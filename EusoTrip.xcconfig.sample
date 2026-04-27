@@ -1,0 +1,25 @@
+//
+//  EusoTrip.xcconfig.sample
+//  Copy this to EusoTrip.xcconfig (which is .gitignored) and fill in real values.
+//
+//  Xcode: Project settings → Configurations → set "Based on Configuration File"
+//         to this file for both Debug and Release.
+//
+
+// ---- OAuth2 client-credentials (HERE app credentials) --------------------
+// Provisioned from the HERE developer portal → Apps → "App credentials".
+// The access.key.id + access.key.secret pair is what signs the
+// OAuth1.0a request to `/oauth2/token`; user.id + client.id are
+// informational (shown in HERE dashboards, not used in the signature).
+HERE_USER_ID            = REPLACE_WITH_HERE_USER_ID
+HERE_CLIENT_ID          = REPLACE_WITH_HERE_CLIENT_ID
+HERE_ACCESS_KEY_ID      = REPLACE_WITH_HERE_ACCESS_KEY_ID
+HERE_ACCESS_KEY_SECRET  = REPLACE_WITH_HERE_ACCESS_KEY_SECRET
+HERE_TOKEN_ENDPOINT_URL = https://account.api.here.com/oauth2/token
+
+// ---- HERE Maps JS 3.1 apiKey --------------------------------------------
+// REST APIs use OAuth above. The Maps JS bundle (Hot Zones heatmap
+// WebView) does NOT accept Bearer tokens — it needs a plain apiKey
+// issued from the HERE portal. Leave empty to disable the JS heatmap
+// in dev builds.
+HERE_JS_API_KEY         = REPLACE_WITH_HERE_JS_API_KEY

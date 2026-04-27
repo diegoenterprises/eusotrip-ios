@@ -1,0 +1,1911 @@
+//
+//  ContentView.swift
+//  EusoTrip by Eusorone Technologies, Inc.
+//
+//  Live production root. Drives a live A→Z walk through the Driver journey
+//  (screens 010–022 shipped; remainder rolls in as they land). Swaps between
+//  DARK and LIGHT register in-place to preview both registers against the
+//  same device bezel.
+//
+//  Powered by ESANG AI™.
+//
+
+import SwiftUI
+
+// MARK: - Register toggle
+
+enum ThemeRegister: String, CaseIterable, Identifiable {
+    case dark = "Night"
+    case light = "Afternoon"
+    var id: String { rawValue }
+
+    var palette: Theme.Palette {
+        switch self {
+        case .dark:  return Theme.dark
+        case .light: return Theme.light
+        }
+    }
+
+    var preferredColorScheme: ColorScheme {
+        switch self {
+        case .dark:  return .dark
+        case .light: return .light
+        }
+    }
+
+    /// Mirror the iOS system colorScheme into our register so the app
+    /// launches in whichever mode the user's device is set to.
+    init(colorScheme: ColorScheme) {
+        self = (colorScheme == .light) ? .light : .dark
+    }
+}
+
+// MARK: - Screen registry (A→Z walk, expands as more land)
+
+struct ProductionScreen: Identifiable {
+    let id: String           // "010", "011", …
+    let title: String        // "Driver Home"
+    let role: Role
+    let view: (Theme.Palette) -> AnyView
+
+    enum Role: String, CaseIterable, Identifiable {
+        case driver = "Driver"
+        case shipper = "Shipper"
+        case carrier = "Carrier"
+        case broker = "Broker"
+        case catalyst = "Catalyst"
+        case escort = "Escort"
+        case terminal = "Terminal"
+        case admin = "Admin"
+        var id: String { rawValue }
+    }
+}
+
+enum ScreenRegistry {
+    static let all: [ProductionScreen] = {
+        var list: [ProductionScreen] = [
+            .init(id: "010", title: "Driver Home",                role: .driver) { p in AnyView(DriverHomeScreen(theme: p)) },
+            .init(id: "011", title: "Pre-trip DVIR",              role: .driver) { p in AnyView(PretripDVIRScreen(theme: p)) },
+            .init(id: "012", title: "DVIR Submitted",             role: .driver) { p in AnyView(DvirSubmittedScreen(theme: p)) },
+            .init(id: "013", title: "Active — Enroute",           role: .driver) { p in AnyView(ActiveEnrouteScreen(theme: p)) },
+            .init(id: "014", title: "Approaching Pickup",         role: .driver) { p in AnyView(ApproachingPickupScreen(theme: p)) },
+            .init(id: "015", title: "At Gate · Awaiting Dock",    role: .driver) { p in AnyView(AtGateAwaitingDockScreen(theme: p)) },
+            .init(id: "016", title: "Pickup · Loading",           role: .driver) { p in AnyView(PickupLoadingScreen(theme: p)) },
+            .init(id: "017", title: "Pickup · BOL Signing",       role: .driver) { p in AnyView(PickupBolSigningScreen(theme: p)) },
+            .init(id: "018", title: "Active Enroute · Loaded",    role: .driver) { p in AnyView(ActiveEnrouteLoadedScreen(theme: p)) },
+            .init(id: "019", title: "HOS Duty Status",            role: .driver) { p in AnyView(HosDutyStatusScreen(theme: p)) },
+            .init(id: "020", title: "Approaching Delivery",       role: .driver) { p in AnyView(ApproachingDeliveryScreen(theme: p)) },
+            .init(id: "021", title: "At Receiver Gate",           role: .driver) { p in AnyView(AtReceiverGateScreen(theme: p)) },
+            .init(id: "022", title: "Dock Assigned",              role: .driver) { p in AnyView(DockAssignedScreen(theme: p)) },
+            .init(id: "023", title: "Backing In",                 role: .driver) { p in AnyView(BackingInScreen(theme: p)) },
+            .init(id: "024", title: "Unloading",                  role: .driver) { p in AnyView(UnloadingScreen(theme: p)) },
+            .init(id: "025", title: "Paperwork",                  role: .driver) { p in AnyView(PaperworkScreen(theme: p)) },
+            .init(id: "026", title: "Off Duty",                   role: .driver) { p in AnyView(OffDutyScreen(theme: p)) },
+            .init(id: "027", title: "Next Load Brief",            role: .driver) { p in AnyView(NextLoadBriefScreen(theme: p)) },
+            .init(id: "028", title: "Load Locked · Prehaul",      role: .driver) { p in AnyView(LoadLockedPrehaulScreen(theme: p)) },
+            .init(id: "029", title: "Pickup Arrival",             role: .driver) { p in AnyView(PickupArrivalScreen(theme: p)) },
+            .init(id: "030", title: "Loading in Progress",        role: .driver) { p in AnyView(LoadingInProgressScreen(theme: p)) },
+            .init(id: "031", title: "Spectra-Match Verdict",      role: .driver) { p in AnyView(SpectraMatchVerdictScreen(theme: p)) },
+            .init(id: "032", title: "Detach Sequence",            role: .driver) { p in AnyView(DetachSequenceScreen(theme: p)) },
+            .init(id: "033", title: "BOL Sign-off",               role: .driver) { p in AnyView(BolSignoffScreen(theme: p)) },
+            .init(id: "034", title: "Departing Pickup",           role: .driver) { p in AnyView(DepartingPickupScreen(theme: p)) },
+            .init(id: "035", title: "En Route Drive",             role: .driver) { p in AnyView(EnRouteDriveScreen(theme: p)) },
+            .init(id: "036", title: "ESANG Smart Stop",           role: .driver) { p in AnyView(ESangSmartStopScreen(theme: p)) },
+            .init(id: "037", title: "Approaching Receiver",       role: .driver) { p in AnyView(ApproachingReceiverScreen(theme: p)) },
+            .init(id: "038", title: "At Receiver Gate · Hazmat",  role: .driver) { p in AnyView(AtReceiverGateFullScreen(theme: p)) },
+            .init(id: "039", title: "Backing Assist · Receiver",  role: .driver) { p in AnyView(BackingAssistReceiverScreen(theme: p)) },
+            .init(id: "040", title: "Discharge in Progress",      role: .driver) { p in AnyView(DischargeInProgressScreen(theme: p)) },
+            .init(id: "041", title: "Discharge Complete",         role: .driver) { p in AnyView(DischargeCompleteScreen(theme: p)) },
+            .init(id: "042", title: "Disconnect and Verify",      role: .driver) { p in AnyView(DisconnectAndVerifyScreen(theme: p)) },
+            .init(id: "043", title: "Disconnect Confirmed",       role: .driver) { p in AnyView(DisconnectConfirmedScreen(theme: p)) },
+            .init(id: "044", title: "Connect Drop Hose",          role: .driver) { p in AnyView(ConnectDropHoseScreen(theme: p)) },
+            .init(id: "045", title: "Departing Receiver",         role: .driver) { p in AnyView(DepartingReceiverScreen(theme: p)) },
+            .init(id: "046", title: "Sequenced Leg Approach",     role: .driver) { p in AnyView(SequencedLegApproachScreen(theme: p)) },
+            .init(id: "047", title: "Arrival Checkpoint",         role: .driver) { p in AnyView(ArrivalCheckpointScreen(theme: p)) },
+            .init(id: "048", title: "Arrival-Gate Task Active",   role: .driver) { p in AnyView(ArrivalGateTaskActiveScreen(theme: p)) },
+            .init(id: "049", title: "Task Result",                role: .driver) { p in AnyView(TaskResultScreen(theme: p)) },
+            .init(id: "050", title: "Next Beat Live",             role: .driver) { p in AnyView(NextBeatLiveScreen(theme: p)) },
+            .init(id: "051", title: "Beat Complete",              role: .driver) { p in AnyView(BeatCompleteScreen(theme: p)) },
+            .init(id: "052", title: "Ratecon Tender",             role: .driver) { p in AnyView(RateconTenderScreen(theme: p)) },
+            .init(id: "053", title: "ESANG Dispatch Chat",         role: .driver) { p in AnyView(ESangDispatchChatScreen(theme: p)) },
+            .init(id: "054", title: "HaulPay Settlement",          role: .driver) { p in AnyView(HaulPaySettlementScreen(theme: p)) },
+            .init(id: "055", title: "Day Close Wallet",            role: .driver) { p in AnyView(DayCloseWalletScreen(theme: p)) },
+            .init(id: "056", title: "Driver Profile",              role: .driver) { p in AnyView(DriverProfileScreen(theme: p)) },
+            .init(id: "057", title: "Driver Vehicle Card",         role: .driver) { p in AnyView(DriverVehicleCardScreen(theme: p)) },
+            .init(id: "058", title: "Driver Weekly Plan",          role: .driver) { p in AnyView(DriverWeeklyPlanScreen(theme: p)) },
+            .init(id: "059", title: "Driver Trips History",        role: .driver) { p in AnyView(DriverTripsHistoryScreen(theme: p)) },
+            .init(id: "060", title: "The Haul · Dashboard",         role: .driver) { p in AnyView(TheHaulDashboardScreen(theme: p)) },
+            .init(id: "061", title: "The Haul · Missions",          role: .driver) { p in AnyView(TheHaulMissionsScreen(theme: p)) },
+            .init(id: "062", title: "The Haul · Badges",            role: .driver) { p in AnyView(TheHaulBadgesScreen(theme: p)) },
+            .init(id: "063", title: "The Haul · Crates",            role: .driver) { p in AnyView(TheHaulCratesScreen(theme: p)) },
+            .init(id: "064", title: "The Haul · Leaderboard",       role: .driver) { p in AnyView(TheHaulLeaderboardScreen(theme: p)) },
+            .init(id: "065", title: "The Haul · Streaks",           role: .driver) { p in AnyView(TheHaulStreaksScreen(theme: p)) },
+            .init(id: "066", title: "The Haul · Cosmetics",         role: .driver) { p in AnyView(TheHaulCosmeticsScreen(theme: p)) },
+            .init(id: "067", title: "Me · Profile",                 role: .driver) { p in AnyView(MeProfileScreen(theme: p)) },
+            .init(id: "068", title: "Me · Earnings",                role: .driver) { p in AnyView(MeEarnings068(theme: p)) },
+            .init(id: "069", title: "Me · Wallet",                  role: .driver) { p in AnyView(MeWalletScreen(theme: p)) },
+            .init(id: "070", title: "Me · Settlements",             role: .driver) { p in AnyView(MeSettlementsScreen(theme: p)) },
+            .init(id: "071", title: "Me · Tax",                     role: .driver) { p in AnyView(MeTaxScreen(theme: p)) },
+            .init(id: "072", title: "Me · Docs",                    role: .driver) { p in AnyView(MeDocsScreen(theme: p)) },
+            .init(id: "073", title: "Me · Vehicle",                 role: .driver) { p in AnyView(MeVehicleScreen(theme: p)) },
+            .init(id: "074", title: "Me · HOS Logs",                role: .driver) { p in AnyView(MeHOSLogsScreen(theme: p)) },
+            .init(id: "075", title: "Me · Safety Score",            role: .driver) { p in AnyView(MeSafetyScoreScreen(theme: p)) },
+            .init(id: "076", title: "Me · Training",                role: .driver) { p in AnyView(MeTrainingScreen(theme: p)) },
+            .init(id: "077", title: "Me · Payment Methods",         role: .driver) { p in AnyView(MePaymentMethodsScreen(theme: p)) },
+            .init(id: "078", title: "Me · Payout Schedule",         role: .driver) { p in AnyView(MePayoutScheduleScreen(theme: p)) },
+            .init(id: "079", title: "Me · Earnings Breakdown",      role: .driver) { p in AnyView(MeEarningsBreakdownScreen(theme: p)) },
+            .init(id: "080", title: "Me · Tax Documents",           role: .driver) { p in AnyView(MeTaxDocumentsScreen(theme: p)) },
+            .init(id: "081", title: "Me · ELD Logs Detail",         role: .driver) { p in AnyView(MeELDLogsDetailScreen(theme: p)) },
+            .init(id: "082", title: "Me · Violations Manager",      role: .driver) { p in AnyView(MeViolationsManagerScreen(theme: p)) },
+            .init(id: "083", title: "Me · Documents Hub",           role: .driver) { p in AnyView(MeDocumentsHubScreen(theme: p)) },
+            .init(id: "084", title: "Me · DataQs Filer",            role: .driver) { p in AnyView(MeDataQsFilerScreen(theme: p)) },
+            .init(id: "085", title: "Me · Carrier Scorecard",       role: .driver) { p in AnyView(MeCarrierScorecardScreen(theme: p)) },
+            .init(id: "086", title: "Me · Incident Filer",          role: .driver) { p in AnyView(MeIncidentReportFilerScreen(theme: p)) },
+            .init(id: "087", title: "Me · Safety Coach",            role: .driver) { p in AnyView(MeSafetyCoachScreen(theme: p)) },
+            .init(id: "088", title: "Me · Invite & Earn",           role: .driver) { p in AnyView(MeReferralsScreen(theme: p)) },
+            .init(id: "089", title: "Me · Support",                 role: .driver) { p in AnyView(MeSupportScreen(theme: p)) },
+            .init(id: "090", title: "Me · IFTA Tax",                role: .driver) { p in AnyView(MeIftaScreen(theme: p)) },
+            .init(id: "091", title: "Me · Detention",               role: .driver) { p in AnyView(MeDetentionScreen(theme: p)) },
+            .init(id: "092", title: "Me · Permits",                 role: .driver) { p in AnyView(MePermitsScreen(theme: p)) },
+            .init(id: "093", title: "Me · DQ File",                 role: .driver) { p in AnyView(MeDQFileScreen(theme: p)) },
+            .init(id: "094", title: "Me · Fuel Cards",              role: .driver) { p in AnyView(MeFuelCardsScreen(theme: p)) },
+            .init(id: "095", title: "Me · Rate Intel",              role: .driver) { p in AnyView(MeRateIntelScreen(theme: p)) },
+            .init(id: "096", title: "Me · ERG",                     role: .driver) { p in AnyView(MeErgScreen(theme: p)) },
+            .init(id: "097", title: "Me · Ratings",                 role: .driver) { p in AnyView(MeRatingsScreen(theme: p)) },
+            .init(id: "098", title: "Me · Emergency Ops",           role: .driver) { p in AnyView(MeEmergencyOpsScreen(theme: p)) },
+            .init(id: "099", title: "Me · Freight Claims",          role: .driver) { p in AnyView(MeFreightClaimsScreen(theme: p)) },
+            .init(id: "100", title: "Me · Hot Zones",               role: .driver) { p in AnyView(MeHotZonesScreen(theme: p)) },
+            .init(id: "101", title: "Me · Appointments",            role: .driver) { p in AnyView(MeAppointmentsScreen(theme: p)) },
+            .init(id: "102", title: "Me · Contacts",                role: .driver) { p in AnyView(MeContactsScreen(theme: p)) },
+            .init(id: "103", title: "Me · Agreements",              role: .driver) { p in AnyView(MeAgreementsScreen(theme: p)) },
+            .init(id: "104", title: "Me · Rate Sheets",             role: .driver) { p in AnyView(MeRateSheetScreen(theme: p)) },
+            .init(id: "105", title: "Me · Authority",               role: .driver) { p in AnyView(MeAuthorityScreen(theme: p)) },
+            .init(id: "106", title: "Me · EusoTicket",              role: .driver) { p in AnyView(MeEusoTicketsScreen(theme: p)) },
+        ]
+
+        // MARK: Non-driver role placeholders (DEBUG only)
+        //
+        // Appended behind #if DEBUG so the dev-chrome role tabs activate
+        // only in dev builds. In Release (TestFlight / App Store) these
+        // entries are not compiled and the registry contains only the
+        // shipped driver screens 010–027. Each placeholder renders a
+        // gradient orb + role label + numeric id + "Figma port pending"
+        // line so it is obvious these are scaffolding, not real screens.
+        //
+        // Using an immediately-invoked closure + append (rather than
+        // `#if DEBUG` directly inside the array literal) because Swift
+        // can't parse `#if` around `.init(...) { p in ... }` trailing-
+        // closure entries cleanly — the parser treats the block as an
+        // expression-form `#if` and fails with "expected expression".
+        // 2026-04-24 — eusotrip-killers next-port firing:
+        // First real Shipper-track brick lands in production. Lifts
+        // id "200" out of the `#if DEBUG` placeholder block below
+        // so non-debug builds also get the Shipper Home surface.
+        // Backed by `shippers.{getDashboardStats,getActiveLoads,
+        // getLoadsRequiringAttention,getRecentLoads}` — see
+        // `200_ShipperHome.swift` header for the full doctrine and
+        // store wire-up.
+        list.append(
+            .init(id: "200", title: "Shipper · Home", role: .shipper) { p in
+                AnyView(ShipperHomeScreen(theme: p))
+            }
+        )
+        // 2026-04-25 — eusotrip-killers continuation firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // Second real Shipper-track brick lands in production. The
+        // `Loads` slot in the 200 BottomNav routes here. Backed by
+        // `shippers.getActiveLoads` + `shippers.getRecentLoads` via the
+        // existing ShipperActiveLoadsStore / ShipperRecentLoadsStore in
+        // LiveDataStores.swift — no new backend, no new API surface,
+        // 100% live data. Filter chip strip (All · Active · Recent) +
+        // in-memory search across loadNumber/origin/destination.
+        // Per-row tap presents the brick-202 placeholder sheet
+        // (EusoEmptyState `comingSoon: true`) until shipper load
+        // detail lands. Doctrine: every Toggle-equivalent surface
+        // uses gradient accent (no flat Brand.info / Brand.blue),
+        // ternary shape-styles wrapped in AnyShapeStyle, both
+        // register previews compile in isolation.
+        list.append(
+            .init(id: "201", title: "Shipper · Loads", role: .shipper) { p in
+                AnyView(ShipperLoadsScreen(theme: p))
+            }
+        )
+        // 2026-04-26 — eusotrip-killers 117th firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // Third real Shipper-track brick lands in production. Routes
+        // from the `Me` slot of the 200/201 BottomNav. Backed by
+        // `shippers.getProfile` + `shippers.getStats` via the new
+        // `ShipperProfileStore` / `ShipperStatsStore` in
+        // LiveDataStores.swift — no fixtures, no fallback values,
+        // 100% live data per Cohort B day-1 doctrine. Identity card
+        // (DOT/MC/verified), contact card (email/phone/address/web),
+        // 4-tile lifetime-stats KPI grid, 12-month gradient mini-bar
+        // chart, and Edit-profile + Sign-out CTAs. Every blank field
+        // surfaces as an em-dash sentinel ("—") rather than a
+        // fabricated brand or metric. Doctrine: gradient-only accent
+        // (no flat Brand.info / Brand.blue), AnyShapeStyle wrapping
+        // for ternary shape-styles, both register previews compile
+        // in isolation.
+        list.append(
+            .init(id: "202", title: "Shipper · Profile", role: .shipper) { p in
+                AnyView(ShipperProfileScreen(theme: p))
+            }
+        )
+        // 2026-04-26 — eusotrip-killers 119th firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // Fourth Shipper-track brick lands in production. Bids inbox
+        // for posted loads — load picker chip strip drives a single
+        // tRPC call to `shippers.getBidsForLoad(loadId)`, with single
+        // tap Accept (`shippers.acceptBid`) and Reject
+        // (`shippers.rejectBid`) mutations live on the detail sheet.
+        // Cohort B day-1 — no fixtures, no fallbacks, no fabricated
+        // data. Server-side empty fields surface as em-dash sentinels
+        // ("—"). Backed by `ShipperActiveLoadsStore` (existing) +
+        // `ShipperBidsStore` (new, LiveDataStores.swift L3313).
+        list.append(
+            .init(id: "203", title: "Shipper · Bids", role: .shipper) { p in
+                AnyView(ShipperBidsScreen(theme: p))
+            }
+        )
+        // 2026-04-26 — eusotrip-killers 121st firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // Fifth Shipper-track brick lands in production. Dedicated
+        // post-load form behind the 201 "Post a load" CTA. Captures
+        // origin / destination / cargo-type / pickup date / weight /
+        // rate / notes and posts a fresh row to the loads table via a
+        // single `shippers.create` mutation
+        // (frontend/server/routers/shippers.ts:18). Backed by the new
+        // `ShipperPostLoadStore` (LiveDataStores.swift, mutation phase
+        // machine: idle → submitting → success | error). Cohort B
+        // day-1 — the form starts blank, no seeded text, no fake
+        // defaults beyond the backend's "general" cargoType Zod
+        // default. Empty optional fields wire-omit so the backend's
+        // `.optional()` defaults apply. Server-emitted `loadNumber`
+        // surfaces verbatim in the success banner — no client-side
+        // reformatting. Submit button gates on origin / destination
+        // non-empty AND not in-flight, so the user can never fire a
+        // known-invalid mutation. After success the form clears and
+        // the user can post another without remounting.
+        list.append(
+            .init(id: "204", title: "Shipper · Post Load", role: .shipper) { p in
+                AnyView(ShipperPostLoadScreen(theme: p))
+            }
+        )
+        // 2026-04-26 — eusotrip-killers 122nd firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // Sixth Shipper-track brick. The 121st firing's Branch B
+        // recommendation: 201_ShipperLoads now opens this surface in
+        // a sheet on row tap (replacing the `EusoEmptyState
+        // (comingSoon:)` placeholder). Detail data flows through
+        // `ShipperLoadDetailStore` → `loads.getById`
+        // (`frontend/server/routers/loads.ts:1046`); bid count +
+        // highest amount reuse the existing `ShipperBidsStore` →
+        // `shippers.getBidsForLoad`. Cohort B day-1: every field
+        // surfaces verbatim from the server, missing optionals
+        // render as em-dash sentinels — never fabricated values.
+        // The dev-chrome registry entry uses loadId="0" purely as
+        // a placeholder so the next/prev walk doesn't break; the
+        // real navigation path is the sheet from 201.
+        list.append(
+            .init(id: "205", title: "Shipper · Load Detail", role: .shipper) { p in
+                AnyView(ShipperLoadDetailScreen(
+                    theme: p,
+                    loadId: "0",
+                    previewLoadNumber: nil,
+                    previewLane: nil
+                ))
+            }
+        )
+        // 2026-04-26 — eusotrip-killers 124th firing
+        // (autonomous scheduled-task `eusotrip-killers`):
+        // Seventh real Shipper-track brick lands in production. Per
+        // the 123rd firing's recommendation for Branch B: "Code port
+        // 206_ShipperSettlements driving shippers.getDeliveryConfirma
+        // tions + a settlements summary card." Backed by
+        // `shippers.getDeliveryConfirmations` via the new
+        // `ShipperDeliveryConfirmationsStore` — see
+        // `206_ShipperSettlements.swift` header for the full doctrine
+        // and store wire-up. Aggregates (total billed, settled count,
+        // average rate, last settlement date) computed client-side
+        // from the same verified server array so the screen can never
+        // drift between an aggregate and its row list. Tap a row →
+        // opens 205_ShipperLoadDetail in a sheet, passing the same
+        // `loadId` so the detail surface re-uses the existing
+        // `ShipperLoadDetailStore` path.
+        list.append(
+            .init(id: "206", title: "Shipper · Settlements", role: .shipper) { p in
+                AnyView(ShipperSettlementsScreen(theme: p))
+            }
+        )
+        // 2026-04-26 — eusotrip-killers 126th firing
+        // (autonomous scheduled-task `eusotrip-killers`):
+        // Eighth real Shipper-track brick lands in production. Per
+        // the 124th firing's hand-off recommendation: "207
+        // ShipperReports" — a spend analytics + catalyst performance
+        // dashboard backed by two parallel real backend procedures
+        // (`shippers.getSpendingAnalytics` returning a single
+        // envelope, `shippers.getCatalystPerformance` returning a
+        // ranked list). MCP-verified at firing open at
+        // `frontend/server/routers/shippers.ts:470` and `:433`.
+        // Period selector (Month / Quarter / Year) propagates to
+        // BOTH stores so the KPI tiles and the catalyst leaderboard
+        // always describe the same time window. Cohort B day-1 — no
+        // fixtures, no fake data, no mock fallbacks. Empty windows
+        // surface `EusoEmptyState` (zero-spend or zero-catalysts)
+        // rather than a confusing "$0 over 0 loads" tile strip.
+        list.append(
+            .init(id: "207", title: "Shipper · Reports", role: .shipper) { p in
+                AnyView(ShipperReportsScreen(theme: p))
+            }
+        )
+        // 2026-04-26 — eusotrip-killers 127th firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // Cohort B day-1 brick — Shipper Payment Methods. Reuses the
+        // existing `PaymentMethodsStore` (defined for Driver Me 077)
+        // because `payments.getPaymentMethods` is `protectedProcedure`
+        // and serves any authenticated user identically — same Stripe
+        // Customer lookup, same `card` + `us_bank_account` mix, same
+        // `isDefault` stamp. Cross-role store reuse is the doctrine-
+        // approved pattern when the backend procedure is role-agnostic
+        // (no shipperProcedure or roleProcedure gate). The shipper
+        // copy reframes "payouts default" → "funding default" because
+        // shippers PAY for loads (the default method funds checkout
+        // via `payments.createLoadCheckout` / per-load PaymentIntent)
+        // whereas drivers RECEIVE payouts. Backend MCP-verified at
+        // firing open: `frontend/server/routers/payments.ts:323`
+        // (`getPaymentMethods`), :366 (`setDefaultMethod`), :381
+        // (`deletePaymentMethod`). Doctrine: 0 Brand.info|blue real
+        // hits (only doctrine-banner comment refs), 0 Toggle widgets
+        // (no GradientToggleStyle obligation), AnyShapeStyle wraps
+        // on isDefault icon-tint ternary, LinearGradient.diagonal on
+        // header, default-banner glyph, default chip, retry CTA, add
+        // CTA, toast checkmark.
+        list.append(
+            .init(id: "208", title: "Shipper · Payment Methods", role: .shipper) { p in
+                AnyView(ShipperPaymentMethodsScreen(theme: p))
+            }
+        )
+        // 2026-04-26 — eusotrip-killers 127th firing (continued)
+        // Cohort B day-1 brick — Shipper Contacts (working-carriers
+        // directory). Backed by the new `shippers.getFavoriteCatalysts`
+        // tRPC procedure (frontend/server/routers/shippers.ts:500),
+        // which is a DERIVED view: no junction table, the server
+        // aggregates `loads` rows where `shipperId = ctx.user.id AND
+        // status = 'delivered' AND catalystId IS NOT NULL`, groups by
+        // catalystId, joins through `companies` for name + dotNumber,
+        // and orders DESC by load count, top 10. The "Contacts" framing
+        // is doctrine: the most-worked-with carriers ARE the shipper's
+        // de-facto contact list — there's no separate "favorited"
+        // boolean. Favorite-tap is a no-op acknowledgment server-side
+        // (returns {success, catalystId, addedAt}); the UI fires it
+        // for future-proofing but doesn't refresh the list. New API
+        // surface added: ShipperAPI.FavoriteCatalyst struct +
+        // getFavoriteCatalysts() + addFavoriteCatalyst(catalystId:).
+        // New store: ShipperFavoriteCatalystsStore in LiveDataStores
+        // with row-level acknowledgingId for the optimistic ack-tap
+        // spinner. Doctrine: 0 Brand.info|blue real hits (only
+        // doctrine-banner comment refs), 0 Toggle widgets (no
+        // GradientToggleStyle obligation), AnyShapeStyle wraps on
+        // top-3 rank-badge gradient ternary, LinearGradient.diagonal
+        // on header, summary-tile glyphs, top-3 rank badges, retry
+        // CTA, toast checkmark.
+        list.append(
+            .init(id: "209", title: "Shipper · Contacts", role: .shipper) { p in
+                AnyView(ShipperContactsScreen(theme: p))
+            }
+        )
+        // 2026-04-26 — eusotrip-killers 128th firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // Eleventh shipper-track brick `210_ShipperAnalyticsDeepDive`.
+        // Cohort B day-1 — fully dynamic, zero new API/store code.
+        // Reuses `ShipperSpendingAnalyticsStore` AND
+        // `ShipperCatalystPerformanceStore` (both already shipped in
+        // 126th firing for brick 207_ShipperReports). Same backend
+        // procedures (`shippers.getSpendingAnalytics:470` +
+        // `shippers.getCatalystPerformance:433`), different lens:
+        // efficiency tiles + share-of-spend horizontal bars + on-time-
+        // rate distribution buckets + programmatically-derived
+        // insights callouts (top-3 spend share, avg on-time, vs-market
+        // variance). Lane and equipment-type cohort breakdowns render
+        // `EusoEmptyState(comingSoon: true)` per the codebase doctrine
+        // §13 no-fake-data rule — backend's `byLane`/`byCatalyst`
+        // arrays are reserved future fields. The screen owns the
+        // canonical SpendingPeriod and propagates to BOTH stores via
+        // setPeriod so every lens describes the same window. Doctrine
+        // compliance: 0 Brand.info|blue real hits (only doctrine-
+        // banner comment refs), 0 Toggle widgets (no GradientToggleStyle
+        // obligation), AnyShapeStyle wraps on rank-badge ternary,
+        // LinearGradient.diagonal on header glyph, period chip when
+        // selected, share-bar fills, on-time bucket bar fills, retry
+        // CTA, marketVariance glyph, sparkle insight glyphs.
+        list.append(
+            .init(id: "210", title: "Shipper · Analytics Deep-Dive", role: .shipper) { p in
+                AnyView(ShipperAnalyticsDeepDiveScreen(theme: p))
+            }
+        )
+        // 2026-04-26 — eusotrip-killers 129th firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // TWELFTH (final) shipper-track brick lands in production —
+        // closes the Shipper anchor sweep at 12-of-12 and brings the
+        // 121-spec total to 121 (Driver 96 + Shipper 12 + Carrier 2 +
+        // Auth 6 + 5 other-role anchors). Backed by the canonical
+        // cross-role notification preferences matrix:
+        //   • `users.getNotificationPreferences` — query, returns the
+        //     11-boolean matrix (4 channel masters + 7 alert categories).
+        //     MCP-verified at `frontend/server/routers/users.ts:1648`.
+        //   • `users.updateNotificationPreferences` — mutation, partial
+        //     update, returns `{success: true}`. MCP-verified at
+        //     `frontend/server/routers/users.ts:1680`.
+        //   Both `protectedProcedure` (any authenticated user) so
+        //   shippers consume the same envelope shape that Driver Me
+        //   eventually migrates to. Account-section rows fall through
+        //   to existing shipper bricks (202 Profile, 201 Loads, 208
+        //   Payment Methods, 209 Contacts) via the standard
+        //   `pushScreenById` env closure. Sign-out wires through
+        //   `EusoTripSession.signOut()` → `auth.logout` → AppRoot
+        //   `.signedOut`. Default lane configs section renders
+        //   `EusoEmptyState(comingSoon:)` per §13 no-fake-data rule
+        //   until backend exposes a `shippers.getDefaultLaneConfigs`
+        //   procedure. New API surface: `UsersAPI` struct +
+        //   `EusoTripAPI.shared.users` accessor (first cross-role
+        //   user-scoped endpoint group; `auth.*`, `notifications.*`,
+        //   and `preferences.*` are sibling but distinct namespaces).
+        //   New store: `NotificationPreferencesStore` (BaseDynamicStore
+        //   over the 11-boolean matrix with per-key inflight set for
+        //   per-row optimistic-flip discipline). pbxproj 4-section
+        //   wiring uses new SK01/SK02 hash suffix consistent with the
+        //   prior shipper-block pattern (SH/SL/SP/SB/SC/SD/SE/SF/SG/SI/SJ).
+        list.append(
+            .init(id: "211", title: "Shipper · Settings", role: .shipper) { p in
+                AnyView(ShipperSettingsScreen(theme: p))
+            }
+        )
+        // 2026-04-25 — eusotrip-killers 100th firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // First real Carrier-track brick lands in production. Lifts
+        // id "300" out of the `#if DEBUG` placeholder block below so
+        // non-debug builds also get the Carrier Home surface. Backed
+        // by `carriers.{getDashboardStats,getActiveLoads,
+        // getLoadsRequiringAttention,getRecentLoads}` — see
+        // `300_CarrierHome.swift` header for the full doctrine and
+        // store wire-up. Name disambiguation against the existing
+        // Driver-Me brick 085 `CarrierScorecardStore` is documented
+        // in `LiveDataStores.swift` (the home stores use the prefix
+        // `CarrierHome*` / `CarrierActiveLoads*` / `CarrierAlerts*`
+        // / `CarrierRecentLoads*` to avoid collision).
+        list.append(
+            .init(id: "300", title: "Carrier · Home", role: .carrier) { p in
+                AnyView(CarrierHomeScreen(theme: p))
+            }
+        )
+        // 2026-04-25 — eusotrip-killers 100th firing (continued):
+        // Second Carrier-track brick. Mirror of 201 Shipper · Loads
+        // swung to the carrier side: `carriers.getActiveLoads` +
+        // `carriers.getRecentLoads` via the existing
+        // `CarrierActiveLoadsStore` / `CarrierRecentLoadsStore` (no
+        // new stores or API namespaces needed). Tap-detail surfaces
+        // `EusoEmptyState(comingSoon:)` placeholder labeled "brick
+        // 302" — no fabricated detail data per the no-mock pledge.
+        list.append(
+            .init(id: "301", title: "Carrier · Loads", role: .carrier) { p in
+                AnyView(CarrierLoadsScreen(theme: p))
+            }
+        )
+        // 2026-04-26 — eusotrip-killers 130th firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // Third real Carrier-track brick lands in production. Per the
+        // 129th firing's hand-off recommendation: "Code-port fallback
+        // if A still blocked: pivot from anchor sweep to second-screen
+        // depth — highest-value next ports per backend coverage are
+        // 302 (Carrier loads detail — carriers.* router has many live
+        // procedures)." The 301 row tap previously surfaced an
+        // EusoEmptyState placeholder; with 302 live, that placeholder
+        // is replaced with the real CarrierLoadDetailScreen on row
+        // tap. Backed by `CarrierLoadDetailStore` (LiveDataStores.swift,
+        // added in this firing) → `loads.getById` (verified at
+        // frontend/server/routers/loads.ts:1046, protectedProcedure).
+        // Same backend procedure that powers 205_ShipperLoadDetail —
+        // the role distinction is in framing: carrier reframes the
+        // Shipper "bids count" panel as "assignment + counterparty +
+        // settlement" cards because the carrier perspective is who
+        // they're hauling for and what they collect, not who they're
+        // paying. Cohort B day-1 — every field surfaces verbatim from
+        // the server. When the load is partially filled (no driver
+        // assigned yet, no actual delivery date, no rate posted) the
+        // screen renders em-dash neutral states — never fabricated
+        // values. The dev-chrome registry entry uses loadId="0" purely
+        // as a placeholder so the next/prev walk doesn't break; the
+        // real navigation path is the sheet from 301.
+        list.append(
+            .init(id: "302", title: "Carrier · Load Detail", role: .carrier) { p in
+                AnyView(CarrierLoadDetailScreen(
+                    theme: p,
+                    loadId: "0",
+                    previewLoadNumber: nil,
+                    previewLane: nil,
+                    previewStatus: nil,
+                    previewDriver: nil,
+                    previewCounterparty: nil,
+                    previewRate: nil,
+                    previewIsActive: true
+                ))
+            }
+        )
+        // 2026-04-27 — eusotrip-killers 144th firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // Fourth Carrier-track brick lands in production. Per the 143rd
+        // firing's hand-off recommendation: "Driver=117, Shipper=12,
+        // Carrier=3 — Carrier is the deepest gap among production roles.
+        // The next high-leverage port is 303_CarrierDispatchBoard — the
+        // carrier-side dispatch screen that closes the carrier→driver
+        // dispatch loop and pairs with the existing carriers.* tRPC
+        // procedures (loads-lifecycle slice §16-02)." Backed by the
+        // existing `CarrierActiveLoadsStore` + `CarrierAlertsStore` —
+        // no new tRPC procedure needed. The dispatch axis is a
+        // *projection* over `carriers.getActiveLoads` rows binned by
+        // `driver`/`status`, joined onto `carriers.getLoadsRequiringAttention`
+        // by `loadNumber`. Per doctrine §13 (no fabricated values) +
+        // §17 (work together with the dev team), composing existing
+        // procedures keeps the client/server contract unchanged.
+        // Cohort B day-1 — every value paints from the server. Row tap
+        // routes to `CarrierLoadDetailScreen` (brick 302) so the
+        // dispatch board → load detail loop is closed without
+        // duplicating the detail surface.
+        list.append(
+            .init(id: "303", title: "Carrier · Dispatch Board", role: .carrier) { p in
+                AnyView(CarrierDispatchBoardScreen(theme: p))
+            }
+        )
+        // 2026-04-27 — eusotrip-killers 145th firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // Fifth Carrier-track brick. Closes the dispatch-loop driver-
+        // roster axis the 303 board references via the UNASSIGNED chip.
+        // Roster is a *projection* over `carriers.getActiveLoads` —
+        // every unique non-empty driver name becomes a roster entry,
+        // with per-driver active-load count + lane summary aggregated
+        // from the same rows. When the dev team ships a real
+        // `carriers.getRoster` (or `drivers.list`), the projection
+        // swap is one line in `CarrierDriverRosterRow.project(from:)`
+        // — the UI surface stays unchanged. Per doctrine §13 +§17,
+        // composing existing endpoints (instead of inventing a server
+        // contract) keeps parallel dev-team work conflict-free.
+        list.append(
+            .init(id: "304", title: "Carrier · Drivers", role: .carrier) { p in
+                AnyView(CarrierDriversScreen(theme: p))
+            }
+        )
+        // 2026-04-25 — eusotrip-killers 99th firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // First real Broker-track brick lands in production. Lifts id
+        // "400" out of the `#if DEBUG` placeholder block below so non-
+        // debug builds also get the Broker Home surface. Backed by
+        // `brokers.{getDashboardStats,getOpenTenders,
+        // getLoadsRequiringAttention,getRecentLoads}` — see
+        // `400_BrokerHome.swift` header for the full doctrine and
+        // store wire-up. The broker sits between the shipper
+        // (originator) and the carrier (mover); the home re-frames
+        // the four-card hierarchy around tender flow + margin rather
+        // than active-load count, so `OpenTenders` replaces the
+        // Carrier's `ActiveLoads` slot and `grossMarginThisWeek`
+        // replaces `weeklyRevenue`.
+        list.append(
+            .init(id: "400", title: "Broker · Home", role: .broker) { p in
+                AnyView(BrokerHomeScreen(theme: p))
+            }
+        )
+        // 2026-04-26 — eusotrip-killers 131st firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // Second brick on the Broker role track lands. Lifts id "401"
+        // out of the `#if DEBUG` placeholder block below so non-debug
+        // builds also get the Broker Tenders board. Backed by the
+        // existing `BrokerOpenTendersStore` (LiveDataStores.swift,
+        // shipped at the 99th firing for 400_BrokerHome) but with
+        // the store's `limit` bumped to 50 inside `.task` so the full
+        // board renders, not just the home strip's 10. Tap on a row
+        // surfaces an honest `EusoEmptyState(comingSoon: true)`
+        // sheet for 402_BrokerTenderDetail until that brick ships —
+        // never fabricated detail data per §13 no-fake-data doctrine.
+        // First port off the 130th firing's "24-user 3-screen-per-
+        // role expansion track" — Broker now has 2 of 6 anchors,
+        // matching Carrier's first non-anchor depth (302).
+        list.append(
+            .init(id: "401", title: "Broker · Tenders", role: .broker) { p in
+                AnyView(BrokerTendersScreen(theme: p))
+            }
+        )
+        // 2026-04-27 — eusotrip-killers 132nd firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // Second-screen depth on the Broker role — 402_BrokerTenderDetail
+        // ships as the natural follow-on to 401. Mirrors the carrier
+        // 302 pattern: backed by `BrokerTenderDetailStore`
+        // (LiveDataStores.swift:3909) which calls the same
+        // `loads.getById` procedure (frontend/server/routers/loads.ts:1046)
+        // already powering 205_ShipperLoadDetail and 302_CarrierLoadDetail.
+        // Role distinction is in framing only — the broker reframes
+        // "load" as "tender" and emphasises the target-rate vs. market-
+        // range spread + responding-carrier count rather than driver
+        // assignment. Carrier shortlist + award CTA render as honest
+        // placeholders until `brokers.getTenderResponses` /
+        // `brokers.awardTender` ship server-side. With this brick,
+        // Broker reaches 3 of 6 anchors — same depth as Carrier (300 +
+        // 301 + 302) per the 24-user 3-screen-per-role expansion track.
+        list.append(
+            .init(id: "402", title: "Broker · Tender Detail", role: .broker) { p in
+                AnyView(
+                    BrokerTenderDetailScreen(
+                        theme: p,
+                        tenderId: "0"
+                    )
+                )
+            }
+        )
+        // 2026-04-25 — eusotrip-killers 102nd firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // First real Catalyst-track brick lands in production. Lifts
+        // id "500" out of the `#if DEBUG` placeholder block below so
+        // non-debug builds also get the Catalyst Home surface. Backed
+        // by `catalysts.{getDashboardStats,getActiveMatches,
+        // getLoadsRequiringAttention,getRecentMatches}` — see
+        // `500_CatalystHome.swift` header for the full doctrine and
+        // store wire-up. Catalyst is the AI-augmented dispatch /
+        // SpectraMatch operator role per §16 intelligence slice
+        // (Autopilot 7-layer cortex, 52 agents); the home re-frames
+        // the four-card hierarchy around match flow + fit-score
+        // rather than tender flow or active-load count, so
+        // `ActiveMatches` replaces the Broker's `OpenTenders` slot
+        // and `gmvThisWeek` replaces `grossMarginThisWeek`.
+        list.append(
+            .init(id: "500", title: "Catalyst · Home", role: .catalyst) { p in
+                AnyView(CatalystHomeScreen(theme: p))
+            }
+        )
+        // 2026-04-27 — eusotrip-killers 134th firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // Second Catalyst-track brick lands in production. The Matches
+        // nav slot on 500's bottom-nav (and the Active Matches card's
+        // "View all" CTA) now route to a real production surface
+        // instead of a `RolePlaceholderScreen` stub. Backed by
+        // `catalysts.getActiveMatches` via `CatalystActiveMatchesStore`
+        // — see `501_CatalystMatches.swift` header for the full
+        // doctrine and SpectraMatch fit-score envelope reframing
+        // (Broker `targetRate` -> Catalyst `bestFitScore`, Broker
+        // `respondingCarriers` -> Catalyst `candidateCount`, Broker
+        // `shipper` -> Catalyst `agentName`). Closes the Catalyst
+        // role's second-screen-depth track and brings the 24-role
+        // 3-screen-per-role expansion track from 22 -> 21 remaining.
+        // The 502_CatalystMatchDetail brick replaces the prior
+        // `matchDetailComingSoonSheet` placeholder with a real
+        // production surface (see registry row "502" below — shipped
+        // 2026-04-27 in the 136th firing). Both row tap and 500's
+        // "View all" CTA now route to live data per §13 no-fake-data
+        // doctrine.
+        list.append(
+            .init(id: "501", title: "Catalyst · Matches", role: .catalyst) { p in
+                AnyView(CatalystMatchesScreen(theme: p))
+            }
+        )
+        // 2026-04-27 — eusotrip-killers 136th firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // Third Catalyst-track brick lands in production. The row tap
+        // on 501's match board (and any deep-link landing on a
+        // specific match) now route to a real production detail
+        // surface instead of an `EusoEmptyState(comingSoon:)`
+        // placeholder. Backed by `loads.getById` via
+        // `CatalystMatchDetailStore` (LiveDataStores.swift) — same
+        // procedure already powering 205 / 302 / 402; the role
+        // distinction is in framing only. The catalyst reframes
+        // "load" as "match" and emphasises SpectraMatch fit score,
+        // candidate count, and agent-in-the-loop rather than tender
+        // rate spread or driver assignment. Candidate shortlist +
+        // override-to-manual CTA render as honest placeholders until
+        // `catalysts.getMatchCandidates` / `catalysts.overrideMatch`
+        // ship server-side. Closes the Catalyst role's third-screen-
+        // depth track and brings the 24-role 3-screen-per-role
+        // expansion track from 21 -> 20 remaining. Catalyst now
+        // reaches structural parity with Carrier (300+301+302) and
+        // Broker (400+401+402): three production screens per role.
+        list.append(
+            .init(id: "502", title: "Catalyst · Match Detail", role: .catalyst) { p in
+                AnyView(
+                    CatalystMatchDetailScreen(
+                        theme: p,
+                        matchId: "0"
+                    )
+                )
+            }
+        )
+        // 2026-04-25 — eusotrip-killers 103rd firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // First real Escort-track brick lands in production. Lifts
+        // id "600" out of the `#if DEBUG` placeholder block below so
+        // non-debug builds also get the Escort Home surface. Backed
+        // by `escorts.{getDashboardStats,getActiveAssignments,
+        // getLoadsRequiringAttention,getRecentAssignments}` — see
+        // `600_EscortHome.swift` header for the full doctrine and
+        // store wire-up. Escort is the regulated-corridor pilot-car /
+        // safety-escort operator role per §16 compliance-safety slice
+        // (escortOverview, escort_* tables, bridge clearance); the
+        // home re-frames the four-card hierarchy around live
+        // assignment flow + corridor coverage rather than match flow,
+        // so `ActiveAssignments` replaces the Catalyst's
+        // `ActiveMatches` slot and `revenueThisWeek` replaces
+        // `gmvThisWeek`.
+        list.append(
+            .init(id: "600", title: "Escort · Home", role: .escort) { p in
+                AnyView(EscortHomeScreen(theme: p))
+            }
+        )
+        // 2026-04-27 — eusotrip-killers 147th firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // Second real Escort-track brick lands. The 600 home's
+        // active-assignment row tap (previously a no-op) now routes
+        // to a real production detail surface — `601_EscortAssignmentDetail`.
+        // Backed by `EscortAssignmentDetailStore` (LiveDataStores.swift)
+        // → `escorts.getActiveAssignmentDetail` (input `{ id: string }`)
+        // for the read and `escorts.confirmRoute` for the route-commit
+        // mutation. Every blank server field renders as an em-dash
+        // sentinel per §13 no-fake-data doctrine. The CTA disables
+        // while the detail fetch is loading, while the mutation is
+        // in flight, and once `routeConfirmed: true` flips. Closes
+        // the Escort role's two-screen-depth track and brings the
+        // 24-role 3-screen-per-role expansion track one step further.
+        // Escort now reaches partial parity with Carrier (300+301+302),
+        // Broker (400+401+402), and Catalyst (500+501+502): two
+        // production screens shipped with the home → detail tap path
+        // wired end-to-end.
+        list.append(
+            .init(id: "601", title: "Escort · Assignment Detail", role: .escort) { p in
+                AnyView(
+                    EscortAssignmentDetailScreen(
+                        theme: p,
+                        assignmentId: "0"
+                    )
+                )
+            }
+        )
+
+#if DEBUG
+        // Phase 1 audit (eusotrip-killers §6, 2026-04-23):
+        // Role placeholders now route through the canonical `EusoEmptyState`
+        // primitive (Theme/Components/EusoEmptyState.swift) with
+        // `comingSoon: true`, per the doctrine's non-driver role stub spec.
+        // The bespoke `RolePlaceholderScreen` view is kept behind this
+        // block for any future dev-chrome demo that wants the richer
+        // gradient-orb layout, but the default role-tab activation now
+        // uses the empty-state pattern the rest of the app renders in
+        // place of mock data.
+        //
+        // 2026-04-24 hygiene: the Shipper id "200" placeholder is
+        // removed from this DEBUG block — the production Shipper
+        // Home above replaces it. Other roles still placeholder
+        // until their first real brick ships.
+        // 2026-04-25 100th firing: the Carrier id "300" placeholder
+        // is removed from this DEBUG block — the production Carrier
+        // Home above replaces it. Broker / Catalyst / Escort /
+        // Terminal / Admin still placeholder until their first real
+        // brick ships.
+        // 2026-04-25 99th firing: the Broker id "400" placeholder
+        // is removed from this DEBUG block — the production Broker
+        // Home above replaces it. Catalyst / Escort / Terminal /
+        // Admin still placeholder until their first real brick
+        // ships.
+        // 2026-04-25 102nd firing: the Catalyst id "500" placeholder
+        // is removed from this DEBUG block — the production Catalyst
+        // Home above replaces it. Escort / Terminal / Admin still
+        // placeholder until their first real brick ships.
+        // 2026-04-25 103rd firing: the Escort id "600" placeholder
+        // is removed from this DEBUG block — the production Escort
+        // Home above replaces it. Terminal / Admin still placeholder
+        // until their first real brick ships.
+        list.append(contentsOf: [
+            // 700 Terminal Home — first real brick on the Terminal Manager
+            // role track (107th eusotrip-killers firing). Replaced the
+            // RolePlaceholderScreen stub. Backend wiring: `terminals.*`
+            // tRPC namespace; if the parallel router has not landed yet,
+            // every card resolves to `.error` and offers retry — no
+            // placeholder data is ever shown (doctrine §11 + MockDataGuard).
+            .init(id: "700", title: "Terminal · Home",                role: .terminal) { p in AnyView(TerminalHomeScreen(theme: p)) },
+            // 701 Terminal · Gate Queue — second real brick on the Terminal
+            // Manager role track (150th eusotrip-killers firing). The 700
+            // home's "ACTIVE MOVEMENTS" section header now routes to this
+            // deep gate-queue surface instead of being read-only chrome.
+            // Backend: `terminals.getGateQueue` (read) + `terminals.assignDock`
+            // (per-row mutation). Each row owns its own in-flight + error
+            // state so a failed assign on row B doesn't disturb row A's
+            // idle CTA. Closes the Terminal role's two-screen-depth track,
+            // bringing parity with Escort 600 → 601 (147th firing).
+            .init(id: "701", title: "Terminal · Gate Queue",          role: .terminal) { p in AnyView(TerminalGateQueueScreen(theme: p)) },
+            // 702 Terminal · Yard Map — third real brick on the Terminal
+            // Manager role track (154th eusotrip-killers firing). Drilled
+            // into from 700_TerminalHome's "Yard" trailing nav slot —
+            // exposes the full yard occupancy by zone with each slot
+            // rendered as a tile (free / occupied) and a per-slot
+            // "Release" mutation when a truck departs and the slot is
+            // clear. Backend: `terminals.getYardMap` (read) +
+            // `terminals.releaseSlot` (per-slot mutation). Each slot
+            // owns its own in-flight + error state. Brings Terminal to
+            // three-screen depth, parity with the upcoming 3-deep
+            // tracks for Escort/Admin (and overshooting Broker/Catalyst
+            // until they reach 3).
+            .init(id: "702", title: "Terminal · Yard Map",            role: .terminal) { p in AnyView(TerminalYardMapScreen(theme: p)) },
+            // 800 Admin Home — first real brick on the Admin role track
+            // (108th eusotrip-killers firing). Replaced the
+            // RolePlaceholderScreen stub. Backend wiring: `admin.*` tRPC
+            // namespace; if the parallel router has not landed yet,
+            // every card resolves to `.error` and offers retry — no
+            // placeholder data is ever shown (doctrine §11 + MockDataGuard).
+            // This brick closes the role-anchor sweep so all 8 of 24
+            // distinct role surfaces have at least one shipped screen.
+            .init(id: "800", title: "Admin · Home",                   role: .admin)    { p in AnyView(AdminHomeScreen(theme: p)) },
+            // 802 — Admin · Tenants (151st eusotrip-killers firing).
+            // Second screen on the Admin role track (800s). Drilled
+            // into from 800's "ACTIVE TENANTS" section header via the
+            // "View all →" CTA. Reads `admin.listTenants` through
+            // `AdminTenantsStore` — never any fixture data; if the
+            // backend hasn't shipped the procedure, the store
+            // resolves to `.error` and the screen surfaces a retry
+            // banner (doctrine §11 + MockDataGuard). Brings Admin to
+            // two-screen depth, parity with Terminal/Escort/Catalyst/
+            // Carrier/Broker.
+            .init(id: "802", title: "Admin · Tenants",                role: .admin)    { p in AnyView(AdminTenantsScreen(theme: p)) },
+        ])
+#endif
+
+        return list
+    }()
+
+    static func forRole(_ r: ProductionScreen.Role) -> [ProductionScreen] {
+        all.filter { $0.role == r }
+    }
+}
+
+// MARK: - Role placeholder screen
+//
+// Minimal "nothing ported here yet" surface for non-driver roles. Exists so
+// the chrome role tabs aren't stranded behind the `hasContent` guard until
+// their real Figma ports land. Deliberately neutral — no fake data, no mock
+// CTAs — per SKILL.md §13 ("every backend stub gap has a neutral empty
+// state on the client; no fake data"). Brand-gradient orb + role kicker +
+// title + id + "Figma port pending" line. Renders identically in both
+// registers; palette comes through the initializer like all shipped screens.
+
+#if DEBUG
+// Phase 1 audit (eusotrip-killers §6, 2026-04-23):
+// Surface is now composed through `EusoEmptyState` with `comingSoon: true`.
+// This preserves the doctrine: "every backend stub gap has a neutral empty
+// state on the client; no fake data." The gradient-orb heritage layout is
+// retained as the header chip (role initial on gradient circle) because
+// EusoEmptyState's default glyph is a neutral-tint square — the per-role
+// gradient orb gives the role-switcher demo a clearer visual identity.
+private struct RolePlaceholderScreen: View {
+    let theme: Theme.Palette
+    let role: ProductionScreen.Role
+    let id: String
+    let title: String
+    let systemImage: String
+
+    var body: some View {
+        ZStack {
+            theme.bgPage.ignoresSafeArea()
+            ScrollView {
+                VStack(spacing: Space.s4) {
+                    // Role identity chip (gradient orb w/ role initial)
+                    ZStack {
+                        Circle()
+                            .fill(LinearGradient.diagonal)
+                            .frame(width: 72, height: 72)
+                        Text(String(role.rawValue.prefix(1)))
+                            .font(.system(size: 30, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    .overlay(
+                        Circle().stroke(Color.white.opacity(0.20), lineWidth: 1)
+                    )
+
+                    Text(role.rawValue.uppercased())
+                        .font(EType.micro).tracking(1.0)
+                        .foregroundStyle(theme.textTertiary)
+
+                    // Canonical empty-state primitive — keeps every stub
+                    // surface visually identical to every other "backend
+                    // missing / no data yet" pane across the app.
+                    EusoEmptyState(
+                        systemImage: systemImage,
+                        title: title,
+                        subtitle: "Screen \(id) · Figma port pending. The \(role.rawValue.lowercased()) role tab activates in dev chrome; the production surface ships in Phase 6.",
+                        comingSoon: true
+                    )
+                    .environment(\.palette, theme)
+                    .padding(.horizontal, Space.s4)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, Space.s6)
+                .padding(.bottom, Space.s8)
+            }
+        }
+    }
+}
+
+#Preview("RolePlaceholder · Shipper · Night") {
+    RolePlaceholderScreen(theme: Theme.dark, role: .shipper, id: "200", title: "Shipper home", systemImage: "shippingbox.circle")
+        .preferredColorScheme(.dark)
+}
+
+#Preview("RolePlaceholder · Carrier · Afternoon") {
+    RolePlaceholderScreen(theme: Theme.light, role: .carrier, id: "300", title: "Carrier home", systemImage: "truck.box")
+        .preferredColorScheme(.light)
+}
+#endif
+
+// MARK: - Root
+
+struct ContentView: View {
+    /// iOS system appearance. We mirror this into `register` at launch and
+    /// whenever the system flips, so the EusoTrip UI follows Settings →
+    /// Display & Brightness by default. A manual tap in the dev-chrome
+    /// register switch flips `userOverrodeRegister = true` and stops the
+    /// mirroring, letting the reviewer pin Night or Afternoon for a
+    /// design-fidelity walk.
+    @Environment(\.colorScheme) private var systemColorScheme
+    @State private var register: ThemeRegister = .dark
+    @State private var userOverrodeRegister: Bool = false
+#if DEBUG
+    // Dev-chrome-only state. In Release builds these have no representation
+    // because the chrome surface (role tabs, prev/next walker, register
+    // pin) is entirely compiled out.
+    @State private var selectedRole: ProductionScreen.Role = .driver
+    @State private var currentIndex: Int = 0
+#endif
+
+    /// Shared driver-mode nav state. Owns the top-level BottomNav tab
+    /// (home | trips | wallet | me) and the ESANG coach sheet toggle.
+    /// Every `BottomNav` rendered anywhere under this ContentView reads
+    /// the injected `driverNavHandler` env value and routes taps here —
+    /// fixing the wiring gap where all 010-023 `driverNavLeading_NNN()`
+    /// helpers created NavSlots with no-op onTap closures.
+    @StateObject private var nav = DriverNavController()
+
+    /// Owns the driver's trip phase — which ScreenRegistry id the Home
+    /// tab should render right now. Replaces the old `currentIndex`-as-
+    /// linear-cycle approach with a real state machine; lifecycle CTAs
+    /// call `trip.advance()` and the Home view reads `trip.phase`.
+    /// See `TripPhase` in DriverNavController.swift for the happy-path
+    /// transition table.
+    @StateObject private var trip = DriverTripController()
+
+    // MARK: - 49th firing · dead-stub wiring state
+    //
+    // Backing state for the 10 ambient driver env handlers declared by the
+    // 45th firing in DriverNavController.swift (driverDialPhone,
+    // driverOpenMessages, driverOpenDocDrawer, driverOpenTripLog,
+    // driverShareLink, driverShowHelp, driverUploadPhoto, driverReportIssue,
+    // driverToggleVoiceMute, driverToggleMapLayers). Those keys were declared
+    // but never injected, so every `Button { } label: { ... }` site that
+    // reached for them silently no-op'd. This state + the .sheet presenters
+    // in `body` below are what make those 61 dead-stub taps do real work.
+
+    /// Phone number the user is about to dial. `nil` = no confirmation sheet
+    /// showing; non-nil = present a `.confirmationDialog` that either calls
+    /// `tel://<digits>` or cancels.
+    @State private var dialConfirmationNumber: String? = nil
+
+    /// When non-nil, `DriverMessagingSheet` is presented over the current
+    /// surface. A `nil` threadId means "open the inbox"; a non-nil value
+    /// means "open this specific conversation".
+    @State private var messagingSheetTarget: MessagingSheetTarget? = nil
+
+    /// When `true`, the document drawer sheet is presented — lists active
+    /// load documents (BOL, Rate Con, POD) sourced from the real backend via
+    /// the drivers / documentManagement routers. No mock data is shown; if
+    /// no documents are linked yet, an `EusoEmptyState` renders.
+    @State private var docDrawerActive: Bool = false
+
+    /// When `true`, the trip log sheet is presented, showing the driver's
+    /// lifecycle event stream for the current load. Events come from the
+    /// real backend via `loadLifecycle.getEventLog` (falls back to empty
+    /// state when `currentLoad` is nil).
+    @State private var tripLogActive: Bool = false
+
+    /// Payload handed to iOS `ShareLink`. `nil` = no share sheet; non-nil =
+    /// present the system share sheet wrapping the URL / string.
+    @State private var shareItem: DriverShareItem? = nil
+
+    /// When `true`, `PhotosPicker` is presented for defect / POD / damage
+    /// photo capture. Selected images upload through `dvir.attachPhoto` or
+    /// `documentManagement.uploadPOD` depending on the active phase.
+    @State private var photoPickerActive: Bool = false
+
+    /// When non-nil, the raise-exception sheet is presented. The `context`
+    /// string identifies which screen fired it so the backend can attribute
+    /// the exception to the right lifecycle phase.
+    @State private var reportIssueContext: String? = nil
+
+    /// Voice-coach mute state — persisted to UserDefaults so it survives app
+    /// launches. Read by `ESangVoiceInput` and the 035 on-screen controls.
+    @AppStorage("com.eusorone.EusoTrip.voice.muted") private var voiceCoachMuted: Bool = false
+
+    /// Map layers overlay visibility — persisted. Read by 013 / 018 map
+    /// backgrounds to decide whether the traffic/weather overlays render.
+    @AppStorage("com.eusorone.EusoTrip.map.layersVisible") private var mapLayersVisible: Bool = true
+
+#if DEBUG
+    private var screens: [ProductionScreen] {
+        ScreenRegistry.forRole(selectedRole)
+    }
+    private var current: ProductionScreen? {
+        screens.indices.contains(currentIndex) ? screens[currentIndex] : nil
+    }
+
+    /// Dev chrome (role tabs / register toggle / prev-next / title) is hidden
+    /// by default — the app renders the current screen edge-to-edge so it
+    /// matches the Figma verbatim. Swipe down from the top-right corner, or
+    /// two-finger tap, to reveal the chrome sheet. DEBUG-only — never
+    /// compiles into TestFlight / App Store.
+    @State private var showChrome: Bool = false
+#endif
+
+    var body: some View {
+        ZStack {
+            register.palette.bgPage.ignoresSafeArea()
+
+            // MARK: Current surface — edge-to-edge
+            //
+            // In Driver mode we branch on `nav.currentTab`: .home renders
+            // the active lifecycle screen (010-023 via the ScreenRegistry,
+            // each of which bakes its own BottomNav into its body); the
+            // other three tabs render the dedicated panes from
+            // DriverTabPanes.swift with a shared BottomNav overlay so the
+            // pill stays visible and the env-routed tap handler keeps the
+            // user able to flip back to Home at any point.
+            //
+            // Non-driver roles still render the ScreenRegistry placeholder
+            // untouched, preserving the existing chrome-walk behavior.
+            Group {
+#if DEBUG
+                // Dev-chrome role walker: flips between Driver and the
+                // placeholder roles (Shipper/Carrier/…) via the chrome
+                // role-tab bar. In Release the chrome is absent and the
+                // app is always in Driver mode, so the branch collapses
+                // to `driverSurface`.
+                if selectedRole == .driver {
+                    driverSurface
+                } else if let s = current {
+                    s.view(register.palette)
+                        // Key on screen id ONLY. Previously this read
+                        // "\(register.rawValue)-\(s.id)" — that remounted
+                        // the whole subtree whenever the user flipped
+                        // their device into dark mode (which rebuilds
+                        // `register` → rawValue changes → `.id` changes
+                        // → SwiftUI destroys all descendant @State,
+                        // including the trip-phase state machine, and
+                        // the app fell back to Dashboard mid-trip).
+                        // The palette is a rendering concern, not a
+                        // structural identity — it's already piped down
+                        // via `.environment(\.palette, register.palette)`
+                        // below, so the tree will restyle without a
+                        // rebuild.
+                        .id(s.id)
+                        .transition(.opacity)
+                } else {
+                    driverSurface
+                }
+#else
+                driverSurface
+#endif
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Propagate the active register's palette to every descendant
+            // (DriverTripsPane / DriverWalletPane / DriverMePane and the
+            // shared BottomNav all read `@Environment(\.palette)`).
+            .environment(\.palette, register.palette)
+            // Single source of truth for every Driver BottomNav slot +
+            // center orb tap. Routes to the nav controller and — for
+            // .home — resets the trip phase to `.idle` so tapping Home
+            // always returns to the dashboard, not the mid-trip screen
+            // the driver was last on. Mid-trip state is preserved if
+            // they tap back into the trip (future: dedicated "resume
+            // trip" affordance); for now, Home is the dashboard surface.
+            .environment(\.driverNavHandler) { label in
+                switch label.lowercased() {
+                case "home":
+                    // Tapping Home from another tab: just switch to Home
+                    // (preserves the current trip phase so the driver
+                    // picks up mid-trip from where they left off).
+                    // Tapping Home while already on Home: rewind to the
+                    // dashboard — standard "take me to the top" gesture.
+                    if nav.currentTab == .home {
+                        trip.jump(to: .idle)
+                    } else {
+                        nav.currentTab = .home
+                    }
+                case "trips":
+                    nav.currentTab = .trips
+                case "loads", "wallet":
+                    // Request 3: the former "Wallet" slot was renamed to
+                    // "Loads". The Tab enum case name stays `.wallet` for
+                    // backward-compat; the label mapping is here so both
+                    // labels route correctly.
+                    nav.currentTab = .wallet
+                case "me":
+                    nav.currentTab = .me
+                case "esang", "orb":
+                    nav.showESang = true
+                default:
+                    break
+                }
+            }
+            // Lifecycle forward-advance handler. Any `LifecycleCTAButton`
+            // rendered within a driver lifecycle screen (010 → 027) reads
+            // this env closure and calls it when tapped, triggering the
+            // trip controller's happy-path state transition. The state
+            // machine owns the sequence — looping back to `.idle` after
+            // `.nextLoadBrief` so a completed trip returns to the
+            // dashboard.
+            //
+            // Backend bridge (Wave-5, 2026-04-20): after the local state
+            // flip we ask the origin phase for the transitionId matching
+            // the `(from, to)` pair; if it returns a non-nil id AND the
+            // controller has a currentLoad, we fire
+            // `loadLifecycle.executeTransition` in a background Task so
+            // the server's `loads.status` tracks the driver's lived
+            // state. UI-only hops (pretrip DVIR, off-duty, next-load
+            // brief) short-circuit here and leave the backend untouched,
+            // which is the correct behavior — those phases don't
+            // correspond to a real `loadStatus`.
+            .environment(\.lifecycleAdvance) { [api = EusoTripAPI.shared] in
+                let from = trip.phase
+                trip.advance()
+                let to = trip.phase
+                guard let transitionId = from.transitionId(to: to),
+                      let loadId = trip.currentLoad?.id else { return }
+                Task {
+                    _ = try? await api.loadLifecycle.executeTransition(
+                        loadId: String(loadId),
+                        transitionId: transitionId
+                    )
+                }
+            }
+            // Lifecycle exit handler. Pre-trip DVIR (and future screens
+            // that expose an X / Cancel chip) read this env closure to
+            // rewind the trip state machine back to `.idle` — which
+            // re-renders the Home dashboard without disturbing the
+            // driver's currentLoad or duty status.
+            .environment(\.lifecycleExit) {
+                trip.phase = .idle
+                trip.preTripGate = .notStarted
+            }
+            // Nav-back handler. Every 010+ top-bar chevron.left button
+            // reads this closure and taps `trip.stepBack()` — the
+            // controller walks `phase` backward along `happyPathPrev`
+            // (a no-op from `.idle`). Wired here so a single injection
+            // drives all back buttons across the 40+ shipped screens,
+            // which previously shipped with `Button { } label: { ... }`
+            // empty closures (doctrine violation the 44th firing ledger
+            // hygiene pass surfaced and fixed).
+            .environment(\.driverNavBack) {
+                trip.stepBack()
+            }
+            // MARK: - 49th firing · 10 ambient driver env handlers
+            //
+            // The 45th firing declared these env keys in
+            // DriverNavController.swift but never injected them here, so
+            // every `Button { action } label:` site that reached for them
+            // silently no-op'd. These injections + the `.sheet(...)` and
+            // `.confirmationDialog(...)` presenters below make all 61
+            // previously-dead stubs across 011-045 fire real behavior —
+            // tel:// opens, tRPC mutations, document-drawer sheets, iOS
+            // share sheet, PhotosPicker, UNUserNotificationCenter reminders,
+            // and state-machine transitions.
+
+            // Dial a phone number. Uses iOS tel:// URL scheme; we first
+            // present a confirmation dialog so misclicks can't trigger a
+            // live call. Digits-only normalization protects against users
+            // passing "(555) 123-4567" — iOS doesn't dial with punctuation.
+            .environment(\.driverDialPhone) { number in
+                let digits = number.filter { $0.isNumber || $0 == "+" }
+                guard !digits.isEmpty else { return }
+                dialConfirmationNumber = digits
+            }
+            // Open the messaging surface. `nil` threadId means "open the
+            // inbox" — the sheet then lists conversations from the canonical
+            // `messages.ts` router (§16 messaging-docs). A non-nil value
+            // jumps straight into that conversation. Backend: real tRPC
+            // calls to `messages.getConversations` / `messages.sendMessage`.
+            .environment(\.driverOpenMessages) { threadId in
+                messagingSheetTarget = MessagingSheetTarget(threadId: threadId)
+            }
+            // Open the document drawer for the active load. Sheet pulls
+            // BOL / Rate Con / POD from the real backend via
+            // `drivers.getRateConURL` and `documentManagement.*`. When no
+            // active load or no docs are linked yet, an EusoEmptyState
+            // renders inside the sheet — no fake data.
+            .environment(\.driverOpenDocDrawer) {
+                docDrawerActive = true
+            }
+            // Open the trip log — lifecycle event stream for the current
+            // load. Source of truth is the phase state machine plus any
+            // logged wizard step transitions; both are real (no mocks).
+            .environment(\.driverOpenTripLog) {
+                tripLogActive = true
+            }
+            // Present the iOS system share sheet. Wrapper around ShareLink
+            // / UIActivityViewController — the raw string is used as the
+            // shared item; if it parses as a URL we share a URL, else the
+            // raw text.
+            .environment(\.driverShareLink) { raw in
+                shareItem = DriverShareItem(raw: raw)
+            }
+            // Open the ESANG coach sheet, passing the context topic so
+            // ESANG can tailor the prompt. Routes through the same
+            // `nav.showESang` flag the orb tap uses; we also stash the topic
+            // in a notification so ESangAutopilot can pick it up on open.
+            .environment(\.driverShowHelp) { topic in
+                NotificationCenter.default.post(
+                    name: .esangOpenHelp,
+                    object: topic
+                )
+                nav.showESang = true
+            }
+            // Launch the photo-capture flow. Opens iOS PhotosPicker; the
+            // selected image is uploaded through `dvir.attachPhoto` when the
+            // active phase is a DVIR surface, or through
+            // `documentManagement.uploadPOD` when we're in a delivery leg.
+            .environment(\.driverUploadPhoto) {
+                photoPickerActive = true
+            }
+            // Raise an exception. Presents a reason picker + note sheet;
+            // submits via the current wizard's `abort(reason:)` when one is
+            // active, or through a dispatcher message otherwise. No silent
+            // no-op — even without backend wiring this fires a real tRPC
+            // mutation.
+            .environment(\.driverReportIssue) {
+                reportIssueContext = trip.phase.rawValue
+            }
+            // Toggle the in-cab voice-coach mute. Persisted to UserDefaults
+            // under `com.eusorone.EusoTrip.voice.muted` so the preference
+            // survives cold launches. ESangVoiceInput reads the same key.
+            .environment(\.driverToggleVoiceMute) {
+                voiceCoachMuted.toggle()
+            }
+            // Toggle the map-layers overlay. Persisted; 013/018 map
+            // backgrounds read the @AppStorage key to decide whether
+            // the traffic / weather overlays render.
+            .environment(\.driverToggleMapLayers) {
+                mapLayersVisible.toggle()
+            }
+            // Make the trip controller available to any descendant
+            // (future: HOS break banner, proximity badge, Load-accept
+            // sheet) via @EnvironmentObject so the state doesn't have
+            // to be threaded through every call site.
+            .environmentObject(trip)
+
+            // MARK: - 49th firing · sheet + dialog presenters
+            // These presenters wire the above state into real iOS UI.
+            // They all hang off the root ZStack so any descendant firing an
+            // env handler gets the sheet — no need to re-plumb per screen.
+
+            // Phone-dial confirmation. Two-tap gate before a live call.
+            .confirmationDialog(
+                "Call \(dialConfirmationNumber ?? "")?",
+                isPresented: Binding(
+                    get: { dialConfirmationNumber != nil },
+                    set: { if !$0 { dialConfirmationNumber = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Call", role: .destructive) {
+                    if let digits = dialConfirmationNumber,
+                       let url = URL(string: "tel://\(digits)") {
+                        UIApplication.shared.open(url)
+                    }
+                    dialConfirmationNumber = nil
+                }
+                Button("Cancel", role: .cancel) {
+                    dialConfirmationNumber = nil
+                }
+            }
+
+            // Messaging sheet — inbox or single thread depending on target.
+            .sheet(item: $messagingSheetTarget) { target in
+                DriverMessagingSheet(threadId: target.threadId)
+                    .environment(\.palette, register.palette)
+                    .preferredColorScheme(register.preferredColorScheme)
+            }
+
+            // Document drawer sheet for the active load.
+            .sheet(isPresented: $docDrawerActive) {
+                DriverDocumentDrawerSheet(
+                    loadId: trip.currentLoad?.id.description,
+                    loadNumber: trip.currentLoad?.loadNumber
+                )
+                .environment(\.palette, register.palette)
+                .preferredColorScheme(register.preferredColorScheme)
+            }
+
+            // Trip log sheet.
+            .sheet(isPresented: $tripLogActive) {
+                DriverTripLogSheet(
+                    loadId: trip.currentLoad?.id.description,
+                    loadNumber: trip.currentLoad?.loadNumber,
+                    currentPhase: trip.phase
+                )
+                .environment(\.palette, register.palette)
+                .preferredColorScheme(register.preferredColorScheme)
+            }
+
+            // iOS share sheet.
+            .sheet(item: $shareItem) { item in
+                DriverShareSheetHost(item: item)
+                    .environment(\.palette, register.palette)
+                    .preferredColorScheme(register.preferredColorScheme)
+            }
+
+            // Photo capture sheet (DVIR defect / POD / damage).
+            .sheet(isPresented: $photoPickerActive) {
+                DriverPhotoUploadSheet(
+                    loadId: trip.currentLoad?.id.description,
+                    phaseRaw: trip.phase.rawValue,
+                    isDVIRPhase: {
+                        if case .notStarted = trip.preTripGate { return false }
+                        return true
+                    }()
+                )
+                .environment(\.palette, register.palette)
+                .preferredColorScheme(register.preferredColorScheme)
+            }
+
+            // Raise-exception sheet.
+            .sheet(item: Binding(
+                get: { reportIssueContext.map { DriverReportIssueContext(raw: $0) } },
+                set: { new in reportIssueContext = new?.raw }
+            )) { ctx in
+                DriverReportIssueSheet(
+                    contextRaw: ctx.raw,
+                    loadId: trip.currentLoad?.id.description
+                )
+                .environment(\.palette, register.palette)
+                .preferredColorScheme(register.preferredColorScheme)
+            }
+
+            // No visible dev-chrome puck. The top-right "slider.horizontal.3"
+            // button was removed per user directive 2026-04-19 — it was
+            // leaking the role walker / register pin / prev-next chrome
+            // into the live surface. The chrome sheet state (`showChrome`,
+            // `chromeSheet`) is retained behind `#if DEBUG` so a future
+            // debug-only gesture can re-expose it if ever needed, but in
+            // both Debug and Release builds no chrome affordance is
+            // rendered.
+        }
+        // Only clamp the window's color scheme when the reviewer has
+        // explicitly pinned a register via the dev-chrome switch. In the
+        // default path we pass `nil`, which tells SwiftUI "no preference"
+        // and lets the window inherit iOS Settings → Display & Brightness.
+        // Passing a non-nil value here would freeze `@Environment(\.colorScheme)`
+        // to that register, meaning the system-appearance flip the user
+        // makes in Control Center would never propagate into the app.
+        .preferredColorScheme(userOverrodeRegister ? register.preferredColorScheme : nil)
+        .animation(.easeInOut(duration: 0.22), value: register)
+#if DEBUG
+        .animation(.easeInOut(duration: 0.22), value: currentIndex)
+        .animation(.easeInOut(duration: 0.22), value: selectedRole)
+#endif
+        .animation(.easeInOut(duration: 0.22), value: nav.currentTab)
+        .animation(.easeInOut(duration: 0.22), value: trip.phase)
+#if DEBUG
+        .onChange(of: selectedRole) { _, _ in
+            currentIndex = 0
+            // When the dev-chrome flips the role away from .driver, reset
+            // driver nav so returning later lands on Home, not a stale tab,
+            // and rewind the trip phase so the next driver walk starts at
+            // the dashboard.
+            nav.currentTab = .home
+            nav.showESang = false
+            trip.reset()
+        }
+#endif
+        // Mirror iOS Settings → Display & Brightness into our register the
+        // first time ContentView mounts, and whenever the user flips system
+        // appearance while the app is open — but only as long as they
+        // haven't manually overridden via the dev-chrome switch.
+        .onAppear {
+            if !userOverrodeRegister {
+                register = ThemeRegister(colorScheme: systemColorScheme)
+            }
+            // Bind the observers that drive background TripEvents into
+            // the controller we own. GeofenceService will fire
+            // .geofenceApproachingPickup / .geofenceApproachingDelivery
+            // when CoreLocation reports region entry; HOSClockService
+            // will fire .hosBreakRequired when drive-time nears the
+            // 11-hour limit. Both hold weak refs, so rebinding is safe.
+            GeofenceService.shared.bind(to: trip)
+            HOSClockService.shared.bind(to: trip)
+            // If the driver already has an active load (e.g. warm
+            // launch into mid-trip), arm the geofences immediately.
+            if let load = trip.currentLoad {
+                GeofenceService.shared.monitor(load: load)
+            }
+        }
+        .onChange(of: systemColorScheme) { _, newScheme in
+            guard !userOverrodeRegister else { return }
+            register = ThemeRegister(colorScheme: newScheme)
+        }
+        // Re-register geofences whenever the active load changes (new
+        // assignment, trip completed, sign-out). `monitor(load:)` clears
+        // prior regions before registering the fresh pair, and
+        // `clearAll()` on nil keeps CoreLocation quiet between trips.
+        .onChange(of: trip.currentLoad?.id) { _, _ in
+            if let load = trip.currentLoad {
+                GeofenceService.shared.monitor(load: load)
+            } else {
+                GeofenceService.shared.clearAll()
+            }
+        }
+        // Cross-surface "Start pre-trip DVIR" — fired by the MeDvirView +
+        // MeZeunView CTAs in `MeDetailScreens.swift`. Previously those
+        // buttons lived inside a detail sheet with no way to navigate the
+        // root surface out from under themselves. The notification is
+        // posted on tap (see `MeAction.fire` + the explicit
+        // `NotificationCenter.default.post(name: .eusoStartPretripDVIR…)`
+        // sites). The root ContentView is the only place with access to
+        // both `nav` and `trip`, so the observer lives here: we flip the
+        // active tab back to Home and walk the trip state machine into
+        // `.pretripDVIR`. Any presenting Me sheet auto-dismisses the
+        // moment `nav.currentTab` changes because the sheet's presenter
+        // (`DriverMePane`) is no longer rendered.
+        .onReceive(NotificationCenter.default.publisher(for: .eusoStartPretripDVIR)) { _ in
+            nav.currentTab = .home
+            trip.handle(.startPretripDVIR)
+        }
+#if DEBUG
+        .sheet(isPresented: $showChrome) {
+            chromeSheet
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+#endif
+        // ESANG coach sheet — presented as a system sheet from the root so
+        // tapping the orb from any Driver surface (lifecycle screen or any
+        // of the three panes) slides it in over the current content.
+        .sheet(isPresented: $nav.showESang) {
+            DriverESangCoachSheet()
+                .environment(\.palette, register.palette)
+                // Mirror the root: let the system drive the sheet's
+                // scheme unless the reviewer has pinned a register.
+                .preferredColorScheme(userOverrodeRegister ? register.preferredColorScheme : nil)
+                // Wire ESANG autopilot actions back into the host. Per user
+                // direction (2026-04-20):
+                //   > i want you to look at the autopilot system on the
+                //   > web platform and how esang can control the platform
+                //   > by voice take you to this screen or that screen. i
+                //   > need esang to have those same capabilties on the app.
+                //   > wire commands into endpoints on the app.
+                // The chat sheet parses `<<<ACTION:…>>>` tokens out of
+                // ESANG's replies and fires them through this closure so
+                // navigate / open-chat / refresh / select-load actually
+                // affect the app state.
+                .environment(\.esangActionHandler) { action in
+                    handleESangAction(action)
+                }
+        }
+    }
+
+    // MARK: - ESANG autopilot dispatcher
+
+    /// Apply an `ESangAction` parsed from the assistant's reply. Routes the
+    /// intent into the right controller — tab switching goes through
+    /// `nav`, refreshes bubble back down via a notification, load-open
+    /// surfaces a Load Detail sheet over Home.
+    ///
+    /// Unknown / no-op intents are swallowed silently — the parser only
+    /// emits verbs it recognizes, so there's nothing to fall through to.
+    private func handleESangAction(_ action: ESangAction) {
+        switch action {
+        case .navigate(let route):
+            switch route {
+            case .home:
+                nav.currentTab = .home
+                trip.jump(to: .idle)
+            case .trips:
+                nav.currentTab = .trips
+            case .myLoads:
+                nav.currentTab = .wallet
+            case .me:
+                nav.currentTab = .me
+            case .meDetail(let raw):
+                // Switch to the Me tab first — if a sheet is about to
+                // present, the user should see it layered over the right
+                // surface. Then fire the notification carrying the
+                // `MeDetailRoute.rawValue` so `DriverMePane` can flip its
+                // `@State route` and open the sub-sheet.
+                nav.currentTab = .me
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                    NotificationCenter.default.post(
+                        name: .esangOpenMeDetail,
+                        object: raw
+                    )
+                }
+            }
+        case .openChat:
+            nav.showESang = true
+        case .closeChat:
+            nav.showESang = false
+        case .selectLoad:
+            // The iOS shell doesn't yet expose a generic "open load by
+            // id" pathway from the root (the per-surface sheet state is
+            // local). Surface the driver's current active-load detail by
+            // flipping to Home — ESANG's reply text already tells them
+            // what they're looking at.
+            nav.currentTab = .home
+            trip.jump(to: .idle)
+        case .refresh:
+            // Broadcast a lightweight refresh signal; any surface that
+            // wants to listen can observe the notification and re-run
+            // its loader.
+            NotificationCenter.default.post(name: .esangRefreshSurface, object: nil)
+        }
+    }
+
+    // MARK: - Driver surface
+    //
+    // Branches on `nav.currentTab`. The .home case looks up the
+    // ScreenRegistry entry whose id matches `trip.phase.screenId` —
+    // so "which lifecycle screen to show" is a function of the trip's
+    // state machine, not an index into a flat list. The three non-home
+    // cases render their dedicated pane with a shared BottomNav
+    // overlaid so slot taps route through the env handler and the
+    // user can always get back to Home.
+    @ViewBuilder
+    private var driverSurface: some View {
+        switch nav.currentTab {
+        case .home:
+            if let s = driverCurrentScreen {
+                s.view(register.palette)
+                    // Key on screen id ONLY. A dark-mode toggle rebuilds
+                    // `register` — if rawValue is part of the identity
+                    // here the whole lifecycle subtree (and trip-phase
+                    // @State underneath) is torn down and SwiftUI snaps
+                    // back to .idle / Dashboard. Palette updates reach
+                    // the tree via `.environment(\.palette, ...)` below
+                    // without needing a remount.
+                    .id(s.id)
+                    // Uniform cafe-door surface animation on every
+                    // lifecycle-screen swap — fires fresh because the
+                    // `.id` above remounts the view on each phase hop.
+                    .screenTileRoot()
+                    .transition(.opacity)
+            } else {
+                placeholder
+                    .screenTileRoot()
+            }
+        case .trips:
+            paneWithNav(.trips) { DriverTripsPane() }
+        case .wallet:
+            // Request 3 restructure: the former wallet tab is now the My
+            // Loads surface (current / upcoming / pending / finished) with
+            // ZEUN Mechanics + DVIR history entries. Wallet/earnings
+            // content has been folded into `DriverMePane` via the
+            // existing `.earnings` MeDetailRoute.
+            paneWithNav(.wallet) { DriverLoadsPane() }
+        case .me:
+            paneWithNav(.me)    { DriverMePane() }
+        }
+    }
+
+    /// The driver-role ScreenRegistry entry that matches the current
+    /// trip phase. Lookup-by-id rather than index so renames/reorders
+    /// of the registry don't silently shift what Home renders.
+    private var driverCurrentScreen: ProductionScreen? {
+        ScreenRegistry.all.first { $0.id == trip.phase.screenId }
+    }
+
+    /// Wrap a pane (DriverTripsPane / DriverWalletPane / DriverMePane) in a
+    /// ZStack with the shared BottomNav anchored to the bottom. The pane
+    /// itself does its own scroll view; the nav floats over the content in
+    /// the same floating-pill form used on 010-023. Taps on the nav route
+    /// through the env-injected `driverNavHandler` so the call-site here
+    /// doesn't need to know how switching works.
+    @ViewBuilder
+    private func paneWithNav<Pane: View>(
+        _ tab: DriverNavController.Tab,
+        @ViewBuilder _ pane: () -> Pane
+    ) -> some View {
+        ZStack(alignment: .bottom) {
+            // Anchor the pane to the top edge. Without `alignment: .top` the
+            // pane's content VStack gets vertically centered inside the
+            // infinite frame, pushing titles ("Wallet", "Trips", "Me") down
+            // into the middle of the screen. Top-alignment restores the
+            // correct scroll-from-top layout used by the lifecycle screens.
+            pane()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            // Nav-slot semantics (per user Request 3, 2026-04-19):
+            //   • Home  — dashboard / lifecycle (trip.phase-driven)
+            //   • Trips — Eusoboards public load board when idle; ALSO
+            //             hosts the active-trip surface (map, nav, SOS)
+            //             when a trip is active. DriverTripsPane branches
+            //             internally on trip.phase.isActiveTrip.
+            //   • Loads — My Loads (current / upcoming / pending /
+            //             finished) + ZEUN Mechanics entry + DVIR
+            //             history. Formerly the "Wallet" slot; wallet
+            //             content folded into Me · Earnings.
+            //   • Me    — profile, earnings, compliance, reputation.
+            BottomNav(
+                leading: [
+                    NavSlot(label: "Home",  systemImage: "house",     isCurrent: tab == .home),
+                    NavSlot(label: "Trips", systemImage: "truck.box", isCurrent: tab == .trips)
+                ],
+                trailing: [
+                    NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: tab == .wallet),
+                    NavSlot(label: "Me",    systemImage: "person",           isCurrent: tab == .me)
+                ]
+            )
+        }
+        // Key by the tab so SwiftUI rebuilds the branch on every tab
+        // switch, which re-triggers the cafe-door surface animation
+        // below. Without this id the view is reused and the @State
+        // that drives TileRevealModifier stays `true`, meaning the
+        // animation would only play the very first time a tab is
+        // opened in the session. Re-playing on every selection is
+        // the whole point of the uniform screen animation.
+        .id("pane-\(tab.rawValue)")
+        .screenTileRoot()
+        .transition(.opacity)
+    }
+
+#if DEBUG
+    // MARK: - Dev chrome (DEBUG only)
+    //
+    // Everything from `chromeSheet` through `devChromeNext` is the dev
+    // chrome surface: role tabs, register pin, prev/next walker, step
+    // ordinal readout. None of it compiles into TestFlight / App Store
+    // builds. Production renders only `driverSurface`.
+
+    private var chromeSheet: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                header
+                registerSwitch
+                roleTabs
+                screenTitle
+                nextPrevBar
+            }
+            .padding(16)
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(LinearGradient.diagonal)
+                .frame(width: 28, height: 28)
+                .overlay(Circle().stroke(Color.white.opacity(0.20), lineWidth: 1))
+            VStack(alignment: .leading, spacing: 0) {
+                Text("EusoTrip")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(register.palette.textPrimary)
+                Text("by Eusorone Technologies, Inc. · ESANG AI™")
+                    .font(.system(size: 10, weight: .medium))
+                    .tracking(0.4)
+                    .foregroundStyle(register.palette.textTertiary)
+            }
+            Spacer()
+            if selectedRole == .driver {
+                // Driver role: phase-based breadcrumb.
+                Text("\(trip.phase.screenId) · \(trip.phase.stepOrdinal)/\(TripPhase.allCases.count)")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(register.palette.textSecondary)
+            } else if let s = current {
+                // Other roles: index-based (placeholders are sequential).
+                Text("\(s.id) · \(currentIndex + 1)/\(screens.count)")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(register.palette.textSecondary)
+            }
+        }
+    }
+
+    private var registerSwitch: some View {
+        HStack(spacing: 6) {
+            ForEach(ThemeRegister.allCases) { r in
+                Button {
+                    register = r
+                    // Pin this choice — stop auto-following iOS system
+                    // appearance so reviewers can lock Night or Afternoon
+                    // for a fidelity walk without the simulator overriding.
+                    userOverrodeRegister = true
+                } label: {
+                    Text(r.rawValue)
+                        .font(.system(size: 12, weight: .semibold))
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(
+                            Capsule().fill(register == r
+                                           ? AnyShapeStyle(LinearGradient.diagonal)
+                                           : AnyShapeStyle(register.palette.bgCard))
+                        )
+                        .foregroundStyle(register == r ? .white : register.palette.textSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+    }
+
+    private var roleTabs: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(ProductionScreen.Role.allCases) { role in
+                    let isOn = selectedRole == role
+                    let hasContent = !ScreenRegistry.forRole(role).isEmpty
+                    Button {
+                        if hasContent { selectedRole = role }
+                    } label: {
+                        Text(role.rawValue)
+                            .font(.system(size: 11, weight: .semibold))
+                            .tracking(0.5)
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .foregroundStyle(
+                                isOn ? register.palette.textPrimary :
+                                hasContent ? register.palette.textSecondary :
+                                register.palette.textTertiary
+                            )
+                            .background(
+                                Capsule().stroke(
+                                    isOn ? register.palette.borderStrong : register.palette.borderFaint,
+                                    lineWidth: 1
+                                )
+                            )
+                            .opacity(hasContent ? 1.0 : 0.45)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!hasContent)
+                }
+            }
+        }
+    }
+
+    private var screenTitle: some View {
+        HStack {
+            Text(devChromeTitle.uppercased())
+                .font(.system(size: 11, weight: .semibold))
+                .tracking(1.2)
+                .foregroundStyle(register.palette.textTertiary)
+            Spacer()
+        }
+    }
+
+    /// Dev-chrome title label. Uses the trip phase's display name for
+    /// the driver role (the authoritative "what surface is live"), and
+    /// falls back to the registry title for placeholder roles.
+    private var devChromeTitle: String {
+        if selectedRole == .driver {
+            return trip.phase.displayName
+        }
+        return current?.title ?? "—"
+    }
+#endif
+
+    /// Deep-fallback empty state for `driverSurface` when the trip phase
+    /// doesn't resolve to a registered screen. In practice every phase
+    /// has a matching entry so this should never render; it's here to
+    /// satisfy the exhaustive branch without leaking any chrome text
+    /// into the user-facing build.
+    private var placeholder: some View {
+        VStack(spacing: 8) {
+            Text("Preparing your surface…")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(register.palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+#if DEBUG
+    private var nextPrevBar: some View {
+        HStack(spacing: 10) {
+            Button {
+                devChromePrev()
+            } label: {
+                Label("Prev", systemImage: "chevron.left")
+                    .labelStyle(.iconOnly)
+                    .frame(width: 44, height: 44)
+                    .background(register.palette.bgCard)
+                    .foregroundStyle(register.palette.textPrimary)
+                    .clipShape(Circle())
+            }
+            .disabled(!canStepBack)
+            .opacity(canStepBack ? 1.0 : 0.35)
+            .buttonStyle(.plain)
+
+            Spacer(minLength: 0)
+
+            // Dev-chrome progress bar — gradient per doctrine §2.1
+            // (no flat Brand.blue). Uses the trip phase ordinal for
+            // the driver role, currentIndex for placeholders.
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(register.palette.borderFaint)
+                        .frame(height: 3)
+                    Capsule()
+                        .fill(LinearGradient.diagonal)
+                        .frame(
+                            width: max(0, geo.size.width * devChromeProgress),
+                            height: 3
+                        )
+                }
+            }
+            .frame(maxWidth: 220, maxHeight: 3)
+
+            Spacer(minLength: 0)
+
+            Button {
+                devChromeNext()
+            } label: {
+                Label("Next", systemImage: "chevron.right")
+                    .labelStyle(.iconOnly)
+                    .frame(width: 44, height: 44)
+                    .background(LinearGradient.diagonal)
+                    .foregroundStyle(.white)
+                    .clipShape(Circle())
+            }
+            .disabled(!canStepForward)
+            .opacity(canStepForward ? 1.0 : 0.35)
+            .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: - Dev-chrome step helpers
+    //
+    // Unified across driver and non-driver roles. Driver role drives
+    // the trip state machine; everything else still walks the
+    // ScreenRegistry by index.
+
+    private var canStepBack: Bool {
+        if selectedRole == .driver {
+            return trip.phase.happyPathPrev != nil
+        }
+        return currentIndex > 0
+    }
+
+    private var canStepForward: Bool {
+        if selectedRole == .driver {
+            // Happy path always has a next step (loops at .nextLoadBrief
+            // back to .idle), so forward is always enabled in driver mode.
+            return true
+        }
+        return currentIndex < screens.count - 1
+    }
+
+    private var devChromeProgress: CGFloat {
+        if selectedRole == .driver {
+            return CGFloat(trip.phase.stepOrdinal)
+                 / CGFloat(max(1, TripPhase.allCases.count))
+        }
+        guard !screens.isEmpty else { return 0 }
+        return CGFloat(currentIndex + 1) / CGFloat(max(1, screens.count))
+    }
+
+    private func devChromePrev() {
+        if selectedRole == .driver {
+            trip.stepBack()
+        } else {
+            currentIndex = max(0, currentIndex - 1)
+        }
+    }
+
+    private func devChromeNext() {
+        if selectedRole == .driver {
+            trip.advance()
+        } else {
+            currentIndex = min(screens.count - 1, currentIndex + 1)
+        }
+    }
+#endif
+}
+
+// MARK: - Previews
+
+#Preview("Root · Night") {
+    ContentView().preferredColorScheme(.dark)
+}
+
+#Preview("Root · Afternoon") {
+    ContentView().preferredColorScheme(.light)
+}

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>$(DEVELOPMENT_LANGUAGE)</string>
+    <key>CFBundleDisplayName</key>
+    <string>EusoTrip</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>$(PRODUCT_NAME)</string>
+    <key>CFBundlePackageType</key>
+    <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>9</string>
+    <key>LSRequiresIPhoneOS</key>
+    <false/>
+    <key>UIAppFonts</key>
+    <array/>
+    <key>WKApplication</key>
+    <true/>
+    <key>WKCompanionAppBundleIdentifier</key>
+    <string>com.app.eusotrip</string>
+    <key>WKWatchOnly</key>
+    <false/>
+    <key>WKExtensionDelegateClassName</key>
+    <string>$(PRODUCT_MODULE_NAME).ExtensionDelegate</string>
+    <key>WKBackgroundModes</key>
+    <array>
+        <string>workout-processing</string>
+        <string>location</string>
+        <string>remote-notification</string>
+    </array>
+    <key>WKSupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+    </array>
+    <key>NSUserActivityTypes</key>
+    <array>
+        <string>com.eusotrip.esang.activate</string>
+        <string>com.eusotrip.load.view</string>
+        <string>com.eusotrip.hos.view</string>
+    </array>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>EusoTrip uses the microphone so you can speak to Esang hands-free while driving.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>EusoTrip transcribes your voice locally so Esang can answer questions about your loads, hours, and dispatch.</string>
+    <key>NSHealthShareUsageDescription</key>
+    <string>EusoTrip monitors heart rate to flag fatigue so you can take a break at the right time.</string>
+    <key>NSHealthUpdateUsageDescription</key>
+    <string>EusoTrip logs driving workouts so your hours-of-service data stays accurate across the watch and phone.</string>
+    <key>NSMotionUsageDescription</key>
+    <string>EusoTrip uses motion data to auto-detect when you start driving so your HOS status updates without a tap.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>EusoTrip uses your location to tag pickup/delivery arrivals, route progress, and emergency SOS.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>EusoTrip needs always-on location so we can keep HOS + load tracking accurate during long-haul drives.</string>
+    <key>NSSiriUsageDescription</key>
+    <string>EusoTrip uses Siri so you can say "Ask Esang" to any load, HOS, or dispatch question.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>EusoTrip connects to Bluetooth hands-free devices and ELDs so your hours log accurately while driving.</string>
+    <key>CLKComplicationPrincipalClass</key>
+    <string>$(PRODUCT_MODULE_NAME).EusoTripWatchWidgetBundle</string>
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
+</dict>
+</plist>

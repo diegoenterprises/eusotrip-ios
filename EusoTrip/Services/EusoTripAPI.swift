@@ -1,0 +1,12445 @@
+//
+//  EusoTripAPI.swift
+//  EusoTrip — tRPC HTTP client against the live backend
+//
+//  Wire format (tRPC v10):
+//    GET  /api/trpc/<router>.<procedure>?input=<url-encoded-JSON>
+//    POST /api/trpc/<router>.<procedure>  body: { json: <input> }
+//
+//  Response envelope:
+//    { "result": { "data": { "json": <payload> } } }
+//
+//  Auth: JWT cookie (set by auth.login) or Authorization: Bearer <token>.
+//  Cookies persist via HTTPCookieStorage.shared so auth survives app restarts.
+//
+//  Backend host: eusotrip-app.azurewebsites.net (Azure App Service).
+//
+
+import Foundation
+#if canImport(UIKit)
+import UIKit
+#endif
+
+// MARK: - Errors
+
+enum EusoTripAPIError: Error, LocalizedError {
+    case notConfigured
+    case badURL
+    case httpStatus(Int, String)
+    case decodingFailed(String)
+    case unauthenticated
+    case trpcError(String)
+    case empty
+
+    var errorDescription: String? {
+        switch self {
+        case .notConfigured:            return "EusoTripAPI.baseURL is not set."
+        case .badURL:                   return "Invalid URL."
+        case .httpStatus(let c, let b): return "HTTP \(c): \(b)"
+        case .decodingFailed(let s):    return "Decoding failed: \(s)"
+        case .unauthenticated:          return "Authentication required."
+        case .trpcError(let m):         return m
+        case .empty:                    return "Empty response."
+        }
+    }
+}
+
+// MARK: - tRPC envelopes
+
+private struct TRPCResult<T: Decodable>: Decodable {
+    let result: Inner
+    struct Inner: Decodable {
+        let data: DataWrapper
+        struct DataWrapper: Decodable {
+            let json: T
+        }
+    }
+}
+
+/// tRPC v10 error envelope shape. The server wraps everything under a
+/// superjson-style `json` child — `{"error":{"json":{"message":...,"code":...,"data":{...}}}}`.
+/// Earlier this file mirrored an older v9/unwrapped shape
+/// (`{"error":{"message":...}}`) which never matched production and caused
+/// every tRPC error to surface in the UI as the fallback "Request failed"
+/// string (driver saw "Can't reach news feed · Request failed" even when
+/// the real message was "Please login (10001)"). Kept the nested shape so
+/// `message` / `httpStatus` come through verbatim.
+private struct TRPCErrorEnvelope: Decodable {
+    let error: Outer
+    struct Outer: Decodable {
+        let json: Inner
+    }
+    struct Inner: Decodable {
+        let message: String?
+        let code: Int?
+        let data: TRPCErrorData?
+    }
+    struct TRPCErrorData: Decodable {
+        let code: String?
+        let httpStatus: Int?
+        let path: String?
+    }
+}
+
+private struct TRPCInputEnvelope<T: Encodable>: Encodable {
+    let json: T
+}
+
+/// Empty input placeholder for tRPC procedures that take no input.
+/// (Swift can't nest generic-constrained types inside generic functions,
+/// so we declare this at file scope.)
+private struct TRPCEmptyInput: Encodable {}
+
+// MARK: - Client
+
+@MainActor
+final class EusoTripAPI: ObservableObject {
+
+    /// Shared singleton.
+    ///
+    /// The reference itself is a `let` of a Sendable reference type, so
+    /// reading it from any isolation domain is safe. Marked `nonisolated`
+    /// (plain, not `nonisolated(unsafe)`) so it can be referenced from
+    /// nonisolated contexts such as default arguments of `@MainActor`
+    /// view-model initializers. Instance-member access still enforces
+    /// main-actor isolation on its own.
+    nonisolated static let shared = EusoTripAPI()
+
+    /// Nonisolated init so the `shared` singleton (itself nonisolated-unsafe)
+    /// can construct the instance at static-initializer time from any context.
+    /// All stored properties have default values, so no body work is needed.
+    nonisolated init() {}
+
+    /// Live Azure App Service host.  Override via `configure(baseURL:)` if needed.
+    var baseURL: URL? = URL(string: "https://eusotrip-app.azurewebsites.net")
+
+    /// Bearer token (SSO / passwordless).  Set when the user signs in.
+    var authToken: String?
+
+    /// APNs device token (hex). Sent on every authenticated request as
+    /// `x-push-token` so the backend can register the device for
+    /// push delivery without a separate roundtrip mutation. Set by
+    /// PushService.didRegister(deviceToken:) after APNs issues the
+    /// token. Was previously held only in PushService and never
+    /// reached the backend — silent push-token drop.
+    var pushDeviceToken: String?
+
+    /// Underlying URLSession (swap for tests).  Wired to HTTPCookieStorage.shared
+    /// so the JWT cookie set by auth.login persists across requests.
+    lazy var session: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.httpCookieStorage = HTTPCookieStorage.shared
+        config.httpCookieAcceptPolicy = .always
+        config.httpShouldSetCookies = true
+        return URLSession(configuration: config)
+    }()
+
+    private let encoder: JSONEncoder = {
+        let e = JSONEncoder()
+        e.keyEncodingStrategy = .useDefaultKeys
+        return e
+    }()
+
+    private let decoder: JSONDecoder = {
+        let d = JSONDecoder()
+        d.keyDecodingStrategy = .useDefaultKeys
+        return d
+    }()
+
+    // MARK: Public configuration
+
+    func configure(baseURL: URL, authToken: String? = nil) {
+        self.baseURL = baseURL
+        self.authToken = authToken
+    }
+
+    /// Hard-reset all stored cookies for the backend host.  Used on logout.
+    func clearCookies() {
+        guard let baseURL else { return }
+        let store = HTTPCookieStorage.shared
+        store.cookies(for: baseURL)?.forEach { store.deleteCookie($0) }
+    }
+
+    // MARK: Auth-cookie persistence
+    //
+    // The tRPC auth middleware on the backend validates BOTH the Bearer
+    // header and the JWT cookie — but in practice the cookie path is the
+    // primary one (Next.js middleware reads cookies first). The auth
+    // cookie is issued as a session cookie by the server, which
+    // `HTTPCookieStorage.shared` drops on app restart. That's the real
+    // reason login didn't persist: keychain had the token string, the
+    // Bearer header was set, but the server's middleware returned 401
+    // because no auth cookie was present in the jar on the cold-boot
+    // `/auth.me` call.
+    //
+    // These helpers snapshot the auth cookies from the shared jar after
+    // sign-in, and rehydrate them into the jar on boot — with a far-
+    // future `expiresDate` so the jar won't drop them as session cookies.
+    // The bytes we persist are JSON-encoded HTTPCookie properties, which
+    // HTTPCookie understands natively on restore.
+
+    /// Return the auth-related cookies currently in the shared jar for
+    /// the backend host, as JSON-encoded property dictionaries. Used by
+    /// `EusoTripSession.signIn` to snapshot the jar once the server has
+    /// issued credentials. Only cookies whose name matches the known
+    /// auth cookie names are kept so we don't accidentally persist
+    /// unrelated third-party cookies.
+    func authCookieSnapshotJSON() -> String? {
+        guard let baseURL else { return nil }
+        let store = HTTPCookieStorage.shared
+        // Canonical name the EusoTrip backend sets on login is
+        // `app_session_id` (source of truth: `shared/const.ts:1`).
+        // The earlier list was missing it, which is the ROOT CAUSE
+        // of the "logged out every 10 minutes / every app update"
+        // bug — the snapshot returned nil, nothing got persisted to
+        // Keychain, and on any cold launch (app-update, iOS memory
+        // reclaim after backgrounding ~10 min) the cookie jar came
+        // back empty. The backend's tRPC middleware reads the cookie
+        // first and only falls back to Bearer; with the cookie gone
+        // and Bearer alone apparently not enough on some routes, the
+        // driver got kicked to SignIn.
+        //
+        // `token` / `auth_token` / `session` / NextAuth entries are
+        // kept for parity with any future auth provider swap — they
+        // cost nothing to snapshot and mean the migration is a
+        // one-line name-swap on the backend, not an app-side change.
+        let keep: Set<String> = [
+            "app_session_id",
+            "token", "auth_token", "session",
+            "next-auth.session-token", "__Secure-next-auth.session-token",
+            // CSRF companion if the backend ever adds one. Harmless
+            // to snapshot now.
+            "__Host-csrf", "csrf_token",
+        ]
+        let cookies = (store.cookies(for: baseURL) ?? []).filter { keep.contains($0.name) }
+        guard !cookies.isEmpty else { return nil }
+        // HTTPCookie.properties values are plist-compatible (strings /
+        // numbers / dates) but JSONSerialization chokes on Date. Encode
+        // Date fields as ISO8601 strings for round-trip safety.
+        let isoFmt = ISO8601DateFormatter()
+        let bag: [[String: String]] = cookies.compactMap { c in
+            var dict: [String: String] = [:]
+            for (k, v) in (c.properties ?? [:]) {
+                if let d = v as? Date {
+                    dict[k.rawValue] = isoFmt.string(from: d)
+                } else {
+                    dict[k.rawValue] = "\(v)"
+                }
+            }
+            return dict
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: bag, options: []) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Rehydrate auth cookies saved by `authCookieSnapshotJSON()` back
+    /// into the shared jar. Sets `expiresDate` to +1 year so the cookie
+    /// is treated as persistent (the original server-issued cookie was
+    /// Session-scoped, which is what caused the cross-launch 401). Safe
+    /// to call more than once; duplicates are overwritten by name+domain.
+    func restoreAuthCookiesFromJSON(_ json: String) {
+        guard let data = json.data(using: .utf8),
+              let bag = try? JSONSerialization.jsonObject(with: data) as? [[String: String]]
+        else { return }
+        let isoFmt = ISO8601DateFormatter()
+        let store = HTTPCookieStorage.shared
+        let farFuture = Date().addingTimeInterval(365 * 24 * 60 * 60)
+        for dict in bag {
+            var props: [HTTPCookiePropertyKey: Any] = [:]
+            for (k, v) in dict {
+                let key = HTTPCookiePropertyKey(rawValue: k)
+                // Dates round-trip as ISO strings — decode back to Date
+                // so HTTPCookie treats the cookie as persistent.
+                if k == HTTPCookiePropertyKey.expires.rawValue {
+                    if let d = isoFmt.date(from: v) {
+                        props[key] = d
+                    } else {
+                        props[key] = farFuture
+                    }
+                } else {
+                    props[key] = v
+                }
+            }
+            // Force a far-future expiry if the original was a session
+            // cookie — otherwise the jar will drop it on next launch.
+            if props[.expires] == nil {
+                props[.expires] = farFuture
+            }
+            // HTTPCookie requires at minimum: name, value, path, domain
+            // OR originURL. If any are missing, skip — malformed entry.
+            guard props[.name] != nil, props[.value] != nil,
+                  props[.path] != nil,
+                  (props[.domain] != nil || props[.originURL] != nil),
+                  let cookie = HTTPCookie(properties: props)
+            else { continue }
+            store.setCookie(cookie)
+        }
+    }
+
+    // MARK: Routers
+
+    lazy var loads: LoadsAPI = LoadsAPI(api: self)
+    lazy var hos: HOSAPI = HOSAPI(api: self)
+    lazy var auth: AuthAPI = AuthAPI(api: self)
+    lazy var availability: AvailabilityAPI = AvailabilityAPI(api: self)
+    lazy var registration: RegistrationAPI = RegistrationAPI(api: self)
+    lazy var inspections: InspectionsAPI = InspectionsAPI(api: self)
+    lazy var esang: ESangAPI = ESangAPI(api: self)
+    lazy var wallet: WalletAPI = WalletAPI(api: self)
+    // NOTE: `loadLifecycle` is declared once below near `agreements` (96th
+    // firing — canonical). Removed the duplicate declaration here that
+    // referenced the older 4-method LoadLifecycleAPI struct (which itself
+    // has been deleted further down in this file). Two declarations of
+    // the same lazy var on `EusoTripAPI` and two `struct LoadLifecycleAPI`
+    // bodies were a hard Swift compile error ("invalid redeclaration").
+    lazy var bayOps: BayOpsAPI = BayOpsAPI(api: self)
+    lazy var notifications: NotificationsAPI = NotificationsAPI(api: self)
+    lazy var drivers: DriversAPI = DriversAPI(api: self)
+    lazy var news: NewsAPI = NewsAPI(api: self)
+    lazy var messaging: MessagingAPI = MessagingAPI(api: self)
+    lazy var hotZones: HotZonesAPI = HotZonesAPI(api: self)
+    lazy var eld: ELDAPI = ELDAPI(api: self)
+
+    // --- Driver-facing surfaces added to back the gamification / wallet /
+    // fleet / availability screens. Each router mirrors a file under
+    // `server/routers/*.ts` in the EusoTrip backend repo.
+    //
+    // 61st-firing hygiene (2026-04-23): removed six orphan lazy-var
+    // entry points whose backend routers do not exist and whose
+    // consumer count across Views/ + ViewModels/ is zero:
+    //   • fuelCard      → replaced by fleet.getFuelTransactionsMobile
+    //   • achievements  → replaced by gamification.getMissions / getBadges
+    //   • leaderboard   → replaced by gamification.getLeaderboard
+    //   • availability  → no backend procs; fixture until router ships
+    //   • rooms         → no backend procs; presence deferred
+    //   • zeunDriver    → replaced by zeunMechanics.* canonical router
+    // The struct bodies remain below with `@available(*, deprecated)`
+    // sentinels so the next macOS-build-verified firing can finalize
+    // removal after xcodebuild verification. Dead code that's
+    // unreachable at the lazy-var level cannot be called at runtime,
+    // so the 404-producing landmines are neutralised immediately by
+    // this edit — even without the struct-body deletion.
+    lazy var walletExtras: WalletExtrasAPI = WalletExtrasAPI(api: self)
+    lazy var factoring: FactoringAPI = FactoringAPI(api: self)
+    lazy var tax: TaxAPI = TaxAPI(api: self)
+    lazy var rewards: RewardsAPI = RewardsAPI(api: self)
+    lazy var gamification: GamificationAPI = GamificationAPI(api: self)
+    /// Distinct tRPC router `advancedGamificationRouter` (mounted at
+    /// `advancedGamification.*` in `frontend/server/routers.ts:1568`).
+    /// Today's only consumer is `StreakTrackerStore` for brick 065
+    /// The Haul · Streaks, via `advancedGamification.getStreakTracker`.
+    /// Added in the 65th firing once MCP-verified the endpoint is live
+    /// (advancedGamification.ts:1476-1544). If the surface grows, keep
+    /// it separate from `gamification` — the server keeps them in two
+    /// files and collapsing them on the client would mask that seam.
+    lazy var advancedGamification: AdvancedGamificationAPI = AdvancedGamificationAPI(api: self)
+    lazy var fleetCanonical: FleetCanonicalAPI = FleetCanonicalAPI(api: self)
+    lazy var zeunMechanics: ZeunMechanicsAPI = ZeunMechanicsAPI(api: self)
+    lazy var fleet: FleetAPI = FleetAPI(api: self)
+    lazy var profile: ProfileAPI = ProfileAPI(api: self)
+    // `lazy var loyalty: LoyaltyAPI` — dropped in the 62nd firing.
+    // `loyaltyRouter` never shipped on the backend; the canonical
+    // replacement is `gamification.getProfile`, wired through
+    // `LoyaltyHeroStore` in `ViewModels/LiveDataStores.swift`.
+    lazy var earnings: EarningsAPI = EarningsAPI(api: self)
+    lazy var settlementBatching: SettlementBatchingAPI = SettlementBatchingAPI(api: self)
+
+    /// `documentManagementRouter` — driver-facing CDL / Medical / TWIC /
+    /// Hazmat / Registration / Insurance etc. document surface.
+    /// MCP-verified at `frontend/server/routers/documentManagement.ts:277`
+    /// (namespace mounted in `frontend/server/routers.ts:1671`).
+    /// Added in the 67th firing (brick port 072 Me · Docs).
+    lazy var documentManagement: DocumentManagementAPI = DocumentManagementAPI(api: self)
+
+    /// `vehicleRouter` — driver-scoped assigned vehicle + maintenance
+    /// history surface. Distinct from `fleetRouter` (company-scoped
+    /// asset manager for dispatchers / terminal managers) and from
+    /// `fleetCanonicalRouter` (rail/vessel). MCP-verified at
+    /// `frontend/server/routers/vehicle.ts:22` (namespace mounted in
+    /// `frontend/server/routers.ts:1275`). Added in the 68th firing
+    /// (brick port 073 Me · Vehicle).
+    lazy var vehicle: VehicleAPI = VehicleAPI(api: self)
+
+    /// `safetyRouter` — driver-scoped safety score + categories +
+    /// recent events surface. Also exposes the company-scoped stats
+    /// procedures for admin screens. MCP-verified at
+    /// `frontend/server/routers/safety.ts:820` (namespace mounted in
+    /// `frontend/server/routers.ts:1008`). Added in the 69th firing
+    /// (brick port 075 Me · Safety Score).
+    lazy var safety: SafetyAPI = SafetyAPI(api: self)
+
+    /// `trainingRouter` + `trainingLMSRouter` — driver-scoped training
+    /// surface (assignments + LMS enrollments + certificates). Both
+    /// namespaces are exposed through the single `TrainingAPI` wrapper
+    /// for ergonomics. MCP-verified at
+    /// `frontend/server/routers/training.ts:113` + `trainingLMS.ts:251,
+    /// 549`. Namespaces mounted in `frontend/server/routers.ts:1017,
+    /// 1488`. Added in the 70th firing (brick port 076 Me · Training).
+    lazy var training: TrainingAPI = TrainingAPI(api: self)
+
+    /// `paymentsRouter` — driver-facing Stripe payment-method surface.
+    /// Lists cards + bank accounts, set-default, detach/unlink.
+    /// MCP-verified at `frontend/server/routers/payments.ts:323-388`.
+    /// Added in the 71st firing (brick port 077 Me · Payment Methods).
+    lazy var payments: PaymentsAPI = PaymentsAPI(api: self)
+
+    /// `complianceRouter` — cross-surface compliance reads + mutations.
+    /// Today's iOS-relevant surface: `getViolations`,
+    /// `getViolationStats`, `resolveViolation`. MCP-verified at
+    /// `frontend/server/routers/compliance.ts:1055`. Added in the
+    /// 75th firing (brick port 082 Me · Violations Manager).
+    lazy var compliance: ComplianceAPI = ComplianceAPI(api: self)
+
+    /// `csaScoresRouter` — FMCSA CSA scoring + DataQs challenge
+    /// filer. Today's iOS-relevant surface: `submitDataQsChallenge`.
+    /// MCP-verified at `frontend/server/routers/csaScores.ts:310`.
+    /// Added in the 77th firing (brick port 084 Me · DataQs Filer).
+    lazy var csaScores: CsaScoresAPI = CsaScoresAPI(api: self)
+
+    /// `esangCoachRouter` — ESANG-powered safety coaching for the
+    /// driver's 087 Me · Safety Coach screen. Role + vertical aware;
+    /// hazmat is the most-stringent regulatory lens. MCP-verified at
+    /// `frontend/server/routers/esangCoach.ts:510` (proc `forDriver`),
+    /// namespace mounted in `frontend/server/routers.ts:1597`. Added
+    /// in the 79th firing (brick port 087 Me · Safety Coach).
+    lazy var esangCoach: EsangCoachAPI = EsangCoachAPI(api: self)
+
+    /// `referralsRouter` — driver-scoped referral code + attribution.
+    /// MCP-verified at `frontend/server/routers/referrals.ts:82`
+    /// (procs `getMyCode`, `summary`, `listMine`, `applyCode`). Added
+    /// in the 80th firing (brick port 088 Me · Invite & Earn).
+    lazy var referrals: ReferralsAPI = ReferralsAPI(api: self)
+
+    /// `gamificationRouter` / `missionsRouter` / `achievementsRouter`
+    /// — unified façade reserved for any screen that wants one-shot
+    /// access across the three Haul surfaces at once. (Unused after
+    /// MeHaulView was restored as the canonical tabbed Haul screen
+    /// wired directly to `gamification` + `messaging` — kept here
+    /// because other screens may still want the composite shape.)
+    lazy var haul: HaulAPI = HaulAPI(api: self)
+
+    /// `supportRouter` — driver-scoped support tickets + optional
+    /// knowledge-base search. MCP-verified at
+    /// `frontend/server/routers/support.ts` (procs `getMyTickets`,
+    /// `getSummary`, `createTicket`, `getTicketById`). Added in the
+    /// 82nd firing (brick port 089 Me · Support & Tickets).
+    lazy var support: SupportAPI = SupportAPI(api: self)
+
+    /// `iftaCalculatorRouter` — IFTA quarterly estimator + full
+    /// per-jurisdiction calculator. MCP-verified at
+    /// `frontend/server/routers/iftaCalculator.ts` (procs
+    /// `estimateFromLoads`, `calculateQuarter`). Added in the 83rd
+    /// firing (brick port 090 Me · IFTA Tax).
+    lazy var ifta: IftaAPI = IftaAPI(api: self)
+
+    /// `detentionAccessorialsRouter` — detention pay recovery +
+    /// demurrage + TONU + layover tracking. MCP-verified at
+    /// `frontend/server/routers/detentionAccessorials.ts`. iOS
+    /// surface today: dashboard + active + history + dispute.
+    /// Added in the 84th firing (brick port 091 Me · Detention).
+    lazy var detention: DetentionAPI = DetentionAPI(api: self)
+
+    /// `permitsRouter` — driver-scoped trip / oversize / IRP / IFTA
+    /// permit lifecycle (list / summary / expiring / renew). MCP-
+    /// verified at `frontend/server/routers/permits.ts`. Added in
+    /// the 85th firing (brick port 092 Me · Permits).
+    lazy var permits: PermitsAPI = PermitsAPI(api: self)
+
+    /// `driverQualificationRouter` — DQ file (CDL, medical card,
+    /// hazmat endorsement, TWIC, drug tests, employment history,
+    /// annual reviews). MCP-verified at
+    /// `frontend/server/routers/driverQualification.ts`. Added in
+    /// the 86th firing (brick port 093 Me · DQ File).
+    lazy var dq: DriverQualificationAPI = DriverQualificationAPI(api: self)
+
+    /// `fuelManagementRouter` — fuel card lifecycle + fuel-spend
+    /// dashboard + theft detection + optimal-stop finder. MCP-
+    /// verified at `frontend/server/routers/fuelManagement.ts`.
+    /// Added in the 87th firing (brick port 094 Me · Fuel Cards).
+    lazy var fuelMgmt: FuelManagementAPI = FuelManagementAPI(api: self)
+
+    /// `ratesRouter` — lane analysis + market rates + trend
+    /// forecasts. MCP-verified at
+    /// `frontend/server/routers/rates.ts`. Added in the 88th
+    /// firing (brick port 095 Me · Rate Intel).
+    lazy var rates: RatesAPI = RatesAPI(api: self)
+
+    /// `rateSheetRouter` — Schedule-A rate-sheet authoring +
+    /// reconciliation engine. The web platform owns 16 procedures
+    /// (create / list / get / update / version-history / calculator
+    /// / EIA diesel / smart defaults / reconciliation generator /
+    /// EusoTicket document fetch / ticket reconciliation / stats).
+    /// MCP-verified at `frontend/server/routers/rateSheet.ts`.
+    /// Pulls per-mileage band rates ($/BBL or $/lb) + surcharges
+    /// (FSC, wait-time, split-load, reject, travel) so a tanker
+    /// driver can preview their pay before the load is finalized.
+    lazy var rateSheet: RateSheetAPI = RateSheetAPI(api: self)
+
+    /// `eusoTicketRouter` — Bills of Lading + run tickets + per-haul
+    /// receipts. Mirrors the web `/euso-ticket` page (Terminal Manager
+    /// + Driver) 1:1. Procedures wired below: listRunTickets, getRunTicket,
+    /// listBOLs, getTerminalStats, generateRunTicketPDF, generateBOLPDF,
+    /// updateRunTicketStatus, updateBOLStatus. MCP-verified at
+    /// `frontend/server/routers/eusoTicket.ts:119-686`. The receipts
+    /// channel (lumper / scale / fuel / toll) lives under the existing
+    /// `documentManagement` namespace — those rows are surfaced by
+    /// HubCategory.loadDocs in 083_MeDocumentsHub. Added in the
+    /// EusoTicket parity firing (2026-04-27).
+    lazy var eusoTicket: EusoTicketAPI = EusoTicketAPI(api: self)
+
+    /// `visualIntelligenceRouter` — VIGA. Photograph → AI analysis
+    /// across 9 use cases (mechanical, gauge, seal, DVIR, cargo,
+    /// POD, facility, damage, road). MCP-verified at
+    /// `frontend/server/routers/visualIntelligence.ts`. Web platform
+    /// uses Gemini + Anthropic image models server-side; iOS just
+    /// uploads base64 + analysis-type and renders the typed result.
+    lazy var viga: VIGAAPI = VIGAAPI(api: self)
+
+    /// `authorityRouter` — DOT/MC operating-authority + lease-on
+    /// (FMCSR Part 376 trip lease). Drivers use this when they need
+    /// to operate under a larger carrier's authority for a specific
+    /// load. Mirrors `frontend/server/routers/authority.ts` 1:1.
+    /// Procedures wired below: getMyAuthority, getMyLeases,
+    /// getLeaseStats, createLease, signLease, updateCompliance,
+    /// terminateLease, browseAuthorities, getEquipmentAuthority,
+    /// createLeaseFromFMCSA.
+    lazy var authority: AuthorityAPI = AuthorityAPI(api: self)
+
+    /// `adaptiveFeeRouter` — EusoWallet Adaptive Fee Engine. Per the
+    /// April-2026 deployment playbook: 6-dimension multiplier table
+    /// (country, vertical, equipment, hazmat, distance, cycle), MHI
+    /// composite from DAT/FRED/EIA, gamification discount (Bronze
+    /// 0% → Diamond 1.5%), full fintech stack (Instant Pay, Cash
+    /// Advance, Quick Pay, Factoring). MCP-verified at
+    /// `frontend/server/routers/adaptiveFee.ts`. iOS surfaces use
+    /// `estimate` for live fee preview on load detail and `getMHI`
+    /// for the cycle-phase chip on Home + Wallet.
+    lazy var adaptiveFee: AdaptiveFeeAPI = AdaptiveFeeAPI(api: self)
+
+    /// `ergRouter` — Emergency Response Guidebook hazmat lookup
+    /// (49 CFR 172.604). MCP-verified at
+    /// `frontend/server/routers/erg.ts` (procs `search`,
+    /// `searchByUN`, `getGuidePage`, `getEmergencyContacts`).
+    /// Added in the 89th firing (brick port 096 Me · ERG).
+    lazy var erg: ErgAPI = ErgAPI(api: self)
+
+    /// `ratingsRouter` — driver / catalyst / shipper reviews and
+    /// rating summary. MCP-verified at
+    /// `frontend/server/routers/ratings.ts`. Added in the 90th
+    /// firing (brick port 097 Me · Ratings).
+    lazy var ratings: RatingsAPI = RatingsAPI(api: self)
+
+    /// `emergencyResponseRouter` — FEMA / pipeline-outage /
+    /// hurricane driver mobilization operations. MCP-verified at
+    /// `frontend/server/routers/emergencyResponse.ts` (procs
+    /// `getMyMobilizations`, `respondToMobilization`,
+    /// `updateMobilizationStatus`, `getGovernmentContacts`).
+    /// Added in the 91st firing (brick port 098 Me · Emergency Ops).
+    lazy var emergency: EmergencyAPI = EmergencyAPI(api: self)
+
+    /// `freightClaimsRouter` — freight damage / loss / shortage /
+    /// delay / contamination claims. MCP-verified at
+    /// `frontend/server/routers/freightClaims.ts` (procs
+    /// `getClaimsDashboard`, `getClaims`, `fileClaim`). Added in
+    /// the 92nd firing (brick port 099 Me · Freight Claims).
+    lazy var freightClaims: FreightClaimsAPI = FreightClaimsAPI(api: self)
+
+    /// `appointmentsRouter` — pickup / delivery appointment
+    /// lifecycle: driver-scoped list, check-in, start-loading,
+    /// complete, cancel. MCP-verified at
+    /// `frontend/server/routers/appointments.ts`. Added in the
+    /// 93rd firing (brick port 101 Me · Appointments).
+    lazy var appointments: AppointmentsAPI = AppointmentsAPI(api: self)
+
+    /// `contactsRouter` — driver's contact directory (shippers /
+    /// catalysts / dispatchers / brokers / drivers). MCP-verified
+    /// at `frontend/server/routers/contacts.ts`. Added in the
+    /// 94th firing (brick port 102 Me · Contacts).
+    lazy var contacts: ContactsAPI = ContactsAPI(api: self)
+
+    /// `agreementsRouter` — party-to-party agreements with
+    /// Gradient-Ink e-signature. Driver sees all agreements
+    /// where they're party A or B (lease-on, owner-op,
+    /// employment, dispatch service). MCP-verified at
+    /// `frontend/server/routers/agreements.ts`. Added in the
+    /// 95th firing (brick port 103 Me · Agreements).
+    lazy var agreements: AgreementsAPI = AgreementsAPI(api: self)
+
+    /// `loadLifecycleRouter` — the canonical load state-machine
+    /// driver. `getAvailableTransitions(loadId)` returns the
+    /// legal next hops for the caller's role; `executeTransition`
+    /// flips state with guards + optional location/data/
+    /// compliance blocks. MCP-verified at
+    /// `frontend/server/routers/loadLifecycle.ts`. Added in the
+    /// 96th firing as the foundation under the trip-lifecycle
+    /// screens 013–051 (per gap analysis 2026-04-24).
+    lazy var loadLifecycle: LoadLifecycleAPI = LoadLifecycleAPI(api: self)
+
+    /// `spectraMatchRouter` — crude-oil + product identification
+    /// surface backing lifecycle screens 030 (Loading in Progress)
+    /// and 031 (Spectra-Match Verdict). Backend procedures live at
+    /// `frontend/server/routers/spectraMatch.ts` with `identify`,
+    /// `getHistory`, `getLearningStats`, `getCrudeTypes`, and the
+    /// terminal-product / destination-intelligence aux surfaces.
+    /// Added 2026-04-24 (eusotrip-killers ledger-hygiene firing) to
+    /// close the only material backend→client gap surfaced by the
+    /// mock-data audit (the hardcoded `samples: [SampleLane]` array
+    /// in 031_SpectraMatchVerdict.swift). Driver-facing screens now
+    /// pull verified-load history via `spectraMatch.getHistory`.
+    lazy var spectraMatch: SpectraMatchAPI = SpectraMatchAPI(api: self)
+
+    /// `shippersRouter` — the canonical Shipper-role surface backing
+    /// the 2xx Shipper screen track (200 Shipper Home, etc.). MCP-
+    /// verified at `frontend/server/routers/shippers.ts` with
+    /// `create`, `update`, `delete`, `getDashboardStats`,
+    /// `getActiveLoads`, `getLoadsRequiringAttention`, and
+    /// `getRecentLoads`. Added 2026-04-24 (eusotrip-killers next-port
+    /// firing) at the start of the role-by-role build per the 2027
+    /// motivation prompt: "all 24 users piece by piece every screen
+    /// each role at a time til you are done."
+    lazy var shipper: ShipperAPI = ShipperAPI(api: self)
+
+    /// Live tRPC handle for the **Carrier** role surface. Added
+    /// 2026-04-25 (100th eusotrip-killers firing, brick port 300 ·
+    /// `Views/Carrier/300_CarrierHome.swift`). Backend convention
+    /// mirrors `shippers.*` — every procedure name on this struct
+    /// hits the real `carriers.*` router. If the parallel router
+    /// has not landed yet, `EusoTripAPIError.trpcError` propagates
+    /// and the live stores in `LiveDataStores.swift` surface
+    /// `EusoEmptyState` per doctrine §11 + `MockDataGuard` — never
+    /// fake data, ever.
+    lazy var carrier: CarrierAPI = CarrierAPI(api: self)
+
+    /// Live tRPC handle for the **Broker** role surface. Added
+    /// 2026-04-25 (99th eusotrip-killers firing, brick port 400 ·
+    /// `Views/Broker/400_BrokerHome.swift`). Backend convention
+    /// mirrors `carriers.*` / `shippers.*` — every procedure name
+    /// on this struct hits the real `brokers.*` router. The broker
+    /// sits between the shipper (originator) and carrier (mover),
+    /// so the home re-frames the four-card hierarchy around margin
+    /// and tender flow rather than active-load count. If the
+    /// parallel router has not landed yet,
+    /// `EusoTripAPIError.trpcError` propagates and the live stores
+    /// in `LiveDataStores.swift` surface `EusoEmptyState` per
+    /// doctrine §11 + `MockDataGuard` — never fake data, ever.
+    lazy var broker: BrokerAPI = BrokerAPI(api: self)
+
+    /// Live tRPC handle for the **Catalyst** role surface. Added
+    /// 2026-04-25 (102nd eusotrip-killers firing, brick port 500 ·
+    /// `Views/Catalyst/500_CatalystHome.swift`). Backend convention
+    /// mirrors `brokers.*` / `carriers.*` / `shippers.*` — every
+    /// procedure name on this struct hits the real `catalysts.*`
+    /// router. Catalyst is the AI-augmented dispatch / SpectraMatch
+    /// operator role per the §16 intelligence slice (Autopilot
+    /// 7-layer cortex, 52 agents); the home re-frames the four-card
+    /// hierarchy around match flow + fit-score rather than tender
+    /// flow or active-load count. If the parallel router has not
+    /// landed yet, `EusoTripAPIError.trpcError` propagates and the
+    /// live stores in `LiveDataStores.swift` surface
+    /// `EusoEmptyState` per doctrine §11 + `MockDataGuard` — never
+    /// fake data, ever.
+    lazy var catalyst: CatalystAPI = CatalystAPI(api: self)
+
+    /// Escort role surface — `escorts.*` tRPC namespace. Added in
+    /// the 103rd eusotrip-killers firing alongside the 600 Escort
+    /// Home brick. Mirrors the convention of the Catalyst (502nd
+    /// firing), Broker (99th), Carrier (100th) and Shipper (91st)
+    /// accessors.
+    lazy var escort: EscortAPI = EscortAPI(api: self)
+
+    /// Terminal Manager role surface — `terminals.*` tRPC namespace.
+    /// Added in the 107th eusotrip-killers firing alongside the
+    /// 700 Terminal Home brick. Mirrors the convention of the
+    /// Escort (103rd), Catalyst (102nd), Broker (99th), Carrier
+    /// (100th) and Shipper (91st) accessors. Terminal Manager owns
+    /// port/yard operations: gate-in / gate-out flow, container
+    /// movements, dock assignment, dwell + demurrage exposure, and
+    /// hazmat clearance per the §16 admin-tenant-ops + intermodal
+    /// slices. If the parallel router has not landed yet,
+    /// `EusoTripAPIError.trpcError` propagates and the live stores
+    /// in `LiveDataStores.swift` surface `EusoEmptyState` per
+    /// doctrine §11 + `MockDataGuard` — never fake data, ever.
+    lazy var terminal: TerminalAPI = TerminalAPI(api: self)
+
+    /// Admin role surface — `admin.*` tRPC namespace. Added in the
+    /// 108th eusotrip-killers firing alongside the 800 Admin Home
+    /// brick. Mirrors the convention of the Terminal (107th),
+    /// Escort (103rd), Catalyst (102nd), Broker (99th), Carrier
+    /// (100th) and Shipper (91st) accessors. Admin owns
+    /// platform-wide tenant ops, user lifecycle, approvals, support
+    /// tickets, and platform health per the §16 admin-tenant-ops
+    /// slice (admin console, tenants, portals, branding, approvals,
+    /// experiments, control tower, DD alerts). If the parallel
+    /// router has not landed yet, `EusoTripAPIError.trpcError`
+    /// propagates and the live stores in `LiveDataStores.swift`
+    /// surface `EusoEmptyState` per doctrine §11 + `MockDataGuard`
+    /// — never fake data, ever. Note: §16 flags `admin.impersonateUser`
+    /// and several system-settings endpoints as returning mock data
+    /// today; the iOS surface intentionally does NOT consume those
+    /// endpoints — only the legitimate dashboard envelope shapes
+    /// listed below.
+    lazy var admin: AdminAPI = AdminAPI(api: self)
+
+    /// `usersRouter` — cross-role user-scoped endpoints (notification
+    /// preferences, profile updates, role/tenant introspection). Distinct
+    /// from `auth.*` (login/logout/MFA), `notifications.*` (per-(channel,
+    /// category) toggle for the Driver Me Notifications surface), and
+    /// `preferences.*` (legacy locale/theme bag). MCP-verified at
+    /// `frontend/server/routers/users.ts:1648` for `getNotificationPreferences`
+    /// and `frontend/server/routers/users.ts:1680` for `updateNotificationPreferences`.
+    /// Both procedures are `protectedProcedure` (any authenticated user)
+    /// so shippers, drivers, brokers, carriers, catalysts all consume the
+    /// same matrix shape — the iOS Shipper Settings surface (brick 211)
+    /// uses these as its canonical preference store. Added in the 129th
+    /// firing (eusotrip-killers · 2026-04-26 · port_211_ShipperSettings).
+    lazy var users: UsersAPI = UsersAPI(api: self)
+
+    /// `loadBiddingRouter` — canonical bid-chain surface used by the
+    /// web platform's bid management page. Drivers and catalysts hit
+    /// `submit` to one-tap accept a posted rate (Book Now) or to
+    /// open a counter-offer chain. The same row schema (`loadBids`)
+    /// powers both web and app so a bid placed on iOS shows up on
+    /// the shipper's web dashboard within a socket frame.
+    lazy var loadBidding: LoadBiddingAPI = LoadBiddingAPI(api: self)
+
+    // MARK: Low-level tRPC invocation
+
+    /// GET /api/trpc/<path>?input=<url-encoded-JSON>
+    func query<Output: Decodable, Input: Encodable>(
+        _ path: String,
+        input: Input
+    ) async throws -> Output {
+        guard let baseURL else { throw EusoTripAPIError.notConfigured }
+        let payload = TRPCInputEnvelope(json: input)
+        let data = try encoder.encode(payload)
+        let encoded = String(data: data, encoding: .utf8) ?? "{}"
+
+        // URLQueryItem percent-encodes the value itself when URLComponents
+        // assembles the final URL. We MUST pass the raw JSON string here —
+        // pre-encoding with addingPercentEncoding(.urlQueryAllowed) caused
+        // URLComponents to encode the percent signs a second time, so the
+        // server saw `%257B%2522json...` and Node's JSON.parse reported
+        // `Unexpected token '%', "%7B%22json"... is not valid JSON`
+        // as the error body, which surfaced in Driver Intel as
+        // "Can't reach news feed - Unexpected token '%'...".
+        let url = baseURL
+            .appendingPathComponent("api/trpc")
+            .appendingPathComponent(path)
+        guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else { throw EusoTripAPIError.badURL }
+        comps.queryItems = [URLQueryItem(name: "input", value: encoded)]
+        guard let finalURL = comps.url else { throw EusoTripAPIError.badURL }
+
+        var req = URLRequest(url: finalURL)
+        req.httpMethod = "GET"
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let authToken {
+            req.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        }
+        if let pushDeviceToken {
+            req.setValue(pushDeviceToken, forHTTPHeaderField: "x-push-token")
+        }
+        return try await perform(req)
+    }
+
+    func queryNoInput<Output: Decodable>(_ path: String) async throws -> Output {
+        return try await query(path, input: TRPCEmptyInput())
+    }
+
+    /// Raw tRPC query that returns the server response bytes verbatim.
+    /// Used by the Pulse relay path: the wrist sends us a path +
+    /// already-serialized `{"json": <input>}` string, we run the GET
+    /// through the authenticated iOS session (cookies + bearer), and
+    /// hand back the raw `Data` for the wrist to decode with its own
+    /// envelope parser. No typed decoding happens on the phone — the
+    /// wrist remains the authoritative decoder so rolling the server
+    /// row shape never requires coordinated phone + watch deploys.
+    func rawQuery(path: String, inputJSON: String) async throws -> Data {
+        guard let baseURL else { throw EusoTripAPIError.notConfigured }
+        let url = baseURL
+            .appendingPathComponent("api/trpc")
+            .appendingPathComponent(path)
+        guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else { throw EusoTripAPIError.badURL }
+        // tRPC expects the wire to be `{"json": <input>}`. If the
+        // wrist already wrapped its payload we pass it through; if
+        // it sent a bare value we wrap it here.
+        let envelope: String = {
+            let trimmed = inputJSON.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("{") && trimmed.contains("\"json\"") {
+                return trimmed
+            }
+            return "{\"json\":\(trimmed.isEmpty ? "{}" : trimmed)}"
+        }()
+        comps.queryItems = [URLQueryItem(name: "input", value: envelope)]
+        guard let finalURL = comps.url else { throw EusoTripAPIError.badURL }
+
+        var req = URLRequest(url: finalURL)
+        req.httpMethod = "GET"
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let authToken {
+            req.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        }
+        if let pushDeviceToken {
+            req.setValue(pushDeviceToken, forHTTPHeaderField: "x-push-token")
+        }
+        let (data, resp) = try await session.data(for: req)
+        guard let http = resp as? HTTPURLResponse else {
+            throw EusoTripAPIError.httpStatus(0, "No HTTP response")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw EusoTripAPIError.httpStatus(
+                http.statusCode,
+                String(data: data, encoding: .utf8) ?? ""
+            )
+        }
+        return data
+    }
+
+    /// POST /api/trpc/<path>  body: {"json": <input>}
+    func mutation<Output: Decodable, Input: Encodable>(
+        _ path: String,
+        input: Input
+    ) async throws -> Output {
+        guard let baseURL else { throw EusoTripAPIError.notConfigured }
+        let url = baseURL
+            .appendingPathComponent("api/trpc")
+            .appendingPathComponent(path)
+
+        let payload = TRPCInputEnvelope(json: input)
+        let body = try encoder.encode(payload)
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let authToken {
+            req.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        }
+        if let pushDeviceToken {
+            req.setValue(pushDeviceToken, forHTTPHeaderField: "x-push-token")
+        }
+        req.httpBody = body
+
+        return try await perform(req)
+    }
+
+    func mutationNoInput<Output: Decodable>(_ path: String) async throws -> Output {
+        return try await mutation(path, input: TRPCEmptyInput())
+    }
+
+    // MARK: Shared transport
+
+    private func perform<Output: Decodable>(_ req: URLRequest) async throws -> Output {
+        let (respData, resp) = try await session.data(for: req)
+        guard let http = resp as? HTTPURLResponse else {
+            throw EusoTripAPIError.httpStatus(0, "No HTTP response")
+        }
+
+        // Extract Bearer token from Set-Cookie if the backend issued one.
+        // The web platform's canonical session cookie is `app_session_id`
+        // (see `frontend/shared/const.ts:1` — `COOKIE_NAME` import in
+        // routers.ts powers every res.cookie() call in the auth flow).
+        // The earlier `token` / `auth_token` allowlist never matched, so
+        // `self.authToken` stayed nil after every successful login,
+        // `keychain.save(key: kAuthToken, value: token)` no-op'd because
+        // the optional bind failed, and the next cold launch had no
+        // bearer to restore — kicking the user back to SignIn on every
+        // app start. Including `app_session_id` here closes that loop.
+        if let url = req.url,
+           let fields = http.allHeaderFields as? [String: String] {
+            let cookies = HTTPCookie.cookies(withResponseHeaderFields: fields, for: url)
+            for c in cookies where c.name == "app_session_id"
+                                || c.name == "token"
+                                || c.name == "auth_token" {
+                if self.authToken == nil { self.authToken = c.value }
+            }
+        }
+
+        // tRPC can return 200 with an error envelope, or 4xx with an error envelope.
+        // Decode the envelope FIRST (before the bare 401/403 check) so we can
+        // promote UNAUTHORIZED errors to `.unauthenticated` using the real
+        // code/httpStatus, while still surfacing the server's human-readable
+        // message for every other trpc error (rate limits, validation, etc.).
+        if let err = try? decoder.decode(TRPCErrorEnvelope.self, from: respData) {
+            let inner = err.error.json
+            let httpStatus = inner.data?.httpStatus ?? http.statusCode
+            let code = inner.data?.code ?? ""
+            if httpStatus == 401 || httpStatus == 403 || code == "UNAUTHORIZED" || code == "FORBIDDEN" {
+                throw EusoTripAPIError.unauthenticated
+            }
+            throw EusoTripAPIError.trpcError(inner.message ?? "Request failed")
+        }
+
+        if http.statusCode == 401 || http.statusCode == 403 {
+            throw EusoTripAPIError.unauthenticated
+        }
+
+        guard 200..<300 ~= http.statusCode else {
+            let body = String(data: respData, encoding: .utf8) ?? ""
+            throw EusoTripAPIError.httpStatus(http.statusCode, body)
+        }
+
+        do {
+            let env = try decoder.decode(TRPCResult<Output>.self, from: respData)
+            return env.result.data.json
+        } catch {
+            throw EusoTripAPIError.decodingFailed(String(describing: error))
+        }
+    }
+}
+
+// MARK: - loadsRouter
+
+struct LoadsAPI {
+    unowned let api: EusoTripAPI
+
+    /// `loadsRouter.search` — returns a projection (LoadSummary).
+    /// Filters mirror the router's zod input.
+    func search(
+        query: String? = nil,
+        status: String? = nil,
+        cargoType: String? = nil,
+        limit: Int = 30
+    ) async throws -> [LoadSummary] {
+        struct Input: Encodable {
+            let query: String?
+            let status: String?
+            let cargoType: String?
+            let limit: Int
+        }
+        let input = Input(query: query, status: status,
+                          cargoType: cargoType, limit: limit)
+        return try await api.query("loads.search", input: input)
+    }
+
+    /// `loadsRouter.getById` — full record.
+    func getById(_ id: Int) async throws -> Load {
+        struct Input: Encodable { let id: Int }
+        return try await api.query("loads.getById", input: Input(id: id))
+    }
+
+    // MARK: - LoadDetail (Shipper · 205 surface)
+    //
+    // Full server-shaped projection of `loads.getById` mirrored verbatim
+    // from `frontend/server/routers/loads.ts:1046–1130`. Differs from
+    // legacy `Load` Codable in two important ways:
+    //   1. The backend serializes `id` as String (`String(load.id)`) and
+    //      `distance` as a Number (resolvedDistance via haversine when DB
+    //      is missing) — so this struct decodes them as `String` and
+    //      `Double` respectively. Legacy `Load.id: Int` was decoded from
+    //      a server-side numeric and is brittle against the new shape.
+    //   2. `pickupLocation` / `deliveryLocation` are narrowed to {city,
+    //      state} on the server-side projection — the addresses are
+    //      surfaced via `origin`/`destination` instead.
+    //
+    // The whole envelope decodes optional everywhere a column may be
+    // null in the row (every shipper-posted draft starts with most
+    // columns blank). 205's view renders an em-dash neutral state for
+    // any nil — never fake data.
+
+    /// Narrow city/state projection used in the server `pickupLocation`
+    /// and `deliveryLocation` slots of the `loads.getById` response.
+    struct LoadCityState: Decodable, Hashable {
+        let city: String?
+        let state: String?
+
+        /// "Shreveport, LA" — empty string when both pieces are missing.
+        var cityState: String {
+            [city, state]
+                .compactMap { $0?.isEmpty == false ? $0 : nil }
+                .joined(separator: ", ")
+        }
+    }
+
+    /// Wider {address, city, state, zip} projection used in the server
+    /// `origin` and `destination` slots of the response.
+    struct LoadAddress: Decodable, Hashable {
+        let address: String?
+        let city: String?
+        let state: String?
+        let zip: String?
+    }
+
+    /// Full load detail mirrored from `loads.getById` server response.
+    /// Every numeric DECIMAL field arrives as a String (Drizzle's
+    /// MySQL DECIMAL serializer); `distance` is the only number, since
+    /// the server resolves it via haversine + 1.2x road factor when the
+    /// raw column is empty.
+    struct LoadDetail: Decodable, Identifiable, Hashable {
+        // Identity
+        let id: String
+        let loadNumber: String
+        let status: String
+        let shipperId: Int?
+        let driverId: Int?
+        let catalystId: Int?
+
+        // Cargo
+        let cargoType: String?
+        let hazmatClass: String?
+        let unNumber: String?
+        let weight: String?
+        let weightUnit: String?
+        let commodity: String?
+        let commodityName: String?
+        let ergGuide: Int?
+        let equipmentType: String?
+        let spectraMatchVerified: Bool?
+
+        // Geography
+        let origin: LoadAddress?
+        let destination: LoadAddress?
+        let pickupLocation: LoadCityState?
+        let deliveryLocation: LoadCityState?
+        let distance: Double?
+        let distanceUnit: String?
+
+        // Dates (ISO strings; nullable on draft rows)
+        let pickupDate: String?
+        let deliveryDate: String?
+        let estimatedDeliveryDate: String?
+        let actualDeliveryDate: String?
+        let createdAt: String?
+        let updatedAt: String?
+        let biddingEnds: String?
+
+        // Money
+        let rate: String?
+        let currency: String?
+        let suggestedRateMin: Double?
+        let suggestedRateMax: Double?
+
+        // Misc
+        let notes: String?
+
+        // MARK: Derived
+
+        /// Numeric integer id for legacy callers (driver screens still
+        /// pass Int into `getById(_ id: Int)` for the older surface).
+        var numericId: Int { Int(id) ?? 0 }
+
+        /// Rate as Double in currency-major unit. Backend sends DECIMAL
+        /// columns as strings; coerce safely.
+        var rateValue: Double { Double(rate ?? "") ?? 0 }
+
+        /// Weight as Double.
+        var weightValue: Double { Double(weight ?? "") ?? 0 }
+
+        /// "$2,440" — em-dash when the column is missing.
+        var rateDisplay: String {
+            guard rateValue > 0 else { return "—" }
+            let f = NumberFormatter()
+            f.numberStyle = .currency
+            f.currencyCode = currency ?? "USD"
+            f.maximumFractionDigits = 0
+            return f.string(from: NSNumber(value: rateValue)) ?? "$\(Int(rateValue))"
+        }
+
+        /// "620 mi" — em-dash when missing.
+        var distanceDisplay: String {
+            guard let d = distance, d > 0 else { return "—" }
+            let unit = (distanceUnit?.isEmpty == false ? distanceUnit! : "mi")
+            return "\(Int(d.rounded())) \(unit)"
+        }
+
+        /// "42,000 lb" — em-dash when missing or zero.
+        var weightDisplay: String {
+            guard weightValue > 0 else { return "—" }
+            let unit = (weightUnit?.isEmpty == false ? weightUnit! : "lb")
+            let f = NumberFormatter()
+            f.numberStyle = .decimal
+            f.maximumFractionDigits = 0
+            let str = f.string(from: NSNumber(value: weightValue)) ?? "\(Int(weightValue))"
+            return "\(str) \(unit)"
+        }
+
+        /// "Shreveport, LA → Dallas, TX" — em-dash when both sides are missing.
+        var laneDisplay: String {
+            let o = pickupLocation?.cityState ?? ""
+            let d = deliveryLocation?.cityState ?? ""
+            switch (o.isEmpty, d.isEmpty) {
+            case (true, true):   return "—"
+            case (false, true):  return "\(o) → —"
+            case (true, false):  return "— → \(d)"
+            case (false, false): return "\(o) → \(d)"
+            }
+        }
+    }
+
+    /// `loads.getById` — server returns the full envelope. Server expects
+    /// `{ id: string }` (Zod `z.string()`) and tolerates numeric ids inside
+    /// the handler via `parseInt`, but this method enforces the strict
+    /// wire contract.
+    func getDetail(id: String) async throws -> LoadDetail? {
+        struct Input: Encodable { let id: String }
+        return try await api.query("loads.getById", input: Input(id: id))
+    }
+
+    // MARK: - Commercial context (broker + agreement)
+
+    /// Mirrors the `loads.getCommercialContext` server projection.
+    /// Both `broker` and `agreement` may be `nil` independently — the
+    /// driver-facing UI renders an em-dash neutral state for either.
+    struct CommercialContext: Decodable {
+        struct Broker: Decodable {
+            let userId: Int
+            let userName: String?
+            let companyId: Int?
+            let companyName: String?
+            let legalName: String?
+            let dotNumber: String?
+            let mcNumber: String?
+            let category: String?
+            let complianceStatus: String?
+        }
+        struct Agreement: Decodable {
+            let id: Int
+            let agreementNumber: String
+            /// One of: catalyst_shipper, broker_catalyst, broker_shipper,
+            /// catalyst_driver, escort_service, dispatch_dispatch,
+            /// terminal_access, master_service, lane_commitment,
+            /// fuel_surcharge, accessorial_schedule, nda, factoring,
+            /// custom. Surface as a friendly label via `displayLabel`.
+            let agreementType: String
+            /// One of: spot, short_term, long_term, evergreen.
+            let contractDuration: String
+            let rateType: String?
+            let baseRate: Double?
+            let effectiveDate: String?
+            let expirationDate: String?
+        }
+        let broker: Broker?
+        let agreement: Agreement?
+    }
+
+    /// `loads.getCommercialContext` — broker + agreement projection for
+    /// a single load. Returns `nil` only when the load itself is gone.
+    func getCommercialContext(loadId: String) async throws -> CommercialContext? {
+        struct Input: Encodable { let loadId: String }
+        return try await api.query(
+            "loads.getCommercialContext",
+            input: Input(loadId: loadId)
+        )
+    }
+
+    // MARK: - Escort assignment
+
+    /// One escort assignment row attached to a load. The lead escort and
+    /// chase escort each get their own entry; either may be missing.
+    struct EscortAssignment: Decodable, Identifiable {
+        let id: Int
+        /// "lead" | "chase" | "both"
+        let position: String
+        /// "pending" | "accepted" | "en_route" | "on_site" | "escorting"
+        /// | "completed" | "cancelled"
+        let status: String
+        let rate: Double?
+        let rateType: String?
+        let escortUserId: Int
+        let escortName: String?
+        let escortPhone: String?
+        let companyName: String?
+        let companyDot: String?
+        let companyMc: String?
+        let startedAt: String?
+        let completedAt: String?
+    }
+
+    /// `loads.getEscortAssignment` — driver visibility into who's
+    /// escorting them. Returns `[]` when the load has no escort wired.
+    func getEscortAssignment(loadId: String) async throws -> [EscortAssignment] {
+        struct Input: Encodable { let loadId: String }
+        return try await api.query(
+            "loads.getEscortAssignment",
+            input: Input(loadId: loadId)
+        )
+    }
+}
+
+// MARK: - hosRouter
+
+struct HOSAPI {
+    unowned let api: EusoTripAPI
+
+    /// `hosRouter.getStatus` — no input, returns dashboard HOSStatus.
+    func getStatus() async throws -> HOSStatus {
+        try await api.queryNoInput("hos.getStatus")
+    }
+
+    /// `hosRouter.getCurrentStatus` — detailed, optional driverId override.
+    func getCurrentStatus(driverId: String? = nil) async throws -> HOSCurrentStatus {
+        struct Input: Encodable { let driverId: String? }
+        return try await api.query("hos.getCurrentStatus", input: Input(driverId: driverId))
+    }
+
+    /// `hosRouter.changeStatus` — canonical duty-status transition.
+    /// Replaces the deprecated `hos.logEvent` the Pulse watch used to call.
+    ///
+    /// - `status`: off_duty | sleeper | driving | on_duty
+    /// - `source`: "ios" | "watch" | "eld" | "dispatcher"
+    /// - `lat` / `lon`: optional GPS fix at the moment of the transition
+    /// - `location`: human-readable place string ("Meridian, MS") that
+    ///   the backend writes into `hos_logs.location_description` per
+    ///   §395.8(h). Required by the tRPC schema — pass "" when the
+    ///   device has no recent fix rather than dropping the field.
+    /// - `odometer`: truck odometer in miles if the ELD has one
+    /// - `remark`: optional §395.8(j) annotation
+    /// - `loadId`: optional load currently on the driver's board
+    func changeStatus(
+        status: HOSDutyCode,
+        source: String = "ios",
+        lat: Double? = nil,
+        lon: Double? = nil,
+        location: String = "",
+        odometer: Double? = nil,
+        remark: String? = nil,
+        loadId: String? = nil,
+        ts: Date = Date()
+    ) async throws -> HOSChangeStatusResult {
+        // Server contract (MCP-verified at
+        // `frontend/server/routers/hos.ts:94`) is:
+        //   { newStatus: dutyStatusSchema, location: string, notes?: string }
+        //
+        // An earlier build shipped an input that named the field
+        // `status` with a handful of ELD-adjacent extras (source, lat,
+        // lon, odometer, loadId, ts) — Zod rejected the whole payload
+        // with an "invalid_value" error against `newStatus`, and that
+        // raw Zod JSON leaked into the driver's duty-status toast as
+        // a wall of text. The ELD-adjacent fields aren't on the server
+        // schema at all; the backend records the location string,
+        // derives lat/lng from the driver's most-recent telemetry
+        // ping, and writes odometer from the ELD integration — so
+        // dropping them from the client matches how the route is
+        // actually processed.
+        //
+        // `source`, `lat`, `lon`, `odometer`, `loadId`, and `ts` are
+        // kept on the public function signature so call-sites don't
+        // have to change — they're intentionally unused here, and
+        // will start flowing through if/when the server extends its
+        // schema. `remark` is mapped to `notes` which IS on the
+        // server schema.
+        _ = (source, lat, lon, odometer, loadId, ts)
+        struct Input: Encodable {
+            let newStatus: String
+            let location: String
+            let notes: String?
+        }
+        let input = Input(
+            newStatus: status.rawValue,
+            location: location,
+            notes: remark
+        )
+        return try await api.mutation("hos.changeStatus", input: input)
+    }
+
+    /// `hosRouter.getDailyLog` — segments + totals for a single calendar
+    /// day. `date` is YYYY-MM-DD in the driver's carrier timezone;
+    /// omitting it asks the server for "today".
+    func getDailyLog(date: String? = nil, driverId: String? = nil) async throws -> HOSDailyLog {
+        struct Input: Encodable {
+            let date: String?
+            let driverId: String?
+        }
+        return try await api.query("hos.getDailyLog", input: Input(date: date, driverId: driverId))
+    }
+
+    /// `hosRouter.getLogHistory` — array of daily logs for the last
+    /// `days` calendar days (defaults to the §395.8(k) 8-day cycle).
+    /// Returns newest-first to match the ELD screen's list rendering.
+    func getLogHistory(days: Int = 8, driverId: String? = nil) async throws -> [HOSDailyLog] {
+        struct Input: Encodable {
+            let days: Int
+            let driverId: String?
+        }
+        return try await api.query("hos.getLogHistory", input: Input(days: days, driverId: driverId))
+    }
+
+    /// `hosRouter.certifyLog` — §395.8(g) driver certification.
+    /// `date` is YYYY-MM-DD. The `signature` field must be a non-empty
+    /// token (biometric hash, typed name, etc.) — the server rejects empty.
+    func certifyLog(date: String, signature: String) async throws -> CertifyLogResult {
+        struct Input: Encodable {
+            let date: String
+            let signature: String
+        }
+        return try await api.mutation("hos.certifyLog", input: Input(date: date, signature: signature))
+    }
+
+    /// `hosRouter.addRemark` — attach an annotation (§395.8(j)) to the
+    /// driver's current segment, or an explicit entry if `entryId` given.
+    func addRemark(text: String, entryId: String? = nil) async throws -> AddRemarkResult {
+        struct Input: Encodable {
+            let text: String
+            let entryId: String?
+        }
+        return try await api.mutation("hos.addRemark", input: Input(text: text, entryId: entryId))
+    }
+
+    /// `hosRouter.getViolations` — unresolved violations the driver
+    /// should be shown on the 019 screen. Empty array when clean.
+    func getViolations() async throws -> [HOSViolation] {
+        try await api.queryNoInput("hos.getViolations")
+    }
+}
+
+// MARK: - authRouter
+
+struct AuthAPI {
+    unowned let api: EusoTripAPI
+
+    /// `auth.login` — POST mutation.
+    /// Returns `{success:true, user}` on success, or
+    /// `{success:false, requiresTwoFactor:true, method, message}` when 2FA gate trips.
+    func login(email: String, password: String, twoFactorCode: String? = nil) async throws -> LoginResponse {
+        struct Input: Encodable {
+            let email: String
+            let password: String
+            let twoFactorCode: String?
+        }
+        return try await api.mutation(
+            "auth.login",
+            input: Input(email: email, password: password, twoFactorCode: twoFactorCode)
+        )
+    }
+
+    /// `auth.me` — GET query, returns the currently authenticated user.
+    func me() async throws -> AuthUser {
+        try await api.queryNoInput("auth.me")
+    }
+
+    /// `auth.logout` — POST mutation.  Clears server-side session and cookies.
+    func logout() async throws -> GenericMessageResponse {
+        try await api.mutationNoInput("auth.logout")
+    }
+
+    /// `auth.forgotPassword` — POST mutation.  Always returns success
+    /// (to prevent email enumeration).
+    func forgotPassword(email: String) async throws -> GenericMessageResponse {
+        struct Input: Encodable { let email: String }
+        return try await api.mutation("auth.forgotPassword", input: Input(email: email))
+    }
+
+    /// `auth.resetPassword` — POST mutation.
+    func resetPassword(token: String, newPassword: String) async throws -> GenericMessageResponse {
+        struct Input: Encodable {
+            let token: String
+            let newPassword: String
+        }
+        return try await api.mutation(
+            "auth.resetPassword",
+            input: Input(token: token, newPassword: newPassword)
+        )
+    }
+}
+
+// MARK: - availabilityRouter
+//
+// Backed by `frontend/server/routers/availability.ts`. The driver
+// availability surface (MeAvailabilityView · home-time block planner ·
+// duty schedule) reads weeklyGrid + utilization, writes blocks via
+// blockTime, and exports the week to iCalendar via `exportICS`.
+// Without this namespace the "Export calendar (.ics)" CTA was a
+// dead notification post — user reported "ICS calendar export
+// doesn't work" (2026-04-25).
+
+struct AvailabilityAPI {
+    unowned let api: EusoTripAPI
+
+    /// Backend mints a 15-minute signed token and returns the URL that
+    /// serves the rendered ICS (`/api/exports/availability/{token}.ics`).
+    /// iOS receives the URL + opens it via `UIApplication.shared.open`
+    /// so the system Calendar app picks up the .ics import handler.
+    struct ExportTokenResponse: Decodable {
+        let url: String
+        let expiresAt: String
+    }
+
+    struct ExportInput: Encodable {
+        let weekStartISO: String?
+    }
+
+    /// Mints a signed export URL for the given week (defaults to the
+    /// current ISO week when `weekStartISO` is nil).
+    func exportICS(weekStartISO: String? = nil) async throws -> ExportTokenResponse {
+        try await api.mutation(
+            "availability.exportICS",
+            input: ExportInput(weekStartISO: weekStartISO)
+        )
+    }
+}
+
+// MARK: - registrationRouter
+
+struct RegistrationAPI {
+    unowned let api: EusoTripAPI
+
+    // Shared registration primitive.  Each role uses different zod inputs
+    // on the backend; we pass a dictionary so each caller controls its own shape.
+    private func register(procedure: String, input: [String: AnyEncodable]) async throws -> RegistrationResponse {
+        try await api.mutation(procedure, input: input)
+    }
+
+    // MARK: Driver
+
+    struct DriverRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String?
+        let cdlNumber: String?
+        let cdlState: String?
+        let cdlClass: String?       // A / B / C
+        let dateOfBirth: String?    // YYYY-MM-DD
+        let companyCode: String?    // joins existing carrier via invite
+    }
+
+    func registerDriver(_ input: DriverRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerDriver", input: input)
+    }
+
+    // MARK: Shipper
+
+    struct ShipperRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String?
+        let companyName: String
+        let address: String?
+        let city: String?
+        let state: String?
+        let zip: String?
+    }
+
+    func registerShipper(_ input: ShipperRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerShipper", input: input)
+    }
+
+    // MARK: Catalyst (Carrier)
+
+    struct CatalystRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String?
+        let companyName: String
+        let mcNumber: String?
+        let dotNumber: String?
+        let ein: String?
+    }
+
+    func registerCatalyst(_ input: CatalystRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerCatalyst", input: input)
+    }
+
+    // MARK: Broker
+
+    struct BrokerRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String?
+        let companyName: String
+        let brokerMcNumber: String?
+        let bondProvider: String?
+        let bondAmount: Double?
+    }
+
+    func registerBroker(_ input: BrokerRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerBroker", input: input)
+    }
+
+    // MARK: Dispatch
+
+    struct DispatchRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String?
+        let companyCode: String?   // required to join a carrier
+    }
+
+    func registerDispatch(_ input: DispatchRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerDispatch", input: input)
+    }
+
+    // MARK: Escort
+
+    struct EscortRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String?
+        let escortCertState: String?
+        let certificationExpires: String? // YYYY-MM-DD
+    }
+
+    func registerEscort(_ input: EscortRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerEscort", input: input)
+    }
+
+    // MARK: Terminal Manager (added for iOS ↔ web role parity)
+    //
+    // Backend proc MCP-verified at
+    // `frontend/server/routers/registration.ts:registerTerminalManager`.
+    // Terminal managers supervise a physical facility (warehouse, dock,
+    // port terminal). Joined to a Catalyst/Shipper company via
+    // `companyCode` invite — parity with the web's company-bound flow.
+
+    struct TerminalManagerRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String?
+        let companyName: String?       // optional — used when provisioning a new terminal
+        let facilityName: String?
+        let epaFacilityId: String?     // facilities handling hazmat report under 40 CFR
+        let companyCode: String?       // invite token from parent Catalyst / Shipper
+    }
+
+    func registerTerminalManager(_ input: TerminalManagerRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerTerminalManager", input: input)
+    }
+
+    // MARK: Compliance Officer
+    //
+    // Company-bound role per FMCSA §390 — must be associated with a
+    // DOT-registered carrier. Backend proc: `registration.registerComplianceOfficer`.
+
+    struct ComplianceOfficerRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String?
+        let certificationNumber: String?   // CDS / TSDCA / state cert
+        let trainingProvider: String?
+        let trainingCompletionDate: String?  // YYYY-MM-DD
+        let companyCode: String?           // required — ties officer to carrier
+    }
+
+    func registerComplianceOfficer(_ input: ComplianceOfficerRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerComplianceOfficer", input: input)
+    }
+
+    // MARK: Safety Manager
+    //
+    // Oversees FMCSA CSA metrics + driver qualification files. Backend
+    // proc: `registration.registerSafetyManager`. Carrier-bound like
+    // Compliance Officer.
+
+    struct SafetyManagerRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String?
+        let csaSpecialistCert: String?     // optional NSC / CSA cert
+        let yearsOfExperience: Int?
+        let companyCode: String?           // required — ties manager to carrier
+    }
+
+    func registerSafetyManager(_ input: SafetyManagerRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerSafetyManager", input: input)
+    }
+
+    // MARK: Admin (invite-only)
+    //
+    // Platform administrator. The backend rejects the call unless the
+    // `inviteCode` matches a SUPER_ADMIN-issued token, so this form is
+    // safe to ship on consumer App Store builds — an attacker with the
+    // form can't self-provision without a valid code. Backend proc:
+    // `registration.registerAdmin`.
+
+    struct AdminRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String?
+        let inviteCode: String             // required — SUPER_ADMIN-issued token
+    }
+
+    func registerAdmin(_ input: AdminRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerAdmin", input: input)
+    }
+
+    // MARK: Rail (6 roles)
+    //
+    // Backend procs added 2026-04-24 via `createSimpleRoleUser` — all
+    // share the firstName/lastName/email/phone/password identity
+    // spine + role-specific regulatory fields the STB / FRA / IMC /
+    // USCG asks for. The struct shapes below match each Zod schema
+    // exactly so the server never sees surprise payloads.
+
+    struct RailShipperRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String
+        let companyName: String
+        let dba: String?
+        let ein: String?
+        let stbRegistration: String?
+        let streetAddress: String?
+        let city: String?
+        let state: String?
+        let zipCode: String?
+    }
+
+    func registerRailShipper(_ input: RailShipperRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerRailShipper", input: input)
+    }
+
+    struct RailCatalystRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String
+        let companyName: String
+        let dba: String?
+        let ein: String?
+        let stbDocket: String?
+        let fraCertification: String?
+        let locomotiveCount: Int?
+        let railcarCount: Int?
+        let operatingStates: [String]?
+    }
+
+    func registerRailCatalyst(_ input: RailCatalystRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerRailCatalyst", input: input)
+    }
+
+    struct RailDispatcherRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String
+        let employerRailroad: String
+        let dispatcherCertification: String?
+        let yearsExperience: String?
+        let companyCode: String?
+    }
+
+    func registerRailDispatcher(_ input: RailDispatcherRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerRailDispatcher", input: input)
+    }
+
+    struct RailEngineerRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String
+        let dateOfBirth: String?
+        let fraCertificationNumber: String       // required — §49 CFR 240
+        let fraCertificationExpires: String?
+        let employerRailroad: String?
+        let yearsExperience: String?
+        let medicalCardNumber: String?
+        let medicalCardExpires: String?
+    }
+
+    func registerRailEngineer(_ input: RailEngineerRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerRailEngineer", input: input)
+    }
+
+    struct RailConductorRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String
+        let dateOfBirth: String?
+        let fraCertificationNumber: String       // required — §49 CFR 242
+        let fraCertificationExpires: String?
+        let employerRailroad: String?
+        let yearsExperience: String?
+        let medicalCardNumber: String?
+        let medicalCardExpires: String?
+    }
+
+    func registerRailConductor(_ input: RailConductorRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerRailConductor", input: input)
+    }
+
+    struct RailBrokerRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String
+        let companyName: String
+        let dba: String?
+        let imcRegistration: String?
+        let stbRegistration: String?
+        let ein: String?
+        let bondProvider: String?
+        let bondAmount: Double?
+    }
+
+    func registerRailBroker(_ input: RailBrokerRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerRailBroker", input: input)
+    }
+
+    // MARK: Vessel (6 roles)
+
+    struct VesselShipperRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String
+        let companyName: String
+        let dba: String?
+        let ein: String?
+        let fmcRegistration: String?
+        let cargoTypes: [String]?
+    }
+
+    func registerVesselShipper(_ input: VesselShipperRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerVesselShipper", input: input)
+    }
+
+    struct VesselOperatorRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String
+        let companyName: String
+        let fmcLicenseNumber: String?
+        let uscgDocumentNumber: String?
+        let vesselCount: Int?
+        let operatingPorts: [String]?
+    }
+
+    func registerVesselOperator(_ input: VesselOperatorRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerVesselOperator", input: input)
+    }
+
+    struct ShipCaptainRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String
+        let dateOfBirth: String?
+        let mmcLicenseNumber: String            // required — Merchant Mariner Credential
+        let mmcExpires: String?
+        let stcwCertification: String?
+        let stcwExpires: String?
+        let vesselClassEndorsements: [String]?
+        let yearsAtSea: String?
+        let medicalCertificateNumber: String?
+        let medicalCertificateExpires: String?
+    }
+
+    func registerShipCaptain(_ input: ShipCaptainRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerShipCaptain", input: input)
+    }
+
+    struct VesselBrokerRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String
+        let companyName: String
+        let dba: String?
+        let fmcLicenseNumber: String?
+        let ein: String?
+        let bondProvider: String?
+        let bondAmount: Double?
+    }
+
+    func registerVesselBroker(_ input: VesselBrokerRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerVesselBroker", input: input)
+    }
+
+    struct PortMasterRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String
+        let portName: String
+        let portAuthority: String?
+        let mtsaFacilityPlan: String?
+        let uscgFacilityId: String?
+        let jobTitle: String?
+        let yearsExperience: String?
+    }
+
+    func registerPortMaster(_ input: PortMasterRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerPortMaster", input: input)
+    }
+
+    struct CustomsBrokerRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String
+        let companyName: String
+        let dba: String?
+        let cbpLicenseNumber: String            // required — CBP broker license
+        let cbpLicenseExpires: String?
+        let bondNumber: String?
+        let bondAmount: Double?
+        let bondProvider: String?
+        let ein: String?
+        let portsOfEntry: [String]?
+    }
+
+    func registerCustomsBroker(_ input: CustomsBrokerRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerCustomsBroker", input: input)
+    }
+
+    // MARK: Financial / platform (Factoring, Super-Admin)
+
+    struct FactoringRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String
+        let companyName: String
+        let dba: String?
+        let ein: String?
+        let stateLenderLicense: String?
+        let yearsInBusiness: String?
+        let operatingStates: [String]?
+        let serviceCommodities: [String]?
+        let advanceRate: Double?        // percentage
+        let factoringFeeRate: Double?   // percentage
+    }
+
+    func registerFactoring(_ input: FactoringRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerFactoring", input: input)
+    }
+
+    struct SuperAdminRegistration: Encodable {
+        let email: String
+        let password: String
+        let firstName: String
+        let lastName: String
+        let phone: String
+        let inviteCode: String          // required — SUPER_ADMIN-issued token
+        let reason: String?
+    }
+
+    func registerSuperAdmin(_ input: SuperAdminRegistration) async throws -> RegistrationResponse {
+        try await api.mutation("registration.registerSuperAdmin", input: input)
+    }
+
+    // MARK: Verify / Resend
+
+    func verifyEmail(token: String) async throws -> GenericMessageResponse {
+        struct Input: Encodable { let token: String }
+        return try await api.mutation("registration.verifyEmail", input: Input(token: token))
+    }
+
+    func resendVerification(email: String) async throws -> GenericMessageResponse {
+        struct Input: Encodable { let email: String }
+        return try await api.mutation("registration.resendVerification", input: Input(email: email))
+    }
+}
+
+// MARK: - inspectionsRouter
+
+struct InspectionsAPI {
+    unowned let api: EusoTripAPI
+
+    /// `inspections.getTemplate` — returns the FMCSA walk-around template
+    /// (categories × required items) for pre-trip / post-trip / DVIR.
+    func getTemplate(type: InspectionType) async throws -> InspectionTemplate {
+        struct Input: Encodable { let type: String }
+        return try await api.query(
+            "inspections.getTemplate",
+            input: Input(type: type.rawValue)
+        )
+    }
+
+    /// `inspections.submit` — writes the full DVIR payload to `inspections`
+    /// table, fires `safety_inspection_passed` gamification, auto-indexes for AI.
+    func submit(_ payload: InspectionSubmission) async throws -> InspectionSubmitResponse {
+        try await api.mutation("inspections.submit", input: payload)
+    }
+
+    /// `inspections.getHistory` — last N inspections for a given vehicle.
+    func getHistory(vehicleId: String, limit: Int = 10) async throws -> [InspectionHistoryEntry] {
+        struct Input: Encodable { let vehicleId: String; let limit: Int }
+        return try await api.query(
+            "inspections.getHistory",
+            input: Input(vehicleId: vehicleId, limit: limit)
+        )
+    }
+
+    /// `inspections.getPrevious` — current driver's recent inspections.
+    func getPrevious(vehicleId: String? = nil) async throws -> [InspectionPreviousEntry] {
+        struct Input: Encodable { let vehicleId: String? }
+        return try await api.query(
+            "inspections.getPrevious",
+            input: Input(vehicleId: vehicleId)
+        )
+    }
+
+    /// `inspections.getOpenDefects` — inspections with defects > 0 across the company.
+    func getOpenDefects(vehicleId: String? = nil) async throws -> [InspectionDefectEntry] {
+        struct Input: Encodable { let vehicleId: String? }
+        return try await api.query(
+            "inspections.getOpenDefects",
+            input: Input(vehicleId: vehicleId)
+        )
+    }
+
+    // MARK: - DVIR (49 CFR 396.11)
+
+    /// `inspections.createDVIR` — writes a DVIR to `dvir_reports` + defect items.
+    func createDVIR(
+        vehicleId: Int,
+        reportType: String,
+        odometerMiles: Int? = nil,
+        overallCondition: String,
+        defects: [DVIRDefectInput] = []
+    ) async throws -> DVIRCreateResponse {
+        struct Input: Encodable {
+            let vehicleId: Int
+            let reportType: String
+            let odometerMiles: Int?
+            let overallCondition: String
+            let defects: [DVIRDefectInput]
+        }
+        return try await api.mutation(
+            "inspections.createDVIR",
+            input: Input(
+                vehicleId: vehicleId,
+                reportType: reportType,
+                odometerMiles: odometerMiles,
+                overallCondition: overallCondition,
+                defects: defects
+            )
+        )
+    }
+
+    /// `inspections.getDVIRHistory` — current driver's DVIR history (optionally per vehicle).
+    func getDVIRHistory(vehicleId: Int? = nil, limit: Int = 20) async throws -> [DVIRHistoryEntry] {
+        struct Input: Encodable {
+            let vehicleId: Int?
+            let limit: Int
+        }
+        return try await api.query(
+            "inspections.getDVIRHistory",
+            input: Input(vehicleId: vehicleId, limit: limit)
+        )
+    }
+
+    /// `inspections.getDVIRCategories` — canonical list from 49 CFR 396.11(a)(1).
+    func getDVIRCategories() async throws -> [DVIRCategory] {
+        try await api.queryNoInput("inspections.getDVIRCategories")
+    }
+}
+
+/// Matches the inline zod shape expected by `inspections.createDVIR`.
+struct DVIRDefectInput: Encodable {
+    let category: String
+    let description: String
+    /// `"minor" | "major" | "out_of_service"` — defaults to `"minor"` server-side.
+    let severity: String
+    let photoUrl: String?
+}
+
+// MARK: - esangRouter
+//
+// Mirrors the web platform's `esangRouter` — POST /api/trpc/esang.chat with
+// input { message, context?: { currentPage?, loadId? } } and response
+// matching the backend `ESANGResponse` type (message + optional
+// suggestions/actions). The backend is powered by Google Gemini via
+// esangAI.chat(); this Swift client is the same entry point the web app
+// uses, so driver replies match what the web ESang would return.
+
+struct ESangAPI {
+    unowned let api: EusoTripAPI
+
+    /// Shape of `esang.chat` context field — both keys are optional on the
+    /// server, so encoding nils here is safe.
+    struct ChatContext: Encodable {
+        /// Where the driver is when they asked — "home", "eusoboards",
+        /// "active_trip", "me", etc. The backend uses this to colour
+        /// the system prompt so replies stay on-topic.
+        let currentPage: String?
+        /// Active load id when the question pertains to a specific
+        /// dispatch. Passed through so ESang can pull live load + HOS
+        /// context server-side.
+        let loadId: String?
+    }
+
+    /// Mirror of the backend `ESANGResponse` payload. We only decode the
+    /// fields the iOS client actually reads today; unknown keys (actions,
+    /// factors, compliance metadata) are ignored by JSONDecoder.
+    struct ChatResponse: Decodable {
+        /// The assistant reply text — this is what we render into the
+        /// transcript bubble.
+        let message: String
+        /// Optional quick-reply chips the web uses below each reply.
+        let suggestions: [String]?
+    }
+
+    /// `esang.chat` — POST mutation. Sends the driver's message to the
+    /// production ESang (Gemini-backed) and returns the assistant reply.
+    /// `currentPage` / `loadId` are optional context hints; pass them when
+    /// available so replies factor in the caller's surface.
+    func chat(
+        message: String,
+        currentPage: String? = nil,
+        loadId: String? = nil
+    ) async throws -> ChatResponse {
+        struct Input: Encodable {
+            let message: String
+            let context: ChatContext?
+        }
+        let ctx: ChatContext? = (currentPage == nil && loadId == nil)
+            ? nil
+            : ChatContext(currentPage: currentPage, loadId: loadId)
+        return try await api.mutation(
+            "esang.chat",
+            input: Input(message: message, context: ctx)
+        )
+    }
+
+    /// `esang.clearHistory` — POST mutation. Drops the server-side
+    /// Gemini conversation history for the signed-in user so the next
+    /// message starts a fresh thread.
+    func clearHistory() async throws {
+        struct EmptyResp: Decodable { let success: Bool? }
+        _ = try await api.mutationNoInput("esang.clearHistory") as EmptyResp
+    }
+}
+
+// MARK: - walletRouter (Plaid + Stripe)
+
+/// Wallet-side calls for linking external accounts through Plaid and
+/// payment methods through Stripe. The iOS client only ever sees:
+///   - Plaid **link tokens** issued by the backend (short-lived, account-
+///     scoped) — the Plaid client_id/secret live server-side only.
+///   - Stripe **publishable key** (safe to ship in iOS) + **client secret**
+///     for a SetupIntent issued by the backend — the Stripe secret key
+///     lives server-side only.
+///
+/// Mirrors the web platform's `walletRouter` — every mutation here exists
+/// on the backend already (sandbox + prod); if a route 404s the backend is
+/// simply on an older deploy.
+struct WalletAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: Plaid
+
+    struct PlaidLinkToken: Decodable {
+        let linkToken: String
+        /// Plaid environment the token was minted against: "sandbox",
+        /// "development", or "production". iOS uses this to pick the
+        /// matching Plaid Link SDK / hosted URL.
+        let environment: String
+        /// Expiration (ISO-8601) — iOS should re-fetch if this has passed.
+        let expiration: String?
+    }
+
+    struct PlaidLinkedAccount: Decodable {
+        let accountId: String
+        let institution: String
+        let accountMask: String
+        let accountName: String
+        let accountType: String   // "depository" / "credit" / etc.
+        let accountSubtype: String?
+    }
+
+    /// `wallet.createPlaidLinkToken` — POST mutation. Backend creates a
+    /// short-lived link token via Plaid's `/link/token/create` using the
+    /// server-side PLAID_CLIENT_ID + PLAID_SECRET. iOS passes the token
+    /// into LinkKit (native) or the hosted Link URL (Safari fallback).
+    func createPlaidLinkToken() async throws -> PlaidLinkToken {
+        return try await api.mutationNoInput("wallet.createPlaidLinkToken")
+    }
+
+    /// `wallet.exchangePlaidPublicToken` — POST mutation. iOS hands the
+    /// `public_token` back to the backend, which calls Plaid's
+    /// `/item/public_token/exchange` to get the access_token (stored
+    /// server-side only) and persists the linked account for the driver.
+    func exchangePlaidPublicToken(publicToken: String,
+                                  institution: String?) async throws -> PlaidLinkedAccount {
+        struct Input: Encodable {
+            let publicToken: String
+            let institution: String?
+        }
+        return try await api.mutation(
+            "wallet.exchangePlaidPublicToken",
+            input: Input(publicToken: publicToken, institution: institution)
+        )
+    }
+
+    // MARK: Stripe
+
+    struct StripeSetupIntent: Decodable {
+        let clientSecret: String
+        /// Stripe publishable key for the **current environment** (test vs
+        /// live). Safe to ship to iOS. Backend returns it per-call so the
+        /// app stays in sync with whatever mode the backend is running in.
+        let publishableKey: String
+    }
+
+    struct StripeAttachedPaymentMethod: Decodable {
+        let paymentMethodId: String
+        let brand: String         // "visa" / "mastercard" / etc.
+        let last4: String
+        let expMonth: Int
+        let expYear: Int
+    }
+
+    /// `wallet.createStripeSetupIntent` — POST mutation. Backend creates a
+    /// SetupIntent against the driver's Stripe Customer using
+    /// STRIPE_SECRET_KEY and returns only the `client_secret` plus the
+    /// environment-matched publishable key for iOS to use with
+    /// StripePaymentSheet (native) or the hosted Checkout session (Safari
+    /// fallback).
+    func createStripeSetupIntent() async throws -> StripeSetupIntent {
+        return try await api.mutationNoInput("wallet.createStripeSetupIntent")
+    }
+
+    /// `wallet.attachStripePaymentMethod` — POST mutation. After the user
+    /// completes the Stripe card-entry flow, iOS reports the resulting
+    /// PaymentMethod id back to the backend, which attaches it to the
+    /// Stripe Customer and persists the driver-facing summary row.
+    func attachStripePaymentMethod(paymentMethodId: String) async throws -> StripeAttachedPaymentMethod {
+        struct Input: Encodable { let paymentMethodId: String }
+        return try await api.mutation(
+            "wallet.attachStripePaymentMethod",
+            input: Input(paymentMethodId: paymentMethodId)
+        )
+    }
+
+    // MARK: Balance
+
+    /// `wallet.getBalance` — query, no input. Returns the driver's live
+    /// Eusowallet balance breakdown. Home-tab "walletAvailable" surface
+    /// reads the `available` field; the other fields are used by the Me
+    /// tab's detailed Eusowallet sheet.
+    struct WalletBalance: Decodable {
+        let available: Double
+        let pending: Double
+        let reserved: Double
+        let escrow: Double
+        let total: Double
+        let currency: String
+        let lastUpdated: String?
+        let paymentMethods: Int?
+        let totalReceived: Double?
+        let totalSpent: Double?
+        let monthVolume: Double?
+    }
+
+    func getBalance() async throws -> WalletBalance {
+        try await api.queryNoInput("wallet.getBalance")
+    }
+
+    /// `wallet.getInstantPayoutEligibility` — query, no input.
+    struct InstantPayoutEligibility: Decodable {
+        let eligible: Bool
+        let maxAmount: Double
+        let feePercentage: Double
+        let minFee: Double
+        let availableBalance: Double
+        let reason: String?
+    }
+
+    func getInstantPayoutEligibility() async throws -> InstantPayoutEligibility {
+        try await api.queryNoInput("wallet.getInstantPayoutEligibility")
+    }
+
+    // MARK: Payout Schedule (078)
+    //
+    // MCP-verified at `frontend/server/routers/wallet.ts:689` and
+    // `:701`. Drives brick 078 Me · Payout Schedule — the cadence
+    // picker (daily / weekly / biweekly / monthly), day-of-week
+    // selector for weekly/biweekly, per-payout minimum threshold,
+    // and the auto-payout toggle.
+
+    struct PayoutSchedule: Decodable, Equatable {
+        /// "daily" | "weekly" | "biweekly" | "monthly"
+        let frequency: String
+        /// "monday".."friday" — populated for weekly / biweekly only.
+        /// Server returns empty string for non-weekly cadences.
+        let dayOfWeek: String
+        let minimumAmount: Double
+        /// ISO-8601 date of the next scheduled payout. May be empty
+        /// until the scheduler has computed the first run.
+        let nextScheduledPayout: String
+        let autoPayoutEnabled: Bool
+    }
+
+    func getPayoutSchedule() async throws -> PayoutSchedule {
+        try await api.queryNoInput("wallet.getPayoutSchedule")
+    }
+
+    struct UpdatePayoutScheduleInput: Encodable {
+        let frequency: String?
+        let dayOfWeek: String?
+        let minimumAmount: Double?
+        let autoPayoutEnabled: Bool?
+    }
+
+    struct UpdatePayoutScheduleResult: Decodable {
+        let success: Bool
+        let updatedAt: String?
+    }
+
+    func updatePayoutSchedule(
+        frequency: String? = nil,
+        dayOfWeek: String? = nil,
+        minimumAmount: Double? = nil,
+        autoPayoutEnabled: Bool? = nil
+    ) async throws -> UpdatePayoutScheduleResult {
+        try await api.mutation(
+            "wallet.updatePayoutSchedule",
+            input: UpdatePayoutScheduleInput(
+                frequency: frequency,
+                dayOfWeek: dayOfWeek,
+                minimumAmount: minimumAmount,
+                autoPayoutEnabled: autoPayoutEnabled
+            )
+        )
+    }
+
+    // MARK: Earnings Breakdown (079)
+    //
+    // MCP-verified at `frontend/server/routers/wallet.ts:731`. Drives
+    // brick 079 Me · Earnings Breakdown — the revenue-type split
+    // (linehaul / fuel surcharge / accessorials / bonuses / other) +
+    // top-earning loads list over a rolling 7 / 30 / 90 day window.
+
+    /// Server's `byType` dollar split. Every field is a positive sum
+    /// in USD over the selected window — not a percentage. The view
+    /// derives percentages at render time against the total so a
+    /// category with $0 still renders a zero-width bar instead of
+    /// dividing by an all-zero denominator.
+    struct EarningsTypeBreakdown: Decodable, Equatable {
+        let linehaul: Double
+        let fuelSurcharge: Double
+        let accessorials: Double
+        let bonuses: Double
+        let other: Double
+
+        var total: Double {
+            linehaul + fuelSurcharge + accessorials + bonuses + other
+        }
+    }
+
+    /// Row shape in `topLoads[]`. Server caps at 3 rows today; the
+    /// iOS view surfaces whatever the server sends so widening the
+    /// server limit later doesn't require a mobile release.
+    struct EarningsTopLoad: Decodable, Identifiable, Equatable {
+        let loadNumber: String
+        let amount: Double
+        let date: String          // YYYY-MM-DD
+        var id: String { "\(date)::\(loadNumber)" }
+    }
+
+    /// Optional weekly rollup (server returns []; populated when the
+    /// analytics engine ships — iOS decodes whatever arrives and the
+    /// view gates rendering on `byWeek.isEmpty == false`).
+    struct EarningsWeekBucket: Decodable, Identifiable, Equatable {
+        let weekStart: String
+        let weekEnd: String
+        let total: Double
+        var id: String { weekStart }
+    }
+
+    struct EarningsBreakdown: Decodable, Equatable {
+        let period: String      // "week" | "month" | "quarter"
+        let byType: EarningsTypeBreakdown
+        let topLoads: [EarningsTopLoad]
+        /// Decoded with a permissive fallback — the server ships `[]`
+        /// today; when the analytics engine adds weekly rollups iOS
+        /// will pick them up without a version bump.
+        let byWeek: [EarningsWeekBucket]
+
+        enum CodingKeys: String, CodingKey {
+            case period, byType, topLoads, byWeek
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.period    = try c.decode(String.self,                  forKey: .period)
+            self.byType    = try c.decode(EarningsTypeBreakdown.self,    forKey: .byType)
+            self.topLoads  = try c.decode([EarningsTopLoad].self,        forKey: .topLoads)
+            // Server currently returns heterogeneous anys for byWeek —
+            // tolerate missing / shape-drift so we never drop the
+            // whole breakdown on a schema hiccup.
+            self.byWeek = (try? c.decode([EarningsWeekBucket].self, forKey: .byWeek)) ?? []
+        }
+    }
+
+    struct EarningsBreakdownInput: Encodable {
+        let period: String    // "week" | "month" | "quarter"
+    }
+
+    func getEarningsBreakdown(period: String = "month") async throws -> EarningsBreakdown {
+        try await api.query(
+            "wallet.getEarningsBreakdown",
+            input: EarningsBreakdownInput(period: period)
+        )
+    }
+
+    // MARK: Tax Documents (080)
+    //
+    // MCP-verified at `frontend/server/routers/wallet.ts:758`. Drives
+    // brick 080 Me · Tax Documents. Year is optional — omitting it
+    // asks the server for the current + prior year (the typical
+    // driver view). Passing a specific year is used by the per-year
+    // filter pill in the UI.
+
+    struct TaxDocument: Decodable, Identifiable, Equatable {
+        let id: String
+        /// "1099-NEC" | "1099-K" | "W-9" | "state-1099" | etc.
+        /// The server only ships "1099-NEC" today; iOS treats `type`
+        /// as a freeform string so state / schedule-C additions
+        /// don't need a mobile release.
+        let type: String
+        let year: Int
+        /// "available" | "pending" | "processing"
+        let status: String
+        /// Relative path (`/api/tax/...pdf`) or absolute URL. The
+        /// view resolves against `EusoTripAPI.baseURL` when relative.
+        let downloadUrl: String
+    }
+
+    struct TaxDocumentsInput: Encodable {
+        let year: Int?
+    }
+
+    func getTaxDocuments(year: Int? = nil) async throws -> [TaxDocument] {
+        try await api.query(
+            "wallet.getTaxDocuments",
+            input: TaxDocumentsInput(year: year)
+        )
+    }
+}
+
+// MARK: - loadLifecycleRouter (deprecated stub removed)
+//
+// The original 4-method `LoadLifecycleAPI` definition that lived here
+// (executeTransition with `targetLocation` + `ComplianceChecks` struct
+// + `ExecuteTransitionResponse` envelope) was a duplicate of the
+// canonical 96th-firing struct that lives further down in this file
+// (search for "MARK: - loadLifecycleRouter (trip-execution state
+// machine)"). Keeping both definitions made the file fail to compile
+// with "invalid redeclaration of 'LoadLifecycleAPI'". The canonical
+// version replaces this one — no production caller used the older
+// signatures (verified via grep across Views/ + ViewModels/ + Services/
+// for `targetLocation:`, `LoadLifecycleAPI.LatLng`,
+// `LoadLifecycleAPI.ComplianceChecks`, `ExecuteTransitionResponse` —
+// only this struct itself referenced them).
+
+// MARK: - bayOpsRouter
+//
+// Four wizards — backingAssist, discharge, connectHose, disconnect — each
+// exposing a canonical verb set: start / advanceStep / recordEvidence /
+// complete / abort / getSession. Server parity: server/routers/bayOps/*.ts.
+//
+// Note: `loadId` is `z.number().int().positive()` here (unlike the string
+// loadId on loadLifecycle.executeTransition). Pass the numeric Load.id.
+//
+
+struct BayOpsAPI {
+    unowned let api: EusoTripAPI
+
+    lazy var backingAssist: Wizard = Wizard(api: api, kind: .backingAssist)
+    lazy var discharge:     Wizard = Wizard(api: api, kind: .discharge)
+    lazy var connectHose:   Wizard = Wizard(api: api, kind: .connectHose)
+    lazy var disconnect:    Wizard = Wizard(api: api, kind: .disconnect)
+
+    /// Session snapshot returned by every mutation except recordEvidence.
+    struct WizardSession: Decodable {
+        let loadId: Int
+        let kind: String
+        let step: String
+        let status: String
+        let startedAt: String?
+        let startedBy: Int?
+        let lastEventId: Int?
+    }
+
+    struct WizardSessionEnvelope: Decodable {
+        let session: WizardSession
+    }
+
+    struct EvidenceAck: Decodable {
+        let eventId: Int
+        let step: String
+    }
+
+    struct GetSessionResponse: Decodable {
+        struct Event: Decodable {
+            let id: Int?
+            let step: String?
+            let kind: String?
+            let createdAt: String?
+        }
+        let session: WizardSession?
+        let history: [Event]?
+    }
+
+    /// One wizard's procedure bundle. The `kind` string is baked into the
+    /// tRPC path (e.g. "bayOps.backingAssist.start").
+    struct Wizard {
+        unowned let api: EusoTripAPI
+        let kind: WizardKind
+
+        private var path: String { "bayOps.\(kind.rawValue)" }
+
+        @discardableResult
+        func start(loadId: Int) async throws -> WizardSessionEnvelope {
+            struct Input: Encodable { let loadId: Int }
+            return try await api.mutation("\(path).start", input: Input(loadId: loadId))
+        }
+
+        @discardableResult
+        func advanceStep(loadId: Int, toStep: String) async throws -> WizardSessionEnvelope {
+            struct Input: Encodable {
+                let loadId: Int
+                let toStep: String
+            }
+            return try await api.mutation(
+                "\(path).advanceStep",
+                input: Input(loadId: loadId, toStep: toStep)
+            )
+        }
+
+        @discardableResult
+        func recordEvidence(
+            loadId: Int,
+            step: String,
+            s3Key: String,
+            kind evidenceKind: EvidenceKind,
+            note: String? = nil
+        ) async throws -> EvidenceAck {
+            struct Input: Encodable {
+                let loadId: Int
+                let step: String
+                let s3Key: String
+                let kind: String
+                let note: String?
+            }
+            return try await api.mutation(
+                "\(path).recordEvidence",
+                input: Input(
+                    loadId: loadId,
+                    step: step,
+                    s3Key: s3Key,
+                    kind: evidenceKind.rawValue,
+                    note: note
+                )
+            )
+        }
+
+        @discardableResult
+        func complete(loadId: Int) async throws -> WizardSessionEnvelope {
+            struct Input: Encodable { let loadId: Int }
+            return try await api.mutation("\(path).complete", input: Input(loadId: loadId))
+        }
+
+        @discardableResult
+        func abort(loadId: Int, reason: String) async throws -> WizardSessionEnvelope {
+            struct Input: Encodable {
+                let loadId: Int
+                let reason: String
+            }
+            return try await api.mutation(
+                "\(path).abort",
+                input: Input(loadId: loadId, reason: reason)
+            )
+        }
+
+        func getSession(loadId: Int) async throws -> GetSessionResponse {
+            struct Input: Encodable { let loadId: Int }
+            return try await api.query("\(path).getSession", input: Input(loadId: loadId))
+        }
+    }
+}
+
+// MARK: - notificationsRouter
+//
+// Server parity: `server/routers/notifications.ts` (updatePreferences) and
+// `server/routers/push.ts` (getSettings). Device-token registration
+// currently lives in the push service-layer (not exposed as tRPC); on
+// launch the APNs token is mirrored through the `notifications`
+// preferences mutation so the backend at least knows push is enabled.
+//
+
+struct NotificationsAPI {
+    unowned let api: EusoTripAPI
+
+    struct PreferencesUpdateAck: Decodable {
+        let success: Bool
+        let channel: String
+        let category: String
+        let enabled: Bool
+    }
+
+    func updatePreferences(
+        channel: String,     // "email" | "push" | "sms"
+        category: String,    // "loads" | "compliance" | "safety" | "billing" | "system" | "drivers"
+        enabled: Bool
+    ) async throws -> PreferencesUpdateAck {
+        struct Input: Encodable {
+            let channel: String
+            let category: String
+            let enabled: Bool
+        }
+        return try await api.mutation(
+            "notifications.updatePreferences",
+            input: Input(channel: channel, category: category, enabled: enabled)
+        )
+    }
+
+    struct PushSettings: Decodable {
+        struct Categories: Decodable {
+            let loads: Bool?
+            let alerts: Bool?
+            let messages: Bool?
+            let system: Bool?
+        }
+        let enabled: Bool
+        let deviceToken: String?
+        let categories: Categories?
+    }
+
+    func getPushSettings() async throws -> PushSettings {
+        try await api.queryNoInput("push.getSettings")
+    }
+}
+
+// MARK: - driversRouter
+//
+// `drivers.acceptLoad` / `drivers.declineLoad` / `drivers.getPendingLoads`
+// from `server/routers/drivers.ts`. `loadId` here is `z.string()` so
+// numeric ids must be stringified. The mutations don't return the full
+// load record — just a `{ success, loadId }` envelope.
+//
+
+struct DriversAPI {
+    unowned let api: EusoTripAPI
+
+    struct AcceptDeclineAck: Decodable {
+        let success: Bool
+        let loadId: String
+    }
+
+    /// `drivers.acceptLoad` — driver takes ownership of the offered load.
+    /// Server sets `driverId = currentUser.id`, `status = 'assigned'`.
+    @discardableResult
+    func acceptLoad(loadId: String) async throws -> AcceptDeclineAck {
+        struct Input: Encodable { let loadId: String }
+        return try await api.mutation("drivers.acceptLoad", input: Input(loadId: loadId))
+    }
+
+    /// `drivers.declineLoad` — driver refuses the offered load. Server
+    /// clears `driverId`, reverts `status = 'posted'`.
+    @discardableResult
+    func declineLoad(loadId: String, reason: String? = nil) async throws -> AcceptDeclineAck {
+        struct Input: Encodable {
+            let loadId: String
+            let reason: String?
+        }
+        return try await api.mutation(
+            "drivers.declineLoad",
+            input: Input(loadId: loadId, reason: reason)
+        )
+    }
+
+    struct PendingLoad: Decodable {
+        let id: String
+        let loadNumber: String?
+        let status: String?
+        let origin: String?
+        let destination: String?
+        let rate: Double?
+        let pickupDate: String?
+    }
+
+    func getPendingLoads() async throws -> [PendingLoad] {
+        try await api.queryNoInput("drivers.getPendingLoads")
+    }
+
+    // MARK: - Active tender (iOS 052 Ratecon Tender)
+
+    /// Tender endpoint (origin / destination) as projected by
+    /// `drivers.getActiveTender` on the server.
+    struct TenderEndpoint: Decodable {
+        let name: String
+        let detail: String?
+    }
+
+    /// Rate breakdown materialized server-side. Numbers are authoritative
+    /// — the client never recomputes them.
+    struct TenderRate: Decodable {
+        let totalToDriver: Double
+        let ratePerMile: Double
+        let linehaul: Double
+        let fuelSurcharge: Double
+        let accessorials: Double
+        let fuelSurchargeIndex: String?
+        let accessorialNote: String?
+        let platformFeePct: Double?
+    }
+
+    /// Broker projection. `rating` will populate once the carrier
+    /// scorecard surfaces it; `avatarInitial` is a single uppercase letter
+    /// used for the circular glyph in the broker card.
+    struct TenderBroker: Decodable {
+        let id: String
+        let name: String
+        let mc: String?
+        let rating: String?
+        let avatarInitial: String?
+    }
+
+    /// Active tender projection. Mirrors `drivers.getActiveTender` on the
+    /// server — `null` when the driver has no live tender (the UI renders
+    /// a neutral empty state per SKILL.md §13).
+    struct ActiveTender: Decodable {
+        let loadId: String
+        let loadNumber: String?
+        /// `"awaiting_accept" | "accepted_in_flight"`
+        let status: String
+        let originName: String
+        let originDetail: String?
+        let destinationName: String
+        let destinationDetail: String?
+        let miles: Double
+        let commodity: String?
+        let commodityCode: String?
+        let equipment: String?
+        let weight: String?
+        let rate: TenderRate
+        let broker: TenderBroker?
+        let expiresAt: String?
+        let bolNumber: String?
+        let bolIssuedAt: String?
+        let esangInsight: String?
+    }
+
+    /// `drivers.getActiveTender` — query, no input. Returns `nil` when
+    /// no tender is live for the current driver. The iOS ViewModel maps
+    /// `nil` to the empty state, a populated value to the rendered
+    /// tender card.
+    func getActiveTender() async throws -> ActiveTender? {
+        try await api.queryNoInput("drivers.getActiveTender")
+    }
+
+    /// Counter-offer ack returned by `drivers.counterOffer`.
+    struct CounterOfferAck: Decodable {
+        let success: Bool
+        let loadId: String
+        let bidId: String?
+        let amount: Double
+        let status: String
+    }
+
+    /// `drivers.counterOffer` — driver proposes a different rate on the
+    /// posted tender. Creates a row in `loadBids` with
+    /// bidderRole='driver' and status='countered'.
+    @discardableResult
+    func counterOffer(loadId: String, amount: Double, conditions: String? = nil) async throws -> CounterOfferAck {
+        struct Input: Encodable {
+            let loadId: String
+            let amount: Double
+            let conditions: String?
+        }
+        return try await api.mutation(
+            "drivers.counterOffer",
+            input: Input(loadId: loadId, amount: amount, conditions: conditions)
+        )
+    }
+
+    /// Rate-con PDF URL projection returned by `drivers.getRateConURL`.
+    struct RateConURL: Decodable {
+        let url: String?
+        let loadId: String
+        let generated: Bool
+    }
+
+    /// `drivers.getRateConURL` — URL the iOS client can hand to
+    /// SFSafariViewController or `UIApplication.shared.open(_:)` to render
+    /// the rate confirmation PDF. `url == nil` when the backend can't
+    /// resolve a document — UI surfaces a neutral "PDF unavailable"
+    /// message rather than a fake success.
+    func getRateConURL(loadId: String) async throws -> RateConURL {
+        struct Input: Encodable { let loadId: String }
+        return try await api.query("drivers.getRateConURL", input: Input(loadId: loadId))
+    }
+
+    // MARK: - Carrier (employer) lookup
+
+    /// Wire shape returned by `drivers.getMyCarrier`. Mirrors the server
+    /// projection 1:1 — every field is optional because a freshly seeded
+    /// driver may have empty company metadata, and the iOS surfaces fall
+    /// back to em-dash neutral state per the Cohort B M2 doctrine.
+    ///
+    /// `*DaysRemaining` is server-evaluated so the UI can flash amber
+    /// (≤30d), red (≤7d), or "Lapsed" (≤0d) without re-parsing the
+    /// timestamp client-side. `null` means the carrier never recorded
+    /// that cert, not "good forever."
+    struct MyCarrier: Decodable {
+        let companyId: Int
+        let name: String?
+        let legalName: String?
+        let dotNumber: String?
+        let mcNumber: String?
+        let ein: String?
+        let phone: String?
+        let email: String?
+        let website: String?
+        let logo: String?
+        let address: String?
+        let city: String?
+        let state: String?
+        let zipCode: String?
+        let country: String?
+        let complianceStatus: String?
+        let companyCategory: String?
+        let supportedModes: [String]?
+        let insuranceExpiry: String?
+        let insuranceDaysRemaining: Int?
+        let hazmatExpiry: String?
+        let hazmatDaysRemaining: Int?
+        let twicExpiry: String?
+        let twicDaysRemaining: Int?
+    }
+
+    /// `drivers.getMyCarrier` — who the signed-in driver works for.
+    /// Returns `nil` when the driver row is missing a company link
+    /// (server returns `null`, not an error). Render an
+    /// "Attach to a carrier" CTA in that branch.
+    func getMyCarrier() async throws -> MyCarrier? {
+        try await api.queryNoInput("drivers.getMyCarrier")
+    }
+}
+
+// MARK: - AnyEncodable (erased encodable for dictionary inputs)
+
+struct AnyEncodable: Encodable {
+    let value: Encodable
+    init(_ value: Encodable) { self.value = value }
+    func encode(to encoder: Encoder) throws {
+        try value.encode(to: encoder)
+    }
+}
+
+// MARK: - newsRouter
+//
+// Mirrors frontend/server/routers/news.ts. The server fans out to ~100
+// tier-1 RSS feeds across 11 categories and caches a unified feed; we
+// just call `getArticles`, `getMorningBrief`, `getBreakingNews`, and
+// `cacheStatus` for the lightweight poll.
+
+struct NewsAPI {
+    unowned let api: EusoTripAPI
+
+    /// `news.getArticles` — paginated, filtered feed.
+    func getArticles(
+        category: String? = nil,
+        search: String? = nil,
+        limit: Int = 50,
+        offset: Int = 0
+    ) async throws -> NewsArticlePage {
+        struct Input: Encodable {
+            let category: String?
+            let search: String?
+            let limit: Int
+            let offset: Int
+        }
+        return try await api.query(
+            "news.getArticles",
+            input: Input(category: category, search: search, limit: limit, offset: offset)
+        )
+    }
+
+    /// `news.cacheStatus` — cheap poll (~1KB) to detect new articles
+    /// without refetching the whole feed.
+    func cacheStatus() async throws -> NewsCacheStatus {
+        try await api.queryNoInput("news.cacheStatus")
+    }
+
+    /// `news.getTrending` — top 10 by engagement.
+    func getTrending() async throws -> [NewsArticle] {
+        try await api.queryNoInput("news.getTrending")
+    }
+
+    /// `news.getMorningBrief` — 8 articles personalised to the role.
+    /// Role strings match the server enum (DRIVER, DISPATCH, SHIPPER, …).
+    func getMorningBrief(role: String) async throws -> NewsMorningBrief {
+        struct Input: Encodable { let role: String }
+        return try await api.query("news.getMorningBrief", input: Input(role: role))
+    }
+
+    /// `news.getBreakingNews` — clusters from the last 2 hours reported
+    /// by 3+ distinct sources.
+    func getBreakingNews() async throws -> [NewsBreakingCluster] {
+        try await api.queryNoInput("news.getBreakingNews")
+    }
+
+    /// `news.saveArticle` / `news.unsaveArticle` — bookmark toggles.
+    func saveArticle(id: String) async throws -> GenericMessageResponse {
+        struct Input: Encodable { let articleId: String }
+        return try await api.mutation("news.saveArticle", input: Input(articleId: id))
+    }
+
+    func unsaveArticle(id: String) async throws -> GenericMessageResponse {
+        struct Input: Encodable { let articleId: String }
+        return try await api.mutation("news.unsaveArticle", input: Input(articleId: id))
+    }
+
+    /// `news.getSavedArticles` — user's bookmark list.
+    func getSavedArticles() async throws -> [NewsArticle] {
+        try await api.queryNoInput("news.getSavedArticles")
+    }
+}
+
+// MARK: - messagesRouter
+//
+// Mirrors frontend/server/routers/messages.ts.  The backend is an
+// OpenIM-inspired Drizzle/MySQL implementation — 100% DB-backed with
+// WebSocket fanout via `emitMessage → message:new` on the
+// `conversation:<id>` Socket.IO room.  Procedures we wire:
+//
+//   messaging.getConversations       → [MessagingConversation]
+//   messaging.getMessages            → [MessagingMessage]
+//   messaging.sendMessage            → MessagingSendResult
+//   messaging.markAsRead             → MessagingMarkReadResult
+//   messaging.getUnreadCount         → MessagingUnreadCount
+//   messaging.search                 → MessagingSearchResult
+//   messaging.searchUsers            → [MessagingUserResult]
+//   messaging.createConversation     → MessagingCreateResult
+//   messaging.deleteConversation     → MessagingActionResult
+//   messaging.archiveConversation    → MessagingActionResult
+//   messaging.uploadAttachment       → MessagingAttachmentResult
+//   messaging.sendPayment            → MessagingPaymentResult
+//   messaging.unsendMessage          → MessagingActionResult
+//   messaging.getUserPhone           → MessagingUserPhone
+//
+// `path` strings point at the canonical `messages` router (the one with
+// payments, uploads and unsend). We expose it as `messaging` in Swift to
+// line up with how the iOS surface talks about "the messaging stack".
+
+struct MessagingAPI {
+    unowned let api: EusoTripAPI
+
+    /// GET /api/trpc/messages.getConversations
+    func getConversations(search: String? = nil) async throws -> [MessagingConversation] {
+        struct Input: Encodable { let search: String? }
+        return try await api.query("messages.getConversations", input: Input(search: search))
+    }
+
+    /// GET /api/trpc/messages.getMessages
+    func getMessages(
+        conversationId: String,
+        limit: Int = 50,
+        before: String? = nil
+    ) async throws -> [MessagingMessage] {
+        struct Input: Encodable {
+            let conversationId: String
+            let limit: Int
+            let before: String?
+        }
+        return try await api.query(
+            "messages.getMessages",
+            input: Input(conversationId: conversationId, limit: limit, before: before)
+        )
+    }
+
+    /// POST /api/trpc/messages.sendMessage
+    func sendMessage(
+        conversationId: String,
+        content: String,
+        type: String = "text"
+    ) async throws -> MessagingSendResult {
+        struct Input: Encodable {
+            let conversationId: String
+            let content: String
+            let type: String
+        }
+        return try await api.mutation(
+            "messages.sendMessage",
+            input: Input(conversationId: conversationId, content: content, type: type)
+        )
+    }
+
+    /// POST /api/trpc/messages.markAsRead
+    @discardableResult
+    func markAsRead(conversationId: String) async throws -> MessagingMarkReadResult {
+        struct Input: Encodable { let conversationId: String }
+        return try await api.mutation(
+            "messages.markAsRead",
+            input: Input(conversationId: conversationId)
+        )
+    }
+
+    /// GET /api/trpc/messages.getUnreadCount
+    func getUnreadCount() async throws -> MessagingUnreadCount {
+        try await api.queryNoInput("messages.getUnreadCount")
+    }
+
+    /// GET /api/trpc/messages.search
+    func search(
+        query: String,
+        conversationId: String? = nil,
+        limit: Int = 20
+    ) async throws -> MessagingSearchResult {
+        struct Input: Encodable {
+            let query: String
+            let conversationId: String?
+            let limit: Int
+        }
+        return try await api.query(
+            "messages.search",
+            input: Input(query: query, conversationId: conversationId, limit: limit)
+        )
+    }
+
+    /// GET /api/trpc/messages.searchUsers — suggest people to DM.
+    func searchUsers(query: String? = nil, limit: Int = 20) async throws -> [MessagingUserResult] {
+        struct Input: Encodable { let query: String?; let limit: Int }
+        return try await api.query(
+            "messages.searchUsers",
+            input: Input(query: query, limit: limit)
+        )
+    }
+
+    /// POST /api/trpc/messages.createConversation — idempotent for 1:1 DMs.
+    func createConversation(
+        participantIds: [Int],
+        type: String = "direct",
+        name: String? = nil,
+        loadId: Int? = nil,
+        initialMessage: String? = nil
+    ) async throws -> MessagingCreateResult {
+        struct Input: Encodable {
+            let participantIds: [Int]
+            let type: String
+            let name: String?
+            let loadId: Int?
+            let initialMessage: String?
+        }
+        return try await api.mutation(
+            "messages.createConversation",
+            input: Input(
+                participantIds: participantIds,
+                type: type,
+                name: name,
+                loadId: loadId,
+                initialMessage: initialMessage
+            )
+        )
+    }
+
+    /// POST /api/trpc/messages.deleteConversation — soft-delete for caller.
+    @discardableResult
+    func deleteConversation(conversationId: String) async throws -> MessagingActionResult {
+        struct Input: Encodable { let conversationId: String }
+        return try await api.mutation(
+            "messages.deleteConversation",
+            input: Input(conversationId: conversationId)
+        )
+    }
+
+    /// POST /api/trpc/messages.archiveConversation — hide from inbox.
+    @discardableResult
+    func archiveConversation(conversationId: String) async throws -> MessagingActionResult {
+        struct Input: Encodable { let conversationId: String }
+        return try await api.mutation(
+            "messages.archiveConversation",
+            input: Input(conversationId: conversationId)
+        )
+    }
+
+    /// POST /api/trpc/messages.uploadAttachment — base64 data URL.
+    /// Image `Data` → `data:<mime>;base64,<...>` so the backend can store
+    /// it in `messageAttachments.fileUrl` and surface it via `<img src>`.
+    func uploadAttachment(
+        conversationId: String,
+        data: Data,
+        fileName: String,
+        mimeType: String = "image/jpeg"
+    ) async throws -> MessagingAttachmentResult {
+        let base64 = data.base64EncodedString()
+        let dataURL = "data:\(mimeType);base64,\(base64)"
+        struct Input: Encodable {
+            let conversationId: String
+            let fileName: String
+            let fileData: String
+            let mimeType: String
+            let fileSize: Int
+        }
+        return try await api.mutation(
+            "messages.uploadAttachment",
+            input: Input(
+                conversationId: conversationId,
+                fileName: fileName,
+                fileData: dataURL,
+                mimeType: mimeType,
+                fileSize: data.count
+            )
+        )
+    }
+
+    /// POST /api/trpc/messages.sendPayment
+    /// type == "send" debits caller EusoWallet + credits the other party;
+    /// type == "request" just posts a `payment_request` card.
+    func sendPayment(
+        conversationId: String,
+        amount: Double,
+        currency: String = "USD",
+        note: String? = nil,
+        type: String = "send"
+    ) async throws -> MessagingPaymentResult {
+        struct Input: Encodable {
+            let conversationId: String
+            let amount: Double
+            let currency: String
+            let note: String?
+            let type: String
+        }
+        return try await api.mutation(
+            "messages.sendPayment",
+            input: Input(
+                conversationId: conversationId,
+                amount: amount,
+                currency: currency,
+                note: note,
+                type: type
+            )
+        )
+    }
+
+    /// POST /api/trpc/messages.unsendMessage
+    @discardableResult
+    func unsendMessage(messageId: String) async throws -> MessagingActionResult {
+        struct Input: Encodable { let messageId: String }
+        return try await api.mutation(
+            "messages.unsendMessage",
+            input: Input(messageId: messageId)
+        )
+    }
+
+    /// GET /api/trpc/messages.getUserPhone — `tel:` link resolution.
+    func getUserPhone(userId: Int) async throws -> MessagingUserPhone {
+        struct Input: Encodable { let userId: Int }
+        return try await api.query("messages.getUserPhone", input: Input(userId: userId))
+    }
+}
+
+// MARK: - Messaging DTOs
+//
+// Wire-shape mirrors are loose on purpose: the backend occasionally
+// sends `null` where the UI expects a string, and omits optional fields
+// entirely when there is no conversation metadata yet. All optional
+// fields below are either `nil` or a sensible default after decode.
+
+struct MessagingConversation: Decodable, Identifiable, Equatable {
+    let id: String
+    let name: String
+    let participantName: String?
+    let avatar: String?
+    let type: String?
+    let lastMessage: String?
+    let lastMessageAt: String?
+    let unread: Int?
+    let unreadCount: Int?
+    let online: Bool?
+    let role: String?
+    let loadId: Int?
+    let isPinned: Bool?
+    let isMuted: Bool?
+
+    var displayName: String { participantName ?? name }
+    var effectiveUnread: Int { unreadCount ?? unread ?? 0 }
+}
+
+struct MessagingMessage: Decodable, Identifiable, Equatable {
+    let id: String
+    let conversationId: String
+    let senderId: String
+    let senderName: String?
+    let senderAvatar: String?
+    let content: String
+    let type: String?
+    let timestamp: String?
+    let read: Bool?
+    let isOwn: Bool?
+
+    /// Decodes tRPC's `metadata` field (arbitrary JSON) into the subset
+    /// the chat UI actually cares about: payment amount/note/status for
+    /// `payment_sent` / `payment_request` cards, and attachment preview
+    /// URLs for image messages.
+    let metadata: MessagingMessageMetadata?
+}
+
+struct MessagingMessageMetadata: Decodable, Equatable {
+    let amount: Double?
+    let currency: String?
+    let note: String?
+    let status: String?
+    let senderName: String?
+    let fileUrl: String?
+    let fileName: String?
+    let mimeType: String?
+    let recipientId: Int?
+}
+
+struct MessagingSendResult: Decodable {
+    let id: String
+    let conversationId: String
+    let senderId: String?
+    let senderName: String?
+    let content: String?
+    let type: String?
+    let timestamp: String?
+    let read: Bool?
+    let isOwn: Bool?
+}
+
+struct MessagingMarkReadResult: Decodable {
+    let success: Bool
+    let conversationId: String
+    let markedCount: Int?
+}
+
+struct MessagingUnreadCount: Decodable {
+    let total: Int
+    let byConversation: [String: Int]
+}
+
+struct MessagingSearchResult: Decodable {
+    struct Hit: Decodable, Identifiable {
+        let messageId: String
+        let conversationId: String
+        let content: String
+        let timestamp: String?
+        let senderName: String?
+        let highlight: String?
+        var id: String { messageId }
+    }
+    let results: [Hit]
+    let total: Int
+}
+
+struct MessagingUserResult: Decodable, Identifiable, Equatable {
+    let id: Int
+    let name: String
+    let email: String?
+    let role: String?
+    let avatar: String?
+    let phone: String?
+}
+
+struct MessagingCreateResult: Decodable {
+    let id: String
+    let createdAt: String?
+    let existing: Bool?
+}
+
+struct MessagingActionResult: Decodable {
+    let success: Bool?
+    let conversationId: String?
+    let messageId: String?
+}
+
+struct MessagingAttachmentResult: Decodable {
+    let success: Bool
+    let messageId: String
+    let attachmentId: String
+    let fileName: String
+    let type: String
+}
+
+struct MessagingPaymentResult: Decodable {
+    let id: String
+    let type: String
+    let amount: Double
+    let currency: String
+    let status: String
+}
+
+struct MessagingUserPhone: Decodable {
+    let phone: String?
+    let name: String?
+}
+
+// MARK: - hotZonesRouter
+//
+// Wraps `hotZones.getRateFeed` — the same tRPC procedure the web
+// `/hot-zones` page uses to power its national heatmap + rate feed.
+// The iOS Driver Home widget reuses the same intelligence data so the
+// driver sees the exact same load-to-truck ratios, live rates, surge
+// multipliers, and demand levels that the dispatcher sees on the web.
+//
+// The web procedure returns ~25 zones with rich fields (FMCSA, fuel,
+// weather, forecasts). On mobile we decode a leaner subset (just what
+// the widget renders) so the decode stays fast and flexible when the
+// backend adds new fields.
+
+struct HotZonesAPI {
+    unowned let api: EusoTripAPI
+
+    /// GET /api/trpc/hotZones.getRateFeed — national zone intelligence.
+    /// Equipment filter narrows to zones whose topEquipment includes it
+    /// (e.g. "REEFER", "FLATBED"). Role-based filtering happens server-side
+    /// off the authenticated user.
+    func getRateFeed(equipment: String? = nil) async throws -> HotZonesFeedResult {
+        struct Input: Encodable {
+            let equipment: String?
+            // `layers` / `userLat` / `userLng` accepted by the server but
+            // not used by the mobile widget — omit to keep the request
+            // envelope small.
+        }
+        return try await api.query("hotZones.getRateFeed", input: Input(equipment: equipment))
+    }
+}
+
+// MARK: - HotZones DTOs
+
+/// National hot-zone intelligence feed. Decodes a leaner subset of the
+/// web `/hot-zones` rateFeed so the mobile widget stays nimble when the
+/// backend adds new fields (FMCSA sub-object, AI trends, etc.).
+struct HotZonesFeedResult: Decodable {
+    let zones: [HotZoneEntry]
+    let coldZones: [ColdZoneEntry]?
+    let marketPulse: HotZonesMarketPulse?
+    let timestamp: String?
+    let refreshInterval: Int?
+    let feedSource: String?
+}
+
+struct HotZoneCenter: Decodable, Hashable {
+    let lat: Double
+    let lng: Double
+}
+
+struct HotZoneEntry: Decodable, Identifiable, Equatable {
+    var id: String { zoneId }
+    let zoneId: String
+    let zoneName: String
+    let state: String
+    let center: HotZoneCenter
+    let radius: Double
+    let demandLevel: String          // "CRITICAL" | "HIGH" | "ELEVATED"
+    let demandTrend: String?         // "RISING" | "STABLE" | "FALLING"
+    let nextWeekForecast: String?    // short forecast blurb
+    let liveRate: Double             // $/mile
+    let liveLoads: Int
+    let liveTrucks: Int
+    let liveRatio: Double
+    let liveSurge: Double
+    let rateChange: Double?
+    let rateChangePercent: Double?
+    let topEquipment: [String]
+    let reasons: [String]?           // why this zone is hot
+    // ── peakHours is a STRING on the wire (e.g. "06:00-14:00 PT"),
+    // ── not an array. Decoding it as [String] made the whole feed fail.
+    let peakHours: String?
+    let hazmatClasses: [String]?
+    let oversizedFrequency: String?
+    let weatherRiskLevel: String?
+    let weatherAlerts: [HotZoneWeatherAlert]?
+    let complianceRiskScore: Int?
+    let safetyScore: Double?
+    let carriersWithViolations: Int?
+    let recentHazmatIncidents: Int?
+    let activeWildfires: Int?
+    let femaDisasterActive: Bool?
+    let seismicRiskLevel: String?
+    let epaFacilitiesCount: Int?
+    let fuelPrice: Double?
+    let platformLoads: Int?
+    let aiRateTrend: String?
+    let aiRateAnomaly: Bool?
+    let fmcsa: HotZoneFMCSA?
+
+    static func == (lhs: HotZoneEntry, rhs: HotZoneEntry) -> Bool { lhs.zoneId == rhs.zoneId }
+}
+
+/// FMCSA enrichment block attached to each zone — 9.8M-record carrier
+/// census sliced by state and blended with recent crash / inspection
+/// rollups (last 90 days / 30 days).
+struct HotZoneFMCSA: Decodable, Equatable {
+    let carriers: Int?
+    let powerUnits: Int?
+    let drivers: Int?
+    let hazmatCarriers: Int?
+    let avgFleetSize: Double?
+    let crashes90d: Int?
+    let crashFatalities: Int?
+    let crashInjuries: Int?
+    let inspections30d: Int?
+    let violations30d: Int?
+    let oosRate: Double?
+}
+
+/// NWS/active weather alert attached to a hot zone. Server sends up to
+/// 3 per zone; we only use a handful of fields for the widget's risk
+/// banner but decode loosely so new fields can ship server-side without
+/// breaking the app.
+struct HotZoneWeatherAlert: Decodable, Equatable {
+    let event: String?
+    let severity: String?
+    let headline: String?
+    let areaDesc: String?
+}
+
+struct ColdZoneEntry: Decodable, Identifiable, Equatable {
+    var id: String { zoneId ?? (name ?? UUID().uuidString) }
+    let zoneId: String?
+    let name: String?
+    let state: String?
+    let center: HotZoneCenter?
+    let radius: Double?
+    let liveRate: Double?
+    let liveSurge: Double?
+    let liveTrucks: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case zoneId = "id", name, state, center, radius, liveRate, liveSurge, liveTrucks
+    }
+
+    static func == (lhs: ColdZoneEntry, rhs: ColdZoneEntry) -> Bool { lhs.id == rhs.id }
+}
+
+struct HotZonesMarketPulse: Decodable, Equatable {
+    let avgRate: Double?
+    let avgRatio: Double?
+    let totalLoads: Int?
+    let totalTrucks: Int?
+    let criticalZones: Int?
+    let avgFuelPrice: Double?
+    let activeWeatherAlerts: Int?
+}
+
+// MARK: - eldRouter (Electronic Logging Device integration)
+//
+// Mirrors frontend/server/routers/eld.ts + frontend/server/services/eld.ts.
+// The web platform is the source-of-truth for the supported ELD catalog —
+// we don't hardcode a second copy of the provider list on iOS. Instead we
+// call `eld.getAllProviders` and render whatever the backend returns so new
+// providers (Samsara, Geotab, Motive, Powerfleet, Zonar, Lytx, Netradyne,
+// Verizon Connect, Azuga, Solera, Trimble/PeopleNet, and any future adds)
+// show up on-device the moment they're shipped server-side.
+//
+// Connection persistence lives in the `integrationConnections` table on the
+// server (one row per (companyId, providerSlug), unique index). Credentials
+// never touch the app binary — the driver types their API key into the
+// provider screen, we POST it to `eld.connectProvider`, and the Samsara/
+// Motive/Geotab poll runs server-side from that moment on.
+//
+// HOS data is already consumed from the same `hos.getStatus` / `hos.getDailyLog`
+// endpoints that back MeEldView + 019_HosDutyStatus; once the ELD is connected,
+// those endpoints receive real-time driver status from the provider (49 CFR 395)
+// instead of the self-reported fallback, so no additional iOS wiring is needed
+// beyond this connector UI — the data pipe "just turns on."
+//
+// Read-only symbiotic connection policy: the iOS surface never pushes status
+// changes to the external ELD. The ELD pushes to us; we only write back
+// EusoTrip-internal state (loads, messaging, dispatch) that never leaves the
+// platform. This mirrors the web `ELDConnectionPanel` shield badge.
+
+struct ELDAPI {
+    unowned let api: EusoTripAPI
+
+    /// `eld.getAllProviders` — catalog of supported ELD providers.
+    /// Server source: `ELD_PROVIDERS` in `frontend/server/services/eld.ts`.
+    /// Returned newest-first by the canonical registry (Samsara → Trimble).
+    func getAllProviders() async throws -> [ELDProvider] {
+        try await api.queryNoInput("eld.getAllProviders")
+    }
+
+    /// `eld.getConnectionStatus` — is this company's fleet wired up to an
+    /// ELD right now? Loaded from `integrationConnections` server-side so
+    /// any web-user or dispatcher change is reflected immediately on iOS.
+    func getConnectionStatus() async throws -> ELDConnectionStatus {
+        try await api.queryNoInput("eld.getConnectionStatus")
+    }
+
+    /// `eld.getProviderConfig` — rich config snapshot for the currently
+    /// configured ELD (Samsara-primary today; other providers rely on
+    /// the generic `getConnectionStatus` surface). Also exposes the 49
+    /// CFR 395 HOS limit constants so the iOS compliance card can render
+    /// them without a second round-trip.
+    func getProviderConfig() async throws -> ELDProviderConfig {
+        try await api.queryNoInput("eld.getProviderConfig")
+    }
+
+    /// `eld.connectProvider` — POST mutation. Upserts a provider
+    /// credential (API key / bearer token) for the caller's company into
+    /// `integrationConnections`, marks status = "connected", and clears
+    /// the server-side ELD service cache so the next `hos.getStatus`
+    /// call pulls live data from the provider.
+    ///
+    /// - `providerSlug`: canonical slug returned by `getAllProviders`
+    ///   (e.g. "samsara", "motive", "geotab"). The server accepts
+    ///   back-compat aliases ("keeptruckin", "omnitracs", "peoplenet",
+    ///   "verizonconnect") and normalises them.
+    /// - `apiKey`: bearer token / API key supplied by the fleet admin in
+    ///   their ELD provider dashboard. Never cached on-device.
+    /// - `authType`: "bearer" by default — matches every provider in the
+    ///   current registry. OAuth providers, when added server-side, will
+    ///   hand back a `publicAuthorizationURL` via a separate endpoint.
+    @discardableResult
+    func connectProvider(
+        providerSlug: String,
+        apiKey: String,
+        authType: String = "bearer"
+    ) async throws -> ELDConnectResult {
+        struct Input: Encodable {
+            let providerSlug: String
+            let apiKey: String
+            let authType: String
+        }
+        return try await api.mutation(
+            "eld.connectProvider",
+            input: Input(
+                providerSlug: providerSlug,
+                apiKey: apiKey,
+                authType: authType
+            )
+        )
+    }
+
+    /// `eld.disconnectProvider` — POST mutation. Flips the row's
+    /// `status` to "disconnected" but keeps the record so the history
+    /// (first connected at, last sync, error count) survives for audit.
+    @discardableResult
+    func disconnectProvider(providerSlug: String) async throws -> ELDDisconnectResult {
+        struct Input: Encodable { let providerSlug: String }
+        return try await api.mutation(
+            "eld.disconnectProvider",
+            input: Input(providerSlug: providerSlug)
+        )
+    }
+}
+
+// MARK: - ELD DTOs
+//
+// Wire shapes match the server zod outputs exactly. Optional fields are
+// the ones the backend sometimes omits when a feature hasn't been enabled
+// yet (e.g. `satisfaction` may be null for a newly-onboarded provider).
+
+/// One row of `eld.getAllProviders` — what the iOS picker renders per tile.
+struct ELDProvider: Decodable, Identifiable, Equatable, Hashable {
+    var id: String { slug }
+    /// Display name e.g. "Samsara", "Verizon Connect", "Trimble / PeopleNet".
+    let name: String
+    /// Canonical slug used in every other ELD mutation. Source-of-truth key.
+    let slug: String
+    /// Driver satisfaction score (0–100) sourced from the registry. Used
+    /// to sort/label the provider grid; higher is better.
+    let satisfaction: Int?
+    /// Brand hex color (e.g. "#1A73E8" for Samsara). Used for the tile
+    /// accent bar and the Connected pill.
+    let logoColor: String?
+    /// Feature tags ["GPS", "HOS", "DVIR", "IFTA", "Dashcam", ...] — shown
+    /// as small chips under the name so the driver knows what will flow
+    /// through once connected.
+    let features: [String]?
+}
+
+/// `eld.getConnectionStatus` envelope. `providers` is the list of
+/// currently-connected provider slugs (typically 0 or 1 for a single-fleet
+/// account; larger for mixed fleets running dual ELDs during migration).
+struct ELDConnectionStatus: Decodable, Equatable {
+    let connected: Bool
+    /// Slugs currently in `connected` status for this company.
+    let providers: [String]
+    /// Primary provider — matches `providers.first` when connected, or
+    /// "none" when disconnected. Used by the MeEldView footer pill.
+    let provider: String
+}
+
+/// `eld.getProviderConfig` output. Currently Samsara-centric (per router
+/// comment) but the shape accommodates additional providers — the backend
+/// will fill in per-provider feature flags as we ship them.
+struct ELDProviderConfig: Decodable {
+    let provider: String
+    let configured: Bool
+    let connected: Bool
+    let apiBase: String?
+    let envVar: String?
+    let features: Features?
+    let hosLimits: HOSLimits?
+    let regulation: String?
+    let setupInstructions: String?
+
+    struct Features: Decodable {
+        let realTimeHOS: Bool?
+        let dailyLogs: Bool?
+        let violations: Bool?
+        let vehicleLocation: Bool?
+        let dvirIntegration: Bool?
+        let fuelUsage: Bool?
+    }
+
+    /// Canonical 49 CFR 395 constants from the server. Copied here so the
+    /// iOS compliance card can render them verbatim and stay authoritative
+    /// regardless of future rulemaking changes (FMCSA adjustments flow in
+    /// automatically via the server).
+    struct HOSLimits: Decodable {
+        let maxDrivingMinutes: Int
+        let maxOnDutyMinutes: Int
+        let breakRequiredAfterMinutes: Int
+        let cycle7DayMinutes: Int
+        let cycle8DayMinutes: Int
+        let minBreakMinutes: Int
+        let minOffDutyMinutes: Int
+    }
+}
+
+struct ELDConnectResult: Decodable {
+    let success: Bool
+    let providerSlug: String
+}
+
+struct ELDDisconnectResult: Decodable {
+    let success: Bool?
+    let providerSlug: String?
+}
+
+// ============================================================================
+// MARK: - Driver-facing router clients (wallet extras / factoring / tax /
+//         fuelCard / rewards / achievements / leaderboard / fleet / profile /
+//         availability / rooms / loyalty / zeun driver read surface)
+//
+// Each of these mirrors a file under `server/routers/*.ts` in the backend
+// repo (`/Users/diegousoro/Downloads/eusotrip-frontend/`). The backend
+// procedures currently return empty-shape mocks; the Swift DTOs below
+// decode exactly that shape so the iOS app can bind through
+// `@StateObject` stores today and pick up real data the moment the
+// backend body swaps in a DB query.
+// ============================================================================
+
+// MARK: - walletExtrasRouter (wallet.getTransactions, …)
+
+struct WalletExtrasAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: Transactions (canonical `wallet.getTransactions`)
+    //
+    // Verified against `frontend/server/routers/wallet.ts:371` (L371 getTransactions).
+    // Input: { type?, status?, startDate?, endDate?, limit=20, offset=0 }
+    // Output: BARE ARRAY of rows:
+    //   { id: "txn_N", type, amount, currency, status, description,
+    //     loadNumber?, date, completedAt? }
+    //
+    // We project the wire row into `WalletTxn` so the UI layer stays
+    // unchanged: the `kind` field maps from `type`, the display `title`
+    // maps from `description` (falls back to type), subtitle maps from
+    // the date string, timestamp preserves `completedAt ?? date`.
+
+    struct TxnWireRow: Decodable {
+        let id: String
+        let type: String
+        let amount: Double
+        let currency: String?
+        let status: String?
+        let description: String?
+        let loadNumber: String?
+        let date: String?
+        let completedAt: String?
+    }
+
+    struct TransactionsResponse: Decodable {
+        let items: [WalletTxn]
+        let nextCursor: String?
+
+        init(from decoder: Decoder) throws {
+            // Canonical shape is a bare array. Single-value container.
+            let c = try decoder.singleValueContainer()
+            let rows = try c.decode([TxnWireRow].self)
+            self.items = rows.map { r in
+                WalletTxn(
+                    id: r.id,
+                    kind: Self.kindFor(type: r.type),
+                    title: (r.description?.isEmpty == false) ? r.description! : Self.titleFor(type: r.type),
+                    subtitle: r.loadNumber.map { "Load \($0)" } ?? r.date,
+                    amount: r.amount,
+                    currency: r.currency,
+                    timestamp: r.completedAt ?? r.date,
+                    loadId: nil,
+                    iconHint: nil
+                )
+            }
+            self.nextCursor = nil
+        }
+
+        private static func kindFor(type: String) -> String {
+            switch type.lowercased() {
+            case "earnings":    return "load_payout"
+            case "payout":      return "instant_payout"
+            case "fee":         return "fee"
+            case "refund":      return "refund"
+            case "bonus":       return "bonus"
+            case "adjustment":  return "adjustment"
+            case "transfer":    return "transfer"
+            case "deposit":     return "deposit"
+            default:            return type.lowercased()
+            }
+        }
+
+        private static func titleFor(type: String) -> String {
+            switch type.lowercased() {
+            case "earnings":   return "Load payout"
+            case "payout":     return "Payout"
+            case "fee":        return "Platform fee"
+            case "refund":     return "Refund"
+            case "bonus":      return "Bonus"
+            case "adjustment": return "Adjustment"
+            case "transfer":   return "Transfer"
+            case "deposit":    return "Deposit"
+            default:           return type.capitalized
+            }
+        }
+    }
+
+    struct GetTransactionsInput: Encodable {
+        let limit: Int
+        let offset: Int
+    }
+
+    /// `wallet.getTransactions` — paginated via offset. Returns a bare array;
+    /// the Decodable in `TransactionsResponse` wraps it.
+    /// The `filter` / `cursor` params on the iOS side are tolerated for
+    /// call-site compatibility but ignored: the canonical router doesn't
+    /// expose a client-facing cursor — offset-based only.
+    func getTransactions(
+        filter: String? = nil,
+        cursor: String? = nil,
+        limit: Int = 20
+    ) async throws -> TransactionsResponse {
+        let offset = Int(cursor ?? "0") ?? 0
+        return try await api.query(
+            "wallet.getTransactions",
+            input: GetTransactionsInput(limit: limit, offset: offset)
+        )
+    }
+
+    // MARK: Payout methods (canonical `wallet.getPayoutMethods`)
+    //
+    // Verified against `frontend/server/routers/wallet.ts:421`.
+    // Output: bare array of:
+    //   { id: "pm_N", type, name, bankName?, brand?, last4, isDefault,
+    //     instantPayoutEligible, createdAt }
+
+    struct PayoutMethodWireRow: Decodable {
+        let id: String
+        let type: String
+        let name: String?
+        let bankName: String?
+        let brand: String?
+        let last4: String
+        let isDefault: Bool?
+        let instantPayoutEligible: Bool?
+        let createdAt: String?
+    }
+
+    struct PaymentMethodsResponse: Decodable {
+        let items: [WalletPaymentMethod]
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.singleValueContainer()
+            let rows = try c.decode([PayoutMethodWireRow].self)
+            self.items = rows.map { r in
+                WalletPaymentMethod(
+                    id: r.id,
+                    kind: r.type == "bank_account" ? "bank" : "debit",
+                    institution: r.bankName ?? r.brand ?? r.name ?? "Account",
+                    mask: r.last4,
+                    isDefault: r.isDefault ?? false,
+                    isInstant: r.instantPayoutEligible ?? false,
+                    addedAt: r.createdAt
+                )
+            }
+        }
+    }
+
+    /// `wallet.getPayoutMethods` — canonical name on backend. The older
+    /// iOS spec called this `wallet.listPaymentMethods`; we renamed the
+    /// call to match the server and kept the Swift API method name so
+    /// call sites stay identical.
+    func listPaymentMethods() async throws -> PaymentMethodsResponse {
+        try await api.queryNoInput("wallet.getPayoutMethods")
+    }
+
+    // MARK: Earnings summary (canonical `earnings.getSummary` + YTD)
+    //
+    // Backend doesn't expose a single `wallet.getEarningsSummary` — the
+    // matching driver data is spread across `earnings.getSummary(period)`
+    // (weekly gross, pending, loads) and `earnings.getYTDSummary` (year-
+    // to-date gross). We aggregate both and project into
+    // `WalletEarningsSummary` so the UI layer stays unchanged.
+
+    struct EarningsSummaryWire: Decodable {
+        let totalEarnings: Double?
+        let loadsCompleted: Int?
+        let paid: Double?
+        let pending: Double?
+        let avgPerMile: Double?
+    }
+
+    struct EarningsYTDWire: Decodable {
+        let totalEarnings: Double?
+        let projectedAnnual: Double?
+    }
+
+    struct EarningsSummaryInput: Encodable { let period: String }
+
+    func getEarningsSummary() async throws -> WalletEarningsSummary {
+        async let weekly: EarningsSummaryWire = api.query(
+            "earnings.getSummary",
+            input: EarningsSummaryInput(period: "week")
+        )
+        async let monthly: EarningsSummaryWire = api.query(
+            "earnings.getSummary",
+            input: EarningsSummaryInput(period: "month")
+        )
+        async let ytd: EarningsYTDWire = api.queryNoInput("earnings.getYTDSummary")
+
+        let (w, m, y) = try await (weekly, monthly, ytd)
+        return WalletEarningsSummary(
+            thisWeekGross: w.totalEarnings ?? 0,
+            thisMonthGross: m.totalEarnings ?? 0,
+            ytdGross: y.totalEarnings ?? 0,
+            pending: w.pending ?? 0,
+            settledLoadsCount: w.loadsCompleted ?? 0,
+            avgRatePerMile: w.avgPerMile,
+            deadheadPct: nil,
+            detentionDollars: nil,
+            projectedAnnual: y.projectedAnnual,
+            currency: "USD"
+        )
+    }
+}
+
+// MARK: - factoringRouter
+
+struct FactoringAPI {
+    unowned let api: EusoTripAPI
+
+    /// Canonical `factoring.getOffer` response.
+    /// Backend: `server/routers/factoring.ts` — driver-scoped
+    /// procedure, returns a day-bucketed idempotent advance proposal
+    /// for the driver's current post-POD load.
+    struct Offer: Decodable {
+        let offerId: String
+        let loadId: Int
+        let provider: String
+        let grossAmount: Double
+        let feeBps: Int
+        let feeAmount: Double
+        let netAmount: Double
+        let currency: String
+        let expiresAt: String
+        let eligible: Bool
+        let reason: String?
+    }
+
+    struct GetOfferInput: Encodable { let loadId: Int }
+
+    func getOffer(loadId: Int) async throws -> Offer {
+        try await api.query("factoring.getOffer", input: GetOfferInput(loadId: loadId))
+    }
+
+    /// Canonical `factoring.accept` response.
+    struct AcceptResponse: Decodable {
+        let accepted: Bool
+        let paymentId: String
+        let netAmount: Double
+        let transferredAt: String
+    }
+
+    struct AcceptInput: Encodable { let loadId: Int; let offerId: String }
+
+    func accept(loadId: Int, offerId: String) async throws -> AcceptResponse {
+        try await api.mutation(
+            "factoring.accept",
+            input: AcceptInput(loadId: loadId, offerId: offerId)
+        )
+    }
+}
+
+// MARK: - taxRouter
+
+struct TaxAPI {
+    unowned let api: EusoTripAPI
+
+    struct TaxSummary: Decodable {
+        struct Deduction: Decodable, Hashable { let category: String; let amount: Double }
+        let year: Int
+        let grossEarnings: Double
+        let platformFees: Double
+        let fuelSpend: Double
+        let maintenanceSpend: Double
+        let milesDriven: Int
+        let deductions: [Deduction]
+        let estimatedTaxLiability: Double
+        let currency: String
+        let updatedAt: String
+
+        // ── EusoWallet §8 driver-surface additions ────────────────
+        // `tax.getSummary` now emits these alongside the legacy
+        // fields above. They're optional so older server builds
+        // still decode cleanly while the new router rolls out.
+        let taxYear: Int?
+        let ytdGross: Double?
+        let estimatedTax: Double?
+        let quarterlyEstimate: Double?
+        let federalWithheld: Double?
+        let stateWithheld: Double?
+        let filingThresholdMet: Bool?
+        let download1099Available: Bool?
+        let download1099URL: String?
+    }
+
+    struct YearInput: Encodable { let year: Int }
+
+    /// Driver-facing tax summary. As of the 68th firing this hits the
+    /// live `tax.getSummary({ year })` backend procedure (MCP-verified
+    /// at `frontend/server/routers/tax.ts:43`). The server aggregates
+    /// `payments` rows where the driver is the payee, applies the
+    /// server-configured self-employed tax BPS, and surfaces the
+    /// quarterly estimate + 1099 availability. Prior implementations
+    /// derived the summary client-side from `earnings.getYTDSummary`
+    /// with a hardcoded 25.31% tax rate — that derivation has been
+    /// removed (the comment claiming `tax.*` didn't exist was stale).
+    func getSummary(year: Int) async throws -> TaxSummary {
+        try await api.query("tax.getSummary", input: YearInput(year: year))
+    }
+
+    /// Driver-scoped summary — no input; uses current calendar year.
+    func getDriverSummary() async throws -> TaxSummary {
+        let year = Calendar.current.component(.year, from: Date())
+        return try await getSummary(year: year)
+    }
+
+    struct Tax1099Document: Decodable {
+        let year: Int
+        let available: Bool
+        let documentType: String?    // "1099-NEC" | "1099-K"
+        let url: String?
+        let issuedAt: String?
+        let totalAmount: Double
+        let currency: String
+        let payerName: String
+        let payerTIN: String?
+    }
+
+    func get1099(year: Int) async throws -> Tax1099Document {
+        try await api.query("tax.get1099", input: YearInput(year: year))
+    }
+}
+
+// MARK: - fuelCardRouter — removed 65th firing (Phase C landmine sweep).
+// Backend router `fuelCardRouter` does not exist. Canonical replacement
+// for fuel receipts is `fleet.getFuelTransactionsMobile`. Zero consumers.
+
+// MARK: - rewardsRouter
+
+struct RewardsAPI {
+    unowned let api: EusoTripAPI
+
+    struct CatalogResponse: Decodable {
+        let items: [RewardItem]
+        let pointsBalance: Int
+    }
+
+    func getCatalog() async throws -> CatalogResponse {
+        try await api.queryNoInput("rewards.getCatalog")
+    }
+
+    // Canonical rewards.getHistory returns a BARE ARRAY of badge-earned rows.
+    // Web binds to `historyQuery.data?.map`, so the canonical shape IS the
+    // wire format. We project it into RewardRedemption-shaped rows on iOS by
+    // mapping { id, name, xpEarned, earnedAt, type } → { itemName, pointsSpent,
+    // redeemedAt, status, fulfillmentRef } at the call site.
+    struct RewardRedemption: Decodable, Identifiable, Hashable {
+        let id: String
+        let type: String?
+        let name: String?
+        let category: String?
+        let tier: String?
+        let xpEarned: Int?
+        let earnedAt: String?
+
+        // Compatibility shims for existing UI that reads itemName/pointsSpent/redeemedAt.
+        var itemName: String { name ?? "" }
+        var pointsSpent: Int { xpEarned ?? 0 }
+        var redeemedAt: String { earnedAt ?? "" }
+        var status: String { "fulfilled" }
+        var fulfillmentRef: String? { nil }
+    }
+
+    // getHistory decodes a BARE ARRAY — wrap in a shim struct for the caller.
+    struct HistoryResponse: Decodable {
+        let items: [RewardRedemption]
+        init(from decoder: Decoder) throws {
+            let c = try decoder.singleValueContainer()
+            self.items = try c.decode([RewardRedemption].self)
+        }
+    }
+    struct GetHistoryInput: Encodable { let limit: Int }
+
+    func getHistory(limit: Int = 25) async throws -> HistoryResponse {
+        try await api.query("rewards.getHistory", input: GetHistoryInput(limit: limit))
+    }
+
+    struct RedeemResponse: Decodable {
+        let success: Bool
+        let itemId: String
+        let newPointsBalance: Int
+        let reason: String?
+    }
+
+    struct RedeemInput: Encodable { let itemId: String }
+
+    func redeem(itemId: String) async throws -> RedeemResponse {
+        try await api.mutation("rewards.redeem", input: RedeemInput(itemId: itemId))
+    }
+}
+
+// MARK: - achievementsRouter — removed 65th firing (Phase C landmine sweep).
+// Canonical replacements on `gamificationRouter`:
+//   • achievements.getMissions → gamification.getMissions
+//   • achievements.getBadges   → gamification.getBadges
+//   • achievements.claim       → gamification.claimMissionReward
+// Zero consumers at removal.
+
+// MARK: - gamificationRouter (canonical — `server/routers/gamification.ts`)
+//
+// 60th firing: stood up to replace the dead `achievements.getMissions`
+// endpoint that `AchievementsAPI` was calling. The backend canonical
+// procedure lives under `gamification.getMissions` and returns three
+// buckets — `active`, `completed`, `available` — each with a richer
+// shape than the prior `items: [DriverMission]` projection.
+//
+// Every field below mirrors `formatMission` in gamification.ts L743 so
+// the iOS layer decodes the wire format verbatim. `MissionsStore` +
+// the new `TheHaulMissionsStore` map these rows onto the existing
+// `DriverMission` struct at the edge so the UI primitives (060 dashboard
+// row, 061 dedicated mission card) keep their current bindings.
+//
+// Per §16 of SKILL.md: every reward emitted here is XP/title only — the
+// `loot_crates` / `user_inventory` / `miles_transactions` tables have
+// zero writers on the backend today, so the UI must not present a
+// "cash added" confirmation. `claimMissionReward` resolves with XP
+// credited to the profile; any `rewardType == "cash"` or `"miles"`
+// value is treated as display-only until writers ship.
+
+struct GamificationAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: Mission DTO (canonical `formatMission` shape)
+
+    /// One row from any of `active` / `completed` / `available`.
+    /// Every optional field on the backend is declared optional here so
+    /// the decoder never trips on missing JSON keys (seeded missions vs
+    /// template-generated fallbacks emit different sub-sets).
+    struct Mission: Decodable, Identifiable, Hashable {
+        let id: Int
+        let code: String?
+        let name: String
+        let description: String?
+        /// `daily` | `weekly` | `monthly` | `epic` | `seasonal` | `raid` |
+        /// `story` | `achievement`
+        let type: String?
+        /// `deliveries` | `earnings` | `safety` | `efficiency` | `social` |
+        /// `special` | `onboarding`
+        let category: String?
+        let targetType: String?
+        let targetValue: Double?
+        let targetUnit: String?
+        let rewardType: String?
+        let rewardValue: Double?
+        let xpReward: Int?
+        let currentProgress: Double?
+        /// `not_started` | `in_progress` | `completed` | `claimed` |
+        /// `cancelled` | `expired`
+        let status: String?
+        let completedAt: String?
+        let startsAt: String?
+        let endsAt: String?
+    }
+
+    /// Canonical response shape — three buckets as the backend returns them.
+    struct MissionsResponse: Decodable {
+        let active: [Mission]
+        let completed: [Mission]
+        let available: [Mission]
+    }
+
+    struct GetMissionsInput: Encodable {
+        let type: String?
+        let category: String?
+    }
+
+    /// `gamification.getMissions` — query with optional `type` /
+    /// `category` filters that mirror the server zod input. Omit both to
+    /// ask for every mission the role can run.
+    func getMissions(type: String? = nil, category: String? = nil) async throws -> MissionsResponse {
+        try await api.query(
+            "gamification.getMissions",
+            input: GetMissionsInput(type: type, category: category)
+        )
+    }
+
+    // MARK: Mutations
+
+    struct MissionActionResult: Decodable {
+        let success: Bool
+        let message: String?
+    }
+
+    struct MissionIdInput: Encodable { let missionId: Int }
+
+    /// `gamification.startMission` — drops the driver into `in_progress`
+    /// on the requested mission. Fails with `success: false` + a reason
+    /// string when the HOS-compliance guard (line 829 of gamification.ts)
+    /// rejects driving-category missions.
+    func startMission(missionId: Int) async throws -> MissionActionResult {
+        try await api.mutation(
+            "gamification.startMission",
+            input: MissionIdInput(missionId: missionId)
+        )
+    }
+
+    /// `gamification.claimMissionReward` — moves a `completed` mission to
+    /// `claimed` and credits `xpReward` onto the driver's gamification
+    /// profile. Returns `success: false` with a message when the mission
+    /// has not yet reached 100% progress or was already claimed.
+    func claimMissionReward(missionId: Int) async throws -> MissionActionResult {
+        try await api.mutation(
+            "gamification.claimMissionReward",
+            input: MissionIdInput(missionId: missionId)
+        )
+    }
+
+    // MARK: Profile (used by 060 loyalty hero + future 065 streaks)
+
+    /// Canonical `gamification.getProfile` shape — XP, rank, streaks, stats.
+    /// Declared here (not in Models/) because it's scoped to this router.
+    struct Profile: Decodable, Hashable {
+        let userId: Int
+        let name: String?
+        let role: String?
+        let level: Int?
+        let title: String?
+        let totalPoints: Int?
+        let currentXp: Int?
+        let xpToNextLevel: Int?
+        let pointsToNextLevel: Int?
+        let nextLevelAt: Int?
+        let rank: Int?
+        let totalUsers: Int?
+        let percentile: Double?
+        let memberSince: String?
+        let currentMiles: Double?
+        let totalMilesEarned: Double?
+    }
+
+    struct GetProfileInput: Encodable { let userId: String? }
+
+    /// `gamification.getProfile` — omit `userId` to ask for the caller's
+    /// own profile.
+    func getProfile(userId: String? = nil) async throws -> Profile {
+        try await api.query(
+            "gamification.getProfile",
+            input: GetProfileInput(userId: userId)
+        )
+    }
+
+    // MARK: - Leaderboard (canonical)
+    //
+    // `gamification.getLeaderboard` — MCP-verified at
+    // frontend/server/routers/gamification.ts:294.
+    // Input: { period, category, limit, roleFilter }. Returns
+    // { period, category, role, leaders:[...], myRank, totalParticipants }.
+
+    struct LeaderboardLeader: Decodable, Hashable {
+        let rank: Int
+        let userId: Int
+        let name: String
+        let role: String
+        let level: Int
+        let totalXp: Int
+        let totalMiles: Double?
+        let missionsCompleted: Int?
+    }
+
+    struct LeaderboardResponse: Decodable {
+        let period: String
+        let category: String
+        let role: String
+        let leaders: [LeaderboardLeader]
+        let myRank: Int
+        let totalParticipants: Int
+    }
+
+    struct GetLeaderboardInput: Encodable {
+        let period: String
+        let category: String
+        let limit: Int
+        let roleFilter: String
+    }
+
+    func getLeaderboard(
+        period: String = "month",
+        category: String = "points",
+        limit: Int = 20,
+        roleFilter: String = "own"
+    ) async throws -> [LeaderboardRow] {
+        let resp: LeaderboardResponse = try await api.query(
+            "gamification.getLeaderboard",
+            input: GetLeaderboardInput(period: period, category: category, limit: limit, roleFilter: roleFilter)
+        )
+        let myUserId = resp.leaders.first(where: { $0.rank == resp.myRank })?.userId ?? -1
+        return resp.leaders.map { l in
+            LeaderboardRow(
+                id: String(l.userId),
+                rank: l.rank,
+                displayName: l.name,
+                avatarUrl: nil,
+                score: l.totalXp,
+                isCurrentDriver: l.userId == myUserId,
+                changeVsLastWeek: nil
+            )
+        }
+    }
+
+    // MARK: - Leaderboard snapshot (canonical, full-envelope)
+    //
+    // 62nd firing: brick 064 `TheHaulLeaderboard` needs `myRank` and
+    // `totalParticipants` to render its self-rank hero + participant
+    // denominator, neither of which the row-only `getLeaderboard(...)`
+    // projection exposes. This snapshot variant returns the whole
+    // response envelope (rows + myRank + totalParticipants + echoed
+    // period/category/role) so the dedicated leaderboard surface
+    // never has to fabricate a denominator or invent "you're #?".
+
+    struct LeaderboardSnapshot: Hashable {
+        let period: String
+        let category: String
+        let role: String
+        let myRank: Int
+        let totalParticipants: Int
+        let rows: [LeaderboardRow]
+    }
+
+    func getLeaderboardSnapshot(
+        period: String = "month",
+        category: String = "points",
+        limit: Int = 20,
+        roleFilter: String = "own"
+    ) async throws -> LeaderboardSnapshot {
+        let resp: LeaderboardResponse = try await api.query(
+            "gamification.getLeaderboard",
+            input: GetLeaderboardInput(period: period, category: category, limit: limit, roleFilter: roleFilter)
+        )
+        let myUserId = resp.leaders.first(where: { $0.rank == resp.myRank })?.userId ?? -1
+        let rows = resp.leaders.map { l in
+            LeaderboardRow(
+                id: String(l.userId),
+                rank: l.rank,
+                displayName: l.name,
+                avatarUrl: nil,
+                score: l.totalXp,
+                isCurrentDriver: l.userId == myUserId,
+                changeVsLastWeek: nil
+            )
+        }
+        return LeaderboardSnapshot(
+            period: resp.period,
+            category: resp.category,
+            role: resp.role,
+            myRank: resp.myRank,
+            totalParticipants: resp.totalParticipants,
+            rows: rows
+        )
+    }
+
+    // MARK: - Rewards catalog (canonical)
+    //
+    // `gamification.getRewardsCatalog` — MCP-verified at
+    // frontend/server/routers/gamification.ts:377. Returns
+    // { availablePoints, rewards:[...], categories }.
+
+    struct RewardsCatalogReward: Decodable {
+        let id: String
+        let name: String
+        let cost: Int?
+        let category: String?
+        let available: Bool?
+        let image: String?
+    }
+
+    struct RewardsCatalogResponse: Decodable {
+        let availablePoints: Int
+        let rewards: [RewardsCatalogReward]
+        let categories: [String]?
+    }
+
+    func getRewardsCatalog() async throws -> (availablePoints: Int, rewards: [RewardItem]) {
+        let resp: RewardsCatalogResponse = try await api.queryNoInput("gamification.getRewardsCatalog")
+        let mapped = resp.rewards.map { r in
+            RewardItem(
+                id: r.id,
+                name: r.name,
+                pointsCost: r.cost ?? 0,
+                category: r.category,
+                imageUrl: r.image,
+                inStock: r.available,
+                tierRequired: nil
+            )
+        }
+        return (resp.availablePoints, mapped)
+    }
+
+    // MARK: - Badges (canonical)
+    //
+    // `gamification.getBadges` — MCP-verified at
+    // frontend/server/routers/gamification.ts:528. Returns an array of
+    // badge rows { id, name, description, iconName, earnedAt, tier, ... }.
+
+    struct BadgeWire: Decodable {
+        let id: String?
+        let name: String?
+        let iconName: String?
+        let icon: String?
+        let description: String?
+        let earnedAt: String?
+        let tier: String?
+        let isDisplay: Bool?
+    }
+
+    /// Server envelope as of the 71st firing — `getBadges` returns
+    /// `{ displayBadges: [...], allBadges: [...] }`, NOT a bare array.
+    /// The earlier comment / previous decoder claimed a bare array
+    /// shape and threw `keyNotFound("displayBadges")` on every refresh,
+    /// surfacing as the user-reported "badge collection error".
+    private struct BadgesEnvelope: Decodable {
+        let displayBadges: [BadgeWire]?
+        let allBadges: [BadgeWire]?
+    }
+
+    func getBadges() async throws -> [DriverBadge] {
+        let env: BadgesEnvelope = try await api.queryNoInput("gamification.getBadges")
+        // Prefer the full collection so the page can render earned +
+        // locked side-by-side; `displayBadges` is the 3-up profile
+        // showcase subset and lives behind the `isDisplay` flag.
+        let rows = env.allBadges ?? env.displayBadges ?? []
+        return rows.map { w in
+            DriverBadge(
+                id: w.id ?? UUID().uuidString,
+                name: w.name ?? "Badge",
+                iconName: w.iconName ?? w.icon ?? "rosette",
+                earnedAt: w.earnedAt,
+                description: w.description,
+                tier: w.tier
+            )
+        }
+    }
+
+    // MARK: - Crates (canonical)
+    //
+    // `gamification.getCrates` — MCP-verified at
+    // frontend/server/routers/gamification.ts:1039. Returns bare array
+    // of pending crate rows owned by the current user.
+    // `gamification.openCrate({ crateId })` — gamification.ts:1066.
+    // Mutation rolls contents server-side, updates profile XP/miles,
+    // and returns `{ success, contents:[{type,value,name}] }` (or
+    // `{ success: false, message }` if the crate is gone/already open).
+
+    struct Crate: Decodable, Identifiable, Hashable {
+        let id: Int
+        /// `common` | `uncommon` | `rare` | `epic` | `legendary` | `mythic`
+        let crateType: String
+        /// Origin label (e.g. `mission`, `streak`, `tournament`).
+        let source: String?
+        let createdAt: String?
+        let expiresAt: String?
+    }
+
+    func getCrates() async throws -> [Crate] {
+        try await api.queryNoInput("gamification.getCrates")
+    }
+
+    struct CrateReward: Decodable, Hashable {
+        /// `miles` | `xp`
+        let type: String
+        let value: Double
+        let name: String
+    }
+
+    struct OpenCrateResponse: Decodable, Equatable {
+        let success: Bool
+        let message: String?
+        let contents: [CrateReward]?
+    }
+
+    struct OpenCrateInput: Encodable { let crateId: Int }
+
+    func openCrate(crateId: Int) async throws -> OpenCrateResponse {
+        try await api.mutation("gamification.openCrate", input: OpenCrateInput(crateId: crateId))
+    }
+}
+
+// MARK: - FleetCanonicalAPI (canonical `fleet.*` procedures)
+//
+// The legacy `FleetAPI` hit iOS-shaped wrappers that don't exist on
+// the backend. `FleetCanonicalAPI` binds to the real canonical
+// procedures verified via MCP search against frontend/server/routers/fleet.ts.
+
+struct FleetCanonicalAPI {
+    unowned let api: EusoTripAPI
+
+    // `fleet.getVehicles` — returns the caller's assigned fleet vehicles.
+    // MCP-verified at frontend/server/routers/fleet.ts:117. Server returns
+    // a bare array of rows with these minimum fields.
+    struct VehicleWire: Decodable {
+        let id: Int?
+        let unitNumber: String?
+        let type: String?
+        let make: String?
+        let model: String?
+        let year: Int?
+        let status: String?
+        let plate: String?
+        let odometer: Int?
+    }
+
+    struct GetVehiclesInput: Encodable {
+        let status: String?
+        let limit: Int?
+    }
+
+    func getVehicles(status: String? = nil, limit: Int? = 50) async throws -> [FleetVehicleRow] {
+        let rows: [VehicleWire] = try await api.query(
+            "fleet.getVehicles",
+            input: GetVehiclesInput(status: status, limit: limit)
+        )
+        return rows.map { w in
+            FleetVehicleRow(
+                id: String(w.id ?? Int.random(in: 1...Int.max)),
+                unitNumber: w.unitNumber ?? "UNIT-\(w.id ?? 0)",
+                kind: (w.type ?? "tractor").lowercased(),
+                make: w.make,
+                model: w.model,
+                year: w.year,
+                plate: w.plate,
+                status: w.status,
+                odometer: w.odometer
+            )
+        }
+    }
+}
+
+// MARK: - ZeunMechanicsAPI (canonical `zeunMechanics.*`)
+//
+// MCP-verified at frontend/server/routers/zeunMechanics.ts. Uses the
+// live 1900-line router (NOT the stubbed `zeun.*` namespace — see SKILL
+// §16 landmines: "zeunRouter is mostly stubs; zeunMechanicsRouter is
+// the live surface").
+
+struct ZeunMechanicsAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: - getMyBreakdowns (existing)
+
+    struct GetMyBreakdownsInput: Encodable {
+        let limit: Int
+        let offset: Int
+        let status: String
+    }
+
+    func getMyBreakdowns(
+        limit: Int = 20,
+        offset: Int = 0,
+        status: String = "ALL"
+    ) async throws -> [ZeunBreakdownRow] {
+        try await api.query(
+            "zeunMechanics.getMyBreakdowns",
+            input: GetMyBreakdownsInput(limit: limit, offset: offset, status: status)
+        )
+    }
+
+    // MARK: - reportBreakdown
+    //
+    // Mirrors the server's `reportBreakdown` mutation. Optional fields
+    // are kept optional on iOS so the form-builder can skip telemetry
+    // the driver can't read off the dash (no DEF % on a class-3 truck,
+    // no oil PSI without an OBD reader, etc.).
+
+    struct BreakdownProvider: Decodable, Identifiable, Hashable {
+        let id: Int
+        let name: String?
+        let type: String?
+        let distance: String?
+        let phone: String?
+        let rating: Double?
+        let available24x7: Bool?
+    }
+
+    struct BreakdownDiagnosis: Decodable, Hashable {
+        let issue: String?
+        let probability: Double?
+        let severity: String?
+        let description: String?
+    }
+
+    struct BreakdownCostRange: Decodable, Hashable {
+        let min: Double?
+        let max: Double?
+    }
+
+    struct ReportBreakdownAck: Decodable {
+        let success: Bool
+        let reportId: Int
+        let processingTimeMs: Int?
+        let diagnosis: BreakdownDiagnosis?
+        let canDrive: Bool?
+        let providers: [BreakdownProvider]
+        let estimatedCost: BreakdownCostRange?
+        let partsLikelyNeeded: [String]?
+        let safetyWarnings: [String]?
+        let preventiveTips: [String]?
+        let aiModel: String?
+    }
+
+    struct ReportBreakdownInput: Encodable {
+        let vehicleVin: String?
+        let vehicleId: Int?
+        let issueCategory: String   // engine | brakes | tires | etc.
+        let severity: String        // LOW | MEDIUM | HIGH | CRITICAL
+        let symptoms: [String]
+        let canDrive: Bool
+        let latitude: Double
+        let longitude: Double
+        let loadId: Int?
+        let loadStatus: String?     // EMPTY | LOADED | HAZMAT
+        let cargoType: String?
+        let isHazmat: Bool?
+        let hazmatClass: String?
+        let faultCodes: [String]?
+        let driverNotes: String?
+        let photos: [String]?       // base64 image data URIs
+        let videos: [String]?
+        let fuelLevelPercent: Double?
+        let defLevelPercent: Double?
+        let oilPressurePsi: Double?
+        let coolantTempF: Double?
+        let batteryVoltage: Double?
+        let currentOdometer: Int?
+    }
+
+    func reportBreakdown(_ input: ReportBreakdownInput) async throws -> ReportBreakdownAck {
+        try await api.mutation("zeunMechanics.reportBreakdown", input: input)
+    }
+
+    // MARK: - getBreakdownReport (single drill-in)
+
+    struct BreakdownDetail: Decodable {
+        struct Diagnostic: Decodable {
+            let confidence: Double?
+            let primaryDiagnosis: BreakdownDiagnosis?
+            let canDrive: Bool?
+            let estimatedCost: BreakdownCostRange?
+        }
+        let id: Int
+        let driverId: Int?
+        let driverName: String?
+        let issueCategory: String?
+        let severity: String?
+        let status: String?
+        let canDrive: Bool?
+        let symptoms: [String]?
+        let driverNotes: String?
+        let createdAt: String?
+        let resolvedAt: String?
+        let actualCost: Double?
+        let selectedProviderId: Int?
+        let diagnostic: Diagnostic?
+    }
+
+    struct ReportIdInput: Encodable { let reportId: Int }
+
+    func getBreakdownReport(reportId: Int) async throws -> BreakdownDetail? {
+        try await api.query(
+            "zeunMechanics.getBreakdownReport",
+            input: ReportIdInput(reportId: reportId)
+        )
+    }
+
+    // MARK: - updateBreakdownStatus
+
+    struct UpdateBreakdownInput: Encodable {
+        let reportId: Int
+        let status: String
+        let notes: String?
+        let actualCost: Double?
+        let selectedProviderId: Int?
+    }
+
+    struct OkAck: Decodable { let success: Bool }
+
+    func updateBreakdownStatus(
+        reportId: Int,
+        status: String,
+        notes: String? = nil,
+        actualCost: Double? = nil,
+        selectedProviderId: Int? = nil
+    ) async throws -> OkAck {
+        try await api.mutation(
+            "zeunMechanics.updateBreakdownStatus",
+            input: UpdateBreakdownInput(
+                reportId: reportId, status: status, notes: notes,
+                actualCost: actualCost, selectedProviderId: selectedProviderId
+            )
+        )
+    }
+
+    // MARK: - findProviders / searchProviders
+
+    struct ProviderRow: Decodable, Identifiable, Hashable {
+        let id: Int
+        let name: String?
+        let type: String?
+        let chainName: String?
+        let address: String?
+        let city: String?
+        let state: String?
+        let phone: String?
+        let distance: Double?
+        let rating: Double?
+        let reviewCount: Int?
+        let available24x7: Bool?
+        let hasMobileService: Bool?
+        let services: [String]?
+        let aiGenerated: Bool?
+    }
+
+    struct FindProvidersInput: Encodable {
+        let latitude: Double
+        let longitude: Double
+        let radiusMiles: Double
+        let providerType: String?
+        let maxResults: Int
+    }
+
+    func findProviders(
+        latitude: Double,
+        longitude: Double,
+        radiusMiles: Double = 50,
+        providerType: String? = nil,
+        maxResults: Int = 10
+    ) async throws -> [ProviderRow] {
+        try await api.query(
+            "zeunMechanics.findProviders",
+            input: FindProvidersInput(
+                latitude: latitude, longitude: longitude,
+                radiusMiles: radiusMiles, providerType: providerType,
+                maxResults: maxResults
+            )
+        )
+    }
+
+    struct SearchProvidersInput: Encodable {
+        let query: String
+        let latitude: Double?
+        let longitude: Double?
+        let radiusMiles: Double
+    }
+
+    func searchProviders(
+        query: String,
+        latitude: Double? = nil,
+        longitude: Double? = nil,
+        radiusMiles: Double = 50
+    ) async throws -> [ProviderRow] {
+        try await api.query(
+            "zeunMechanics.searchProviders",
+            input: SearchProvidersInput(
+                query: query, latitude: latitude,
+                longitude: longitude, radiusMiles: radiusMiles
+            )
+        )
+    }
+
+    // MARK: - getProvider (full detail + reviews)
+
+    struct ProviderReview: Decodable, Identifiable, Hashable {
+        let id: Int
+        let rating: Double
+        let title: String?
+        let reviewText: String?
+        let serviceType: String?
+        let createdAt: String?
+    }
+
+    struct ProviderDetail: Decodable {
+        let id: Int
+        let name: String?
+        let providerType: String?
+        let chainName: String?
+        let address: String?
+        let city: String?
+        let state: String?
+        let zip: String?
+        let phone: String?
+        let website: String?
+        let email: String?
+        let services: [String]?
+        let certifications: [String]?
+        let oemBrands: [String]?
+        let available24x7: Bool?
+        let hasMobileService: Bool?
+        let acceptsCreditCard: Bool?
+        let acceptsFleetAccounts: Bool?
+        let rating: Double?
+        let reviewCount: Int?
+        let zeunRating: String?
+        let zeunReviewCount: Int?
+        let averageWaitTimeMinutes: Int?
+        let jobsCompleted: Int?
+        let reviews: [ProviderReview]
+    }
+
+    struct ProviderIdInput: Encodable { let providerId: Int }
+
+    func getProvider(providerId: Int) async throws -> ProviderDetail? {
+        try await api.query(
+            "zeunMechanics.getProvider",
+            input: ProviderIdInput(providerId: providerId)
+        )
+    }
+
+    // MARK: - submitProviderReview
+
+    struct SubmitReviewInput: Encodable {
+        let providerId: Int
+        let breakdownReportId: Int?
+        let rating: Int
+        let title: String?
+        let reviewText: String?
+        let serviceType: String?
+        let waitTimeMinutes: Int?
+        /// "LOWER" | "AS_QUOTED" | "HIGHER"
+        let costAccuracy: String?
+        let wouldRecommend: Bool
+    }
+
+    func submitProviderReview(_ input: SubmitReviewInput) async throws -> OkAck {
+        try await api.mutation("zeunMechanics.submitProviderReview", input: input)
+    }
+
+    // MARK: - Maintenance
+
+    struct MaintenanceStatusInput: Encodable {
+        let vehicleId: Int
+        let currentOdometer: Int
+    }
+
+    struct ScheduledItem: Decodable, Hashable, Identifiable {
+        var id: String { "\(serviceType ?? "")-\(dueOdometer ?? 0)" }
+        let serviceType: String?
+        let dueOdometer: Int?
+        let priority: String?
+        let milesRemaining: Int?
+    }
+
+    struct MaintenanceStatus: Decodable {
+        let overdue: [ScheduledItem]
+        let dueSoon: [ScheduledItem]
+        let upcoming: [ScheduledItem]
+    }
+
+    func getMaintenanceStatus(vehicleId: Int, currentOdometer: Int) async throws -> MaintenanceStatus? {
+        try await api.query(
+            "zeunMechanics.getMaintenanceStatus",
+            input: MaintenanceStatusInput(vehicleId: vehicleId, currentOdometer: currentOdometer)
+        )
+    }
+
+    struct MaintenanceLog: Decodable, Identifiable, Hashable {
+        let id: Int
+        let serviceType: String?
+        let serviceDate: String?
+        let odometerAtService: Int?
+        let cost: Double?
+        let providerName: String?
+        let notes: String?
+    }
+
+    struct MaintenanceHistoryInput: Encodable {
+        let vehicleId: Int
+        let limit: Int
+    }
+
+    func getMaintenanceHistory(vehicleId: Int, limit: Int = 50) async throws -> [MaintenanceLog] {
+        try await api.query(
+            "zeunMechanics.getMaintenanceHistory",
+            input: MaintenanceHistoryInput(vehicleId: vehicleId, limit: limit)
+        )
+    }
+
+    struct LogMaintenanceInput: Encodable {
+        let vehicleId: Int
+        let serviceType: String
+        let serviceDate: String
+        let odometerAtService: Int
+        let cost: Double?
+        let providerName: String?
+        let providerId: Int?
+        let partsReplaced: [String]?
+        let laborHours: Double?
+        let invoiceUrl: String?
+        let notes: String?
+    }
+
+    func logMaintenance(_ input: LogMaintenanceInput) async throws -> OkAck {
+        try await api.mutation("zeunMechanics.logMaintenance", input: input)
+    }
+
+    // MARK: - DTC + Self-repair + Emergency procedures
+
+    struct DTCResult: Decodable {
+        let found: Bool
+        let code: String?
+        let spn: String?
+        let fmi: String?
+        let description: String?
+        let severity: String?
+        let category: String?
+        let symptoms: [String]?
+        let commonCauses: [String]?
+        let canDrive: Bool?
+        let repairUrgency: String?
+        let estimatedCost: BreakdownCostRange?
+        let estimatedTimeHours: Double?
+        let affectedSystems: [String]?
+    }
+
+    struct DTCInput: Encodable { let code: String }
+
+    func lookupDTC(code: String) async throws -> DTCResult {
+        try await api.query("zeunMechanics.lookupDTC", input: DTCInput(code: code))
+    }
+
+    struct EmergencyContact: Decodable, Hashable, Identifiable {
+        var id: String { "\(name ?? "")-\(number ?? "")" }
+        let name: String?
+        let number: String?
+        let priority: String?
+    }
+
+    struct EmergencyProcedure: Decodable {
+        let title: String
+        let severity: String
+        let immediateAction: String?
+        let steps: [String]
+        let emergencyContacts: [EmergencyContact]
+        let doNot: [String]?
+    }
+
+    /// One of: engine_fire, brake_failure, tire_blowout, rollover,
+    /// hazmat_spill, medical_emergency, accident, stolen_vehicle,
+    /// weather_severe, breakdown_highway.
+    struct EmergencyTypeInput: Encodable { let emergencyType: String }
+
+    func getEmergencyProcedure(type: String) async throws -> EmergencyProcedure {
+        try await api.query(
+            "zeunMechanics.getEmergencyProcedure",
+            input: EmergencyTypeInput(emergencyType: type)
+        )
+    }
+
+    // MARK: - Recalls
+
+    struct Recall: Decodable, Identifiable, Hashable {
+        let id: Int
+        let campaignNumber: String?
+        let manufacturer: String?
+        let component: String?
+        let summary: String?
+        let consequence: String?
+        let remedy: String?
+        let recallDate: String?
+        let isCompleted: Bool?
+    }
+
+    struct VehicleIdInput: Encodable { let vehicleId: Int }
+
+    func checkRecalls(vehicleId: Int) async throws -> [Recall] {
+        try await api.query(
+            "zeunMechanics.checkRecalls",
+            input: VehicleIdInput(vehicleId: vehicleId)
+        )
+    }
+}
+
+// MARK: - leaderboardRouter — removed 65th firing (Phase C landmine sweep).
+// Canonical replacement: `gamification.getLeaderboard` (wired via
+// `LeaderboardStore` in `ViewModels/LiveDataStores.swift`). Zero consumers.
+
+// MARK: - fleetRouter
+
+struct FleetAPI {
+    unowned let api: EusoTripAPI
+
+    struct AssetsResponse: Decodable { let items: [FleetAsset] }
+
+    func listAssets() async throws -> AssetsResponse {
+        try await api.queryNoInput("fleet.listAssets")
+    }
+
+    struct AssetDetail: Decodable {
+        let id: String
+        let kind: String
+        let unitNumber: String
+        let make: String?
+        let model: String?
+        let year: Int?
+        let plate: String?
+        let odometerMiles: Int?
+        let homeBase: String?
+        let status: String?
+        let vin: String?
+        let lastInspectionDate: String?
+        let nextInspectionDue: String?
+    }
+
+    struct GetAssetInput: Encodable { let id: String }
+
+    func getAsset(id: String) async throws -> AssetDetail {
+        try await api.query("fleet.getAsset", input: GetAssetInput(id: id))
+    }
+
+    struct MaintenanceItem: Decodable, Identifiable, Hashable {
+        let id: String
+        let assetId: String
+        let taskName: String
+        let dueDate: String?
+        let dueMiles: Int?
+        let severity: String
+        let lastCompletedAt: String?
+        let notes: String?
+    }
+
+    struct MaintenanceResponse: Decodable { let items: [MaintenanceItem] }
+    struct GetMaintenanceInput: Encodable { let assetId: String? }
+
+    // NOTE: canonical `fleet.getMaintenanceSchedule` returns a bare array with
+    // different field names (used by the web Fleet Maintenance page). iOS now
+    // calls the iOS-shaped wrapper `fleet.getMaintenanceScheduleMobile`, which
+    // returns { items: [MaintenanceItem] } with the fields iOS decodes.
+    func getMaintenanceSchedule(assetId: String? = nil) async throws -> MaintenanceResponse {
+        try await api.query(
+            "fleet.getMaintenanceScheduleMobile",
+            input: GetMaintenanceInput(assetId: assetId)
+        )
+    }
+
+    struct FuelTxn: Decodable, Identifiable, Hashable {
+        let id: String
+        let assetId: String?
+        let stationName: String
+        let city: String
+        let state: String
+        let timestamp: String
+        let gallons: Double
+        let pricePerGallon: Double
+        let total: Double
+        let odometer: Int?
+        let currency: String
+    }
+
+    struct FuelTxnsResponse: Decodable { let items: [FuelTxn] }
+    struct GetFuelTxnsInput: Encodable { let assetId: String?; let limit: Int }
+
+    // NOTE: canonical `fleet.getFuelTransactions` returns a bare array with
+    // different field names (vehicleId/date/location/totalCost) used by the
+    // web Fleet Fuel page. iOS calls the iOS-shaped wrapper
+    // `fleet.getFuelTransactionsMobile`, which returns { items: [FuelTxn] }
+    // with stationName/city/state/timestamp/total/currency/odometer.
+    func getFuelTransactions(
+        assetId: String? = nil,
+        limit: Int = 50
+    ) async throws -> FuelTxnsResponse {
+        try await api.query(
+            "fleet.getFuelTransactionsMobile",
+            input: GetFuelTxnsInput(assetId: assetId, limit: limit)
+        )
+    }
+}
+
+// MARK: - profileRouter
+
+struct ProfileAPI {
+    unowned let api: EusoTripAPI
+
+    struct ReferralsResponse: Decodable {
+        let items: [DriverReferral]
+        let totalEarned: Double
+        let currency: String
+    }
+
+    func listReferrals() async throws -> ReferralsResponse {
+        try await api.queryNoInput("profile.listReferrals")
+    }
+
+    struct ReferralCode: Decodable {
+        let code: String
+        let bonusAmount: Double
+        let bonusTerms: String
+        let currency: String
+        let shareUrl: String?
+    }
+
+    func getReferralCode() async throws -> ReferralCode {
+        try await api.queryNoInput("profile.getReferralCode")
+    }
+
+    struct Reputation: Decodable {
+        let overallScore: Double
+        let onTimePickupPct: Double
+        let onTimeDeliveryPct: Double
+        let safetyScore: Double
+        let cancellationRate: Double
+        let ratingAverage: Double
+        let ratingCount: Int
+        let lastUpdatedAt: String
+    }
+
+    func getReputation() async throws -> Reputation {
+        try await api.queryNoInput("profile.getReputation")
+    }
+}
+
+// MARK: - availabilityRouter — removed 65th firing (Phase C landmine sweep).
+// No backend router and no canonical replacement yet. Driver availability
+// grid in `MeAvailabilityView` remains Cohort A until the backend ships.
+// Zero consumers at removal.
+
+// MARK: - roomsRouter — removed 65th firing (Phase C landmine sweep).
+// No backend router; nearest surface is `messaging.*` (no presence counts).
+// Zero consumers at removal.
+
+// MARK: - loyaltyRouter — removed 65th firing (Phase C landmine sweep).
+// Canonical replacement: `gamification.getProfile` (wired via
+// `LoyaltyHeroStore` in `ViewModels/LiveDataStores.swift`). Zero consumers.
+
+// MARK: - zeun driver router — removed 65th firing (Phase C landmine sweep).
+// Canonical replacement: `ZeunMechanicsAPI.getMyBreakdowns` (wired via
+// `ZeunBreakdownsStore`). Procedure `zeun.getDiagnostics` never existed —
+// real name is `zeun.getDiagnosticCodes`. Zero consumers at removal.
+
+// MARK: - earningsRouter (canonical — `server/routers/earnings.ts`)
+//
+// Weekly settlement history lives on `earnings.getWeeklySummaries({ weeks })`
+// — a bare array of per-week gross + miles + loads rows. The iOS
+// EusoWallet weekly-chart section reads from here, which is the only
+// place the backend exposes a weekly time series today (wallet.ts has
+// no `getWeeklyHistory` procedure — verified via MCP search_code).
+//
+// We also expose `getSummary(period)` and `getYTDSummary` so the
+// EarningsStore can aggregate the hero-card side tiles without adding
+// a dedicated router.
+//
+
+struct EarningsAPI {
+    unowned let api: EusoTripAPI
+
+    /// Weekly summary row returned by `earnings.getWeeklySummaries`.
+    /// `totalEarnings` is the gross the driver was paid that week; the
+    /// chart treats this as the bar height. `totalLoads` and
+    /// `totalMiles` are surfaced for tooltips/secondary labels.
+    struct WeeklySummary: Decodable, Identifiable, Hashable {
+        let weekStart: String
+        let weekEnd: String
+        let totalLoads: Int
+        let totalMiles: Double
+        let totalEarnings: Double
+        let avgPerMile: Double
+        let avgPerLoad: Double
+        var id: String { weekStart }
+    }
+
+    struct GetWeeklySummariesInput: Encodable { let weeks: Int }
+
+    /// `earnings.getWeeklySummaries({ weeks })` — bare array. The server
+    /// returns `weeks` rows ordered most-recent first (index 0 == this
+    /// week). iOS reverses into chronological order at the render layer.
+    func getWeeklySummaries(weeks: Int = 7) async throws -> [WeeklySummary] {
+        try await api.query(
+            "earnings.getWeeklySummaries",
+            input: GetWeeklySummariesInput(weeks: weeks)
+        )
+    }
+
+    // MARK: - Brick 068 · Me · Earnings additions
+    //
+    // Typed access to `earnings.getSummary({ period })`, `earnings.getYTDSummary`
+    // and a derived `getTopLoads` built from `earnings.getEarnings` (there is
+    // no dedicated `earnings.getTopLoads` procedure — verified via MCP
+    // search_code against frontend/server/routers/earnings.ts).
+
+    /// Wire shape of `earnings.getSummary` — superset of all fields the
+    /// server currently emits so future evolution decodes cleanly.
+    struct PeriodSummary: Decodable, Hashable {
+        let period: String
+        let totalEarnings: Double
+        let totalLoads: Int
+        let totalMiles: Double
+        let avgPerMile: Double
+        let avgPerLoad: Double
+        let pendingAmount: Double?
+        let approvedAmount: Double?
+        let paidAmount: Double?
+        let bonuses: Double?
+        let change: Double?
+
+        struct Comparison: Decodable, Hashable {
+            let previousPeriod: Double
+            let percentChange: Double
+            let trend: String
+        }
+        let comparison: Comparison?
+    }
+
+    struct GetSummaryInput: Encodable { let period: String }
+
+    /// `earnings.getSummary({ period })` — week | month | quarter | year.
+    /// The server rejects any other enum value; `ytd` is computed from
+    /// `getYTDSummary` on iOS rather than dispatched to this procedure.
+    func getSummary(period: String) async throws -> PeriodSummary {
+        try await api.query(
+            "earnings.getSummary",
+            input: GetSummaryInput(period: period)
+        )
+    }
+
+    /// Wire shape of `earnings.getYTDSummary`. `monthlyBreakdown` is
+    /// declared on the server but always emitted empty today; iOS keeps
+    /// it optional so future population decodes transparently.
+    struct YTDSummaryWire: Decodable, Hashable {
+        let year: Int
+        let totalEarnings: Double
+        let totalLoads: Int
+        let totalMiles: Double
+        let avgPerMile: Double
+        let avgPerLoad: Double
+        let projectedAnnual: Double
+    }
+
+    func getYTDSummary() async throws -> YTDSummaryWire {
+        try await api.queryNoInput("earnings.getYTDSummary")
+    }
+
+    /// Row shape returned by `earnings.getEarnings` — per-load completed
+    /// row. Brick 068's "TOP LOADS THIS PERIOD" section sorts these by
+    /// `totalPay` descending and takes the top N.
+    struct EarningsLoadRow: Decodable, Identifiable, Hashable {
+        let id: String
+        let loadNumber: String?
+        let date: String
+        let origin: String
+        let destination: String
+        let miles: Double
+        let pay: Double?
+        let totalPay: Double
+        let hazmatPremium: Double?
+        let fuelBonus: Double?
+        let status: String
+    }
+
+    struct GetEarningsInput: Encodable {
+        let period: String?
+        let offset: Int
+        let limit: Int
+    }
+
+    /// `earnings.getEarnings({ period, offset, limit })` — list of
+    /// completed-load rows. Caller sorts + truncates for the "top loads"
+    /// section on brick 068.
+    func getEarnings(period: String, limit: Int = 50) async throws -> [EarningsLoadRow] {
+        try await api.query(
+            "earnings.getEarnings",
+            input: GetEarningsInput(period: period, offset: 0, limit: limit)
+        )
+    }
+}
+
+// MARK: - settlementBatchingRouter (canonical — `server/routers/settlementBatching.ts`)
+//
+// EusoWallet's "upcoming settlements" section reads from
+// `settlementBatching.getDriverBatchView({ driverId })`. Input is the
+// driver user id; response is `{ batches: [BatchRow] }` where each row
+// carries `batchId`, `batchNumber`, `periodStart`, `periodEnd`,
+// `totalAmount`, `status`, and `paidAt`. Statuses observed in the
+// source: `draft | pending_approval | approved | processing | paid |
+// failed | disputed` — we surface non-`paid` rows as "upcoming" on
+// the driver wallet pane.
+//
+
+struct SettlementBatchingAPI {
+    unowned let api: EusoTripAPI
+
+    struct DriverBatchRow: Decodable, Identifiable, Hashable {
+        let batchId: Int
+        let batchNumber: String
+        let periodStart: String?
+        let periodEnd: String?
+        let totalAmount: String            // server returns DECIMAL-string
+        let status: String
+        let paidAt: String?
+        var id: Int { batchId }
+    }
+
+    struct DriverBatchViewResponse: Decodable {
+        let batches: [DriverBatchRow]
+    }
+
+    struct GetDriverBatchViewInput: Encodable { let driverId: Int }
+
+    /// Server requires a driver id. iOS passes the currently-authenticated
+    /// user id; when unknown we pass 0 and the server returns `{ batches: [] }`.
+    func getDriverBatchView(driverId: Int) async throws -> DriverBatchViewResponse {
+        try await api.query(
+            "settlementBatching.getDriverBatchView",
+            input: GetDriverBatchViewInput(driverId: driverId)
+        )
+    }
+}
+
+// MARK: - advancedGamificationRouter (canonical — `server/routers/advancedGamification.ts`)
+//
+// Streaks, multipliers, daily-bonus XP, and the 7-day history rail
+// drive brick 065 The Haul · Streaks. The server reads
+// `gamificationProfiles.streakDays` / `longestStreak` /
+// `lastActivityAt`, derives the multiplier tier, and synthesises the
+// 7-day history. The iOS layer renders exactly what comes back —
+// no local multiplier math, no fabricated streak count.
+//
+// Added in the 65th firing. MCP-verified at
+// frontend/server/routers/advancedGamification.ts:1476 (procedure
+// body) and routers.ts:1568 (router mount point).
+//
+
+struct AdvancedGamificationAPI {
+    unowned let api: EusoTripAPI
+
+    /// A single entry in the 7-day streak history rail. Returned by
+    /// the server as `{ date, completed }` — `date` is an ISO
+    /// yyyy-MM-dd string, `completed` indicates whether that day
+    /// counted toward the current streak window.
+    struct StreakDay: Decodable, Hashable, Identifiable {
+        let date: String
+        let completed: Bool
+        var id: String { date }
+    }
+
+    /// Full response envelope for `advancedGamification.getStreakTracker`.
+    /// Every field lands server-side; the iOS layer never synthesises.
+    struct StreakTracker: Decodable, Hashable {
+        let dailyStreak: Int
+        let weeklyStreak: Int
+        let bestDailyStreak: Int
+        let bestWeeklyStreak: Int
+        let currentMultiplier: Double
+        let nextMultiplierAt: Int
+        let nextMultiplierValue: Double
+        let streakHistory: [StreakDay]
+        let dailyBonusXp: Int
+    }
+
+    /// Fetch the canonical streak tracker for the authenticated driver.
+    /// Returns a fully-populated envelope even when the driver has no
+    /// active streak (dailyStreak == 0, streakHistory == 7 false days,
+    /// currentMultiplier == 1.0). The empty-streak hero in 065 keys off
+    /// `dailyStreak == 0 && bestDailyStreak == 0`, not off missing data.
+    func getStreakTracker() async throws -> StreakTracker {
+        try await api.queryNoInput("advancedGamification.getStreakTracker")
+    }
+
+    // MARK: - Cosmetics (canonical)
+    //
+    // `advancedGamification.getCustomizationOptions` — MCP-verified at
+    // frontend/server/routers/advancedGamification.ts:1786. Returns
+    // `{ avatars, frames, titles }` sliced from the server-side
+    // `CUSTOMIZATION_OPTIONS` catalog (static game-design config —
+    // same catalog for every driver, with `owned: true` on the starter
+    // set + `owned: false` on items gated by cost / prestige).
+    //
+    // `advancedGamification.equipCustomization({ type, itemId })` —
+    // advancedGamification.ts:1794. Mutation. Server validates
+    // `item.owned == true`; returns BAD_REQUEST if not. For
+    // `type: "title"` the server writes
+    // `gamificationProfiles.activeTitle`. For `type: "avatar"` and
+    // `type: "frame"` the mutation resolves with `success: true` but
+    // does NOT persist — this is a known backend partial-implementation
+    // (the `getDriverProfile.customization` response is hardcoded to
+    // av1/fr1/ti1). 066 Cosmetics discloses this limitation in-copy
+    // rather than hiding it behind a stub banner.
+
+    /// Single catalog row as returned by `getCustomizationOptions`.
+    /// `owned` = "available to every driver out of the box" (starter
+    /// set). `equipped` = "default equipped for every driver" (one per
+    /// type). These are game-design config flags, not per-user state.
+    struct CustomizationOption: Decodable, Identifiable, Hashable {
+        let id: String
+        /// `avatar` | `frame` | `title`
+        let type: String
+        let name: String
+        /// Optional image URL (titles are `null`).
+        let image: String?
+        /// Purchase cost in points (0 for starter items).
+        let cost: Int
+        /// Prestige level required to unlock (0 for starter items).
+        let prestigeRequired: Int
+        let owned: Bool
+        let equipped: Bool
+    }
+
+    /// Catalog envelope — three arrays sliced from the shared catalog.
+    struct CustomizationCatalog: Decodable, Hashable {
+        let avatars: [CustomizationOption]
+        let frames: [CustomizationOption]
+        let titles: [CustomizationOption]
+    }
+
+    func getCustomizationOptions() async throws -> CustomizationCatalog {
+        try await api.queryNoInput("advancedGamification.getCustomizationOptions")
+    }
+
+    struct EquipCustomizationInput: Encodable {
+        /// `avatar` | `frame` | `title`
+        let type: String
+        let itemId: String
+    }
+
+    struct EquipCustomizationResponse: Decodable {
+        let success: Bool
+        /// Echoed item id on success. Absent on server-thrown errors
+        /// (the tRPC error path handles those — see `EusoTripAPIError`).
+        let equipped: String?
+        let type: String?
+    }
+
+    func equipCustomization(type: String, itemId: String) async throws -> EquipCustomizationResponse {
+        try await api.mutation(
+            "advancedGamification.equipCustomization",
+            input: EquipCustomizationInput(type: type, itemId: itemId)
+        )
+    }
+}
+
+// MARK: - DocumentManagementAPI
+//
+// Driver document surface backing 072 Me · Docs (CDL / Medical / TWIC /
+// Hazmat / Registration / Insurance). Mirrors
+// `frontend/server/routers/documentManagement.ts` — only the driver-
+// relevant read procedures are exposed here; workflow, e-signature, and
+// template surfaces live behind the admin-only 200s ladder and are not
+// wired on mobile yet.
+//
+// MCP-verified procedures (tRPC namespace `documentManagement.*`):
+//   • getDocuments            — list (paginated, filterable by type)
+//   • getDocumentById         — single detail fetch
+//   • getExpiringDocuments    — expiration alerts (expiring+expired)
+//
+// 67th firing (brick port 072).
+
+struct DocumentManagementAPI {
+    let api: EusoTripAPI
+
+    // MARK: Decoded shapes
+
+    /// Shape returned by `documentManagement.getDocuments[].map(mapDocRow)`
+    /// on the backend. Drops the admin-heavy fields the driver UI never
+    /// renders (workflow state, audit trail, retention policy, etc.) —
+    /// Swift `Decodable` silently ignores unknown JSON keys, so adding
+    /// extra server-side fields later is non-breaking for the app.
+    struct Document: Decodable, Identifiable, Equatable {
+        let id: String
+        let name: String
+        /// Backend `documentTypeSchema` enum value — e.g. "medical_card",
+        /// "hazmat_placard", "permit", "registration", "insurance",
+        /// "operating_authority", "other". See
+        /// `documentManagement.ts:51-58` for the full list.
+        let type: String
+        let status: String
+        /// Convenience bucket the backend computes with
+        /// `getCategoryForType(type)`. Useful for grouping when the raw
+        /// `type` value isn't specific enough (e.g. "other" documents
+        /// sort under the "personal" category on the server).
+        let category: String?
+        let mimeType: String?
+        let size: Int?
+        /// May be a relative path (`/api/documents/:id/download`) or an
+        /// absolute blob URL. Views resolve against `EusoTripAPI.baseURL`
+        /// when relative.
+        let url: String?
+        /// ISO-8601 string. Nil for documents with no expiration.
+        let expiresAt: String?
+        let uploadedAt: String?
+        let updatedAt: String?
+    }
+
+    struct GetDocumentsResponse: Decodable {
+        let documents: [Document]
+        let total: Int
+        let page: Int
+        let pageSize: Int
+        let totalPages: Int
+    }
+
+    /// Row shape inside `getExpiringDocuments.expiring[]`.
+    struct ExpiringDoc: Decodable, Identifiable, Equatable {
+        let id: String
+        let name: String
+        let type: String
+        let expiresAt: String?
+        let daysUntilExpiry: Int
+        /// Server-computed: "critical" | "high" | "medium" | "low".
+        let urgency: String
+    }
+
+    /// Row shape inside `getExpiringDocuments.expired[]`.
+    struct ExpiredDoc: Decodable, Identifiable, Equatable {
+        let id: String
+        let name: String
+        let type: String
+        let expiresAt: String?
+        let daysExpired: Int
+    }
+
+    struct ExpiringDocumentsResponse: Decodable, Equatable {
+        let expiring: [ExpiringDoc]
+        let expired: [ExpiredDoc]
+        let totalExpiring: Int
+        let totalExpired: Int
+    }
+
+    // MARK: Input envelopes
+
+    struct GetDocumentsInput: Encodable {
+        let page: Int
+        let pageSize: Int
+        let sortBy: String
+        let sortOrder: String
+    }
+
+    struct GetExpiringInput: Encodable {
+        let daysAhead: Int
+        let includeExpired: Bool
+    }
+
+    // MARK: Procedures
+
+    /// List driver-scoped documents. The server filters by `userId`
+    /// against the session, so no `driverId` parameter is needed —
+    /// whichever driver is signed in sees their own docs.
+    func getDocuments(page: Int = 1, pageSize: Int = 50) async throws -> GetDocumentsResponse {
+        try await api.query(
+            "documentManagement.getDocuments",
+            input: GetDocumentsInput(
+                page: page,
+                pageSize: pageSize,
+                sortBy: "uploadedAt",
+                sortOrder: "desc"
+            )
+        )
+    }
+
+    /// Expiration alerts — expiring within `daysAhead` + already-expired.
+    /// Backend default is 30 days; we bump to 90 for the Me · Docs
+    /// surface so drivers see renewal warnings a full quarter out for
+    /// TWIC (5-year) / CDL (varies) / medical (2-year) certs.
+    func getExpiringDocuments(daysAhead: Int = 90, includeExpired: Bool = true) async throws -> ExpiringDocumentsResponse {
+        try await api.query(
+            "documentManagement.getExpiringDocuments",
+            input: GetExpiringInput(daysAhead: daysAhead, includeExpired: includeExpired)
+        )
+    }
+
+    // MARK: Document mutations (083 Me · Documents Hub)
+    //
+    // MCP-verified procedures at `frontend/server/routers/documentManagement.ts`:
+    //   • uploadDocument      — line 519
+    //   • classifyDocument    — line 591  (AI kick; server-side OCR)
+    //   • shareDocument       — line 1639
+    //   • archiveDocument     — line 1916
+    //   • requestESignature   — line 1121
+
+    struct UploadDocumentInput: Encodable {
+        let name: String
+        let type: String
+        let mimeType: String
+        let size: Int
+        /// Base-64 encoded file body. Server expects this field exactly.
+        let fileData: String
+        /// "load" | "driver" | "vehicle" | "company" | "carrier" |
+        /// "broker" | "shipper". Me·Docs uploads default to "driver".
+        let entityType: String
+        let entityId: String
+        let tags: [String]?
+        let expiresAt: String?
+    }
+
+    struct UploadDocumentResponse: Decodable, Equatable {
+        let id: String
+        let name: String
+        let type: String
+        let status: String
+        let uploadedAt: String?
+        let message: String?
+    }
+
+    /// Upload a document. Driver-scoped by default — passes `driver`
+    /// as `entityType` and the driver's user-id as the entity id so
+    /// the server rows land under the right owner.
+    func uploadDocument(
+        name: String,
+        type: String,
+        mimeType: String,
+        size: Int,
+        fileData: String,
+        entityType: String = "driver",
+        entityId: String,
+        tags: [String]? = nil,
+        expiresAt: String? = nil
+    ) async throws -> UploadDocumentResponse {
+        try await api.mutation(
+            "documentManagement.uploadDocument",
+            input: UploadDocumentInput(
+                name: name, type: type, mimeType: mimeType,
+                size: size, fileData: fileData,
+                entityType: entityType, entityId: entityId,
+                tags: tags, expiresAt: expiresAt
+            )
+        )
+    }
+
+    struct DocumentIdInput: Encodable {
+        let documentId: String
+    }
+
+    struct ClassifyDocumentResponse: Decodable, Equatable {
+        let success: Bool
+        let classification: ClassificationResult?
+        let error: String?
+
+        struct ClassificationResult: Decodable, Equatable {
+            let type: String?
+            let confidence: Double?
+        }
+    }
+
+    /// Kick AI classification / OCR on the uploaded document. The
+    /// server runs this async on its side and persists the result
+    /// into `user_documents.ocrExtractedData`; the mobile caller only
+    /// needs to know success/failure.
+    func classifyDocument(documentId: String) async throws -> ClassifyDocumentResponse {
+        try await api.mutation(
+            "documentManagement.classifyDocument",
+            input: DocumentIdInput(documentId: documentId)
+        )
+    }
+
+    struct ArchiveDocumentInput: Encodable {
+        let documentId: String
+        /// "1_year" | "3_years" | "5_years" | "7_years" | "10_years" | "permanent"
+        let retentionPolicy: String
+        let reason: String?
+    }
+
+    struct ArchiveDocumentResponse: Decodable, Equatable {
+        let success: Bool
+        let documentId: String?
+        let archivedAt: String?
+        let retentionPolicy: String?
+        let message: String?
+        let error: String?
+    }
+
+    /// Soft-delete a document with a retention policy. The server
+    /// stamps `deletedAt` + `status = "expired"`; rows stay in the
+    /// audit trail for the chosen retention window.
+    func archiveDocument(
+        documentId: String,
+        retentionPolicy: String = "7_years",
+        reason: String? = nil
+    ) async throws -> ArchiveDocumentResponse {
+        try await api.mutation(
+            "documentManagement.archiveDocument",
+            input: ArchiveDocumentInput(
+                documentId: documentId,
+                retentionPolicy: retentionPolicy,
+                reason: reason
+            )
+        )
+    }
+
+    struct ShareDocumentInput: Encodable {
+        let documentId: String
+        let recipientEmail: String
+        let recipientName: String?
+        let expiresInHours: Int
+        /// "view" | "download" | "sign"
+        let permissions: String
+        let message: String?
+    }
+
+    struct ShareDocumentResponse: Decodable, Equatable {
+        let success: Bool
+        let shareLink: String?
+        let shareToken: String?
+        let expiresAt: String?
+        let permissions: String?
+        let recipientEmail: String?
+        let message: String?
+        let error: String?
+    }
+
+    func shareDocument(
+        documentId: String,
+        recipientEmail: String,
+        recipientName: String? = nil,
+        expiresInHours: Int = 72,
+        permissions: String = "view",
+        message: String? = nil
+    ) async throws -> ShareDocumentResponse {
+        try await api.mutation(
+            "documentManagement.shareDocument",
+            input: ShareDocumentInput(
+                documentId: documentId,
+                recipientEmail: recipientEmail,
+                recipientName: recipientName,
+                expiresInHours: expiresInHours,
+                permissions: permissions,
+                message: message
+            )
+        )
+    }
+
+    struct ESignSigner: Encodable {
+        let name: String
+        let email: String
+        let order: Int
+    }
+
+    struct RequestESignatureInput: Encodable {
+        let documentId: String
+        let signers: [ESignSigner]
+        let message: String
+        let expiresInDays: Int
+    }
+
+    struct RequestESignatureResponse: Decodable, Equatable {
+        let success: Bool
+        let requestId: String?
+        let expiresAt: String?
+        let message: String?
+        let error: String?
+    }
+
+    /// Fire a DocuSign-equivalent e-signature request. The server
+    /// stores the request in `audit_logs` under `doc_signature` and
+    /// emails each signer. Response's `requestId` is safe to
+    /// round-trip into a Driver → Dispatch chat so both sides can
+    /// track signing progress.
+    func requestESignature(
+        documentId: String,
+        signers: [ESignSigner],
+        message: String = "Please review and sign this document.",
+        expiresInDays: Int = 7
+    ) async throws -> RequestESignatureResponse {
+        try await api.mutation(
+            "documentManagement.requestESignature",
+            input: RequestESignatureInput(
+                documentId: documentId,
+                signers: signers,
+                message: message,
+                expiresInDays: expiresInDays
+            )
+        )
+    }
+}
+
+// MARK: - VehicleAPI
+//
+// Driver-scoped assigned-vehicle + maintenance history surface backing
+// 073 Me · Vehicle. Mirrors `frontend/server/routers/vehicle.ts`.
+//
+// MCP-verified procedures (tRPC namespace `vehicle.*`):
+//   • getAssigned             — the driver's currently assigned truck
+//                               (id/unitNumber/year/make/model/vin/
+//                               licensePlate/odometer/fuelLevel/status).
+//                               Server returns all-zero sentinel fields
+//                               (id="" etc.) when no assignment exists —
+//                               the store folds that into `.empty`.
+//   • getMaintenanceHistory   — maintenance work-order records keyed to
+//                               the driver's company. Returns {records:
+//                               [{id, description, type, date, status}]}.
+//
+// 68th firing (brick port 073).
+
+struct VehicleAPI {
+    let api: EusoTripAPI
+
+    // MARK: Decoded shapes
+
+    /// Shape returned by `vehicle.getAssigned`. The server always returns
+    /// a non-null object; an empty `id` string means "no vehicle assigned
+    /// to this driver" (new driver, between assignments, etc.).
+    ///
+    /// Note on odometer / fuelLevel: the current backend implementation
+    /// hardcodes these to 0 because the telematics integration has not
+    /// shipped yet (vehicle.ts:138). The view surfaces them only when
+    /// non-zero and renders a disclosure footer otherwise. No fake data.
+    struct AssignedVehicle: Decodable, Equatable {
+        let id: String
+        let unitNumber: String
+        let year: Int
+        let make: String
+        let model: String
+        let vin: String
+        let licensePlate: String
+        let odometer: Int
+        let fuelLevel: Double
+        let status: String
+
+        /// True when the server returned the "no assignment" sentinel.
+        var isUnassigned: Bool { id.isEmpty }
+    }
+
+    /// Row shape inside `getMaintenanceHistory.records[]`. Derived from
+    /// the `documents` table filtered to maintenance-category items, so
+    /// `status` tracks the document lifecycle (uploaded / approved /
+    /// archived / etc.) rather than a work-order-specific state.
+    struct MaintenanceRecord: Decodable, Identifiable, Equatable {
+        let id: String
+        let description: String
+        let type: String
+        /// `YYYY-MM-DD` string (server-trimmed ISO date).
+        let date: String
+        let status: String
+    }
+
+    struct MaintenanceResponse: Decodable {
+        let records: [MaintenanceRecord]
+    }
+
+    struct GetMaintenanceInput: Encodable {
+        let vehicleId: String?
+        let limit: Int?
+    }
+
+    // MARK: Procedures
+
+    /// Fetch the driver's currently assigned vehicle. Server filters by
+    /// `ctx.user.id`, so no explicit driver-id parameter is needed.
+    func getAssigned() async throws -> AssignedVehicle {
+        try await api.queryNoInput("vehicle.getAssigned")
+    }
+
+    /// Fetch maintenance-event history. `vehicleId` is optional — when
+    /// omitted, the server returns the company's full maintenance feed
+    /// (dispatcher view). For the driver's Me · Vehicle surface we pass
+    /// the assigned vehicle's id so the list is scoped to their truck.
+    func getMaintenanceHistory(vehicleId: String? = nil, limit: Int = 20) async throws -> MaintenanceResponse {
+        try await api.query(
+            "vehicle.getMaintenanceHistory",
+            input: GetMaintenanceInput(vehicleId: vehicleId, limit: limit)
+        )
+    }
+}
+
+// MARK: - SafetyAPI
+//
+// Driver-facing safety score + contributing-factor breakdown + recent
+// event log. Mirrors the driver-relevant procedures of
+// `frontend/server/routers/safety.ts`.
+//
+// MCP-verified procedures (tRPC namespace `safety.*`):
+//   • getDriverScoreDetail({ driverId })   — score + categories + events
+//   • getDriverScores                      — company leaderboard (admin)
+//   • getDriverSafetyStats                 — company aggregates (admin)
+//
+// 69th firing (brick port 075 Me · Safety Score).
+
+struct SafetyAPI {
+    let api: EusoTripAPI
+
+    // MARK: Decoded shapes
+
+    /// One category row in the driver's score detail payload — e.g.
+    /// "Driving", "Compliance", "Vehicle Care". Server scores are
+    /// 0-100; we decode as `Int` since the backend rounds to whole
+    /// numbers.
+    struct ScoreCategory: Decodable, Identifiable, Equatable {
+        let name: String
+        let score: Int
+        var id: String { name }
+    }
+
+    /// One recent-event row — today typed as "inspection" by the
+    /// server (derived from `inspections` rows joined by driver).
+    /// Future types ("incident", "near_miss", "training_completed")
+    /// will land here too; views should treat `type` as a string
+    /// and render a known set of icons / fall back to a neutral
+    /// icon for unknown types.
+    struct ScoreEvent: Decodable, Identifiable, Equatable {
+        let type: String
+        let date: String
+        let status: String
+        var id: String { "\(date)::\(type)::\(status)" }
+    }
+
+    /// Response shape from `safety.getDriverScoreDetail`.
+    struct DriverScoreDetail: Decodable, Equatable {
+        let driverId: String
+        let name: String
+        /// Aggregate score 0-100 (server caps). `overall` vs.
+        /// `overallScore` are duplicates the backend keeps for
+        /// historical callers; we read `overallScore` preferentially
+        /// and fall back to `overall` on the decoder.
+        let overall: Int
+        let overallScore: Int
+        let licenseNumber: String
+        let categories: [ScoreCategory]
+        let recentEvents: [ScoreEvent]
+
+        /// Best value for rendering — prefers `overallScore` but
+        /// tolerates older payloads.
+        var canonicalScore: Int {
+            overallScore > 0 ? overallScore : overall
+        }
+    }
+
+    // MARK: Input envelopes
+
+    struct DriverIdInput: Encodable {
+        let driverId: String
+    }
+
+    // MARK: Procedures
+
+    /// Fetch the driver's score detail. `driverId` comes from the
+    /// signed-in session — callers resolve it off
+    /// `EusoTripSession.user?.id` (canonical for every Me· screen).
+    func getDriverScoreDetail(driverId: String) async throws -> DriverScoreDetail {
+        try await api.query(
+            "safety.getDriverScoreDetail",
+            input: DriverIdInput(driverId: driverId)
+        )
+    }
+
+    // MARK: Incident filing (086 Me · Incident Report Filer)
+    //
+    // Drivers file one of three incident kinds from the field:
+    //   1. Accident / crash  → `safety.submitAccidentReport`
+    //   2. Near-miss         → `safetyRisk.reportNearMiss`
+    //   3. Property damage   → `safety.submitAccidentReport` with
+    //                          severity="minor" and type hint in
+    //                          the description.
+    //
+    // Both procs MCP-verified at
+    // `frontend/server/routers/safety.ts:700` and
+    // `frontend/server/routers/safetyRisk.ts:812`.
+
+    struct AccidentReportInput: Encodable {
+        let driverId: String?
+        let date: String?           // ISO-8601 — when the event occurred
+        let description: String?
+        /// "critical" | "major" | "minor"
+        let severity: String?
+    }
+
+    struct AccidentReportResponse: Decodable, Equatable {
+        let success: Bool
+        let reportId: String?
+    }
+
+    /// File a crash / property-damage incident. Server writes
+    /// `incidents` row with type=accident, indexes for AI semantic
+    /// search, and returns the new report id.
+    func submitAccidentReport(
+        driverId: String? = nil,
+        date: String? = nil,
+        description: String,
+        severity: String = "minor"
+    ) async throws -> AccidentReportResponse {
+        try await api.mutation(
+            "safety.submitAccidentReport",
+            input: AccidentReportInput(
+                driverId: driverId,
+                date: date,
+                description: description,
+                severity: severity
+            )
+        )
+    }
+
+    struct NearMissReportInput: Encodable {
+        /// "lane_departure" | "hard_brake" | "close_call" |
+        /// "distraction" | "fatigue" | "weather_related" |
+        /// "equipment_issue" | "pedestrian" | "rollover_risk" | "other"
+        let nearMissType: String
+        let description: String
+        let location: String?
+        /// ISO-8601 — required by server schema.
+        let occurredAt: String
+        /// "critical" | "major" | "minor" (default "minor")
+        let severity: String?
+        let driverId: Int?
+        let weatherConditions: String?
+        let roadConditions: String?
+        let actionTaken: String?
+    }
+
+    struct NearMissReportResponse: Decodable, Equatable {
+        let success: Bool
+        let reportId: String?
+    }
+
+    /// File a near-miss event. Surfaces to the carrier's safety
+    /// manager in the same incidents-table queue as crashes, tagged
+    /// `type="near_miss"` so analytics can pivot on leading vs
+    /// lagging events.
+    func reportNearMiss(
+        nearMissType: String,
+        description: String,
+        location: String? = nil,
+        occurredAt: String,
+        severity: String = "minor",
+        driverId: Int? = nil,
+        weatherConditions: String? = nil,
+        roadConditions: String? = nil,
+        actionTaken: String? = nil
+    ) async throws -> NearMissReportResponse {
+        try await api.mutation(
+            "safetyRisk.reportNearMiss",
+            input: NearMissReportInput(
+                nearMissType: nearMissType,
+                description: description,
+                location: location,
+                occurredAt: occurredAt,
+                severity: severity,
+                driverId: driverId,
+                weatherConditions: weatherConditions,
+                roadConditions: roadConditions,
+                actionTaken: actionTaken
+            )
+        )
+    }
+}
+
+// MARK: - TrainingAPI
+//
+// Driver-scoped training + certification surface backing 076 Me ·
+// Training. Wraps the relevant procedures from two server routers:
+//
+//   `trainingRouter` (frontend/server/routers/training.ts):
+//     • getDriverAssignments({driverId?, status?})
+//     • getPendingMandatoryTraining({driverId?})
+//     • getProgress({courseId?})
+//
+//   `trainingLMSRouter` (frontend/server/routers/trainingLMS.ts):
+//     • getMyEnrollments({status?})
+//     • getMyCertificates
+//
+// Both namespaces scope to the signed-in user when driverId is
+// omitted, so the driver sees only their own records.
+//
+// 70th firing (brick port 076 Me · Training).
+
+struct TrainingAPI {
+    let api: EusoTripAPI
+
+    // MARK: Shapes
+
+    /// Assignment row from `training.getDriverAssignments`.
+    struct Assignment: Decodable, Identifiable, Equatable {
+        let id: String
+        /// "not_started" | "in_progress" | "completed" | "expired"
+        let status: String
+        let courseName: String
+        let courseId: String?
+        /// 0-100.
+        let progress: Int
+        /// ISO-8601. May be nil for assignments without a hard deadline.
+        let dueDate: String?
+        let assignedAt: String?
+        let completedAt: String?
+        let score: Int?
+        /// Server label — "safety" / "hazmat" / "compliance" / etc.
+        let category: String?
+    }
+
+    struct AssignmentSummary: Decodable, Equatable {
+        let total: Int
+        let completed: Int
+        let inProgress: Int
+        let expired: Int
+        let notStarted: Int
+    }
+
+    struct AssignmentsResponse: Decodable, Equatable {
+        let assignments: [Assignment]
+        let summary: AssignmentSummary
+    }
+
+    /// Certificate row from `trainingLMS.getMyCertificates`.
+    struct Certificate: Decodable, Identifiable, Equatable {
+        let id: String
+        let courseName: String
+        let certificateNumber: String
+        let issuedAt: String?
+        /// ISO-8601. Nil for certificates without expiration (rare).
+        let expiresAt: String?
+        /// "active" | "expired" | "revoked"
+        let status: String
+        let verificationCode: String?
+    }
+
+    struct CertificatesResponse: Decodable, Equatable {
+        let certificates: [Certificate]
+    }
+
+    /// "Pending mandatory" row from `training.getPendingMandatoryTraining`
+    /// — overdue + not-started courses the driver must complete to stay
+    /// in dispatch rotation.
+    struct PendingCourse: Decodable, Identifiable, Equatable {
+        let id: String
+        let courseName: String
+        let dueDate: String?
+        let progress: Int
+        /// Whether this is past its due date.
+        let overdue: Bool
+    }
+
+    struct PendingResponse: Decodable, Equatable {
+        let pending: [PendingCourse]
+        let overdue: [PendingCourse]
+    }
+
+    // MARK: Inputs
+
+    struct AssignmentsInput: Encodable {
+        let driverId: String?
+        let status: String?
+    }
+
+    struct PendingInput: Encodable {
+        let driverId: String?
+    }
+
+    struct EnrollmentsInput: Encodable {
+        let status: String?
+    }
+
+    // MARK: Procedures
+
+    /// Driver's assignments (all statuses) with summary counts.
+    /// Server defaults to the signed-in user when driverId is nil.
+    func getDriverAssignments(driverId: String? = nil, status: String? = nil) async throws -> AssignmentsResponse {
+        try await api.query(
+            "training.getDriverAssignments",
+            input: AssignmentsInput(driverId: driverId, status: status)
+        )
+    }
+
+    /// Pending + overdue mandatory courses. Drives the red "due now"
+    /// strip at the top of the 076 screen.
+    func getPendingMandatoryTraining(driverId: String? = nil) async throws -> PendingResponse {
+        try await api.query(
+            "training.getPendingMandatoryTraining",
+            input: PendingInput(driverId: driverId)
+        )
+    }
+
+    /// Earned certificates with issue + expiry dates. The server
+    /// scopes to the signed-in user via ctx.user.id — no param needed.
+    func getMyCertificates() async throws -> CertificatesResponse {
+        try await api.queryNoInput("trainingLMS.getMyCertificates")
+    }
+}
+
+// MARK: - PaymentsAPI
+//
+// Driver-facing payment-methods surface backing 077 Me · Payment
+// Methods. Reads / writes Stripe via the backend — no raw Stripe keys
+// on the device.
+//
+// MCP-verified procedures (tRPC namespace `payments.*`):
+//   • getPaymentMethods     — cards + us_bank_account types (mixed list)
+//   • setDefaultMethod      — mutate customer.invoice_settings
+//   • deletePaymentMethod   — detach the payment method id
+//
+// 71st firing.
+
+struct PaymentsAPI {
+    let api: EusoTripAPI
+
+    // MARK: Decoded shapes
+
+    /// One row in the driver's payment-methods list. Two shapes: a
+    /// `card` row has `brand` + `expiryDate`; a `bank` row has
+    /// `bankName`. `last4` is populated on both. `billingAddress` is
+    /// present on cards only.
+    struct PaymentMethod: Decodable, Identifiable, Equatable {
+        let id: String
+        /// "card" | "bank"
+        let type: String
+        let last4: String
+        let brand: String?
+        let expiryDate: String?          // "MM/YY"
+        let bankName: String?
+        let isDefault: Bool
+        let billingAddress: BillingAddress?
+
+        struct BillingAddress: Decodable, Equatable {
+            let street: String
+            let city: String
+            let state: String
+            let zip: String
+        }
+    }
+
+    // MARK: Inputs
+
+    struct PaymentMethodIdInput: Encodable {
+        let paymentMethodId: String
+    }
+
+    // MARK: Procedures
+
+    /// Returns the driver's cards + bank-account payment methods,
+    /// with the `isDefault` flag set against whichever one is wired
+    /// as the Stripe Customer invoice default.
+    func listPaymentMethods() async throws -> [PaymentMethod] {
+        try await api.queryNoInput("payments.getPaymentMethods")
+    }
+
+    /// Promote a payment method to the default. Returns `{success,
+    /// methodId}` — we don't currently surface the methodId after, so
+    /// the response is decoded as a generic success row.
+    struct SetDefaultResponse: Decodable {
+        let success: Bool
+        let methodId: String?
+    }
+
+    func setDefaultMethod(paymentMethodId: String) async throws -> SetDefaultResponse {
+        try await api.mutation(
+            "payments.setDefaultMethod",
+            input: PaymentMethodIdInput(paymentMethodId: paymentMethodId)
+        )
+    }
+
+    /// Detach a payment method from the driver's Stripe Customer.
+    /// Irreversible — the row disappears from the list on next refresh.
+    struct DeleteResponse: Decodable {
+        let success: Bool
+        let methodId: String?
+    }
+
+    func deletePaymentMethod(paymentMethodId: String) async throws -> DeleteResponse {
+        try await api.mutation(
+            "payments.deletePaymentMethod",
+            input: PaymentMethodIdInput(paymentMethodId: paymentMethodId)
+        )
+    }
+}
+
+// MARK: - ComplianceAPI
+//
+// Violations + resolution surface. Backs 082 Me · Violations
+// Manager.
+//
+// MCP-verified procedures (tRPC namespace `compliance.*`):
+//   • getViolations({search?, status?, severity?, page, limit})
+//       — returns either a bare `[Violation]` array or a
+//         `{violations: [...], complianceKnowledge: [...]}` envelope
+//         depending on whether the server fired its AI enrichment
+//         path. The Swift decoder tolerates both shapes.
+//   • getViolationStats — aggregate counts (open / critical /
+//         inProgress / resolved / totalFines / avgResolutionDays).
+//   • resolveViolation({id, resolution?, notes?}) — marks the
+//         backing inspection row `status = passed` and stamps
+//         resolvedAt + resolvedBy.
+//
+// 75th firing.
+
+struct ComplianceAPI {
+    let api: EusoTripAPI
+
+    // MARK: Decoded shapes
+
+    /// One violation row from `compliance.getViolations`. `type`,
+    /// `severity`, and `status` are decoded as strings so server
+    /// additions (e.g. "warning" severity, "acknowledged" status)
+    /// don't require a mobile release.
+    struct Violation: Decodable, Identifiable, Equatable {
+        let id: String
+        let type: String          // "inspection" | "annual" | "preTrip" | etc.
+        let driver: String
+        let driverId: String
+        let vehicleId: String
+        let date: String          // YYYY-MM-DD
+        /// "critical" | "major" | "minor"
+        let severity: String
+        /// "open" | "resolved"
+        let status: String
+        let defectsFound: Int
+        let oosViolation: Bool
+        let location: String
+        /// FMCSA CFR reference — e.g. "49 CFR 396.7" or "49 CFR 396.3".
+        let regulation: String
+    }
+
+    /// Response shape — tolerates either a bare array or the
+    /// `{violations, complianceKnowledge}` envelope the server
+    /// returns when search-term AI enrichment fires.
+    struct ViolationsResponse: Decodable, Equatable {
+        let violations: [Violation]
+        /// AI-retrieved knowledge snippets tied to the search term.
+        /// Server returns 0-3 entries when relevance > 0.3; empty
+        /// otherwise.
+        let complianceKnowledge: [String]
+
+        init(from decoder: Decoder) throws {
+            // Try bare-array shape first.
+            if let single = try? decoder.singleValueContainer(),
+               let bare = try? single.decode([Violation].self) {
+                self.violations = bare
+                self.complianceKnowledge = []
+                return
+            }
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.violations = (try? c.decode([Violation].self, forKey: .violations)) ?? []
+            self.complianceKnowledge = (try? c.decode([String].self, forKey: .complianceKnowledge)) ?? []
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case violations, complianceKnowledge
+        }
+    }
+
+    struct ViolationStats: Decodable, Equatable {
+        let open: Int
+        let critical: Int
+        let inProgress: Int
+        let resolved: Int
+        let totalFines: Double
+        let avgResolutionDays: Double
+    }
+
+    struct ResolveViolationResult: Decodable, Equatable {
+        let success: Bool
+        let id: String
+        let resolvedAt: String?
+        let resolvedBy: String?
+    }
+
+    // MARK: Inputs
+
+    struct GetViolationsInput: Encodable {
+        let search: String?
+        let status: String?
+        let severity: String?
+        let page: Int
+        let limit: Int
+    }
+
+    struct ResolveViolationInput: Encodable {
+        let id: String
+        let resolution: String?
+        let notes: String?
+    }
+
+    // MARK: Procedures
+
+    func getViolations(
+        search: String? = nil,
+        status: String? = nil,
+        severity: String? = nil,
+        page: Int = 1,
+        limit: Int = 20
+    ) async throws -> ViolationsResponse {
+        try await api.query(
+            "compliance.getViolations",
+            input: GetViolationsInput(
+                search: search, status: status, severity: severity,
+                page: page, limit: limit
+            )
+        )
+    }
+
+    func getViolationStats() async throws -> ViolationStats {
+        try await api.queryNoInput("compliance.getViolationStats")
+    }
+
+    func resolveViolation(
+        id: String,
+        resolution: String? = nil,
+        notes: String? = nil
+    ) async throws -> ResolveViolationResult {
+        try await api.mutation(
+            "compliance.resolveViolation",
+            input: ResolveViolationInput(id: id, resolution: resolution, notes: notes)
+        )
+    }
+}
+
+// MARK: - CsaScoresAPI
+//
+// FMCSA CSA (Compliance, Safety, Accountability) surface. Today the
+// iOS app only uses the DataQs Challenge filer — an RDR (Request for
+// Data Review) under 49 CFR §386 that contests a specific FMCSA-
+// reported violation. MCP-verified at
+// `frontend/server/routers/csaScores.ts:310`.
+//
+// 77th firing.
+
+struct CsaScoresAPI {
+    let api: EusoTripAPI
+
+    struct DataQsChallengeInput: Encodable {
+        let violationId: String
+        /// Server enum: "incorrect_data" | "not_responsible" |
+        /// "documentation_error" | "other".
+        let reason: String
+        let explanation: String
+        /// Document ids the driver wants attached as supporting
+        /// evidence. Resolved server-side to the actual document
+        /// blobs at submission time.
+        let supportingDocs: [String]?
+    }
+
+    struct DataQsChallengeResponse: Decodable, Equatable {
+        let challengeId: String
+        let violationId: String
+        let status: String
+        let submittedBy: String?
+        let submittedAt: String?
+        /// ISO-8601. FMCSA's typical response window is 60 days, so
+        /// the server stamps a +60-day estimate here by default.
+        let estimatedResponse: String?
+    }
+
+    func submitDataQsChallenge(
+        violationId: String,
+        reason: String,
+        explanation: String,
+        supportingDocs: [String]? = nil
+    ) async throws -> DataQsChallengeResponse {
+        try await api.mutation(
+            "csaScores.submitDataQsChallenge",
+            input: DataQsChallengeInput(
+                violationId: violationId,
+                reason: reason,
+                explanation: explanation,
+                supportingDocs: supportingDocs
+            )
+        )
+    }
+
+    // MARK: Overview (085 Me · Carrier Scorecard)
+    //
+    // MCP-verified at `frontend/server/routers/csaScores.ts:23`.
+    // Returns the carrier's full BASIC scorecard — 7 Behavior
+    // Analysis and Safety Improvement Categories (BASICs), SAFER
+    // data (OOS rates, inspection count), and FMCSA bulk-data
+    // enrichment (crashes, violations) when the carrier's USDOT is
+    // on file.
+
+    /// One BASIC category row in the `basics[]` array. Thresholds
+    /// are the percentile cutoffs FMCSA uses to flag a category:
+    /// 65 for safety-sensitive BASICs (Unsafe Driving, HOS, Crash),
+    /// 80 for the others. A percentile at or above threshold trips
+    /// the `alert` flag on the server.
+    struct BasicCategory: Decodable, Identifiable, Equatable {
+        let category: String         // "unsafe_driving" | "hos_compliance" | ...
+        let name: String             // human label
+        let percentile: Double       // 0-100
+        let threshold: Int           // 65 or 80
+        let status: String           // "ok" | "warning" | "alert"
+        let trend: String            // "stable" | "up" | "down" (future-proof)
+        let inspections: Int
+        let violations: Int
+        let alert: Bool
+        var id: String { category }
+    }
+
+    /// SAFER snapshot. Server zeroes fields the FMCSA bulk pull
+    /// didn't populate; iOS treats zero as unknown for display.
+    struct SaferData: Decodable, Equatable {
+        let outOfServiceRate: Double
+        let nationalAverage: Double
+        let inspectionCount24Months: Int
+        let driverOOSRate: Double
+        let vehicleOOSRate: Double
+    }
+
+    /// FMCSA crashes 24-month summary. Nil when the USDOT isn't on
+    /// file or the bulk pull hasn't run yet.
+    struct FmcsaCrashes: Decodable, Equatable {
+        let total: Int
+        let fatalities: Int
+        let injuries: Int
+        let towAways: Int
+        let hazmatReleases: Int
+        let recent: Int?
+    }
+
+    /// FMCSA inspections 24-month summary. Same nil rule as crashes.
+    struct FmcsaInspections: Decodable, Equatable {
+        let total: Int
+        let violations: Int
+        let driverOos: Int
+        let vehicleOos: Int
+        let hazmatOos: Int
+        let recent: Int?
+    }
+
+    struct CsaOverview: Decodable, Equatable {
+        let companyId: String
+        let companyName: String
+        let dotNumber: String
+        let mcNumber: String
+        let lastUpdated: String
+        /// "satisfactory" | "alert" | "critical" | "out_of_service"
+        let overallStatus: String
+        /// "none" | "warning" | "critical"
+        let alertLevel: String
+        let basics: [BasicCategory]
+        let saferData: SaferData?
+        let fmcsaCrashes: FmcsaCrashes?
+        let fmcsaInspections: FmcsaInspections?
+        let outOfService: Bool?
+        let oosReason: String?
+        /// "fmcsa_bulk_9.8M" when real FMCSA data resolved, else
+        /// "platform_internal". UI uses this to tell the driver
+        /// whether they're looking at true federal data or the
+        /// internal placeholder.
+        let dataSource: String?
+    }
+
+    struct CsaOverviewInput: Encodable {
+        let companyId: String?
+    }
+
+    func getOverview(companyId: String? = nil) async throws -> CsaOverview {
+        try await api.query(
+            "csaScores.getOverview",
+            input: CsaOverviewInput(companyId: companyId)
+        )
+    }
+}
+
+// MARK: - esangCoachRouter (087 Me · Safety Coach)
+//
+// Mirrors `frontend/server/routers/esangCoach.ts`. Today's iOS-
+// relevant surface is the `forDriver` query, which returns 3–10
+// coaching items personalized to the driver's role + vertical +
+// recent compliance signal. The server may ship either a Gemini-
+// authored payload or the deterministic fallback when Gemini is
+// down; the iOS client treats both identically — we render whatever
+// items the server returned.
+
+struct EsangCoachAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: Server-shaped input / output
+
+    struct ForDriverInput: Encodable {
+        let recentIncidents: Int?
+        let recentViolations: Int?
+        let recentNearMisses: Int?
+        let focus: String?
+        let limit: Int?
+    }
+
+    /// One coaching card. `severity` and `topic` use the server's
+    /// lowercase enums verbatim — no client-side remapping — so the
+    /// UI can evolve alongside the backend without cross-coding.
+    struct CoachingItem: Decodable, Equatable, Identifiable {
+        /// Stable identity for SwiftUI `ForEach`. Server doesn't ship
+        /// an id field (the items are stateless) so we derive one from
+        /// topic + title. Collisions across a single response are not
+        /// expected given the server already filters empty titles.
+        var id: String { "\(topic)::\(title)" }
+
+        let title: String          // ≤ 60 chars per server prompt
+        let body: String           // ≤ 200 chars per server prompt
+        /// "info" | "watch" | "critical"
+        let severity: String
+        /// Short CFR reference (e.g. "49 CFR 395.3(a)(3)"), or nil
+        /// when the server chose not to cite one. Never synthesised
+        /// client-side.
+        let cfr: String?
+        /// Short lowercase slug the UI maps to an SF Symbol.
+        let topic: String
+    }
+
+    struct ForDriverResponse: Decodable, Equatable {
+        let items: [CoachingItem]
+        /// Echoed user role from ctx; used by the view to render the
+        /// "For <role-label>" subheader.
+        let role: String
+        /// "truck" | "rail" | "vessel" | "cross"
+        let vertical: String
+        /// Server clock epoch millis. UI shows relative time
+        /// ("Updated 2m ago") keyed off this.
+        let generatedAt: Double
+    }
+
+    // MARK: Queries
+
+    /// `esangCoach.forDriver` — GET query. Returns role- and
+    /// vertical-tailored coaching cards. All inputs are optional —
+    /// pass driver-observed recent counts for a fresher result, or
+    /// omit to let the server pull the signed-in driver's own
+    /// counts from the database.
+    func forDriver(
+        recentIncidents: Int? = nil,
+        recentViolations: Int? = nil,
+        recentNearMisses: Int? = nil,
+        focus: String? = nil,
+        limit: Int = 6
+    ) async throws -> ForDriverResponse {
+        try await api.query(
+            "esangCoach.forDriver",
+            input: ForDriverInput(
+                recentIncidents: recentIncidents,
+                recentViolations: recentViolations,
+                recentNearMisses: recentNearMisses,
+                focus: (focus?.isEmpty ?? true) ? nil : focus,
+                limit: limit
+            )
+        )
+    }
+}
+
+// MARK: - referralsRouter (088 Me · Invite & Earn)
+//
+// Mirrors `frontend/server/routers/referrals.ts`. The driver-scoped
+// Me · Invite & Earn screen reads `getMyCode` (one per driver,
+// minted on first call), `summary` (counters for the header), and
+// `listMine` (recent referral events by stage).
+//
+// Reward schedule is authoritative server-side (`REWARD_CENTS` in
+// referrals.ts). The iOS client never fabricates the reward
+// amount — it renders whatever the server returned.
+
+struct ReferralsAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: - Shapes
+
+    struct ReferralCode: Decodable, Equatable {
+        let id: Int
+        let code: String
+        let uses: Int
+        /// Nil → unlimited. A truthy value caps how many referees
+        /// may redeem this code; used by admins only (drivers don't
+        /// manage their own cap today).
+        let maxUses: Int?
+    }
+
+    struct ReferralSummary: Decodable, Equatable {
+        let totalRefs: Int
+        let totalEarnedCents: Int
+        let pendingCents: Int
+        /// Per-stage roll-up keyed by the server's stage strings:
+        /// "signup" | "first_load" | "first_payout" | "kyc_verified".
+        /// Each entry is `{n, totalCents, paidCents, pendingCents}`.
+        let byStage: [String: StageRollup]
+
+        struct StageRollup: Decodable, Equatable {
+            let n: Int?
+            let totalCents: Int?
+            let paidCents: Int?
+            let pendingCents: Int?
+        }
+    }
+
+    /// One referral event — the referee's funnel stage + the reward
+    /// the referrer earned for crossing it. `paidAt == nil` means
+    /// the reward is still accruing.
+    struct ReferralEvent: Decodable, Equatable, Identifiable {
+        let id: Int
+        let referredId: Int
+        /// Server stage enum — "signup" | "first_load" |
+        /// "first_payout" | "kyc_verified".
+        let stage: String
+        let rewardCents: Int
+        let rewardKind: String
+        /// Nil while pending.
+        let paidAt: String?
+        let createdAt: String?
+    }
+
+    // MARK: - Queries
+
+    /// `referrals.getMyCode` — returns (minting on first call) the
+    /// caller's active referral code. Safe to call repeatedly — the
+    /// server checks for an existing row before minting.
+    func getMyCode() async throws -> ReferralCode {
+        try await api.queryNoInput("referrals.getMyCode")
+    }
+
+    /// `referrals.summary` — totals for the Invite & Earn header.
+    func getSummary() async throws -> ReferralSummary {
+        try await api.queryNoInput("referrals.summary")
+    }
+
+    /// `referrals.listMine` — recent referral events with optional
+    /// stage filter. Server clamps limit to [1, 100]; default 30.
+    func listMine(
+        stage: String? = nil,
+        limit: Int = 30
+    ) async throws -> [ReferralEvent] {
+        struct Input: Encodable {
+            let stage: String?
+            let limit: Int
+        }
+        return try await api.query(
+            "referrals.listMine",
+            input: Input(stage: stage, limit: limit)
+        )
+    }
+
+    // MARK: - Mutations
+
+    struct ApplyResult: Decodable, Equatable {
+        let ok: Bool
+        let stage: String?
+        let rewardCents: Int?
+    }
+
+    /// `referrals.applyCode` — the referee applies another driver's
+    /// code during onboarding. Referrer + referee both need the link
+    /// to land, so this mutation is safe for the referee to call
+    /// from the sign-up flow.
+    func applyCode(_ code: String) async throws -> ApplyResult {
+        struct Input: Encodable { let code: String }
+        return try await api.mutation(
+            "referrals.applyCode",
+            input: Input(code: code)
+        )
+    }
+}
+
+// MARK: - Haul (gamification + missions + achievements, 089 Me · The Haul)
+//
+// Composite façade for the driver's Haul brand surface. The
+// iOS client calls three live tRPC procs in parallel:
+//
+//   gamification.getProfile    → level + XP + rank + streaks + stats
+//   missions.listMine          → active + claimable mission progress rows
+//   achievements.listMine      → earned + optionally-displayed badges
+//
+// Each proc is exposed as its own method so the UI can refresh one
+// feed independently (e.g. optimistic refresh of missions after a
+// claim without re-fetching the whole profile).
+
+struct HaulAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: - gamification.getProfile
+
+    struct Streaks: Decodable, Equatable {
+        let currentOnTime: Int?
+        let longestOnTime: Int?
+        let currentSafe: Int?
+        let longestSafe: Int?
+    }
+
+    struct ProfileStats: Decodable, Equatable {
+        let loadsCompleted: Int?
+        let milesDriver: Int?
+        let onTimeRate: Double?
+        let safetyScore: Double?
+        let customerRating: Double?
+    }
+
+    struct Profile: Decodable, Equatable {
+        let userId: Int
+        let name: String
+        let level: Int
+        /// Optional user-facing title (e.g. "Highway Pro"). Nil when
+        /// the driver hasn't earned one yet.
+        let title: String?
+        let totalPoints: Int
+        let currentXp: Int
+        let xpToNextLevel: Int
+        /// Rank in the signed-in driver's cohort. Nil when the cohort
+        /// hasn't settled yet (new signup) — UI renders "—".
+        let rank: Int?
+        let totalUsers: Int?
+        let percentile: Double?
+        /// YYYY-MM-DD from the server.
+        let memberSince: String?
+        let streaks: Streaks?
+        let stats: ProfileStats?
+    }
+
+    /// `gamification.getProfile` — the signed-in driver's Haul
+    /// profile. Server returns the zero-state payload for a brand-
+    /// new driver so the view always has a shape to render.
+    func getProfile() async throws -> Profile {
+        struct Input: Encodable { let userId: String? = nil }
+        return try await api.query(
+            "gamification.getProfile",
+            input: Input()
+        )
+    }
+
+    // MARK: - missions.listMine
+
+    struct Mission: Decodable, Equatable, Identifiable {
+        /// Server uses a separate progress id per (driver, mission)
+        /// row — we use that as the SwiftUI identity since a driver
+        /// might work the same mission across seasons.
+        let progressId: Int
+        let missionId: Int
+        let name: String?
+        let category: String?
+        let type: String?
+        let targetType: String?
+        let targetValue: Double
+        let currentProgress: Double
+        /// "in_progress" | "completed" | "claimed" | "failed" | "cancelled"
+        let status: String
+        let createdAt: String?
+        let completedAt: String?
+        let claimedAt: String?
+
+        var id: Int { progressId }
+    }
+
+    /// `missions.listMine` — caller's in-progress + recently completed
+    /// missions. Pass `status` to filter the server-side selection.
+    func listMyMissions(
+        status: String? = nil,
+        limit: Int = 20
+    ) async throws -> [Mission] {
+        struct Input: Encodable {
+            let status: String?
+            let limit: Int
+        }
+        return try await api.query(
+            "missions.listMine",
+            input: Input(status: status, limit: limit)
+        )
+    }
+
+    /// `missions.claim` — flips a `status == completed` mission into
+    /// `claimed` and credits the driver's reward. Server rejects if
+    /// the progress row isn't in a claimable state.
+    struct MissionClaimResult: Decodable, Equatable {
+        let success: Bool?
+        let progressId: Int?
+        let rewardCents: Int?
+    }
+
+    func claimMission(progressId: Int) async throws -> MissionClaimResult {
+        struct Input: Encodable { let progressId: Int }
+        return try await api.mutation(
+            "missions.claim",
+            input: Input(progressId: progressId)
+        )
+    }
+
+    // MARK: - achievements.listMine
+
+    struct Badge: Decodable, Equatable, Identifiable {
+        let id: Int
+        let badgeId: Int
+        let code: String?
+        let name: String?
+        let description: String?
+        let category: String?
+        let tier: String?
+        let iconUrl: String?
+        let xpValue: Int
+        let isRare: Bool
+        let earnedAt: String?
+        let displayOrder: Int?
+        let isDisplayed: Bool
+    }
+
+    /// `achievements.listMine` — driver's earned badges.
+    /// `onlyDisplayed: true` narrows to the small row the driver has
+    /// pinned to their public profile, which matches the Haul
+    /// header's "Shelf" affordance.
+    func listMyBadges(
+        onlyDisplayed: Bool = false,
+        limit: Int = 100
+    ) async throws -> [Badge] {
+        struct Input: Encodable {
+            let onlyDisplayed: Bool
+            let limit: Int
+        }
+        return try await api.query(
+            "achievements.listMine",
+            input: Input(onlyDisplayed: onlyDisplayed, limit: limit)
+        )
+    }
+}
+
+// MARK: - supportRouter (089 Me · Support & Tickets)
+//
+// Mirrors `frontend/server/routers/support.ts`. Today's iOS-relevant
+// surface is the driver's ticket lifecycle: see open/in-progress/
+// resolved counts (`getSummary`), list their own tickets
+// (`getMyTickets`), and create a new one (`createTicket`). The
+// server NLP-auto-classifies category on create when the driver
+// leaves the category default, so "general" is always a safe fallback.
+
+struct SupportAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: - Shapes
+
+    struct Summary: Decodable, Equatable {
+        let total: Int
+        let open: Int
+        let inProgress: Int
+        let resolved: Int
+        let avgResponseTime: String?
+
+        // Server uses both `open` and `openTickets` in the response
+        // shape. The key we actually decode is `open`; `openTickets`
+        // is ignored because it's a duplicate of the same counter.
+    }
+
+    struct Ticket: Decodable, Equatable, Identifiable {
+        /// MySQL primary key. Raw DB rows ship as Int; we coerce to
+        /// String via a custom init so SwiftUI ForEach can key on id.
+        let id: String
+        let ticketNumber: String?
+        let subject: String
+        /// Body of the initial message. Server ships this as `message`
+        /// on the raw `support_tickets` row.
+        let message: String?
+        let category: String?
+        let priority: String?
+        /// "open" | "in_progress" | "waiting_user" | "resolved" | "closed"
+        let status: String?
+        let loadId: Int?
+        /// ISO timestamp.
+        let createdAt: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id
+            case ticketNumber
+            case subject
+            case message
+            case category
+            case priority
+            case status
+            case loadId
+            case createdAt
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            // id may come as Int (raw DB row) or String (getTicketById).
+            if let intId = try? c.decode(Int.self, forKey: .id) {
+                self.id = String(intId)
+            } else {
+                self.id = try c.decode(String.self, forKey: .id)
+            }
+            self.ticketNumber   = try? c.decode(String.self, forKey: .ticketNumber)
+            self.subject        = (try? c.decode(String.self, forKey: .subject)) ?? "(untitled)"
+            self.message        = try? c.decode(String.self, forKey: .message)
+            self.category       = try? c.decode(String.self, forKey: .category)
+            self.priority       = try? c.decode(String.self, forKey: .priority)
+            self.status         = try? c.decode(String.self, forKey: .status)
+            self.loadId         = try? c.decode(Int.self, forKey: .loadId)
+            self.createdAt      = try? c.decode(String.self, forKey: .createdAt)
+        }
+    }
+
+    struct MyTicketsResponse: Decodable {
+        let tickets: [Ticket]
+        let total: Int
+    }
+
+    // MARK: - Queries
+
+    /// `support.getSummary` — the signed-in user's counters (open /
+    /// in_progress / resolved / total). Admins get company-wide
+    /// counts server-side; drivers get their own only.
+    func getSummary() async throws -> Summary {
+        try await api.queryNoInput("support.getSummary")
+    }
+
+    /// `support.getMyTickets` — driver-scoped paginated list.
+    func getMyTickets(
+        status: String? = nil,
+        limit: Int = 20,
+        offset: Int = 0
+    ) async throws -> MyTicketsResponse {
+        struct Input: Encodable {
+            let status: String?
+            let limit: Int
+            let offset: Int
+        }
+        return try await api.query(
+            "support.getMyTickets",
+            input: Input(status: status, limit: limit, offset: offset)
+        )
+    }
+
+    // MARK: - Mutations
+
+    struct CreateTicketInput: Encodable {
+        let subject: String
+        let message: String
+        let category: String
+        let priority: String
+        let loadId: String?
+    }
+
+    struct CreateTicketResult: Decodable, Equatable {
+        let id: String?
+        let ticketNumber: String?
+        let status: String?
+    }
+
+    /// `support.createTicket` — opens a new ticket. Server NLP auto-
+    /// classifies the category when `category` is "general"; otherwise
+    /// the passed value is used verbatim.
+    func createTicket(
+        subject: String,
+        message: String,
+        category: String = "general",
+        priority: String = "medium",
+        loadId: String? = nil
+    ) async throws -> CreateTicketResult {
+        try await api.mutation(
+            "support.createTicket",
+            input: CreateTicketInput(
+                subject: subject,
+                message: message,
+                category: category,
+                priority: priority,
+                loadId: loadId
+            )
+        )
+    }
+}
+
+// MARK: - iftaCalculatorRouter (090 Me · IFTA Tax)
+//
+// Mirrors `frontend/server/routers/iftaCalculator.ts`. Today's
+// iOS surface exposes:
+//
+//   estimateFromLoads  — query. Pulls the driver's delivered loads
+//                        in a year+quarter window, returns estimated
+//                        total miles + gallons consumed + tax
+//                        liability. Zero input from the driver
+//                        needed; the number is "best we can see
+//                        from your real loads."
+//   calculateQuarter   — mutation. Accepts per-jurisdiction miles +
+//                        fuel purchases and returns the full IFTA
+//                        return shape (per-state tax due / refund +
+//                        filing deadline). This is the one the
+//                        driver uses at filing time.
+
+struct IftaAPI {
+    unowned let api: EusoTripAPI
+
+    enum Quarter: String, Codable, CaseIterable, Identifiable {
+        case Q1, Q2, Q3, Q4
+        var id: String { rawValue }
+
+        /// ISO filing-deadline date the server stamps on quarterly
+        /// returns. Computed client-side for display — the server
+        /// authoritative copy is the one on the actual response.
+        func filingDeadline(year: Int) -> String {
+            switch self {
+            case .Q1: return "\(year)-04-30"
+            case .Q2: return "\(year)-07-31"
+            case .Q3: return "\(year)-10-31"
+            case .Q4: return "\(year + 1)-01-31"
+            }
+        }
+
+        var label: String { rawValue }
+
+        /// Which quarter "now" is in — used to pre-select the latest
+        /// completed quarter on view first-load.
+        static func current(in date: Date = .init()) -> Quarter {
+            let m = Calendar.current.component(.month, from: date)
+            switch m {
+            case 1...3:   return .Q1
+            case 4...6:   return .Q2
+            case 7...9:   return .Q3
+            default:      return .Q4
+            }
+        }
+    }
+
+    // MARK: - estimateFromLoads
+
+    struct Estimate: Decodable, Equatable {
+        let period: String
+        let loadsInPeriod: Int
+        let estimatedTotalMiles: Double
+        let estimatedGallonsConsumed: Double
+        let estimatedTaxLiability: Double
+        let note: String?
+    }
+
+    /// `iftaCalculator.estimateFromLoads` — quick tax-liability
+    /// forecast from the driver's delivered loads in a year+quarter.
+    func estimateFromLoads(
+        year: Int,
+        quarter: Quarter,
+        fleetMpg: Double = 6.5
+    ) async throws -> Estimate {
+        struct Input: Encodable {
+            let year: Int
+            let quarter: String
+            let fleetMpg: Double
+        }
+        return try await api.query(
+            "iftaCalculator.estimateFromLoads",
+            input: Input(year: year, quarter: quarter.rawValue, fleetMpg: fleetMpg)
+        )
+    }
+
+    // MARK: - calculateQuarter
+
+    struct QuarterSummary: Decodable, Equatable {
+        let totalMiles: Double
+        let totalGallonsPurchased: Double
+        let totalGallonsConsumed: Double
+        let fleetMpg: Double
+        let netTaxDue: Double
+        let jurisdictionsOwed: Int
+        let jurisdictionsRefund: Int
+    }
+
+    struct JurisdictionRow: Decodable, Equatable, Identifiable {
+        let jurisdiction: String
+        let miles: Double
+        let gallonsConsumed: Double
+        let gallonsPurchased: Double
+        let netGallons: Double
+        let taxRate: Double
+        let taxDue: Double
+        let isRefund: Bool
+
+        var id: String { jurisdiction }
+    }
+
+    struct QuarterReturn: Decodable, Equatable {
+        let period: String
+        let summary: QuarterSummary
+        let jurisdictions: [JurisdictionRow]
+        let filingDeadline: String
+    }
+
+    /// `iftaCalculator.calculateQuarter` — full filing-ready IFTA
+    /// return. Takes the driver's per-jurisdiction miles + gallons
+    /// and returns the filing breakdown.
+    func calculateQuarter(
+        year: Int,
+        quarter: Quarter,
+        milesByJurisdiction: [String: Double],
+        fuelPurchasesByJurisdiction: [String: Double],
+        fleetMpg: Double = 6.5
+    ) async throws -> QuarterReturn {
+        struct Input: Encodable {
+            let year: Int
+            let quarter: String
+            let milesByJurisdiction: [String: Double]
+            let fuelPurchasesByJurisdiction: [String: Double]
+            let fleetMpg: Double
+        }
+        return try await api.mutation(
+            "iftaCalculator.calculateQuarter",
+            input: Input(
+                year: year,
+                quarter: quarter.rawValue,
+                milesByJurisdiction: milesByJurisdiction,
+                fuelPurchasesByJurisdiction: fuelPurchasesByJurisdiction,
+                fleetMpg: fleetMpg
+            )
+        )
+    }
+}
+
+// MARK: - detentionAccessorialsRouter (091 Me · Detention)
+//
+// Mirrors `frontend/server/routers/detentionAccessorials.ts`. The
+// driver Me surface focuses on three reads + one write:
+//   - `getDetentionDashboard` — $ billed / collected / disputed
+//   - `getActiveDetentions`   — what's accruing right now
+//   - `getDetentionHistory`   — past events
+//   - `disputeDetention`      — challenge a claim
+// TONU / demurrage / layover surfaces ship in follow-up bricks.
+
+struct DetentionAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: - Dashboard
+
+    struct Dashboard: Decodable, Equatable {
+        let activeDetentions: Int
+        let avgWaitMinutes: Int
+        let totalCharges: Double
+        let totalEvents: Int
+        let billedAmount: Double
+        let collectedAmount: Double
+        let disputedAmount: Double
+    }
+
+    /// `detentionAccessorials.getDetentionDashboard` — counters for
+    /// the hero. Optional date-range input; default server window is
+    /// the last 30 days.
+    func getDashboard(dateFrom: String? = nil, dateTo: String? = nil) async throws -> Dashboard {
+        struct Input: Encodable {
+            let dateFrom: String?
+            let dateTo: String?
+        }
+        return try await api.query(
+            "detentionAccessorials.getDetentionDashboard",
+            input: Input(dateFrom: dateFrom, dateTo: dateTo)
+        )
+    }
+
+    // MARK: - Active detentions
+
+    struct ActiveDetention: Decodable, Equatable, Identifiable {
+        let id: Int
+        let loadId: Int?
+        let facilityName: String
+        let locationType: String
+        let arrivalTime: String?
+        let elapsedMinutes: Int
+        let freeTimeMinutes: Int
+        let billableMinutes: Int
+        let currentCharge: Double
+    }
+
+    struct ActiveDetentionsResponse: Decodable {
+        let detentions: [ActiveDetention]
+        let total: Int
+    }
+
+    /// `detentionAccessorials.getActiveDetentions` — drivers stuck
+    /// at a dock right now, with live elapsed + billable minutes
+    /// computed server-side from arrival time.
+    func getActive(limit: Int = 25) async throws -> ActiveDetentionsResponse {
+        struct Input: Encodable {
+            let limit: Int
+            let offset: Int
+        }
+        return try await api.query(
+            "detentionAccessorials.getActiveDetentions",
+            input: Input(limit: limit, offset: 0)
+        )
+    }
+
+    // MARK: - History
+
+    struct HistoryEvent: Decodable, Equatable, Identifiable {
+        let id: Int
+        let loadId: Int?
+        let facilityName: String
+        let locationType: String
+        let arrivalTime: String?
+        let departureTime: String?
+        let totalMinutes: Int
+        let freeTimeMinutes: Int
+        let billableMinutes: Int
+        let totalCharge: Double
+        let status: String?
+        let billingStatus: String?
+        let carrierName: String?
+        let shipperName: String?
+        let cargoType: String?
+        let createdAt: String?
+    }
+
+    struct HistoryResponse: Decodable {
+        let events: [HistoryEvent]
+        let total: Int
+    }
+
+    /// `detentionAccessorials.getDetentionHistory` — past detention
+    /// claims with billingStatus rollup ("paid" | "invoiced" |
+    /// "disputed" | "pending").
+    func getHistory(
+        status: String? = nil,
+        facilityName: String? = nil,
+        limit: Int = 50
+    ) async throws -> HistoryResponse {
+        struct Input: Encodable {
+            let status: String?
+            let facilityName: String?
+            let limit: Int
+            let offset: Int
+        }
+        return try await api.query(
+            "detentionAccessorials.getDetentionHistory",
+            input: Input(status: status, facilityName: facilityName, limit: limit, offset: 0)
+        )
+    }
+
+    // MARK: - Dispute
+
+    struct DisputeResult: Decodable, Equatable {
+        let success: Bool?
+        let id: Int?
+        let status: String?
+    }
+
+    /// `detentionAccessorials.disputeDetention` — the driver (or
+    /// dispatcher) challenges a detention charge. Server flips the
+    /// row status to `disputed` so billing/accounting can review.
+    func dispute(detentionId: Int, reason: String) async throws -> DisputeResult {
+        struct Input: Encodable {
+            let detentionId: Int
+            let reason: String
+        }
+        return try await api.mutation(
+            "detentionAccessorials.disputeDetention",
+            input: Input(detentionId: detentionId, reason: reason)
+        )
+    }
+}
+
+// MARK: - permitsRouter (092 Me · Permits)
+//
+// Mirrors `frontend/server/routers/permits.ts`. The driver Me
+// surface today reads:
+//   - `getSummary`  → {total, active, expiring, expired}
+//   - `getActive`   → array of currently-approved permits
+//   - `getExpiring` → permits whose expirationDate lands in the
+//                     next N days (default 30)
+// And writes:
+//   - `renew` → push the expirationDate forward
+//
+// The server's `getActive` and `list` use an unusual "array plus
+// summary keys via Object.assign" pattern; when JSON-serialized,
+// only the array elements survive. We decode as a plain array.
+
+struct PermitsAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: - Permit shape
+
+    struct Permit: Decodable, Equatable, Identifiable {
+        let id: String
+        let permitNumber: String?
+        /// "trip" | "oversize" | "overweight" | "IRP" | "IFTA" | etc.
+        let type: String?
+        /// "pending" | "approved" | "denied" | "expired"
+        let status: String?
+        let states: [String]?
+        let origin: String?
+        let destination: String?
+        let commodity: String?
+        let weight: Double?
+        let expirationDate: String?
+        let fees: Double?
+        let createdAt: String?
+    }
+
+    // MARK: - Summary
+
+    struct Summary: Decodable, Equatable {
+        let total: Int
+        let active: Int
+        let expiring: Int
+        let expired: Int
+    }
+
+    /// `permits.getSummary` — counters for the hero strip.
+    func getSummary() async throws -> Summary {
+        try await api.queryNoInput("permits.getSummary")
+    }
+
+    // MARK: - Active
+
+    /// `permits.getActive` — all approved permits sorted by
+    /// expirationDate ascending.
+    func getActive() async throws -> [Permit] {
+        try await api.queryNoInput("permits.getActive")
+    }
+
+    // MARK: - Expiring
+
+    struct ExpiringPermit: Decodable, Equatable, Identifiable {
+        let id: String
+        let permitNumber: String?
+        let type: String?
+        let expirationDate: String?
+        let daysRemaining: Int
+        let states: [String]?
+    }
+
+    /// `permits.getExpiring` — permits expiring within the window
+    /// (server default 30 days). Use for the "needs attention"
+    /// section and renewal nudges.
+    func getExpiring(days: Int = 30) async throws -> [ExpiringPermit] {
+        struct Input: Encodable { let days: Int }
+        return try await api.query(
+            "permits.getExpiring",
+            input: Input(days: days)
+        )
+    }
+
+    // MARK: - Renew
+
+    struct RenewResult: Decodable, Equatable {
+        let success: Bool?
+        let permitId: String?
+    }
+
+    /// `permits.renew` — push the expirationDate to
+    /// `requestedEndDate` (ISO yyyy-MM-dd). Server may flip status
+    /// back to `pending` for re-approval depending on permit type.
+    func renew(
+        permitId: String,
+        requestedEndDate: String,
+        notes: String? = nil
+    ) async throws -> RenewResult {
+        struct Input: Encodable {
+            let permitId: String
+            let requestedEndDate: String
+            let notes: String?
+        }
+        return try await api.mutation(
+            "permits.renew",
+            input: Input(
+                permitId: permitId,
+                requestedEndDate: requestedEndDate,
+                notes: notes
+            )
+        )
+    }
+}
+
+// MARK: - driverQualificationRouter (093 Me · DQ File)
+//
+// Mirrors `frontend/server/routers/driverQualification.ts`. The
+// driver's own DQ file — CDL, medical card, hazmat endorsement,
+// TWIC, drug tests, employment history, annual reviews — gated
+// under a single compliance score.
+//
+// Expiry tracking: `getExpiringItems` watches four
+// driver-row columns (licenseExpiry / medicalCardExpiry /
+// hazmatExpiry / twicExpiry) plus the certifications table. The
+// server returns a flat array with type + expiresAt + daysRemaining
+// so the view can render one combined "needs attention" list
+// without joining across sources.
+
+struct DriverQualificationAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: - Overview
+
+    struct DocumentsSummary: Decodable, Equatable {
+        let total: Int
+        let valid: Int
+        let expiringSoon: Int
+        let expired: Int
+        let missing: Int
+    }
+
+    struct Overview: Decodable, Equatable {
+        let driverId: String
+        let driverName: String?
+        let hireDate: String?
+        let status: String
+        let complianceScore: Int
+        let documents: DocumentsSummary
+        let lastAudit: String?
+        let nextAudit: String?
+    }
+
+    /// `driverQualification.getOverview` — single-driver DQ file
+    /// summary. Requires the driver's user id.
+    func getOverview(driverId: String) async throws -> Overview {
+        struct Input: Encodable { let driverId: String }
+        return try await api.query(
+            "driverQualification.getOverview",
+            input: Input(driverId: driverId)
+        )
+    }
+
+    // MARK: - Documents
+
+    struct DQDocument: Decodable, Equatable, Identifiable {
+        let id: String
+        /// CDL | medical_card | hazmat | twic | drug_test | mvr | etc.
+        let type: String
+        let name: String?
+        /// "valid" | "expired" | "pending" | ...
+        let status: String?
+        let uploadedAt: String?
+        let expiresAt: String?
+        let required: Bool?
+        let regulation: String?
+    }
+
+    struct DocumentsResponse: Decodable {
+        let documents: [DQDocument]
+        let total: Int
+    }
+
+    /// `driverQualification.getDocuments` — all DQ docs for the
+    /// driver, newest first. Optional type/status filters.
+    func getDocuments(
+        driverId: String,
+        type: String? = nil,
+        status: String? = nil
+    ) async throws -> DocumentsResponse {
+        struct Input: Encodable {
+            let driverId: String
+            let type: String?
+            let status: String?
+        }
+        return try await api.query(
+            "driverQualification.getDocuments",
+            input: Input(driverId: driverId, type: type, status: status)
+        )
+    }
+
+    // MARK: - Expiring items
+
+    struct ExpiringItem: Decodable, Equatable, Identifiable {
+        let driverId: Int
+        let type: String
+        let expiresAt: String
+        let daysRemaining: Int
+
+        /// Composite id stable across renders (server doesn't ship
+        /// an id on these rows — they're synthesized from multiple
+        /// driver-row columns + certifications rows).
+        var id: String { "\(driverId)-\(type)-\(expiresAt)" }
+    }
+
+    /// `driverQualification.getExpiringItems` — company-scoped
+    /// watchlist of CDL / medical / hazmat / TWIC / cert expiries
+    /// within `daysAhead` (default 60).
+    func getExpiringItems(daysAhead: Int = 60) async throws -> [ExpiringItem] {
+        struct Input: Encodable { let daysAhead: Int }
+        return try await api.query(
+            "driverQualification.getExpiringItems",
+            input: Input(daysAhead: daysAhead)
+        )
+    }
+}
+
+// MARK: - fuelManagementRouter (094 Me · Fuel Cards)
+//
+// Mirrors `frontend/server/routers/fuelManagement.ts`. The driver
+// Me surface today exposes:
+//   - `getFuelDashboard`      — month-over-month spend + MPG +
+//                               cost-per-mile counters for the hero.
+//   - `getFuelCardManagement` — company-scoped fuel cards. The
+//                               driver view narrows client-side
+//                               to their own driverId.
+// Mutations (setFuelCardLimits, investigateFuelAnomaly) ship in
+// follow-up bricks — this screen is read + glance only.
+
+struct FuelManagementAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: - Dashboard
+
+    struct FuelTrends: Decodable, Equatable {
+        let spendChange: Double
+        let mpgChange: Double
+        let costPerMileChange: Double
+    }
+
+    struct MonthSpend: Decodable, Equatable, Identifiable {
+        let month: String
+        let amount: Double
+        var id: String { month }
+    }
+
+    struct Dashboard: Decodable, Equatable {
+        let totalSpend: Double
+        let avgMpg: Double
+        let fuelCostPerMile: Double
+        let totalGallons: Double
+        let totalMiles: Double
+        let transactionCount: Int
+        let avgPricePerGallon: Double
+        let trends: FuelTrends
+        let monthlySpend: [MonthSpend]
+    }
+
+    /// `fuelManagement.getFuelDashboard` — spend + MPG + cost/mile
+    /// over the selected period. Server defaults to "month."
+    func getDashboard(period: String = "month") async throws -> Dashboard {
+        struct Input: Encodable { let period: String }
+        return try await api.query(
+            "fuelManagement.getFuelDashboard",
+            input: Input(period: period)
+        )
+    }
+
+    // MARK: - Fuel cards
+
+    struct FuelCard: Decodable, Equatable, Identifiable {
+        let id: String
+        /// Server masks all but last 4 digits.
+        let cardNumber: String
+        let cardType: String?
+        /// "active" | "suspended" | "cancelled"
+        let status: String?
+        let driverName: String?
+        let driverId: Int?
+        let dailyLimit: Double
+        let monthlyLimit: Double
+        let dailySpent: Double
+        let monthlySpent: Double
+        let totalSpent: Double
+        let fuelOnly: Bool?
+        let lastUsed: String?
+        let expirationDate: String?
+    }
+
+    struct FuelCardSummary: Decodable, Equatable {
+        let total: Int
+        let active: Int
+        let suspended: Int
+        let totalSpent: Double
+        let monthlyLimit: Double
+    }
+
+    struct FuelCardsResponse: Decodable {
+        let cards: [FuelCard]
+        let summary: FuelCardSummary
+    }
+
+    /// `fuelManagement.getFuelCardManagement` — all company fuel
+    /// cards (admin view). Driver's personal Me screen filters to
+    /// just their own `driverId` before rendering.
+    func getFuelCards(status: String = "all") async throws -> FuelCardsResponse {
+        struct Input: Encodable {
+            let status: String
+            let limit: Int
+        }
+        return try await api.query(
+            "fuelManagement.getFuelCardManagement",
+            input: Input(status: status, limit: 50)
+        )
+    }
+}
+
+// MARK: - ratesRouter (095 Me · Rate Intel)
+//
+// Mirrors `frontend/server/routers/rates.ts`. Driver Me surface:
+//   - `getTrends`       — rate delta vs. prior window + short-
+//                         horizon forecast. Optional equipment /
+//                         region filters. The hero of the screen.
+//   - `getMarketRates`  — per-lane breakdown with history. Reserved
+//                         for the "Look up a lane" drilldown.
+
+struct RatesAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: - Trends
+
+    struct Forecast: Decodable, Equatable {
+        let nextWeek: Double
+        let nextMonth: Double
+        /// 0.0–1.0 — server's own model confidence.
+        let confidence: Double
+    }
+
+    struct TrendFactor: Decodable, Equatable, Identifiable {
+        let factor: String?
+        let impact: String?
+        let description: String?
+
+        var id: String { factor ?? UUID().uuidString }
+    }
+
+    struct Trends: Decodable, Equatable {
+        let period: String
+        let currentAvg: Double
+        let previousAvg: Double
+        let changePercent: Double
+        /// "up" | "down" | "stable"
+        let trend: String
+        let forecast: Forecast
+        let factors: [TrendFactor]
+    }
+
+    enum Period: String, CaseIterable, Identifiable {
+        case week, month, quarter, year
+        var id: String { rawValue }
+        var label: String { rawValue.capitalized }
+    }
+
+    enum Equipment: String, CaseIterable, Identifiable {
+        case any
+        case dry_van, reefer, flatbed, stepdeck, tanker, lowboy, container
+
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .any:       return "Any"
+            case .dry_van:   return "Dry Van"
+            case .reefer:    return "Reefer"
+            case .flatbed:   return "Flatbed"
+            case .stepdeck:  return "Step Deck"
+            case .tanker:    return "Tanker"
+            case .lowboy:    return "Lowboy"
+            case .container: return "Container"
+            }
+        }
+    }
+
+    /// `rates.getTrends` — rate change + forecast over the
+    /// selected window. Pass equipment as `nil` to let the server
+    /// aggregate across all equipment types.
+    func getTrends(
+        equipment: String? = nil,
+        region: String? = nil,
+        period: Period = .month
+    ) async throws -> Trends {
+        struct Input: Encodable {
+            let equipment: String?
+            let region: String?
+            let period: String
+        }
+        return try await api.query(
+            "rates.getTrends",
+            input: Input(
+                equipment: equipment,
+                region: region,
+                period: period.rawValue
+            )
+        )
+    }
+
+    // MARK: - Lane benchmark (above-market meter)
+
+    /// `rates.compareLaneRate` — server-canonical "above market"
+    /// meter the LoadDetailSheet renders next to the posted rate.
+    /// Looks at the last `lookbackDays` of delivered loads on the
+    /// same origin→dest state pair within ±25% of the distance and
+    /// returns the lane percentile + min/avg/max RPM. When fewer than
+    /// 3 comparable loads are found, the server falls back to a
+    /// distance-banded national benchmark (annotated via
+    /// `source: "national_benchmark"`) so the meter still renders a
+    /// real number rather than going blank.
+    struct LaneComparison: Decodable, Equatable {
+        let lane: String
+        let yourRate: Double
+        let yourRPM: Double
+        let distance: Double
+        let marketAvgRPM: Double
+        let marketMinRPM: Double
+        let marketMaxRPM: Double
+        let percentile: Int
+        /// "ABOVE_MARKET" | "AT_MARKET" | "BELOW_MARKET"
+        let position: String
+        let sampleSize: Int
+        let savingsVsAvg: Double
+        let recommendation: String
+        /// "platform_data" | "national_benchmark"
+        let source: String
+    }
+
+    func compareLaneRate(
+        originState: String,
+        destState: String,
+        rate: Double,
+        distance: Double,
+        cargoType: String? = nil,
+        lookbackDays: Int = 90
+    ) async throws -> LaneComparison {
+        struct Input: Encodable {
+            let originState: String
+            let destState: String
+            let rate: Double
+            let distance: Double
+            let cargoType: String?
+            let lookbackDays: Int
+        }
+        return try await api.query(
+            "rates.compareLaneRate",
+            input: Input(
+                originState: originState,
+                destState: destState,
+                rate: rate,
+                distance: distance,
+                cargoType: cargoType,
+                lookbackDays: lookbackDays
+            )
+        )
+    }
+}
+
+// MARK: - loadBiddingRouter
+//
+// Mirrors `frontend/server/routers/loadBidding.ts`. The web platform's
+// bid-chain surface — drivers / catalysts call `submit` to accept a
+// posted rate or open a counter chain. Counter-offers go through
+// `counter` with the parent bidId. Shippers / brokers call `accept`
+// or `reject` on their bid review surface.
+
+struct LoadBiddingAPI {
+    unowned let api: EusoTripAPI
+
+    /// Result of a `submit` call. `status` is "pending" by default,
+    /// "auto_accepted" when a shipper auto-accept rule matched the
+    /// bid, or "countered" when the caller is a driver flagging a
+    /// non-posted rate as a starting offer.
+    struct SubmitAck: Decodable, Equatable {
+        let id: Int?
+        let status: String
+    }
+
+    /// `loadBidding.submit` — one-tap accept at posted rate (Book Now
+    /// on the iOS load-detail sheet maps `bidAmount = load.rate`)
+    /// or open a chain at a custom rate. Server inserts a `loadBids`
+    /// row, fans `BID_RECEIVED` to the shipper's USER channel, and
+    /// runs the bidder's bid through the auto-accept rules.
+    @discardableResult
+    func submit(
+        loadId: Int,
+        bidAmount: Double,
+        rateType: String = "flat",
+        equipmentType: String? = nil,
+        estimatedPickup: String? = nil,
+        estimatedDelivery: String? = nil,
+        transitTimeDays: Int? = nil,
+        fuelSurchargeIncluded: Bool? = nil,
+        accessorialsIncluded: [String]? = nil,
+        conditions: String? = nil,
+        agreementId: Int? = nil,
+        expiresInHours: Int = 24
+    ) async throws -> SubmitAck {
+        struct Input: Encodable {
+            let loadId: Int
+            let bidAmount: Double
+            let rateType: String
+            let equipmentType: String?
+            let estimatedPickup: String?
+            let estimatedDelivery: String?
+            let transitTimeDays: Int?
+            let fuelSurchargeIncluded: Bool?
+            let accessorialsIncluded: [String]?
+            let conditions: String?
+            let agreementId: Int?
+            let expiresInHours: Int
+        }
+        return try await api.mutation(
+            "loadBidding.submit",
+            input: Input(
+                loadId: loadId,
+                bidAmount: bidAmount,
+                rateType: rateType,
+                equipmentType: equipmentType,
+                estimatedPickup: estimatedPickup,
+                estimatedDelivery: estimatedDelivery,
+                transitTimeDays: transitTimeDays,
+                fuelSurchargeIncluded: fuelSurchargeIncluded,
+                accessorialsIncluded: accessorialsIncluded,
+                conditions: conditions,
+                agreementId: agreementId,
+                expiresInHours: expiresInHours
+            )
+        )
+    }
+
+    /// `loadBidding.counter` — counter an existing bid in a chain.
+    /// Marks the parent bid as `countered`, inserts a fresh row at
+    /// `bidRound = parent.round + 1`, fans the counter event to the
+    /// other party. Used when the driver receives a shipper counter
+    /// and wants to push back rather than accept.
+    @discardableResult
+    func counter(
+        parentBidId: Int,
+        loadId: Int,
+        counterAmount: Double,
+        rateType: String = "flat",
+        conditions: String? = nil,
+        expiresInHours: Int = 24
+    ) async throws -> SubmitAck {
+        struct Input: Encodable {
+            let parentBidId: Int
+            let loadId: Int
+            let counterAmount: Double
+            let rateType: String
+            let conditions: String?
+            let expiresInHours: Int
+        }
+        return try await api.mutation(
+            "loadBidding.counter",
+            input: Input(
+                parentBidId: parentBidId,
+                loadId: loadId,
+                counterAmount: counterAmount,
+                rateType: rateType,
+                conditions: conditions,
+                expiresInHours: expiresInHours
+            )
+        )
+    }
+
+    /// `loadBidding.withdraw` — drop a still-pending bid the driver
+    /// changed their mind on. Server flips status to `withdrawn`
+    /// without notifying the counterparty.
+    @discardableResult
+    func withdraw(bidId: Int) async throws -> SubmitAck {
+        struct Input: Encodable { let bidId: Int }
+        return try await api.mutation(
+            "loadBidding.withdraw",
+            input: Input(bidId: bidId)
+        )
+    }
+
+    /// `loadBidding.getMyBids` — bids the caller has placed.
+    /// Used by the iOS My Bids surface and the post-Book ack to
+    /// confirm the bid landed in the chain.
+    struct MyBid: Decodable, Equatable, Identifiable {
+        let id: Int
+        let loadId: Int
+        let bidAmount: String?
+        let rateType: String?
+        let bidRound: Int?
+        let status: String
+        let createdAt: String?
+        let respondedAt: String?
+    }
+
+    func getMyBids(limit: Int = 50) async throws -> [MyBid] {
+        struct Input: Encodable { let limit: Int }
+        return try await api.query(
+            "loadBidding.getMyBids",
+            input: Input(limit: limit)
+        )
+    }
+}
+
+// MARK: - ergRouter (096 Me · ERG Hazmat Lookup)
+//
+// Mirrors `frontend/server/routers/erg.ts`. This is the driver's
+// wrist + phone copy of the Emergency Response Guidebook that
+// 49 CFR 172.604 requires to be in the cab whenever hazardous
+// materials are being transported. The server is backed by the
+// canonical ERG material tables + guide pages; iOS renders the
+// lookup + guide detail + emergency contact strip.
+//
+// Procs surfaced today:
+//   - `search`                — typeahead by name or UN
+//   - `searchByUN`            — full detail for a UN number
+//   - `getEmergencyContacts`  — CHEMTREC + NRC + Poison + 911
+
+struct ErgAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: - Search
+
+    struct SearchHit: Decodable, Equatable, Identifiable {
+        let unNumber: String
+        let name: String
+        let guide: Int
+        let hazardClass: String
+        let isTIH: Bool?
+        let isWR: Bool?
+        let alternateNames: [String]?
+        let placardName: String
+
+        var id: String { unNumber }
+    }
+
+    struct SearchResponse: Decodable {
+        let results: [SearchHit]
+        let count: Int
+    }
+
+    /// `erg.search` — typeahead by partial UN number or material
+    /// name. Short queries (<2 chars) return empty server-side so
+    /// we don't hammer with single-letter strokes.
+    func search(query: String, limit: Int = 10) async throws -> SearchResponse {
+        struct Input: Encodable {
+            let query: String
+            let limit: Int
+        }
+        return try await api.query(
+            "erg.search",
+            input: Input(query: query, limit: limit)
+        )
+    }
+
+    // MARK: - Full detail
+
+    struct ProtectiveDistance: Decodable, Equatable {
+        let smallSpill: PDRow?
+        let largeSpill: PDRow?
+
+        struct PDRow: Decodable, Equatable {
+            let isolate: String?
+            let downwindDay: String?
+            let downwindNight: String?
+        }
+    }
+
+    struct GuideDetail: Decodable, Equatable {
+        let title: String?
+        let potentialHazards: [String]?
+        let publicSafety: [String]?
+        let emergencyResponse: [String]?
+    }
+
+    struct MaterialDetail: Decodable, Equatable {
+        let found: Bool
+        let unNumber: String?
+        let name: String?
+        let guideNumber: Int?
+        let hazardClass: String?
+        let placard: String?
+        let isTIH: Bool?
+        let isWR: Bool?
+        let alternateNames: [String]?
+        let guide: GuideDetail?
+        let protectiveDistance: ProtectiveDistance?
+    }
+
+    /// `erg.searchByUN` — full detail + emergency response steps +
+    /// TIH initial isolation / protective action distances.
+    func searchByUN(_ unNumber: String) async throws -> MaterialDetail {
+        struct Input: Encodable { let unNumber: String }
+        return try await api.query(
+            "erg.searchByUN",
+            input: Input(unNumber: unNumber)
+        )
+    }
+
+    // MARK: - Emergency contacts
+
+    struct EmergencyContact: Decodable, Equatable {
+        let name: String
+        let phone: String
+        let description: String
+        let international: String?
+    }
+
+    struct EmergencyContactsResponse: Decodable, Equatable {
+        let chemtrec: EmergencyContact
+        let national: EmergencyContact
+        let poison: EmergencyContact
+        let emergency: EmergencyContact
+    }
+
+    /// `erg.getEmergencyContacts` — CHEMTREC + National Response
+    /// Center + Poison Control + 911. Drivers hauling hazmat
+    /// should have these at a tap, per §172.704.
+    func getEmergencyContacts() async throws -> EmergencyContactsResponse {
+        try await api.queryNoInput("erg.getEmergencyContacts")
+    }
+}
+
+// MARK: - ratingsRouter (097 Me · Ratings)
+//
+// Mirrors `frontend/server/routers/ratings.ts`. Driver Me surface:
+//   - `getMySummary` → roles × {overall rating, review count, trend}
+//   - `getReviews`    → paginated reviews for a given entity (for
+//                       the driver's Me screen: entityType="user",
+//                       entityId=signed-in user id)
+//   - `respond`       → reply to a review
+//   - `report`        → flag an abusive / false review
+
+struct RatingsAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: - Summary
+
+    struct RoleSummary: Decodable, Equatable {
+        let overallRating: Double
+        let totalReviews: Int
+        /// "up" | "down" | "stable"
+        let recentTrend: String
+    }
+
+    struct MySummary: Decodable, Equatable {
+        let asDriver: RoleSummary
+        let asCatalyst: RoleSummary
+        let givenThisMonth: Int
+        let receivedThisMonth: Int
+    }
+
+    /// `ratings.getMySummary` — per-role summaries for the driver's
+    /// Me · Ratings header.
+    func getMySummary() async throws -> MySummary {
+        try await api.queryNoInput("ratings.getMySummary")
+    }
+
+    // MARK: - Reviews
+
+    enum Sort: String, CaseIterable, Identifiable {
+        case recent, highest, lowest
+        var id: String { rawValue }
+        var label: String { rawValue.capitalized }
+    }
+
+    struct Review: Decodable, Equatable, Identifiable {
+        let id: String
+        let score: Double
+        let category: String?
+        let comment: String
+        let reviewerName: String?
+        let loadId: String?
+        let createdAt: String?
+    }
+
+    struct ReviewsResponse: Decodable {
+        let reviews: [Review]
+        let total: Int
+    }
+
+    /// `ratings.getReviews` — paginated reviews for an entity. The
+    /// driver's own reviews pass `entityType: "user"` with their
+    /// own id.
+    func getReviews(
+        entityType: String,
+        entityId: String,
+        sort: Sort = .recent,
+        limit: Int = 20,
+        offset: Int = 0
+    ) async throws -> ReviewsResponse {
+        struct Input: Encodable {
+            let entityType: String
+            let entityId: String
+            let sortBy: String
+            let limit: Int
+            let offset: Int
+        }
+        return try await api.query(
+            "ratings.getReviews",
+            input: Input(
+                entityType: entityType,
+                entityId: entityId,
+                sortBy: sort.rawValue,
+                limit: limit,
+                offset: offset
+            )
+        )
+    }
+
+    // MARK: - Respond / report
+
+    struct RespondResult: Decodable, Equatable {
+        let success: Bool?
+        let responseId: String?
+        let respondedAt: String?
+    }
+
+    /// `ratings.respond` — publicly reply to a review (≤500 chars).
+    func respond(reviewId: String, response: String) async throws -> RespondResult {
+        struct Input: Encodable {
+            let reviewId: String
+            let response: String
+        }
+        return try await api.mutation(
+            "ratings.respond",
+            input: Input(reviewId: reviewId, response: response)
+        )
+    }
+
+    /// `ratings.report` — report a review for inappropriate content,
+    /// false info, spam, harassment, or other reasons.
+    struct ReportResult: Decodable, Equatable {
+        let success: Bool?
+        let reportId: String?
+        let reportedAt: String?
+    }
+
+    func report(
+        reviewId: String,
+        reason: String,
+        details: String? = nil
+    ) async throws -> ReportResult {
+        struct Input: Encodable {
+            let reviewId: String
+            let reason: String
+            let details: String?
+        }
+        return try await api.mutation(
+            "ratings.report",
+            input: Input(reviewId: reviewId, reason: reason, details: details)
+        )
+    }
+}
+
+// MARK: - emergencyResponseRouter (098 Me · Emergency Ops)
+//
+// Mirrors `frontend/server/routers/emergencyResponse.ts`. Emergency
+// operations (FEMA mobilizations, pipeline-outage fuel surge,
+// hurricane evacuations) dispatch mobilization orders to drivers
+// with a CDL + hazmat or fuel tanker endorsement. Drivers see
+// active calls, accept or decline, and track loads hauled.
+//
+// Note: server-side this router stores state in-memory module
+// arrays (not DB); an in-flight mobilization resets on server
+// restart. The iOS surface still wires real endpoints — the
+// server-authoritative view is what the driver sees, placeholder-
+// free.
+
+struct EmergencyAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: - Operation + order + response shapes
+    //
+    // Keep these forgiving — the server returns a mix of typed
+    // TypeScript shapes that evolve. All fields decoded as
+    // optional so a new server field never crashes the client.
+
+    struct Operation: Decodable, Equatable, Identifiable {
+        let id: String
+        let name: String?
+        let status: String?
+        let severity: String?
+        let type: String?
+        let declaredAt: String?
+        let location: String?
+        let estimatedEnd: String?
+    }
+
+    struct MobilizationOrder: Decodable, Equatable, Identifiable {
+        let id: String
+        let operationId: String
+        /// Summary of the ask — regions, capacity, commodity.
+        let title: String?
+        let description: String?
+        let commodity: String?
+        let region: String?
+        let hazmatRequired: Bool?
+        let payPerMileCents: Int?
+        let surgeMultiplier: Double?
+        let deadline: String?
+        let createdAt: String?
+        let myResponse: MobilizationResponse?
+        let operation: Operation?
+    }
+
+    struct MobilizationResponse: Decodable, Equatable, Identifiable {
+        let id: String
+        let mobilizationOrderId: String?
+        let operationId: String?
+        let status: String?
+        let currentState: String?
+        let estimatedArrivalMinutes: Int?
+        let respondedAt: String?
+        let acceptedAt: String?
+        let loadsCompleted: Int?
+        let milesHauled: Double?
+    }
+
+    struct MyMobilizations: Decodable, Equatable {
+        let availableOrders: [MobilizationOrder]
+        let myActiveResponses: [MobilizationResponse]
+        let myCompletedResponses: [MobilizationResponse]
+        let totalLoadsCompleted: Int
+        let totalMilesHauled: Double
+    }
+
+    /// `emergencyResponse.getMyMobilizations` — driver-scoped
+    /// available orders + my active + my completed + aggregate stats.
+    func getMyMobilizations() async throws -> MyMobilizations {
+        try await api.queryNoInput("emergencyResponse.getMyMobilizations")
+    }
+
+    // MARK: - Respond / update
+
+    struct RespondResult: Decodable, Equatable {
+        let id: String?
+        let status: String?
+        let acceptedAt: String?
+    }
+
+    /// `emergencyResponse.respondToMobilization` — accept or decline
+    /// with optional location + ETA.
+    func respondToMobilization(
+        orderId: String,
+        accept: Bool,
+        currentState: String? = nil,
+        estimatedArrivalMinutes: Int? = nil
+    ) async throws -> RespondResult {
+        struct Input: Encodable {
+            let mobilizationOrderId: String
+            let accept: Bool
+            let currentState: String?
+            let estimatedArrivalMinutes: Int?
+        }
+        return try await api.mutation(
+            "emergencyResponse.respondToMobilization",
+            input: Input(
+                mobilizationOrderId: orderId,
+                accept: accept,
+                currentState: currentState,
+                estimatedArrivalMinutes: estimatedArrivalMinutes
+            )
+        )
+    }
+
+    /// `emergencyResponse.updateMobilizationStatus` — flip the
+    /// driver's response status (EN_ROUTE / ON_SITE / COMPLETED /
+    /// ABANDONED).
+    func updateStatus(
+        responseId: String,
+        status: String,
+        loadsCompleted: Int? = nil,
+        milesHauled: Double? = nil
+    ) async throws -> RespondResult {
+        struct Input: Encodable {
+            let responseId: String
+            let status: String
+            let loadsCompleted: Int?
+            let milesHauled: Double?
+        }
+        return try await api.mutation(
+            "emergencyResponse.updateMobilizationStatus",
+            input: Input(
+                responseId: responseId,
+                status: status,
+                loadsCompleted: loadsCompleted,
+                milesHauled: milesHauled
+            )
+        )
+    }
+}
+
+// MARK: - freightClaimsRouter (099 Me · Freight Claims)
+//
+// Mirrors `frontend/server/routers/freightClaims.ts`. Driver files
+// a claim from the cab when cargo is damaged / lost / short /
+// delayed / contaminated. Server auto-maps the claim type onto
+// the canonical incident `type` enum (damage→property_damage,
+// contamination→hazmat_spill, delay→near_miss, etc.) and creates
+// the row; dispatch + safety pick it up from there.
+
+struct FreightClaimsAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: - Claim type
+
+    enum ClaimType: String, CaseIterable, Identifiable, Codable {
+        case damage, loss, shortage, delay, contamination
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .damage:        return "Damage"
+            case .loss:          return "Loss"
+            case .shortage:      return "Shortage"
+            case .delay:         return "Delay"
+            case .contamination: return "Contamination"
+            }
+        }
+        var icon: String {
+            switch self {
+            case .damage:        return "shippingbox.and.arrow.backward"
+            case .loss:          return "xmark.bin"
+            case .shortage:      return "minus.rectangle"
+            case .delay:         return "clock.badge.exclamationmark"
+            case .contamination: return "exclamationmark.triangle"
+            }
+        }
+    }
+
+    // MARK: - Dashboard
+
+    struct Aging: Decodable, Equatable {
+        let under30: Int
+        let days30to60: Int
+        let days60to90: Int
+        let over90: Int
+    }
+
+    struct Dashboard: Decodable, Equatable {
+        let open: Int
+        let pending: Int
+        let resolved: Int
+        let denied: Int
+        let totalValue: Double
+        let avgResolutionDays: Double
+        let aging: Aging
+    }
+
+    /// `freightClaims.getClaimsDashboard` — counters + aging
+    /// breakdown. Admin-scoped in production; drivers see
+    /// company-wide counts which is fine — a driver knowing
+    /// "carrier has 4 claims over 90 days" is actionable
+    /// information when they push for resolution on theirs.
+    func getDashboard() async throws -> Dashboard {
+        try await api.queryNoInput("freightClaims.getClaimsDashboard")
+    }
+
+    // MARK: - Claim rows
+
+    struct Claim: Decodable, Equatable, Identifiable {
+        let id: Int
+        let type: String?
+        let status: String?
+        let description: String?
+        let createdAt: String?
+        let severity: String?
+
+        /// Stable String id for SwiftUI ForEach.
+        var stableId: String { String(id) }
+    }
+
+    struct ClaimsResponse: Decodable {
+        let claims: [Claim]
+        let total: Int
+    }
+
+    func getClaims(
+        status: String? = nil,
+        search: String? = nil,
+        limit: Int = 20
+    ) async throws -> ClaimsResponse {
+        struct Input: Encodable {
+            let status: String?
+            let search: String?
+            let limit: Int
+            let offset: Int
+        }
+        return try await api.query(
+            "freightClaims.getClaims",
+            input: Input(status: status, search: search, limit: limit, offset: 0)
+        )
+    }
+
+    // MARK: - File a claim
+
+    struct FileClaimResult: Decodable, Equatable {
+        let id: Int?
+        let status: String?
+        let claimNumber: String?
+    }
+
+    func fileClaim(
+        loadId: String,
+        type: ClaimType,
+        amount: Double,
+        description: String,
+        commodity: String? = nil,
+        damageExtent: String? = nil
+    ) async throws -> FileClaimResult {
+        struct Input: Encodable {
+            let loadId: String
+            let type: String
+            let amount: Double
+            let description: String
+            let commodity: String?
+            let damageExtent: String?
+        }
+        return try await api.mutation(
+            "freightClaims.fileClaim",
+            input: Input(
+                loadId: loadId,
+                type: type.rawValue,
+                amount: amount,
+                description: description,
+                commodity: commodity,
+                damageExtent: damageExtent
+            )
+        )
+    }
+}
+
+// MARK: - appointmentsRouter (101 Me · Appointments)
+//
+// Mirrors `frontend/server/routers/appointments.ts`. Each driver
+// row comes from the appointments table (scheduledAt in local
+// time window). iOS Me surface lists upcoming / today / past +
+// offers check-in → start-loading → complete progression.
+
+struct AppointmentsAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: - Status window
+
+    enum Window: String, CaseIterable, Identifiable, Codable {
+        case upcoming, today, past
+        var id: String { rawValue }
+        var label: String { rawValue.capitalized }
+    }
+
+    // MARK: - Row shape
+
+    struct Appointment: Decodable, Equatable, Identifiable {
+        let id: String
+        let type: String?
+        let loadNumber: String?
+        let facilityName: String?
+        let address: String?
+        let scheduledDate: String?
+        let scheduledTime: String?
+        /// "scheduled" | "checked_in" | "loading" | "completed" |
+        /// "cancelled" etc.
+        let status: String?
+        let product: String?
+        let quantity: Double?
+    }
+
+    // MARK: - Summary
+
+    struct Summary: Decodable, Equatable {
+        let today: Int
+        let completed: Int
+        let inProgress: Int
+        let upcoming: Int
+        let cancelled: Int
+    }
+
+    /// `appointments.getSummary` — today's counters + upcoming
+    /// count for the hero strip.
+    func getSummary() async throws -> Summary {
+        try await api.queryNoInput("appointments.getSummary")
+    }
+
+    /// `appointments.getMyAppointments` — paginated driver-scoped
+    /// list for the selected window.
+    func getMyAppointments(window: Window = .upcoming) async throws -> [Appointment] {
+        struct Input: Encodable { let status: String }
+        return try await api.query(
+            "appointments.getMyAppointments",
+            input: Input(status: window.rawValue)
+        )
+    }
+
+    // MARK: - Mutations
+
+    struct SimpleResult: Decodable, Equatable {
+        let success: Bool?
+        let appointmentId: String?
+        let checkInTime: String?
+        let queuePosition: Int?
+        let estimatedWait: Int?
+    }
+
+    /// `appointments.checkIn` — driver arrives at the facility.
+    func checkIn(
+        appointmentId: String,
+        trailerNumber: String? = nil,
+        notes: String? = nil
+    ) async throws -> SimpleResult {
+        struct Input: Encodable {
+            let appointmentId: String
+            let trailerNumber: String?
+            let notes: String?
+        }
+        return try await api.mutation(
+            "appointments.checkIn",
+            input: Input(
+                appointmentId: appointmentId,
+                trailerNumber: trailerNumber,
+                notes: notes
+            )
+        )
+    }
+
+    /// `appointments.startLoading` — dock started loading /
+    /// unloading. Flips status to `loading`.
+    func startLoading(appointmentId: String) async throws -> SimpleResult {
+        struct Input: Encodable { let appointmentId: String }
+        return try await api.mutation(
+            "appointments.startLoading",
+            input: Input(appointmentId: appointmentId)
+        )
+    }
+
+    /// `appointments.complete` — driver pulled out + POD captured.
+    func complete(appointmentId: String) async throws -> SimpleResult {
+        struct Input: Encodable { let appointmentId: String }
+        return try await api.mutation(
+            "appointments.complete",
+            input: Input(appointmentId: appointmentId)
+        )
+    }
+
+    /// `appointments.cancel` — cancel with reason.
+    func cancel(id: String, reason: String) async throws -> SimpleResult {
+        struct Input: Encodable {
+            let id: String
+            let reason: String
+        }
+        return try await api.mutation(
+            "appointments.cancel",
+            input: Input(id: id, reason: reason)
+        )
+    }
+}
+
+// MARK: - contactsRouter (102 Me · Contacts)
+//
+// Mirrors `frontend/server/routers/contacts.ts`. Driver's
+// contact book — shipper reps, dispatchers, broker agents,
+// mechanic partners, fellow drivers. Server joins the `users`
+// table with the `companies` table so each row carries company
+// context + role.
+
+struct ContactsAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: - Row shape
+
+    struct Address: Decodable, Equatable {
+        let city: String?
+        let state: String?
+    }
+
+    struct Contact: Decodable, Equatable, Identifiable {
+        let id: String
+        /// "driver" | "shipper" | "catalyst" | "broker" | "dispatcher"
+        /// | "other"
+        let type: String
+        let name: String
+        let company: String?
+        let email: String?
+        let phone: String?
+        let address: Address?
+        let favorite: Bool
+        let lastContact: String?
+    }
+
+    // MARK: - Summary
+
+    struct Summary: Decodable, Equatable {
+        let total: Int
+        let shippers: Int
+        let catalysts: Int
+        let drivers: Int
+    }
+
+    /// `contacts.getSummary` — counters per role for the header strip.
+    func getSummary() async throws -> Summary {
+        try await api.queryNoInput("contacts.getSummary")
+    }
+
+    /// `contacts.list` — paginated + optionally filtered by type /
+    /// search / favorite. Returns a flat array (not enveloped).
+    func list(
+        type: String? = nil,
+        search: String? = nil,
+        favorite: Bool? = nil,
+        limit: Int = 40
+    ) async throws -> [Contact] {
+        struct Input: Encodable {
+            let type: String?
+            let search: String?
+            let favorite: Bool?
+            let limit: Int
+            let offset: Int
+        }
+        return try await api.query(
+            "contacts.list",
+            input: Input(
+                type: type,
+                search: search,
+                favorite: favorite,
+                limit: limit,
+                offset: 0
+            )
+        )
+    }
+
+    // MARK: - Mutations
+
+    struct ToggleFavoriteResult: Decodable, Equatable {
+        let success: Bool?
+        let id: String?
+        let favorite: Bool?
+    }
+
+    /// `contacts.toggleFavorite` — flip the favorite flag.
+    func toggleFavorite(id: String) async throws -> ToggleFavoriteResult {
+        struct Input: Encodable { let id: String }
+        return try await api.mutation(
+            "contacts.toggleFavorite",
+            input: Input(id: id)
+        )
+    }
+
+    struct InteractionResult: Decodable, Equatable {
+        let id: String?
+        let contactId: String?
+        let type: String?
+        let date: String?
+    }
+
+    /// `contacts.addInteraction` — log a call / email / meeting /
+    /// note against a contact.
+    func addInteraction(
+        contactId: String,
+        kind: String,
+        notes: String
+    ) async throws -> InteractionResult {
+        struct Input: Encodable {
+            let contactId: String
+            let type: String
+            let notes: String
+        }
+        return try await api.mutation(
+            "contacts.addInteraction",
+            input: Input(contactId: contactId, type: kind, notes: notes)
+        )
+    }
+}
+
+// MARK: - agreementsRouter (103 Me · Agreements)
+//
+// Mirrors `frontend/server/routers/agreements.ts`. Driver sees
+// any agreement where they are party A or B (lease-on, owner-op,
+// employment, dispatch service contract, per-load rate agreement,
+// etc.). Server stores agreements encrypted + generates Gradient-
+// Ink e-signatures on sign().
+//
+// Note on scope: this covers the MASTER AGREEMENTS system. The
+// related laneContracts router (recurring lane commitments)
+// filters by shipperId / catalystId / brokerId — no driverId
+// column today, so a driver seeing "my dedicated lanes" needs a
+// server-side change first. Documented in the Pulse-role-wiring
+// doctrine.
+
+struct AgreementsAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: - Stats
+
+    struct Stats: Decodable, Equatable {
+        let total: Int
+        let active: Int
+        let draft: Int
+        let negotiating: Int
+        let pendingSignature: Int
+        let expired: Int
+        let totalValue: Double
+    }
+
+    /// `agreements.getStats` — counters for the hero. Server
+    /// scopes to the signed-in user's party-A / party-B rows.
+    func getStats() async throws -> Stats {
+        try await api.queryNoInput("agreements.getStats")
+    }
+
+    // MARK: - List
+
+    struct Agreement: Decodable, Equatable, Identifiable {
+        let id: Int
+        let agreementNumber: String?
+        let agreementType: String?
+        let contractDuration: String?
+        /// "draft" | "negotiating" | "pending_signature" |
+        /// "active" | "terminated" | "expired"
+        let status: String?
+        let partyAUserId: Int?
+        let partyARole: String?
+        let partyBUserId: Int?
+        let partyBRole: String?
+        let baseRate: Double?
+        let rateType: String?
+        let paymentTermDays: Int?
+        let effectiveDate: String?
+        let expirationDate: String?
+        let equipmentTypes: [String]?
+        let hazmatRequired: Bool?
+        let isEncrypted: Bool?
+        let createdAt: String?
+        let updatedAt: String?
+    }
+
+    struct ListResponse: Decodable {
+        let agreements: [Agreement]
+        let total: Int
+    }
+
+    /// `agreements.list` — filter by status / type / duration /
+    /// search / partyUserId. Server narrows to the signed-in
+    /// user's own agreements unless they're admin.
+    func list(
+        status: String? = nil,
+        type: String? = nil,
+        search: String? = nil,
+        limit: Int = 40
+    ) async throws -> ListResponse {
+        struct Input: Encodable {
+            let status: String?
+            let type: String?
+            let search: String?
+            let limit: Int
+            let offset: Int
+        }
+        return try await api.query(
+            "agreements.list",
+            input: Input(
+                status: status,
+                type: type,
+                search: search,
+                limit: limit,
+                offset: 0
+            )
+        )
+    }
+
+    // MARK: - Sign
+
+    struct SignResult: Decodable, Equatable {
+        let success: Bool?
+        let agreementId: Int?
+        let status: String?
+        let signatureHash: String?
+    }
+
+    /// `agreements.sign` — apply a Gradient-Ink digital signature.
+    /// `signatureData` is a base64-encoded PNG of the driver's
+    /// signature stroke; the server hashes it SHA-256 for
+    /// verification.
+    func sign(
+        agreementId: Int,
+        signatureBase64: String,
+        signatureRole: String,
+        signerName: String? = nil,
+        signerTitle: String? = nil
+    ) async throws -> SignResult {
+        struct Input: Encodable {
+            let agreementId: Int
+            let signatureData: String
+            let signatureRole: String
+            let signerName: String?
+            let signerTitle: String?
+        }
+        return try await api.mutation(
+            "agreements.sign",
+            input: Input(
+                agreementId: agreementId,
+                signatureData: signatureBase64,
+                signatureRole: signatureRole,
+                signerName: signerName,
+                signerTitle: signerTitle
+            )
+        )
+    }
+}
+
+// MARK: - loadLifecycleRouter (trip-execution state machine)
+//
+// Mirrors `frontend/server/routers/loadLifecycle.ts`. This is the
+// foundation under the 013–051 trip execution screens. Each screen
+// subscribes to the same `TripLifecycleStore` (defined in
+// `ViewModels/LiveDataStores.swift`) which reads state from the
+// load + available-transitions from this API. Driver actions (tap
+// "I've arrived", "Loading", "BOL signed", "Delivered") fire
+// `executeTransition` with the appropriate transition id and the
+// store refreshes — which means the next screen in the 34-screen
+// lifecycle automatically picks up the new state.
+//
+// The server-side state machine handles guards (HOS compliance,
+// hazmat endorsement, BOL present, etc.) and validates the role
+// is allowed to perform the transition. iOS never hardcodes the
+// next state — it asks the server "what's legal next from here?"
+// and renders whatever came back.
+
+struct LoadLifecycleAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: - Transition DTO
+
+    struct Transition: Decodable, Equatable, Identifiable {
+        let transitionId: String
+        let to: String
+        /// Human-readable label for the action button (from the
+        /// transition's server definition).
+        let label: String?
+        /// Guard-failure messages the server precomputed. When
+        /// non-empty, the transition is REJECTED and the driver
+        /// should see these as a reason on the UI before tap.
+        let guardErrors: [String]?
+        /// Whether the transition requires capture of location,
+        /// photo, BOL data, etc. The UI should prompt before
+        /// executing.
+        let requiresLocation: Bool?
+        let requiresData: Bool?
+
+        var id: String { transitionId }
+    }
+
+    /// `loadLifecycle.getAvailableTransitions` — role-filtered
+    /// next-hop options + guard evaluation. Returns `[]` when
+    /// no legal transitions remain (terminal state).
+    func getAvailableTransitions(loadId: String) async throws -> [Transition] {
+        struct Input: Encodable { let loadId: String }
+        return try await api.query(
+            "loadLifecycle.getAvailableTransitions",
+            input: Input(loadId: loadId)
+        )
+    }
+
+    // MARK: - Execute transition
+
+    struct TransitionResult: Decodable, Equatable {
+        let success: Bool
+        let newState: String?
+        let error: String?
+        let guardErrors: [String]?
+    }
+
+    struct ExecuteLocation: Encodable {
+        let lat: Double
+        let lng: Double
+    }
+
+    struct ComplianceBlock: Encodable {
+        let hosCompliant: Bool?
+        let hazmatEndorsed: Bool?
+        let vehicleInspected: Bool?
+        let bolPresent: Bool?
+        let runTicketPresent: Bool?
+        let podSigned: Bool?
+    }
+
+    /// `loadLifecycle.executeTransition` — flip the load's state.
+    /// Guarded server-side by the state-machine rules; the caller
+    /// should pass the location fix (if the transition requires
+    /// one) + any transition-specific `data` payload (BOL id,
+    /// POD photo id, damage notes, etc.).
+    func executeTransition(
+        loadId: String,
+        transitionId: String,
+        location: ExecuteLocation? = nil,
+        data: [String: String]? = nil,
+        compliance: ComplianceBlock? = nil
+    ) async throws -> TransitionResult {
+        struct Input: Encodable {
+            let loadId: String
+            let transitionId: String
+            let location: ExecuteLocation?
+            let data: [String: String]?
+            let complianceChecks: ComplianceBlock?
+        }
+        return try await api.mutation(
+            "loadLifecycle.executeTransition",
+            input: Input(
+                loadId: loadId,
+                transitionId: transitionId,
+                location: location,
+                data: data,
+                complianceChecks: compliance
+            )
+        )
+    }
+
+    // MARK: - State history
+
+    struct StateTransition: Decodable, Equatable, Identifiable {
+        let id: Int
+        let fromState: String?
+        let toState: String?
+        let transitionId: String?
+        let triggerType: String?
+        let triggerEvent: String?
+        let actorName: String?
+        let actorRole: String?
+        let success: Bool?
+        let errorMessage: String?
+        let createdAt: String?
+    }
+
+    /// `loadLifecycle.getStateHistory` — immutable audit trail of
+    /// every transition on this load. Each row carries actor +
+    /// trigger + outcome.
+    func getStateHistory(loadId: String) async throws -> [StateTransition] {
+        struct Input: Encodable { let loadId: String }
+        return try await api.query(
+            "loadLifecycle.getStateHistory",
+            input: Input(loadId: loadId)
+        )
+    }
+
+    // MARK: - Check-in
+
+    struct CheckInResult: Decodable, Equatable {
+        let success: Bool?
+        let loadId: String?
+        let checkInTime: String?
+    }
+
+    /// `loadLifecycle.checkIn` — location-gated arrival confirm.
+    /// Server verifies geofence match; on success, auto-fires
+    /// the relevant transition (arrive-at-pickup, arrive-at-
+    /// receiver, etc.).
+    func checkIn(
+        loadId: String,
+        lat: Double,
+        lng: Double,
+        stopType: String
+    ) async throws -> CheckInResult {
+        struct Input: Encodable {
+            let loadId: String
+            let lat: Double
+            let lng: Double
+            let stopType: String
+        }
+        return try await api.mutation(
+            "loadLifecycle.checkIn",
+            input: Input(
+                loadId: loadId,
+                lat: lat,
+                lng: lng,
+                stopType: stopType
+            )
+        )
+    }
+}
+
+// MARK: - spectraMatchRouter
+//
+// Driver-facing surface for crude-oil + product identification.
+// Backed verbatim by `frontend/server/routers/spectraMatch.ts`.
+// Today's iOS callsites:
+//
+//   • `031_SpectraMatchVerdict` → `getHistory(limit:)` to render
+//     the per-fill sample lane strip.
+//   • `030_LoadingInProgress`   → `getHistory(limit: 1)` to render
+//     the in-flight Spectra-Match card (target % + last reading).
+//
+// Added 2026-04-24 (eusotrip-killers ledger-hygiene firing) to
+// remove the hardcoded `samples` array in 031. Other procedures
+// (identify, identifyWithAI, getLearningStats, askAboutProduct,
+// getCrudeTypes, getCrudesByCountry, getCrudeSpecs, saveToRunTicket,
+// getTerminalProductCatalog, autoIdentifyFromTerminal,
+// getProductMarketContext, getDestinationIntelligence,
+// quickDestinationMatch, getPipelineCompatibility,
+// getBlendingRecommendations) are reserved for follow-up bricks
+// (terminal product catalog, destination intelligence, etc.) and
+// will be added when those screens are wired.
+
+struct SpectraMatchAPI {
+    unowned let api: EusoTripAPI
+
+    /// One verified spectra-match identification (one BOL signoff
+    /// or run-ticket save, one crude/product confirmation). The
+    /// shape is mirrored from `spectraMatch.getHistory` in
+    /// `frontend/server/routers/spectraMatch.ts:414`.
+    struct Identification: Decodable, Identifiable, Hashable {
+        /// Server-assigned identifier in `SM-NNN` form.
+        let id: String
+        /// ISO-8601 timestamp of the verifying BOL signoff /
+        /// run-ticket save.
+        let timestamp: String
+        /// Resolved product / crude name (e.g. "Bakken Light").
+        let crudeType: String
+        /// 0–1 match confidence at the time the load was signed.
+        let confidence: Double
+        /// API gravity (degrees) recorded at sign-off.
+        let apiGravity: Double
+        /// BS&W percent recorded at sign-off.
+        let bsw: Double
+        /// Server-side load handle (`LD-<id>`).
+        let loadId: String
+        /// "ESANG AI" if AI-verified, "System" if static-only.
+        let verifiedBy: String
+        /// Static category bucket (sweet/sour/medium-sour/etc.).
+        let category: String
+    }
+
+    /// Top-level envelope returned by `spectraMatch.getHistory`.
+    struct HistoryResponse: Decodable {
+        let identifications: [Identification]
+        let total: Int
+    }
+
+    struct GetHistoryInput: Encodable {
+        let terminalId: String?
+        let limit: Int
+    }
+
+    /// `spectraMatch.getHistory` — most-recent verified
+    /// identifications across the caller's company / driver scope.
+    /// Server filters to loads with a non-null `spectraMatchResult`,
+    /// in `loads.createdAt DESC` order, capped by `limit`.
+    func getHistory(terminalId: String? = nil, limit: Int = 20) async throws -> HistoryResponse {
+        try await api.query(
+            "spectraMatch.getHistory",
+            input: GetHistoryInput(terminalId: terminalId, limit: limit)
+        )
+    }
+}
+
+// MARK: - shippersRouter
+//
+// The first Shipper-facing surface on the iOS client. Today's
+// callsite is the new `200_ShipperHome` brick (Shipper · Home).
+// Backed verbatim by `frontend/server/routers/shippers.ts`. Added
+// 2026-04-24 at the start of the role-by-role build wave that
+// follows the Driver track (010–103) being shipped.
+//
+// Procedures wired today:
+//   • getDashboardStats — header KPIs for Shipper Home
+//   • getActiveLoads    — "Active loads" card list
+//   • getLoadsRequiringAttention — "Needs your attention" alerts
+//   • getRecentLoads    — recent activity feed
+//
+// Mutations (`create`, `update`, `delete`) will land when the
+// post-a-load (201_PostLoad) and load-detail (203_LoadDetail) bricks
+// ship in the next sub-firing.
+
+struct ShipperAPI {
+    unowned let api: EusoTripAPI
+
+    /// Dashboard KPI envelope. Mirrors `shippers.getDashboardStats`
+    /// (frontend/server/routers/shippers.ts:77).
+    struct DashboardStats: Decodable, Hashable {
+        let activeLoads: Int
+        let pendingBids: Int
+        let deliveredThisWeek: Int
+        let ratePerMile: Double
+        let onTimeRate: Double
+        let totalSpendThisMonth: Double
+    }
+
+    func getDashboardStats() async throws -> DashboardStats {
+        try await api.queryNoInput("shippers.getDashboardStats")
+    }
+
+    /// One in-flight load on the Shipper's plate. Mirrors
+    /// `shippers.getActiveLoads` (line 109).
+    struct ActiveLoad: Decodable, Identifiable, Hashable {
+        let id: String
+        let loadNumber: String
+        let status: String
+        let origin: String
+        let destination: String
+        let catalyst: String
+        let driver: String
+        let eta: String
+        let rate: Double
+    }
+
+    struct GetActiveLoadsInput: Encodable { let limit: Int }
+
+    func getActiveLoads(limit: Int = 10) async throws -> [ActiveLoad] {
+        try await api.query(
+            "shippers.getActiveLoads",
+            input: GetActiveLoadsInput(limit: limit)
+        )
+    }
+
+    /// One alert row on the Shipper's "needs attention" feed.
+    /// Mirrors `shippers.getLoadsRequiringAttention` (line 147).
+    struct LoadAlert: Decodable, Identifiable, Hashable {
+        let id: String
+        let loadNumber: String
+        let issue: String
+        let severity: String
+        let message: String
+    }
+
+    func getLoadsRequiringAttention() async throws -> [LoadAlert] {
+        try await api.queryNoInput("shippers.getLoadsRequiringAttention")
+    }
+
+    /// One row in the Shipper's recent-activity feed. Server
+    /// returns a slim load summary; richer detail hangs off
+    /// `loads.getById`. `deliveredAt` is the server's `YYYY-MM-DD`
+    /// projection of `actualDeliveryDate ?? deliveryDate`, empty
+    /// string when neither is set.
+    struct RecentLoad: Decodable, Identifiable, Hashable {
+        let id: String
+        let loadNumber: String
+        let status: String
+        let origin: String
+        let destination: String
+        let deliveredAt: String
+        let rate: Double
+    }
+
+    struct GetRecentLoadsInput: Encodable { let limit: Int }
+
+    func getRecentLoads(limit: Int = 5) async throws -> [RecentLoad] {
+        try await api.query(
+            "shippers.getRecentLoads",
+            input: GetRecentLoadsInput(limit: limit)
+        )
+    }
+
+    // ===================================================================
+    // 117th eusotrip-killers firing · 2026-04-26 · brick 202 wiring
+    // -------------------------------------------------------------------
+    // Profile + Stats DTOs and the matching `getProfile()` / `getStats()`
+    // methods land in the same firing as `202_ShipperProfile.swift`
+    // (Cohort B day-1, no mock data). Wire-format mirrors verbatim what
+    // the backend returns at `frontend/server/routers/shippers.ts:583`
+    // (`getProfile`) and `:605` (`getStats`). Both procedures use the
+    // shipper-gated `protectedProcedure` and return populated envelopes
+    // even when the underlying tables are empty (server returns sentinel
+    // empty strings / zeros), so the client never has to invent data —
+    // every blank field surfaces as an em-dash sentinel in the UI.
+    // ===================================================================
+
+    /// Shipper company profile envelope. Mirrors verbatim
+    /// `shippers.getProfile` at `frontend/server/routers/shippers.ts:583`.
+    /// Server returns empty strings / `false` when the underlying
+    /// `companies` row hasn't been hydrated yet — the screen surfaces
+    /// those as em-dashes rather than fabricating values.
+    struct Profile: Decodable, Hashable {
+        let id: String
+        let companyName: String
+        let contactName: String
+        let email: String
+        let phone: String
+        let address: String
+        let dotNumber: String
+        let mcNumber: String
+        let verified: Bool
+        /// ISO-8601 timestamp string from `companies.createdAt.toISOString()`.
+        /// Empty string when not set. Client formats this for display.
+        let memberSince: String
+        let website: String
+    }
+
+    func getProfile() async throws -> Profile {
+        try await api.queryNoInput("shippers.getProfile")
+    }
+
+    /// Per-month volume row. Mirrors verbatim each entry in
+    /// `monthlyVolume` returned by `shippers.getStats` at
+    /// `frontend/server/routers/shippers.ts:605`. Server projects
+    /// `month` as `YYYY-MM` and `loads` as the row count.
+    struct ProfileMonthlyVolume: Decodable, Hashable, Identifiable {
+        let month: String
+        let loads: Int
+
+        var id: String { month }
+    }
+
+    /// Shipper aggregate stats envelope. Mirrors verbatim
+    /// `shippers.getStats` at `frontend/server/routers/shippers.ts:605`.
+    /// `avgRatePerMile` and `avgPaymentTime` are server-side TODOs (the
+    /// backend currently returns 0 for both); the client honors that
+    /// honestly with em-dash sentinels rather than fake projections.
+    struct Stats: Decodable, Hashable {
+        let totalLoads: Int
+        let totalSpend: Int
+        let avgRatePerMile: Double
+        let onTimeDeliveryRate: Int
+        let preferredCatalysts: Int
+        let avgPaymentTime: Double
+        let onTimeRate: Int
+        let monthlyVolume: [ProfileMonthlyVolume]
+        let maxMonthlyLoads: Int
+    }
+
+    func getStats() async throws -> Stats {
+        try await api.queryNoInput("shippers.getStats")
+    }
+
+    // ===================================================================
+    // 119th eusotrip-killers firing · 2026-04-26 · brick 203 wiring
+    // -------------------------------------------------------------------
+    // Bid DTOs + getBidsForLoad / acceptBid / rejectBid land in the same
+    // firing as `203_ShipperBids.swift` (Cohort B day-1, no mock data).
+    // Wire-format mirrors verbatim what the backend returns at:
+    //   • `frontend/server/routers/shippers.ts:358` (`getBidsForLoad`)
+    //   • `frontend/server/routers/shippers.ts:392` (`acceptBid`)
+    //   • `frontend/server/routers/shippers.ts:415` (`rejectBid`)
+    // All three use the shipper-gated `protectedProcedure`. The server
+    // returns sentinel zeros / empty strings when underlying fields
+    // (e.g. `safetyScore`, `transitTime`) aren't yet populated — the
+    // client surfaces those as em-dash sentinels rather than fabricating
+    // values. `recommended` is a server-side flag (currently the most-
+    // recent bid) — the screen renders a gradient pill only when true.
+    // ===================================================================
+
+    /// One bid row returned by `shippers.getBidsForLoad`. Mirrors
+    /// verbatim the catalyst-decorated payload constructed at
+    /// `frontend/server/routers/shippers.ts:368`. `id` and
+    /// `catalystId` carry the `bid_` / `car_` prefixes the server
+    /// emits — the client passes them back to `acceptBid` /
+    /// `rejectBid` unmodified (the server strips the prefix on its
+    /// side before the SQL update).
+    struct Bid: Decodable, Identifiable, Hashable {
+        let id: String
+        let catalystId: String
+        let catalystName: String
+        let dotNumber: String
+        let safetyScore: Double
+        let amount: Double
+        let transitTime: String
+        let submittedAt: String
+        let message: String
+        let recommended: Bool
+    }
+
+    struct GetBidsForLoadInput: Encodable { let loadId: String }
+
+    /// Fetch every bid for a single posted load. Server returns an
+    /// empty array (not an error) when the load has no bids yet, so
+    /// the screen surfaces the canonical `EusoEmptyState` rather
+    /// than an error tile.
+    func getBidsForLoad(loadId: String) async throws -> [Bid] {
+        try await api.query(
+            "shippers.getBidsForLoad",
+            input: GetBidsForLoadInput(loadId: loadId)
+        )
+    }
+
+    struct AcceptBidInput: Encodable {
+        let loadId: String
+        let bidId: String
+    }
+
+    /// Accept-bid mutation envelope. Mirrors verbatim the return of
+    /// `shippers.acceptBid` at `frontend/server/routers/shippers.ts:409`.
+    /// Server-side this also rejects every other pending bid on the
+    /// load and updates `loads.status` → `assigned`, so the client
+    /// must refresh the bids list (the rejected bids re-render with
+    /// `status` = "rejected" — though the client filters on the
+    /// caller's side via `ShipperBidsStore`) and the loads list (the
+    /// load drops out of `getActiveLoads` / re-categorises to
+    /// `assigned` in the next refresh window).
+    struct AcceptBidOutput: Decodable, Hashable {
+        let success: Bool
+        let loadId: String
+        let bidId: String
+        let status: String
+        let acceptedAt: String
+    }
+
+    func acceptBid(loadId: String, bidId: String) async throws -> AcceptBidOutput {
+        try await api.mutation(
+            "shippers.acceptBid",
+            input: AcceptBidInput(loadId: loadId, bidId: bidId)
+        )
+    }
+
+    struct RejectBidInput: Encodable {
+        let loadId: String
+        let bidId: String
+        let reason: String?
+    }
+
+    /// Reject-bid mutation envelope. Mirrors verbatim the return of
+    /// `shippers.rejectBid` at `frontend/server/routers/shippers.ts:427`.
+    /// `reason` is optional — the server stores it on `bids.notes`
+    /// only when non-nil. Empty / whitespace strings on the client
+    /// are coalesced to `nil` by `203_ShipperBids.swift` before the
+    /// call so the wire never carries a meaningless reason field.
+    struct RejectBidOutput: Decodable, Hashable {
+        let success: Bool
+        let bidId: String
+        let rejectedAt: String
+    }
+
+    func rejectBid(
+        loadId: String,
+        bidId: String,
+        reason: String? = nil
+    ) async throws -> RejectBidOutput {
+        try await api.mutation(
+            "shippers.rejectBid",
+            input: RejectBidInput(
+                loadId: loadId,
+                bidId: bidId,
+                reason: reason
+            )
+        )
+    }
+
+    // ===================================================================
+    // 121st eusotrip-killers firing · 2026-04-26 · brick 204 wiring
+    // -------------------------------------------------------------------
+    // PostLoad input + ack DTOs and the matching `create()` method land
+    // in the same firing as `204_ShipperPostLoad.swift` (Cohort B day-1,
+    // no mock data). Wire-format mirrors verbatim what the backend
+    // accepts and returns at:
+    //   • `frontend/server/routers/shippers.ts:18` (`shippers.create`)
+    //
+    // Procedure is `shipperProcedure` (alias of `protectedProcedure` in
+    // shippers.ts), so a logged-in non-shipper hits a 403 — the screen
+    // surfaces the readable tRPC error, never invents a fake load
+    // number. `cargoType` is a fixed-cardinality string enum the
+    // backend defaults to "general" when the client sends a missing
+    // / unknown value; the iOS picker enumerates the same 8 values
+    // verbatim so the wire never drifts. `rate` / `weight` are the
+    // optional cents-anonymous numerics — the backend coerces both to
+    // string-decimal for the Drizzle insert. `pickupDate` is an
+    // ISO-8601 date string when present (the screen serialises with
+    // `ISO8601DateFormatter` to keep the wire stable across locales).
+    // ===================================================================
+
+    /// Cargo-type enum the backend accepts at `shippers.create`. The
+    /// raw value matches the Zod enum verbatim
+    /// (`general | hazmat | refrigerated | oversized | liquid | gas |
+    /// chemicals | petroleum`). Order is preserved from the schema so
+    /// the gradient-chip picker in `204_ShipperPostLoad` can iterate
+    /// `allCases` for the visible row.
+    enum CargoType: String, Codable, CaseIterable, Hashable, Identifiable {
+        case general
+        case hazmat
+        case refrigerated
+        case oversized
+        case liquid
+        case gas
+        case chemicals
+        case petroleum
+
+        var id: String { rawValue }
+
+        /// Human-readable label rendered on the picker chip. Mirrors
+        /// the marketing copy used on the web shipper UI; no
+        /// abbreviations.
+        var label: String {
+            switch self {
+            case .general:      return "General"
+            case .hazmat:       return "Hazmat"
+            case .refrigerated: return "Refrigerated"
+            case .oversized:    return "Oversized"
+            case .liquid:       return "Liquid bulk"
+            case .gas:          return "Gas"
+            case .chemicals:    return "Chemicals"
+            case .petroleum:    return "Petroleum"
+            }
+        }
+
+        /// SF Symbol on the picker chip — keeps the visual hierarchy
+        /// readable when the label wraps. All glyphs are SF-Symbols
+        /// 5+ available on iOS 17+ targets.
+        var systemImage: String {
+            switch self {
+            case .general:      return "shippingbox"
+            case .hazmat:       return "exclamationmark.triangle.fill"
+            case .refrigerated: return "thermometer.snowflake"
+            case .oversized:    return "ruler.fill"
+            case .liquid:       return "drop.fill"
+            case .gas:          return "wind"
+            case .chemicals:    return "testtube.2"
+            case .petroleum:    return "fuelpump.fill"
+            }
+        }
+    }
+
+    /// Input envelope for `shippers.create`. Mirrors verbatim the Zod
+    /// schema at `shippers.ts:19`. Optional numerics / notes / pickup
+    /// date are wire-omitted when nil so the backend's
+    /// `.optional()` defaults apply. `cargoType` carries the raw
+    /// enum string (`"general"`, `"hazmat"`, …) — the screen never
+    /// sends free-form strings.
+    struct PostLoadInput: Encodable, Hashable {
+        let origin: String
+        let destination: String
+        let cargoType: CargoType
+        let rate: Double?
+        let weight: Double?
+        let notes: String?
+        /// ISO-8601 date string (no time) — backend coerces to
+        /// `Date` via `new Date(input.pickupDate)` for the Drizzle
+        /// insert. Empty strings are coalesced to nil before send.
+        let pickupDate: String?
+    }
+
+    /// Acknowledgement envelope returned by `shippers.create`.
+    /// Mirrors verbatim the return at `shippers.ts:44`. The backend
+    /// emits `loadNumber` as `SHP-${Date.now().toString(36)
+    /// .toUpperCase()}` — the screen surfaces the verbatim string in
+    /// the success toast (no client-side reformatting).
+    struct PostLoadAck: Decodable, Hashable {
+        let success: Bool
+        let id: Int
+        let loadNumber: String
+    }
+
+    /// Create a freshly-posted load. Server flow on success:
+    ///   1. Inserts a row in `loads` with `status = 'posted'`,
+    ///      `shipperId = ctx.user.companyId`, and a freshly-minted
+    ///      `loadNumber`.
+    ///   2. Returns `{ success: true, id, loadNumber }`.
+    ///
+    /// Failure modes the screen handles explicitly:
+    ///   • Database unavailable — backend throws (status 500). The
+    ///     screen surfaces `EusoTripAPIError.trpcError` via the
+    ///     readable-error helper.
+    ///   • Non-shipper role — `shipperProcedure` rejects with 403.
+    ///     Same readable-error path.
+    ///   • Invalid Zod payload — surfaces 400 via the same path.
+    ///
+    /// The screen does NOT cache or replay successful inserts: every
+    /// CTA tap hits the network with the freshest input value. On
+    /// success the `ShipperActiveLoadsStore` is invalidated by the
+    /// caller so the loads list re-fetches and shows the new row.
+    func create(
+        origin: String,
+        destination: String,
+        cargoType: CargoType = .general,
+        rate: Double? = nil,
+        weight: Double? = nil,
+        notes: String? = nil,
+        pickupDate: String? = nil
+    ) async throws -> PostLoadAck {
+        try await api.mutation(
+            "shippers.create",
+            input: PostLoadInput(
+                origin: origin,
+                destination: destination,
+                cargoType: cargoType,
+                rate: rate,
+                weight: weight,
+                notes: notes,
+                pickupDate: pickupDate
+            )
+        )
+    }
+
+    // ===================================================================
+    // 124th eusotrip-killers firing · 2026-04-26 · brick 206 wiring
+    // -------------------------------------------------------------------
+    // DeliveryConfirmation DTO + `getDeliveryConfirmations()` lands in
+    // the same firing as `206_ShipperSettlements.swift` (Cohort B day-1,
+    // no mock data). Wire-format mirrors verbatim what the backend
+    // returns at `frontend/server/routers/shippers.ts:534`. Server
+    // selects every `loads` row where `shipperId == ctx.user.id` AND
+    // `status == 'delivered'`, joined with the pickup/delivery JSON
+    // and `actualDeliveryDate ?? deliveryDate` for the `deliveredAt`
+    // ISO timestamp. The procedure is `protectedProcedure`, so a
+    // logged-in non-shipper hits a 403 — the screen surfaces the
+    // readable tRPC error rather than fabricating rows.
+    //
+    // The Settlements surface aggregates these confirmations into a
+    // billable summary (count + total spend + avg) on the client side
+    // and renders the row list below the KPI tiles. The aggregate
+    // numbers are derived locally from the verified server array so
+    // there is zero risk of drift between two queries — every cell on
+    // the screen traces back to a real DELIVERED row.
+    // ===================================================================
+
+    /// Status filter accepted by `shippers.getDeliveryConfirmations`.
+    /// Mirrors the Zod enum at line 536 verbatim.
+    enum DeliveryConfirmationStatus: String, Encodable, Hashable {
+        case pending, confirmed, disputed
+    }
+
+    /// One row in the shipper's delivery-confirmations feed. Mirrors
+    /// verbatim the projection at `shippers.ts:548-553`. `loadId` is
+    /// the server-emitted `load_NNN` form (the backend prefixes the
+    /// numeric primary key); the client passes it back unmodified
+    /// when wiring to load-detail. `deliveredAt` is an ISO-8601
+    /// timestamp string (or empty when neither `actualDeliveryDate`
+    /// nor `deliveryDate` is set — the screen surfaces "—" then).
+    /// `rate` is `parseFloat(loads.rate)` server-side, defaulting to
+    /// `0` when the column is empty. `status` is the literal
+    /// "confirmed" string the backend hard-codes today (the row was
+    /// returned because `loads.status == 'delivered'`); the field
+    /// is kept on the wire for forward compatibility with the
+    /// `pending` / `disputed` filters once the backend writes a real
+    /// confirmation status column.
+    struct DeliveryConfirmation: Decodable, Identifiable, Hashable {
+        let loadId: String
+        let loadNumber: String
+        let origin: String
+        let destination: String
+        let deliveredAt: String
+        let status: String
+        let rate: Double
+
+        var id: String { loadId }
+    }
+
+    struct GetDeliveryConfirmationsInput: Encodable {
+        /// Optional server-side filter. The backend treats a
+        /// missing key as "all confirmed". The screen passes nil
+        /// for the canonical "show every settled load" view.
+        let status: DeliveryConfirmationStatus?
+        let limit: Int
+    }
+
+    /// Fetch the shipper's delivery-confirmations feed. Server
+    /// returns an empty array (not an error) when the shipper has
+    /// no delivered loads yet, so the screen surfaces the canonical
+    /// `EusoEmptyState` rather than an error tile.
+    func getDeliveryConfirmations(
+        status: DeliveryConfirmationStatus? = nil,
+        limit: Int = 20
+    ) async throws -> [DeliveryConfirmation] {
+        try await api.query(
+            "shippers.getDeliveryConfirmations",
+            input: GetDeliveryConfirmationsInput(status: status, limit: limit)
+        )
+    }
+
+    // ===================================================================
+    // 126th eusotrip-killers firing · 2026-04-26 · brick 207 wiring
+    // -------------------------------------------------------------------
+    // Spending Analytics + Catalyst Performance DTOs land in the same
+    // firing as `207_ShipperReports.swift` (Cohort B day-1, no mock
+    // data). Wire-format mirrors verbatim the backend at
+    // `frontend/server/routers/shippers.ts:470` (getSpendingAnalytics,
+    // single envelope) and `:433` (getCatalystPerformance, list). Both
+    // are `shipperProcedure` aliases of `protectedProcedure` so a non-
+    // shipper login surfaces the readable tRPC error rather than
+    // fabricating numbers.
+    //
+    // The Reports surface combines the two endpoints in a single
+    // dashboard — spend KPIs at the top + catalyst leaderboard below.
+    // Period switcher (Month / Quarter / Year) propagates to both
+    // queries via the shared `SpendingPeriod` token so the two strips
+    // can never describe different time windows.
+    // ===================================================================
+
+    /// Period filter accepted by both `shippers.getSpendingAnalytics`
+    /// and `shippers.getCatalystPerformance`. Mirrors the Zod enums at
+    /// lines 472 + 435 verbatim. Backend defaults differ (`month` vs
+    /// `quarter`); the screen unifies them client-side at `.month`.
+    enum SpendingPeriod: String, Encodable, Hashable, CaseIterable {
+        case month, quarter, year
+    }
+
+    /// Spending-analytics envelope. Mirrors the projection at
+    /// `shippers.ts:489-493`. `byLane` and `byCatalyst` are reserved
+    /// for future expansion (backend returns empty arrays today); the
+    /// screen renders the leaderboard from the parallel
+    /// `getCatalystPerformance` query so an empty envelope.byLane /
+    /// .byCatalyst doesn't degrade the UI. Numeric fields are typed
+    /// as `Double` so backend-side `Math.round(...)` integer outputs
+    /// AND any future fractional values both decode cleanly.
+    struct SpendingAnalytics: Decodable, Hashable {
+        let period: String
+        let totalSpend: Double
+        let loadCount: Int
+        let avgPerLoad: Double
+        let avgPerMile: Double
+        let vsMarketRate: Double
+    }
+
+    struct GetSpendingAnalyticsInput: Encodable {
+        let period: SpendingPeriod
+    }
+
+    /// One catalyst's recent performance — projection mirrors
+    /// `shippers.ts:454-461`. `catalystId` is the server-emitted
+    /// `car_NNN` form. `onTimeRate` is a 0–100 integer percent
+    /// (backend `Math.round((onTime / total) * 100)`).
+    struct CatalystPerformance: Decodable, Identifiable, Hashable {
+        let catalystId: String
+        let name: String
+        let totalLoads: Int
+        let delivered: Int
+        let onTimeRate: Int
+        let totalSpend: Double
+
+        var id: String { catalystId }
+    }
+
+    struct GetCatalystPerformanceInput: Encodable {
+        let period: SpendingPeriod
+    }
+
+    /// Fetch this shipper's spend analytics for the given period.
+    /// Server returns a fully-populated envelope (all-zeros if the
+    /// shipper has no loads in window) so the call never throws on
+    /// "no data"; the store's `foldState` collapses an all-zero
+    /// envelope to `.empty` for the UI.
+    func getSpendingAnalytics(
+        period: SpendingPeriod = .month
+    ) async throws -> SpendingAnalytics {
+        try await api.query(
+            "shippers.getSpendingAnalytics",
+            input: GetSpendingAnalyticsInput(period: period)
+        )
+    }
+
+    /// Fetch this shipper's catalyst-performance leaderboard.
+    /// Server returns an empty array (not an error) when the shipper
+    /// has no catalyst-assigned loads in window.
+    func getCatalystPerformance(
+        period: SpendingPeriod = .month
+    ) async throws -> [CatalystPerformance] {
+        try await api.query(
+            "shippers.getCatalystPerformance",
+            input: GetCatalystPerformanceInput(period: period)
+        )
+    }
+
+    // MARK: - Favorite Catalysts (brick 209_ShipperContacts · 127th firing)
+    //
+    // Backs the shipper's "Working Carriers" / contact directory.
+    // Server-side this is a derived view: catalysts the shipper has
+    // worked with (status='delivered'), aggregated by COUNT + SUM(rate),
+    // ordered DESC by load count, top 10. The "favorite" framing is
+    // doctrine: the most-worked-with carriers ARE the shipper's de-
+    // facto contact list.
+    //
+    // MCP-verified at firing open: shippers.getFavoriteCatalysts at
+    // frontend/server/routers/shippers.ts:500 (returns Array<{
+    // catalystId: "car_${id}", name, dotNumber, loadsCompleted,
+    // totalSpend (Math.rounded int) }>). Empty when shipper has zero
+    // delivered loads.
+    //
+    // addFavoriteCatalyst is a no-op acknowledgment server-side
+    // (returns { success, catalystId, addedAt }) — favorites are
+    // derived from history, not stored as a separate junction table
+    // — but the mutation exists so the UI can fire-and-forget on
+    // explicit "favorite" taps for future-proofing.
+
+    /// One row of the shipper's working-carriers directory.
+    /// Mirrors `shippers.ts:511-516`. `catalystId` is the server-
+    /// emitted `car_NNN` form. `totalSpend` is in dollars (the server
+    /// does `Math.round(...)` so it lands as an integer-valued Double).
+    struct FavoriteCatalyst: Decodable, Identifiable, Hashable {
+        let catalystId: String
+        let name: String
+        let dotNumber: String
+        let loadsCompleted: Int
+        let totalSpend: Double
+
+        var id: String { catalystId }
+    }
+
+    /// Server response for `addFavoriteCatalyst`. The backend treats
+    /// this as a no-op acknowledgment — the catalyst will surface in
+    /// `getFavoriteCatalysts` once a delivered load exists, not by
+    /// virtue of this call. Kept on the wire so iOS can flush the
+    /// optimistic favorite-tap UX without breaking the contract.
+    struct AddFavoriteCatalystResponse: Decodable {
+        let success: Bool
+        let catalystId: String
+        let addedAt: String
+    }
+
+    struct AddFavoriteCatalystInput: Encodable {
+        let catalystId: String
+    }
+
+    /// Fetch the shipper's working-carriers directory (top 10 by
+    /// delivered-load count). Server returns an empty array when the
+    /// shipper has zero delivered loads — view surfaces EusoEmptyState.
+    func getFavoriteCatalysts() async throws -> [FavoriteCatalyst] {
+        try await api.queryNoInput("shippers.getFavoriteCatalysts")
+    }
+
+    /// Acknowledge a favorite tap server-side. Idempotent (server
+    /// derives favorites from history); kept available for parity
+    /// with the `addFavoriteCatalyst` UI affordance.
+    func addFavoriteCatalyst(
+        catalystId: String
+    ) async throws -> AddFavoriteCatalystResponse {
+        try await api.mutation(
+            "shippers.addFavoriteCatalyst",
+            input: AddFavoriteCatalystInput(catalystId: catalystId)
+        )
+    }
+}
+
+// =====================================================================
+// CarrierAPI · live tRPC surface for Carrier role (brick 300+)
+// ---------------------------------------------------------------------
+// Added 2026-04-25 in the 100th eusotrip-killers firing as the role-
+// switch from Shipper to Carrier per the 2027 motivation: "all 24 users
+// piece by piece every screen each role at a time til you are done."
+//
+// Every procedure on this struct calls a real backend path. There are
+// no mock fixtures, no stubbed return values, no `if PREVIEW { return
+// .sample }` short-circuits. If the backend has not yet exposed the
+// `carriers.*` router, the call throws `EusoTripAPIError.trpcError`
+// and the Carrier* stores in `ViewModels/LiveDataStores.swift` surface
+// `EusoEmptyState`. This satisfies doctrine §11 (no mock data) and the
+// `MockDataGuard` self-check wired at `EusoTripApp.swift:101`.
+//
+// Field shapes are carrier-side KPIs and rows. Where a field has a
+// natural Shipper analog with a different name (Shipper's
+// `pendingBids` ↔ Carrier's `openOffers`; Shipper's
+// `totalSpendThisMonth` ↔ Carrier's `weeklyRevenue`), the rename is
+// in the Carrier struct — the **fetch path** still mirrors Shipper's
+// `getDashboardStats` shape so the wire-format is symmetric.
+// =====================================================================
+
+struct CarrierAPI {
+    unowned let api: EusoTripAPI
+
+    /// Dashboard KPI envelope. Mirrors the convention of
+    /// `shippers.getDashboardStats` on the Carrier role's home.
+    /// Backend path: `carriers.getDashboardStats`.
+    struct DashboardStats: Decodable, Hashable {
+        /// In-flight loads currently assigned to one of the
+        /// carrier's drivers (any status that is post-dispatch and
+        /// pre-delivery).
+        let activeLoads: Int
+        /// Open offers on the carrier's board awaiting accept /
+        /// decline. Carrier-side analog of Shipper's `pendingBids`.
+        let openOffers: Int
+        /// Loads delivered in the trailing 7-day window.
+        let deliveredThisWeek: Int
+        /// Carrier's blended rate-per-mile across all delivered
+        /// loads in the trailing 7-day window.
+        let ratePerMile: Double
+        /// On-time delivery rate (0.0…1.0) over the trailing 30-
+        /// day window.
+        let onTimeRate: Double
+        /// Net carrier revenue in the trailing 7-day window
+        /// (after platform fee, before any factoring discount).
+        /// Carrier-side analog of Shipper's
+        /// `totalSpendThisMonth`.
+        let weeklyRevenue: Double
+    }
+
+    func getDashboardStats() async throws -> DashboardStats {
+        try await api.queryNoInput("carriers.getDashboardStats")
+    }
+
+    /// One in-flight load on the carrier's plate. Mirrors the
+    /// shape of Shipper's `ActiveLoad` so the home cards can share
+    /// row scaffolding. Backend path:
+    /// `carriers.getActiveLoads`.
+    struct ActiveLoad: Decodable, Identifiable, Hashable {
+        let id: String
+        let loadNumber: String
+        let status: String
+        let origin: String
+        let destination: String
+        /// Driver display name assigned to this load (or empty if
+        /// the load is dispatched but not yet driver-assigned).
+        let driver: String
+        /// Broker / shipper display name (counterparty on this
+        /// haul). Carrier sees who tendered the load.
+        let counterparty: String
+        let eta: String
+        /// Gross load rate the carrier will collect on delivery
+        /// (before platform fee + factoring).
+        let rate: Double
+    }
+
+    struct GetActiveLoadsInput: Encodable { let limit: Int }
+
+    func getActiveLoads(limit: Int = 10) async throws -> [ActiveLoad] {
+        try await api.query(
+            "carriers.getActiveLoads",
+            input: GetActiveLoadsInput(limit: limit)
+        )
+    }
+
+    /// One alert on the carrier's "needs attention" feed.
+    /// Backend path: `carriers.getLoadsRequiringAttention`.
+    /// Issue strings come from the server's exception engine
+    /// (overdue check-call, detention-pending, dock-rejection,
+    /// HOS-stop, breakdown, etc).
+    struct LoadAlert: Decodable, Identifiable, Hashable {
+        let id: String
+        let loadNumber: String
+        let issue: String
+        let severity: String
+        let message: String
+    }
+
+    func getLoadsRequiringAttention() async throws -> [LoadAlert] {
+        try await api.queryNoInput("carriers.getLoadsRequiringAttention")
+    }
+
+    /// One row in the carrier's recent-activity feed (a slim
+    /// summary of recently delivered loads). Backend path:
+    /// `carriers.getRecentLoads`. `deliveredAt` is the server's
+    /// `YYYY-MM-DD` projection of `actualDeliveryDate ??
+    /// deliveryDate`; empty string when neither is set.
+    struct RecentLoad: Decodable, Identifiable, Hashable {
+        let id: String
+        let loadNumber: String
+        let status: String
+        let origin: String
+        let destination: String
+        let deliveredAt: String
+        /// Net carrier payout on this delivered load (after
+        /// platform fee, before any factoring discount).
+        let netPayout: Double
+    }
+
+    struct GetRecentLoadsInput: Encodable { let limit: Int }
+
+    func getRecentLoads(limit: Int = 5) async throws -> [RecentLoad] {
+        try await api.query(
+            "carriers.getRecentLoads",
+            input: GetRecentLoadsInput(limit: limit)
+        )
+    }
+}
+
+// =====================================================================
+// BrokerAPI — `brokers.*` router surface for the Broker role home
+// (brick 400_BrokerHome) and downstream Broker-track screens.
+// ---------------------------------------------------------------------
+// Added 2026-04-25 in the 99th eusotrip-killers firing, parallel to
+// the dev-team's existing 300/301 Carrier surfaces. The broker sits
+// between the shipper (origin) and the carrier (mover) — the home
+// re-frames the four-card hierarchy around tender flow + margin
+// rather than active-load count.
+//
+// Every procedure on this struct hits the real `brokers.*` tRPC
+// router. If the parallel router has not yet shipped on the
+// `brokers.*` router, the call throws `EusoTripAPIError.trpcError`
+// and the Broker* stores in `ViewModels/LiveDataStores.swift` surface
+// `EusoEmptyState`. This satisfies doctrine §11 (no mock data) and
+// the `MockDataGuard` self-check wired at `EusoTripApp.swift:101`.
+// =====================================================================
+
+struct BrokerAPI {
+    unowned let api: EusoTripAPI
+
+    /// Dashboard KPI envelope. Mirrors the convention of
+    /// `carriers.getDashboardStats` on the Broker role's home.
+    /// Backend path: `brokers.getDashboardStats`.
+    struct DashboardStats: Decodable, Hashable {
+        /// Open tenders the broker has posted that haven't been
+        /// awarded yet (carriers may have responded but no award
+        /// is recorded). Broker-side analog of Shipper's
+        /// `pendingBids` and Carrier's `openOffers`.
+        let openTenders: Int
+        /// Tenders the broker awarded to a carrier in the
+        /// trailing 7-day window (regardless of whether the load
+        /// has delivered yet).
+        let awardedThisWeek: Int
+        /// Loads delivered through the broker's lane in the
+        /// trailing 7-day window.
+        let deliveredThisWeek: Int
+        /// Average broker margin per delivered load over the
+        /// trailing 7-day window (USD).
+        let marginPerLoad: Double
+        /// On-time delivery rate (0.0…1.0) over the trailing 30-
+        /// day window.
+        let onTimeRate: Double
+        /// Gross broker margin in the trailing 7-day window
+        /// (after platform fee, before any factoring discount).
+        /// Broker-side analog of Carrier's `weeklyRevenue` and
+        /// Shipper's `totalSpendThisMonth` — reframed as
+        /// margin since the broker doesn't capture the load
+        /// rate, only the spread.
+        let grossMarginThisWeek: Double
+    }
+
+    func getDashboardStats() async throws -> DashboardStats {
+        try await api.queryNoInput("brokers.getDashboardStats")
+    }
+
+    /// One open-tender row on the broker's plate. Mirrors the
+    /// shape of Carrier's `ActiveLoad` so the home cards can
+    /// share row scaffolding. Backend path:
+    /// `brokers.getOpenTenders`.
+    struct OpenTender: Decodable, Identifiable, Hashable {
+        let id: String
+        let loadNumber: String
+        let origin: String
+        let destination: String
+        /// Number of carriers that have submitted a bid /
+        /// response on this tender (zero is valid — newly
+        /// posted tenders will start at 0 until the dispatch
+        /// engine fans out to the broker's network).
+        let respondingCarriers: Int
+        /// Server-side projection of `postedAt` as a relative
+        /// short label (e.g. "12m", "2h", "1d") suitable for
+        /// inline display. Empty string when not set.
+        let postedAt: String
+        /// Shipper / customer display name on this tender.
+        let shipper: String
+        /// Target rate the broker is targeting for this
+        /// tender (their ask before any carrier counter-bids).
+        /// Zero when the broker has not set a target (open
+        /// tender, market price).
+        let targetRate: Double
+    }
+
+    struct GetOpenTendersInput: Encodable { let limit: Int }
+
+    func getOpenTenders(limit: Int = 10) async throws -> [OpenTender] {
+        try await api.query(
+            "brokers.getOpenTenders",
+            input: GetOpenTendersInput(limit: limit)
+        )
+    }
+
+    /// One alert on the broker's "needs attention" feed.
+    /// Backend path: `brokers.getLoadsRequiringAttention`.
+    /// Issue strings come from the server's exception engine
+    /// (carrier no-show, customer escalation, late tender,
+    /// detention dispute, rate-confirmation reject, etc).
+    struct LoadAlert: Decodable, Identifiable, Hashable {
+        let id: String
+        let loadNumber: String
+        let issue: String
+        let severity: String
+        let message: String
+    }
+
+    func getLoadsRequiringAttention() async throws -> [LoadAlert] {
+        try await api.queryNoInput("brokers.getLoadsRequiringAttention")
+    }
+
+    /// One row in the broker's recent-activity feed (a slim
+    /// summary of recently delivered loads). Backend path:
+    /// `brokers.getRecentLoads`. `deliveredAt` is the server's
+    /// `YYYY-MM-DD` projection of `actualDeliveryDate ??
+    /// deliveryDate`; empty string when neither is set.
+    struct RecentLoad: Decodable, Identifiable, Hashable {
+        let id: String
+        let loadNumber: String
+        let status: String
+        let origin: String
+        let destination: String
+        let deliveredAt: String
+        /// Net broker margin on this delivered load (after
+        /// platform fee, before any factoring discount).
+        let netMargin: Double
+    }
+
+    struct GetRecentLoadsInput: Encodable { let limit: Int }
+
+    func getRecentLoads(limit: Int = 5) async throws -> [RecentLoad] {
+        try await api.query(
+            "brokers.getRecentLoads",
+            input: GetRecentLoadsInput(limit: limit)
+        )
+    }
+}
+
+// =====================================================================
+// CatalystAPI — `catalysts.*` router surface for the Catalyst role
+// home (brick 500_CatalystHome) and downstream Catalyst-track screens.
+// ---------------------------------------------------------------------
+// Added 2026-04-25 in the 102nd eusotrip-killers firing, parallel to
+// the Shipper (200) / Carrier (300) / Broker (400) surfaces. Catalyst
+// is the AI-augmented dispatch / SpectraMatch operator role per the
+// EusoTrip backend §16 intelligence slice (Autopilot 7-layer cortex,
+// 52 agents). The home re-frames the four-card hierarchy around match
+// flow + SpectraMatch fit-score rather than tender flow or active-
+// load count.
+//
+// Every procedure on this struct hits the real `catalysts.*` tRPC
+// router. If the parallel router has not yet shipped on the
+// `catalysts.*` namespace, the call throws
+// `EusoTripAPIError.trpcError` and the Catalyst* stores in
+// `ViewModels/LiveDataStores.swift` surface `EusoEmptyState`. This
+// satisfies doctrine §11 (no mock data) and the `MockDataGuard`
+// self-check wired at `EusoTripApp.swift:101`.
+// =====================================================================
+
+struct CatalystAPI {
+    unowned let api: EusoTripAPI
+
+    /// Dashboard KPI envelope. Mirrors the convention of
+    /// `brokers.getDashboardStats` on the Catalyst role's home.
+    /// Backend path: `catalysts.getDashboardStats`.
+    struct DashboardStats: Decodable, Hashable {
+        /// Live SpectraMatch / autopilot match sessions the catalyst
+        /// is currently running (an "active match" is a load with
+        /// at least one autopilot agent in the loop). Catalyst-side
+        /// analog of Carrier's `activeLoads` and Broker's
+        /// `openTenders`.
+        let activeMatches: Int
+        /// Loads that resolved to a carrier-accepted match in the
+        /// trailing 7-day window.
+        let matchedThisWeek: Int
+        /// Matched loads that delivered through the catalyst's lane
+        /// in the trailing 7-day window.
+        let deliveredThisWeek: Int
+        /// Average SpectraMatch best-fit score across resolved
+        /// matches in the trailing 7-day window (0.0…1.0).
+        let avgFitScore: Double
+        /// On-time delivery rate (0.0…1.0) for matched loads in the
+        /// trailing 30-day window.
+        let onTimeRate: Double
+        /// Gross merchandise value (lane revenue) of loads matched
+        /// through this catalyst in the trailing 7-day window.
+        /// Catalyst-side analog of Broker's `grossMarginThisWeek`
+        /// and Carrier's `weeklyRevenue` — reframed as GMV since
+        /// the catalyst doesn't capture margin or rate, only
+        /// match volume.
+        let gmvThisWeek: Double
+    }
+
+    func getDashboardStats() async throws -> DashboardStats {
+        try await api.queryNoInput("catalysts.getDashboardStats")
+    }
+
+    /// One active SpectraMatch / autopilot session row on the
+    /// catalyst's plate. Mirrors the shape of Broker's `OpenTender`
+    /// so the home cards can share row scaffolding. Backend path:
+    /// `catalysts.getActiveMatches`.
+    struct ActiveMatch: Decodable, Identifiable, Hashable {
+        let id: String
+        let loadNumber: String
+        let origin: String
+        let destination: String
+        /// Number of carrier candidates the autopilot has scored
+        /// for this load (zero is valid — newly fired matches
+        /// will start at 0 until SpectraMatch fans out across the
+        /// network).
+        let candidateCount: Int
+        /// Server-side projection of `startedAt` as a relative
+        /// short label (e.g. "2m", "12m", "1h") suitable for
+        /// inline display. Empty string when not set.
+        let startedAt: String
+        /// Display name of the autopilot agent driving this match
+        /// (one of the 52 agents in the §16 intelligence slice).
+        /// Empty when the catalyst is running the match manually
+        /// without an agent attached.
+        let agentName: String
+        /// Highest SpectraMatch fit score across all candidates on
+        /// this match (0.0…1.0). Zero when no carrier has been
+        /// scored yet.
+        let bestFitScore: Double
+    }
+
+    struct GetActiveMatchesInput: Encodable { let limit: Int }
+
+    func getActiveMatches(limit: Int = 10) async throws -> [ActiveMatch] {
+        try await api.query(
+            "catalysts.getActiveMatches",
+            input: GetActiveMatchesInput(limit: limit)
+        )
+    }
+
+    /// One alert on the catalyst's "needs attention" feed.
+    /// Backend path: `catalysts.getLoadsRequiringAttention`. Issue
+    /// strings come from the server's exception engine (match
+    /// stall, fit drift, autopilot fault, capacity shortage,
+    /// rate misfit, etc).
+    struct LoadAlert: Decodable, Identifiable, Hashable {
+        let id: String
+        let loadNumber: String
+        let issue: String
+        let severity: String
+        let message: String
+    }
+
+    func getLoadsRequiringAttention() async throws -> [LoadAlert] {
+        try await api.queryNoInput("catalysts.getLoadsRequiringAttention")
+    }
+
+    /// One row in the catalyst's recent-activity feed (a slim
+    /// summary of recently resolved matches). Backend path:
+    /// `catalysts.getRecentMatches`. `resolvedAt` is the server's
+    /// `YYYY-MM-DD` projection of `actualMatchedAt ?? matchedAt`;
+    /// empty string when neither is set.
+    struct RecentMatch: Decodable, Identifiable, Hashable {
+        let id: String
+        let loadNumber: String
+        let status: String
+        let origin: String
+        let destination: String
+        let resolvedAt: String
+        /// Final SpectraMatch fit score on the carrier this match
+        /// resolved to (0.0…1.0). Zero when the match resolved
+        /// without a SpectraMatch lock (manual override).
+        let finalFitScore: Double
+    }
+
+    struct GetRecentMatchesInput: Encodable { let limit: Int }
+
+    func getRecentMatches(limit: Int = 5) async throws -> [RecentMatch] {
+        try await api.query(
+            "catalysts.getRecentMatches",
+            input: GetRecentMatchesInput(limit: limit)
+        )
+    }
+}
+
+// =====================================================================
+// EscortAPI — `escorts.*` router surface for the Escort role
+// home (brick 600_EscortHome) and downstream Escort-track screens.
+// ---------------------------------------------------------------------
+// Added 2026-04-25 in the 103rd eusotrip-killers firing, parallel to
+// the Shipper (200) / Carrier (300) / Broker (400) / Catalyst (500)
+// surfaces. Escort is the regulated-corridor pilot-car / safety-escort
+// operator role per the EusoTrip backend §16 compliance-safety slice
+// (`escortOverview`, `escort_*` tables, bridge clearance integration).
+// The home re-frames the four-card hierarchy around live assignment
+// flow + corridor coverage rather than match flow or tender flow.
+//
+// Every procedure on this struct hits the real `escorts.*` tRPC
+// router. If the parallel router has not yet shipped on the
+// `escorts.*` namespace, the call throws
+// `EusoTripAPIError.trpcError` and the Escort* stores in
+// `ViewModels/LiveDataStores.swift` surface `EusoEmptyState`. This
+// satisfies doctrine §11 (no mock data) and the `MockDataGuard`
+// self-check wired at `EusoTripApp.swift:101`.
+// =====================================================================
+
+struct EscortAPI {
+    unowned let api: EusoTripAPI
+
+    /// Dashboard KPI envelope. Mirrors the convention of
+    /// `catalysts.getDashboardStats` on the Escort role's home.
+    /// Backend path: `escorts.getDashboardStats`.
+    struct DashboardStats: Decodable, Hashable {
+        /// Live escort assignments the operator is currently
+        /// piloting (an "active assignment" is a load with at
+        /// least one lead/chase escort vehicle in the corridor).
+        /// Escort-side analog of Catalyst's `activeMatches` and
+        /// Broker's `openTenders`.
+        let activeAssignments: Int
+        /// Loads that resolved to a completed escort delivery in
+        /// the trailing 7-day window.
+        let completedThisWeek: Int
+        /// Total escort-corridor mileage piloted in the trailing
+        /// 7-day window.
+        let milesThisWeek: Double
+        /// Mean corridor-coverage ratio (0.0…1.0) across active
+        /// and recently-resolved escort assignments. New semantic
+        /// for the Escort role; replaces Catalyst's `avgFitScore`.
+        let corridorCoverage: Double
+        /// On-time delivery rate (0.0…1.0) for escort-piloted
+        /// loads in the trailing 30-day window.
+        let onTimeRate: Double
+        /// Lane revenue captured by the escort operator in the
+        /// trailing 7-day window. Escort-side analog of Catalyst's
+        /// `gmvThisWeek` and Broker's `grossMarginThisWeek`.
+        let revenueThisWeek: Double
+    }
+
+    func getDashboardStats() async throws -> DashboardStats {
+        try await api.queryNoInput("escorts.getDashboardStats")
+    }
+
+    /// One active escort assignment row on the operator's plate.
+    /// Mirrors the shape of Catalyst's `ActiveMatch` so the home
+    /// cards can share row scaffolding. Backend path:
+    /// `escorts.getActiveAssignments`.
+    struct ActiveAssignment: Decodable, Identifiable, Hashable {
+        let id: String
+        let loadNumber: String
+        let origin: String
+        let destination: String
+        /// Whether this escort vehicle is leading or chasing the
+        /// piloted load. Server-side enum (e.g. "lead", "chase",
+        /// "lead+chase") rendered uppercase in the row.
+        let escortRole: String
+        /// Server-side projection of `startedAt` as a relative
+        /// short label (e.g. "2m", "12m", "1h") suitable for
+        /// inline display. Empty string when not set.
+        let startedAt: String
+        /// Permit number authorizing this corridor (OS/OW, hazmat,
+        /// etc.). Empty when no permit attached.
+        let permitNumber: String
+        /// Live corridor-coverage ratio (0.0…1.0) — the proportion
+        /// of the routed corridor currently covered by lead/chase
+        /// escort presence. Zero when no escort vehicle has rolled.
+        let corridorCoverage: Double
+    }
+
+    struct GetActiveAssignmentsInput: Encodable { let limit: Int }
+
+    func getActiveAssignments(limit: Int = 10) async throws -> [ActiveAssignment] {
+        try await api.query(
+            "escorts.getActiveAssignments",
+            input: GetActiveAssignmentsInput(limit: limit)
+        )
+    }
+
+    /// One alert on the escort operator's "needs attention" feed.
+    /// Backend path: `escorts.getLoadsRequiringAttention`. Issue
+    /// strings come from the server's exception engine (clearance
+    /// breach, route deviation, escort handoff stall, lead/chase
+    /// imbalance, permit drift, etc).
+    struct LoadAlert: Decodable, Identifiable, Hashable {
+        let id: String
+        let loadNumber: String
+        let issue: String
+        let severity: String
+        let message: String
+    }
+
+    func getLoadsRequiringAttention() async throws -> [LoadAlert] {
+        try await api.queryNoInput("escorts.getLoadsRequiringAttention")
+    }
+
+    /// One row in the escort operator's recent-activity feed (a
+    /// slim summary of recently completed escort assignments).
+    /// Backend path: `escorts.getRecentAssignments`. `resolvedAt`
+    /// is the server's `YYYY-MM-DD` projection of
+    /// `actualClosedAt ?? closedAt`; empty string when neither is
+    /// set.
+    struct RecentAssignment: Decodable, Identifiable, Hashable {
+        let id: String
+        let loadNumber: String
+        let status: String
+        let origin: String
+        let destination: String
+        let resolvedAt: String
+        /// Final corridor-coverage ratio (0.0…1.0) achieved on
+        /// the resolved escort assignment. Zero when the assignment
+        /// resolved without coverage data (manual override).
+        let finalCoverage: Double
+    }
+
+    struct GetRecentAssignmentsInput: Encodable { let limit: Int }
+
+    func getRecentAssignments(limit: Int = 5) async throws -> [RecentAssignment] {
+        try await api.query(
+            "escorts.getRecentAssignments",
+            input: GetRecentAssignmentsInput(limit: limit)
+        )
+    }
+
+    // MARK: - Assignment detail (601_EscortAssignmentDetail)
+    //
+    // Added 2026-04-27 in the 147th eusotrip-killers firing as the
+    // detail surface drilled into from `getActiveAssignments` rows on
+    // brick 600. Mirrors the 502_CatalystMatchDetail / 402_BrokerTender
+    // /302_CarrierLoadDetail pattern: the row tap presents the full
+    // assignment record so the operator can review the corridor route,
+    // lead/chase pairing, permit, hazmat / OS-OW context, and confirm
+    // the route before they roll. Backend path:
+    // `escorts.getActiveAssignmentDetail` (input `{ id: string }`).
+    //
+    // If the parallel router has not yet shipped the detail procedure,
+    // the call throws `EusoTripAPIError.trpcError` and the
+    // `EscortAssignmentDetailStore` resolves to `.error` — the screen
+    // surfaces an honest retry banner. No fixture data, ever (doctrine
+    // §11 + `MockDataGuard`).
+
+    /// Full escort-assignment record served by
+    /// `escorts.getActiveAssignmentDetail`. Strict superset of the
+    /// `ActiveAssignment` row shape — the detail screen reads both
+    /// the live envelope (corridorCoverage, escortRole, started…) and
+    /// the deeper fields (route legs, lead/chase pairing, permit /
+    /// hazmat / OS-OW context). Optional fields surface as `nil` on
+    /// the wire and as em-dash sentinels in the UI per §13 doctrine.
+    struct AssignmentDetail: Decodable, Identifiable, Hashable {
+        let id: String
+        let loadNumber: String
+        let origin: String
+        let destination: String
+        /// Server-side enum: "lead", "chase", "lead+chase", or "" when
+        /// no escort vehicle is paired yet.
+        let escortRole: String
+        /// ISO-8601 timestamp the corridor went live; empty string
+        /// when the assignment hasn't rolled yet.
+        let startedAt: String
+        /// OS/OW / hazmat permit number authorizing this corridor.
+        /// Empty string when none attached.
+        let permitNumber: String
+        /// Live corridor-coverage ratio (0.0…1.0).
+        let corridorCoverage: Double
+        /// Coarse status enum from the server. Examples:
+        /// `pending`, `dispatched`, `enroute`, `at_origin`, `at_destination`,
+        /// `completed`, `cancelled`. Rendered uppercase in the UI.
+        let status: String
+        /// Stage-2 fields (optional — server returns `null` until the
+        /// corridor is fully resolved). Each is wrapped optionally so
+        /// the UI can decide whether to render the row.
+        let routedMiles: Double?
+        let routeName: String?
+        /// Permit + corridor compliance metadata.
+        let hazmatClass: String?
+        let unNumber: String?
+        let oversizeFlag: Bool?
+        let overweightFlag: Bool?
+        let bridgeClearanceFt: Double?
+        /// Lead / chase vehicle identifiers (server-side strings).
+        /// Empty string when no escort vehicle paired yet.
+        let leadVehicleId: String?
+        let chaseVehicleId: String?
+        /// Driver / shipper / broker contact metadata.
+        let driverName: String?
+        let driverPhone: String?
+        let shipperName: String?
+        /// Free-form corridor notes / restrictions from dispatch.
+        let notes: String?
+        /// Whether the operator has already confirmed the route on
+        /// this assignment. Drives the CTA's enable/disable state.
+        let routeConfirmed: Bool?
+    }
+
+    struct GetActiveAssignmentDetailInput: Encodable { let id: String }
+
+    func getActiveAssignmentDetail(id: String) async throws -> AssignmentDetail? {
+        try await api.query(
+            "escorts.getActiveAssignmentDetail",
+            input: GetActiveAssignmentDetailInput(id: id)
+        )
+    }
+
+    /// Mutation acknowledging that the operator has reviewed and
+    /// confirmed the routed corridor for an active assignment.
+    /// Backend path: `escorts.confirmRoute` (input `{ id: string }`).
+    /// Returns the updated `AssignmentDetail` so the UI can re-paint
+    /// without an extra round-trip. If the router hasn't shipped, the
+    /// call throws and the CTA flips back to its idle label with an
+    /// honest inline error — the local state never lies about the
+    /// commit landing.
+    struct ConfirmRouteInput: Encodable { let id: String }
+
+    func confirmRoute(id: String) async throws -> AssignmentDetail {
+        try await api.mutation(
+            "escorts.confirmRoute",
+            input: ConfirmRouteInput(id: id)
+        )
+    }
+}
+
+// =====================================================================
+// MARK: - terminalsRouter
+//
+// Mirrors `frontend/server/routers/terminals.ts` 1:1. Terminal Manager
+// owns port/yard operations across the EusoTrip ecosystem:
+//
+//   • Gate-in / gate-out flow for trucks crossing the terminal fence.
+//   • Container movements between staging, dock, and rail spur (per
+//     the §16 intermodal-xborder slice — chassis pool / drayage / ISF
+//     10+2 gate).
+//   • Dock assignment + dwell + demurrage exposure (the same dwell
+//     model the Driver `015_AtGateAwaitingDock` brick reads from the
+//     other side of the gate).
+//   • Hazmat clearance + ADR/IMDG/TDG holds (compliance-safety slice).
+//
+// Procedure coverage (mirrors carriers/brokers/catalysts/escorts):
+//   • getDashboardStats           — six-figure KPI envelope
+//   • getActiveMovements          — yard rows currently in motion
+//   • getMovementsRequiringAttention — exception engine alerts
+//   • getRecentMovements          — recently-resolved gate-outs
+//
+// If the parallel router has not yet shipped on the `terminals.*`
+// namespace, the call throws `EusoTripAPIError.trpcError` and the
+// Terminal* stores in `ViewModels/LiveDataStores.swift` surface
+// `EusoEmptyState`. This satisfies doctrine §11 (no mock data) and
+// the `MockDataGuard` self-check wired at `EusoTripApp.swift:101`.
+// =====================================================================
+
+struct TerminalAPI {
+    unowned let api: EusoTripAPI
+
+    /// Dashboard KPI envelope. Mirrors the convention of
+    /// `escorts.getDashboardStats` on the Terminal role's home.
+    /// Backend path: `terminals.getDashboardStats`.
+    struct DashboardStats: Decodable, Hashable {
+        /// Live container/truck movements the terminal is currently
+        /// processing (a "movement" is a yard row not yet at
+        /// `GATED_OUT` / `DEPARTED`). Terminal-side analog of
+        /// Escort's `activeAssignments` and Broker's `openTenders`.
+        let activeMovements: Int
+        /// Movements that resolved to a completed gate-out in the
+        /// trailing 7-day window.
+        let completedThisWeek: Int
+        /// Mean dwell time (hours) across resolved movements in the
+        /// trailing 7-day window. Drives demurrage exposure
+        /// projections — anything above `freeDwellHours` on a
+        /// shipping-line container is the terminal's exposure.
+        let avgDwellHoursThisWeek: Double
+        /// Total movements processed (gate-in + gate-out events) in
+        /// the trailing 7-day window. Throughput proxy for terminal
+        /// utilization KPI on the operations dashboard.
+        let throughputThisWeek: Int
+        /// On-time gate-out rate (0.0…1.0) versus the appointment
+        /// window for the trailing 30-day window. Below 0.85 is the
+        /// terminal-ops red line.
+        let onTimeRate: Double
+        /// Live gate utilization ratio (0.0…1.0). 1.0 means every
+        /// scheduled gate slot in the next hour is occupied; below
+        /// 0.5 indicates wasted gate capacity.
+        let gateUtilization: Double
+    }
+
+    func getDashboardStats() async throws -> DashboardStats {
+        try await api.queryNoInput("terminals.getDashboardStats")
+    }
+
+    /// One active terminal movement row. Mirrors the shape of the
+    /// other role active-row types (`EscortAPI.ActiveAssignment`,
+    /// `CatalystAPI.ActiveMatch`) so the home cards can share row
+    /// scaffolding. Backend path: `terminals.getActiveMovements`.
+    struct ActiveMovement: Decodable, Identifiable, Hashable {
+        let id: String
+        /// Load number / shipment number / container number — the
+        /// terminal-facing identifier the operator looks up by. Server
+        /// projects whichever is most specific for the movement type.
+        let loadNumber: String
+        /// Origin city/state or upstream port/rail yard.
+        let origin: String
+        /// Destination city/state or downstream port/rail yard.
+        let destination: String
+        /// Movement stage as a server-side enum: "AT_GATE",
+        /// "ON_YARD", "AT_DOCK", "STAGING", "AT_RAIL_SPUR", etc.
+        /// Rendered uppercase in the row.
+        let stage: String
+        /// Server-side projection of `arrivedAt` as a relative
+        /// short label (e.g. "2m", "12m", "1h") suitable for inline
+        /// display. Empty string when not set.
+        let arrivedAt: String
+        /// Dock assignment for this movement, e.g. "D-12",
+        /// "Spur 3", "Yard A-7". Empty when no dock yet assigned.
+        let dockAssignment: String
+        /// Live dwell time (hours) since gate-in. Drives the
+        /// demurrage exposure column on the home card.
+        let dwellHours: Double
+    }
+
+    struct GetActiveMovementsInput: Encodable { let limit: Int }
+
+    func getActiveMovements(limit: Int = 10) async throws -> [ActiveMovement] {
+        try await api.query(
+            "terminals.getActiveMovements",
+            input: GetActiveMovementsInput(limit: limit)
+        )
+    }
+
+    /// One alert on the terminal operator's "needs attention" feed.
+    /// Backend path: `terminals.getMovementsRequiringAttention`.
+    /// Issue strings come from the server's exception engine
+    /// (dwell breach, demurrage exposure, dock conflict, hazmat
+    /// clearance pending, BOL mismatch, ISF 10+2 hold, etc).
+    struct MovementAlert: Decodable, Identifiable, Hashable {
+        let id: String
+        let loadNumber: String
+        let issue: String
+        let severity: String
+        let message: String
+    }
+
+    func getMovementsRequiringAttention() async throws -> [MovementAlert] {
+        try await api.queryNoInput("terminals.getMovementsRequiringAttention")
+    }
+
+    /// One row in the terminal operator's recent-activity feed (a
+    /// slim summary of recently completed gate-outs / movements).
+    /// Backend path: `terminals.getRecentMovements`. `resolvedAt`
+    /// is the server's `YYYY-MM-DD` projection of `gatedOutAt ??
+    /// closedAt`; empty string when neither is set.
+    struct RecentMovement: Decodable, Identifiable, Hashable {
+        let id: String
+        let loadNumber: String
+        let status: String
+        let origin: String
+        let destination: String
+        let resolvedAt: String
+        /// Final dwell time (hours) on the resolved movement. Zero
+        /// when the movement resolved without dwell tracking.
+        let finalDwellHours: Double
+    }
+
+    struct GetRecentMovementsInput: Encodable { let limit: Int }
+
+    func getRecentMovements(limit: Int = 5) async throws -> [RecentMovement] {
+        try await api.query(
+            "terminals.getRecentMovements",
+            input: GetRecentMovementsInput(limit: limit)
+        )
+    }
+
+    // MARK: - Gate queue (701_TerminalGateQueue)
+    //
+    // Added 2026-04-27 in the 150th eusotrip-killers firing as the
+    // detail surface drilled into from the 700 active-movements
+    // section header. Mirrors the 601_EscortAssignmentDetail pattern
+    // (147th firing): the operator opens a sheet that shows the full
+    // list of trucks/containers currently waiting for a dock, each
+    // row with an inline "Assign dock" mutation.
+    //
+    // Backend procedure pair:
+    //   • `terminals.getGateQueue`  — input `{ limit: number }`,
+    //     returns `[GateQueueItem]`. Empty list when no gate-queue
+    //     items pending.
+    //   • `terminals.assignDock`    — input `{ id: string, dock: string }`,
+    //     returns the updated `GateQueueItem` so the UI can re-paint
+    //     the row without an extra round-trip.
+    //
+    // If the parallel router has not yet shipped, every call throws
+    // `EusoTripAPIError.trpcError` and the `TerminalGateQueueStore`
+    // resolves to `.error` — the screen surfaces an honest retry
+    // banner. No fixture data, ever (doctrine §11 + `MockDataGuard`).
+
+    /// One row in the terminal operator's gate queue (a movement that
+    /// has gated in and is currently waiting for a dock assignment or
+    /// hazmat clearance). Strict superset of the `ActiveMovement` row
+    /// so the 701 detail can render the same `loadNumber / origin /
+    /// destination / stage / arrivedAt` columns without a translation
+    /// shim. Backend path: `terminals.getGateQueue`.
+    struct GateQueueItem: Decodable, Identifiable, Hashable {
+        let id: String
+        /// Load number / shipment number / container number — terminal-
+        /// facing identifier. Empty when the row is a placeholder.
+        let loadNumber: String
+        /// Origin city/state or upstream port/rail yard.
+        let origin: String
+        /// Destination city/state or downstream port/rail yard.
+        let destination: String
+        /// Movement stage as a server-side enum: "AT_GATE",
+        /// "STAGING", "AT_DOCK", etc. Rendered uppercase.
+        let stage: String
+        /// Server-side projection of `arrivedAt` as a relative short
+        /// label (e.g. "2m", "12m", "1h"). Empty string when not set.
+        let arrivedAt: String
+        /// Current dock assignment (e.g. "D-12"). Empty when the row
+        /// is still waiting for the operator's call.
+        let dockAssignment: String
+        /// Live dwell time (hours) since gate-in. Drives the demurrage
+        /// exposure column on the queue row.
+        let dwellHours: Double
+        /// Optional priority hint from the server's queue scheduler:
+        /// "expedited", "appointment", "standby", or empty. Drives the
+        /// gradient priority chip on the row.
+        let priority: String?
+        /// Optional hazmat class code (e.g. "2.2", "3", "8") when the
+        /// movement carries regulated freight. Empty/absent when none.
+        let hazmatClass: String?
+        /// Optional appointment window the queue row was scheduled
+        /// against, server-projected as a short label like
+        /// "08:30–09:00" or "08:30 ETA". Empty when none scheduled.
+        let appointmentWindow: String?
+    }
+
+    struct GetGateQueueInput: Encodable { let limit: Int }
+
+    func getGateQueue(limit: Int = 25) async throws -> [GateQueueItem] {
+        try await api.query(
+            "terminals.getGateQueue",
+            input: GetGateQueueInput(limit: limit)
+        )
+    }
+
+    /// Mutation that assigns a dock identifier to a queue row. Backend
+    /// path: `terminals.assignDock` (input `{ id: string, dock: string }`).
+    /// Returns the updated `GateQueueItem` so the UI can re-paint the
+    /// row without an extra round-trip. If the router hasn't shipped,
+    /// the call throws and the inline CTA flips back to its idle label
+    /// with an honest error — local state never lies about the commit
+    /// landing.
+    struct AssignDockInput: Encodable {
+        let id: String
+        let dock: String
+    }
+
+    func assignDock(id: String, dock: String) async throws -> GateQueueItem {
+        try await api.mutation(
+            "terminals.assignDock",
+            input: AssignDockInput(id: id, dock: dock)
+        )
+    }
+
+    // MARK: - Yard map (702_TerminalYardMap)
+    //
+    // Added 2026-04-27 in the 154th eusotrip-killers firing as the third
+    // brick on the Terminal Manager role track (700s). Drilled into from
+    // 700_TerminalHome's "Yard" trailing nav slot — shows the full yard
+    // occupancy by zone, with each slot rendered as a tile (free / occupied)
+    // and per-slot mutation to release a slot when a truck departs.
+    //
+    // Backend procedure pair:
+    //   • `terminals.getYardMap`   — input `{}`, returns `YardMap` with
+    //     `zones: [YardZone]` (each zone has `slots: [YardSlot]`). When
+    //     the yard is empty the server returns zones with empty slot
+    //     arrays — the screen renders zone scaffolding with em-dashed
+    //     slots so the operator sees the geometry of the yard even at
+    //     idle.
+    //   • `terminals.releaseSlot`  — input `{ id: string }`, returns the
+    //     updated `YardSlot` (now empty) so the UI can re-paint the tile
+    //     without an extra round-trip.
+    //
+    // If the parallel router has not yet shipped, every call throws
+    // `EusoTripAPIError.trpcError` and the `TerminalYardMapStore`
+    // resolves to `.error` — the screen surfaces an honest retry
+    // banner. No fixture data, ever (doctrine §11 + `MockDataGuard`).
+
+    /// One yard zone — a grouping of physical slots (Zone A, Spur 3,
+    /// Dock Row, Reefer Row, Hazmat Pad). Mirrors the server's
+    /// physical-yard topology so the operator's mental model maps
+    /// directly to the on-screen layout.
+    struct YardZone: Decodable, Identifiable, Hashable {
+        let id: String
+        /// Display label, e.g. "ZONE A", "SPUR 3", "REEFER ROW".
+        /// Server projects pre-uppercased; rendered as-is.
+        let label: String
+        /// Optional kind hint from the server: "STAGING", "DOCK",
+        /// "RAIL_SPUR", "REEFER", "HAZMAT", or empty. Used to pick
+        /// the zone's leading SF Symbol (and nothing else — fills
+        /// stay neutral; only the priority chip on a slot uses
+        /// gradient).
+        let kind: String?
+        /// Slots belonging to this zone, server-ordered. Server returns
+        /// every slot in the zone, including unoccupied ones, so the
+        /// operator sees yard geometry at idle.
+        let slots: [YardSlot]
+    }
+
+    /// One yard slot — a discrete physical position that may or may not
+    /// hold a truck/container. Empty slots have empty `loadNumber` /
+    /// `containerNumber` and zero `dwellHours`, so the row falls back
+    /// to em-dash sentinels.
+    struct YardSlot: Decodable, Identifiable, Hashable {
+        let id: String
+        /// Slot identifier rendered on the tile, e.g. "A-3", "S3-12",
+        /// "D-7", "RR-2". Server projects pre-formatted.
+        let label: String
+        /// Load number / shipment number / container number occupying
+        /// this slot. Empty when the slot is free.
+        let loadNumber: String
+        /// Container number when the slot holds an ocean/intermodal
+        /// container (e.g. "MSCU 123-4567"). Empty when not applicable.
+        let containerNumber: String
+        /// Live dwell time (hours) since the slot was occupied. Zero
+        /// when the slot is free. Drives the demurrage exposure chip.
+        let dwellHours: Double
+        /// Optional hazmat class code (e.g. "2.2", "3", "8") when the
+        /// occupied movement carries regulated freight. Empty/absent
+        /// when none.
+        let hazmatClass: String?
+        /// Optional appointment window the slot was scheduled against,
+        /// server-projected as a short label like "08:30–09:00". Empty
+        /// when none scheduled.
+        let appointmentWindow: String?
+        /// Whether the slot is currently occupied. The server is the
+        /// authority — the UI never infers from `loadNumber` because
+        /// the server may report a slot as "occupied" while the load
+        /// is in the staging-to-dock transit window before the load
+        /// number flips.
+        let occupied: Bool
+    }
+
+    /// Yard map envelope. Mirrors the convention of `escorts.getCorridor`
+    /// and `admin.getControlTowerOverview` — single read, server-shaped
+    /// payload. Backend path: `terminals.getYardMap`.
+    struct YardMap: Decodable, Hashable {
+        /// Zones in render order, each carrying its own slots. Server
+        /// returns the empty array only when the yard hasn't been
+        /// configured at all (which the screen treats as `.empty`).
+        let zones: [YardZone]
+        /// Total slot count across all zones. Server-computed so the
+        /// header KPI doesn't need a client-side sum (and stays right
+        /// when the server filters slots the operator can't see).
+        let totalSlots: Int
+        /// Occupied slot count. Drives the occupancy ratio in the
+        /// header KPI strip.
+        let occupiedSlots: Int
+        /// Server-computed mean dwell hours across occupied slots.
+        /// Zero when no slots occupied.
+        let avgDwellHours: Double
+        /// Count of slots whose `dwellHours` exceeds the server's
+        /// demurrage threshold. Surfaced as a danger chip in the
+        /// header.
+        let dwellBreachCount: Int
+    }
+
+    func getYardMap() async throws -> YardMap {
+        try await api.queryNoInput("terminals.getYardMap")
+    }
+
+    /// Mutation that releases a yard slot — used when a truck departs
+    /// and the operator confirms the slot is clear. Backend path:
+    /// `terminals.releaseSlot` (input `{ id: string }`). Returns the
+    /// updated `YardSlot` (now `occupied: false` with empty load /
+    /// container) so the UI can re-paint the tile without an extra
+    /// round-trip. If the router hasn't shipped, the call throws and
+    /// the inline CTA flips back to its idle label with an honest
+    /// error — local state never lies about the commit landing.
+    struct ReleaseSlotInput: Encodable {
+        let id: String
+    }
+
+    func releaseSlot(id: String) async throws -> YardSlot {
+        try await api.mutation(
+            "terminals.releaseSlot",
+            input: ReleaseSlotInput(id: id)
+        )
+    }
+}
+
+// =====================================================================
+// MARK: - adminRouter
+//
+// Mirrors the legitimate read-side of the §16 admin-tenant-ops slice
+// 1:1. Admin owns platform-wide ops: tenant lifecycle, user lifecycle,
+// approvals, support tickets, experiments, and control tower DD alerts.
+//
+// Procedure coverage (mirrors carriers/brokers/catalysts/escorts/
+// terminals, intentionally read-side only — §16 flags impersonate +
+// system-settings as mock-stubbed today):
+//   • getDashboardStats           — six-figure platform-health envelope
+//   • getOpenTickets              — support tickets currently open
+//   • getApprovalsRequiringAttention — pending approval queue alerts
+//   • getRecentTickets            — recently-resolved tickets
+//
+// If the parallel router has not yet shipped on the `admin.*`
+// namespace, the call throws `EusoTripAPIError.trpcError` and the
+// Admin* stores in `ViewModels/LiveDataStores.swift` surface
+// `EusoEmptyState`. This satisfies doctrine §11 (no mock data) and
+// the `MockDataGuard` self-check wired at `EusoTripApp.swift:101`.
+// =====================================================================
+
+struct AdminAPI {
+    unowned let api: EusoTripAPI
+
+    /// Dashboard KPI envelope. Mirrors the convention of
+    /// `terminals.getDashboardStats` on the Admin role's home.
+    /// Backend path: `admin.getDashboardStats`.
+    struct DashboardStats: Decodable, Hashable {
+        /// Active tenants on the platform (tenants whose primary
+        /// account has had at least one signed-in user in the
+        /// trailing 30-day window). Admin-side analog of Terminal's
+        /// `activeMovements` and Escort's `activeAssignments`.
+        let activeTenants: Int
+        /// Distinct users who signed in during the trailing 7-day
+        /// window. Drives the platform-engagement KPI.
+        let activeUsersThisWeek: Int
+        /// Approvals in the queue waiting for an admin decision
+        /// (new tenant, new user, credit-line, contract, etc).
+        /// Admin-side analog of Carrier's `loadsRequiringAttention`.
+        let pendingApprovals: Int
+        /// Support tickets currently in `open` or `in_progress`
+        /// state (not yet resolved). Drives the operations KPI on
+        /// the home dashboard.
+        let supportTicketsOpen: Int
+        /// Trailing-month MRR snapshot (US dollars). Pulled from
+        /// the `wallet.*` + `money.*` rollup; zero until the first
+        /// settlement closes for the current calendar month.
+        let mrrThisMonth: Double
+        /// Live platform-health composite (0.0…1.0). Computed by
+        /// the control-tower DD-alerts pipeline as a weighted mean
+        /// of API SLO, queue lag, error rate, and external-vendor
+        /// integration status. Below 0.85 is the admin red line.
+        let systemHealthScore: Double
+    }
+
+    func getDashboardStats() async throws -> DashboardStats {
+        try await api.queryNoInput("admin.getDashboardStats")
+    }
+
+    /// One open support ticket on the admin operator's plate.
+    /// Mirrors the shape of the other role active-row types
+    /// (`TerminalAPI.ActiveMovement`, `EscortAPI.ActiveAssignment`)
+    /// so the home cards can share row scaffolding. Backend path:
+    /// `admin.getOpenTickets`.
+    struct ActiveTicket: Decodable, Identifiable, Hashable {
+        let id: String
+        /// Ticket number / case identifier the admin operator looks
+        /// up by (e.g. "EUSO-12345"). Server projects whichever is
+        /// most specific for the ticket type.
+        let ticketNumber: String
+        /// Tenant or user name the ticket originated from.
+        let customer: String
+        /// Brief one-line subject summarising the ticket.
+        let subject: String
+        /// Ticket status as a server-side enum: "open",
+        /// "in_progress", "awaiting_customer", "escalated", etc.
+        /// Rendered uppercase in the row.
+        let status: String
+        /// Server-side projection of `openedAt` as a relative
+        /// short label (e.g. "2m", "12m", "1h") suitable for inline
+        /// display. Empty string when not set.
+        let openedAt: String
+        /// Priority bucket: "low", "normal", "high", "urgent".
+        /// Drives the row's right-side priority chip.
+        let priority: String
+    }
+
+    struct GetOpenTicketsInput: Encodable { let limit: Int }
+
+    func getOpenTickets(limit: Int = 10) async throws -> [ActiveTicket] {
+        try await api.query(
+            "admin.getOpenTickets",
+            input: GetOpenTicketsInput(limit: limit)
+        )
+    }
+
+    /// One alert on the admin operator's "needs attention" feed.
+    /// Backend path: `admin.getApprovalsRequiringAttention`. Issue
+    /// strings come from the server's exception engine (pending
+    /// approval, failed integration, payment exception, fraud
+    /// signal, MFA enrollment lapse, blockchain-audit drift, etc).
+    struct AdminAlert: Decodable, Identifiable, Hashable {
+        let id: String
+        let ticketNumber: String
+        let issue: String
+        let severity: String
+        let message: String
+    }
+
+    func getApprovalsRequiringAttention() async throws -> [AdminAlert] {
+        try await api.queryNoInput("admin.getApprovalsRequiringAttention")
+    }
+
+    /// One row in the admin operator's recent-activity feed (a slim
+    /// summary of recently resolved tickets / approvals). Backend
+    /// path: `admin.getRecentTickets`. `resolvedAt` is the server's
+    /// `YYYY-MM-DD` projection of `closedAt ?? resolvedAt`; empty
+    /// string when neither is set.
+    struct RecentTicket: Decodable, Identifiable, Hashable {
+        let id: String
+        let ticketNumber: String
+        let status: String
+        let customer: String
+        let subject: String
+        let resolvedAt: String
+    }
+
+    struct GetRecentTicketsInput: Encodable { let limit: Int }
+
+    func getRecentTickets(limit: Int = 5) async throws -> [RecentTicket] {
+        try await api.query(
+            "admin.getRecentTickets",
+            input: GetRecentTicketsInput(limit: limit)
+        )
+    }
+
+    // MARK: - listTenants (802 brick · 151st firing)
+    //
+    // One row in the admin operator's tenant directory. Each `Tenant`
+    // is a customer organisation on the EusoTrip platform — a
+    // shipper company, a carrier company, a brokerage, a catalyst
+    // collective, etc. This wires the second screen on the Admin
+    // role track (`802_AdminTenants`) — the natural drill-down from
+    // the home dashboard's `ACTIVE TENANTS` KPI.
+    //
+    // Backend path: `admin.listTenants`. If the parallel router has
+    // not shipped yet, calls throw `EusoTripAPIError.trpcError` and
+    // the client store resolves to `.error` — the screen surfaces an
+    // honest retry banner. Doctrine §11 + `MockDataGuard`: never a
+    // fixture row.
+    //
+    // Every nullable column (`plan`, `primaryUserName`, `primaryUserEmail`,
+    // `monthlyVolumeUsd`, `mrrUsd`) renders as a neutral em-dash on the
+    // 802 row when absent — shape mirrors the 701 GateQueueItem pattern.
+    struct Tenant: Decodable, Identifiable, Hashable {
+        let id: String
+        /// Display name of the tenant organisation (the company,
+        /// brokerage, fleet, or catalyst collective). Server-side
+        /// projection of `companies.legalName ?? companies.dba`.
+        let name: String
+        /// Server-side enum: "active", "trial", "suspended",
+        /// "churned", "pending_review". Drives the row's status pill.
+        let status: String
+        /// Subscription plan label (e.g. "Starter", "Growth",
+        /// "Enterprise"). Optional — empty when the tenant is on a
+        /// custom contract or hasn't completed plan selection.
+        let plan: String?
+        /// Primary user / owner of the tenant account. Optional —
+        /// empty when the org has multiple equally-privileged owners.
+        let primaryUserName: String?
+        let primaryUserEmail: String?
+        /// Active distinct user count for this tenant in the trailing
+        /// 30-day window. Zero on a brand-new tenant.
+        let activeUserCount: Int
+        /// Trailing-month USD volume routed through the tenant
+        /// (load gross, ticket gross, settlement gross — server
+        /// picks the most representative). Optional — null until the
+        /// first settlement closes.
+        let monthlyVolumeUsd: Double?
+        /// Trailing-month MRR contribution (USD). Optional — null
+        /// when the tenant is on a custom contract that doesn't roll
+        /// into the standard MRR engine.
+        let mrrUsd: Double?
+        /// Server projection of `createdAt` as a `YYYY-MM-DD` string.
+        /// Empty when the tenant predates the migrations that set
+        /// the column (rare).
+        let signedUpAt: String
+    }
+
+    /// Optional status filter mirrors the server's `status` query
+    /// parameter — when nil/empty, the server returns all tenants
+    /// regardless of status, sorted by `monthlyVolumeUsd` descending.
+    /// Otherwise filters to that single status enum value.
+    struct ListTenantsInput: Encodable {
+        let limit: Int
+        let status: String?
+    }
+
+    func listTenants(limit: Int = 50, status: String? = nil) async throws -> [Tenant] {
+        try await api.query(
+            "admin.listTenants",
+            input: ListTenantsInput(limit: limit, status: status)
+        )
+    }
+}
+
+// MARK: - rateSheetRouter
+//
+// Mirrors `frontend/server/routers/rateSheet.ts` 1:1. The web platform
+// is the source of truth for the data model — these wire types are
+// therefore Codable on both sides (mutations send the same shape they
+// receive on a read), so a driver who edits a tier on iOS produces a
+// payload the React consumer accepts unchanged.
+//
+// Procedure coverage (16 total, all wired):
+//   • create / list / getRateSheet / updateRateSheet / deleteRateSheet
+//   • getDefaultTiers / getSmartDefaultTiers / getCurrentDiesel
+//   • calculateRate (driver-facing pay preview)
+//   • getVersionHistory / listMyRateSheets
+//   • generateReconciliation / listReconciliations / getStats
+//   • getEusoTicketDocuments / reconcileTickets
+//
+// Driver-side, the highest-value procedures are `calculateRate`,
+// `getCurrentDiesel`, `listMyRateSheets`, and `getRateSheet` —
+// everything else is for catalyst/broker authoring flows the iOS
+// surface still exposes for the carrier-as-driver case.
+
+struct RateSheetAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: Wire types
+
+    /// One mileage band on a Schedule-A rate sheet. The web router's
+    /// `rateTierSchema` is `{ minMiles, maxMiles, ratePerBarrel }`.
+    /// We mirror that exact shape so a payload round-trips cleanly
+    /// between iOS authoring and the React consumer.
+    struct RateTier: Codable, Identifiable, Hashable {
+        var id: String { "\(minMiles)-\(maxMiles)" }
+        let minMiles: Double
+        let maxMiles: Double
+        let ratePerBarrel: Double
+
+        init(minMiles: Double, maxMiles: Double, ratePerBarrel: Double) {
+            self.minMiles = minMiles
+            self.maxMiles = maxMiles
+            self.ratePerBarrel = ratePerBarrel
+        }
+    }
+
+    /// Surcharge schedule. Mirrors `surchargeRulesSchema` in the web
+    /// router. Defaults match the Permian Crude baseline so a fresh
+    /// iOS authoring sheet starts from a known-good config.
+    struct Surcharges: Codable, Hashable {
+        var fscEnabled: Bool = true
+        var fscBaselineDieselPrice: Double = 3.75
+        var fscMilesPerGallon: Double = 5
+        var fscPaddRegion: String = "3"
+        var waitTimeFreeHours: Double = 1
+        var waitTimeRatePerHour: Double = 85
+        var splitLoadFee: Double = 50
+        var rejectFee: Double = 85
+        var minimumBarrels: Double = 160
+        var travelSurchargePerMile: Double = 1.50
+        var longLeaseRoadFee: Double? = nil
+        var multipleGatesFee: Double? = nil
+    }
+
+    // MARK: - calculateRate (driver pay preview)
+
+    /// Live-preview output for a single run. The iOS rate calculator
+    /// surface binds every numeric field below to a row in the
+    /// breakdown card, so changing `oneWayMiles` re-runs the round-
+    /// trip and the panel rebuilds in place.
+    struct CalculatedRate: Decodable {
+        let ratePerBarrel: Double
+        let baseAmount: Double
+        let fsc: Double
+        let waitTimeCharge: Double
+        let splitLoadFee: Double
+        let rejectFee: Double
+        let travelSurcharge: Double
+        let totalAmount: Double
+        /// Pre-rendered explanation lines ("160 BBL × $3.40 = $544.00").
+        /// We render verbatim — the server is the rounding authority.
+        let breakdown: [String]
+    }
+
+    struct CalculateRateInput: Encodable {
+        let netBarrels: Double
+        let oneWayMiles: Double
+        var waitTimeHours: Double = 0
+        var isSplitLoad: Bool = false
+        var isReject: Bool = false
+        var travelSurchargeMiles: Double = 0
+        var currentDieselPrice: Double? = nil
+        var rateTiers: [RateTier]? = nil
+        var surcharges: Surcharges? = nil
+    }
+
+    /// Driver-facing pay preview. Mirrors `rateSheet.calculateRate`.
+    func calculateRate(_ input: CalculateRateInput) async throws -> CalculatedRate {
+        try await api.query("rateSheet.calculateRate", input: input)
+    }
+
+    // MARK: - Defaults + EIA diesel auto-populate
+
+    struct DefaultTiers: Decodable {
+        let tiers: [RateTier]
+        let surcharges: Surcharges
+    }
+
+    /// `rateSheet.getDefaultTiers` — Permian Crude baseline tiers.
+    func getDefaultTiers() async throws -> DefaultTiers {
+        try await api.queryNoInput("rateSheet.getDefaultTiers")
+    }
+
+    struct SmartTiersInput: Encodable {
+        let region: String?
+        let product: String?
+        let trailerType: String?
+    }
+
+    struct RegionInfo: Decodable {
+        let label: String?
+        let padd: String?
+        let multiplier: Double?
+    }
+
+    struct AvailableRegion: Decodable, Identifiable {
+        var id: String { key }
+        let key: String
+        let label: String
+        let padd: String
+        let multiplier: Double
+    }
+
+    struct AvailableProduct: Decodable, Identifiable {
+        var id: String { name }
+        let name: String
+        let multiplier: Double
+    }
+
+    struct AvailableTrailer: Decodable, Identifiable {
+        var id: String { key }
+        let key: String
+        let multiplier: Double
+        let unit: String
+        let defaultProduct: String?
+    }
+
+    struct SmartTiers: Decodable {
+        let tiers: [RateTier]
+        let surcharges: Surcharges
+        let regionInfo: RegionInfo?
+        let productMultiplier: Double?
+        let trailerMultiplier: Double?
+        let availableRegions: [AvailableRegion]
+        let availableProducts: [AvailableProduct]
+        let availableTrailers: [AvailableTrailer]
+    }
+
+    /// `rateSheet.getSmartDefaultTiers` — region/product/trailer-aware
+    /// defaults. Pass any/all of the three; server returns the matching
+    /// adjusted tier set + surcharges + the available enums for the UI
+    /// pickers.
+    func getSmartDefaultTiers(
+        region: String? = nil,
+        product: String? = nil,
+        trailerType: String? = nil
+    ) async throws -> SmartTiers {
+        try await api.query(
+            "rateSheet.getSmartDefaultTiers",
+            input: SmartTiersInput(region: region, product: product, trailerType: trailerType)
+        )
+    }
+
+    struct CurrentDiesel: Decodable {
+        let price: Double
+        let padd: String?
+        let state: String?
+        let reportDate: String?
+        /// "EIA" when live-fed, "default" when the server fell back.
+        let source: String
+        let change1w: Double?
+        let change1m: Double?
+    }
+
+    struct CurrentDieselInput: Encodable {
+        let state: String?
+        let paddRegion: String?
+    }
+
+    /// `rateSheet.getCurrentDiesel` — auto-populates the FSC diesel
+    /// input. Pass either a USPS state code or a PADD region.
+    func getCurrentDiesel(state: String? = nil, padd: String? = nil) async throws -> CurrentDiesel {
+        try await api.query(
+            "rateSheet.getCurrentDiesel",
+            input: CurrentDieselInput(state: state, paddRegion: padd)
+        )
+    }
+
+    // MARK: - Sheet authoring (CRUD)
+
+    struct RateSheetSummary: Decodable, Identifiable {
+        let id: Int
+        let name: String?
+        let status: String?
+        let createdAt: String
+    }
+
+    struct ListInput: Encodable { let limit: Int }
+
+    /// `rateSheet.list` — company-scoped sheet list (lightweight).
+    func list(limit: Int = 20) async throws -> [RateSheetSummary] {
+        try await api.query("rateSheet.list", input: ListInput(limit: limit))
+    }
+
+    /// `rateSheet.listMyRateSheets` — user/company-scoped active list.
+    struct ListMineInput: Encodable { let includeExpired: Bool? }
+    func listMyRateSheets(includeExpired: Bool = false) async throws -> [RateSheetSummary] {
+        try await api.query(
+            "rateSheet.listMyRateSheets",
+            input: ListMineInput(includeExpired: includeExpired)
+        )
+    }
+
+    /// Full rate-sheet record. Mirrors `rateSheet.getRateSheet` output.
+    struct RateSheetDetail: Decodable, Identifiable {
+        let id: Int
+        let name: String?
+        let status: String?
+        let createdAt: String
+        let region: String?
+        let productType: String?
+        let trailerType: String?
+        let rateUnit: String?
+        let effectiveDate: String?
+        let expirationDate: String?
+        let agreementId: Int?
+        let rateTiers: [RateTier]
+        let surcharges: Surcharges
+        let notes: String?
+        let version: Int
+    }
+
+    struct GetRateSheetInput: Encodable { let id: Int }
+
+    func getRateSheet(id: Int) async throws -> RateSheetDetail? {
+        try await api.query("rateSheet.getRateSheet", input: GetRateSheetInput(id: id))
+    }
+
+    // MARK: - Create / update
+
+    /// Mirrors `rateSheetSchema` on the server — anything optional on
+    /// the wire is optional here too. Driver-side authoring usually
+    /// only needs (name, effectiveDate, issuedBy, rateTiers, surcharges).
+    struct CreateInput: Encodable {
+        let name: String
+        let effectiveDate: String
+        let expirationDate: String?
+        let fuelSurchargeIncluded: Bool
+        let issuedBy: String
+        let issuedByContact: String?
+        let issuedByPhone: String?
+        let issuedByEmail: String?
+        let issuedByAddress: String?
+        let issuedTo: String?
+        let rateTiers: [RateTier]
+        let surcharges: Surcharges
+        let notes: String?
+        let agreementId: Int?
+        let region: String?
+        let productType: String?
+        let trailerType: String?
+        let rateUnit: String?
+
+        init(
+            name: String,
+            effectiveDate: String,
+            issuedBy: String,
+            rateTiers: [RateTier],
+            surcharges: Surcharges,
+            expirationDate: String? = nil,
+            fuelSurchargeIncluded: Bool = false,
+            issuedByContact: String? = nil,
+            issuedByPhone: String? = nil,
+            issuedByEmail: String? = nil,
+            issuedByAddress: String? = nil,
+            issuedTo: String? = nil,
+            notes: String? = nil,
+            agreementId: Int? = nil,
+            region: String? = nil,
+            productType: String? = nil,
+            trailerType: String? = nil,
+            rateUnit: String? = nil
+        ) {
+            self.name = name
+            self.effectiveDate = effectiveDate
+            self.expirationDate = expirationDate
+            self.fuelSurchargeIncluded = fuelSurchargeIncluded
+            self.issuedBy = issuedBy
+            self.issuedByContact = issuedByContact
+            self.issuedByPhone = issuedByPhone
+            self.issuedByEmail = issuedByEmail
+            self.issuedByAddress = issuedByAddress
+            self.issuedTo = issuedTo
+            self.rateTiers = rateTiers
+            self.surcharges = surcharges
+            self.notes = notes
+            self.agreementId = agreementId
+            self.region = region
+            self.productType = productType
+            self.trailerType = trailerType
+            self.rateUnit = rateUnit
+        }
+    }
+
+    struct CreateAck: Decodable {
+        let success: Bool
+        let id: Int
+        let name: String?
+        let effectiveDate: String?
+        let tierCount: Int?
+        let createdAt: String?
+    }
+
+    func create(_ input: CreateInput) async throws -> CreateAck {
+        try await api.mutation("rateSheet.create", input: input)
+    }
+
+    struct UpdateInput: Encodable {
+        let id: Int
+        let name: String?
+        let region: String?
+        let productType: String?
+        let trailerType: String?
+        let rateUnit: String?
+        let effectiveDate: String?
+        let expirationDate: String?
+        let agreementId: Int?
+        let rateTiers: [RateTier]?
+        let surcharges: Surcharges?
+        let notes: String?
+    }
+
+    struct UpdateAck: Decodable {
+        let success: Bool
+        let id: Int
+        let version: Int
+    }
+
+    func update(_ input: UpdateInput) async throws -> UpdateAck {
+        try await api.mutation("rateSheet.updateRateSheet", input: input)
+    }
+
+    struct DeleteInput: Encodable { let id: Int }
+    struct DeleteAck: Decodable { let success: Bool }
+    func delete(id: Int) async throws -> DeleteAck {
+        try await api.mutation("rateSheet.deleteRateSheet", input: DeleteInput(id: id))
+    }
+
+    // MARK: - Version history
+
+    struct Version: Decodable, Identifiable {
+        let id: Int
+        let version: Int
+        let snapshotAt: String?
+        let name: String?
+        let tierCount: Int?
+        let region: String?
+        let productType: String?
+    }
+
+    struct VersionHistoryInput: Encodable { let sheetId: Int }
+    func getVersionHistory(sheetId: Int) async throws -> [Version] {
+        try await api.query(
+            "rateSheet.getVersionHistory",
+            input: VersionHistoryInput(sheetId: sheetId)
+        )
+    }
+
+    // MARK: - Reconciliation
+
+    struct ReconcileLineInput: Encodable {
+        let runDate: String
+        let bolNumber: String?
+        let runTicket: String?
+        let origin: String?
+        let destination: String?
+        let netBarrels: Double
+        let oneWayMiles: Double
+        let waitTimeHours: Double?
+        let isSplitLoad: Bool?
+        let isReject: Bool?
+        let travelSurchargeMiles: Double?
+    }
+
+    struct ReconcileInput: Encodable {
+        let periodStart: String
+        let periodEnd: String
+        let customerName: String
+        let carrierName: String
+        let lines: [ReconcileLineInput]
+        let rateTiers: [RateTier]?
+        let surcharges: Surcharges?
+        let currentDieselPrice: Double?
+    }
+
+    /// Each calculated reconciliation line — mirrors what the server
+    /// builds when aggregating a billing period. The server is the
+    /// rounding authority; we render the numbers verbatim.
+    struct ReconcileLineOut: Decodable, Identifiable {
+        let id: String
+        let runDate: String?
+        let bolNumber: String?
+        let runTicket: String?
+        let netBarrels: Double?
+        let oneWayMiles: Double?
+        let ratePerBarrel: Double?
+        let baseAmount: Double?
+        let fsc: Double?
+        let waitTimeCharge: Double?
+        let splitLoadFee: Double?
+        let rejectFee: Double?
+        let travelSurcharge: Double?
+        let totalAmount: Double?
+    }
+
+    struct ReconcileTotals: Decodable {
+        let totalRuns: Int?
+        let totalBarrels: Double?
+        let totalMiles: Double?
+        let totalGross: Double?
+        let totalFsc: Double?
+        let totalWaitTime: Double?
+        let totalSplitLoad: Double?
+        let totalReject: Double?
+        let totalTravelSurcharge: Double?
+        let totalAmount: Double?
+    }
+
+    struct ReconcilePlatformFees: Decodable {
+        let pct: Double?
+        let amount: Double?
+    }
+
+    struct ReconcileSettlement: Decodable {
+        let netToCarrier: Double?
+        let payoutTimingDays: Int?
+        let scheduledPayoutAt: String?
+    }
+
+    struct ReconciliationOut: Decodable {
+        let reconciliationId: Int?
+        let lines: [ReconcileLineOut]
+        let totals: ReconcileTotals
+        let platformFees: ReconcilePlatformFees?
+        let settlement: ReconcileSettlement?
+        let generatedAt: String?
+    }
+
+    func generateReconciliation(_ input: ReconcileInput) async throws -> ReconciliationOut {
+        try await api.mutation("rateSheet.generateReconciliation", input: input)
+    }
+
+    func listReconciliations(limit: Int = 20) async throws -> [RateSheetSummary] {
+        try await api.query("rateSheet.listReconciliations", input: ListInput(limit: limit))
+    }
+
+    struct ReconcileStats: Decodable {
+        let totalStatements: Int?
+        let totalPaid: Double?
+        let pending: Int?
+    }
+    func getStats() async throws -> ReconcileStats {
+        try await api.queryNoInput("rateSheet.getStats")
+    }
+
+    // MARK: - EusoTicket documents
+
+    struct EusoTicketDocument: Decodable, Identifiable {
+        let id: Int
+        let name: String?
+        let type: String?
+        let status: String?
+        let createdAt: String?
+    }
+
+    struct EusoTicketStats: Decodable {
+        let bols: Int?
+        let runTickets: Int?
+        let rateSheets: Int?
+        let reconciliations: Int?
+    }
+
+    struct EusoTicketResponse: Decodable {
+        let documents: [EusoTicketDocument]
+        let stats: EusoTicketStats?
+    }
+
+    struct EusoTicketInput: Encodable {
+        let type: String?
+        let limit: Int?
+    }
+
+    func getEusoTicketDocuments(type: String? = nil, limit: Int = 50) async throws -> EusoTicketResponse {
+        try await api.query(
+            "rateSheet.getEusoTicketDocuments",
+            input: EusoTicketInput(type: type, limit: limit)
+        )
+    }
+}
+
+// MARK: - visualIntelligenceRouter (VIGA)
+//
+// Mirrors `frontend/server/routers/visualIntelligence.ts` 1:1. The
+// server takes a base64 image + analysis-type discriminator and runs
+// it through Gemini / Anthropic vision models, returning a typed
+// envelope `{ type, data }` that maps to one of nine analysis structs.
+//
+// iOS converts UIImage → JPEG (0.85 quality) → base64 in the call
+// site. Don't preprocess the bytes here — the server's quality
+// pipeline already handles resize / contrast normalization.
+//
+// Procedure coverage (10 wired):
+//   • diagnoseMechanical (ZEUN integration)
+//   • readGauge          (tank/pressure/temp)
+//   • verifySeal         (BOL seal tamper detection)
+//   • inspectDVIR        (per-inspection-point AI assist)
+//   • assessCargo        (securement + integrity)
+//   • verifyPOD          (visual POD validation)
+//   • mapFacility        (terminal/yard intel)
+//   • assessDamage       (accident/incident)
+//   • reportRoadCondition(route hazards)
+//   • analyzeMulti       (multi-pass for ambiguous photos)
+
+struct VIGAAPI {
+    unowned let api: EusoTripAPI
+
+    /// Server-side analysis types — must stay in sync with the
+    /// `passes` enum on `visualIntelligenceRouter.analyzeMulti`.
+    enum AnalysisType: String, Codable, CaseIterable {
+        case mechanicalDiagnosis = "MECHANICAL_DIAGNOSIS"
+        case gaugeReading        = "GAUGE_READING"
+        case sealVerification    = "SEAL_VERIFICATION"
+        case dvirInspection      = "DVIR_INSPECTION"
+        case cargoCondition      = "CARGO_CONDITION"
+        case podVerification     = "POD_VERIFICATION"
+        case facilityMapping     = "FACILITY_MAPPING"
+        case damageAssessment    = "DAMAGE_ASSESSMENT"
+        case roadCondition       = "ROAD_CONDITION"
+        case generalVisual       = "GENERAL_VISUAL"
+    }
+
+    // MARK: Result envelopes — one struct per analysis type.
+
+    /// MECHANICAL_DIAGNOSIS shape.
+    struct MechanicalDiagnosis: Decodable {
+        struct Defect: Decodable, Hashable {
+            let description: String
+            let severity: String
+            let location: String?
+        }
+        let component: String
+        let componentCategory: String?
+        /// "GOOD" | "WORN" | "DAMAGED" | "CRITICAL" | "FAILED"
+        let condition: String
+        let defects: [Defect]
+        let repairRecommendation: String?
+        let repairSteps: [String]?
+        let partsNeeded: [String]?
+        let estimatedRepairTime: String?
+        /// "NONE" | "LOW" | "MODERATE" | "HIGH" | "IMMEDIATE_DANGER"
+        let safetyRisk: String
+        let canContinueDriving: Bool
+        let confidence: Double
+        let visualNotes: String?
+    }
+
+    /// GAUGE_READING shape.
+    struct GaugeReading: Decodable {
+        struct Additional: Decodable, Hashable {
+            let label: String
+            let value: String
+            let unit: String?
+        }
+        let gaugeType: String
+        let reading: String
+        let unit: String?
+        let numericValue: Double?
+        let normalRange: String?
+        let isWithinNormal: Bool
+        let additionalReadings: [Additional]?
+        let confidence: Double
+        let visualNotes: String?
+    }
+
+    /// SEAL_VERIFICATION shape.
+    struct SealVerification: Decodable {
+        let sealNumber: String?
+        let sealType: String?
+        /// "INTACT" | "BROKEN" | "TAMPERED" | "MISSING" | "UNREADABLE"
+        let condition: String
+        let tamperEvidence: Bool
+        let tamperDetails: String?
+        let matchesBOL: Bool?
+        let confidence: Double
+        let visualNotes: String?
+    }
+
+    /// DVIR_INSPECTION shape.
+    struct DVIRInspection: Decodable {
+        struct Defect: Decodable, Hashable {
+            let description: String
+            /// "MINOR" | "MAJOR" | "CRITICAL_OOS"
+            let severity: String
+            let requiresImmediate: Bool
+        }
+        let inspectionPoint: String?
+        /// "PASS" | "MARGINAL" | "FAIL"
+        let condition: String
+        let defectsFound: [Defect]
+        let regulatoryNotes: [String]?
+        let confidence: Double
+        let visualNotes: String?
+    }
+
+    /// CARGO_CONDITION shape.
+    struct CargoCondition: Decodable {
+        struct Issue: Decodable, Hashable {
+            let description: String
+            let severity: String
+            let location: String?
+        }
+        let cargoType: String?
+        /// "SECURE" | "SHIFTED" | "DAMAGED" | "LEAKING" | "UNKNOWN"
+        let condition: String
+        let issues: [Issue]
+        let securementStatus: String?
+        let hazmatVisible: Bool
+        let placardInfo: String?
+        let confidence: Double
+        let visualNotes: String?
+    }
+
+    /// POD_VERIFICATION shape.
+    struct PODVerification: Decodable {
+        let deliveryConfirmed: Bool
+        let siteCondition: String?
+        let visibleEvidence: [String]?
+        let discrepancies: [String]?
+        let signatureVisible: Bool
+        let timestampEvidence: String?
+        let confidence: Double
+        let visualNotes: String?
+    }
+
+    /// FACILITY_MAPPING shape.
+    struct FacilityMapping: Decodable {
+        let facilityType: String?
+        let features: [String]?
+        let accessPoints: [String]?
+        let equipment: [String]?
+        let hazards: [String]?
+        let capacity: String?
+        let navigationNotes: [String]?
+        let confidence: Double
+        let visualNotes: String?
+    }
+
+    /// DAMAGE_ASSESSMENT shape.
+    struct DamageAssessment: Decodable {
+        struct AffectedArea: Decodable, Hashable {
+            let area: String
+            let description: String
+            let severity: String
+        }
+        struct CostRange: Decodable, Hashable {
+            let min: Double
+            let max: Double
+        }
+        let damageType: String
+        /// "COSMETIC" | "MINOR" | "MODERATE" | "SEVERE" | "TOTAL"
+        let severity: String
+        let affectedAreas: [AffectedArea]
+        let estimatedRepairCost: CostRange?
+        let safetyImplications: [String]?
+        let evidenceNotes: [String]?
+        let insuranceRelevant: Bool
+        let confidence: Double
+        let visualNotes: String?
+    }
+
+    /// ROAD_CONDITION shape.
+    struct RoadCondition: Decodable {
+        let conditionType: String
+        /// "GOOD" | "FAIR" | "POOR" | "HAZARDOUS" | "IMPASSABLE"
+        let severity: String
+        let hazards: [String]?
+        let recommendedAction: String?
+        let alternateRouteAdvised: Bool
+        let confidence: Double
+        let visualNotes: String?
+    }
+
+    // Each procedure returns a `{ type, data }` envelope. We surface
+    // ONLY the typed `.data` since iOS call sites already know which
+    // analysis they asked for.
+
+    private struct Envelope<T: Decodable>: Decodable {
+        let type: String
+        let data: T
+    }
+
+    // MARK: - Inputs
+
+    private struct ImageInput: Encodable {
+        let imageBase64: String
+        let mimeType: String
+    }
+
+    struct DiagnoseMechanicalInput: Encodable {
+        let imageBase64: String
+        let mimeType: String
+        let vehicleMake: String?
+        let vehicleModel: String?
+        let vehicleYear: Int?
+        let issueCategory: String?
+        let symptoms: [String]?
+    }
+
+    struct GaugeInput: Encodable {
+        let imageBase64: String
+        let mimeType: String
+        let gaugeType: String?
+    }
+
+    struct SealInput: Encodable {
+        let imageBase64: String
+        let mimeType: String
+        let expectedSealNumber: String?
+    }
+
+    struct DVIRInput: Encodable {
+        let imageBase64: String
+        let mimeType: String
+        let inspectionPoint: String?
+    }
+
+    struct PODInput: Encodable {
+        let imageBase64: String
+        let mimeType: String
+        let loadNumber: String?
+        let consigneeName: String?
+    }
+
+    // MARK: - Calls
+
+    /// `viga.diagnoseMechanical` — photograph → AI mechanical diagnosis.
+    func diagnoseMechanical(
+        imageBase64: String,
+        mimeType: String = "image/jpeg",
+        vehicleMake: String? = nil,
+        vehicleModel: String? = nil,
+        vehicleYear: Int? = nil,
+        issueCategory: String? = nil,
+        symptoms: [String]? = nil
+    ) async throws -> MechanicalDiagnosis {
+        let env: Envelope<MechanicalDiagnosis> = try await api.mutation(
+            "visualIntelligence.diagnoseMechanical",
+            input: DiagnoseMechanicalInput(
+                imageBase64: imageBase64, mimeType: mimeType,
+                vehicleMake: vehicleMake, vehicleModel: vehicleModel,
+                vehicleYear: vehicleYear, issueCategory: issueCategory,
+                symptoms: symptoms
+            )
+        )
+        return env.data
+    }
+
+    func readGauge(
+        imageBase64: String,
+        mimeType: String = "image/jpeg",
+        gaugeType: String? = nil
+    ) async throws -> GaugeReading {
+        let env: Envelope<GaugeReading> = try await api.mutation(
+            "visualIntelligence.readGauge",
+            input: GaugeInput(imageBase64: imageBase64, mimeType: mimeType, gaugeType: gaugeType)
+        )
+        return env.data
+    }
+
+    func verifySeal(
+        imageBase64: String,
+        mimeType: String = "image/jpeg",
+        expectedSealNumber: String? = nil
+    ) async throws -> SealVerification {
+        let env: Envelope<SealVerification> = try await api.mutation(
+            "visualIntelligence.verifySeal",
+            input: SealInput(imageBase64: imageBase64, mimeType: mimeType, expectedSealNumber: expectedSealNumber)
+        )
+        return env.data
+    }
+
+    func inspectDVIR(
+        imageBase64: String,
+        mimeType: String = "image/jpeg",
+        inspectionPoint: String? = nil
+    ) async throws -> DVIRInspection {
+        let env: Envelope<DVIRInspection> = try await api.mutation(
+            "visualIntelligence.inspectDVIR",
+            input: DVIRInput(imageBase64: imageBase64, mimeType: mimeType, inspectionPoint: inspectionPoint)
+        )
+        return env.data
+    }
+
+    func assessCargo(
+        imageBase64: String,
+        mimeType: String = "image/jpeg"
+    ) async throws -> CargoCondition {
+        let env: Envelope<CargoCondition> = try await api.mutation(
+            "visualIntelligence.assessCargo",
+            input: ImageInput(imageBase64: imageBase64, mimeType: mimeType)
+        )
+        return env.data
+    }
+
+    func verifyPOD(
+        imageBase64: String,
+        mimeType: String = "image/jpeg",
+        loadNumber: String? = nil,
+        consigneeName: String? = nil
+    ) async throws -> PODVerification {
+        let env: Envelope<PODVerification> = try await api.mutation(
+            "visualIntelligence.verifyPOD",
+            input: PODInput(imageBase64: imageBase64, mimeType: mimeType, loadNumber: loadNumber, consigneeName: consigneeName)
+        )
+        return env.data
+    }
+
+    func mapFacility(
+        imageBase64: String,
+        mimeType: String = "image/jpeg"
+    ) async throws -> FacilityMapping {
+        let env: Envelope<FacilityMapping> = try await api.mutation(
+            "visualIntelligence.mapFacility",
+            input: ImageInput(imageBase64: imageBase64, mimeType: mimeType)
+        )
+        return env.data
+    }
+
+    func assessDamage(
+        imageBase64: String,
+        mimeType: String = "image/jpeg"
+    ) async throws -> DamageAssessment {
+        let env: Envelope<DamageAssessment> = try await api.mutation(
+            "visualIntelligence.assessDamage",
+            input: ImageInput(imageBase64: imageBase64, mimeType: mimeType)
+        )
+        return env.data
+    }
+
+    func reportRoadCondition(
+        imageBase64: String,
+        mimeType: String = "image/jpeg"
+    ) async throws -> RoadCondition {
+        let env: Envelope<RoadCondition> = try await api.mutation(
+            "visualIntelligence.reportRoadCondition",
+            input: ImageInput(imageBase64: imageBase64, mimeType: mimeType)
+        )
+        return env.data
+    }
+
+    // MARK: - UIImage helper
+
+    #if canImport(UIKit)
+    /// Convenience: convert a UIImage to base64 JPEG (0.85 quality).
+    /// Returns nil when the conversion fails (caller should fall back
+    /// to a neutral "couldn't read photo" toast).
+    static func base64(from image: UIImage, quality: CGFloat = 0.85) -> String? {
+        image.jpegData(compressionQuality: quality)?.base64EncodedString()
+    }
+    #endif
+}
+
+// MARK: - authorityRouter (lease-on / DOT-MC sharing)
+//
+// Mirrors `frontend/server/routers/authority.ts` 1:1. The web platform
+// is the source of truth for the data model. Lease types map to
+// FMCSR Part 376:
+//   • full_lease  — long-term lease-on, owner-op leased to a fleet
+//   • trip_lease  — single trip under another carrier's authority
+//   • interline   — two carriers share a haul (handoff at terminal)
+//   • seasonal    — produce / harvest / hurricane response
+// Compliance gates the lease activation: all 4 Part 376 boxes must
+// be checked (written lease, exclusive control, insurance coverage,
+// vehicle marking) before status can flip to "active."
+
+struct AuthorityAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: Wire types
+
+    struct OwnAuthority: Decodable {
+        let companyId: Int
+        let companyName: String?
+        let legalName: String?
+        let mcNumber: String?
+        let dotNumber: String?
+        let insurancePolicy: String?
+        let insuranceExpiry: String?
+        let complianceStatus: String?
+        let isActive: Bool?
+    }
+
+    struct LeaseRow: Decodable, Identifiable {
+        let id: Int
+        let leaseType: String
+        let status: String
+        let mcNumber: String?
+        let dotNumber: String?
+        let startDate: String?
+        let endDate: String?
+        let revenueSharePercent: Double?
+        let originCity: String?
+        let originState: String?
+        let destinationCity: String?
+        let destinationState: String?
+        let hasWrittenLease: Bool?
+        let hasExclusiveControl: Bool?
+        let hasInsuranceCoverage: Bool?
+        let hasVehicleMarking: Bool?
+        let lessorSignedAt: String?
+        let lesseeSignedAt: String?
+        // Resolved on the lessee/lessor side respectively
+        let lessorCompanyName: String?
+        let lessorMcNumber: String?
+        let lessorDotNumber: String?
+        let lesseeName: String?
+        let notes: String?
+    }
+
+    struct MyAuthority: Decodable {
+        let ownAuthority: OwnAuthority?
+        let activeLeasesAsLessee: [LeaseRow]
+        let activeLeasesAsLessor: [LeaseRow]
+        let complianceScore: Int
+    }
+
+    func getMyAuthority() async throws -> MyAuthority {
+        try await api.queryNoInput("authority.getMyAuthority")
+    }
+
+    struct GetMyLeasesInput: Encodable { let status: String? }
+    func getMyLeases(status: String? = nil) async throws -> [LeaseRow] {
+        try await api.query("authority.getMyLeases", input: GetMyLeasesInput(status: status))
+    }
+
+    struct LeaseStats: Decodable {
+        let activeAsLessor: Int?
+        let activeAsLessee: Int?
+        let pendingSignature: Int?
+        let expired: Int?
+        let totalLeases: Int?
+    }
+
+    func getLeaseStats() async throws -> LeaseStats {
+        try await api.queryNoInput("authority.getLeaseStats")
+    }
+
+    // MARK: - Browse + search authorities
+
+    struct AuthorityListing: Decodable, Identifiable {
+        var id: Int { companyId }
+        let companyId: Int
+        let companyName: String?
+        let legalName: String?
+        let mcNumber: String?
+        let dotNumber: String?
+        let complianceStatus: String?
+        let insuranceValid: Bool?
+    }
+
+    struct BrowseInput: Encodable { let search: String? }
+
+    func browseAuthorities(search: String? = nil) async throws -> [AuthorityListing] {
+        try await api.query("authority.browseAuthorities", input: BrowseInput(search: search))
+    }
+
+    // MARK: - Create lease
+
+    struct CreateLeaseInput: Encodable {
+        let lessorCompanyId: Int
+        let lesseeUserId: Int?
+        let leaseType: String
+        let startDate: String?
+        let endDate: String?
+        let revenueSharePercent: Double?
+        let loadId: Int?
+        let originCity: String?
+        let originState: String?
+        let destinationCity: String?
+        let destinationState: String?
+        let trailerTypes: [String]?
+        let notes: String?
+    }
+
+    struct CreateLeaseAck: Decodable {
+        let success: Bool
+        let leaseId: Int
+    }
+
+    func createLease(_ input: CreateLeaseInput) async throws -> CreateLeaseAck {
+        try await api.mutation("authority.createLease", input: input)
+    }
+
+    /// FMCSA SAFER lookup variant — pass the carrier's MC/DOT and
+    /// legal name from a SAFER scrape; server creates the company
+    /// row if it doesn't exist, then creates the lease.
+    struct CreateLeaseFromFMCSAInput: Encodable {
+        let mcNumber: String
+        let dotNumber: String
+        let legalName: String
+        let leaseType: String
+        let startDate: String?
+        let endDate: String?
+        let revenueSharePercent: Double?
+        let loadId: Int?
+        let originCity: String?
+        let originState: String?
+        let destinationCity: String?
+        let destinationState: String?
+        let notes: String?
+    }
+
+    func createLeaseFromFMCSA(_ input: CreateLeaseFromFMCSAInput) async throws -> CreateLeaseAck {
+        try await api.mutation("authority.createLeaseFromFMCSA", input: input)
+    }
+
+    // MARK: - Compliance + sign + terminate
+
+    struct UpdateComplianceInput: Encodable {
+        let leaseId: Int
+        let hasWrittenLease: Bool?
+        let hasExclusiveControl: Bool?
+        let hasInsuranceCoverage: Bool?
+        let hasVehicleMarking: Bool?
+    }
+
+    struct AuthorityOkAck: Decodable { let success: Bool }
+
+    func updateCompliance(
+        leaseId: Int,
+        hasWrittenLease: Bool? = nil,
+        hasExclusiveControl: Bool? = nil,
+        hasInsuranceCoverage: Bool? = nil,
+        hasVehicleMarking: Bool? = nil
+    ) async throws -> AuthorityOkAck {
+        try await api.mutation(
+            "authority.updateCompliance",
+            input: UpdateComplianceInput(
+                leaseId: leaseId,
+                hasWrittenLease: hasWrittenLease,
+                hasExclusiveControl: hasExclusiveControl,
+                hasInsuranceCoverage: hasInsuranceCoverage,
+                hasVehicleMarking: hasVehicleMarking
+            )
+        )
+    }
+
+    struct SignLeaseInput: Encodable {
+        let leaseId: Int
+        /// "lessor" | "lessee"
+        let role: String
+    }
+
+    func signLease(leaseId: Int, role: String) async throws -> AuthorityOkAck {
+        try await api.mutation(
+            "authority.signLease",
+            input: SignLeaseInput(leaseId: leaseId, role: role)
+        )
+    }
+
+    struct TerminateLeaseInput: Encodable {
+        let leaseId: Int
+        let reason: String?
+    }
+
+    func terminateLease(leaseId: Int, reason: String? = nil) async throws -> AuthorityOkAck {
+        try await api.mutation(
+            "authority.terminateLease",
+            input: TerminateLeaseInput(leaseId: leaseId, reason: reason)
+        )
+    }
+
+    // MARK: - Equipment authority
+
+    struct EquipmentAuthority: Decodable, Identifiable {
+        var id: Int { vehicleId }
+        let vehicleId: Int
+        let vin: String?
+        let make: String?
+        let model: String?
+        let year: Int?
+        let type: String?
+        let licensePlate: String?
+        let status: String?
+        /// "own" | "leased"
+        let authoritySource: String
+        let leaseId: Int?
+        let leaseMcNumber: String?
+        let leaseDotNumber: String?
+    }
+
+    func getEquipmentAuthority() async throws -> [EquipmentAuthority] {
+        try await api.queryNoInput("authority.getEquipmentAuthority")
+    }
+}
+
+// MARK: - adaptiveFeeRouter (EusoWallet Adaptive Fee Engine)
+//
+// Mirrors `frontend/server/routers/adaptiveFee.ts` 1:1. The web
+// platform is the source of truth — server runs the 6-dimension
+// multiplier × cycle-dampener × MHI math and returns a fully-priced
+// breakdown the iOS UI just renders. Driver-side surfaces use
+// `estimate` (no audit log; cheap to call on every load card focus)
+// and `getMHI` (one chip on Home + Wallet showing the current
+// market phase). The catalyst-side `calculate` mutation runs at
+// load booking — iOS doesn't call that directly.
+
+struct AdaptiveFeeAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: - Wire types
+
+    /// `AdaptiveFeeResult.breakdown` — every multiplier the server
+    /// applied. Drivers see this as a per-line trace ("vertical x
+    /// 1.18 reefer", "hazmat x 1.25", "cycle x 1.15 contraction")
+    /// so they can argue with the carrier when the fee feels wrong.
+    struct FeeBreakdown: Decodable, Hashable {
+        let baseRate: Double
+        let countryMultiplier: Double
+        let verticalMultiplier: Double
+        let productMultiplier: Double
+        let hazmatMultiplier: Double
+        let distanceMultiplier: Double
+        let cycleDampener: Double
+        let loadTypeAdjustment: Double
+        let rawRate: Double
+        let floor: Double
+        let ceiling: Double
+        let cyclePhase: String
+        let marketHealthIndex: Double
+        let volumeDiscount: Double
+        let gamificationDiscount: Double
+    }
+
+    struct FeeResult: Decodable, Hashable {
+        let effectiveRate: Double
+        let feeAmount: Double
+        let carrierPayment: Double
+        let breakdown: FeeBreakdown
+    }
+
+    // MARK: - estimate (driver-facing live preview)
+
+    struct EstimateInput: Encodable {
+        let loadRate: Double
+        let originCountry: String
+        let destCountry: String
+        let vertical: String
+        let equipmentType: String
+        let hazmatClass: String
+        let distanceMiles: Double
+        let loadType: String
+    }
+
+    /// `adaptiveFee.estimate` — live fee preview without writing to
+    /// the audit log. Use on load detail to show drivers what they'd
+    /// net before they tap Book. Defaults match the playbook's
+    /// "domestic dry van spot" baseline so a missing field doesn't
+    /// blow up the call.
+    func estimate(
+        loadRate: Double,
+        originCountry: String = "US",
+        destCountry: String = "US",
+        vertical: String = "general_freight",
+        equipmentType: String = "dry_van",
+        hazmatClass: String = "none",
+        distanceMiles: Double = 500,
+        loadType: String = "spot"
+    ) async throws -> FeeResult {
+        try await api.query(
+            "adaptiveFee.estimate",
+            input: EstimateInput(
+                loadRate: loadRate,
+                originCountry: originCountry,
+                destCountry: destCountry,
+                vertical: vertical,
+                equipmentType: equipmentType,
+                hazmatClass: hazmatClass,
+                distanceMiles: distanceMiles,
+                loadType: loadType
+            )
+        )
+    }
+
+    // MARK: - MHI + Cycle dampener
+
+    struct MHISnapshot: Decodable {
+        let composite: Double
+        let cyclePhase: String   // EXPANSION | NEUTRAL | CONTRACTION
+        let dampener: Double
+        let floor: Double
+        let ceiling: Double
+        let asOf: String?
+        let components: MHIComponents?
+    }
+
+    struct MHIComponents: Decodable, Hashable {
+        let loadToTruck: Double?
+        let truckingPPI: Double?
+        let dieselDelta: Double?
+        let contractSpotSpread: Double?
+    }
+
+    func getMHI() async throws -> MHISnapshot {
+        try await api.queryNoInput("adaptiveFee.getMHI")
+    }
+
+    struct DampenerSnapshot: Decodable {
+        let cyclePhase: String
+        let dampener: Double
+        let floor: Double
+        let ceiling: Double
+    }
+
+    struct DampenerInput: Encodable { let mhiOverride: Double? }
+    func getCycleDampener(mhiOverride: Double? = nil) async throws -> DampenerSnapshot {
+        try await api.query(
+            "adaptiveFee.getCycleDampener",
+            input: DampenerInput(mhiOverride: mhiOverride)
+        )
+    }
+
+    // MARK: - Fintech stack
+
+    struct FintechOption: Decodable, Identifiable, Hashable {
+        var id: String { type }
+        let type: String        // instant_pay | cash_advance | quick_pay_net7 | quick_pay_net3 | same_day | factoring
+        let label: String
+        let feePercent: Double?
+        let flatFee: Double?
+        let description: String?
+        let active: Bool
+    }
+
+    func getAvailableFintech() async throws -> [FintechOption] {
+        try await api.queryNoInput("adaptiveFee.getAvailableFintech")
+    }
+
+    struct FintechFeeInput: Encodable {
+        let type: String
+        let amount: Double
+    }
+
+    struct FintechFeeAck: Decodable {
+        let type: String
+        let amount: Double
+        let feeAmount: Double
+        let netToCarrier: Double
+    }
+
+    func calculateFintechFee(type: String, amount: Double) async throws -> FintechFeeAck {
+        try await api.mutation(
+            "adaptiveFee.calculateFintechFee",
+            input: FintechFeeInput(type: type, amount: amount)
+        )
+    }
+
+    struct EngineStatus: Decodable {
+        let mode: String           // shadow | full | off
+        let mhi: Double?
+        let cyclePhase: String?
+        let lastUpdated: String?
+    }
+
+    func getEngineStatus() async throws -> EngineStatus {
+        try await api.queryNoInput("adaptiveFee.getEngineStatus")
+    }
+}
+
+// MARK: - usersRouter
+//
+// Server parity: `frontend/server/routers/users.ts`. This file currently
+// surfaces the cross-role notification-preferences matrix used by the
+// Shipper Settings brick (211) and any future role-Settings ports. Other
+// `users.*` procedures (admin impersonation, role updates, tenant
+// introspection) are deliberately NOT wrapped here — they are admin-
+// only flows and the iOS Driver/Shipper/Carrier/Broker/Catalyst surfaces
+// have no consumers for them. Adding a wrapper without a consumer would
+// be a doctrine §13 no-fake-data violation by the same logic that keeps
+// other admin-only flows out of the iOS API layer.
+//
+// Both procedures wrapped below are `protectedProcedure` server-side, so
+// any authenticated user can read and update their own preferences.
+// Server-side the row in `notificationPreferences` is keyed on
+// `userId = ctx.user.id` — there is no shipper/driver/broker variant.
+//
+// Returned shape (full 11-boolean matrix):
+//
+//   {
+//     emailNotifications: bool        // master email switch
+//     pushNotifications:  bool        // master push switch
+//     smsNotifications:   bool        // master SMS switch
+//     inAppNotifications: bool        // in-app banner toasts
+//     loadUpdates:        bool        // load posted / assigned / status change
+//     bidAlerts:          bool        // new bid received on a posted load
+//     paymentAlerts:      bool        // settlement / payout / invoice paid
+//     messageAlerts:      bool        // new chat message
+//     missionAlerts:      bool        // gamification mission / streak / crate
+//     promotionalAlerts:  bool        // marketing / referral / new feature
+//     weeklyDigest:       bool        // Monday digest email
+//   }
+//
+// `updateNotificationPreferences` accepts the same 11 fields, all
+// optional — the server does a partial update (`UPDATE … SET <only the
+// supplied keys>` semantics via Drizzle's `.set(input)` with `updatedAt`
+// stamped). On the client we typically send a single field at a time so
+// the optimistic UI flip and the server reconcile happen on the same
+// boolean. Server returns `{ success: true }` and does NOT echo the new
+// matrix — clients that need the canonical state should `.refresh()`
+// from `users.getNotificationPreferences` after the mutation lands.
+//
+
+struct UsersAPI {
+    unowned let api: EusoTripAPI
+
+    /// 11-boolean preference matrix. Mirrors the row shape of
+    /// `drizzle/schema.ts → notificationPreferences`. Defaults below
+    /// are the same as the server's "no row exists yet" defaults so
+    /// the UI never has to special-case a brand-new account.
+    struct PreferenceMatrix: Decodable, Equatable {
+        let emailNotifications: Bool
+        let pushNotifications: Bool
+        let smsNotifications: Bool
+        let inAppNotifications: Bool
+        let loadUpdates: Bool
+        let bidAlerts: Bool
+        let paymentAlerts: Bool
+        let messageAlerts: Bool
+        let missionAlerts: Bool
+        let promotionalAlerts: Bool
+        let weeklyDigest: Bool
+
+        /// Server-aligned default matrix. Used by the Settings UI when
+        /// rendering before the first round-trip lands so the toggles
+        /// don't flash off→on as the network resolves.
+        static let serverDefault = PreferenceMatrix(
+            emailNotifications: true,
+            pushNotifications: true,
+            smsNotifications: false,
+            inAppNotifications: true,
+            loadUpdates: true,
+            bidAlerts: true,
+            paymentAlerts: true,
+            messageAlerts: true,
+            missionAlerts: true,
+            promotionalAlerts: false,
+            weeklyDigest: true
+        )
+    }
+
+    /// Partial-update payload. Every field is optional — only the
+    /// supplied keys move on the server. The Settings UI sends a single
+    /// `Patch` per toggle flip so optimistic and authoritative states
+    /// converge on one boolean at a time.
+    struct Patch: Encodable {
+        var emailNotifications: Bool?
+        var pushNotifications: Bool?
+        var smsNotifications: Bool?
+        var inAppNotifications: Bool?
+        var loadUpdates: Bool?
+        var bidAlerts: Bool?
+        var paymentAlerts: Bool?
+        var messageAlerts: Bool?
+        var missionAlerts: Bool?
+        var promotionalAlerts: Bool?
+        var weeklyDigest: Bool?
+
+        // Encode only the non-nil keys so server's `.set(input)` writes
+        // exactly the fields the user toggled — leaving the rest alone.
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: K.self)
+            if let v = emailNotifications  { try c.encode(v, forKey: .emailNotifications) }
+            if let v = pushNotifications   { try c.encode(v, forKey: .pushNotifications) }
+            if let v = smsNotifications    { try c.encode(v, forKey: .smsNotifications) }
+            if let v = inAppNotifications  { try c.encode(v, forKey: .inAppNotifications) }
+            if let v = loadUpdates         { try c.encode(v, forKey: .loadUpdates) }
+            if let v = bidAlerts           { try c.encode(v, forKey: .bidAlerts) }
+            if let v = paymentAlerts       { try c.encode(v, forKey: .paymentAlerts) }
+            if let v = messageAlerts       { try c.encode(v, forKey: .messageAlerts) }
+            if let v = missionAlerts       { try c.encode(v, forKey: .missionAlerts) }
+            if let v = promotionalAlerts   { try c.encode(v, forKey: .promotionalAlerts) }
+            if let v = weeklyDigest        { try c.encode(v, forKey: .weeklyDigest) }
+        }
+
+        private enum K: String, CodingKey {
+            case emailNotifications, pushNotifications, smsNotifications, inAppNotifications
+            case loadUpdates, bidAlerts, paymentAlerts, messageAlerts, missionAlerts
+            case promotionalAlerts, weeklyDigest
+        }
+    }
+
+    struct UpdateAck: Decodable {
+        let success: Bool
+    }
+
+    /// `users.getNotificationPreferences` — query, no input. Returns the
+    /// full 11-boolean matrix for the current authenticated user. Server
+    /// upserts a default row on first read.
+    func getNotificationPreferences() async throws -> PreferenceMatrix {
+        try await api.queryNoInput("users.getNotificationPreferences")
+    }
+
+    /// `users.updateNotificationPreferences` — mutation, partial update.
+    /// Pass a `Patch` with only the keys that changed. Returns
+    /// `{ success: true }`. The Settings UI typically follows up with a
+    /// `getNotificationPreferences()` to reconcile, but optimistic flips
+    /// can stand on this ack alone for non-critical preferences.
+    func updateNotificationPreferences(_ patch: Patch) async throws -> UpdateAck {
+        try await api.mutation("users.updateNotificationPreferences", input: patch)
+    }
+}
+
+// MARK: - EusoTicketAPI
+//
+// Bills of Lading + run tickets + per-haul receipts. Mirrors
+// `frontend/server/routers/eusoTicket.ts` 1:1. Used by 089_MeEusoTickets
+// driver screen + (future) terminal-manager surfaces.
+//
+// All procedures are `protectedProcedure` server-side — any authenticated
+// user (DRIVER included) can read their own tickets/BOLs. Mutations
+// (status changes, PDF generation) authorize off the resolver context,
+// not the role gate, so the driver-facing list/PDF flow works without
+// the carrier-sheet role-gate problem `drivers.getMyCarrier` had.
+//
+// Receipts (lumper / scale / fuel / toll) ride on the Documents Center
+// (HubCategory.loadDocs) — they are the same `documents` table rows
+// the BOL list reads, just classified by type. No separate router.
+struct EusoTicketAPI {
+    unowned let api: EusoTripAPI
+
+    /// Driver-facing list row for run tickets. Mirrors the `tickets[]`
+    /// shape returned by `eusoTicket.listRunTickets`.
+    struct RunTicketRow: Decodable, Identifiable {
+        let ticketNumber: String
+        let status: String
+        let productName: String?
+        let netVolume: Double?
+        let apiGravity: Double?
+        let driverName: String?
+        let vehiclePlate: String?
+        let terminalName: String?
+        let createdAt: String?
+        let spectraMatchVerified: Bool?
+        let spectraMatchConfidence: Double?
+
+        var id: String { ticketNumber }
+    }
+
+    struct RunTicketList: Decodable {
+        let tickets: [RunTicketRow]
+        let total: Int
+    }
+
+    /// Driver-facing list row for BOLs. Mirrors `eusoTicket.listBOLs`.
+    struct BOLRow: Decodable, Identifiable {
+        let bolNumber: String?
+        let loadNumber: String?
+        let status: String
+        let driverName: String?
+        let fileUrl: String?
+        let createdAt: String?
+
+        var id: String { bolNumber ?? UUID().uuidString }
+    }
+
+    struct BOLList: Decodable {
+        let bols: [BOLRow]
+        let total: Int
+    }
+
+    /// Terminal stats — used by the EusoTicket header summary strip.
+    struct TerminalStats: Decodable {
+        let terminalId: String
+        let todayTickets: Int
+        let todayVolume: Double
+        let weekTickets: Int
+        let weekVolume: Double
+        let monthTickets: Int
+        let monthVolume: Double
+        let avgLoadTime: Double?
+        let avgApiGravity: Double?
+        let pendingTickets: Int
+        let pendingBOLs: Int
+        struct CrudeType: Decodable, Hashable {
+            let name: String
+            let count: Int
+        }
+        let topCrudeTypes: [CrudeType]
+    }
+
+    /// Single run-ticket detail — broader shape with hazmat / SpectraMatch
+    /// fields. Many fields are optional to absorb the server's empty
+    /// "not_found" response without throwing.
+    struct RunTicketDetail: Decodable {
+        let ticketNumber: String
+        let status: String
+        let loadId: String?
+        let catalystId: String?
+        let driverId: String?
+        let vehicleId: String?
+        let originTerminalId: String?
+        let productName: String?
+        let crudeType: String?
+        let apiGravity: Double?
+        let bsw: Double?
+        let sulfurContent: Double?
+        let temperature: Double?
+        let grossVolume: Double?
+        let netVolume: Double?
+        let grossWeight: Double?
+        let netWeight: Double?
+        let loadStartTime: String?
+        let loadEndTime: String?
+        let rackNumber: String?
+        let bayNumber: String?
+        let meterNumber: String?
+        let sealNumbers: [String]?
+        let spectraMatchVerified: Bool?
+        let spectraMatchConfidence: Double?
+        let createdAt: String?
+    }
+
+    struct PDFGenerated: Decodable {
+        let success: Bool
+        let documentUrl: String
+        let generatedAt: String
+        let ticketNumber: String?
+        let bolNumber: String?
+    }
+
+    struct StatusUpdated: Decodable {
+        let success: Bool
+        let updatedAt: String
+        let status: String
+        let ticketNumber: String?
+        let bolNumber: String?
+    }
+
+    // MARK: List
+
+    /// `eusoTicket.listRunTickets` — driver scoped to their own loads
+    /// when the server resolves `ctx.user.id` (no per-driver filter
+    /// needed in input; the server already filters via `loads.driverId`
+    /// when called from a driver context).
+    func listRunTickets(driverId: String? = nil,
+                       status: String? = nil,
+                       limit: Int = 20) async throws -> RunTicketList {
+        struct Input: Encodable {
+            let driverId: String?
+            let status: String?
+            let limit: Int
+        }
+        return try await api.query(
+            "eusoTicket.listRunTickets",
+            input: Input(driverId: driverId, status: status, limit: limit)
+        )
+    }
+
+    /// `eusoTicket.listBOLs`.
+    func listBOLs(status: String? = nil, limit: Int = 20) async throws -> BOLList {
+        struct Input: Encodable {
+            let status: String?
+            let limit: Int
+        }
+        return try await api.query(
+            "eusoTicket.listBOLs",
+            input: Input(status: status, limit: limit)
+        )
+    }
+
+    /// `eusoTicket.getRunTicket`.
+    func getRunTicket(ticketNumber: String) async throws -> RunTicketDetail {
+        struct Input: Encodable { let ticketNumber: String }
+        return try await api.query(
+            "eusoTicket.getRunTicket",
+            input: Input(ticketNumber: ticketNumber)
+        )
+    }
+
+    /// `eusoTicket.getTerminalStats`.
+    func getTerminalStats(terminalId: String) async throws -> TerminalStats {
+        struct Input: Encodable { let terminalId: String }
+        return try await api.query(
+            "eusoTicket.getTerminalStats",
+            input: Input(terminalId: terminalId)
+        )
+    }
+
+    // MARK: Status mutations
+
+    /// `eusoTicket.updateRunTicketStatus`.
+    func updateRunTicketStatus(ticketNumber: String,
+                               status: String,
+                               notes: String? = nil) async throws -> StatusUpdated {
+        struct Input: Encodable {
+            let ticketNumber: String
+            let status: String
+            let notes: String?
+        }
+        return try await api.mutation(
+            "eusoTicket.updateRunTicketStatus",
+            input: Input(ticketNumber: ticketNumber, status: status, notes: notes)
+        )
+    }
+
+    /// `eusoTicket.updateBOLStatus`.
+    func updateBOLStatus(bolNumber: String,
+                        status: String,
+                        notes: String? = nil,
+                        proofOfDelivery: String? = nil) async throws -> StatusUpdated {
+        struct Input: Encodable {
+            let bolNumber: String
+            let status: String
+            let notes: String?
+            let proofOfDelivery: String?
+        }
+        return try await api.mutation(
+            "eusoTicket.updateBOLStatus",
+            input: Input(bolNumber: bolNumber, status: status,
+                         notes: notes, proofOfDelivery: proofOfDelivery)
+        )
+    }
+
+    // MARK: PDF generation
+
+    /// `eusoTicket.generateRunTicketPDF` — server returns a relative
+    /// path under `/documents/run-tickets/`; iOS resolves it against
+    /// the API origin like other document URLs.
+    func generateRunTicketPDF(ticketNumber: String) async throws -> PDFGenerated {
+        struct Input: Encodable { let ticketNumber: String }
+        return try await api.mutation(
+            "eusoTicket.generateRunTicketPDF",
+            input: Input(ticketNumber: ticketNumber)
+        )
+    }
+
+    /// `eusoTicket.generateBOLPDF`.
+    func generateBOLPDF(bolNumber: String) async throws -> PDFGenerated {
+        struct Input: Encodable { let bolNumber: String }
+        return try await api.mutation(
+            "eusoTicket.generateBOLPDF",
+            input: Input(bolNumber: bolNumber)
+        )
+    }
+}

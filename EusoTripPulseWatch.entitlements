@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.developer.healthkit</key>
+    <true/>
+    <key>com.apple.developer.healthkit.background-delivery</key>
+    <true/>
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.com.app.eusotrip</string>
+    </array>
+    <key>aps-environment</key>
+    <string>development</string>
+    <key>com.apple.developer.location.push</key>
+    <true/>
+    <!--
+      Shared Keychain access group so the watch + iPhone can both read
+      the Esang auth token without WCSession being the sole transport.
+      Prevents the "stuck pairing" state when WCSession is cold on a
+      fresh install and the watch has no way to recover the token.
+    -->
+    <key>keychain-access-groups</key>
+    <array>
+        <string>$(AppIdentifierPrefix)com.app.eusotrip.shared</string>
+    </array>
+</dict>
+</plist>

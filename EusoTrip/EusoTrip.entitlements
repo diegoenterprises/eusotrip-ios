@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.developer.weatherkit</key>
+	<true/>
+	<!--
+	  Shared container for iOS ↔ Pulse Watch App. Used for shared
+	  UserDefaults and file storage alongside WCSession, so HOS,
+	  load, and auth state stay in sync across the two bundles.
+	  Must match the Watch app's entitlement.
+	-->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.app.eusotrip</string>
+	</array>
+	<!--
+	  APNs environment. 'development' is what Xcode injects for debug
+	  builds; the App Store / TestFlight provisioning profile auto-
+	  remaps this to 'production' at archive time, so a single value
+	  here covers both sandboxes without a second entitlements file.
+	-->
+	<key>aps-environment</key>
+	<string>development</string>
+	<!--
+	  Shared Keychain access group — paired with the watch entitlement
+	  so both bundles can read/write the Esang auth token under the
+	  same kSecAttrAccessGroup, removing WCSession as the single
+	  pairing-transport SPOF.
+	-->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.app.eusotrip.shared</string>
+	</array>
+</dict>
+</plist>

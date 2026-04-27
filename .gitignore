@@ -1,0 +1,15 @@
+# Xcode
+.DS_Store
+build/
+DerivedData/
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+
+# Secrets — never commit
+EusoTrip.xcconfig
+EusoTrip.xcconfig.local
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved

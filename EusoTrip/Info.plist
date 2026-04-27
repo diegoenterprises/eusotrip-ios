@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<true/>
+		<key>UISceneConfigurations</key>
+		<dict/>
+	</dict>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+		<!-- HOS clock + geofence + ESANG voice + load lifecycle progress
+		     all need to keep ticking when the wrist is the only screen
+		     awake. Without `location` the geofence enter/exit events
+		     never fire while the phone is locked; without `audio` the
+		     ESANG voice session drops the moment the screen sleeps;
+		     without `fetch` + `processing` the BGTaskScheduler stops
+		     waking the app for the 5-min HOS poll. -->
+		<string>location</string>
+		<string>audio</string>
+		<string>fetch</string>
+		<string>processing</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<!-- Identifiers BGTaskScheduler will allow when registered.
+		     `com.eusotrip.hos.poll` powers the 5-min HOS dashboard
+		     refresh; `com.eusotrip.outbox.drain` flushes the offline
+		     mutation queue when reachability flaps positive. -->
+		<string>com.eusotrip.hos.poll</string>
+		<string>com.eusotrip.outbox.drain</string>
+	</array>
+	<!-- Always + WhenInUse so the geofence handler keeps firing when
+	     the driver pockets the phone mid-route. The when-in-use string
+	     stays as the always-permission toggle's parent description per
+	     Apple's 2-step prompt flow. -->
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>EusoTrip uses your background location so geofence arrival, automatic HOS state changes, and ESANG smart-stop suggestions keep working when your phone is locked or in your pocket.</string>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<!-- Usage descriptions -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>EusoTrip uses your location to show route weather, traffic, and nearby loads, and to automatically advance your trip screens when you arrive at pickup or delivery.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>EusoTrip uses the microphone for ESANG voice commands so you can talk to your copilot hands-free.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>EusoTrip uses motion data to auto-detect when you start and stop driving so your HOS clock and trip screens advance without a tap.</string>
+	<key>NSNearbyInteractionUsageDescription</key>
+	<string>EusoTrip uses Ultra-Wideband to help you dock your truck precisely at loading bays and to coordinate hazmat escort handoffs with nearby drivers.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>EusoTrip transcribes what you say to ESANG on-device so your copilot can answer and navigate the app for you.</string>
+	<!-- HERE Maps OAuth + JS credentials. Values flow from EusoTrip.xcconfig
+	     via Xcode's $(VAR) substitution at Info.plist preprocessing time. -->
+	<key>HEREAccessKeyId</key>
+	<string>$(HERE_ACCESS_KEY_ID)</string>
+	<key>HEREAccessKeySecret</key>
+	<string>$(HERE_ACCESS_KEY_SECRET)</string>
+	<key>HEREClientId</key>
+	<string>$(HERE_CLIENT_ID)</string>
+	<key>HEREUserId</key>
+	<string>$(HERE_USER_ID)</string>
+	<key>HERETokenEndpointURL</key>
+	<string>$(HERE_TOKEN_ENDPOINT_URL)</string>
+	<key>HEREJSApiKey</key>
+	<string>$(HERE_JS_API_KEY)</string>
+</dict>
+</plist>

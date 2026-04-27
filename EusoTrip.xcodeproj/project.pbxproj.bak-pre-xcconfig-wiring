@@ -1,0 +1,1494 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 71;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A1000000000000000000AABA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000AAB9 /* Assets.xcassets */; };
+		A1000000000000000000AABD /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000AABC /* Preview Assets.xcassets */; };
+		A104A92790FBBAD8E412C5F3 /* AppRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F5325921E558CD8ED37DBF /* AppRoot.swift */; };
+		A10AAEEEAC9C0054F8B34905 /* 019_HosDutyStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10C7CD83E4BB6CA038192D0 /* 019_HosDutyStatus.swift */; };
+		A11E8603E79595216A3607DB /* 004_ResetPassword.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F6E6E09C5EB9568612F3E1 /* 004_ResetPassword.swift */; };
+		A12E1A1C0010CE0FF1000001 /* HereMapsConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000002 /* HereMapsConfig.swift */; };
+		A12E1A1C0010CE0FF1000003 /* TruckProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000004 /* TruckProfile.swift */; };
+		A12E1A1C0010CE0FF1000005 /* HereRouteModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000006 /* HereRouteModels.swift */; };
+		A12E1A1C0010CE0FF1000007 /* HereFlexiblePolyline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000008 /* HereFlexiblePolyline.swift */; };
+		A12E1A1C0010CE0FF1000009 /* HereRoutingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100000A /* HereRoutingClient.swift */; };
+		A12E1A1C0010CE0FF100000B /* HereGeocodingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100000C /* HereGeocodingClient.swift */; };
+		A12E1A1C0010CE0FF100000D /* HereMatrixClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100000E /* HereMatrixClient.swift */; };
+		A12E1A1C0010CE0FF100000F /* HereTileOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000010 /* HereTileOverlay.swift */; };
+		A12E1A1C0010CE0FF1000011 /* HereMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000012 /* HereMapView.swift */; };
+		A12E1A1C0010CE0FF1000021 /* HEREAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000016 /* HEREAuthService.swift */; };
+		A12E1A1C0010CE0FF1000017 /* EusoAddressField.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000018 /* EusoAddressField.swift */; };
+		A12E1A1C0010CE0FF1000019 /* EusoHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100001A /* EusoHeader.swift */; };
+		A12E1A1C0010CE0FF100001B /* EusoBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100001C /* EusoBadge.swift */; };
+		A12E1A1C0010CE0FF100001D /* LatLongParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100001E /* LatLongParser.swift */; };
+		A143A81AF94A185B0C5FF8D1 /* DriverHomeViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1EF89B1CAB8863EE1308360 /* DriverHomeViewModel.swift */; };
+		A144AC1DCD36EDC1A2891416 /* EusoTripApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1006F894BE68F2F15836F50 /* EusoTripApp.swift */; };
+		A14728D41BAA4F36F0F999C1 /* 014_ApproachingPickup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A146716C21F5FFF98BC03896 /* 014_ApproachingPickup.swift */; };
+		A147FB466ACE52CB7A92127C /* Load.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A6E1B8A95A32BDBADB148B /* Load.swift */; };
+		A14C5A02BB0F8BCB48A18B6C /* 011_PretripDVIR.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A34909AFFDFF756FF363F3 /* 011_PretripDVIR.swift */; };
+		A14CB5B2DAD7FD734291AFDD /* ForgotPasswordViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D507CFE4BE8224D0EF83E2 /* ForgotPasswordViewModel.swift */; };
+		A153A997FE2A3F8F703A23A7 /* 005_TermsOfService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A14C271DA98CF1117DD59F15 /* 005_TermsOfService.swift */; };
+		A153EC9E1A9F3C628CB1A34C /* RegistrationViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D98E53AF24D307F0593138 /* RegistrationViewModel.swift */; };
+		A156FBFA78FAD20569A81A61 /* 001_SignIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = A137B3A24D20514F5C061A19 /* 001_SignIn.swift */; };
+		A157A4EE31DF3D193DFC8C8A /* 006_PrivacyPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1FC32344EC014D3FAF0ED78 /* 006_PrivacyPolicy.swift */; };
+		A157F689D9AEDCA651044E43 /* 013_ActiveEnroute.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CF9F9CF4AC5F9B6B739C60 /* 013_ActiveEnroute.swift */; };
+		A15D2066B9DD418D7A98ED9D /* EusoTripAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A16B82B4BAD14ED9D95C9A26 /* EusoTripAPI.swift */; };
+		A16BC7376B77E8DC7AA73CE6 /* AuthModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1491CB2D389CD10B33FEE22 /* AuthModels.swift */; };
+		A172C53B20BAC24CD40870B0 /* 015_AtGateAwaitingDock.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1FA70836FB725922F39A4E9 /* 015_AtGateAwaitingDock.swift */; };
+		A17EA9A0121947A6C4E1DDE9 /* HOSStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C02F30061DE34AC9D052E1 /* HOSStatus.swift */; };
+		A180A9761AF2588A94E0B9BA /* 016_PickupLoading.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C161DBC257A985CDDCC731 /* 016_PickupLoading.swift */; };
+		A189C8A4865293C026FBA23C /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B23B0093AD7B398378648C /* DesignSystem.swift */; };
+		A18C84C77B3CF73706D41A64 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D3CC244FE3B63DFF710117 /* ContentView.swift */; };
+		A18D4464B17ACF90DB16F8CE /* 020_ApproachingDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A13F901CAF5AB974AD192C6B /* 020_ApproachingDelivery.swift */; };
+		A19525BD8DF8599C5B5535AD /* 018_ActiveEnrouteLoaded.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1576D12AB9BE49E47C64A8E /* 018_ActiveEnrouteLoaded.swift */; };
+		A1978D143BA29D29AC175E7B /* Glass.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E7D7E296A5602D08D57F92 /* Glass.swift */; };
+		A1A11111111111111111F001 /* PushService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F005 /* PushService.swift */; };
+		A1A11111111111111111F002 /* RealtimeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F006 /* RealtimeService.swift */; };
+		A1A11111111111111111F003 /* GeofenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F007 /* GeofenceService.swift */; };
+		A1A11111111111111111F004 /* HOSClockService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F008 /* HOSClockService.swift */; };
+		A1A11111111111111111F010 /* UnreadMessageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F009 /* UnreadMessageStore.swift */; };
+		A1B1903E9CD06CDB06E71174 /* EusoTripSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A13B8109FC394A8921DF752F /* EusoTripSession.swift */; };
+		A1BEEF0000000000DEAD0012 /* 012_DvirSubmitted.swift in Sources */ = {isa = PBXBuildFile; fileRef = A192A329AC526EED829942B1 /* 012_DvirSubmitted.swift */; };
+		A1C242E22B722C1015AFBEF1 /* LoginViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A106400EADABFEE26276F8E8 /* LoginViewModel.swift */; };
+		A1D061193673EC398AB67E44 /* 017_PickupBolSigning.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F1968282989372CA735A10 /* 017_PickupBolSigning.swift */; };
+		A1D4E2D6D079F0A6924FACD1 /* 002_CreateAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A4741520D5DE7A968DABA8 /* 002_CreateAccount.swift */; };
+		A1E5DB630C4394232DF0D06F /* 003_ForgotPassword.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A560E135690A6A4E0E6BBC /* 003_ForgotPassword.swift */; };
+		A1E8B8FE82845A99D1285220 /* 010_DriverHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12AE74E2A03406ADC0DD5AD /* 010_DriverHome.swift */; };
+		A1F1000000000000000003AA /* Lottie in Frameworks */ = {isa = PBXBuildFile; productRef = A1F1000000000000000002AA /* Lottie */; };
+		A1F1000000000000000006AA /* intro_dark.json in Resources */ = {isa = PBXBuildFile; fileRef = A1F1000000000000000004AA /* intro_dark.json */; };
+		A1F1000000000000000007AA /* intro_light.json in Resources */ = {isa = PBXBuildFile; fileRef = A1F1000000000000000005AA /* intro_light.json */; };
+		A1F100000000000000000BAA /* IntroSplash.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F100000000000000000AAA /* IntroSplash.swift */; };
+		A1F3A1F3A1F3A1F3A1F30001 /* Inspection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F3A1F3A1F3A1F3A1F30002 /* Inspection.swift */; };
+		A1F3A1F3A1F3A1F3A1F30003 /* PretripDVIRViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F3A1F3A1F3A1F3A1F30004 /* PretripDVIRViewModel.swift */; };
+		A12E1A1C0010CE0FF1000031 /* EusoEmptyState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000032 /* EusoEmptyState.swift */; };
+		A12E1A1C0010CE0FF1000033 /* MockDataGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000034 /* MockDataGuard.swift */; };
+		A12E1A1C0010CE0FF1000035 /* DynamicStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000036 /* DynamicStore.swift */; };
+		A12E1A1C0010CE0FF1000037 /* LiveDataStores.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000038 /* LiveDataStores.swift */; };
+		A12E1A1C0010CE0FF1000039 /* DriverStoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100003A /* DriverStoreModels.swift */; };
+		A21A9C7F5E4D3B2A1C9876AA /* 021_AtReceiverGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21A9C7F5E4D3B2A1C9876BB /* 021_AtReceiverGate.swift */; };
+		A22A9C7F5E4D3B2A1C9876CC /* 022_DockAssigned.swift in Sources */ = {isa = PBXBuildFile; fileRef = A22A9C7F5E4D3B2A1C9876DD /* 022_DockAssigned.swift */; };
+		A23A9C7F5E4D3B2A1C9876EE /* 023_BackingIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = A23A9C7F5E4D3B2A1C9876FF /* 023_BackingIn.swift */; };
+		A24A9C7F5E4D3B2A1C987700 /* 024_Unloading.swift in Sources */ = {isa = PBXBuildFile; fileRef = A24A9C7F5E4D3B2A1C987711 /* 024_Unloading.swift */; };
+		A25A9C7F5E4D3B2A1C987722 /* 025_Paperwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = A25A9C7F5E4D3B2A1C987733 /* 025_Paperwork.swift */; };
+		A26A9C7F5E4D3B2A1C987744 /* 026_OffDuty.swift in Sources */ = {isa = PBXBuildFile; fileRef = A26A9C7F5E4D3B2A1C987755 /* 026_OffDuty.swift */; };
+		A27A9C7F5E4D3B2A1C987766 /* 027_NextLoadBrief.swift in Sources */ = {isa = PBXBuildFile; fileRef = A27A9C7F5E4D3B2A1C987777 /* 027_NextLoadBrief.swift */; };
+		A28A9C7F5E4D3B2A1C987788 /* 028_LoadLockedPrehaul.swift in Sources */ = {isa = PBXBuildFile; fileRef = A28A9C7F5E4D3B2A1C987799 /* 028_LoadLockedPrehaul.swift */; };
+		A29A9C7F5E4D3B2A1C9877AA /* 029_PickupArrival.swift in Sources */ = {isa = PBXBuildFile; fileRef = A29A9C7F5E4D3B2A1C9877BB /* 029_PickupArrival.swift */; };
+		A30A9C7F5E4D3B2A1C9877CC /* 030_LoadingInProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30A9C7F5E4D3B2A1C9877DD /* 030_LoadingInProgress.swift */; };
+		A31A9C7F5E4D3B2A1C9877EE /* 031_SpectraMatchVerdict.swift in Sources */ = {isa = PBXBuildFile; fileRef = A31A9C7F5E4D3B2A1C9877FF /* 031_SpectraMatchVerdict.swift */; };
+		A32A9C7F5E4D3B2A1C988800 /* 032_DetachSequence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A32A9C7F5E4D3B2A1C988811 /* 032_DetachSequence.swift */; };
+		A33A9C7F5E4D3B2A1C988822 /* 033_BolSignoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = A33A9C7F5E4D3B2A1C988833 /* 033_BolSignoff.swift */; };
+		A34A9C7F5E4D3B2A1C988844 /* 034_DepartingPickup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A34A9C7F5E4D3B2A1C988855 /* 034_DepartingPickup.swift */; };
+		A35A9C7F5E4D3B2A1C988866 /* 035_EnRouteDrive.swift in Sources */ = {isa = PBXBuildFile; fileRef = A35A9C7F5E4D3B2A1C988877 /* 035_EnRouteDrive.swift */; };
+		A36A9C7F5E4D3B2A1C988888 /* 036_ESangSmartStop.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36A9C7F5E4D3B2A1C988899 /* 036_ESangSmartStop.swift */; };
+		A37A9C7F5E4D3B2A1C988900 /* 037_ApproachingReceiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37A9C7F5E4D3B2A1C988901 /* 037_ApproachingReceiver.swift */; };
+		A38A9C7F5E4D3B2A1C988902 /* 038_AtReceiverGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A38A9C7F5E4D3B2A1C988903 /* 038_AtReceiverGate.swift */; };
+		A39A9C7F5E4D3B2A1C988904 /* 039_BackingAssistReceiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A39A9C7F5E4D3B2A1C988905 /* 039_BackingAssistReceiver.swift */; };
+		A40C0FA9CE1A4B7E0000C011 /* MeComplianceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40C0FA9CE1A4B7E0000C012 /* MeComplianceView.swift */; };
+		A40D0FA0CE1A4B7E0000D001 /* 040_DischargeInProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40D0FA0CE1A4B7E0000D002 /* 040_DischargeInProgress.swift */; };
+		A41D0FA0CE1A4B7E0000D003 /* 041_DischargeComplete.swift in Sources */ = {isa = PBXBuildFile; fileRef = A41D0FA0CE1A4B7E0000D004 /* 041_DischargeComplete.swift */; };
+		A42D0FA0CE1A4B7E0000D005 /* 042_DisconnectAndVerify.swift in Sources */ = {isa = PBXBuildFile; fileRef = A42D0FA0CE1A4B7E0000D006 /* 042_DisconnectAndVerify.swift */; };
+		A43D0FA0CE1A4B7E0000D007 /* 043_DisconnectConfirmed.swift in Sources */ = {isa = PBXBuildFile; fileRef = A43D0FA0CE1A4B7E0000D008 /* 043_DisconnectConfirmed.swift */; };
+		A44D0FA0CE1A4B7E0000D009 /* 044_ConnectDropHose.swift in Sources */ = {isa = PBXBuildFile; fileRef = A44D0FA0CE1A4B7E0000D010 /* 044_ConnectDropHose.swift */; };
+		A45D0FA0CE1A4B7E0000D011 /* 045_DepartingReceiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A45D0FA0CE1A4B7E0000D012 /* 045_DepartingReceiver.swift */; };
+		A46D0FA0CE1A4B7E0000D013 /* 046_SequencedLegApproach.swift in Sources */ = {isa = PBXBuildFile; fileRef = A46D0FA0CE1A4B7E0000D014 /* 046_SequencedLegApproach.swift */; };
+		A47D0FA0CE1A4B7E0000D015 /* 047_ArrivalCheckpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = A47D0FA0CE1A4B7E0000D016 /* 047_ArrivalCheckpoint.swift */; };
+		A48D0FA0CE1A4B7E0000D017 /* 048_ArrivalGateTaskActive.swift in Sources */ = {isa = PBXBuildFile; fileRef = A48D0FA0CE1A4B7E0000D018 /* 048_ArrivalGateTaskActive.swift */; };
+		A49D0FA0CE1A4B7E0000D019 /* 049_TaskResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = A49D0FA0CE1A4B7E0000D020 /* 049_TaskResult.swift */; };
+		A50D0FA0CE1A4B7E0000D021 /* 050_NextBeatLive.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50D0FA0CE1A4B7E0000D022 /* 050_NextBeatLive.swift */; };
+		A51D0FA0CE1A4B7E0000D023 /* 051_BeatComplete.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51D0FA0CE1A4B7E0000D024 /* 051_BeatComplete.swift */; };
+		A52D0FA0CE1A4B7E0000D025 /* 052_RateconTender.swift in Sources */ = {isa = PBXBuildFile; fileRef = A52D0FA0CE1A4B7E0000D026 /* 052_RateconTender.swift */; };
+		A53D0FA0CE1A4B7E0000D027 /* 053_ESangDispatchChat.swift in Sources */ = {isa = PBXBuildFile; fileRef = A53D0FA0CE1A4B7E0000D028 /* 053_ESangDispatchChat.swift */; };
+		A54D0FA1CE1A4B7E0000D001 /* 054_HaulPaySettlement.swift in Sources */ = {isa = PBXBuildFile; fileRef = A54D0FA1CE1A4B7E0000D002 /* 054_HaulPaySettlement.swift */; };
+		A55D0FA1CE1A4B7E0000D003 /* 055_DayCloseWallet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55D0FA1CE1A4B7E0000D004 /* 055_DayCloseWallet.swift */; };
+		A56D0FA2CE1A4B7E0000D005 /* 056_DriverProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = A56D0FA2CE1A4B7E0000D006 /* 056_DriverProfile.swift */; };
+		A57D0FA2CE1A4B7E0000D007 /* 057_DriverVehicleCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57D0FA2CE1A4B7E0000D008 /* 057_DriverVehicleCard.swift */; };
+		A58D0FA2CE1A4B7E0000D009 /* 058_DriverWeeklyPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A58D0FA2CE1A4B7E0000D00A /* 058_DriverWeeklyPlan.swift */; };
+		A59D0FA2CE1A4B7E0000D00B /* 059_DriverTripsHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59D0FA2CE1A4B7E0000D00C /* 059_DriverTripsHistory.swift */; };
+		A60D0FA2CE1A4B7E0000D00D /* 060_TheHaulDashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60D0FA2CE1A4B7E0000D00E /* 060_TheHaulDashboard.swift */; };
+		A61D0FA2CE1A4B7E0000D00F /* 061_TheHaulMissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61D0FA2CE1A4B7E0000D010 /* 061_TheHaulMissions.swift */; };
+		A62D0FA2CE1A4B7E0000D011 /* 062_TheHaulBadges.swift in Sources */ = {isa = PBXBuildFile; fileRef = A62D0FA2CE1A4B7E0000D012 /* 062_TheHaulBadges.swift */; };
+		A63D0FA2CE1A4B7E0000D015 /* 063_TheHaulCrates.swift in Sources */ = {isa = PBXBuildFile; fileRef = A63D0FA2CE1A4B7E0000D016 /* 063_TheHaulCrates.swift */; };
+		A64D0FA2CE1A4B7E0000D013 /* 064_TheHaulLeaderboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A64D0FA2CE1A4B7E0000D014 /* 064_TheHaulLeaderboard.swift */; };
+		A65D0FA2CE1A4B7E0000D017 /* 065_TheHaulStreaks.swift in Sources */ = {isa = PBXBuildFile; fileRef = A65D0FA2CE1A4B7E0000D018 /* 065_TheHaulStreaks.swift */; };
+		A66D0FA2CE1A4B7E0000D019 /* 066_TheHaulCosmetics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A66D0FA2CE1A4B7E0000D01A /* 066_TheHaulCosmetics.swift */; };
+		A67D0FA2CE1A4B7E0000D01B /* 067_MeProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = A67D0FA2CE1A4B7E0000D01C /* 067_MeProfile.swift */; };
+		A68D0FA0CE1A4B7E0000D029 /* 068_MeEarnings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A68D0FA0CE1A4B7E0000D02A /* 068_MeEarnings.swift */; };
+		A70D0FA2CE1A4B7E0000D01D /* 070_MeSettlements.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70D0FA2CE1A4B7E0000D01E /* 070_MeSettlements.swift */; };
+		A71D0FA2CE1A4B7E0000D01F /* 071_MeTax.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71D0FA2CE1A4B7E0000D020 /* 071_MeTax.swift */; };
+		A72D0FA2CE1A4B7E0000D021 /* 072_MeDocs.swift in Sources */ = {isa = PBXBuildFile; fileRef = A72D0FA2CE1A4B7E0000D022 /* 072_MeDocs.swift */; };
+		A73D0FA2CE1A4B7E0000D023 /* 073_MeVehicle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A73D0FA2CE1A4B7E0000D024 /* 073_MeVehicle.swift */; };
+		B1A11111111111111111AA01 /* WeatherSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA02 /* WeatherSnapshot.swift */; };
+		B1A11111111111111111AA03 /* WeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA04 /* WeatherService.swift */; };
+		B1A11111111111111111AA05 /* WeatherCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA06 /* WeatherCard.swift */; };
+		B1A11111111111111111AA07 /* DriverTabPanes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA08 /* DriverTabPanes.swift */; };
+		B1A11111111111111111AB01 /* ESangParticleBurst.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AB02 /* ESangParticleBurst.swift */; };
+		B1A11111111111111111AC01 /* MeDetailScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AC02 /* MeDetailScreens.swift */; };
+		B1A11111111111111111AD01 /* DriverNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AD02 /* DriverNavController.swift */; };
+		B1A11111111111111111AE01 /* LoadDetailSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AE02 /* LoadDetailSheet.swift */; };
+		B1A11111111111111111AF01 /* SOSEmergencySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AF02 /* SOSEmergencySheet.swift */; };
+		C1A11111111111111111BA01 /* DriverProfileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A11111111111111111BA02 /* DriverProfileStore.swift */; };
+		C1A11111111111111111BB01 /* ProfileEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A11111111111111111BB02 /* ProfileEditView.swift */; };
+		C1A2B3C4D5E6F78901234501 /* WatchAuthBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A2B3C4D5E6F78901234502 /* WatchAuthBridge.swift */; };
+		C1A2B3C4D5E6F78901234503 /* WatchCommandHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A2B3C4D5E6F78901234504 /* WatchCommandHandler.swift */; };
+		C1A2B3C4D5E6F78901234505 /* EusoTripApp+WatchBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A2B3C4D5E6F78901234506 /* EusoTripApp+WatchBridge.swift */; };
+		C1A2B3C4D5E6F78901234507 /* ConvoyPhoneBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A2B3C4D5E6F78901234508 /* ConvoyPhoneBridge.swift */; };
+		C1A2B3C4D5E6F78901234509 /* SatellitePhoneBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A2B3C4D5E6F7890123450A /* SatellitePhoneBridge.swift */; };
+		D1A11111111111111111AA01 /* LoadingParticleField.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111AA02 /* LoadingParticleField.swift */; };
+		D1A11111111111111111AB01 /* ESangAutopilot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111AB02 /* ESangAutopilot.swift */; };
+		D1A11111111111111111AC01 /* ESangVoiceInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111AC02 /* ESangVoiceInput.swift */; };
+		D1A11111111111111111AD01 /* LoadDetailSheet+Adapters.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111AD02 /* LoadDetailSheet+Adapters.swift */; };
+		D1A11111111111111111AE01 /* TileReveal.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111AE02 /* TileReveal.swift */; };
+		D1A11111111111111111AF01 /* AddPaymentAccountSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111AF02 /* AddPaymentAccountSheet.swift */; };
+		D1A11111111111111111BA01 /* DriverConversationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111BA02 /* DriverConversationView.swift */; };
+		D1A11111111111111111HZ01 /* HotZonesWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111HZ02 /* HotZonesWidget.swift */; };
+		E1D1ED0111111111111111AA /* ELDIntegrationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D1ED0211111111111111AA /* ELDIntegrationStore.swift */; };
+		E1D1ED0311111111111111AA /* ELDIntegrationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D1ED0411111111111111AA /* ELDIntegrationView.swift */; };
+		E1E1055100000001AA000001 /* HOSLiveStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E1055200000001AA000001 /* HOSLiveStore.swift */; };
+		E1E1A1A100000001AA000001 /* NewsArticle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E1A1A200000001AA000001 /* NewsArticle.swift */; };
+		E1E1E7E100000001AA000001 /* MeNewsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E1E7E200000001AA000001 /* MeNewsView.swift */; };
+		E1E1E7E300000001AA000001 /* NewsArticleReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E1E7E400000001AA000001 /* NewsArticleReader.swift */; };
+		E1E1F5F100000001AA000001 /* NewsFeedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E1F5F200000001AA000001 /* NewsFeedStore.swift */; };
+		E1E1FA1100000001AA000001 /* MeNotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E1FA1200000001AA000001 /* MeNotificationsView.swift */; };
+		FDCA0D262F96F83F0057AC19 /* EusoTrip Pulse Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = FDCA0D062F96F83E0057AC19 /* EusoTrip Pulse Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		FDCA0D132F96F83F0057AC19 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A1000000000000000000AAAA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FDCA0D052F96F83E0057AC19;
+			remoteInfo = "EusoTrip Pulse Watch App";
+		};
+		FDCA0D1D2F96F83F0057AC19 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A1000000000000000000AAAA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FDCA0D052F96F83E0057AC19;
+			remoteInfo = "EusoTrip Pulse Watch App";
+		};
+		FDCA0D242F96F83F0057AC19 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A1000000000000000000AAAA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FDCA0D052F96F83E0057AC19;
+			remoteInfo = "EusoTrip Pulse Watch App";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		FDCA0D272F96F83F0057AC19 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				FDCA0D262F96F83F0057AC19 /* EusoTrip Pulse Watch App.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		A1000000000000000000AAB1 /* EusoTrip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = EusoTrip.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1000000000000000000AAB9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A1000000000000000000AABC /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
+		A1006F894BE68F2F15836F50 /* EusoTripApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoTripApp.swift; sourceTree = "<group>"; };
+		A106400EADABFEE26276F8E8 /* LoginViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginViewModel.swift; sourceTree = "<group>"; };
+		A10C7CD83E4BB6CA038192D0 /* 019_HosDutyStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 019_HosDutyStatus.swift; sourceTree = "<group>"; };
+		A12AE74E2A03406ADC0DD5AD /* 010_DriverHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 010_DriverHome.swift; sourceTree = "<group>"; };
+		A12E1A1C0010CE0FF1000002 /* HereMapsConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereMapsConfig.swift; sourceTree = "<group>"; };
+		A12E1A1C0010CE0FF1000004 /* TruckProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TruckProfile.swift; sourceTree = "<group>"; };
+		A12E1A1C0010CE0FF1000006 /* HereRouteModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereRouteModels.swift; sourceTree = "<group>"; };
+		A12E1A1C0010CE0FF1000008 /* HereFlexiblePolyline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereFlexiblePolyline.swift; sourceTree = "<group>"; };
+		A12E1A1C0010CE0FF100000A /* HereRoutingClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereRoutingClient.swift; sourceTree = "<group>"; };
+		A12E1A1C0010CE0FF100000C /* HereGeocodingClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereGeocodingClient.swift; sourceTree = "<group>"; };
+		A12E1A1C0010CE0FF100000E /* HereMatrixClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereMatrixClient.swift; sourceTree = "<group>"; };
+		A12E1A1C0010CE0FF1000010 /* HereTileOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereTileOverlay.swift; sourceTree = "<group>"; };
+		A12E1A1C0010CE0FF1000016 /* HEREAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HEREAuthService.swift; sourceTree = "<group>"; };
+		A12E1A1C0010CE0FF1000018 /* EusoAddressField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoAddressField.swift; sourceTree = "<group>"; };
+		A12E1A1C0010CE0FF100001A /* EusoHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoHeader.swift; sourceTree = "<group>"; };
+		A12E1A1C0010CE0FF100001C /* EusoBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoBadge.swift; sourceTree = "<group>"; };
+		A12E1A1C0010CE0FF100001E /* LatLongParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatLongParser.swift; sourceTree = "<group>"; };
+		A12E1A1C0010CE0FF1000012 /* HereMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereMapView.swift; sourceTree = "<group>"; };
+		A12E1A1C0010CE0FF1000015 /* EusoTrip.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = EusoTrip.xcconfig; sourceTree = "<group>"; };
+		A137B3A24D20514F5C061A19 /* 001_SignIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 001_SignIn.swift; sourceTree = "<group>"; };
+		A13B8109FC394A8921DF752F /* EusoTripSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoTripSession.swift; sourceTree = "<group>"; };
+		A13F901CAF5AB974AD192C6B /* 020_ApproachingDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 020_ApproachingDelivery.swift; sourceTree = "<group>"; };
+		A146716C21F5FFF98BC03896 /* 014_ApproachingPickup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 014_ApproachingPickup.swift; sourceTree = "<group>"; };
+		A1491CB2D389CD10B33FEE22 /* AuthModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthModels.swift; sourceTree = "<group>"; };
+		A14C271DA98CF1117DD59F15 /* 005_TermsOfService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 005_TermsOfService.swift; sourceTree = "<group>"; };
+		A1576D12AB9BE49E47C64A8E /* 018_ActiveEnrouteLoaded.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 018_ActiveEnrouteLoaded.swift; sourceTree = "<group>"; };
+		A16B82B4BAD14ED9D95C9A26 /* EusoTripAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoTripAPI.swift; sourceTree = "<group>"; };
+		A192A329AC526EED829942B1 /* 012_DvirSubmitted.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 012_DvirSubmitted.swift; sourceTree = "<group>"; };
+		A1A11111111111111111F005 /* PushService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushService.swift; sourceTree = "<group>"; };
+		A1A11111111111111111F006 /* RealtimeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeService.swift; sourceTree = "<group>"; };
+		A1A11111111111111111F007 /* GeofenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeofenceService.swift; sourceTree = "<group>"; };
+		A1A11111111111111111F008 /* HOSClockService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HOSClockService.swift; sourceTree = "<group>"; };
+		A1A11111111111111111F009 /* UnreadMessageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnreadMessageStore.swift; sourceTree = "<group>"; };
+		A1A34909AFFDFF756FF363F3 /* 011_PretripDVIR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 011_PretripDVIR.swift; sourceTree = "<group>"; };
+		A1A4741520D5DE7A968DABA8 /* 002_CreateAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 002_CreateAccount.swift; sourceTree = "<group>"; };
+		A1A560E135690A6A4E0E6BBC /* 003_ForgotPassword.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 003_ForgotPassword.swift; sourceTree = "<group>"; };
+		A1A6E1B8A95A32BDBADB148B /* Load.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Load.swift; sourceTree = "<group>"; };
+		A1B23B0093AD7B398378648C /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
+		A1C02F30061DE34AC9D052E1 /* HOSStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HOSStatus.swift; sourceTree = "<group>"; };
+		A1C161DBC257A985CDDCC731 /* 016_PickupLoading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 016_PickupLoading.swift; sourceTree = "<group>"; };
+		A1CF9F9CF4AC5F9B6B739C60 /* 013_ActiveEnroute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 013_ActiveEnroute.swift; sourceTree = "<group>"; };
+		A1D3CC244FE3B63DFF710117 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A1D507CFE4BE8224D0EF83E2 /* ForgotPasswordViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotPasswordViewModel.swift; sourceTree = "<group>"; };
+		A1D98E53AF24D307F0593138 /* RegistrationViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegistrationViewModel.swift; sourceTree = "<group>"; };
+		A1E7D7E296A5602D08D57F92 /* Glass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Glass.swift; sourceTree = "<group>"; };
+		A1EF89B1CAB8863EE1308360 /* DriverHomeViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverHomeViewModel.swift; sourceTree = "<group>"; };
+		A1F1000000000000000004AA /* intro_dark.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = intro_dark.json; sourceTree = "<group>"; };
+		A1F1000000000000000005AA /* intro_light.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = intro_light.json; sourceTree = "<group>"; };
+		A1F100000000000000000AAA /* IntroSplash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntroSplash.swift; sourceTree = "<group>"; };
+		A1F1968282989372CA735A10 /* 017_PickupBolSigning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 017_PickupBolSigning.swift; sourceTree = "<group>"; };
+		A1F3A1F3A1F3A1F3A1F30002 /* Inspection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Inspection.swift; sourceTree = "<group>"; };
+		A1F3A1F3A1F3A1F3A1F30004 /* PretripDVIRViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PretripDVIRViewModel.swift; sourceTree = "<group>"; };
+		A12E1A1C0010CE0FF1000032 /* EusoEmptyState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoEmptyState.swift; sourceTree = "<group>"; };
+		A12E1A1C0010CE0FF1000034 /* MockDataGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockDataGuard.swift; sourceTree = "<group>"; };
+		A12E1A1C0010CE0FF1000036 /* DynamicStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicStore.swift; sourceTree = "<group>"; };
+		A12E1A1C0010CE0FF1000038 /* LiveDataStores.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveDataStores.swift; sourceTree = "<group>"; };
+		A12E1A1C0010CE0FF100003A /* DriverStoreModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverStoreModels.swift; sourceTree = "<group>"; };
+		A1F5325921E558CD8ED37DBF /* AppRoot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRoot.swift; sourceTree = "<group>"; };
+		A1F6E6E09C5EB9568612F3E1 /* 004_ResetPassword.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 004_ResetPassword.swift; sourceTree = "<group>"; };
+		A1FA70836FB725922F39A4E9 /* 015_AtGateAwaitingDock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 015_AtGateAwaitingDock.swift; sourceTree = "<group>"; };
+		A1FC32344EC014D3FAF0ED78 /* 006_PrivacyPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 006_PrivacyPolicy.swift; sourceTree = "<group>"; };
+		A21A9C7F5E4D3B2A1C9876BB /* 021_AtReceiverGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 021_AtReceiverGate.swift; sourceTree = "<group>"; };
+		A22A9C7F5E4D3B2A1C9876DD /* 022_DockAssigned.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 022_DockAssigned.swift; sourceTree = "<group>"; };
+		A23A9C7F5E4D3B2A1C9876FF /* 023_BackingIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 023_BackingIn.swift; sourceTree = "<group>"; };
+		A24A9C7F5E4D3B2A1C987711 /* 024_Unloading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 024_Unloading.swift; sourceTree = "<group>"; };
+		A25A9C7F5E4D3B2A1C987733 /* 025_Paperwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 025_Paperwork.swift; sourceTree = "<group>"; };
+		A26A9C7F5E4D3B2A1C987755 /* 026_OffDuty.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 026_OffDuty.swift; sourceTree = "<group>"; };
+		A27A9C7F5E4D3B2A1C987777 /* 027_NextLoadBrief.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 027_NextLoadBrief.swift; sourceTree = "<group>"; };
+		A28A9C7F5E4D3B2A1C987799 /* 028_LoadLockedPrehaul.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 028_LoadLockedPrehaul.swift; sourceTree = "<group>"; };
+		A29A9C7F5E4D3B2A1C9877BB /* 029_PickupArrival.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 029_PickupArrival.swift; sourceTree = "<group>"; };
+		A30A9C7F5E4D3B2A1C9877DD /* 030_LoadingInProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 030_LoadingInProgress.swift; sourceTree = "<group>"; };
+		A31A9C7F5E4D3B2A1C9877FF /* 031_SpectraMatchVerdict.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 031_SpectraMatchVerdict.swift; sourceTree = "<group>"; };
+		A32A9C7F5E4D3B2A1C988811 /* 032_DetachSequence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 032_DetachSequence.swift; sourceTree = "<group>"; };
+		A33A9C7F5E4D3B2A1C988833 /* 033_BolSignoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 033_BolSignoff.swift; sourceTree = "<group>"; };
+		A34A9C7F5E4D3B2A1C988855 /* 034_DepartingPickup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 034_DepartingPickup.swift; sourceTree = "<group>"; };
+		A35A9C7F5E4D3B2A1C988877 /* 035_EnRouteDrive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 035_EnRouteDrive.swift; sourceTree = "<group>"; };
+		A36A9C7F5E4D3B2A1C988899 /* 036_ESangSmartStop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 036_ESangSmartStop.swift; sourceTree = "<group>"; };
+		A37A9C7F5E4D3B2A1C988901 /* 037_ApproachingReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 037_ApproachingReceiver.swift; sourceTree = "<group>"; };
+		A38A9C7F5E4D3B2A1C988903 /* 038_AtReceiverGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 038_AtReceiverGate.swift; sourceTree = "<group>"; };
+		A39A9C7F5E4D3B2A1C988905 /* 039_BackingAssistReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 039_BackingAssistReceiver.swift; sourceTree = "<group>"; };
+		A40C0FA9CE1A4B7E0000C012 /* MeComplianceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeComplianceView.swift; sourceTree = "<group>"; };
+		A40D0FA0CE1A4B7E0000D002 /* 040_DischargeInProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 040_DischargeInProgress.swift; sourceTree = "<group>"; };
+		A41D0FA0CE1A4B7E0000D004 /* 041_DischargeComplete.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 041_DischargeComplete.swift; sourceTree = "<group>"; };
+		A42D0FA0CE1A4B7E0000D006 /* 042_DisconnectAndVerify.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 042_DisconnectAndVerify.swift; sourceTree = "<group>"; };
+		A43D0FA0CE1A4B7E0000D008 /* 043_DisconnectConfirmed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 043_DisconnectConfirmed.swift; sourceTree = "<group>"; };
+		A44D0FA0CE1A4B7E0000D010 /* 044_ConnectDropHose.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 044_ConnectDropHose.swift; sourceTree = "<group>"; };
+		A45D0FA0CE1A4B7E0000D012 /* 045_DepartingReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 045_DepartingReceiver.swift; sourceTree = "<group>"; };
+		A46D0FA0CE1A4B7E0000D014 /* 046_SequencedLegApproach.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 046_SequencedLegApproach.swift; sourceTree = "<group>"; };
+		A47D0FA0CE1A4B7E0000D016 /* 047_ArrivalCheckpoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 047_ArrivalCheckpoint.swift; sourceTree = "<group>"; };
+		A48D0FA0CE1A4B7E0000D018 /* 048_ArrivalGateTaskActive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 048_ArrivalGateTaskActive.swift; sourceTree = "<group>"; };
+		A49D0FA0CE1A4B7E0000D020 /* 049_TaskResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 049_TaskResult.swift; sourceTree = "<group>"; };
+		A50D0FA0CE1A4B7E0000D022 /* 050_NextBeatLive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 050_NextBeatLive.swift; sourceTree = "<group>"; };
+		A51D0FA0CE1A4B7E0000D024 /* 051_BeatComplete.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 051_BeatComplete.swift; sourceTree = "<group>"; };
+		A52D0FA0CE1A4B7E0000D026 /* 052_RateconTender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 052_RateconTender.swift; sourceTree = "<group>"; };
+		A53D0FA0CE1A4B7E0000D028 /* 053_ESangDispatchChat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 053_ESangDispatchChat.swift; sourceTree = "<group>"; };
+		A54D0FA1CE1A4B7E0000D002 /* 054_HaulPaySettlement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 054_HaulPaySettlement.swift; sourceTree = "<group>"; };
+		A55D0FA1CE1A4B7E0000D004 /* 055_DayCloseWallet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 055_DayCloseWallet.swift; sourceTree = "<group>"; };
+		A56D0FA2CE1A4B7E0000D006 /* 056_DriverProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 056_DriverProfile.swift; sourceTree = "<group>"; };
+		A57D0FA2CE1A4B7E0000D008 /* 057_DriverVehicleCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 057_DriverVehicleCard.swift; sourceTree = "<group>"; };
+		A58D0FA2CE1A4B7E0000D00A /* 058_DriverWeeklyPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 058_DriverWeeklyPlan.swift; sourceTree = "<group>"; };
+		A59D0FA2CE1A4B7E0000D00C /* 059_DriverTripsHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 059_DriverTripsHistory.swift; sourceTree = "<group>"; };
+		A60D0FA2CE1A4B7E0000D00E /* 060_TheHaulDashboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 060_TheHaulDashboard.swift; sourceTree = "<group>"; };
+		A61D0FA2CE1A4B7E0000D010 /* 061_TheHaulMissions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 061_TheHaulMissions.swift; sourceTree = "<group>"; };
+		A62D0FA2CE1A4B7E0000D012 /* 062_TheHaulBadges.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 062_TheHaulBadges.swift; sourceTree = "<group>"; };
+		A63D0FA2CE1A4B7E0000D016 /* 063_TheHaulCrates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 063_TheHaulCrates.swift; sourceTree = "<group>"; };
+		A64D0FA2CE1A4B7E0000D014 /* 064_TheHaulLeaderboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 064_TheHaulLeaderboard.swift; sourceTree = "<group>"; };
+		A65D0FA2CE1A4B7E0000D018 /* 065_TheHaulStreaks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 065_TheHaulStreaks.swift; sourceTree = "<group>"; };
+		A66D0FA2CE1A4B7E0000D01A /* 066_TheHaulCosmetics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 066_TheHaulCosmetics.swift; sourceTree = "<group>"; };
+		A67D0FA2CE1A4B7E0000D01C /* 067_MeProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 067_MeProfile.swift; sourceTree = "<group>"; };
+		A68D0FA0CE1A4B7E0000D02A /* 068_MeEarnings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 068_MeEarnings.swift; sourceTree = "<group>"; };
+		A70D0FA2CE1A4B7E0000D01E /* 070_MeSettlements.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 070_MeSettlements.swift; sourceTree = "<group>"; };
+		A71D0FA2CE1A4B7E0000D020 /* 071_MeTax.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 071_MeTax.swift; sourceTree = "<group>"; };
+		A72D0FA2CE1A4B7E0000D022 /* 072_MeDocs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 072_MeDocs.swift; sourceTree = "<group>"; };
+		A73D0FA2CE1A4B7E0000D024 /* 073_MeVehicle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 073_MeVehicle.swift; sourceTree = "<group>"; };
+		B1A11111111111111111AA02 /* WeatherSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherSnapshot.swift; sourceTree = "<group>"; };
+		B1A11111111111111111AA04 /* WeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherService.swift; sourceTree = "<group>"; };
+		B1A11111111111111111AA06 /* WeatherCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherCard.swift; sourceTree = "<group>"; };
+		B1A11111111111111111AA08 /* DriverTabPanes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverTabPanes.swift; sourceTree = "<group>"; };
+		B1A11111111111111111AA09 /* EusoTrip.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = EusoTrip.entitlements; sourceTree = "<group>"; };
+		B1A11111111111111111AB02 /* ESangParticleBurst.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESangParticleBurst.swift; sourceTree = "<group>"; };
+		B1A11111111111111111AC02 /* MeDetailScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeDetailScreens.swift; sourceTree = "<group>"; };
+		B1A11111111111111111AD02 /* DriverNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverNavController.swift; sourceTree = "<group>"; };
+		B1A11111111111111111AE02 /* LoadDetailSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadDetailSheet.swift; sourceTree = "<group>"; };
+		B1A11111111111111111AF02 /* SOSEmergencySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SOSEmergencySheet.swift; sourceTree = "<group>"; };
+		C1A11111111111111111BA02 /* DriverProfileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverProfileStore.swift; sourceTree = "<group>"; };
+		C1A11111111111111111BB02 /* ProfileEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileEditView.swift; sourceTree = "<group>"; };
+		C1A2B3C4D5E6F78901234502 /* WatchAuthBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchAuthBridge.swift; sourceTree = "<group>"; };
+		C1A2B3C4D5E6F78901234504 /* WatchCommandHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchCommandHandler.swift; sourceTree = "<group>"; };
+		C1A2B3C4D5E6F78901234506 /* EusoTripApp+WatchBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EusoTripApp+WatchBridge.swift"; sourceTree = "<group>"; };
+		C1A2B3C4D5E6F78901234508 /* ConvoyPhoneBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvoyPhoneBridge.swift; sourceTree = "<group>"; };
+		C1A2B3C4D5E6F7890123450A /* SatellitePhoneBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SatellitePhoneBridge.swift; sourceTree = "<group>"; };
+		D1A11111111111111111AA02 /* LoadingParticleField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingParticleField.swift; sourceTree = "<group>"; };
+		D1A11111111111111111AB02 /* ESangAutopilot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESangAutopilot.swift; sourceTree = "<group>"; };
+		D1A11111111111111111AC02 /* ESangVoiceInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESangVoiceInput.swift; sourceTree = "<group>"; };
+		D1A11111111111111111AD02 /* LoadDetailSheet+Adapters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LoadDetailSheet+Adapters.swift"; sourceTree = "<group>"; };
+		D1A11111111111111111AE02 /* TileReveal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TileReveal.swift; sourceTree = "<group>"; };
+		D1A11111111111111111AF02 /* AddPaymentAccountSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddPaymentAccountSheet.swift; sourceTree = "<group>"; };
+		D1A11111111111111111BA02 /* DriverConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverConversationView.swift; sourceTree = "<group>"; };
+		D1A11111111111111111HZ02 /* HotZonesWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotZonesWidget.swift; sourceTree = "<group>"; };
+		E1D1ED0211111111111111AA /* ELDIntegrationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ELDIntegrationStore.swift; sourceTree = "<group>"; };
+		E1D1ED0411111111111111AA /* ELDIntegrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ELDIntegrationView.swift; sourceTree = "<group>"; };
+		E1E1055200000001AA000001 /* HOSLiveStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HOSLiveStore.swift; sourceTree = "<group>"; };
+		E1E1A1A200000001AA000001 /* NewsArticle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewsArticle.swift; sourceTree = "<group>"; };
+		E1E1E7E200000001AA000001 /* MeNewsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeNewsView.swift; sourceTree = "<group>"; };
+		E1E1E7E400000001AA000001 /* NewsArticleReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewsArticleReader.swift; sourceTree = "<group>"; };
+		E1E1F5F200000001AA000001 /* NewsFeedStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewsFeedStore.swift; sourceTree = "<group>"; };
+		E1E1FA1200000001AA000001 /* MeNotificationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeNotificationsView.swift; sourceTree = "<group>"; };
+		FDCA0D062F96F83E0057AC19 /* EusoTrip Pulse Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "EusoTrip Pulse Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		FDCA0D122F96F83F0057AC19 /* EusoTrip Pulse Watch AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "EusoTrip Pulse Watch AppTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		FDCA0D1C2F96F83F0057AC19 /* EusoTrip Pulse Watch AppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "EusoTrip Pulse Watch AppUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		FDCA0D072F96F83E0057AC19 /* EusoTrip Pulse Watch App */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "EusoTrip Pulse Watch App"; sourceTree = "<group>"; };
+		FDCA0D152F96F83F0057AC19 /* EusoTrip Pulse Watch AppTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "EusoTrip Pulse Watch AppTests"; sourceTree = "<group>"; };
+		FDCA0D1F2F96F83F0057AC19 /* EusoTrip Pulse Watch AppUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "EusoTrip Pulse Watch AppUITests"; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A1000000000000000000AAAD /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1F1000000000000000003AA /* Lottie in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FDCA0D032F96F83E0057AC19 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FDCA0D0F2F96F83F0057AC19 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FDCA0D192F96F83F0057AC19 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A1000000000000000000AAAB = {
+			isa = PBXGroup;
+			children = (
+				A12E1A1C0010CE0FF1000015 /* EusoTrip.xcconfig */,
+				A1000000000000000000AAB8 /* EusoTrip */,
+				FDCA0D072F96F83E0057AC19 /* EusoTrip Pulse Watch App */,
+				FDCA0D152F96F83F0057AC19 /* EusoTrip Pulse Watch AppTests */,
+				FDCA0D1F2F96F83F0057AC19 /* EusoTrip Pulse Watch AppUITests */,
+				A1000000000000000000AAAC /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A1000000000000000000AAAC /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A1000000000000000000AAB1 /* EusoTrip.app */,
+				FDCA0D062F96F83E0057AC19 /* EusoTrip Pulse Watch App.app */,
+				FDCA0D122F96F83F0057AC19 /* EusoTrip Pulse Watch AppTests.xctest */,
+				FDCA0D1C2F96F83F0057AC19 /* EusoTrip Pulse Watch AppUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A1000000000000000000AAB8 /* EusoTrip */ = {
+			isa = PBXGroup;
+			children = (
+				A1D3CC244FE3B63DFF710117 /* ContentView.swift */,
+				A1006F894BE68F2F15836F50 /* EusoTripApp.swift */,
+				B1A11111111111111111AA09 /* EusoTrip.entitlements */,
+				A1000000000000000000AAD2 /* Models */,
+				A1000000000000000000AAD3 /* Services */,
+				A1000000000000000000AAD4 /* ViewModels */,
+				A1000000000000000000AABE /* Theme */,
+				A1000000000000000000AABF /* Views */,
+				A12E1A1C0010CE0FF1000020 /* Utilities */,
+				A1F1000000000000000008AA /* Resources */,
+				A1000000000000000000AAB9 /* Assets.xcassets */,
+				A1000000000000000000AABB /* Preview Content */,
+			);
+			path = EusoTrip;
+			sourceTree = "<group>";
+		};
+		A1000000000000000000AABB /* Preview Content */ = {
+			isa = PBXGroup;
+			children = (
+				A1000000000000000000AABC /* Preview Assets.xcassets */,
+			);
+			path = "Preview Content";
+			sourceTree = "<group>";
+		};
+		A1000000000000000000AABE /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				A1B23B0093AD7B398378648C /* DesignSystem.swift */,
+				A1E7D7E296A5602D08D57F92 /* Glass.swift */,
+				A12E1A1C0010CE0FF100001F /* Components */,
+			);
+			path = Theme;
+			sourceTree = "<group>";
+		};
+		A1000000000000000000AABF /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A1F5325921E558CD8ED37DBF /* AppRoot.swift */,
+				A1000000000000000000AAD5 /* Auth */,
+				A12E1A1C0010CE0FF1000014 /* Components */,
+				A1000000000000000000AAC0 /* Driver */,
+				A1F100000000000000000CAA /* Intro */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		A1000000000000000000AAC0 /* Driver */ = {
+			isa = PBXGroup;
+			children = (
+				A12AE74E2A03406ADC0DD5AD /* 010_DriverHome.swift */,
+				A1A34909AFFDFF756FF363F3 /* 011_PretripDVIR.swift */,
+				A192A329AC526EED829942B1 /* 012_DvirSubmitted.swift */,
+				A1CF9F9CF4AC5F9B6B739C60 /* 013_ActiveEnroute.swift */,
+				A146716C21F5FFF98BC03896 /* 014_ApproachingPickup.swift */,
+				A1FA70836FB725922F39A4E9 /* 015_AtGateAwaitingDock.swift */,
+				A1C161DBC257A985CDDCC731 /* 016_PickupLoading.swift */,
+				A1F1968282989372CA735A10 /* 017_PickupBolSigning.swift */,
+				A1576D12AB9BE49E47C64A8E /* 018_ActiveEnrouteLoaded.swift */,
+				A10C7CD83E4BB6CA038192D0 /* 019_HosDutyStatus.swift */,
+				A13F901CAF5AB974AD192C6B /* 020_ApproachingDelivery.swift */,
+				A21A9C7F5E4D3B2A1C9876BB /* 021_AtReceiverGate.swift */,
+				A22A9C7F5E4D3B2A1C9876DD /* 022_DockAssigned.swift */,
+				A23A9C7F5E4D3B2A1C9876FF /* 023_BackingIn.swift */,
+				A24A9C7F5E4D3B2A1C987711 /* 024_Unloading.swift */,
+				A25A9C7F5E4D3B2A1C987733 /* 025_Paperwork.swift */,
+				A26A9C7F5E4D3B2A1C987755 /* 026_OffDuty.swift */,
+				A27A9C7F5E4D3B2A1C987777 /* 027_NextLoadBrief.swift */,
+				A28A9C7F5E4D3B2A1C987799 /* 028_LoadLockedPrehaul.swift */,
+				A29A9C7F5E4D3B2A1C9877BB /* 029_PickupArrival.swift */,
+				A30A9C7F5E4D3B2A1C9877DD /* 030_LoadingInProgress.swift */,
+				A31A9C7F5E4D3B2A1C9877FF /* 031_SpectraMatchVerdict.swift */,
+				A32A9C7F5E4D3B2A1C988811 /* 032_DetachSequence.swift */,
+				A33A9C7F5E4D3B2A1C988833 /* 033_BolSignoff.swift */,
+				A34A9C7F5E4D3B2A1C988855 /* 034_DepartingPickup.swift */,
+				A35A9C7F5E4D3B2A1C988877 /* 035_EnRouteDrive.swift */,
+				A36A9C7F5E4D3B2A1C988899 /* 036_ESangSmartStop.swift */,
+				A37A9C7F5E4D3B2A1C988901 /* 037_ApproachingReceiver.swift */,
+				A38A9C7F5E4D3B2A1C988903 /* 038_AtReceiverGate.swift */,
+				A39A9C7F5E4D3B2A1C988905 /* 039_BackingAssistReceiver.swift */,
+				A40D0FA0CE1A4B7E0000D002 /* 040_DischargeInProgress.swift */,
+				A41D0FA0CE1A4B7E0000D004 /* 041_DischargeComplete.swift */,
+				A42D0FA0CE1A4B7E0000D006 /* 042_DisconnectAndVerify.swift */,
+				A43D0FA0CE1A4B7E0000D008 /* 043_DisconnectConfirmed.swift */,
+				A44D0FA0CE1A4B7E0000D010 /* 044_ConnectDropHose.swift */,
+				A45D0FA0CE1A4B7E0000D012 /* 045_DepartingReceiver.swift */,
+				A46D0FA0CE1A4B7E0000D014 /* 046_SequencedLegApproach.swift */,
+				A47D0FA0CE1A4B7E0000D016 /* 047_ArrivalCheckpoint.swift */,
+				A48D0FA0CE1A4B7E0000D018 /* 048_ArrivalGateTaskActive.swift */,
+				A49D0FA0CE1A4B7E0000D020 /* 049_TaskResult.swift */,
+				A50D0FA0CE1A4B7E0000D022 /* 050_NextBeatLive.swift */,
+				A51D0FA0CE1A4B7E0000D024 /* 051_BeatComplete.swift */,
+				A52D0FA0CE1A4B7E0000D026 /* 052_RateconTender.swift */,
+				A53D0FA0CE1A4B7E0000D028 /* 053_ESangDispatchChat.swift */,
+				A54D0FA1CE1A4B7E0000D002 /* 054_HaulPaySettlement.swift */,
+				A55D0FA1CE1A4B7E0000D004 /* 055_DayCloseWallet.swift */,
+				A56D0FA2CE1A4B7E0000D006 /* 056_DriverProfile.swift */,
+				A57D0FA2CE1A4B7E0000D008 /* 057_DriverVehicleCard.swift */,
+				A58D0FA2CE1A4B7E0000D00A /* 058_DriverWeeklyPlan.swift */,
+				A59D0FA2CE1A4B7E0000D00C /* 059_DriverTripsHistory.swift */,
+				A60D0FA2CE1A4B7E0000D00E /* 060_TheHaulDashboard.swift */,
+				A61D0FA2CE1A4B7E0000D010 /* 061_TheHaulMissions.swift */,
+				A62D0FA2CE1A4B7E0000D012 /* 062_TheHaulBadges.swift */,
+				A63D0FA2CE1A4B7E0000D016 /* 063_TheHaulCrates.swift */,
+				A64D0FA2CE1A4B7E0000D014 /* 064_TheHaulLeaderboard.swift */,
+				A65D0FA2CE1A4B7E0000D018 /* 065_TheHaulStreaks.swift */,
+				A66D0FA2CE1A4B7E0000D01A /* 066_TheHaulCosmetics.swift */,
+				A67D0FA2CE1A4B7E0000D01C /* 067_MeProfile.swift */,
+				A68D0FA0CE1A4B7E0000D02A /* 068_MeEarnings.swift */,
+				A70D0FA2CE1A4B7E0000D01E /* 070_MeSettlements.swift */,
+				A71D0FA2CE1A4B7E0000D020 /* 071_MeTax.swift */,
+				A72D0FA2CE1A4B7E0000D022 /* 072_MeDocs.swift */,
+				A73D0FA2CE1A4B7E0000D024 /* 073_MeVehicle.swift */,
+				A40C0FA9CE1A4B7E0000C012 /* MeComplianceView.swift */,
+				B1A11111111111111111AA08 /* DriverTabPanes.swift */,
+				B1A11111111111111111AC02 /* MeDetailScreens.swift */,
+				E1E1E7E200000001AA000001 /* MeNewsView.swift */,
+				E1E1E7E400000001AA000001 /* NewsArticleReader.swift */,
+				E1E1FA1200000001AA000001 /* MeNotificationsView.swift */,
+				B1A11111111111111111AD02 /* DriverNavController.swift */,
+				C1A11111111111111111BB02 /* ProfileEditView.swift */,
+				D1A11111111111111111AF02 /* AddPaymentAccountSheet.swift */,
+				D1A11111111111111111BA02 /* DriverConversationView.swift */,
+				D1A11111111111111111HZ02 /* HotZonesWidget.swift */,
+				E1D1ED0411111111111111AA /* ELDIntegrationView.swift */,
+			);
+			path = Driver;
+			sourceTree = "<group>";
+		};
+		A1000000000000000000AAD2 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				A1491CB2D389CD10B33FEE22 /* AuthModels.swift */,
+				A1C02F30061DE34AC9D052E1 /* HOSStatus.swift */,
+				A1F3A1F3A1F3A1F3A1F30002 /* Inspection.swift */,
+				A1A6E1B8A95A32BDBADB148B /* Load.swift */,
+				E1E1A1A200000001AA000001 /* NewsArticle.swift */,
+				B1A11111111111111111AA02 /* WeatherSnapshot.swift */,
+				A12E1A1C0010CE0FF100003A /* DriverStoreModels.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		A1000000000000000000AAD3 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				A16B82B4BAD14ED9D95C9A26 /* EusoTripAPI.swift */,
+				A13B8109FC394A8921DF752F /* EusoTripSession.swift */,
+				C1A11111111111111111BA02 /* DriverProfileStore.swift */,
+				B1A11111111111111111AA04 /* WeatherService.swift */,
+				A1A11111111111111111F005 /* PushService.swift */,
+				A1A11111111111111111F006 /* RealtimeService.swift */,
+				A1A11111111111111111F007 /* GeofenceService.swift */,
+				A1A11111111111111111F008 /* HOSClockService.swift */,
+				A1A11111111111111111F009 /* UnreadMessageStore.swift */,
+				E1E1055200000001AA000001 /* HOSLiveStore.swift */,
+				E1D1ED0211111111111111AA /* ELDIntegrationStore.swift */,
+				E1E1F5F200000001AA000001 /* NewsFeedStore.swift */,
+				C1A2B3C4D5E6F78901234502 /* WatchAuthBridge.swift */,
+				C1A2B3C4D5E6F78901234504 /* WatchCommandHandler.swift */,
+				C1A2B3C4D5E6F78901234506 /* EusoTripApp+WatchBridge.swift */,
+				C1A2B3C4D5E6F78901234508 /* ConvoyPhoneBridge.swift */,
+				C1A2B3C4D5E6F7890123450A /* SatellitePhoneBridge.swift */,
+				A12E1A1C0010CE0FF1000013 /* HereMaps */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		A1000000000000000000AAD4 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				A1EF89B1CAB8863EE1308360 /* DriverHomeViewModel.swift */,
+				A1D507CFE4BE8224D0EF83E2 /* ForgotPasswordViewModel.swift */,
+				A106400EADABFEE26276F8E8 /* LoginViewModel.swift */,
+				A1F3A1F3A1F3A1F3A1F30004 /* PretripDVIRViewModel.swift */,
+				A1D98E53AF24D307F0593138 /* RegistrationViewModel.swift */,
+				A12E1A1C0010CE0FF1000036 /* DynamicStore.swift */,
+				A12E1A1C0010CE0FF1000038 /* LiveDataStores.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		A1000000000000000000AAD5 /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				A137B3A24D20514F5C061A19 /* 001_SignIn.swift */,
+				A1A4741520D5DE7A968DABA8 /* 002_CreateAccount.swift */,
+				A1A560E135690A6A4E0E6BBC /* 003_ForgotPassword.swift */,
+				A1F6E6E09C5EB9568612F3E1 /* 004_ResetPassword.swift */,
+				A14C271DA98CF1117DD59F15 /* 005_TermsOfService.swift */,
+				A1FC32344EC014D3FAF0ED78 /* 006_PrivacyPolicy.swift */,
+			);
+			path = Auth;
+			sourceTree = "<group>";
+		};
+		A12E1A1C0010CE0FF1000013 /* HereMaps */ = {
+			isa = PBXGroup;
+			children = (
+				A12E1A1C0010CE0FF1000002 /* HereMapsConfig.swift */,
+				A12E1A1C0010CE0FF1000004 /* TruckProfile.swift */,
+				A12E1A1C0010CE0FF1000006 /* HereRouteModels.swift */,
+				A12E1A1C0010CE0FF1000008 /* HereFlexiblePolyline.swift */,
+				A12E1A1C0010CE0FF100000A /* HereRoutingClient.swift */,
+				A12E1A1C0010CE0FF100000C /* HereGeocodingClient.swift */,
+				A12E1A1C0010CE0FF100000E /* HereMatrixClient.swift */,
+				A12E1A1C0010CE0FF1000010 /* HereTileOverlay.swift */,
+				A12E1A1C0010CE0FF1000016 /* HEREAuthService.swift */,
+			);
+			path = HereMaps;
+			sourceTree = "<group>";
+		};
+		A12E1A1C0010CE0FF1000014 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				A12E1A1C0010CE0FF1000012 /* HereMapView.swift */,
+				B1A11111111111111111AA06 /* WeatherCard.swift */,
+				B1A11111111111111111AB02 /* ESangParticleBurst.swift */,
+				B1A11111111111111111AE02 /* LoadDetailSheet.swift */,
+				B1A11111111111111111AF02 /* SOSEmergencySheet.swift */,
+				D1A11111111111111111AA02 /* LoadingParticleField.swift */,
+				D1A11111111111111111AB02 /* ESangAutopilot.swift */,
+				D1A11111111111111111AC02 /* ESangVoiceInput.swift */,
+				D1A11111111111111111AD02 /* LoadDetailSheet+Adapters.swift */,
+				D1A11111111111111111AE02 /* TileReveal.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		A1F1000000000000000008AA /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				A1F1000000000000000009AA /* Intro */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		A1F1000000000000000009AA /* Intro */ = {
+			isa = PBXGroup;
+			children = (
+				A1F1000000000000000004AA /* intro_dark.json */,
+				A1F1000000000000000005AA /* intro_light.json */,
+			);
+			path = Intro;
+			sourceTree = "<group>";
+		};
+		A1F100000000000000000CAA /* Intro */ = {
+			isa = PBXGroup;
+			children = (
+				A1F100000000000000000AAA /* IntroSplash.swift */,
+			);
+			path = Intro;
+			sourceTree = "<group>";
+		};
+		A12E1A1C0010CE0FF100001F /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				A12E1A1C0010CE0FF1000018 /* EusoAddressField.swift */,
+				A12E1A1C0010CE0FF100001A /* EusoHeader.swift */,
+				A12E1A1C0010CE0FF100001C /* EusoBadge.swift */,
+				A12E1A1C0010CE0FF1000032 /* EusoEmptyState.swift */,
+				A12E1A1C0010CE0FF1000034 /* MockDataGuard.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		A12E1A1C0010CE0FF1000020 /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				A12E1A1C0010CE0FF100001E /* LatLongParser.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A1000000000000000000AAB0 /* EusoTrip */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1000000000000000000AAB3 /* Build configuration list for PBXNativeTarget "EusoTrip" */;
+			buildPhases = (
+				A1000000000000000000AAAF /* Sources */,
+				A1000000000000000000AAAD /* Frameworks */,
+				A1000000000000000000AAAE /* Resources */,
+				FDCA0D272F96F83F0057AC19 /* Embed Watch Content */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				FDCA0D252F96F83F0057AC19 /* PBXTargetDependency */,
+			);
+			name = EusoTrip;
+			packageProductDependencies = (
+				A1F1000000000000000002AA /* Lottie */,
+			);
+			productName = EusoTrip;
+			productReference = A1000000000000000000AAB1 /* EusoTrip.app */;
+			productType = "com.apple.product-type.application";
+		};
+		FDCA0D052F96F83E0057AC19 /* EusoTrip Pulse Watch App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FDCA0D2E2F96F83F0057AC19 /* Build configuration list for PBXNativeTarget "EusoTrip Pulse Watch App" */;
+			buildPhases = (
+				FDCA0D022F96F83E0057AC19 /* Sources */,
+				FDCA0D032F96F83E0057AC19 /* Frameworks */,
+				FDCA0D042F96F83E0057AC19 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				FDCA0D072F96F83E0057AC19 /* EusoTrip Pulse Watch App */,
+			);
+			name = "EusoTrip Pulse Watch App";
+			packageProductDependencies = (
+			);
+			productName = "EusoTrip Pulse Watch App";
+			productReference = FDCA0D062F96F83E0057AC19 /* EusoTrip Pulse Watch App.app */;
+			productType = "com.apple.product-type.application";
+		};
+		FDCA0D112F96F83F0057AC19 /* EusoTrip Pulse Watch AppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FDCA0D2F2F96F83F0057AC19 /* Build configuration list for PBXNativeTarget "EusoTrip Pulse Watch AppTests" */;
+			buildPhases = (
+				FDCA0D0E2F96F83F0057AC19 /* Sources */,
+				FDCA0D0F2F96F83F0057AC19 /* Frameworks */,
+				FDCA0D102F96F83F0057AC19 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				FDCA0D142F96F83F0057AC19 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				FDCA0D152F96F83F0057AC19 /* EusoTrip Pulse Watch AppTests */,
+			);
+			name = "EusoTrip Pulse Watch AppTests";
+			packageProductDependencies = (
+			);
+			productName = "EusoTrip Pulse Watch AppTests";
+			productReference = FDCA0D122F96F83F0057AC19 /* EusoTrip Pulse Watch AppTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		FDCA0D1B2F96F83F0057AC19 /* EusoTrip Pulse Watch AppUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FDCA0D302F96F83F0057AC19 /* Build configuration list for PBXNativeTarget "EusoTrip Pulse Watch AppUITests" */;
+			buildPhases = (
+				FDCA0D182F96F83F0057AC19 /* Sources */,
+				FDCA0D192F96F83F0057AC19 /* Frameworks */,
+				FDCA0D1A2F96F83F0057AC19 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				FDCA0D1E2F96F83F0057AC19 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				FDCA0D1F2F96F83F0057AC19 /* EusoTrip Pulse Watch AppUITests */,
+			);
+			name = "EusoTrip Pulse Watch AppUITests";
+			packageProductDependencies = (
+			);
+			productName = "EusoTrip Pulse Watch AppUITests";
+			productReference = FDCA0D1C2F96F83F0057AC19 /* EusoTrip Pulse Watch AppUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A1000000000000000000AAAA /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2640;
+				LastUpgradeCheck = 2640;
+				TargetAttributes = {
+					A1000000000000000000AAB0 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					FDCA0D052F96F83E0057AC19 = {
+						CreatedOnToolsVersion = 26.4.1;
+					};
+					FDCA0D112F96F83F0057AC19 = {
+						CreatedOnToolsVersion = 26.4.1;
+						TestTargetID = FDCA0D052F96F83E0057AC19;
+					};
+					FDCA0D1B2F96F83F0057AC19 = {
+						CreatedOnToolsVersion = 26.4.1;
+						TestTargetID = FDCA0D052F96F83E0057AC19;
+					};
+				};
+			};
+			buildConfigurationList = A1000000000000000000AAB2 /* Build configuration list for PBXProject "EusoTrip" */;
+			compatibilityVersion = "Xcode 16.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A1000000000000000000AAAB;
+			packageReferences = (
+				A1F1000000000000000001AA /* XCRemoteSwiftPackageReference "lottie-ios" */,
+			);
+			productRefGroup = A1000000000000000000AAAC /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A1000000000000000000AAB0 /* EusoTrip */,
+				FDCA0D052F96F83E0057AC19 /* EusoTrip Pulse Watch App */,
+				FDCA0D112F96F83F0057AC19 /* EusoTrip Pulse Watch AppTests */,
+				FDCA0D1B2F96F83F0057AC19 /* EusoTrip Pulse Watch AppUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A1000000000000000000AAAE /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000000000000000000AABD /* Preview Assets.xcassets in Resources */,
+				A1000000000000000000AABA /* Assets.xcassets in Resources */,
+				A1F1000000000000000006AA /* intro_dark.json in Resources */,
+				A1F1000000000000000007AA /* intro_light.json in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FDCA0D042F96F83E0057AC19 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FDCA0D102F96F83F0057AC19 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FDCA0D1A2F96F83F0057AC19 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A1000000000000000000AAAF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A18C84C77B3CF73706D41A64 /* ContentView.swift in Sources */,
+				A144AC1DCD36EDC1A2891416 /* EusoTripApp.swift in Sources */,
+				A189C8A4865293C026FBA23C /* DesignSystem.swift in Sources */,
+				A1978D143BA29D29AC175E7B /* Glass.swift in Sources */,
+				A104A92790FBBAD8E412C5F3 /* AppRoot.swift in Sources */,
+				A156FBFA78FAD20569A81A61 /* 001_SignIn.swift in Sources */,
+				A1D4E2D6D079F0A6924FACD1 /* 002_CreateAccount.swift in Sources */,
+				A1E5DB630C4394232DF0D06F /* 003_ForgotPassword.swift in Sources */,
+				A11E8603E79595216A3607DB /* 004_ResetPassword.swift in Sources */,
+				A153A997FE2A3F8F703A23A7 /* 005_TermsOfService.swift in Sources */,
+				A157A4EE31DF3D193DFC8C8A /* 006_PrivacyPolicy.swift in Sources */,
+				A1E8B8FE82845A99D1285220 /* 010_DriverHome.swift in Sources */,
+				A14C5A02BB0F8BCB48A18B6C /* 011_PretripDVIR.swift in Sources */,
+				A1BEEF0000000000DEAD0012 /* 012_DvirSubmitted.swift in Sources */,
+				A157F689D9AEDCA651044E43 /* 013_ActiveEnroute.swift in Sources */,
+				A14728D41BAA4F36F0F999C1 /* 014_ApproachingPickup.swift in Sources */,
+				A172C53B20BAC24CD40870B0 /* 015_AtGateAwaitingDock.swift in Sources */,
+				A180A9761AF2588A94E0B9BA /* 016_PickupLoading.swift in Sources */,
+				A1D061193673EC398AB67E44 /* 017_PickupBolSigning.swift in Sources */,
+				A19525BD8DF8599C5B5535AD /* 018_ActiveEnrouteLoaded.swift in Sources */,
+				A10AAEEEAC9C0054F8B34905 /* 019_HosDutyStatus.swift in Sources */,
+				A18D4464B17ACF90DB16F8CE /* 020_ApproachingDelivery.swift in Sources */,
+				A21A9C7F5E4D3B2A1C9876AA /* 021_AtReceiverGate.swift in Sources */,
+				A22A9C7F5E4D3B2A1C9876CC /* 022_DockAssigned.swift in Sources */,
+				A23A9C7F5E4D3B2A1C9876EE /* 023_BackingIn.swift in Sources */,
+				A24A9C7F5E4D3B2A1C987700 /* 024_Unloading.swift in Sources */,
+				A25A9C7F5E4D3B2A1C987722 /* 025_Paperwork.swift in Sources */,
+				A26A9C7F5E4D3B2A1C987744 /* 026_OffDuty.swift in Sources */,
+				A27A9C7F5E4D3B2A1C987766 /* 027_NextLoadBrief.swift in Sources */,
+				A28A9C7F5E4D3B2A1C987788 /* 028_LoadLockedPrehaul.swift in Sources */,
+				A29A9C7F5E4D3B2A1C9877AA /* 029_PickupArrival.swift in Sources */,
+				A30A9C7F5E4D3B2A1C9877CC /* 030_LoadingInProgress.swift in Sources */,
+				A31A9C7F5E4D3B2A1C9877EE /* 031_SpectraMatchVerdict.swift in Sources */,
+				A32A9C7F5E4D3B2A1C988800 /* 032_DetachSequence.swift in Sources */,
+				A33A9C7F5E4D3B2A1C988822 /* 033_BolSignoff.swift in Sources */,
+				A34A9C7F5E4D3B2A1C988844 /* 034_DepartingPickup.swift in Sources */,
+				A35A9C7F5E4D3B2A1C988866 /* 035_EnRouteDrive.swift in Sources */,
+				A36A9C7F5E4D3B2A1C988888 /* 036_ESangSmartStop.swift in Sources */,
+				A37A9C7F5E4D3B2A1C988900 /* 037_ApproachingReceiver.swift in Sources */,
+				A38A9C7F5E4D3B2A1C988902 /* 038_AtReceiverGate.swift in Sources */,
+				A39A9C7F5E4D3B2A1C988904 /* 039_BackingAssistReceiver.swift in Sources */,
+				A40D0FA0CE1A4B7E0000D001 /* 040_DischargeInProgress.swift in Sources */,
+				A41D0FA0CE1A4B7E0000D003 /* 041_DischargeComplete.swift in Sources */,
+				A42D0FA0CE1A4B7E0000D005 /* 042_DisconnectAndVerify.swift in Sources */,
+				A43D0FA0CE1A4B7E0000D007 /* 043_DisconnectConfirmed.swift in Sources */,
+				A44D0FA0CE1A4B7E0000D009 /* 044_ConnectDropHose.swift in Sources */,
+				A45D0FA0CE1A4B7E0000D011 /* 045_DepartingReceiver.swift in Sources */,
+				A46D0FA0CE1A4B7E0000D013 /* 046_SequencedLegApproach.swift in Sources */,
+				A47D0FA0CE1A4B7E0000D015 /* 047_ArrivalCheckpoint.swift in Sources */,
+				A48D0FA0CE1A4B7E0000D017 /* 048_ArrivalGateTaskActive.swift in Sources */,
+				A49D0FA0CE1A4B7E0000D019 /* 049_TaskResult.swift in Sources */,
+				A50D0FA0CE1A4B7E0000D021 /* 050_NextBeatLive.swift in Sources */,
+				A51D0FA0CE1A4B7E0000D023 /* 051_BeatComplete.swift in Sources */,
+				A52D0FA0CE1A4B7E0000D025 /* 052_RateconTender.swift in Sources */,
+				A53D0FA0CE1A4B7E0000D027 /* 053_ESangDispatchChat.swift in Sources */,
+				A54D0FA1CE1A4B7E0000D001 /* 054_HaulPaySettlement.swift in Sources */,
+				A55D0FA1CE1A4B7E0000D003 /* 055_DayCloseWallet.swift in Sources */,
+				A56D0FA2CE1A4B7E0000D005 /* 056_DriverProfile.swift in Sources */,
+				A57D0FA2CE1A4B7E0000D007 /* 057_DriverVehicleCard.swift in Sources */,
+				A58D0FA2CE1A4B7E0000D009 /* 058_DriverWeeklyPlan.swift in Sources */,
+				A59D0FA2CE1A4B7E0000D00B /* 059_DriverTripsHistory.swift in Sources */,
+				A60D0FA2CE1A4B7E0000D00D /* 060_TheHaulDashboard.swift in Sources */,
+				A61D0FA2CE1A4B7E0000D00F /* 061_TheHaulMissions.swift in Sources */,
+				A62D0FA2CE1A4B7E0000D011 /* 062_TheHaulBadges.swift in Sources */,
+				A63D0FA2CE1A4B7E0000D015 /* 063_TheHaulCrates.swift in Sources */,
+				A64D0FA2CE1A4B7E0000D013 /* 064_TheHaulLeaderboard.swift in Sources */,
+				A65D0FA2CE1A4B7E0000D017 /* 065_TheHaulStreaks.swift in Sources */,
+				A66D0FA2CE1A4B7E0000D019 /* 066_TheHaulCosmetics.swift in Sources */,
+				A67D0FA2CE1A4B7E0000D01B /* 067_MeProfile.swift in Sources */,
+				A68D0FA0CE1A4B7E0000D029 /* 068_MeEarnings.swift in Sources */,
+				A70D0FA2CE1A4B7E0000D01D /* 070_MeSettlements.swift in Sources */,
+				A71D0FA2CE1A4B7E0000D01F /* 071_MeTax.swift in Sources */,
+				A72D0FA2CE1A4B7E0000D021 /* 072_MeDocs.swift in Sources */,
+				A73D0FA2CE1A4B7E0000D023 /* 073_MeVehicle.swift in Sources */,
+				A40C0FA9CE1A4B7E0000C011 /* MeComplianceView.swift in Sources */,
+				A16BC7376B77E8DC7AA73CE6 /* AuthModels.swift in Sources */,
+				A17EA9A0121947A6C4E1DDE9 /* HOSStatus.swift in Sources */,
+				A147FB466ACE52CB7A92127C /* Load.swift in Sources */,
+				E1E1A1A100000001AA000001 /* NewsArticle.swift in Sources */,
+				E1E1F5F100000001AA000001 /* NewsFeedStore.swift in Sources */,
+				E1E1E7E100000001AA000001 /* MeNewsView.swift in Sources */,
+				E1E1E7E300000001AA000001 /* NewsArticleReader.swift in Sources */,
+				E1E1FA1100000001AA000001 /* MeNotificationsView.swift in Sources */,
+				E1E1055100000001AA000001 /* HOSLiveStore.swift in Sources */,
+				E1D1ED0111111111111111AA /* ELDIntegrationStore.swift in Sources */,
+				E1D1ED0311111111111111AA /* ELDIntegrationView.swift in Sources */,
+				A15D2066B9DD418D7A98ED9D /* EusoTripAPI.swift in Sources */,
+				A1B1903E9CD06CDB06E71174 /* EusoTripSession.swift in Sources */,
+				A143A81AF94A185B0C5FF8D1 /* DriverHomeViewModel.swift in Sources */,
+				A14CB5B2DAD7FD734291AFDD /* ForgotPasswordViewModel.swift in Sources */,
+				A1C242E22B722C1015AFBEF1 /* LoginViewModel.swift in Sources */,
+				A153EC9E1A9F3C628CB1A34C /* RegistrationViewModel.swift in Sources */,
+				A1F3A1F3A1F3A1F3A1F30001 /* Inspection.swift in Sources */,
+				A1F3A1F3A1F3A1F3A1F30003 /* PretripDVIRViewModel.swift in Sources */,
+				A1F100000000000000000BAA /* IntroSplash.swift in Sources */,
+				A12E1A1C0010CE0FF1000001 /* HereMapsConfig.swift in Sources */,
+				A12E1A1C0010CE0FF1000003 /* TruckProfile.swift in Sources */,
+				A12E1A1C0010CE0FF1000005 /* HereRouteModels.swift in Sources */,
+				A12E1A1C0010CE0FF1000007 /* HereFlexiblePolyline.swift in Sources */,
+				A12E1A1C0010CE0FF1000009 /* HereRoutingClient.swift in Sources */,
+				A12E1A1C0010CE0FF100000B /* HereGeocodingClient.swift in Sources */,
+				A12E1A1C0010CE0FF100000D /* HereMatrixClient.swift in Sources */,
+				A12E1A1C0010CE0FF100000F /* HereTileOverlay.swift in Sources */,
+				A12E1A1C0010CE0FF1000011 /* HereMapView.swift in Sources */,
+				A12E1A1C0010CE0FF1000021 /* HEREAuthService.swift in Sources */,
+				A12E1A1C0010CE0FF1000017 /* EusoAddressField.swift in Sources */,
+				A12E1A1C0010CE0FF1000019 /* EusoHeader.swift in Sources */,
+				A12E1A1C0010CE0FF100001B /* EusoBadge.swift in Sources */,
+				A12E1A1C0010CE0FF100001D /* LatLongParser.swift in Sources */,
+				B1A11111111111111111AA01 /* WeatherSnapshot.swift in Sources */,
+				B1A11111111111111111AA03 /* WeatherService.swift in Sources */,
+				B1A11111111111111111AA05 /* WeatherCard.swift in Sources */,
+				B1A11111111111111111AA07 /* DriverTabPanes.swift in Sources */,
+				B1A11111111111111111AB01 /* ESangParticleBurst.swift in Sources */,
+				B1A11111111111111111AC01 /* MeDetailScreens.swift in Sources */,
+				B1A11111111111111111AD01 /* DriverNavController.swift in Sources */,
+				B1A11111111111111111AE01 /* LoadDetailSheet.swift in Sources */,
+				B1A11111111111111111AF01 /* SOSEmergencySheet.swift in Sources */,
+				C1A11111111111111111BA01 /* DriverProfileStore.swift in Sources */,
+				C1A11111111111111111BB01 /* ProfileEditView.swift in Sources */,
+				D1A11111111111111111AA01 /* LoadingParticleField.swift in Sources */,
+				D1A11111111111111111AB01 /* ESangAutopilot.swift in Sources */,
+				D1A11111111111111111AC01 /* ESangVoiceInput.swift in Sources */,
+				D1A11111111111111111AD01 /* LoadDetailSheet+Adapters.swift in Sources */,
+				D1A11111111111111111AE01 /* TileReveal.swift in Sources */,
+				D1A11111111111111111AF01 /* AddPaymentAccountSheet.swift in Sources */,
+				D1A11111111111111111BA01 /* DriverConversationView.swift in Sources */,
+				D1A11111111111111111HZ01 /* HotZonesWidget.swift in Sources */,
+				A1A11111111111111111F001 /* PushService.swift in Sources */,
+				A1A11111111111111111F002 /* RealtimeService.swift in Sources */,
+				A1A11111111111111111F003 /* GeofenceService.swift in Sources */,
+				A1A11111111111111111F004 /* HOSClockService.swift in Sources */,
+				A1A11111111111111111F010 /* UnreadMessageStore.swift in Sources */,
+				C1A2B3C4D5E6F78901234501 /* WatchAuthBridge.swift in Sources */,
+				C1A2B3C4D5E6F78901234503 /* WatchCommandHandler.swift in Sources */,
+				C1A2B3C4D5E6F78901234505 /* EusoTripApp+WatchBridge.swift in Sources */,
+				C1A2B3C4D5E6F78901234507 /* ConvoyPhoneBridge.swift in Sources */,
+				C1A2B3C4D5E6F78901234509 /* SatellitePhoneBridge.swift in Sources */,
+				A12E1A1C0010CE0FF1000031 /* EusoEmptyState.swift in Sources */,
+				A12E1A1C0010CE0FF1000033 /* MockDataGuard.swift in Sources */,
+				A12E1A1C0010CE0FF1000035 /* DynamicStore.swift in Sources */,
+				A12E1A1C0010CE0FF1000037 /* LiveDataStores.swift in Sources */,
+				A12E1A1C0010CE0FF1000039 /* DriverStoreModels.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FDCA0D022F96F83E0057AC19 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FDCA0D0E2F96F83F0057AC19 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FDCA0D182F96F83F0057AC19 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		FDCA0D142F96F83F0057AC19 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = FDCA0D052F96F83E0057AC19 /* EusoTrip Pulse Watch App */;
+			targetProxy = FDCA0D132F96F83F0057AC19 /* PBXContainerItemProxy */;
+		};
+		FDCA0D1E2F96F83F0057AC19 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = FDCA0D052F96F83E0057AC19 /* EusoTrip Pulse Watch App */;
+			targetProxy = FDCA0D1D2F96F83F0057AC19 /* PBXContainerItemProxy */;
+		};
+		FDCA0D252F96F83F0057AC19 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = FDCA0D052F96F83E0057AC19 /* EusoTrip Pulse Watch App */;
+			targetProxy = FDCA0D242F96F83F0057AC19 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		A1000000000000000000AAB4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A12E1A1C0010CE0FF1000015 /* EusoTrip.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A1000000000000000000AAB5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A12E1A1C0010CE0FF1000015 /* EusoTrip.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		A1000000000000000000AAB6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = EusoTrip/EusoTrip.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 55;
+				DEVELOPMENT_ASSET_PATHS = "\"EusoTrip/Preview Content\"";
+				DEVELOPMENT_TEAM = 665Z3ZBZS2;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_HEREAccessKeyId = "$(HERE_ACCESS_KEY_ID)";
+				INFOPLIST_KEY_HEREAccessKeySecret = "$(HERE_ACCESS_KEY_SECRET)";
+				INFOPLIST_KEY_HEREClientId = "$(HERE_CLIENT_ID)";
+				INFOPLIST_KEY_HEREJSApiKey = "$(HERE_JS_API_KEY)";
+				INFOPLIST_KEY_HERETokenEndpointURL = "$(HERE_TOKEN_ENDPOINT_URL)";
+				INFOPLIST_KEY_HEREUserId = "$(HERE_USER_ID)";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "EusoTrip uses your location to show route weather, traffic, and nearby loads, and to automatically advance your trip screens when you arrive at pickup or delivery.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "EusoTrip uses the microphone for ESANG voice commands so you can talk to your copilot hands-free.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "EusoTrip uses motion data to auto-detect when you start and stop driving so your HOS clock and trip screens advance without a tap.";
+				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "EusoTrip uses Ultra-Wideband to help you dock your truck precisely at loading bays and to coordinate hazmat escort handoffs with nearby drivers.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "EusoTrip transcribes what you say to ESANG on-device so your copilot can answer and navigate the app for you.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = "remote-notification";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.app.eusotrip;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A1000000000000000000AAB7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = EusoTrip/EusoTrip.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 55;
+				DEVELOPMENT_ASSET_PATHS = "\"EusoTrip/Preview Content\"";
+				DEVELOPMENT_TEAM = 665Z3ZBZS2;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_HEREAccessKeyId = "$(HERE_ACCESS_KEY_ID)";
+				INFOPLIST_KEY_HEREAccessKeySecret = "$(HERE_ACCESS_KEY_SECRET)";
+				INFOPLIST_KEY_HEREClientId = "$(HERE_CLIENT_ID)";
+				INFOPLIST_KEY_HEREJSApiKey = "$(HERE_JS_API_KEY)";
+				INFOPLIST_KEY_HERETokenEndpointURL = "$(HERE_TOKEN_ENDPOINT_URL)";
+				INFOPLIST_KEY_HEREUserId = "$(HERE_USER_ID)";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "EusoTrip uses your location to show route weather, traffic, and nearby loads, and to automatically advance your trip screens when you arrive at pickup or delivery.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "EusoTrip uses the microphone for ESANG voice commands so you can talk to your copilot hands-free.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "EusoTrip uses motion data to auto-detect when you start and stop driving so your HOS clock and trip screens advance without a tap.";
+				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "EusoTrip uses Ultra-Wideband to help you dock your truck precisely at loading bays and to coordinate hazmat escort handoffs with nearby drivers.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "EusoTrip transcribes what you say to ESANG on-device so your copilot can answer and navigate the app for you.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = "remote-notification";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.app.eusotrip;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		FDCA0D282F96F83F0057AC19 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = EusoTripPulseWatch.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 55;
+				DEVELOPMENT_TEAM = 665Z3ZBZS2;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "EusoTripPulseWatch-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				PRODUCT_BUNDLE_IDENTIFIER = com.app.eusotrip.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.4;
+			};
+			name = Debug;
+		};
+		FDCA0D292F96F83F0057AC19 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = EusoTripPulseWatch.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 55;
+				DEVELOPMENT_TEAM = 665Z3ZBZS2;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "EusoTripPulseWatch-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.app.eusotrip.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.4;
+			};
+			name = Release;
+		};
+		FDCA0D2A2F96F83F0057AC19 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 55;
+				DEVELOPMENT_TEAM = 665Z3ZBZS2;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.app.eusotrip.EusoTrip-Pulse-Watch-AppTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/EusoTrip Pulse Watch App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/EusoTrip Pulse Watch App";
+				WATCHOS_DEPLOYMENT_TARGET = 26.4;
+			};
+			name = Debug;
+		};
+		FDCA0D2B2F96F83F0057AC19 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 55;
+				DEVELOPMENT_TEAM = 665Z3ZBZS2;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.app.eusotrip.EusoTrip-Pulse-Watch-AppTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/EusoTrip Pulse Watch App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/EusoTrip Pulse Watch App";
+				WATCHOS_DEPLOYMENT_TARGET = 26.4;
+			};
+			name = Release;
+		};
+		FDCA0D2C2F96F83F0057AC19 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 55;
+				DEVELOPMENT_TEAM = 665Z3ZBZS2;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.app.eusotrip.EusoTrip-Pulse-Watch-AppUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_TARGET_NAME = "EusoTrip Pulse Watch App";
+				WATCHOS_DEPLOYMENT_TARGET = 26.4;
+			};
+			name = Debug;
+		};
+		FDCA0D2D2F96F83F0057AC19 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 55;
+				DEVELOPMENT_TEAM = 665Z3ZBZS2;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.app.eusotrip.EusoTrip-Pulse-Watch-AppUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_TARGET_NAME = "EusoTrip Pulse Watch App";
+				WATCHOS_DEPLOYMENT_TARGET = 26.4;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A1000000000000000000AAB2 /* Build configuration list for PBXProject "EusoTrip" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1000000000000000000AAB4 /* Debug */,
+				A1000000000000000000AAB5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1000000000000000000AAB3 /* Build configuration list for PBXNativeTarget "EusoTrip" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1000000000000000000AAB6 /* Debug */,
+				A1000000000000000000AAB7 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		FDCA0D2E2F96F83F0057AC19 /* Build configuration list for PBXNativeTarget "EusoTrip Pulse Watch App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FDCA0D282F96F83F0057AC19 /* Debug */,
+				FDCA0D292F96F83F0057AC19 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		FDCA0D2F2F96F83F0057AC19 /* Build configuration list for PBXNativeTarget "EusoTrip Pulse Watch AppTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FDCA0D2A2F96F83F0057AC19 /* Debug */,
+				FDCA0D2B2F96F83F0057AC19 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		FDCA0D302F96F83F0057AC19 /* Build configuration list for PBXNativeTarget "EusoTrip Pulse Watch AppUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FDCA0D2C2F96F83F0057AC19 /* Debug */,
+				FDCA0D2D2F96F83F0057AC19 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A1F1000000000000000001AA /* XCRemoteSwiftPackageReference "lottie-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/airbnb/lottie-ios.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 4.5.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A1F1000000000000000002AA /* Lottie */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1F1000000000000000001AA /* XCRemoteSwiftPackageReference "lottie-ios" */;
+			productName = Lottie;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = A1000000000000000000AAAA /* Project object */;
+}

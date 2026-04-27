@@ -1,0 +1,44 @@
+---
+description: EusoTrip 2027 Doctrine — the single source of truth for the platform
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# EusoTrip 2027 Doctrine Cursor Rule
+
+**The `EUSOTRIP2027GOLD/` folder in the repo root is the single source of truth for everything EusoTrip 2027.**
+
+Before making ANY change to this codebase — code, design, schema, copy, infra — you must:
+
+1. **Read `EUSOTRIP2027GOLD/00_THE_BIBLE.md` first.** It contains the decision tree, the ten non-negotiables, the role baseline, the build phases, and the onboarding ritual.
+2. **Follow the decision tree** in §3 of the Bible to find the exact file for your task (UI → `01_Brand_DNA_and_Design_Rules.md`, API → `03_Backend_API_Contract.md`, Driver role → `10_Mode_TRUCK/01_Driver.md`, etc.).
+3. **Honor the Ten Non-Negotiables** in §4 of the Bible. Gradient-first, TDD, zero mocks, palette-sourced colors, both registers preview, canonical procedure names, Driver baseline, MCP as source of truth.
+4. **Never hardcode colors or solid fills.** Use `LinearGradient.diagonal` and palette helpers only.
+5. **Never ship mock data or "coming soon" screens** outside an explicitly DEBUG-gated placeholder for a next-phase role.
+6. **Run the tests.** Every feature must have a failing test first (TDD), every user journey must have an E2E (XCUITest + Playwright).
+7. **Preview both registers.** Night + Afternoon. Both must render. No exceptions.
+8. **Update the ledger** (`EUSOTRIP2027GOLD/autorun_ledger/` or the master `EUSOTRIP_TRAJECTORY.json`) when you ship a brick.
+9. **Mirror doctrine changes** to BOTH repos (`eusoronetechnologiesinc/` and `EusoTrip by Eusorone Technologies, Inc/`) — never let them drift.
+10. **The Driver profile is the baseline.** Every other role extends it; nothing replaces it.
+
+## Key file locations
+
+- Bible (read first): `EUSOTRIP2027GOLD/00_THE_BIBLE.md`
+- Brand + design tokens: `EUSOTRIP2027GOLD/01_Brand_DNA_and_Design_Rules.md`
+- Engineering principles (TDD, E2E): `EUSOTRIP2027GOLD/02_Engineering_Principles.md`
+- Backend API contract: `EUSOTRIP2027GOLD/03_Backend_API_Contract.md`
+- DB schema: `EUSOTRIP2027GOLD/04_Database_and_Schema.md`
+- Auth/Security: `EUSOTRIP2027GOLD/05_Auth_Security_Compliance.md`
+- Integrations (HERE, Stripe, Plaid, APNs): `EUSOTRIP2027GOLD/06_Third_Party_Integrations.md`
+- Role doctrine: `EUSOTRIP2027GOLD/10_Mode_TRUCK/`, `20_Mode_RAIL/`, `30_Mode_VESSEL/`
+- Journeys + lifecycle: `EUSOTRIP2027GOLD/80_User_Journeys_and_Load_Lifecycle.md`
+- Claude Code init: `EUSOTRIP2027GOLD/95_Codebase_Continuity_and_Claude_Init.md`
+- Scheduled task (autorun agent): `EUSOTRIP2027GOLD/scheduled_task/SKILL.md`
+- Shipped bricks (ledger): `EUSOTRIP2027GOLD/autorun_ledger/`
+
+## When in doubt
+
+Ask: "which file in `EUSOTRIP2027GOLD/` governs this?" If you cannot find one, the change is probably outside the doctrine — flag it in PR description and add a doctrine entry in the same PR.
+
+**EusoTrip 2027 — Taking our talents on the road. Driver is home base; every role extends it.**
