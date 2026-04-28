@@ -366,6 +366,14 @@
 		D2T0500000000000000ABF1 /* 310_CarrierAssignDriver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2T0500000000000000ACF1 /* 310_CarrierAssignDriver.swift */; };
 		D2T0600000000000000ABF1 /* 311_CarrierActiveLoad.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2T0600000000000000ACF1 /* 311_CarrierActiveLoad.swift */; };
 		D2T0700000000000000ABF1 /* 312_CarrierEarningsHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2T0700000000000000ACF1 /* 312_CarrierEarningsHome.swift */; };
+		D2U0000000000000000ABF0 /* 313_CarrierSettlementsList.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2U0000000000000000ACF0 /* 313_CarrierSettlementsList.swift */; };
+		D2U0100000000000000ABF0 /* 314_CarrierFuelCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2U0100000000000000ACF0 /* 314_CarrierFuelCard.swift */; };
+		D2U0200000000000000ABF0 /* 315_CarrierMaintenance.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2U0200000000000000ACF0 /* 315_CarrierMaintenance.swift */; };
+		D2U0300000000000000ABF0 /* 316_CarrierComplianceDash.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2U0300000000000000ACF0 /* 316_CarrierComplianceDash.swift */; };
+		D2U0400000000000000ABF0 /* 317_CarrierAuthority.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2U0400000000000000ACF0 /* 317_CarrierAuthority.swift */; };
+		D2U0500000000000000ABF0 /* 318_CarrierELD.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2U0500000000000000ACF0 /* 318_CarrierELD.swift */; };
+		D2U0600000000000000ABF0 /* 319_CarrierDriversList.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2U0600000000000000ACF0 /* 319_CarrierDriversList.swift */; };
+		D2U0700000000000000ABF0 /* 320_CarrierVehiclesList.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2U0700000000000000ACF0 /* 320_CarrierVehiclesList.swift */; };
 		D2260000000000000AB0004 /* 260_PostedAwaitingBids.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2260000000000000AC0004 /* 260_PostedAwaitingBids.swift */; };
 		D2261000000000000AB0005 /* 261_BiddingLiveFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2261000000000000AC0005 /* 261_BiddingLiveFeed.swift */; };
 		D2262000000000000AB0006 /* 262_AwardedPrePickup.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2262000000000000AC0006 /* 262_AwardedPrePickup.swift */; };
@@ -829,6 +837,14 @@
 		D2T0500000000000000ACF1 /* 310_CarrierAssignDriver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 310_CarrierAssignDriver.swift; path = EusoTrip/Views/Carrier/310_CarrierAssignDriver.swift; sourceTree = SOURCE_ROOT; };
 		D2T0600000000000000ACF1 /* 311_CarrierActiveLoad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 311_CarrierActiveLoad.swift; path = EusoTrip/Views/Carrier/311_CarrierActiveLoad.swift; sourceTree = SOURCE_ROOT; };
 		D2T0700000000000000ACF1 /* 312_CarrierEarningsHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 312_CarrierEarningsHome.swift; path = EusoTrip/Views/Carrier/312_CarrierEarningsHome.swift; sourceTree = SOURCE_ROOT; };
+		D2U0000000000000000ACF0 /* 313_CarrierSettlementsList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 313_CarrierSettlementsList.swift; path = EusoTrip/Views/Carrier/313_CarrierSettlementsList.swift; sourceTree = SOURCE_ROOT; };
+		D2U0100000000000000ACF0 /* 314_CarrierFuelCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 314_CarrierFuelCard.swift; path = EusoTrip/Views/Carrier/314_CarrierFuelCard.swift; sourceTree = SOURCE_ROOT; };
+		D2U0200000000000000ACF0 /* 315_CarrierMaintenance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 315_CarrierMaintenance.swift; path = EusoTrip/Views/Carrier/315_CarrierMaintenance.swift; sourceTree = SOURCE_ROOT; };
+		D2U0300000000000000ACF0 /* 316_CarrierComplianceDash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 316_CarrierComplianceDash.swift; path = EusoTrip/Views/Carrier/316_CarrierComplianceDash.swift; sourceTree = SOURCE_ROOT; };
+		D2U0400000000000000ACF0 /* 317_CarrierAuthority.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 317_CarrierAuthority.swift; path = EusoTrip/Views/Carrier/317_CarrierAuthority.swift; sourceTree = SOURCE_ROOT; };
+		D2U0500000000000000ACF0 /* 318_CarrierELD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 318_CarrierELD.swift; path = EusoTrip/Views/Carrier/318_CarrierELD.swift; sourceTree = SOURCE_ROOT; };
+		D2U0600000000000000ACF0 /* 319_CarrierDriversList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 319_CarrierDriversList.swift; path = EusoTrip/Views/Carrier/319_CarrierDriversList.swift; sourceTree = SOURCE_ROOT; };
+		D2U0700000000000000ACF0 /* 320_CarrierVehiclesList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 320_CarrierVehiclesList.swift; path = EusoTrip/Views/Carrier/320_CarrierVehiclesList.swift; sourceTree = SOURCE_ROOT; };
 		D2260000000000000AC0004 /* 260_PostedAwaitingBids.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 260_PostedAwaitingBids.swift; path = EusoTrip/Views/Shipper/260_PostedAwaitingBids.swift; sourceTree = SOURCE_ROOT; };
 		D2261000000000000AC0005 /* 261_BiddingLiveFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 261_BiddingLiveFeed.swift; path = EusoTrip/Views/Shipper/261_BiddingLiveFeed.swift; sourceTree = SOURCE_ROOT; };
 		D2262000000000000AC0006 /* 262_AwardedPrePickup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 262_AwardedPrePickup.swift; path = EusoTrip/Views/Shipper/262_AwardedPrePickup.swift; sourceTree = SOURCE_ROOT; };
@@ -1275,6 +1291,14 @@
 				D2T0500000000000000ACF1 /* 310_CarrierAssignDriver.swift */,
 				D2T0600000000000000ACF1 /* 311_CarrierActiveLoad.swift */,
 				D2T0700000000000000ACF1 /* 312_CarrierEarningsHome.swift */,
+				D2U0000000000000000ACF0 /* 313_CarrierSettlementsList.swift */,
+				D2U0100000000000000ACF0 /* 314_CarrierFuelCard.swift */,
+				D2U0200000000000000ACF0 /* 315_CarrierMaintenance.swift */,
+				D2U0300000000000000ACF0 /* 316_CarrierComplianceDash.swift */,
+				D2U0400000000000000ACF0 /* 317_CarrierAuthority.swift */,
+				D2U0500000000000000ACF0 /* 318_CarrierELD.swift */,
+				D2U0600000000000000ACF0 /* 319_CarrierDriversList.swift */,
+				D2U0700000000000000ACF0 /* 320_CarrierVehiclesList.swift */,
 				D2260000000000000AC0004 /* 260_PostedAwaitingBids.swift */,
 				D2261000000000000AC0005 /* 261_BiddingLiveFeed.swift */,
 				D2262000000000000AC0006 /* 262_AwardedPrePickup.swift */,
@@ -2017,6 +2041,14 @@
 				D2T0500000000000000ABF1 /* 310_CarrierAssignDriver.swift in Sources */,
 				D2T0600000000000000ABF1 /* 311_CarrierActiveLoad.swift in Sources */,
 				D2T0700000000000000ABF1 /* 312_CarrierEarningsHome.swift in Sources */,
+				D2U0000000000000000ABF0 /* 313_CarrierSettlementsList.swift in Sources */,
+				D2U0100000000000000ABF0 /* 314_CarrierFuelCard.swift in Sources */,
+				D2U0200000000000000ABF0 /* 315_CarrierMaintenance.swift in Sources */,
+				D2U0300000000000000ABF0 /* 316_CarrierComplianceDash.swift in Sources */,
+				D2U0400000000000000ABF0 /* 317_CarrierAuthority.swift in Sources */,
+				D2U0500000000000000ABF0 /* 318_CarrierELD.swift in Sources */,
+				D2U0600000000000000ABF0 /* 319_CarrierDriversList.swift in Sources */,
+				D2U0700000000000000ABF0 /* 320_CarrierVehiclesList.swift in Sources */,
 				D2260000000000000AB0004 /* 260_PostedAwaitingBids.swift in Sources */,
 				D2261000000000000AB0005 /* 261_BiddingLiveFeed.swift in Sources */,
 				D2262000000000000AB0006 /* 262_AwardedPrePickup.swift in Sources */,
