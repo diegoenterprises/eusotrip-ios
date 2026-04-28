@@ -331,6 +331,16 @@
 		D2P0800000000000000ABF5 /* 398_KybLegalEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2P0800000000000000ACF5 /* 398_KybLegalEntity.swift */; };
 		D2P0900000000000000ABF5 /* 399_EmailVerifyPending.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2P0900000000000000ACF5 /* 399_EmailVerifyPending.swift */; };
 		D2Q0000000000000000ABF4 /* 400_BulkUploadShell.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2Q0000000000000000ACF4 /* 400_BulkUploadShell.swift */; };
+		D2R0000000000000000ABF3 /* 410_LoadsFilterSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2R0000000000000000ACF3 /* 410_LoadsFilterSheet.swift */; };
+		D2R0100000000000000ABF3 /* 411_LoadsSortSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2R0100000000000000ACF3 /* 411_LoadsSortSheet.swift */; };
+		D2R0200000000000000ABF3 /* 412_DraftsList.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2R0200000000000000ACF3 /* 412_DraftsList.swift */; };
+		D2R0300000000000000ABF3 /* 413_ArchivedLoads.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2R0300000000000000ACF3 /* 413_ArchivedLoads.swift */; };
+		D2R0400000000000000ABF3 /* 414_BidDetailSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2R0400000000000000ACF3 /* 414_BidDetailSheet.swift */; };
+		D2R0500000000000000ABF3 /* 415_CounterOfferComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2R0500000000000000ACF3 /* 415_CounterOfferComposer.swift */; };
+		D2R0600000000000000ABF3 /* 416_BidRejectSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2R0600000000000000ACF3 /* 416_BidRejectSheet.swift */; };
+		D2R0700000000000000ABF3 /* 417_BidAcceptConfirmation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2R0700000000000000ACF3 /* 417_BidAcceptConfirmation.swift */; };
+		D2R0800000000000000ABF3 /* 418_TenderAcceptCountdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2R0800000000000000ACF3 /* 418_TenderAcceptCountdown.swift */; };
+		D2R0900000000000000ABF3 /* 419_ExceptionResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2R0900000000000000ACF3 /* 419_ExceptionResponse.swift */; };
 		D2260000000000000AB0004 /* 260_PostedAwaitingBids.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2260000000000000AC0004 /* 260_PostedAwaitingBids.swift */; };
 		D2261000000000000AB0005 /* 261_BiddingLiveFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2261000000000000AC0005 /* 261_BiddingLiveFeed.swift */; };
 		D2262000000000000AB0006 /* 262_AwardedPrePickup.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2262000000000000AC0006 /* 262_AwardedPrePickup.swift */; };
@@ -759,6 +769,16 @@
 		D2P0800000000000000ACF5 /* 398_KybLegalEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 398_KybLegalEntity.swift; path = EusoTrip/Views/Shipper/398_KybLegalEntity.swift; sourceTree = SOURCE_ROOT; };
 		D2P0900000000000000ACF5 /* 399_EmailVerifyPending.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 399_EmailVerifyPending.swift; path = EusoTrip/Views/Shipper/399_EmailVerifyPending.swift; sourceTree = SOURCE_ROOT; };
 		D2Q0000000000000000ACF4 /* 400_BulkUploadShell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 400_BulkUploadShell.swift; path = EusoTrip/Views/Shipper/400_BulkUploadShell.swift; sourceTree = SOURCE_ROOT; };
+		D2R0000000000000000ACF3 /* 410_LoadsFilterSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 410_LoadsFilterSheet.swift; path = EusoTrip/Views/Shipper/410_LoadsFilterSheet.swift; sourceTree = SOURCE_ROOT; };
+		D2R0100000000000000ACF3 /* 411_LoadsSortSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 411_LoadsSortSheet.swift; path = EusoTrip/Views/Shipper/411_LoadsSortSheet.swift; sourceTree = SOURCE_ROOT; };
+		D2R0200000000000000ACF3 /* 412_DraftsList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 412_DraftsList.swift; path = EusoTrip/Views/Shipper/412_DraftsList.swift; sourceTree = SOURCE_ROOT; };
+		D2R0300000000000000ACF3 /* 413_ArchivedLoads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 413_ArchivedLoads.swift; path = EusoTrip/Views/Shipper/413_ArchivedLoads.swift; sourceTree = SOURCE_ROOT; };
+		D2R0400000000000000ACF3 /* 414_BidDetailSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 414_BidDetailSheet.swift; path = EusoTrip/Views/Shipper/414_BidDetailSheet.swift; sourceTree = SOURCE_ROOT; };
+		D2R0500000000000000ACF3 /* 415_CounterOfferComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 415_CounterOfferComposer.swift; path = EusoTrip/Views/Shipper/415_CounterOfferComposer.swift; sourceTree = SOURCE_ROOT; };
+		D2R0600000000000000ACF3 /* 416_BidRejectSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 416_BidRejectSheet.swift; path = EusoTrip/Views/Shipper/416_BidRejectSheet.swift; sourceTree = SOURCE_ROOT; };
+		D2R0700000000000000ACF3 /* 417_BidAcceptConfirmation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 417_BidAcceptConfirmation.swift; path = EusoTrip/Views/Shipper/417_BidAcceptConfirmation.swift; sourceTree = SOURCE_ROOT; };
+		D2R0800000000000000ACF3 /* 418_TenderAcceptCountdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 418_TenderAcceptCountdown.swift; path = EusoTrip/Views/Shipper/418_TenderAcceptCountdown.swift; sourceTree = SOURCE_ROOT; };
+		D2R0900000000000000ACF3 /* 419_ExceptionResponse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 419_ExceptionResponse.swift; path = EusoTrip/Views/Shipper/419_ExceptionResponse.swift; sourceTree = SOURCE_ROOT; };
 		D2260000000000000AC0004 /* 260_PostedAwaitingBids.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 260_PostedAwaitingBids.swift; path = EusoTrip/Views/Shipper/260_PostedAwaitingBids.swift; sourceTree = SOURCE_ROOT; };
 		D2261000000000000AC0005 /* 261_BiddingLiveFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 261_BiddingLiveFeed.swift; path = EusoTrip/Views/Shipper/261_BiddingLiveFeed.swift; sourceTree = SOURCE_ROOT; };
 		D2262000000000000AC0006 /* 262_AwardedPrePickup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 262_AwardedPrePickup.swift; path = EusoTrip/Views/Shipper/262_AwardedPrePickup.swift; sourceTree = SOURCE_ROOT; };
@@ -1170,6 +1190,16 @@
 				D2P0800000000000000ACF5 /* 398_KybLegalEntity.swift */,
 				D2P0900000000000000ACF5 /* 399_EmailVerifyPending.swift */,
 				D2Q0000000000000000ACF4 /* 400_BulkUploadShell.swift */,
+				D2R0000000000000000ACF3 /* 410_LoadsFilterSheet.swift */,
+				D2R0100000000000000ACF3 /* 411_LoadsSortSheet.swift */,
+				D2R0200000000000000ACF3 /* 412_DraftsList.swift */,
+				D2R0300000000000000ACF3 /* 413_ArchivedLoads.swift */,
+				D2R0400000000000000ACF3 /* 414_BidDetailSheet.swift */,
+				D2R0500000000000000ACF3 /* 415_CounterOfferComposer.swift */,
+				D2R0600000000000000ACF3 /* 416_BidRejectSheet.swift */,
+				D2R0700000000000000ACF3 /* 417_BidAcceptConfirmation.swift */,
+				D2R0800000000000000ACF3 /* 418_TenderAcceptCountdown.swift */,
+				D2R0900000000000000ACF3 /* 419_ExceptionResponse.swift */,
 				D2260000000000000AC0004 /* 260_PostedAwaitingBids.swift */,
 				D2261000000000000AC0005 /* 261_BiddingLiveFeed.swift */,
 				D2262000000000000AC0006 /* 262_AwardedPrePickup.swift */,
@@ -1877,6 +1907,16 @@
 				D2P0800000000000000ABF5 /* 398_KybLegalEntity.swift in Sources */,
 				D2P0900000000000000ABF5 /* 399_EmailVerifyPending.swift in Sources */,
 				D2Q0000000000000000ABF4 /* 400_BulkUploadShell.swift in Sources */,
+				D2R0000000000000000ABF3 /* 410_LoadsFilterSheet.swift in Sources */,
+				D2R0100000000000000ABF3 /* 411_LoadsSortSheet.swift in Sources */,
+				D2R0200000000000000ABF3 /* 412_DraftsList.swift in Sources */,
+				D2R0300000000000000ABF3 /* 413_ArchivedLoads.swift in Sources */,
+				D2R0400000000000000ABF3 /* 414_BidDetailSheet.swift in Sources */,
+				D2R0500000000000000ABF3 /* 415_CounterOfferComposer.swift in Sources */,
+				D2R0600000000000000ABF3 /* 416_BidRejectSheet.swift in Sources */,
+				D2R0700000000000000ABF3 /* 417_BidAcceptConfirmation.swift in Sources */,
+				D2R0800000000000000ABF3 /* 418_TenderAcceptCountdown.swift in Sources */,
+				D2R0900000000000000ABF3 /* 419_ExceptionResponse.swift in Sources */,
 				D2260000000000000AB0004 /* 260_PostedAwaitingBids.swift in Sources */,
 				D2261000000000000AB0005 /* 261_BiddingLiveFeed.swift in Sources */,
 				D2262000000000000AB0006 /* 262_AwardedPrePickup.swift in Sources */,
