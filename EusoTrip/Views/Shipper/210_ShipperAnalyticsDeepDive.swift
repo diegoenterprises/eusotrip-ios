@@ -629,30 +629,185 @@ struct ShipperAnalyticsDeepDive: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
-    // MARK: - Cohort placeholders (lane / equipment-type)
+    // MARK: - Cohort breakdowns (lane / equipment)
 
-    /// Backend reserves `byLane` and equipment-type breakdowns for
-    /// future expansion — they are not yet returned by
-    /// `shippers.getSpendingAnalytics`. Per the §13 no-fake-data rule
-    /// in the codebase doctrine: render the UI but surface a neutral
-    /// `comingSoon: true` empty state. The screen wiring is ready —
-    /// when the backend ships those projections, only the empty
-    /// states swap to live cohort rows.
+    /// Lane and equipment cohorts now ship live from
+    /// `shippers.getSpendingAnalytics.byLane` (top 8 by spend, grouped
+    /// on the denormalized origin/dest state columns) and `byEquipment`
+    /// (cargoType-classified mix with server-computed share-of-spend).
+    /// Both cohorts are computed against the same period filter as the
+    /// headline totals so cross-lens numbers always agree. Empty state
+    /// renders only when the shipper actually has zero qualifying loads
+    /// in window — never as a "coming soon" placeholder.
+    @ViewBuilder
     private var cohortPlaceholdersSection: some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
-            sectionHeader("MORE LENSES", icon: "rectangle.3.group")
-            EusoEmptyState(
-                systemImage: "map",
-                title: "By lane",
-                subtitle: "Origin-destination breakdown lands here when the backend ships the byLane projection.",
-                comingSoon: true
-            )
-            EusoEmptyState(
-                systemImage: "shippingbox.and.arrow.backward",
-                title: "By equipment",
-                subtitle: "Dry van, reefer, flatbed and tanker mix lands here when the backend ships the byEquipment projection.",
-                comingSoon: true
-            )
+        if case .loaded(.some(let v)) = spendStore.state {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                sectionHeader("MORE LENSES", icon: "rectangle.3.group")
+                laneCohortCard(v.byLane)
+                equipmentCohortCard(v.byEquipment, totalSpend: v.totalSpend)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func laneCohortCard(_ rows: [ShipperAPI.SpendingAnalytics.LaneCohort]) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 8) {
+                Image(systemName: "map")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("By lane")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                Text("\(rows.count) lane\(rows.count == 1 ? "" : "s")")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            if rows.isEmpty {
+                Text("No lanes yet for this window.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textTertiary)
+            } else {
+                VStack(spacing: 6) {
+                    ForEach(rows) { lane in
+                        HStack(spacing: 8) {
+                            HStack(spacing: 4) {
+                                Text(lane.origin)
+                                    .font(EType.bodyStrong)
+                                    .foregroundStyle(palette.textPrimary)
+                                Image(systemName: "arrow.right")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(palette.textTertiary)
+                                Text(lane.destination)
+                                    .font(EType.bodyStrong)
+                                    .foregroundStyle(palette.textPrimary)
+                            }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 1) {
+                                Text("$\(formatThousands(lane.totalSpend))")
+                                    .font(EType.bodyStrong)
+                                    .foregroundStyle(LinearGradient.diagonal)
+                                    .monospacedDigit()
+                                Text("\(lane.loadCount) load\(lane.loadCount == 1 ? "" : "s") · avg $\(formatThousands(lane.avgPerLoad))")
+                                    .font(EType.micro).tracking(0.4)
+                                    .foregroundStyle(palette.textTertiary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(palette.bgCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private func equipmentCohortCard(_ rows: [ShipperAPI.SpendingAnalytics.EquipmentCohort], totalSpend: Double) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 8) {
+                Image(systemName: "shippingbox.and.arrow.backward")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("By equipment")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                Text("\(rows.count) type\(rows.count == 1 ? "" : "s")")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            if rows.isEmpty {
+                Text("No qualifying loads for this window.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textTertiary)
+            } else {
+                VStack(spacing: 6) {
+                    ForEach(rows) { eq in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(prettifyEquipment(eq.equipment))
+                                    .font(EType.bodyStrong)
+                                    .foregroundStyle(palette.textPrimary)
+                                Spacer()
+                                Text("$\(formatThousands(eq.totalSpend))  ·  \(eq.share)%")
+                                    .font(EType.bodyStrong)
+                                    .foregroundStyle(LinearGradient.diagonal)
+                                    .monospacedDigit()
+                            }
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                        .fill(palette.borderFaint.opacity(0.5))
+                                        .frame(height: 4)
+                                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                        .fill(LinearGradient.diagonal)
+                                        .frame(
+                                            width: max(2, geo.size.width * CGFloat(min(100, max(0, eq.share))) / 100),
+                                            height: 4
+                                        )
+                                }
+                            }
+                            .frame(height: 4)
+                            Text("\(eq.loadCount) load\(eq.loadCount == 1 ? "" : "s")")
+                                .font(EType.micro).tracking(0.4)
+                                .foregroundStyle(palette.textTertiary)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(palette.bgCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+    }
+
+    private func formatThousands(_ value: Double) -> String {
+        let n = Int(value.rounded())
+        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
+        if n >= 10_000    { return String(format: "%.0fk", Double(n) / 1_000) }
+        if n >= 1_000     { return String(format: "%.1fk", Double(n) / 1_000) }
+        return "\(n)"
+    }
+
+    /// Maps the canonical `loads.cargoType` enum value to a human
+    /// label. Mirrors the enum at `drizzle/schema.ts:281` 1:1.
+    private func prettifyEquipment(_ raw: String) -> String {
+        switch raw.lowercased() {
+        case "general":      return "Dry van / general"
+        case "hazmat":       return "Hazmat"
+        case "refrigerated": return "Reefer"
+        case "oversized":    return "Oversized / OS&D"
+        case "liquid":       return "Liquid bulk"
+        case "gas":          return "Compressed gas"
+        case "chemicals":    return "Chemicals"
+        case "petroleum":    return "Petroleum / crude"
+        case "livestock":    return "Livestock"
+        case "vehicles":     return "Vehicles"
+        case "timber":       return "Timber"
+        case "grain":        return "Grain"
+        case "dry_bulk":     return "Dry bulk"
+        case "food_grade":   return "Food grade"
+        case "water":        return "Water"
+        case "intermodal":   return "Intermodal"
+        case "cryogenic":    return "Cryogenic"
+        default:             return raw.replacingOccurrences(of: "_", with: " ").capitalized
         }
     }
 
@@ -668,7 +823,7 @@ struct ShipperAnalyticsDeepDive: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
             }
-            Text("Every figure resolves from two live tRPC procedures (`shippers.getSpendingAnalytics` and `shippers.getCatalystPerformance`) against the same period selection, so cross-tile numbers always agree. Lane and equipment-type cohorts ship when the backend exposes them.")
+            Text("Every figure resolves from two live tRPC procedures (`shippers.getSpendingAnalytics` and `shippers.getCatalystPerformance`) against the same period selection, so cross-tile numbers always agree. Lane (origin↔destination state pairs) and equipment-type cohorts now ship from the same query envelope.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -812,14 +967,15 @@ struct ShipperAnalyticsDeepDiveScreen: View {
     }
 }
 
+// Shipper bottom-nav doctrine — analytics/insights live under Me.
 private func shipperNavLeading_210() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",            isCurrent: false),
-     NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false)]
+    [NavSlot(label: "Home",        systemImage: "house",                          isCurrent: false),
+     NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle",    isCurrent: false)]
 }
 
 private func shipperNavTrailing_210() -> [NavSlot] {
-    [NavSlot(label: "Reports",  systemImage: "chart.line.uptrend.xyaxis",   isCurrent: false),
-     NavSlot(label: "Insights", systemImage: "chart.bar.doc.horizontal",    isCurrent: true)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person.fill",      isCurrent: true)]
 }
 
 // MARK: - Previews

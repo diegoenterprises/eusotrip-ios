@@ -624,14 +624,15 @@ struct ShipperLoadsScreen: View {
     }
 }
 
+// Shipper bottom-nav doctrine — see 200_ShipperHome.swift comment.
 private func shipperNavLeading_201() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",                isCurrent: false),
-     NavSlot(label: "Loads", systemImage: "shippingbox.fill",     isCurrent: true)]
+    [NavSlot(label: "Home",        systemImage: "house",                          isCurrent: false),
+     NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle",    isCurrent: false)]
 }
 
 private func shipperNavTrailing_201() -> [NavSlot] {
-    [NavSlot(label: "Bids",  systemImage: "hand.raised",          isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",               isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: true),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 // MARK: - Previews

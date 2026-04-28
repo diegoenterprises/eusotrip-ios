@@ -502,14 +502,17 @@ struct ShipperHomeScreen: View {
     }
 }
 
+// Shipper bottom-nav doctrine (2026-04-28): Home / Create Load / ESANG /
+// Loads / Me. Wallet, settlements, payments, reports, contacts, analytics
+// all live under the Me sub-section, NOT promoted to the chrome.
 private func shipperNavLeading_200() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill",          isCurrent: true),
-     NavSlot(label: "Loads", systemImage: "shippingbox",         isCurrent: false)]
+    [NavSlot(label: "Home",        systemImage: "house.fill",                    isCurrent: true),
+     NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle",   isCurrent: false)]
 }
 
 private func shipperNavTrailing_200() -> [NavSlot] {
-    [NavSlot(label: "Bids",  systemImage: "hand.raised",         isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",              isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person.fill",      isCurrent: false)]
 }
 
 // MARK: - Previews

@@ -74,14 +74,46 @@ struct ShipperLoadDetail: View {
     @StateObject private var detailStore = ShipperLoadDetailStore()
     @StateObject private var bidsStore = ShipperBidsStore()
 
+    /// Vertical / product context resolved from the current load.
+    /// Drives the header kicker + the lifecycle strip silhouettes.
+    /// Falls through to truck/dryVan defaults until the detail row
+    /// arrives, so the strip never shows a flash-of-wrong-product
+    /// during initial paint.
+    private var lifecycleVertical: TripVertical {
+        TripVertical(role: session.user?.role)
+    }
+
+    private var lifecycleProduct: TripProduct {
+        let detail = detailStore.state.value ?? nil
+        return TripProduct.resolveDirect(
+            cargoType:   detail?.cargoType,
+            hazmatClass: detail?.hazmatClass,
+            vertical:    lifecycleVertical
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             header
+            // Lifecycle stage strip — animated 8-stage progression
+            // (Posted → Closed) with product/vertical-aware kicker
+            // copy and silhouette. Mirrors the Driver lifecycle
+            // doctrine on the Shipper side so a hazmat tanker load
+            // reads as a hazmat tanker load on every surface.
+            if let live = detailStore.state.value ?? nil {
+                ShipperLoadCycleView(
+                    status:   live.status,
+                    product:  lifecycleProduct,
+                    vertical: lifecycleVertical
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
             contentBody
             Color.clear.frame(height: 96)
         }
         .padding(.horizontal, 14)
         .padding(.top, 8)
+        .animation(.easeOut(duration: 0.18), value: detailStore.state)
         .task { await refreshAll() }
         .refreshable { await refreshAll() }
     }
@@ -111,9 +143,27 @@ struct ShipperLoadDetail: View {
                     .overlay(Circle().strokeBorder(palette.borderFaint))
                     .clipShape(Circle())
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("LOAD DETAIL")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                        .foregroundStyle(LinearGradient.diagonal)
+                    // Product-aware eyebrow. Falls through to the
+                    // vertical-default kicker until the live detail
+                    // row lands so the header doesn't flash a wrong
+                    // product on first paint.
+                    HStack(spacing: 6) {
+                        Text("LOAD DETAIL")
+                            .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                            .foregroundStyle(LinearGradient.diagonal)
+                        if live != nil {
+                            Text("·")
+                                .font(.system(size: 9, weight: .heavy))
+                                .foregroundStyle(palette.textTertiary)
+                            Image(systemName: lifecycleProduct.symbol)
+                                .font(.system(size: 9, weight: .heavy))
+                                .foregroundStyle(LinearGradient.diagonal)
+                            Text(lifecycleProduct.label)
+                                .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                                .foregroundStyle(palette.textSecondary)
+                                .lineLimit(1)
+                        }
+                    }
                     Text(loadNumber)
                         .font(.system(size: 22, weight: .heavy))
                         .foregroundStyle(palette.textPrimary)
@@ -533,14 +583,17 @@ struct ShipperLoadDetailScreen: View {
     }
 }
 
+// Shipper bottom-nav doctrine — 205 is drilled-down from 201 Loads, so
+// the Loads slot stays highlighted to anchor the user's location in the
+// hierarchy.
 private func shipperNavLeading_205() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",                isCurrent: false),
-     NavSlot(label: "Loads", systemImage: "shippingbox.fill",     isCurrent: true)]
+    [NavSlot(label: "Home",        systemImage: "house",                          isCurrent: false),
+     NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle",    isCurrent: false)]
 }
 
 private func shipperNavTrailing_205() -> [NavSlot] {
-    [NavSlot(label: "Bids",  systemImage: "hand.raised",          isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",               isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: true),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 // MARK: - Previews

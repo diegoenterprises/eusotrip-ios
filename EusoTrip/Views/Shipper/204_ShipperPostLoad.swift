@@ -642,17 +642,16 @@ struct ShipperPostLoadScreen: View {
 
 // 204 sits one tap deeper than the four primary BottomNav slots —
 // it's the dedicated form behind the "Post a load" CTA on
-// 201 Shipper · Loads. We keep the BottomNav identical to 201's
-// "Loads" tab highlighted so the user can see they're inside the
-// Loads context and tap any other slot to bail out.
+// Shipper bottom-nav doctrine — 204 is the canonical "Create Load"
+// destination; the leading[1] slot lights up when this screen is active.
 private func shipperNavLeading_204() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",                isCurrent: false),
-     NavSlot(label: "Loads", systemImage: "shippingbox.fill",     isCurrent: true)]
+    [NavSlot(label: "Home",        systemImage: "house",                              isCurrent: false),
+     NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle.fill",   isCurrent: true)]
 }
 
 private func shipperNavTrailing_204() -> [NavSlot] {
-    [NavSlot(label: "Bids",  systemImage: "hand.raised",          isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",               isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 // MARK: - Previews

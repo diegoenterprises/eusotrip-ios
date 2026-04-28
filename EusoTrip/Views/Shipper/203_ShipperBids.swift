@@ -2,10 +2,13 @@
 //  203_ShipperBids.swift
 //  EusoTrip — Shipper · Bids (brick 203).
 //
-//  Fourth brick on the Shipper role track (200s). Sits behind the
-//  "Bids" slot of the 200 / 201 / 202 BottomNav and presents every
-//  open bid the shipper's posted loads are receiving — with single-
-//  tap Accept and Reject gestures wired into real tRPC mutations.
+//  Fourth brick on the Shipper role track (200s). Reached via
+//  drill-in from 201 ShipperLoads / 205 ShipperLoadDetail (the
+//  shipper bottom-nav doctrine — Home / Create Load / ESANG / Loads
+//  / Me — does not promote Bids to a chrome slot; it lives one
+//  level deeper). Presents every open bid the shipper's posted
+//  loads are receiving — with single-tap Accept and Reject
+//  gestures wired into real tRPC mutations.
 //
 //  Pixel-doctrine compliant per EUSOTRIP2027GOLD §2 (gradient-only
 //  accent — no flat Brand.info / Brand.blue fills, no .tint(.blue)),
@@ -923,14 +926,16 @@ struct ShipperBidsScreen: View {
     }
 }
 
+// Shipper bottom-nav doctrine — Bids is a drilled-down screen reached
+// from Loads / Load Detail; no chrome slot is highlighted.
 private func shipperNavLeading_203() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",                isCurrent: false),
-     NavSlot(label: "Loads", systemImage: "shippingbox",          isCurrent: false)]
+    [NavSlot(label: "Home",        systemImage: "house",                          isCurrent: false),
+     NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle",    isCurrent: false)]
 }
 
 private func shipperNavTrailing_203() -> [NavSlot] {
-    [NavSlot(label: "Bids",  systemImage: "hand.raised.fill",     isCurrent: true),
-     NavSlot(label: "Me",    systemImage: "person",               isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 // MARK: - Previews

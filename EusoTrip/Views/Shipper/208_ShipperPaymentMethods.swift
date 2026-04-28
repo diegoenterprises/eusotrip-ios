@@ -476,14 +476,15 @@ struct ShipperPaymentMethodsScreen: View {
     }
 }
 
+// Shipper bottom-nav doctrine — payment methods live under Me.
 private func shipperNavLeading_208() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",            isCurrent: false),
-     NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false)]
+    [NavSlot(label: "Home",        systemImage: "house",                          isCurrent: false),
+     NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle",    isCurrent: false)]
 }
 
 private func shipperNavTrailing_208() -> [NavSlot] {
-    [NavSlot(label: "Bills", systemImage: "dollarsign.circle.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",                 isCurrent: true)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person.fill",      isCurrent: true)]
 }
 
 // MARK: - Previews

@@ -75,6 +75,7 @@ struct ShipperSettings: View {
     @Environment(\.palette) var palette
     @EnvironmentObject var session: EusoTripSession
     @StateObject private var prefsStore = NotificationPreferencesStore()
+    @StateObject private var laneTemplatesStore = LoadTemplatesListStore()
     @State private var showSignOutConfirm = false
     @State private var lastToast: String?
 
@@ -99,8 +100,16 @@ struct ShipperSettings: View {
             .padding(.top, Space.s4)
             .padding(.bottom, Space.s8)
         }
-        .task { await prefsStore.refresh() }
-        .refreshable { await prefsStore.refresh() }
+        .task {
+            async let a: Void = prefsStore.refresh()
+            async let b: Void = laneTemplatesStore.refresh()
+            _ = await (a, b)
+        }
+        .refreshable {
+            async let a: Void = prefsStore.refresh()
+            async let b: Void = laneTemplatesStore.refresh()
+            _ = await (a, b)
+        }
         .overlay(alignment: .bottom) {
             if let toast = lastToast {
                 toastView(toast)
@@ -469,25 +478,57 @@ struct ShipperSettings: View {
 
     private var defaultLaneConfigsCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("DEFAULT LANE CONFIGS")
-                .font(EType.micro).tracking(1.4)
-                .foregroundStyle(palette.textTertiary)
-                .padding(.horizontal, Space.s1)
-            VStack(spacing: Space.s2) {
-                Image(systemName: "road.lanes")
-                    .font(.system(size: 22, weight: .light))
+            HStack {
+                Text("DEFAULT LANE CONFIGS")
+                    .font(EType.micro).tracking(1.4)
                     .foregroundStyle(palette.textTertiary)
-                Text("Coming soon")
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
-                Text("Save default commodity, equipment, and lane preferences so every new posted load starts from your common shape. Backend in development.")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textTertiary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, Space.s4)
+                Spacer()
+                if case .loaded(let rows) = laneTemplatesStore.state, !rows.isEmpty {
+                    Text("\(rows.count) saved")
+                        .font(EType.micro).tracking(0.4)
+                        .foregroundStyle(palette.textTertiary)
+                }
+            }
+            .padding(.horizontal, Space.s1)
+
+            laneTemplatesContent
+        }
+    }
+
+    @ViewBuilder
+    private var laneTemplatesContent: some View {
+        switch laneTemplatesStore.state {
+        case .loading:
+            laneTemplatesPlaceholder(
+                icon: "road.lanes",
+                title: "Loading saved configs…",
+                subtitle: nil,
+                showSpinner: true
+            )
+        case .empty:
+            laneTemplatesPlaceholder(
+                icon: "road.lanes",
+                title: "No saved lane configs yet",
+                subtitle: "Save a recurring lane (Houston→Atlanta, dry van, $2.85/mi) when posting a load and it'll show up here. Future posts can spin up from this template in one tap.",
+                showSpinner: false
+            )
+        case .error(let message):
+            laneTemplatesPlaceholder(
+                icon: "exclamationmark.triangle",
+                title: "Couldn't load configs",
+                subtitle: message,
+                showSpinner: false
+            )
+        case .loaded(let rows):
+            VStack(spacing: 0) {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { idx, t in
+                    laneTemplateRow(t)
+                    if idx < rows.count - 1 {
+                        Divider().overlay(palette.borderFaint).padding(.leading, Space.s4)
+                    }
+                }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, Space.s5)
             .background(
                 RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                     .fill(palette.bgCard)
@@ -497,6 +538,129 @@ struct ShipperSettings: View {
                     .strokeBorder(palette.borderFaint, lineWidth: 1)
             )
         }
+    }
+
+    private func laneTemplatesPlaceholder(icon: String,
+                                          title: String,
+                                          subtitle: String?,
+                                          showSpinner: Bool) -> some View {
+        VStack(spacing: Space.s2) {
+            if showSpinner {
+                ProgressView()
+                    .controlSize(.regular)
+            } else {
+                Image(systemName: icon)
+                    .font(.system(size: 22, weight: .light))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Text(title)
+                .font(EType.bodyStrong)
+                .foregroundStyle(palette.textPrimary)
+                .multilineTextAlignment(.center)
+            if let subtitle {
+                Text(subtitle)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, Space.s4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Space.s5)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(palette.bgCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+    }
+
+    private func laneTemplateRow(_ t: LoadTemplatesAPI.Template) -> some View {
+        HStack(alignment: .top, spacing: Space.s3) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(LinearGradient.diagonal.opacity(0.15))
+                Image(systemName: t.isFavorite == true ? "star.fill" : "road.lanes")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(LinearGradient.diagonal)
+            }
+            .frame(width: 36, height: 36)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(t.name)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                if let lane = laneSubtitle(t) {
+                    Text(lane)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                }
+                if let meta = templateMeta(t) {
+                    Text(meta)
+                        .font(EType.micro).tracking(0.4)
+                        .foregroundStyle(palette.textTertiary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: Space.s2)
+            if let used = t.useCount, used > 0 {
+                Text("\(used)×")
+                    .font(EType.micro).tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+                    .monospacedDigit()
+            }
+        }
+        .padding(.horizontal, Space.s4)
+        .padding(.vertical, Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
+    private func laneSubtitle(_ t: LoadTemplatesAPI.Template) -> String? {
+        let oCity = t.origin?.city
+        let oState = t.origin?.state
+        let dCity = t.destination?.city
+        let dState = t.destination?.state
+        let lhs: String? = {
+            if let c = oCity, !c.isEmpty, let s = oState, !s.isEmpty { return "\(c), \(s)" }
+            return oCity ?? oState
+        }()
+        let rhs: String? = {
+            if let c = dCity, !c.isEmpty, let s = dState, !s.isEmpty { return "\(c), \(s)" }
+            return dCity ?? dState
+        }()
+        switch (lhs, rhs) {
+        case (let l?, let r?): return "\(l) → \(r)"
+        case (let l?, nil):    return "\(l) → —"
+        case (nil, let r?):    return "— → \(r)"
+        case (nil, nil):       return nil
+        }
+    }
+
+    private func templateMeta(_ t: LoadTemplatesAPI.Template) -> String? {
+        var parts: [String] = []
+        if let cargo = t.cargoType, !cargo.isEmpty {
+            parts.append(cargo.replacingOccurrences(of: "_", with: " ").capitalized)
+        }
+        if let eq = t.equipmentType, !eq.isEmpty {
+            parts.append(eq)
+        }
+        if let rate = t.rate, !rate.isEmpty {
+            let suffix: String
+            switch t.rateType ?? "flat" {
+            case "per_mile":   suffix = "/mi"
+            case "per_barrel": suffix = "/bbl"
+            case "per_gallon": suffix = "/gal"
+            case "per_ton":    suffix = "/ton"
+            default:           suffix = ""
+            }
+            parts.append("$\(rate)\(suffix)")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     // MARK: Sign out

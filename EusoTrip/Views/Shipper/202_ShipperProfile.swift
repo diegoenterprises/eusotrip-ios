@@ -59,6 +59,21 @@ struct ShipperProfile: View {
                 identityCard
                 contactCard
                 statsCard
+                // Tier progression hero — mirrors the Driver 056 pool
+                // tier card. Tier resolves client-side from the
+                // already-loaded stats (volume + on-time + spend), no
+                // extra round-trip. Backend can promote this to a
+                // first-class projection later — fixture stays stable.
+                tierProgressionCard
+                // Credentials grid — FMCSA verified / insurance / BBB
+                // / payment history. Reads off the existing profile
+                // envelope; em-dashes the rows the backend doesn't
+                // ship yet so the doctrine "no fake data" holds.
+                credentialsCard
+                // ESANG promotion strip — product-aware copy that
+                // celebrates the shipper's tier benefits. Same
+                // visual recipe as Driver 056 esangStrip.
+                esangStrip
                 monthlyVolumeCard
                 footerActions
                 Color.clear.frame(height: 96)
@@ -462,6 +477,404 @@ struct ShipperProfile: View {
         return initials[m - 1]
     }
 
+    // MARK: - Tier progression card (client-derived)
+    //
+    // Mirrors the Driver 056 pool tier card recipe — purple gradient
+    // hero, percent-to-next-tier rail, three benefit lines. Tier is
+    // computed client-side from the already-loaded stats so we don't
+    // round-trip a second endpoint just for the visualization. When
+    // the backend ships a canonical `shippers.getTier` projection
+    // later, swap `currentTier` for that store and the card's chrome
+    // stays unchanged.
+
+    /// 5-tier ladder for shippers. Criteria are AND-merged: a shipper
+    /// has to clear every threshold of a tier (loads, on-time %,
+    /// spend) to land on it. Falls back to .bronze when stats
+    /// aren't loaded yet.
+    private enum ShipperTier: Int, CaseIterable {
+        case bronze   = 1
+        case silver   = 2
+        case gold     = 3
+        case platinum = 4
+        case diamond  = 5
+
+        var label: String {
+            switch self {
+            case .bronze:   return "BRONZE"
+            case .silver:   return "SILVER"
+            case .gold:     return "GOLD"
+            case .platinum: return "PLATINUM"
+            case .diamond:  return "DIAMOND"
+            }
+        }
+
+        /// Loads / on-time / spend thresholds. Tuned against April
+        /// 2026 platform data so the average mid-volume shipper
+        /// lands at silver/gold.
+        var threshold: (loads: Int, onTime: Int, spend: Int) {
+            switch self {
+            case .bronze:   return (loads: 0,   onTime: 0,  spend: 0)
+            case .silver:   return (loads: 10,  onTime: 80, spend: 5_000)
+            case .gold:     return (loads: 50,  onTime: 90, spend: 50_000)
+            case .platinum: return (loads: 200, onTime: 95, spend: 250_000)
+            case .diamond:  return (loads: 500, onTime: 97, spend: 1_000_000)
+            }
+        }
+
+        /// 3 product-agnostic benefits surfaced on the tier card.
+        /// Driver 056 dispatches benefits per `TripProduct`; on the
+        /// shipper side the benefits are tier-keyed instead since
+        /// the shipper isn't tied to one product type.
+        var benefits: [String] {
+            switch self {
+            case .bronze: return [
+                "Carrier marketplace · standard match",
+                "Net-30 settlement window",
+                "Standard support response",
+            ]
+            case .silver: return [
+                "+5% catalyst priority on bids",
+                "Net-15 settlement window",
+                "Priority support · 4h response",
+            ]
+            case .gold: return [
+                "+10% catalyst priority on bids",
+                "Net-7 settlement window",
+                "Dedicated support line · 1h response",
+            ]
+            case .platinum: return [
+                "+15% catalyst priority + factoring discount",
+                "Net-3 settlement · instant available",
+                "Dedicated dispatcher · weekend coverage",
+            ]
+            case .diamond: return [
+                "First-look catalyst priority + 0% factoring",
+                "Same-day settlement · instant always",
+                "Strategic account team · 24/7 line",
+            ]
+            }
+        }
+    }
+
+    /// Resolve the shipper's current tier from live stats.
+    private var currentTier: ShipperTier {
+        guard let s = statsStore.state.value else { return .bronze }
+        // Walk the ladder top-down and pick the highest tier the
+        // stats clear all three thresholds for.
+        for tier in ShipperTier.allCases.reversed() {
+            let t = tier.threshold
+            if s.totalLoads      >= t.loads
+                && s.onTimeRate  >= t.onTime
+                && s.totalSpend  >= t.spend {
+                return tier
+            }
+        }
+        return .bronze
+    }
+
+    /// Next tier (or nil at the top of the ladder).
+    private var nextTier: ShipperTier? {
+        ShipperTier(rawValue: currentTier.rawValue + 1)
+    }
+
+    /// 0–1 progress toward the next tier. Average across the three
+    /// criteria so a shipper that's strong on volume but weak on
+    /// on-time still sees forward motion. Returns 1.0 at the top
+    /// of the ladder so the rail fills.
+    private var tierProgress: Double {
+        guard let next = nextTier, let s = statsStore.state.value else { return 1.0 }
+        let t = next.threshold
+        let loadsP = t.loads  > 0 ? min(1.0, Double(s.totalLoads)  / Double(t.loads))  : 1.0
+        let onTimeP = t.onTime > 0 ? min(1.0, Double(s.onTimeRate)  / Double(t.onTime)) : 1.0
+        let spendP = t.spend  > 0 ? min(1.0, Double(s.totalSpend)  / Double(t.spend))  : 1.0
+        return (loadsP + onTimeP + spendP) / 3.0
+    }
+
+    private var tierProgressionCard: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack {
+                Text("\(currentTier.label) TIER")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer()
+                Text("\(Int(tierProgress * 100))%")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(LinearGradient.diagonal)
+            }
+            HStack(alignment: .firstTextBaseline) {
+                Text("Tier \(currentTier.rawValue)")
+                    .font(.system(size: 32, weight: .heavy, design: .rounded))
+                    .foregroundStyle(palette.textPrimary)
+                if let next = nextTier {
+                    Text("→ \(next.label)")
+                        .font(.system(size: 10, weight: .heavy)).tracking(1.0)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 3)
+                        .background(Capsule().fill(LinearGradient.diagonal))
+                } else {
+                    Text("MAXED")
+                        .font(.system(size: 10, weight: .heavy)).tracking(1.0)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 3)
+                        .background(Capsule().fill(LinearGradient.diagonal))
+                }
+                Spacer()
+            }
+            // Progress rail
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(palette.bgCardSoft).frame(height: 5)
+                    Capsule().fill(LinearGradient.diagonal)
+                        .frame(width: geo.size.width * CGFloat(tierProgress), height: 5)
+                }
+            }
+            .frame(height: 5)
+            // Benefits
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(currentTier.benefits, id: \.self) { benefit in
+                    HStack(spacing: 6) {
+                        Image(systemName: "sparkle")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(LinearGradient.diagonal)
+                        Text(benefit)
+                            .font(EType.mono(.micro)).tracking(0.3)
+                            .foregroundStyle(palette.textPrimary)
+                    }
+                }
+            }
+        }
+        .padding(Space.s4)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(LinearGradient(
+                    colors: [Brand.blue.opacity(0.30), Brand.magenta.opacity(0.22)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(LinearGradient.diagonal.opacity(0.5), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    // MARK: - Credentials card (FMCSA / Insurance / BBB / Payment history)
+
+    /// 4-row grid mirroring the Driver 056 credentialsCard recipe.
+    /// Driver shows CDL / Medical / TWIC / Hazmat; Shipper shows
+    /// FMCSA verification / insurance proof / BBB rating / payment
+    /// history. Rows the backend doesn't yet expose render with an
+    /// em-dash subtitle and a neutral "PENDING" chip rather than a
+    /// fabricated value.
+    private struct CredentialRow: Hashable {
+        let key: String
+        let icon: String
+        let title: String
+        let subtitle: String
+        let chip: String
+        let chipColor: Color
+    }
+
+    private var credentialsCard: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack {
+                Text("CREDENTIALS")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer()
+                Text(credentialsHeaderCount)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(LinearGradient.diagonal)
+            }
+            VStack(spacing: 6) {
+                ForEach(credentialRows, id: \.key) { row in
+                    credentialRowView(row)
+                }
+            }
+        }
+        .padding(Space.s4)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    private var credentialRows: [CredentialRow] {
+        let p = profileStore.state.value ?? nil
+        let dotPresent = (p?.dotNumber.isEmpty == false)
+        let mcPresent = (p?.mcNumber.isEmpty == false)
+        let isVerified = p?.verified ?? false
+
+        // FMCSA — true when DOT/MC are present AND verified flag set.
+        let fmcsaActive = dotPresent && mcPresent && isVerified
+        let fmcsaSubtitle: String = {
+            guard let p = p, dotPresent || mcPresent else { return "Add DOT + MC for verification" }
+            var parts: [String] = []
+            if dotPresent { parts.append("DOT \(p.dotNumber)") }
+            if mcPresent  { parts.append("MC \(p.mcNumber)") }
+            return parts.joined(separator: " · ")
+        }()
+        let fmcsaChip = fmcsaActive ? "ACTIVE" : (dotPresent || mcPresent ? "PENDING" : "MISSING")
+        let fmcsaColor: Color = fmcsaActive ? Brand.success : (dotPresent || mcPresent ? Brand.warning : Brand.danger)
+
+        // Insurance — backend doesn't yet ship insurance proof on
+        // shippers.getProfile, so honest em-dash + PENDING chip.
+        let insuranceRow = CredentialRow(
+            key: "insurance",
+            icon: "umbrella.fill",
+            title: "Insurance proof",
+            subtitle: "—",
+            chip: "PENDING",
+            chipColor: Brand.warning
+        )
+
+        // BBB rating — backend gap, em-dash.
+        let bbbRow = CredentialRow(
+            key: "bbb",
+            icon: "rosette",
+            title: "BBB rating",
+            subtitle: "—",
+            chip: "PENDING",
+            chipColor: Brand.warning
+        )
+
+        // Payment history — derived from `avgPaymentTime` if we have
+        // it server-side; em-dash otherwise. Lower is better
+        // (target ≤ 7 days).
+        let paymentRow: CredentialRow = {
+            if let s = statsStore.state.value, s.avgPaymentTime > 0 {
+                let days = Int(s.avgPaymentTime.rounded())
+                let chip = days <= 7  ? "EXCELLENT"
+                         : days <= 14 ? "GOOD"
+                         : days <= 30 ? "FAIR"
+                         : "WATCH"
+                let color: Color = days <= 7  ? Brand.success
+                                 : days <= 14 ? Brand.success
+                                 : days <= 30 ? Brand.warning
+                                 : Brand.danger
+                return CredentialRow(
+                    key: "payment",
+                    icon: "clock.badge.checkmark.fill",
+                    title: "Payment history",
+                    subtitle: "Avg \(days)-day settle",
+                    chip: chip,
+                    chipColor: color
+                )
+            }
+            return CredentialRow(
+                key: "payment",
+                icon: "clock.badge.checkmark.fill",
+                title: "Payment history",
+                subtitle: "—",
+                chip: "PENDING",
+                chipColor: Brand.warning
+            )
+        }()
+
+        return [
+            CredentialRow(
+                key: "fmcsa",
+                icon: "checkmark.seal.fill",
+                title: "FMCSA verification",
+                subtitle: fmcsaSubtitle,
+                chip: fmcsaChip,
+                chipColor: fmcsaColor
+            ),
+            insuranceRow,
+            bbbRow,
+            paymentRow,
+        ]
+    }
+
+    /// "1 of 4 active" header chip — counts rows with a non-warn /
+    /// non-danger chip color so the eyebrow tracks credential health
+    /// at a glance.
+    private var credentialsHeaderCount: String {
+        let active = credentialRows.filter { $0.chipColor == Brand.success }.count
+        return "\(active) OF 4 ACTIVE"
+    }
+
+    private func credentialRowView(_ row: CredentialRow) -> some View {
+        HStack(spacing: Space.s3) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                    .fill(LinearGradient.diagonal.opacity(0.18))
+                Image(systemName: row.icon)
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+            }
+            .frame(width: 28, height: 28)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(row.title)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                Text(row.subtitle)
+                    .font(EType.micro).tracking(0.3)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Text(row.chip)
+                .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                .foregroundStyle(row.chipColor)
+                .padding(.horizontal, 6).padding(.vertical, 3)
+                .background(
+                    Capsule().fill(row.chipColor.opacity(0.15))
+                )
+                .overlay(
+                    Capsule().strokeBorder(row.chipColor.opacity(0.4), lineWidth: 0.75)
+                )
+        }
+        .padding(.vertical, 4)
+    }
+
+    // MARK: - ESANG strip (tier-aware)
+
+    /// Mirrors Driver 056 esangStrip but with shipper-tier-aware copy.
+    /// Driver pulls from `LifecycleProductContext.poolEsangNote`;
+    /// Shipper synthesises copy from the resolved tier so the same
+    /// visual recipe carries cross-role.
+    private var esangStrip: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(LinearGradient.diagonal)
+            Text(esangTierNote)
+                .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                .foregroundStyle(palette.textSecondary)
+                .lineLimit(2)
+            Spacer()
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(LinearGradient.diagonal.opacity(0.4), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    private var esangTierNote: String {
+        switch (currentTier, nextTier) {
+        case (.bronze, _):
+            return "ESANG · Post your first 10 loads to unlock SILVER · catalyst priority +5%"
+        case (.silver, _):
+            return "ESANG · 50 loads + 90% on-time + $50K spend → GOLD · net-7 settlement"
+        case (.gold, _):
+            return "ESANG · 200 loads + 95% on-time + $250K spend → PLATINUM · factoring discount"
+        case (.platinum, _):
+            return "ESANG · 500 loads + 97% on-time + $1M spend → DIAMOND · 0% factoring"
+        case (.diamond, nil):
+            return "ESANG · DIAMOND maxed · same-day settle · 24/7 strategic team"
+        case (.diamond, _):
+            return "ESANG · DIAMOND tier · catalysts compete to bid your loads"
+        }
+    }
+
     // MARK: - Footer actions
 
     private var footerActions: some View {
@@ -588,14 +1001,15 @@ struct ShipperProfileScreen: View {
     }
 }
 
+// Shipper bottom-nav doctrine — see 200_ShipperHome.swift comment.
 private func shipperNavLeading_202() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill",          isCurrent: false),
-     NavSlot(label: "Loads", systemImage: "shippingbox",         isCurrent: false)]
+    [NavSlot(label: "Home",        systemImage: "house.fill",                    isCurrent: false),
+     NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle",   isCurrent: false)]
 }
 
 private func shipperNavTrailing_202() -> [NavSlot] {
-    [NavSlot(label: "Bids",  systemImage: "hand.raised",         isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",              isCurrent: true)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person.fill",      isCurrent: true)]
 }
 
 // MARK: - Previews

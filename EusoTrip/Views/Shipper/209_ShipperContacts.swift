@@ -404,14 +404,15 @@ struct ShipperContactsScreen: View {
     }
 }
 
+// Shipper bottom-nav doctrine — contacts/carriers live under Me.
 private func shipperNavLeading_209() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",            isCurrent: false),
-     NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false)]
+    [NavSlot(label: "Home",        systemImage: "house",                          isCurrent: false),
+     NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle",    isCurrent: false)]
 }
 
 private func shipperNavTrailing_209() -> [NavSlot] {
-    [NavSlot(label: "Carriers", systemImage: "person.2.crop.square.stack", isCurrent: true),
-     NavSlot(label: "Me",       systemImage: "person",                     isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person.fill",      isCurrent: true)]
 }
 
 // MARK: - Previews

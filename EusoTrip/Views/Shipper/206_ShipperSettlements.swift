@@ -503,14 +503,17 @@ struct ShipperSettlementsScreen: View {
     }
 }
 
+// Shipper bottom-nav doctrine — settlements / wallet live under Me, so
+// 206 keeps the Me slot highlighted while the user is inside the
+// settlement detail / list.
 private func shipperNavLeading_206() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",            isCurrent: false),
-     NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false)]
+    [NavSlot(label: "Home",        systemImage: "house",                          isCurrent: false),
+     NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle",    isCurrent: false)]
 }
 
 private func shipperNavTrailing_206() -> [NavSlot] {
-    [NavSlot(label: "Bills", systemImage: "dollarsign.circle.fill", isCurrent: true),
-     NavSlot(label: "Me",    systemImage: "person",                 isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person.fill",      isCurrent: true)]
 }
 
 // MARK: - Previews

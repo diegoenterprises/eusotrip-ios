@@ -2010,28 +2010,83 @@ final class ReferralsStore: ObservableObject, DynamicStore {
     func refresh() async {
         isLoading = true
         lastError = nil
-        // Parallel fetches — each feeds a separate @Published so
-        // partial failures still land partial data on the UI.
-        async let codeTask: ReferralsAPI.ReferralCode? = try? EusoTripAPI.shared.referrals.getMyCode()
-        async let summaryTask: ReferralsAPI.ReferralSummary? = try? EusoTripAPI.shared.referrals.getSummary()
-        async let eventsTask: [ReferralsAPI.ReferralEvent] = (try? EusoTripAPI.shared.referrals.listMine(
-            stage: stageFilter,
-            limit: 30
-        )) ?? []
 
-        let (c, s, e) = await (codeTask, summaryTask, eventsTask)
-        code = c
-        summary = s
-        events = e
+        // Parallel fetches — each tracks its OWN error so we can
+        // distinguish "code minted but events table missing" (partial
+        // deploy) from "auth failed" (whole namespace returns 401).
+        // Without per-call error capture the previous "Can't reach
+        // referrals service" string masked which endpoint was failing,
+        // making it hard to diagnose between a stale deploy and a
+        // missing migration.
+        async let codeAttempt: Result<ReferralsAPI.ReferralCode, Error> = withResult {
+            try await EusoTripAPI.shared.referrals.getMyCode()
+        }
+        async let summaryAttempt: Result<ReferralsAPI.ReferralSummary, Error> = withResult {
+            try await EusoTripAPI.shared.referrals.getSummary()
+        }
+        async let eventsAttempt: Result<[ReferralsAPI.ReferralEvent], Error> = withResult {
+            try await EusoTripAPI.shared.referrals.listMine(
+                stage: stageFilter,
+                limit: 30
+            )
+        }
+
+        let (cR, sR, eR) = await (codeAttempt, summaryAttempt, eventsAttempt)
+
+        switch cR {
+        case .success(let v): code = v
+        case .failure: code = nil
+        }
+        switch sR {
+        case .success(let v): summary = v
+        case .failure: summary = nil
+        }
+        switch eR {
+        case .success(let v): events = v
+        case .failure: events = []
+        }
         isLoading = false
+
         // Surface an error only when everything failed — partial
-        // signal is a useful UI.
-        if c == nil && s == nil && e.isEmpty {
+        // signal is a useful UI. The error message names the first
+        // failure so the support flow has something concrete to chase.
+        if code == nil && summary == nil && events.isEmpty {
+            let firstFailure: (endpoint: String, error: Error)? = {
+                if case .failure(let e) = cR { return ("getMyCode", e) }
+                if case .failure(let e) = sR { return ("getSummary", e) }
+                if case .failure(let e) = eR { return ("listMine", e) }
+                return nil
+            }()
+            let detail = firstFailure.map { "\($0.endpoint): \($0.error.localizedDescription)" }
+                ?? "All endpoints returned empty"
             lastError = NSError(
                 domain: "ReferralsStore",
                 code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "Can't reach referrals service"]
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Can't reach referrals service",
+                    "endpoint": detail,
+                ]
             )
+            #if DEBUG
+            print("[ReferralsStore] all 3 calls failed — first failure: \(detail)")
+            #else
+            // Surface first-failure detail in production logs too
+            // so a TestFlight tester / production crash log shows
+            // the actual server response that broke the page.
+            print("[ReferralsStore] all 3 calls failed — first failure: \(detail)")
+            #endif
+        }
+    }
+
+    /// Tiny helper that wraps an `async throws` call into a `Result`
+    /// without forcing every call site to write a do/catch. Used
+    /// above so each parallel fetch carries its own success or
+    /// error, instead of getting swallowed by `try?`.
+    private func withResult<T>(_ op: @Sendable () async throws -> T) async -> Result<T, Error> {
+        do {
+            return .success(try await op())
+        } catch {
+            return .failure(error)
         }
     }
 }
@@ -3573,6 +3628,54 @@ final class ShipperLoadDetailStore: BaseDynamicStore<LoadsAPI.LoadDetail?> {
 }
 
 // =====================================================================
+// ShipperLifecycleSnapshotStore — Round 4 / Arc E · feeds 260–279.
+// ---------------------------------------------------------------------
+// Composite store wrapping `shippers.getLifecycleSnapshot(loadId)`. Every
+// shipper lifecycle screen consumes this store directly so the 20
+// bricks share a single snapshot — no parallel caches, no drift.
+//
+// `loadId` is a `String` matching the server's Zod input. Caller sets
+// it before `refresh()`; the store throws on empty.
+// =====================================================================
+
+@MainActor
+final class ShipperLifecycleSnapshotStore: BaseDynamicStore<ShipperAPI.LifecycleSnapshot?> {
+    var loadId: String = ""
+
+    override func fetch() async throws -> ShipperAPI.LifecycleSnapshot? {
+        guard !loadId.isEmpty else { return nil }
+        return try await EusoTripAPI.shared.shippers.getLifecycleSnapshot(loadId: loadId)
+    }
+
+    override func foldState(
+        _ value: ShipperAPI.LifecycleSnapshot?
+    ) -> RemoteState<ShipperAPI.LifecycleSnapshot?> {
+        guard let v = value else { return .empty }
+        return .loaded(v)
+    }
+}
+
+@MainActor
+final class ShipperSettlementForLoadStore: BaseDynamicStore<ShipperAPI.SettlementForLoad?> {
+    var loadId: String = ""
+
+    override func fetch() async throws -> ShipperAPI.SettlementForLoad? {
+        guard !loadId.isEmpty else { return nil }
+        return try await EusoTripAPI.shared.shippers.getSettlementForLoad(loadId: loadId)
+    }
+
+    override func foldState(
+        _ value: ShipperAPI.SettlementForLoad?
+    ) -> RemoteState<ShipperAPI.SettlementForLoad?> {
+        // nil = settlement not yet constructed; surface as `.empty`
+        // so the screen renders the "not yet payable" affordance,
+        // not an error tile.
+        guard let v = value else { return .empty }
+        return .loaded(v)
+    }
+}
+
+// =====================================================================
 // ShipperDeliveryConfirmationsStore — Shipper · 206 surface
 // (brick 206_ShipperSettlements).
 // ---------------------------------------------------------------------
@@ -4275,6 +4378,39 @@ final class EscortAssignmentDetailStore: BaseDynamicStore<EscortAPI.AssignmentDe
     }
 }
 
+// MARK: - EscortCorridorStore — `escorts.getCorridor`
+//
+// Drives the corridor map surface (602_EscortCorridorMap). Caller
+// writes `assignmentId` then triggers `refresh()`. The server returns
+// the full corridor envelope (legs + milestones + geofences + escort
+// vehicles + KPI counts) in a single read, so the screen renders KPIs
+// and the per-section detail from the same payload. Folds `nil` from
+// the wire to `.empty` so the UI surfaces a deliberate "Corridor not
+// available" empty state rather than treating absence as a transport
+// failure. A corridor with zero legs likewise folds to `.empty` (the
+// route engine has not yet resolved geometry). Added 2026-04-27 in
+// the 159th eusotrip-killers firing alongside the 602 brick.
+
+@MainActor
+final class EscortCorridorStore: BaseDynamicStore<EscortAPI.EscortCorridor?> {
+    /// The assignment id the screen is fetching. The 601 sheet tap
+    /// passes the assignment id straight through.
+    var assignmentId: String = ""
+
+    override func fetch() async throws -> EscortAPI.EscortCorridor? {
+        guard !assignmentId.isEmpty else { return nil }
+        return try await EusoTripAPI.shared.escort.getCorridor(id: assignmentId)
+    }
+
+    override func foldState(
+        _ value: EscortAPI.EscortCorridor?
+    ) -> RemoteState<EscortAPI.EscortCorridor?> {
+        guard let v = value else { return .empty }
+        if v.legs.isEmpty { return .empty }
+        return .loaded(v)
+    }
+}
+
 // =====================================================================
 // MARK: - Terminal Manager (700) home stores
 //
@@ -4488,6 +4624,95 @@ final class AdminTenantsStore: BaseDynamicListStore<AdminAPI.Tenant> {
     }
 }
 
+// MARK: - AdminControlTowerOverviewStore — `admin.controlTower.getOverview` (801 brick · 156th firing)
+//
+// Drives the KPI strip on `Views/Admin/801_AdminControlTower.swift`.
+// `Optional<ControlTowerOverview>` so a server response that returns
+// no rollup yet (brand-new tenant, pipeline never run) folds to
+// `.empty`. Any thrown error from the underlying tRPC call resolves
+// to `.error` and the screen surfaces an honest retry banner.
+
+@MainActor
+final class AdminControlTowerOverviewStore: BaseDynamicStore<AdminAPI.ControlTowerOverview?> {
+    override func fetch() async throws -> AdminAPI.ControlTowerOverview? {
+        try await EusoTripAPI.shared.admin.getControlTowerOverview()
+    }
+
+    override func foldState(_ value: AdminAPI.ControlTowerOverview?) -> RemoteState<AdminAPI.ControlTowerOverview?> {
+        guard let v = value else { return .empty }
+        // Health score 0 + zero-count exceptions + empty vendor status
+        // is the genuine "no rollup yet" tuple — fold to empty so the
+        // screen shows the awaiting-data state instead of a row of
+        // zero-tiles.
+        if v.activeExceptionsCount == 0
+            && v.systemHealthScore == 0
+            && v.vendorIntegrationStatus.isEmpty {
+            return .empty
+        }
+        return .loaded(value)
+    }
+}
+
+// MARK: - AdminControlTowerExceptionsStore — `admin.controlTower.getExceptions` (801 brick · 156th firing)
+//
+// Drives the exception-feed list on the same screen. Per-instance
+// `limit` and `severityFilter` mirror the tenants-store pattern so
+// the chip row on 801 can re-fetch with a tighter severity scope
+// without spawning a parallel store.
+
+@MainActor
+final class AdminControlTowerExceptionsStore: BaseDynamicListStore<AdminAPI.ControlTowerException> {
+    var limit: Int = 25
+    /// Optional severity filter ("low", "normal", "high", "urgent",
+    /// "critical"). nil = no filter (server returns every active
+    /// exception).
+    var severityFilter: String? = nil
+
+    override func fetch() async throws -> [AdminAPI.ControlTowerException] {
+        try await EusoTripAPI.shared.admin.getControlTowerExceptions(
+            limit: limit, severity: severityFilter
+        )
+    }
+}
+
+// MARK: - AdminTenantDetailStore — `admin.getTenantDetail` (803 brick · 161st firing)
+//
+// Drives the per-tenant deep envelope on
+// `Views/Admin/803_AdminTenantDetail.swift`. Caller writes
+// `tenantId` immediately after init, then triggers `refresh()`.
+// Same RemoteState contract as `EscortAssignmentDetailStore`,
+// `TerminalYardMapStore`, `EscortCorridorStore`, and the other
+// per-record detail stores. `Optional<TenantDetail>` so a server
+// response that returns no body (parallel router not yet shipped
+// on the `admin.*` namespace) folds to `.empty` and the screen
+// shows the awaiting-data state.
+//
+// No fixture data ever (doctrine §11 + `MockDataGuard`). Every
+// nullable field on the loaded envelope renders as a neutral
+// em-dash on the 803 surface — never a fabricated number.
+
+@MainActor
+final class AdminTenantDetailStore: BaseDynamicStore<AdminAPI.TenantDetail?> {
+    /// Tenant id this store is fetching. Caller writes immediately
+    /// after init (or whenever a different tenant is selected) and
+    /// then calls `refresh()`. nil = no fetch will fire.
+    var tenantId: String? = nil
+
+    override func fetch() async throws -> AdminAPI.TenantDetail? {
+        guard let id = tenantId, !id.isEmpty else { return nil }
+        return try await EusoTripAPI.shared.admin.getTenantDetail(id: id)
+    }
+
+    /// nil → `.empty` (no body returned). A loaded tenant with
+    /// zero contacts / zero usage / zero audit rows is still a
+    /// `.loaded` state — the UI renders honest empty sub-cards
+    /// rather than treating the whole envelope as missing.
+    override func foldState(_ value: AdminAPI.TenantDetail?) -> RemoteState<AdminAPI.TenantDetail?> {
+        guard value != nil else { return .empty }
+        return .loaded(value)
+    }
+}
+
 // MARK: - NotificationPreferencesStore — `users.{get,update}NotificationPreferences`
 //
 // Cross-role store that fronts the canonical 11-boolean notification
@@ -4615,5 +4840,24 @@ final class NotificationPreferencesStore: BaseDynamicStore<UsersAPI.PreferenceMa
             promotionalAlerts:  keyName == "promotionalAlerts"  ? value : m.promotionalAlerts,
             weeklyDigest:       keyName == "weeklyDigest"       ? value : m.weeklyDigest
         )
+    }
+}
+
+// MARK: - LoadTemplatesListStore — `loadTemplates.list`
+//
+// Saved lane / commodity / equipment configurations. Backs the 211
+// Shipper Settings "Default lane configs" card. Server returns
+// favorites first, then most-recently-used, then most-recently-
+// created — already ordered, so no client-side re-sort.
+//
+// Empty case is honest: a brand-new shipper account has zero saved
+// templates until they post a load and tap "Save as template" (next
+// firing wires that affordance into 204 ShipperPostLoad). The card's
+// empty state explains that flow rather than showing a "coming soon"
+// stub.
+@MainActor
+final class LoadTemplatesListStore: BaseDynamicListStore<LoadTemplatesAPI.Template> {
+    override func fetch() async throws -> [LoadTemplatesAPI.Template] {
+        try await EusoTripAPI.shared.loadTemplates.list()
     }
 }

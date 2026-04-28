@@ -438,14 +438,15 @@ struct ShipperReportsScreen: View {
     }
 }
 
+// Shipper bottom-nav doctrine — reports live under Me.
 private func shipperNavLeading_207() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",            isCurrent: false),
-     NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false)]
+    [NavSlot(label: "Home",        systemImage: "house",                          isCurrent: false),
+     NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle",    isCurrent: false)]
 }
 
 private func shipperNavTrailing_207() -> [NavSlot] {
-    [NavSlot(label: "Reports", systemImage: "chart.line.uptrend.xyaxis", isCurrent: true),
-     NavSlot(label: "Me",      systemImage: "person",                    isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person.fill",      isCurrent: true)]
 }
 
 // MARK: - Previews

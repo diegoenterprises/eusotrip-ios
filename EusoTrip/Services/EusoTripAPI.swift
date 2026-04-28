@@ -702,6 +702,124 @@ final class EusoTripAPI: ObservableObject {
     /// the shipper's web dashboard within a socket frame.
     lazy var loadBidding: LoadBiddingAPI = LoadBiddingAPI(api: self)
 
+    /// `loadTemplatesRouter` — saved lane / commodity / equipment
+    /// configurations. Shippers reuse a template when posting a
+    /// recurring load (same Houston→Atlanta, same dry-van shape, same
+    /// rate structure) so they don't re-key the same fields every
+    /// week. MCP-verified at `frontend/server/routers/loadTemplates.ts`
+    /// (procs `list`, `get`, `create`, `update`, plus archive +
+    /// favorite mutations). iOS surface today: settings card list +
+    /// post-load prefill. Added in the lane-configs parity firing
+    /// (2026-04-27) — replaces the "Coming soon" placeholder on the
+    /// 211 Shipper Settings screen.
+    lazy var loadTemplates: LoadTemplatesAPI = LoadTemplatesAPI(api: self)
+
+    /// `controlTowerRouter` — multi-modal supply-chain visibility
+    /// (truck + rail + vessel). Backs the Shipper Control Tower
+    /// brick (212), Catalyst dispatch overview, and any future
+    /// admin / broker control surface. MCP-verified at
+    /// `frontend/server/routers/controlTower.ts` (procs `overview`,
+    /// `exceptions`, `recentActivity`). Added 2026-04-27 in the
+    /// shipper round-2 trajectory firing.
+    lazy var controlTower: ControlTowerAPI = ControlTowerAPI(api: self)
+
+    /// `co2CalculatorRouter` — per-shipment carbon emissions across
+    /// truck / rail / vessel / air with offset pricing. Backs the
+    /// Shipper Sustainability brick (214) + any future
+    /// per-load-detail "carbon footprint" chip. MCP-verified at
+    /// `frontend/server/routers/co2Calculator.ts` (procs
+    /// `calculateTruckShipment`, `calculateMultiModal`,
+    /// `calculateVesselShipment` (vessel-role gated)). Added
+    /// 2026-04-27 in the shipper round-2 trajectory firing.
+    lazy var co2: Co2CalculatorAPI = Co2CalculatorAPI(api: self)
+
+    /// `rfpManagerRouter` — RFP / RFQ procurement workflow. Create
+    /// lane RFPs, publish to eligible carriers, collect bid
+    /// responses, score them on rate / service / safety / capacity /
+    /// experience, award by lane. Backs the Shipper RFP brick (215)
+    /// and any future Catalyst-side bid-response surface. MCP-
+    /// verified at `frontend/server/routers/rfpManager.ts` (procs
+    /// `getRFPs`, `getRFPDetail`, `createRFP`, `publishRFP`,
+    /// `getBidResponses`, `scoreResponses`, `awardLane`,
+    /// `batchAward`). Added 2026-04-27 in the shipper round-3 firing.
+    lazy var rfp: RFPManagerAPI = RFPManagerAPI(api: self)
+
+    /// `complianceRouter` — shipper-scope subset (business
+    /// verification + credit + insurance + document vault). Backs
+    /// the Shipper Compliance brick (216). Distinct from the
+    /// existing `compliance` namespace already wired for driver
+    /// violations — that one resolves to `compliance.getViolations`
+    /// etc; this set hits `getShipperCompliance` /
+    /// `getShipperDocuments` / `uploadDocument` (all
+    /// `protectedProcedure`, accept any auth role). MCP-verified at
+    /// `frontend/server/routers/compliance.ts:2542+`. Added
+    /// 2026-04-27 in the shipper round-3 firing.
+    lazy var shipperCompliance: ShipperComplianceAPI = ShipperComplianceAPI(api: self)
+
+    /// `contractsRouter` — agreement / volume-commitment lifecycle.
+    /// Backs the Shipper Contracts brick (217). MCP-verified at
+    /// `frontend/server/routers/contracts.ts` (procs `getAll`,
+    /// `getStats`, `list`, `getById`, `create`, `update`,
+    /// `submitForApproval`, `approve`, `renew`, `terminate`).
+    /// Added 2026-04-27 in the shipper round-3 firing.
+    lazy var contracts: ContractsAPI = ContractsAPI(api: self)
+
+    /// `freightClaimsRouter` — shipper-as-claimant view of damage /
+    /// loss / shortage / delay claims. Backs the Shipper Freight
+    /// Claims brick (219). Distinct from the existing driver-side
+    /// `freightClaims` lazy var — that one targets the
+    /// driver-as-defendant flow; this set surfaces the dashboard +
+    /// claim list + per-claim detail for the shipper. MCP-verified
+    /// at `frontend/server/routers/freightClaims.ts:75+`. Mounted
+    /// as `shipperFreightClaims` to avoid colliding with the
+    /// driver-side `freightClaims` namespace.
+    lazy var shipperFreightClaims: ShipperFreightClaimsAPI = ShipperFreightClaimsAPI(api: self)
+
+    /// `ratesRouter` (lane-rate / market / trends). Backs Shipper
+    /// 220 ShipperRateBoard. Mounted as `ratesNS` because `rates`
+    /// would shadow the existing `rates: RatesAPI` mount above.
+    lazy var ratesNS: ShipperRatesAPI = ShipperRatesAPI(api: self)
+
+    /// `telemetryRouter` (live driver position + trail). Backs
+    /// Shipper 222 ShipperLiveTracking. Mounted as `shipperTelemetry`
+    /// to avoid colliding with any future driver-side telemetry mount.
+    lazy var shipperTelemetry: ShipperTelemetryAPI = ShipperTelemetryAPI(api: self)
+
+    /// `agreementsRouter` shipper-scope. Backs 223 ShipperAgreements
+    /// (companion to 217 Contracts — agreements are the auth-trail of
+    /// signatures, contracts are the volume-commitment lifecycle).
+    lazy var shipperAgreements: ShipperAgreementsAPI = ShipperAgreementsAPI(api: self)
+
+    /// `supplyChain.getMyPartners` — partner directory backing 224
+    /// ShipperPartnerDirectory (mirror of web `MyPartners.tsx`).
+    /// Companion to `agreements` (signed-contract layer above raw
+    /// partnerships).
+    lazy var supplyChain: SupplyChainAPI = SupplyChainAPI(api: self)
+
+    /// `documentsRouter` — Documents Center (BOL, run-tickets,
+    /// agreements, insurance certs, W9s). Backs 226
+    /// ShipperDocumentCenter (mirror of web `DocumentCenter.tsx`).
+    lazy var documents: DocumentsAPI = DocumentsAPI(api: self)
+
+    /// Shipper-scope settlement detail / approve / dispute. Mounts
+    /// the `earningsRouter` procs that a SHIPPER (not a DRIVER) hits
+    /// when reviewing the settlement workflow. Backs 227
+    /// ShipperSettlementDetail (mirror of web `SettlementDetails.tsx`
+    /// shipper-action surface).
+    lazy var shipperSettlements: ShipperSettlementsAPI = ShipperSettlementsAPI(api: self)
+
+    /// `allocationTracker.*` — daily petroleum nomination + contract
+    /// fulfillment dashboard. Backs 230 ShipperAllocations (mirror of
+    /// web `allocations/AllocationDashboard.tsx`).
+    lazy var allocations: AllocationsAPI = AllocationsAPI(api: self)
+
+    /// `loadBoard.*` — public-loadboard browse / search / book.
+    /// Different namespace from `loads.search` (the bare loadsRouter
+    /// projection). loadBoard returns market stats + lane-contract
+    /// enrichment + radius-aware origin/destination filtering. Backs
+    /// 108 MeLoadBoard (driver-facing browse + bid entry).
+    lazy var loadBoard: LoadBoardAPI = LoadBoardAPI(api: self)
+
     // MARK: Low-level tRPC invocation
 
     /// GET /api/trpc/<path>?input=<url-encoded-JSON>
@@ -7754,6 +7872,189 @@ struct LoadBiddingAPI {
             input: Input(limit: limit)
         )
     }
+
+    /// One row in the multi-round counter chain. Mirrors the verbatim
+    /// `loadBids` row projection at `loadBidding.ts:604` (raw table
+    /// select). Driver-side bid detail (109 MeBidDetail) walks rounds
+    /// in chronological order and resolves the latest unresolved row
+    /// to decide which CTAs to render.
+    struct ChainRow: Decodable, Identifiable, Hashable {
+        let id: Int
+        let loadId: Int
+        let bidderUserId: Int?
+        let bidderCompanyId: Int?
+        let bidderRole: String?
+        let bidAmount: String?
+        let rateType: String?
+        let parentBidId: Int?
+        let bidRound: Int?
+        let equipmentType: String?
+        let estimatedPickup: String?
+        let estimatedDelivery: String?
+        let transitTimeDays: Int?
+        let fuelSurchargeIncluded: Bool?
+        let conditions: String?
+        let isAutoAccepted: Bool?
+        let agreementId: Int?
+        let status: String?
+        let rejectionReason: String?
+        let expiresAt: String?
+        let respondedAt: String?
+        let respondedBy: Int?
+        let createdAt: String?
+        let updatedAt: String?
+    }
+
+    /// `loadBidding.getBidChain` — full thread of bids + counters for
+    /// a load. Server orders by (bidRound asc, createdAt asc) so the
+    /// caller can render top-down chronological.
+    func getBidChain(loadId: Int, rootBidId: Int? = nil) async throws -> [ChainRow] {
+        struct Input: Encodable {
+            let loadId: Int
+            let rootBidId: Int?
+        }
+        return try await api.query(
+            "loadBidding.getBidChain",
+            input: Input(loadId: loadId, rootBidId: rootBidId)
+        )
+    }
+
+    /// `loadBidding.accept` — accept a bid (or a shipper's counter
+    /// when called by the driver). Server runs the FMCSA safety-rating
+    /// + operating-authority compliance gate before flipping the bid
+    /// to `accepted` and the load to `assigned`.
+    @discardableResult
+    func accept(bidId: Int) async throws -> SubmitAck {
+        struct Input: Encodable { let bidId: Int }
+        return try await api.mutation(
+            "loadBidding.accept",
+            input: Input(bidId: bidId)
+        )
+    }
+
+    /// `loadBidding.reject` — decline a bid (shipper-side action on
+    /// driver bids, or driver-side decline of a shipper counter).
+    /// Server flips the bid to `rejected`, stores the optional reason,
+    /// and emits a `bid_rejected` notification to the bidder.
+    @discardableResult
+    func reject(bidId: Int, reason: String? = nil) async throws -> SubmitAck {
+        struct Input: Encodable {
+            let bidId: Int
+            let reason: String?
+        }
+        return try await api.mutation(
+            "loadBidding.reject",
+            input: Input(bidId: bidId, reason: reason)
+        )
+    }
+
+    // MARK: - Auto-Accept Rules
+
+    /// One auto-accept rule. Mirrors the verbatim
+    /// `bidAutoAcceptRules` row at `schema.ts`. Each is a set of
+    /// criteria that, when ALL satisfied by an incoming bid, flips
+    /// the bid to `auto_accepted` server-side without the user
+    /// having to react. Decimals serialize as String through Drizzle.
+    struct AutoAcceptRule: Decodable, Identifiable, Hashable {
+        let id: Int
+        let userId: Int?
+        let companyId: Int?
+        let name: String
+        let maxRate: String?
+        let maxRatePerMile: String?
+        let minCatalystRating: String?
+        let requiredInsuranceMin: String?
+        let requiredEquipmentTypes: [String]?
+        let requiredHazmat: Bool?
+        let maxTransitDays: Int?
+        let preferredCatalystIds: [Int]?
+        let originStates: [String]?
+        let destinationStates: [String]?
+        let isActive: Bool?
+        let createdAt: String?
+    }
+
+    struct CreateRuleAck: Decodable, Hashable {
+        let id: Int?
+        let success: Bool?
+    }
+
+    struct ToggleAck: Decodable, Hashable {
+        let success: Bool?
+    }
+
+    struct DeleteAck: Decodable, Hashable {
+        let success: Bool?
+    }
+
+    func listAutoAcceptRules() async throws -> [AutoAcceptRule] {
+        try await api.queryNoInput("loadBidding.listAutoAcceptRules")
+    }
+
+    func createAutoAcceptRule(
+        name: String,
+        maxRate: Double? = nil,
+        maxRatePerMile: Double? = nil,
+        minCatalystRating: Double? = nil,
+        requiredInsuranceMin: Double? = nil,
+        requiredEquipmentTypes: [String]? = nil,
+        requiredHazmat: Bool? = nil,
+        maxTransitDays: Int? = nil,
+        preferredCatalystIds: [Int]? = nil,
+        originStates: [String]? = nil,
+        destinationStates: [String]? = nil
+    ) async throws -> CreateRuleAck {
+        struct Input: Encodable {
+            let name: String
+            let maxRate: Double?
+            let maxRatePerMile: Double?
+            let minCatalystRating: Double?
+            let requiredInsuranceMin: Double?
+            let requiredEquipmentTypes: [String]?
+            let requiredHazmat: Bool?
+            let maxTransitDays: Int?
+            let preferredCatalystIds: [Int]?
+            let originStates: [String]?
+            let destinationStates: [String]?
+        }
+        return try await api.mutation(
+            "loadBidding.createAutoAcceptRule",
+            input: Input(
+                name: name,
+                maxRate: maxRate,
+                maxRatePerMile: maxRatePerMile,
+                minCatalystRating: minCatalystRating,
+                requiredInsuranceMin: requiredInsuranceMin,
+                requiredEquipmentTypes: requiredEquipmentTypes,
+                requiredHazmat: requiredHazmat,
+                maxTransitDays: maxTransitDays,
+                preferredCatalystIds: preferredCatalystIds,
+                originStates: originStates,
+                destinationStates: destinationStates
+            )
+        )
+    }
+
+    @discardableResult
+    func toggleAutoAcceptRule(id: Int, isActive: Bool) async throws -> ToggleAck {
+        struct Input: Encodable {
+            let id: Int
+            let isActive: Bool
+        }
+        return try await api.mutation(
+            "loadBidding.toggleAutoAcceptRule",
+            input: Input(id: id, isActive: isActive)
+        )
+    }
+
+    @discardableResult
+    func deleteAutoAcceptRule(id: Int) async throws -> DeleteAck {
+        struct Input: Encodable { let id: Int }
+        return try await api.mutation(
+            "loadBidding.deleteAutoAcceptRule",
+            input: Input(id: id)
+        )
+    }
 }
 
 // MARK: - ergRouter (096 Me · ERG Hazmat Lookup)
@@ -8949,6 +9250,12 @@ struct ShipperAPI {
         let destination: String
         let catalyst: String
         let driver: String
+        /// Numeric `users.id` of the assigned driver, when one is
+        /// assigned. Required by 222 LiveTracking to call
+        /// `telemetry.getLiveLocation(driverId:)`. Server emits this
+        /// at `shippers.ts:139` (shippers.getActiveLoads).
+        let driverId: Int?
+        let catalystId: Int?
         let eta: String
         let rate: Double
     }
@@ -9180,6 +9487,147 @@ struct ShipperAPI {
                 bidId: bidId,
                 reason: reason
             )
+        )
+    }
+
+    // ===================================================================
+    // Round 4 / Arc E lifecycle wiring · 2026-04-28
+    // -------------------------------------------------------------------
+    // `shippers.getLifecycleSnapshot(loadId)` is the composite endpoint
+    // every shipper lifecycle brick (260-279) consumes. One round-trip
+    // returns load detail + stops + bids summary + assigned carrier /
+    // driver / vehicle + last geofence event + escrow + accessorial
+    // total + recommended bid id. Mirrors verbatim the return at
+    // `frontend/server/routers/shippers.ts:getLifecycleSnapshot`.
+    //
+    // Cohort B day-1: every field is server-emitted; missing rows
+    // surface as `nil` and the screen renders em-dash sentinels.
+    // ===================================================================
+
+    struct LifecycleSnapshot: Decodable, Hashable {
+        struct Load: Decodable, Hashable {
+            let id: Int
+            let loadNumber: String
+            let status: String
+            let cargoType: String?
+            let hazmatClass: String?
+            let unNumber: String?
+            let ergGuide: Int?
+            let equipmentType: String?
+            let rate: Double?
+            let weight: Double?
+            let distance: Double?
+            let pickupDate: String?
+            let deliveryDate: String?
+            let estimatedDeliveryDate: String?
+            let actualDeliveryDate: String?
+            let biddingEnds: String?
+            let specialInstructions: String?
+            let spectraMatchVerified: Bool?
+        }
+        struct Stop: Decodable, Hashable, Identifiable {
+            let id: Int
+            let sequence: Int
+            let stopType: String
+            let facilityName: String?
+            let address: String?
+            let city: String?
+            let state: String?
+            let contactName: String?
+            let contactPhone: String?
+            let appointmentStart: String?
+            let appointmentEnd: String?
+            let arrivedAt: String?
+            let departedAt: String?
+            let status: String
+            let notes: String?
+            let lat: Double?
+            let lng: Double?
+        }
+        struct BidsSummary: Decodable, Hashable {
+            let count: Int
+            let topBid: Double?
+            let highestBid: Double?
+            let averageBid: Double?
+            let acceptedBidId: Int?
+        }
+        struct Carrier: Decodable, Hashable {
+            let id: Int
+            let name: String
+            let dotNumber: String?
+            let mcNumber: String?
+        }
+        struct Driver: Decodable, Hashable {
+            let id: Int
+            let name: String
+            let email: String?
+            let phone: String?
+        }
+        struct Vehicle: Decodable, Hashable {
+            let id: Int
+            let vehicleNumber: String?
+            let vin: String?
+            let make: String?
+            let model: String?
+        }
+        struct Geofence: Decodable, Hashable {
+            let type: String
+            let eventTimestamp: String?
+            let latitude: Double
+            let longitude: Double
+            let dwellSeconds: Int?
+        }
+        struct Escrow: Decodable, Hashable {
+            let id: Int
+            let amount: Double
+            let status: String?
+            let releaseAt: String?
+        }
+
+        let load: Load
+        let pickup: Stop?
+        let delivery: Stop?
+        let stops: [Stop]
+        let bidsSummary: BidsSummary
+        let carrier: Carrier?
+        let driver: Driver?
+        let vehicle: Vehicle?
+        let lastGeofence: Geofence?
+        let escrow: Escrow?
+        let accessorialTotal: Double
+        let recommendedBidId: Int?
+        let fetchedAt: String
+    }
+
+    struct LifecycleSnapshotInput: Encodable { let loadId: String }
+
+    /// Fetch the lifecycle composite snapshot for a single load.
+    /// Throws on transport errors and on `loads.getById`-style "not
+    /// found" — the screen surfaces a real retry banner.
+    func getLifecycleSnapshot(loadId: String) async throws -> LifecycleSnapshot {
+        try await api.query(
+            "shippers.getLifecycleSnapshot",
+            input: LifecycleSnapshotInput(loadId: loadId)
+        )
+    }
+
+    /// Optional settlement view for a load. `nil` until the
+    /// settlement is constructed.
+    struct SettlementForLoad: Decodable, Hashable {
+        let id: Int
+        let status: String
+        let amount: Double
+        let payableDate: String?
+        let paidAt: String?
+        let invoiceUrl: String?
+        let source: String
+    }
+
+    func getSettlementForLoad(loadId: String) async throws -> SettlementForLoad? {
+        struct In: Encodable { let loadId: String }
+        return try await api.query(
+            "shippers.getSettlementForLoad",
+            input: In(loadId: loadId)
         )
     }
 
@@ -9431,13 +9879,15 @@ struct ShipperAPI {
     }
 
     /// Spending-analytics envelope. Mirrors the projection at
-    /// `shippers.ts:489-493`. `byLane` and `byCatalyst` are reserved
-    /// for future expansion (backend returns empty arrays today); the
-    /// screen renders the leaderboard from the parallel
-    /// `getCatalystPerformance` query so an empty envelope.byLane /
-    /// .byCatalyst doesn't degrade the UI. Numeric fields are typed
-    /// as `Double` so backend-side `Math.round(...)` integer outputs
+    /// `shippers.ts:getSpendingAnalytics`. Numeric fields typed as
+    /// `Double` so backend-side `Math.round(...)` integer outputs
     /// AND any future fractional values both decode cleanly.
+    ///
+    /// `byLane` / `byEquipment` / `byCatalyst` ship live cohort
+    /// breakdowns: state-pair lanes (top 8 by spend), cargoType-
+    /// classified equipment mix, and per-catalyst spend (top 10).
+    /// All three are computed from the same time-window filter as
+    /// the headline totals so cross-lens numbers always agree.
     struct SpendingAnalytics: Decodable, Hashable {
         let period: String
         let totalSpend: Double
@@ -9445,6 +9895,57 @@ struct ShipperAPI {
         let avgPerLoad: Double
         let avgPerMile: Double
         let vsMarketRate: Double
+        let byLane: [LaneCohort]
+        let byEquipment: [EquipmentCohort]
+        let byCatalyst: [CatalystSpend]
+
+        struct LaneCohort: Decodable, Hashable, Identifiable {
+            let origin: String
+            let destination: String
+            let loadCount: Int
+            let totalSpend: Double
+            let avgPerLoad: Double
+            var id: String { "\(origin)->\(destination)" }
+        }
+
+        struct EquipmentCohort: Decodable, Hashable, Identifiable {
+            let equipment: String
+            let loadCount: Int
+            let totalSpend: Double
+            /// Server-computed share of total spend, 0–100.
+            let share: Int
+            var id: String { equipment }
+        }
+
+        struct CatalystSpend: Decodable, Hashable, Identifiable {
+            let catalystId: String
+            let name: String
+            let loadCount: Int
+            let totalSpend: Double
+            var id: String { catalystId }
+        }
+
+        // Default-empty cohort arrays so a server still returning the
+        // pre-cohort shape decodes without throwing — JSONDecoder
+        // throws on a missing required key. `init(from:)` accepts
+        // missing arrays as `[]`.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.period       = try c.decode(String.self, forKey: .period)
+            self.totalSpend   = try c.decode(Double.self, forKey: .totalSpend)
+            self.loadCount    = try c.decode(Int.self,    forKey: .loadCount)
+            self.avgPerLoad   = try c.decode(Double.self, forKey: .avgPerLoad)
+            self.avgPerMile   = try c.decode(Double.self, forKey: .avgPerMile)
+            self.vsMarketRate = try c.decode(Double.self, forKey: .vsMarketRate)
+            self.byLane       = (try? c.decode([LaneCohort].self,      forKey: .byLane))      ?? []
+            self.byEquipment  = (try? c.decode([EquipmentCohort].self, forKey: .byEquipment)) ?? []
+            self.byCatalyst   = (try? c.decode([CatalystSpend].self,   forKey: .byCatalyst))  ?? []
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case period, totalSpend, loadCount, avgPerLoad, avgPerMile, vsMarketRate
+            case byLane, byEquipment, byCatalyst
+        }
     }
 
     struct GetSpendingAnalyticsInput: Encodable {
@@ -10207,6 +10708,159 @@ struct EscortAPI {
             input: ConfirmRouteInput(id: id)
         )
     }
+
+    // MARK: - Corridor map (602_EscortCorridorMap)
+    //
+    // Added 2026-04-27 in the 159th eusotrip-killers firing as the
+    // third Escort-track surface. Drilled into from
+    // 601_EscortAssignmentDetail's "View corridor →" sheet CTA — the
+    // operator opens the corridor map to inspect the routed legs,
+    // milestone schedule, geofences, and lead/chase pairing visualised
+    // along the corridor. Backend path: `escorts.getCorridor` (input
+    // `{ id: string }`).
+    //
+    // Single-read envelope mirrors the convention of
+    // `terminals.getYardMap` and `admin.getControlTowerOverview` — the
+    // server returns the full corridor topology (route legs +
+    // milestones + geofences + KPI counts) in one payload so the
+    // screen can render its full state from a single fetch. If the
+    // parallel router has not yet shipped the procedure, the call
+    // throws `EusoTripAPIError.trpcError` and the
+    // `EscortCorridorStore` resolves to `.error` — the screen
+    // surfaces an honest retry banner. No fixture data ever
+    // (doctrine §11 + `MockDataGuard`).
+
+    /// One leg of the routed corridor (origin → waypoint, waypoint →
+    /// waypoint, …, waypoint → destination). Server-shaped so the UI
+    /// never needs to compute leg geometry locally. Empty `name` /
+    /// nil distance fold to em-dash sentinels in the UI.
+    struct CorridorLeg: Decodable, Identifiable, Hashable {
+        let id: String
+        /// Display label (e.g. "Leg 1 · Yard → Bridge"). Server-formatted.
+        let label: String
+        /// Origin waypoint identifier or place name for the leg.
+        let origin: String
+        /// Destination waypoint identifier or place name for the leg.
+        let destination: String
+        /// Server-projected leg distance in miles. `nil` until the
+        /// route engine resolves the geometry.
+        let miles: Double?
+        /// Coverage ratio (0.0…1.0) — the proportion of this leg
+        /// already piloted by an escort vehicle. Zero on a leg that
+        /// hasn't rolled yet.
+        let coverage: Double
+        /// Server-side enum: "pending", "active", "completed",
+        /// "skipped". Drives the leg's status pill.
+        let status: String
+        /// Coarse hazmat / OS-OW chip rendered on the leg row when
+        /// the leg crosses a regulated segment. Empty when none.
+        let chips: [String]?
+    }
+
+    /// One milestone the operator must hit along the corridor —
+    /// permit check-in, bridge clearance survey, weigh stop, escort
+    /// handoff, etc. Server-defined ordering. `eta` and `elapsed`
+    /// are server-projected short labels suitable for inline display.
+    struct CorridorMilestone: Decodable, Identifiable, Hashable {
+        let id: String
+        /// Display label ("Permit check", "Bridge clearance survey", …).
+        let label: String
+        /// Server-side enum: "pending", "in_progress", "completed",
+        /// "skipped".
+        let status: String
+        /// Optional short ETA label (e.g. "in 12m", "in 1h 20m").
+        /// Empty when not scheduled or already completed.
+        let eta: String?
+        /// Optional short elapsed label for completed milestones
+        /// (e.g. "12m ago"). Empty when not yet completed.
+        let elapsed: String?
+        /// Optional milestone note / remark from dispatch. Empty when
+        /// none attached.
+        let note: String?
+    }
+
+    /// One geofence overlay along the corridor (bridge clearance
+    /// zone, hazmat exclusion, weigh-station bypass, etc.). The UI
+    /// renders a chip row — full polygon rendering is server-side
+    /// when the corridor is presented in the EusoTrip mapping engine.
+    struct CorridorGeofence: Decodable, Identifiable, Hashable {
+        let id: String
+        /// Display label.
+        let label: String
+        /// Geofence kind ("bridge_clearance", "hazmat_exclusion",
+        /// "weigh_station_bypass", "ports_of_entry", …). Drives icon
+        /// pick.
+        let kind: String
+        /// Optional short status: "armed", "breached", "cleared".
+        let status: String?
+    }
+
+    /// Lead / chase escort vehicle envelope — flattened so the UI
+    /// renders the pairing card without re-merging fields from the
+    /// detail surface. Empty when no vehicle paired yet.
+    struct CorridorEscortVehicle: Decodable, Hashable {
+        /// Server-side enum: "lead", "chase".
+        let role: String
+        /// Vehicle identifier (e.g. "PILOT-12", "ESC-3-A").
+        let vehicleId: String
+        /// Optional driver name.
+        let driverName: String?
+        /// Optional last-known place label (e.g. "I-44 mp 142").
+        let lastKnownLocation: String?
+        /// Optional short relative-time label for the last ping
+        /// (e.g. "2m", "15m").
+        let lastPingAt: String?
+    }
+
+    /// Corridor map envelope. Mirrors `terminals.getYardMap` shape
+    /// (single read, server-shaped payload). Backend path:
+    /// `escorts.getCorridor`.
+    struct EscortCorridor: Decodable, Hashable {
+        /// The escort assignment id this corridor belongs to.
+        let id: String
+        /// Load number for the piloted load.
+        let loadNumber: String
+        /// Origin / destination labels (mirrors `AssignmentDetail`).
+        let origin: String
+        /// Origin / destination labels (mirrors `AssignmentDetail`).
+        let destination: String
+        /// Optional named route the corridor follows.
+        let routeName: String?
+        /// Total routed miles for the corridor (server-summed across
+        /// legs). `nil` until the route engine resolves geometry.
+        let routedMiles: Double?
+        /// Server-computed mean coverage ratio (0.0…1.0) across legs.
+        let corridorCoverage: Double
+        /// Server-side enum mirroring `AssignmentDetail.status`.
+        let status: String
+        /// Legs in render order.
+        let legs: [CorridorLeg]
+        /// Milestones in dispatch order.
+        let milestones: [CorridorMilestone]
+        /// Geofence overlays.
+        let geofences: [CorridorGeofence]
+        /// Paired escort vehicles (lead / chase). Empty when none paired.
+        let escortVehicles: [CorridorEscortVehicle]
+        /// Server-computed legs-completed counter for the header KPI
+        /// strip. Saves the UI from re-summing client-side.
+        let legsCompleted: Int
+        /// Server-computed total leg count for the header KPI strip.
+        let legsTotal: Int
+        /// Optional bridge clearance feet for the corridor's most
+        /// restrictive leg. `nil` when no clearance survey attached.
+        let bridgeClearanceFt: Double?
+        /// Optional permit number authorising the corridor.
+        let permitNumber: String?
+    }
+
+    struct GetCorridorInput: Encodable { let id: String }
+
+    func getCorridor(id: String) async throws -> EscortCorridor? {
+        try await api.query(
+            "escorts.getCorridor",
+            input: GetCorridorInput(id: id)
+        )
+    }
 }
 
 // =====================================================================
@@ -10777,6 +11431,292 @@ struct AdminAPI {
         try await api.query(
             "admin.listTenants",
             input: ListTenantsInput(limit: limit, status: status)
+        )
+    }
+
+    // MARK: - controlTower (801 brick · 156th firing)
+    //
+    // Platform-wide control-tower pane. Closes the 800->802 leapfrog
+    // by giving Admin a third deep surface (parity with Terminal
+    // 700/701/702 and Catalyst 500/501/502). Mirrors the convention
+    // of the per-role control-tower routers on the web platform
+    // (slice 13 of SKILL.md §16 — "admin-tenant-ops"). All
+    // procedures throw `EusoTripAPIError.trpcError` if the parallel
+    // router has not shipped on the `admin.controlTower.*` namespace,
+    // and the matching `Admin*Store` resolves to `.error` so the
+    // screen surfaces an honest retry banner. Doctrine §11 holds:
+    // never a fixture row.
+    //
+    // Backend paths:
+    //   • admin.controlTower.getOverview     -> ControlTowerOverview
+    //   • admin.controlTower.getExceptions   -> [ControlTowerException]
+    //   • admin.controlTower.acknowledgeExc  -> ControlTowerException
+
+    /// Composite control-tower KPI envelope. Each scalar represents
+    /// a platform-health dimension surfaced as a single tile on the
+    /// 801 home strip. The server computes these from the DD-alerts
+    /// pipeline + system-health composite + integration-status
+    /// register; on a fresh tenant where one rollup hasn't seeded
+    /// (e.g., no settlements yet for the calendar month), the
+    /// scalar projects 0 / 0.0 / "" and the row renders the neutral
+    /// em-dash — never a fabricated value.
+    struct ControlTowerOverview: Decodable, Hashable {
+        /// Distinct active exceptions across the platform right now
+        /// (any ticket / alert in `open` or `escalated` state).
+        let activeExceptionsCount: Int
+        /// Exceptions whose SLA window has already breached and are
+        /// awaiting an admin response. Subset of `activeExceptionsCount`.
+        let breachedSLAExceptionsCount: Int
+        /// Composite system-health score (0.0 ... 1.0). Below 0.85
+        /// is the admin red line. Same column the home dashboard's
+        /// `systemHealthScore` tile reads — surfaced here too so the
+        /// drill-down always agrees with the home tile.
+        let systemHealthScore: Double
+        /// API SLO compliance over the trailing 24h window, expressed
+        /// as a fraction (0.0 ... 1.0). `eusotrip-api` p99 budget.
+        let apiSLO24h: Double
+        /// Queue lag in seconds — max of the message-bus consumer
+        /// lag across `loads.events`, `dispatch.events`, `wallet.events`.
+        let queueLagSeconds: Int
+        /// Error rate over the trailing 1h window (fraction of
+        /// requests that returned 5xx or threw an unhandled exception).
+        let errorRate1h: Double
+        /// Vendor-integration status rollup — one of "green", "yellow",
+        /// "red". Aggregates Stripe + HERE + FMCSA + CBP + CBSA. When
+        /// any single vendor is "red", the rollup is "red"; when any is
+        /// "yellow" but none are "red", "yellow"; else "green".
+        let vendorIntegrationStatus: String
+        /// Server-side projection of the most-recent control-tower
+        /// pipeline timestamp as a relative short label ("just now",
+        /// "12s", "1m"). Empty string when the pipeline has never run.
+        let lastUpdatedAt: String
+    }
+
+    func getControlTowerOverview() async throws -> ControlTowerOverview {
+        try await api.queryNoInput("admin.controlTower.getOverview")
+    }
+
+    /// One row in the control-tower exception feed. Each row is an
+    /// active platform-level exception that needs admin attention.
+    /// Severity bucket drives the row's left-side gradient bar; SLA
+    /// status drives the right-side chip ("BREACHED", "AT RISK",
+    /// "ON TRACK"). Empty `category` and `assignee` render as
+    /// em-dash sentinels — never a fabricated label.
+    struct ControlTowerException: Decodable, Identifiable, Hashable {
+        let id: String
+        /// Server enum: "infra", "integration", "fraud", "billing",
+        /// "compliance", "support", "security". Empty when not
+        /// classified yet (rare on a settled exception).
+        let category: String
+        /// Server enum: "low", "normal", "high", "urgent", "critical".
+        /// Drives the row's severity colour-band.
+        let severity: String
+        /// Server enum: "on_track", "at_risk", "breached". Drives the
+        /// right-side SLA chip.
+        let slaStatus: String
+        /// Brief one-line headline of the exception.
+        let headline: String
+        /// Tenant or scope this exception is attached to (e.g.
+        /// "Acme Logistics", "Platform-wide", "Stripe webhook").
+        let scope: String
+        /// User name of the admin currently assigned (empty when
+        /// unassigned). Not the email — server-side projection.
+        let assignee: String
+        /// Server-side projection of `openedAt` as a relative short
+        /// label ("2m", "12m", "1h", "3h"). Empty when not set.
+        let openedAt: String
+    }
+
+    struct GetControlTowerExceptionsInput: Encodable {
+        let limit: Int
+        let severity: String?
+    }
+
+    func getControlTowerExceptions(
+        limit: Int = 25,
+        severity: String? = nil
+    ) async throws -> [ControlTowerException] {
+        try await api.query(
+            "admin.controlTower.getExceptions",
+            input: GetControlTowerExceptionsInput(limit: limit, severity: severity)
+        )
+    }
+
+    struct AcknowledgeExceptionInput: Encodable { let id: String }
+
+    /// Mark a control-tower exception as acknowledged. The server
+    /// sets `acknowledgedAt = now()` and `acknowledgedBy = currentUser`,
+    /// returning the updated row. The 801 screen flips that row's
+    /// SLA chip from `breached` -> `at_risk` (or holds, depending on
+    /// recompute) and the right-side chevron is removed. Calls do
+    /// NOT close the exception — closure is a separate flow on the
+    /// future detail screen `802` (admin tenants is at 802; the
+    /// detail editor lands at `803_AdminTenantDetail`/`804_...`).
+    func acknowledgeControlTowerException(id: String) async throws -> ControlTowerException {
+        try await api.mutation(
+            "admin.controlTower.acknowledgeException",
+            input: AcknowledgeExceptionInput(id: id)
+        )
+    }
+
+    // MARK: - getTenantDetail (803 brick · 161st firing)
+    //
+    // Per-tenant deep view that drills in from the 802 row's
+    // "View detail →" CTA. Lifts Admin to 4-deep parity with
+    // Driver/Shipper. Mirrors the convention of the per-record
+    // detail routers on Carrier (`carriers.getLoadDetail`),
+    // Catalyst (`catalysts.getMatchDetail`), and Escort
+    // (`escorts.getAssignmentDetail`). Backend path:
+    // `admin.getTenantDetail` (input `{ id: string }`).
+    //
+    // If the parallel router has not yet shipped on the `admin.*`
+    // namespace, the call throws `EusoTripAPIError.trpcError` and
+    // `AdminTenantDetailStore` resolves to `.error` so the screen
+    // surfaces an honest retry banner. No fixture data ever
+    // (doctrine §11 + `MockDataGuard`).
+    //
+    // Every nullable column (`primaryUserName`, `primaryUserEmail`,
+    // `monthlyVolumeUsd`, `mrrUsd`, `lifetimeVolumeUsd`,
+    // `lifetimeRevenueUsd`, `nextRenewalAt`, …) renders as a neutral
+    // em-dash on the 803 screen when absent — never a fabricated
+    // value or a fallback zero.
+    struct TenantContact: Decodable, Identifiable, Hashable {
+        let id: String
+        let name: String
+        let email: String?
+        let phone: String?
+        /// Server-side enum: "owner", "billing", "operations",
+        /// "compliance". Drives the contact-card subtitle.
+        let role: String
+    }
+
+    struct TenantUsageMetric: Decodable, Identifiable, Hashable {
+        let id: String
+        /// Display label for the metric ("Loads booked",
+        /// "Drivers active", "Documents signed", "API calls",
+        /// "Push notifications sent"). Server-projected so the
+        /// client never localises a server-driven dimension.
+        let label: String
+        /// Trailing-30-day count for the metric. Always present —
+        /// a metric the tenant has never used would be omitted by
+        /// the server, never returned with a zero value.
+        let value: Int
+        /// Optional delta vs the prior trailing-30-day window
+        /// (signed integer). Drives the trend chip on the row.
+        let delta30dPct: Double?
+    }
+
+    struct TenantPaymentSummary: Decodable, Hashable {
+        /// Stripe customer id when the tenant is billed via the
+        /// platform's Stripe Connect account. Null when the tenant
+        /// is on a custom invoicing arrangement.
+        let stripeCustomerId: String?
+        /// Brand of the primary card on file ("visa", "mastercard",
+        /// "amex"). Null when the tenant pays via ACH/wire.
+        let primaryCardBrand: String?
+        /// Last 4 digits of the primary card on file. Null when
+        /// the tenant pays via ACH/wire.
+        let primaryCardLast4: String?
+        /// "active", "past_due", "canceled", "trialing", "unpaid".
+        /// Drives the billing-status pill on the screen.
+        let billingStatus: String
+        /// Trailing-90-day on-time payment rate (0.0-1.0). Null
+        /// when the tenant has had < 3 invoices closed.
+        let onTimeRate90d: Double?
+        /// Trailing-30-day balance owed (USD). Always present —
+        /// a tenant with no balance returns 0.0, not null.
+        let balanceUsd: Double
+    }
+
+    struct TenantAuditEntry: Decodable, Identifiable, Hashable {
+        let id: String
+        /// Server-projected event label ("Tenant created",
+        /// "Plan upgraded", "Suspended", "Reinstated", "Owner
+        /// transferred", "Billing method updated"). Localisation
+        /// is deliberately deferred to the server.
+        let label: String
+        /// ISO-8601 timestamp of the event.
+        let occurredAt: String
+        /// Optional actor ("system", "admin@eusotrip.com",
+        /// "owner@tenantco.com"). Drives the byline on the row.
+        let actor: String?
+        /// Optional one-line context shown beneath the label.
+        let note: String?
+    }
+
+    struct TenantDetail: Decodable, Identifiable, Hashable {
+        let id: String
+        let name: String
+        /// Server-side enum: "active", "trial", "suspended",
+        /// "churned", "pending_review". Drives the hero status pill.
+        let status: String
+        /// Subscription plan label ("Starter", "Growth",
+        /// "Enterprise", "Custom"). Optional — null on a tenant
+        /// without an active plan (custom contract or pending
+        /// signup).
+        let plan: String?
+        /// Server-projected `companies.role` ("shipper", "carrier",
+        /// "broker", "catalyst", "terminal", …). Drives the type
+        /// chip in the hero row.
+        let kind: String
+        /// Trailing-month USD volume routed through the tenant.
+        /// Optional — null until the first settlement closes.
+        let monthlyVolumeUsd: Double?
+        /// Trailing-month MRR contribution (USD). Optional — null
+        /// for custom contracts that don't roll into the standard
+        /// MRR engine.
+        let mrrUsd: Double?
+        /// Lifetime USD volume routed through the tenant. Optional
+        /// — null when the tenant predates the migrations that
+        /// added the column (rare).
+        let lifetimeVolumeUsd: Double?
+        /// Lifetime USD revenue captured from the tenant (sum of
+        /// platform fees + plan revenue + add-ons). Optional.
+        let lifetimeRevenueUsd: Double?
+        /// Active distinct users in the trailing-30-day window.
+        let activeUserCount30d: Int
+        /// Total distinct users on the tenant ever (lifetime).
+        let totalUserCount: Int
+        /// Server-projected `createdAt` as `YYYY-MM-DD`.
+        let signedUpAt: String
+        /// ISO-8601 of the next renewal date. Optional — null on
+        /// trial / churned tenants.
+        let nextRenewalAt: String?
+        /// Free-form server-projected health score 0-100. Optional
+        /// — null when the score engine hasn't run for this
+        /// tenant yet (very-new accounts).
+        let healthScore: Int?
+        /// Free-form risk note from the server-side classifier.
+        /// Optional — null when no risks are flagged.
+        let riskNote: String?
+        /// Contact roster (owner, billing, operations,
+        /// compliance). May be empty if the tenant hasn't
+        /// completed onboarding.
+        let contacts: [TenantContact]
+        /// Trailing-30-day usage rollup. May be empty on a
+        /// brand-new tenant that hasn't generated any activity yet.
+        let usageMetrics: [TenantUsageMetric]
+        /// Billing summary. Always present — a tenant on a custom
+        /// contract still returns a billing summary with empty
+        /// Stripe fields.
+        let paymentSummary: TenantPaymentSummary
+        /// Most recent admin audit events (suspend, reinstate,
+        /// plan changes, billing updates). Server-paged — most-
+        /// recent-first. May be empty on a brand-new tenant.
+        let auditTrail: [TenantAuditEntry]
+    }
+
+    struct GetTenantDetailInput: Encodable { let id: String }
+
+    /// Read the per-tenant deep envelope. Server returns a fully
+    /// hydrated `TenantDetail` or throws when the id is unknown.
+    /// The store folds nil → `.empty` only when the server
+    /// explicitly omits a tenant body (parallel router has not
+    /// yet shipped); otherwise either `.loaded` or `.error`.
+    func getTenantDetail(id: String) async throws -> TenantDetail? {
+        try await api.query(
+            "admin.getTenantDetail",
+            input: GetTenantDetailInput(id: id)
         )
     }
 }
@@ -12441,5 +13381,1459 @@ struct EusoTicketAPI {
             "eusoTicket.generateBOLPDF",
             input: Input(bolNumber: bolNumber)
         )
+    }
+}
+
+// MARK: - LoadTemplatesAPI
+//
+// Saved lane / commodity / equipment configurations. Backs the
+// shipper-settings "Default lane configs" card and (next firing) the
+// post-load screen's prefill flow. Mirrors
+// `frontend/server/routers/loadTemplates.ts` 1:1.
+struct LoadTemplatesAPI {
+    unowned let api: EusoTripAPI
+
+    /// One saved template row. Mirrors the `loadTemplates` schema
+    /// (`drizzle/schema.ts:561+`). Most fields optional — a shipper can
+    /// save a lane-only template without locking commodity / rate.
+    struct Template: Decodable, Identifiable, Hashable {
+        let id: Int
+        let name: String
+        let description: String?
+        let origin: Location?
+        let destination: Location?
+        let distance: String?
+        let commodity: String?
+        let cargoType: String?
+        let equipmentType: String?
+        let trailerType: String?
+        let weight: String?
+        let weightUnit: String?
+        let quantity: String?
+        let quantityUnit: String?
+        let hazmatClass: String?
+        let unNumber: String?
+        let rate: String?
+        let rateType: String?
+        let isFavorite: Bool?
+        let isArchived: Bool?
+        let useCount: Int?
+        let lastUsedAt: String?
+        let createdAt: String?
+        let updatedAt: String?
+
+        struct Location: Decodable, Hashable {
+            let city: String?
+            let state: String?
+            let zipCode: String?
+            let address: String?
+            let facilityName: String?
+        }
+    }
+
+    struct ListInput: Encodable {
+        let search: String?
+        let favoritesOnly: Bool?
+        let includeArchived: Bool?
+    }
+
+    /// `loadTemplates.list` — current user's saved templates.
+    /// Returns favorites first (server-side ORDER BY), then most
+    /// recently used. iOS settings card pulls top 100.
+    func list(search: String? = nil,
+              favoritesOnly: Bool? = nil,
+              includeArchived: Bool? = nil) async throws -> [Template] {
+        try await api.query(
+            "loadTemplates.list",
+            input: ListInput(
+                search: search,
+                favoritesOnly: favoritesOnly,
+                includeArchived: includeArchived
+            )
+        )
+    }
+}
+
+// MARK: - ControlTowerAPI
+//
+// Multi-modal supply-chain visibility. Mirrors verbatim
+// `frontend/server/routers/controlTower.ts` (procs `overview`,
+// `exceptions`, `recentActivity`). Backs the Shipper Control Tower
+// brick 212 + any future Catalyst / Broker dispatch overview surface
+// that wants the same envelope shape.
+struct ControlTowerAPI {
+    unowned let api: EusoTripAPI
+
+    /// Per-mode lane counts (active / inTransit / delivered for truck,
+    /// active / inTransit for vessel + rail). The web peer
+    /// (`ControlTower.tsx`) sums truck.active + vessel.active for the
+    /// "Total Active" header tile.
+    struct ModeCounts: Decodable, Hashable {
+        let active: Int
+        let inTransit: Int
+        let delivered: Int?
+    }
+
+    struct Totals: Decodable, Hashable {
+        let active: Int
+        let inTransit: Int
+    }
+
+    struct Overview: Decodable, Hashable {
+        let truck: ModeCounts
+        let vessel: ModeCounts
+        let rail: ModeCounts
+        let total: Totals
+    }
+
+    /// Fetch the multi-modal overview. No input.
+    func overview() async throws -> Overview {
+        try await api.queryNoInput("controlTower.overview")
+    }
+
+    // MARK: Exceptions
+
+    /// One late-delivery / ETA-passed exception row. Server emits
+    /// truck rows with `mode: "truck"` carrying pickup + delivery
+    /// JSON columns; vessel rows with `mode: "vessel"` carrying
+    /// origin + destination port ids + booking number. Wire-field
+    /// `id` (Int) is mapped to `rowId` so `Identifiable.id: String`
+    /// can return a stable composite without colliding.
+    struct ExceptionRow: Decodable, Hashable, Identifiable {
+        let rowId: Int
+        let mode: String
+        let exceptionType: String
+        let status: String?
+        // Truck-shape fields
+        let loadNumber: String?
+        let deliveryDate: String?
+        // Vessel-shape fields
+        let bookingNumber: String?
+        let eta: String?
+        let originPortId: Int?
+        let destinationPortId: Int?
+        let pickupLocation: LocationStub?
+        let deliveryLocation: LocationStub?
+
+        enum CodingKeys: String, CodingKey {
+            case rowId = "id"
+            case mode, exceptionType, status
+            case loadNumber, deliveryDate
+            case bookingNumber, eta, originPortId, destinationPortId
+            case pickupLocation, deliveryLocation
+        }
+
+        var id: String { "\(mode)-\(rowId)" }
+
+        struct LocationStub: Decodable, Hashable {
+            let city: String?
+            let state: String?
+        }
+    }
+
+    struct ExceptionsResponse: Decodable, Hashable {
+        let truckExceptions: [ExceptionRow]
+        let vesselExceptions: [ExceptionRow]
+        let totalExceptions: Int
+    }
+
+    func exceptions(limit: Int = 50) async throws -> ExceptionsResponse {
+        struct Input: Encodable { let limit: Int }
+        return try await api.query(
+            "controlTower.exceptions",
+            input: Input(limit: limit)
+        )
+    }
+
+    // MARK: Recent activity
+
+    /// One row in the multi-modal activity feed. Server merges the
+    /// most-recent truck loads + vessel shipments and returns them
+    /// sorted by `updatedAt` desc. Wire-field `id` (Int) is mapped to
+    /// `rowId` so the SwiftUI `Identifiable` requirement can return a
+    /// composite "\(mode)-\(rowId)" String without clashing with the
+    /// Int wire shape.
+    struct ActivityRow: Decodable, Hashable, Identifiable {
+        let mode: String
+        let rowId: Int
+        let status: String?
+        let label: String?    // loadNumber for truck, bookingNumber for vessel
+        let updatedAt: String?
+
+        enum CodingKeys: String, CodingKey {
+            case mode
+            case rowId = "id"
+            case status, label, updatedAt
+        }
+
+        var id: String { "\(mode)-\(rowId)" }
+    }
+
+    func recentActivity(limit: Int = 20) async throws -> [ActivityRow] {
+        struct Input: Encodable { let limit: Int }
+        return try await api.query(
+            "controlTower.recentActivity",
+            input: Input(limit: limit)
+        )
+    }
+}
+
+// MARK: - Co2CalculatorAPI
+//
+// Per-shipment carbon emissions across truck / rail / vessel / air with
+// equivalence helpers (trees-to-offset, gallons-of-gasoline, car-miles)
+// and CII rating for vessel mode. Mirrors verbatim
+// `frontend/server/routers/co2Calculator.ts` (procs
+// `calculateTruckShipment`, `calculateMultiModal`). Vessel-only
+// `calculateVesselShipment` is gated by `vesselProcedure` server-side
+// and therefore not exposed here for the Shipper-track surface.
+struct Co2CalculatorAPI {
+    unowned let api: EusoTripAPI
+
+    /// Equivalence triplet emitted by the truck-shipment calculator —
+    /// gives the shipper a tangible feel for what a CO2 number means.
+    struct Equivalents: Decodable, Hashable {
+        let treesNeededToOffset: Int
+        let gallonsOfGasoline: Int
+        let milesInAvgCar: Int
+    }
+
+    /// Truck-shipment result envelope. Mirrors
+    /// `co2Calculator.calculateTruckShipment` output.
+    struct TruckResult: Decodable, Hashable {
+        let mode: String
+        let distanceMiles: Double
+        let weightTons: Double
+        let equipmentType: String
+        let emissionFactor: Double
+        let co2Kg: Double
+        let co2Tonnes: Double
+        let equivalents: Equivalents
+    }
+
+    struct TruckInput: Encodable {
+        let loadId: Int?
+        let distanceMiles: Double?
+        let weightTons: Double?
+        let equipmentType: String?
+    }
+
+    /// Compute the truck-mode CO2 footprint for a single shipment.
+    /// Either pass `loadId` (server pulls distance/weight/equipment
+    /// from the loads row) OR the raw triplet.
+    func calculateTruckShipment(
+        loadId: Int? = nil,
+        distanceMiles: Double? = nil,
+        weightTons: Double? = nil,
+        equipmentType: String? = nil
+    ) async throws -> TruckResult {
+        try await api.query(
+            "co2Calculator.calculateTruckShipment",
+            input: TruckInput(
+                loadId: loadId,
+                distanceMiles: distanceMiles,
+                weightTons: weightTons,
+                equipmentType: equipmentType
+            )
+        )
+    }
+
+    // MARK: Multi-modal
+
+    /// One leg of a multi-modal shipment. Different modes accept
+    /// different distance units (miles / nm / km) — encode whatever
+    /// the caller has and the server picks the right field.
+    struct MultiModalLeg: Encodable {
+        let mode: String        // "truck" | "rail" | "vessel" | "air"
+        let distanceMiles: Double?
+        let distanceNm: Double?
+        let distanceKm: Double?
+        let weightTons: Double?
+        let equipmentType: String?
+        let fuelType: String?
+        let fuelConsumedTonnes: Double?
+
+        init(mode: String,
+             distanceMiles: Double? = nil,
+             distanceNm: Double? = nil,
+             distanceKm: Double? = nil,
+             weightTons: Double? = nil,
+             equipmentType: String? = nil,
+             fuelType: String? = nil,
+             fuelConsumedTonnes: Double? = nil) {
+            self.mode = mode
+            self.distanceMiles = distanceMiles
+            self.distanceNm = distanceNm
+            self.distanceKm = distanceKm
+            self.weightTons = weightTons
+            self.equipmentType = equipmentType
+            self.fuelType = fuelType
+            self.fuelConsumedTonnes = fuelConsumedTonnes
+        }
+    }
+
+    struct MultiModalLegResult: Decodable, Hashable, Identifiable {
+        let leg: Int
+        let mode: String
+        let co2Kg: Double
+
+        var id: Int { leg }
+    }
+
+    struct MultiModalResult: Decodable, Hashable {
+        let legs: [MultiModalLegResult]
+        let totalCo2Kg: Double
+        let totalCo2Tonnes: Double
+        let carbonOffsetCostUsd: Double
+    }
+
+    struct MultiModalInput: Encodable { let legs: [MultiModalLeg] }
+
+    /// Compute carbon footprint across an arbitrary leg sequence.
+    func calculateMultiModal(legs: [MultiModalLeg]) async throws -> MultiModalResult {
+        try await api.query(
+            "co2Calculator.calculateMultiModal",
+            input: MultiModalInput(legs: legs)
+        )
+    }
+}
+
+// MARK: - RFPManagerAPI
+//
+// Procurement workflow — list / create / publish / score / award RFPs.
+// Mirrors verbatim `frontend/server/routers/rfpManager.ts`. Backs the
+// Shipper RFP brick (215) and any future Catalyst-side bid-response
+// surface (Catalyst sees the same RFPs as a "carrier opportunity"
+// inbox).
+struct RFPManagerAPI {
+    unowned let api: EusoTripAPI
+
+    /// Carrier-eligibility constraints attached to an RFP. All
+    /// optional — a draft RFP can publish without any constraints
+    /// and accept bids from every motor carrier.
+    struct CarrierRequirements: Decodable, Hashable, Encodable {
+        let minSafetyScore: Int?
+        let minOnTimeRate: Int?
+        let requiredInsurance: Int?
+        let hazmatCertRequired: Bool?
+        let minFleetSize: Int?
+        let preferredTiers: [String]?
+    }
+
+    /// Server-emitted scoring weights. Each is a 0–100 weight that
+    /// adds up to ~100 across the 5 dimensions.
+    struct ScoringWeights: Decodable, Hashable, Encodable {
+        let rate: Int?
+        let serviceLevel: Int?
+        let safety: Int?
+        let capacity: Int?
+        let experience: Int?
+    }
+
+    /// City + state pair — used for both lane origin and destination.
+    struct CityState: Decodable, Hashable, Encodable {
+        let city: String
+        let state: String
+    }
+
+    /// One lane on an RFP. Server returns a flat shape with origin /
+    /// destination broken out as nested `CityState` (see
+    /// `loadRFPWithLanes` in the server module).
+    struct Lane: Decodable, Hashable, Identifiable {
+        let id: String
+        let origin: CityState
+        let destination: CityState
+        let estimatedDistance: Int
+        let annualVolume: Int?
+        let volumeUnit: String?
+        let equipmentRequired: String
+        let hazmat: Bool?
+        let temperatureControlled: Bool?
+        let targetRate: Double?
+        let rateType: String?
+        let frequencyPerWeek: Int
+        let specialRequirements: [String]?
+    }
+
+    /// Full RFP envelope. Mirrors server `loadRFPWithLanes` projection.
+    struct RFP: Decodable, Hashable, Identifiable {
+        let id: String
+        let title: String
+        let description: String?
+        let status: String
+        let responseDeadline: String?
+        let contractStartDate: String?
+        let contractEndDate: String?
+        let distributedTo: Int
+        let responsesReceived: Int
+        let publishedAt: String?
+        let companyName: String?
+        let lanes: [Lane]
+        let carrierRequirements: CarrierRequirements?
+        let scoringWeights: ScoringWeights?
+    }
+
+    /// One lane bid inside a carrier's overall RFP response.
+    struct LaneBid: Decodable, Hashable, Identifiable {
+        let laneId: String
+        let bidRate: Double
+        let transitDays: Int?
+        let capacityPerWeek: Int?
+
+        var id: String { laneId }
+    }
+
+    /// One carrier's response to an RFP. Carries their reputational
+    /// summary (tier / safety / on-time / fleet size) plus per-lane
+    /// bid amounts.
+    struct BidResponse: Decodable, Hashable, Identifiable {
+        let id: String
+        let carrierId: Int
+        let carrierName: String
+        let carrierTier: String?
+        let safetyScore: Int?
+        let onTimeRate: Int?
+        let fleetSize: Int?
+        let laneBids: [LaneBid]
+        let submittedAt: String?
+    }
+
+    /// Server-side scoring projection across 5 dimensions, with a
+    /// final overallScore + recommendation enum (`award` / `shortlist`
+    /// / `decline`). Built by `scoreBidResponse` against the RFP's
+    /// scoringWeights (or platform defaults).
+    struct Scorecard: Decodable, Hashable, Identifiable {
+        let carrierId: Int
+        let carrierName: String
+        let carrierTier: String?
+        let overallScore: Int
+        let rateScore: Int
+        let serviceLevelScore: Int
+        let safetyScore: Int
+        let capacityScore: Int
+        let experienceScore: Int
+        let recommendation: String   // "award" | "shortlist" | "decline"
+
+        var id: Int { carrierId }
+    }
+
+    // MARK: List + Detail
+
+    func getRFPs() async throws -> [RFP] {
+        try await api.queryNoInput("rfpManager.getRFPs")
+    }
+
+    func getRFPDetail(rfpId: String) async throws -> RFP {
+        struct Input: Encodable { let rfpId: String }
+        return try await api.query(
+            "rfpManager.getRFPDetail",
+            input: Input(rfpId: rfpId)
+        )
+    }
+
+    // MARK: Bids + Scoring
+
+    func getBidResponses(rfpId: String) async throws -> [BidResponse] {
+        struct Input: Encodable { let rfpId: String }
+        return try await api.query(
+            "rfpManager.getBidResponses",
+            input: Input(rfpId: rfpId)
+        )
+    }
+
+    func scoreResponses(rfpId: String) async throws -> [Scorecard] {
+        struct Input: Encodable { let rfpId: String }
+        return try await api.query(
+            "rfpManager.scoreResponses",
+            input: Input(rfpId: rfpId)
+        )
+    }
+
+    // MARK: Mutations
+
+    struct PublishResult: Decodable {
+        let success: Bool
+        let rfpId: String
+        let status: String
+        let distributedTo: Int
+        let publishedAt: String?
+    }
+
+    /// Flip a draft RFP to `published`, count eligible motor
+    /// carriers, fan distribution. Server-side this is the moment
+    /// the RFP becomes visible to every carrier in the marketplace.
+    func publishRFP(rfpId: String) async throws -> PublishResult {
+        struct Input: Encodable { let rfpId: String }
+        return try await api.mutation(
+            "rfpManager.publishRFP",
+            input: Input(rfpId: rfpId)
+        )
+    }
+
+    struct AwardResult: Decodable {
+        let success: Bool
+        let rfpId: String?
+        let laneId: String?
+        let carrierId: Int?
+        let awardedRate: Double?
+        let awardedAt: String?
+    }
+
+    func awardLane(rfpId: String,
+                   laneId: String,
+                   carrierId: Int,
+                   awardedRate: Double? = nil) async throws -> AwardResult {
+        struct Input: Encodable {
+            let rfpId: String
+            let laneId: String
+            let carrierId: Int
+            let awardedRate: Double?
+        }
+        return try await api.mutation(
+            "rfpManager.awardLane",
+            input: Input(
+                rfpId: rfpId,
+                laneId: laneId,
+                carrierId: carrierId,
+                awardedRate: awardedRate
+            )
+        )
+    }
+}
+
+// MARK: - ShipperComplianceAPI
+//
+// Business verification + credit + insurance + document vault for
+// the shipper. Mirrors the shipper-scope subset of
+// `frontend/server/routers/compliance.ts` (`getShipperCompliance`,
+// `getShipperDocuments`, `uploadDocument`). Distinct from the
+// driver-side compliance namespace which surfaces violations.
+//
+// Naming: the iOS-side `compliance: ComplianceAPI` lazy var already
+// exists for driver violations (108 violations dashboard etc); this
+// new namespace mounts under `shipperCompliance` so consumers don't
+// collide.
+struct ShipperComplianceAPI {
+    unowned let api: EusoTripAPI
+
+    /// General-liability insurance summary block. Mirrors the server
+    /// projection at `compliance.ts:2561`.
+    struct GeneralLiability: Decodable, Hashable {
+        let status: String       // "active" | "expiring" | "missing"
+        let coverage: Double     // dollars (e.g. 1_000_000)
+        let expires: String      // YYYY-MM-DD or empty
+    }
+
+    /// Compliance summary envelope.
+    struct Summary: Decodable, Hashable {
+        let score: Int
+        let businessVerified: Bool
+        let creditApproved: Bool
+        let creditLimit: Double
+        let availableCredit: Double
+        let paymentTerms: String
+        let creditRating: String
+        let generalLiability: GeneralLiability
+    }
+
+    /// One row in the shipper's document vault. Server-side this
+    /// joins the `documents` table filtered by `companyId` plus a
+    /// derived `status` that promotes expired rows.
+    struct Document: Decodable, Hashable, Identifiable {
+        let id: String
+        let name: String
+        let type: String?
+        let status: String       // "active" | "expiring" | "expired" | "pending"
+        let expiresAt: String    // YYYY-MM-DD or empty
+        let fileUrl: String
+    }
+
+    /// Outcome of an upload mutation. The server-side handler is
+    /// currently a stub (returns success: true with a placeholder
+    /// documentId); full S3 / Azure Blob wiring lands in a
+    /// follow-up server firing. iOS path is correct as-is.
+    struct UploadResult: Decodable, Hashable {
+        let success: Bool
+        let documentId: String
+        let documentType: String
+        let userType: String
+        let status: String
+        let uploadedAt: String
+    }
+
+    /// Fetch the shipper-scope compliance summary.
+    func getShipperCompliance() async throws -> Summary {
+        try await api.queryNoInput("compliance.getShipperCompliance")
+    }
+
+    /// Fetch the shipper's compliance document list.
+    func getShipperDocuments() async throws -> [Document] {
+        try await api.queryNoInput("compliance.getShipperDocuments")
+    }
+
+    /// Upload a compliance document. `userType` defaults to "shipper"
+    /// per the platform vocabulary; pass another role only if the
+    /// caller is on a multi-capability account.
+    func uploadDocument(
+        documentType: String,
+        expirationDate: String? = nil,
+        userType: String = "shipper",
+        fileUrl: String? = nil
+    ) async throws -> UploadResult {
+        struct Input: Encodable {
+            let documentType: String
+            let expirationDate: String?
+            let userType: String
+            let fileUrl: String?
+        }
+        return try await api.mutation(
+            "compliance.uploadDocument",
+            input: Input(
+                documentType: documentType,
+                expirationDate: expirationDate,
+                userType: userType,
+                fileUrl: fileUrl
+            )
+        )
+    }
+}
+
+// MARK: - ContractsAPI
+//
+// Volume-commitment / agreement lifecycle. Mirrors verbatim
+// `frontend/server/routers/contracts.ts`. Backs the Shipper
+// Contracts brick (217).
+struct ContractsAPI {
+    unowned let api: EusoTripAPI
+
+    /// Aggregate stats for the contracts header strip.
+    /// Mirrors `contracts.getStats`.
+    struct Stats: Decodable, Hashable {
+        let total: Int
+        let active: Int
+        let expiring: Int
+        let expired: Int
+        let totalValue: Double
+    }
+
+    /// Trim row used by `contracts.getAll` for the list surface.
+    /// Server-side `customer` is the agreement notes column for
+    /// now (no joined company name yet) — display as-is.
+    struct ContractRow: Decodable, Hashable, Identifiable {
+        let id: String
+        let number: String?
+        let customer: String?
+        let type: String?
+        let status: String?
+        let value: Double
+        let endDate: String?
+    }
+
+    /// Wider envelope returned by `contracts.list` (offset paginated).
+    struct ContractListItem: Decodable, Hashable, Identifiable {
+        let id: String
+        let contractNumber: String?
+        let type: String?
+        let status: String?
+        let startDate: String?
+        let endDate: String?
+        let baseRate: Double
+    }
+
+    struct ContractListResponse: Decodable, Hashable {
+        let contracts: [ContractListItem]
+        let total: Int
+    }
+
+    /// Detail envelope from `contracts.getById`.
+    struct ContractDetail: Decodable, Hashable {
+        let id: String
+        let contractNumber: String?
+        let type: String?
+        let status: String?
+        let terms: Terms?
+        let pricing: Pricing?
+        let volume: Volume?
+        let notes: String?
+        let createdAt: String?
+
+        struct Terms: Decodable, Hashable {
+            let startDate: String?
+            let endDate: String?
+            let autoRenew: Bool
+        }
+        struct Pricing: Decodable, Hashable {
+            let rateType: String
+            let baseRate: Double
+            let fuelSurcharge: String
+        }
+        struct Volume: Decodable, Hashable {
+            let commitment: Int
+            let period: String
+        }
+    }
+
+    // MARK: Reads
+
+    /// `contracts.getStats` — header KPI envelope.
+    func getStats() async throws -> Stats {
+        try await api.queryNoInput("contracts.getStats")
+    }
+
+    /// `contracts.getAll` — full list for the contracts surface,
+    /// optional search / status filter.
+    func getAll(search: String? = nil, status: String? = nil) async throws -> [ContractRow] {
+        struct Input: Encodable { let search: String?; let status: String? }
+        return try await api.query(
+            "contracts.getAll",
+            input: Input(search: search, status: status)
+        )
+    }
+
+    /// `contracts.getById` — full detail. Pass the contract id as a
+    /// String (server parses to Int internally).
+    func getContract(id: String) async throws -> ContractDetail {
+        struct Input: Encodable { let id: String }
+        return try await api.query(
+            "contracts.getById",
+            input: Input(id: id)
+        )
+    }
+}
+
+// MARK: - ShipperFreightClaimsAPI
+//
+// Shipper-as-claimant view of damage / loss / shortage / delay claims.
+// Mirrors verbatim `frontend/server/routers/freightClaims.ts` (procs
+// `getClaimsDashboard`, `getClaims`, `getClaimById`, `fileClaim`).
+//
+// Naming: the iOS-side `freightClaims: FreightClaimsAPI` lazy var
+// already exists for the driver-side defendant flow (brick 099). This
+// new namespace mounts under `shipperFreightClaims` so the two views
+// don't collide.
+struct ShipperFreightClaimsAPI {
+    unowned let api: EusoTripAPI
+
+    /// Aging breakdown of open claims by days-since-filed bucket.
+    struct AgingBuckets: Decodable, Hashable {
+        let under30: Int
+        let days30to60: Int
+        let days60to90: Int
+        let over90: Int
+    }
+
+    /// Trim row used in `getClaimsDashboard.recentClaims` AND
+    /// `getClaims.claims`. Server returns the same shape on both
+    /// surfaces (id, claimNumber, type, status, description, amount,
+    /// filedDate). The list-only response also carries severity +
+    /// shipper / carrier / loadNumber stubs.
+    struct ClaimRow: Decodable, Hashable, Identifiable {
+        let id: String
+        let claimNumber: String
+        let type: String
+        let status: String
+        let description: String
+        let amount: Double
+        let filedDate: String
+        let severity: String?
+        let shipper: String?
+        let carrier: String?
+        let loadNumber: String?
+    }
+
+    struct Dashboard: Decodable, Hashable {
+        let open: Int
+        let pending: Int
+        let resolved: Int
+        let denied: Int
+        let totalValue: Double
+        let avgResolutionDays: Double
+        let aging: AgingBuckets
+        let recentClaims: [ClaimRow]
+    }
+
+    struct ClaimsListResponse: Decodable, Hashable {
+        let claims: [ClaimRow]
+        let total: Int
+    }
+
+    // MARK: Reads
+
+    /// `freightClaims.getClaimsDashboard` — header KPIs + 5 most
+    /// recent claims for the dashboard hero strip.
+    func getClaimsDashboard() async throws -> Dashboard {
+        try await api.queryNoInput("freightClaims.getClaimsDashboard")
+    }
+
+    /// `freightClaims.getClaims` — filtered list with optional
+    /// search / status / type / amount / date filters. Pagination
+    /// via offset.
+    func getClaims(
+        status: String? = nil,
+        type: String? = nil,
+        search: String? = nil,
+        startDate: String? = nil,
+        endDate: String? = nil,
+        limit: Int = 30,
+        offset: Int = 0
+    ) async throws -> ClaimsListResponse {
+        struct Input: Encodable {
+            let status: String?
+            let type: String?
+            let search: String?
+            let startDate: String?
+            let endDate: String?
+            let limit: Int
+            let offset: Int
+        }
+        return try await api.query(
+            "freightClaims.getClaims",
+            input: Input(
+                status: status,
+                type: type,
+                search: search,
+                startDate: startDate,
+                endDate: endDate,
+                limit: limit,
+                offset: offset
+            )
+        )
+    }
+}
+
+// MARK: - ShipperRatesAPI
+//
+// Lane-rate intel + market average + 30-day history. Mirrors the
+// shipper-relevant slice of `ratesRouter` (`getMarketRates`,
+// `getFuelSurcharge`, `getTrends`).
+struct ShipperRatesAPI {
+    unowned let api: EusoTripAPI
+
+    struct HistoryPoint: Decodable, Hashable, Identifiable {
+        let date: String
+        let rate: Double
+        var id: String { date }
+    }
+
+    struct Comparison: Decodable, Hashable {
+        let nationalAvg: Double
+        let regionalAvg: Double
+        let laneRank: Int
+        let totalLanes: Int
+    }
+
+    struct MarketRateResponse: Decodable, Hashable {
+        let lane: String
+        let period: String
+        let avgRate: Double
+        let trend: String          // "up" | "down" | "stable"
+        let trendPercent: Double
+        let loadToTruckRatio: Double
+        let volumeIndex: Int
+        let history: [HistoryPoint]
+        let comparison: Comparison
+    }
+
+    struct FuelSurcharge: Decodable, Hashable {
+        let currentRate: Double
+        let basePrice: Double
+        let effectiveDate: String
+        let nextUpdate: String
+    }
+
+    /// `rates.getMarketRates` — lane average + history for a chosen period.
+    func getMarketRates(originState: String,
+                        destState: String,
+                        equipment: String? = nil,
+                        period: String = "month") async throws -> MarketRateResponse {
+        struct Input: Encodable {
+            let originState: String
+            let destState: String
+            let equipment: String?
+            let period: String
+        }
+        return try await api.query(
+            "rates.getMarketRates",
+            input: Input(
+                originState: originState,
+                destState: destState,
+                equipment: equipment,
+                period: period
+            )
+        )
+    }
+
+    /// `rates.getFuelSurcharge` — current EIA-anchored FSC.
+    func getFuelSurcharge() async throws -> FuelSurcharge {
+        try await api.queryNoInput("rates.getFuelSurcharge")
+    }
+}
+
+// MARK: - ShipperTelemetryAPI
+//
+// Live carrier-position + trail for the dispatch surface. Mirrors
+// the shipper-relevant slice of `telemetryRouter`.
+struct ShipperTelemetryAPI {
+    unowned let api: EusoTripAPI
+
+    struct LiveLocation: Decodable, Hashable {
+        let driverId: Int
+        let lat: Double?
+        let lng: Double?
+        let speed: Double?
+        let heading: Double?
+        let updatedAt: String?
+        let stale: Bool
+    }
+
+    struct TrailPoint: Decodable, Hashable, Identifiable {
+        let lat: Double
+        let lng: Double
+        let recordedAt: String
+        var id: String { recordedAt }
+    }
+
+    func getLiveLocation(driverId: Int) async throws -> LiveLocation {
+        struct Input: Encodable { let driverId: Int }
+        return try await api.query(
+            "telemetry.getLiveLocation",
+            input: Input(driverId: driverId)
+        )
+    }
+
+    func getTrail(driverId: Int, hoursBack: Int = 4) async throws -> [TrailPoint] {
+        struct Input: Encodable { let driverId: Int; let hoursBack: Int }
+        return try await api.query(
+            "telemetry.getTrail",
+            input: Input(driverId: driverId, hoursBack: hoursBack)
+        )
+    }
+}
+
+// MARK: - ShipperAgreementsAPI
+//
+// Agreements companion to ContractsAPI. Surfaces the lighter-weight
+// `agreements.list` view + `agreements.sendForReview` mutation that
+// the wizard uses.
+struct ShipperAgreementsAPI {
+    unowned let api: EusoTripAPI
+
+    struct Agreement: Decodable, Hashable, Identifiable {
+        let id: Int
+        let agreementNumber: String?
+        let agreementType: String?
+        let status: String?
+        let effectiveDate: String?
+        let expirationDate: String?
+        let baseRate: String?
+        let partyAUserId: Int?
+        let partyBUserId: Int?
+        let createdAt: String?
+        let notes: String?
+    }
+
+    struct ListResponse: Decodable, Hashable {
+        let agreements: [Agreement]?
+        let total: Int?
+
+        // The server may return either { agreements, total } OR a raw
+        // array. Handle both shapes.
+        init(from decoder: Decoder) throws {
+            if let single = try? decoder.singleValueContainer(),
+               let arr = try? single.decode([Agreement].self) {
+                self.agreements = arr
+                self.total = arr.count
+                return
+            }
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.agreements = try? c.decode([Agreement].self, forKey: .agreements)
+            self.total      = try? c.decode(Int.self, forKey: .total)
+        }
+        private enum CodingKeys: String, CodingKey { case agreements, total }
+    }
+
+    func list(limit: Int = 50, offset: Int = 0) async throws -> ListResponse {
+        struct Input: Encodable { let limit: Int; let offset: Int }
+        return try await api.query(
+            "agreements.list",
+            input: Input(limit: limit, offset: offset)
+        )
+    }
+
+    /// `agreements.sign` — append the caller's "Gradient Ink"
+    /// signature row. The server hashes (agreementId, userId, ts) into
+    /// a SHA-256 audit trail (see `agreements.ts:1115`). When both
+    /// parties have signed, the row's status auto-flips to `active`.
+    /// `signatureData` is a base64-encoded canvas snapshot.
+    /// Mirrors the verbatim sign() return at `agreements.ts:1185` /
+    /// `:1228`. `status` flips to `"active"` when both parties have
+    /// signed (`fullyExecuted == true`); otherwise it stays at
+    /// `"pending_signature"`.
+    struct SignAck: Decodable, Hashable {
+        let success: Bool?
+        let status: String?
+        let fullyExecuted: Bool?
+    }
+    func sign(agreementId: Int, signatureData: String, signatureRole: String,
+              signerName: String? = nil, signerTitle: String? = nil) async throws -> SignAck {
+        struct Input: Encodable {
+            let agreementId: Int
+            let signatureData: String
+            let signatureRole: String
+            let signerName: String?
+            let signerTitle: String?
+        }
+        return try await api.mutation(
+            "agreements.sign",
+            input: Input(
+                agreementId: agreementId,
+                signatureData: signatureData,
+                signatureRole: signatureRole,
+                signerName: signerName,
+                signerTitle: signerTitle
+            )
+        )
+    }
+}
+
+// MARK: - SupplyChainAPI
+//
+// Partnership directory. Backs 224 ShipperPartnerDirectory and any
+// future Catalyst/Broker partner-rolodex surface. Mirrors the
+// `supplyChainRouter.getMyPartners` shape verbatim — outbound +
+// inbound rows merged server-side, deduped by partnership id, with
+// per-partner agreement-status enrichment.
+struct SupplyChainAPI {
+    unowned let api: EusoTripAPI
+
+    /// One row in the merged partnership directory. Mirrors the union
+    /// shape returned by `supplyChainRouter.getMyPartners` at
+    /// `supplyChain.ts:820`. The server merges outbound (we invited)
+    /// + inbound (they invited) and dedupes by `id`.
+    struct Partner: Decodable, Identifiable, Hashable {
+        let id: Int
+        let direction: String?            // "outbound" | "inbound"
+        let partnerCompanyId: Int?
+        let fromRole: String?
+        let toRole: String?
+        let relationshipType: String?
+        let status: String?               // "active" | "pending" | "declined" | …
+        let notes: String?
+        let invitedVia: String?
+        let createdAt: String?
+        let companyName: String?
+        let companyDot: String?
+        let companyMc: String?
+        let companyCity: String?
+        let companyState: String?
+
+        /// Server emits `agreementStatus` only when an agreement
+        /// exists between the caller's company and `partnerCompanyId`
+        /// — `null` means "no agreement on file".
+        let agreementStatus: String?
+    }
+
+    func getMyPartners(status: String? = nil, toRole: String? = nil) async throws -> [Partner] {
+        struct Input: Encodable {
+            let status: String?
+            let toRole: String?
+        }
+        // Server treats `input` as optional (`.optional()`) — pass
+        // an envelope with both fields omittable.
+        return try await api.query(
+            "supplyChain.getMyPartners",
+            input: Input(status: status, toRole: toRole)
+        )
+    }
+}
+
+// MARK: - DocumentsAPI
+//
+// Documents Center. Backs 226 ShipperDocumentCenter (mirror of web
+// `DocumentCenter.tsx`). Wraps the `documentsRouter` procs.
+struct DocumentsAPI {
+    unowned let api: EusoTripAPI
+
+    /// One row from `documents.getAll`. Mirrors the slim projection
+    /// the server emits at `documents.ts:42`. The PDF/preview URL is
+    /// reachable via `/documents/file/:id` (handled outside this
+    /// struct in the document-viewer surface).
+    struct Document: Decodable, Identifiable, Hashable {
+        let id: String
+        let name: String
+        let category: String
+        let status: String
+        let uploadedAt: String
+        let size: Int
+    }
+
+    /// Aggregate counts from `documents.getStats` —
+    /// total/active/valid/expiring/expired.
+    struct Stats: Decodable, Hashable {
+        let total: Int
+        let active: Int
+        let valid: Int
+        let expiring: Int
+        let expired: Int
+    }
+
+    /// One bucket from `documents.getCategories`. Server filters out
+    /// empty buckets so a count of 0 never shows up in the array.
+    struct Category: Decodable, Identifiable, Hashable {
+        let id: String
+        let name: String
+        let count: Int
+    }
+
+    /// Acknowledge envelope from `documents.delete`.
+    struct DeleteAck: Decodable, Hashable {
+        let success: Bool
+        let deletedId: String?
+    }
+
+    func getAll(search: String? = nil, category: String? = nil) async throws -> [Document] {
+        struct Input: Encodable {
+            let search: String?
+            let category: String?
+        }
+        return try await api.query(
+            "documents.getAll",
+            input: Input(search: search, category: category)
+        )
+    }
+
+    func getStats() async throws -> Stats {
+        try await api.queryNoInput("documents.getStats")
+    }
+
+    func getCategories() async throws -> [Category] {
+        try await api.queryNoInput("documents.getCategories")
+    }
+
+    func delete(id: String) async throws -> DeleteAck {
+        struct Input: Encodable { let id: String }
+        return try await api.mutation("documents.delete", input: Input(id: id))
+    }
+}
+
+// MARK: - ShipperSettlementsAPI
+//
+// Settlement detail + approve + dispute. Backs 227
+// ShipperSettlementDetail (mirror of web `SettlementDetails.tsx`
+// shipper-action surface). Sits alongside `EarningsAPI` (which is
+// driver-scope earnings reporting) without conflicting — these are
+// the SHIPPER's mutations on a settlement they're paying out.
+struct ShipperSettlementsAPI {
+    unowned let api: EusoTripAPI
+
+    /// One settlement detail from `earnings.getSettlementById`.
+    /// Mirrors the verbatim envelope at `earnings.ts:276` — every
+    /// field is optional because the server returns an "empty"
+    /// scaffold when the settlement can't be resolved.
+    struct SettlementDetail: Decodable, Hashable {
+        let id: String
+        let settlementNumber: String?
+        let period: String?
+        let periodStart: String?
+        let periodEnd: String?
+        let driverId: String?
+        let driverName: String?
+        let grossPay: Double?
+        let grossRevenue: Double?
+        let driverPay: Double?
+        let payRate: Double?
+        let payType: String?
+        let paymentMethod: String?
+        let deductions: Double?
+        let totalDeductions: Double?
+        let netPay: Double?
+        let status: String?
+        let paidDate: String?
+        let breakdown: Breakdown?
+
+        struct Breakdown: Decodable, Hashable {
+            let lineHaul: Double?
+            let fuelSurcharge: Double?
+            let accessorials: Double?
+        }
+    }
+
+    /// Acknowledge envelope from `earnings.approveSettlement`.
+    struct ApproveAck: Decodable, Hashable {
+        let success: Bool?
+        let settlementId: String?
+        let approvedAt: String?
+    }
+
+    /// Acknowledge envelope from `earnings.disputeSettlement`.
+    struct DisputeAck: Decodable, Hashable {
+        let success: Bool?
+        let settlementId: String?
+        let disputeId: String?
+        let status: String?
+    }
+
+    func getDetail(settlementId: String) async throws -> SettlementDetail {
+        struct Input: Encodable { let settlementId: String }
+        return try await api.query(
+            "earnings.getSettlementById",
+            input: Input(settlementId: settlementId)
+        )
+    }
+
+    func approve(settlementId: String) async throws -> ApproveAck {
+        struct Input: Encodable { let settlementId: String }
+        return try await api.mutation(
+            "earnings.approveSettlement",
+            input: Input(settlementId: settlementId)
+        )
+    }
+
+    func dispute(settlementId: String, reason: String, evidence: String? = nil) async throws -> DisputeAck {
+        struct Input: Encodable {
+            let settlementId: String
+            let reason: String
+            let evidence: String?
+        }
+        return try await api.mutation(
+            "earnings.disputeSettlement",
+            input: Input(settlementId: settlementId, reason: reason, evidence: evidence)
+        )
+    }
+}
+
+// MARK: - AllocationsAPI
+//
+// Daily nomination + fulfillment tracker. Backs 230 ShipperAllocations
+// (mirror of web `allocations/AllocationDashboard.tsx`). Mirrors
+// `frontend/server/routers/allocationTracker.ts`. Used heavily by
+// petroleum / refined-products shippers that need the nominate-load-
+// deliver loop tracked by-the-barrel by-the-day.
+struct AllocationsAPI {
+    unowned let api: EusoTripAPI
+
+    /// One row in the contracts list. Mirrors the verbatim
+    /// `allocationContracts` projection from the server.
+    struct Contract: Decodable, Identifiable, Hashable {
+        let id: Int
+        let shipperId: Int?
+        let contractName: String?
+        let buyerName: String?
+        let originTerminalId: Int?
+        let destinationTerminalId: Int?
+        let product: String?
+        let cargoType: String?
+        let unit: String?
+        let dailyNominationBbl: String?
+        let effectiveDate: String?
+        let expirationDate: String?
+        let ratePerBbl: String?
+        let status: String?
+    }
+
+    struct ContractsResponse: Decodable {
+        let contracts: [Contract]
+    }
+
+    /// One row in the per-contract-per-date tracking view.
+    struct DailyContractRow: Decodable, Identifiable, Hashable {
+        let contractId: Int
+        let contractName: String?
+        let buyerName: String?
+        let product: String?
+        let originTerminalId: Int?
+        let destinationTerminalId: Int?
+        let ratePerBbl: String?
+        let nominatedBbl: Double
+        let loadedBbl: Double
+        let deliveredBbl: Double
+        let remainingBbl: Double
+        let loadsNeeded: Int
+        let loadsCreated: Int
+        let loadsCompleted: Int
+        let status: String?
+
+        var id: Int { contractId }
+    }
+
+    /// Aggregated bar at the top of the daily view. Mirrors the
+    /// `summaryBar` projection at `allocationTracker.ts:177`.
+    struct SummaryBar: Decodable, Hashable {
+        let totalNominated: Double
+        let totalLoaded: Double
+        let totalDelivered: Double
+        let fulfillmentPercent: Int
+    }
+
+    struct DailyDashboard: Decodable {
+        let date: String
+        let summaryBar: SummaryBar
+        let contracts: [DailyContractRow]
+    }
+
+    func getContracts(status: String? = nil) async throws -> ContractsResponse {
+        struct Input: Encodable {
+            let status: String?
+        }
+        return try await api.query(
+            "allocationTracker.getContracts",
+            input: Input(status: status)
+        )
+    }
+
+    func getDailyDashboard(date: String? = nil) async throws -> DailyDashboard {
+        struct Input: Encodable { let date: String? }
+        return try await api.query(
+            "allocationTracker.getDailyDashboard",
+            input: Input(date: date)
+        )
+    }
+}
+
+// MARK: - LoadBoardAPI
+//
+// Public loadboard search + book. Mirrors `loadBoardRouter.search`
+// + `getById` + `bookLoad`. Different envelope from `loadsRouter`
+// — surfaces market stats + lane-contract enrichment per row so
+// drivers see "Lane contract · $2.85/mi" inline on the card without
+// an N+1 lookup. Backs 108 MeLoadBoard (driver browse) + future
+// 230 ShipperLoadBoardSearch (shipper market intel).
+struct LoadBoardAPI {
+    unowned let api: EusoTripAPI
+
+    /// One row in the search result projection. Mirrors the verbatim
+    /// `loadBoard.ts:754` server projection.
+    struct SearchRow: Decodable, Identifiable, Hashable {
+        let id: String
+        let loadNumber: String?
+        let status: String?
+        let origin: CityState
+        let destination: CityState
+        let rate: Double
+        let distance: Double
+        let weight: Double?
+        let weightUnit: String?
+        let cargoType: String?
+        let equipmentType: String?
+        let hazmat: Bool?
+        let hazmatClass: String?
+        let commodityName: String?
+        let unNumber: String?
+        let packingGroup: String?
+        let properShippingName: String?
+        let pickupDate: String?
+        let createdAt: String?
+        let postedAt: String?
+        let isLaneContract: Bool?
+        let laneContractRate: Double?
+        let laneContractRateType: String?
+        let laneContractMiles: Double?
+
+        struct CityState: Decodable, Hashable {
+            let city: String?
+            let state: String?
+            var display: String {
+                let c = (city ?? "").trimmingCharacters(in: .whitespaces)
+                let s = (state ?? "").trimmingCharacters(in: .whitespaces)
+                if !c.isEmpty && !s.isEmpty { return "\(c), \(s)" }
+                if !c.isEmpty { return c }
+                return s
+            }
+        }
+    }
+
+    struct MarketStats: Decodable, Hashable {
+        let avgRate: Double
+        let totalLoads: Int
+        let loadToTruckRatio: Double
+    }
+
+    struct SearchResponse: Decodable {
+        let loads: [SearchRow]
+        let total: Int
+        let marketStats: MarketStats
+    }
+
+    /// `loadBoard.search` — filtered browse. Origin/destination radius
+    /// defaults to 50 mi server-side. Sort options:
+    /// `rate` / `distance` / `pickup_date` / `posted_date` (default).
+    func search(
+        originState: String? = nil,
+        originCity: String? = nil,
+        originRadius: Int = 50,
+        destState: String? = nil,
+        destCity: String? = nil,
+        destRadius: Int = 50,
+        equipmentType: String? = nil,
+        pickupDateStart: String? = nil,
+        pickupDateEnd: String? = nil,
+        minRate: Double? = nil,
+        maxWeight: Double? = nil,
+        hazmat: Bool? = nil,
+        hazmatClass: String? = nil,
+        unNumber: String? = nil,
+        sortBy: String = "posted_date",
+        limit: Int = 50,
+        offset: Int = 0
+    ) async throws -> SearchResponse {
+        struct Geo: Encodable { let city: String?; let state: String; let radius: Int }
+        struct Input: Encodable {
+            let origin: Geo?
+            let destination: Geo?
+            let equipmentType: String?
+            let pickupDateStart: String?
+            let pickupDateEnd: String?
+            let minRate: Double?
+            let maxWeight: Double?
+            let hazmat: Bool?
+            let hazmatClass: String?
+            let unNumber: String?
+            let sortBy: String
+            let limit: Int
+            let offset: Int
+        }
+        let originGeo: Geo? = originState.map { Geo(city: originCity, state: $0, radius: originRadius) }
+        let destGeo:   Geo? = destState.map   { Geo(city: destCity,   state: $0, radius: destRadius) }
+        return try await api.query(
+            "loadBoard.search",
+            input: Input(
+                origin: originGeo,
+                destination: destGeo,
+                equipmentType: equipmentType,
+                pickupDateStart: pickupDateStart,
+                pickupDateEnd: pickupDateEnd,
+                minRate: minRate,
+                maxWeight: maxWeight,
+                hazmat: hazmat,
+                hazmatClass: hazmatClass,
+                unNumber: unNumber,
+                sortBy: sortBy,
+                limit: limit,
+                offset: offset
+            )
+        )
+    }
+}
+
+// MARK: - bol.generateBOLFromLoad ON EusoTicketAPI
+//
+// Bridge proc — generates a BOL from an existing load. Lives on the
+// `bol` router (NOT eusoTicket), but iOS callers expect a single
+// EusoTicket-namespaced surface. Re-exported here as a thin
+// passthrough for ergonomic call-site grouping.
+extension EusoTicketAPI {
+    struct GeneratedBOL: Decodable {
+        let bolNumber: String?
+        let loadId: Int?
+        let loadNumber: String?
+        let type: String?
+        let cargoType: String?
+        let status: String?
+        let createdAt: String?
+    }
+
+    func generateBOLFromLoad(loadId: Int) async throws -> GeneratedBOL {
+        struct Input: Encodable { let loadId: Int }
+        return try await api.mutation("bol.generateBOLFromLoad", input: Input(loadId: loadId))
     }
 }

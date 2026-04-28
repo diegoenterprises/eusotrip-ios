@@ -75,6 +75,7 @@
 		A1E5DB630C4394232DF0D06F /* 003_ForgotPassword.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A560E135690A6A4E0E6BBC /* 003_ForgotPassword.swift */; };
 		A1E8B8FE82845A99D1285220 /* 010_DriverHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12AE74E2A03406ADC0DD5AD /* 010_DriverHome.swift */; };
 		A1F1000000000000000003AA /* Lottie in Frameworks */ = {isa = PBXBuildFile; productRef = A1F1000000000000000002AA /* Lottie */; };
+		A1F1100000000000000010AA /* WeatherKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1F1100000000000000011AA /* WeatherKit.framework */; };
 		A1F1000000000000000006AA /* intro_dark.json in Resources */ = {isa = PBXBuildFile; fileRef = A1F1000000000000000004AA /* intro_dark.json */; };
 		A1F1000000000000000007AA /* intro_light.json in Resources */ = {isa = PBXBuildFile; fileRef = A1F1000000000000000005AA /* intro_light.json */; };
 		A1F100000000000000000BAA /* IntroSplash.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F100000000000000000AAA /* IntroSplash.swift */; };
@@ -167,6 +168,10 @@
 		B04D0FA2CE1A4B7E0000D061 /* 104_MeRateSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B04D0FA2CE1A4B7E0000D062 /* 104_MeRateSheet.swift */; };
 		B05D0FA2CE1A4B7E0000D063 /* 105_MeAuthority.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05D0FA2CE1A4B7E0000D064 /* 105_MeAuthority.swift */; };
 		B06E0FA2CE1A4B7E0000D101 /* 106_MeEusoTickets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B06E0FA2CE1A4B7E0000D102 /* 106_MeEusoTickets.swift */; };
+		B07E0FA2CE1A4B7E0000D107 /* 107_MeMyBids.swift in Sources */ = {isa = PBXBuildFile; fileRef = B07E0FA2CE1A4B7E0000D108 /* 107_MeMyBids.swift */; };
+		B08E0FA2CE1A4B7E0000D109 /* 108_MeLoadBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B08E0FA2CE1A4B7E0000D110 /* 108_MeLoadBoard.swift */; };
+		B09E0FA2CE1A4B7E0000D111 /* 109_MeBidDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = B09E0FA2CE1A4B7E0000D112 /* 109_MeBidDetail.swift */; };
+		B10E0FA2CE1A4B7E0000D113 /* 110_MeAutoAcceptRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10E0FA2CE1A4B7E0000D114 /* 110_MeAutoAcceptRules.swift */; };
 		B06D0FA2CE1A4B7E0000D065 /* ZeunMechanicsScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = B06D0FA2CE1A4B7E0000D066 /* ZeunMechanicsScreens.swift */; };
 		B07D0FA2CE1A4B7E0000D067 /* SheetCloseButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = B07D0FA2CE1A4B7E0000D068 /* SheetCloseButton.swift */; };
 		B1A11111111111111111AA01 /* WeatherSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA02 /* WeatherSnapshot.swift */; };
@@ -192,6 +197,7 @@
 		D1A11111111111111111AE01 /* TileReveal.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111AE02 /* TileReveal.swift */; };
 		D1A11111111111111111AF01 /* AddPaymentAccountSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111AF02 /* AddPaymentAccountSheet.swift */; };
 		D1A11111111111111111AH01 /* 800_AdminHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111AH02 /* 800_AdminHome.swift */; };
+		D1A11111111111111111CT01 /* 801_AdminControlTower.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CT02 /* 801_AdminControlTower.swift */; };
 		D1A11111111111111111AT01 /* 802_AdminTenants.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111AT02 /* 802_AdminTenants.swift */; };
 		D1A11111111111111111BA01 /* DriverConversationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111BA02 /* DriverConversationView.swift */; };
 		D1A11111111111111111BH01 /* 400_BrokerHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111BH02 /* 400_BrokerHome.swift */; };
@@ -205,6 +211,8 @@
 		D1A11111111111111111CR01 /* 301_CarrierLoads.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CR02 /* 301_CarrierLoads.swift */; };
 		D1A11111111111111111EH01 /* 600_EscortHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111EH02 /* 600_EscortHome.swift */; };
 		D1A11111111111111111EAD1 /* 601_EscortAssignmentDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111EAD2 /* 601_EscortAssignmentDetail.swift */; };
+		D1A11111111111111111ECM1 /* 602_EscortCorridorMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111ECM2 /* 602_EscortCorridorMap.swift */; };
+		D1A11111111111111111ATD1 /* 803_AdminTenantDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111ATD2 /* 803_AdminTenantDetail.swift */; };
 		D1A11111111111111111EV01 /* HereEVStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111EV02 /* HereEVStrip.swift */; };
 		D1A11111111111111111HG01 /* DriverHomeGlances.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111HG02 /* DriverHomeGlances.swift */; };
 		D1A11111111111111111HZ01 /* HotZonesWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111HZ02 /* HotZonesWidget.swift */; };
@@ -218,6 +226,149 @@
 		D1A11111111111111111SB01 /* 203_ShipperBids.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111SB02 /* 203_ShipperBids.swift */; };
 		D1A11111111111111111SC01 /* 204_ShipperPostLoad.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111SC02 /* 204_ShipperPostLoad.swift */; };
 		D1A11111111111111111SD01 /* 205_ShipperLoadDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111SD02 /* 205_ShipperLoadDetail.swift */; };
+		D1A11111111111111111SC01 /* ShipperLoadCycleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111SC02 /* ShipperLoadCycleView.swift */; };
+		D2120000000000000021CT /* 212_ShipperControlTower.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2120000000000000021CU /* 212_ShipperControlTower.swift */; };
+		D2130000000000000021CS /* 213_ShipperCatalystScorecard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2130000000000000021CR /* 213_ShipperCatalystScorecard.swift */; };
+		D2280000000000000000ABFF /* LifecycleScaffold.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2280000000000000000ACFF /* LifecycleScaffold.swift */; };
+		D2D0000000000000000ABFE /* PostLoadDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D0000000000000000ACFE /* PostLoadDraft.swift */; };
+		D2D0100000000000000ABFE /* 250_PostLoadStep1Lane.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D0100000000000000ACFE /* 250_PostLoadStep1Lane.swift */; };
+		D2D0200000000000000ABFE /* 251_PostLoadStep2Equipment.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D0200000000000000ACFE /* 251_PostLoadStep2Equipment.swift */; };
+		D2D0300000000000000ABFE /* 252_PostLoadStep3Pricing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D0300000000000000ACFE /* 252_PostLoadStep3Pricing.swift */; };
+		D2D0400000000000000ABFE /* 253_PostLoadStep4Review.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D0400000000000000ACFE /* 253_PostLoadStep4Review.swift */; };
+		D2D0500000000000000ABFE /* 254_PostLoadSuccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D0500000000000000ACFE /* 254_PostLoadSuccess.swift */; };
+		D2D0600000000000000ABFE /* 255_PostLoadMultiStop.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D0600000000000000ACFE /* 255_PostLoadMultiStop.swift */; };
+		D2D0700000000000000ABFE /* 256_PostLoadAddressPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D0700000000000000ACFE /* 256_PostLoadAddressPicker.swift */; };
+		D2D0800000000000000ABFE /* 257_PostLoadHazmatSubform.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D0800000000000000ACFE /* 257_PostLoadHazmatSubform.swift */; };
+		D2D0900000000000000ABFE /* 258_PostLoadReeferSubform.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D0900000000000000ACFE /* 258_PostLoadReeferSubform.swift */; };
+		D2D1000000000000000ABFE /* 259_PostLoadTemplates.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D1000000000000000ACFE /* 259_PostLoadTemplates.swift */; };
+		D2F0000000000000000ABFD /* 280_CatalystDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F0000000000000000ACFD /* 280_CatalystDirectory.swift */; };
+		D2F0100000000000000ABFD /* 281_CatalystDetailSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F0100000000000000ACFD /* 281_CatalystDetailSummary.swift */; };
+		D2F0200000000000000ABFD /* 282_CatalystLoadsHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F0200000000000000ACFD /* 282_CatalystLoadsHistory.swift */; };
+		D2F0300000000000000ABFD /* 283_CatalystRatings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F0300000000000000ACFD /* 283_CatalystRatings.swift */; };
+		D2F0400000000000000ABFD /* 284_CatalystCompliancePeek.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F0400000000000000ACFD /* 284_CatalystCompliancePeek.swift */; };
+		D2F0500000000000000ABFD /* 285_CatalystSparklineTrend.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F0500000000000000ACFD /* 285_CatalystSparklineTrend.swift */; };
+		D2F0600000000000000ABFD /* 286_AddFavoriteCatalyst.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F0600000000000000ACFD /* 286_AddFavoriteCatalyst.swift */; };
+		D2F0700000000000000ABFD /* 287_CatalystRiskFlag.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F0700000000000000ACFD /* 287_CatalystRiskFlag.swift */; };
+		D2F0800000000000000ABFD /* 288_CatalystContact.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F0800000000000000ACFD /* 288_CatalystContact.swift */; };
+		D2F0900000000000000ABFD /* 289_InviteCatalyst.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F0900000000000000ACFD /* 289_InviteCatalyst.swift */; };
+		D2G0000000000000000ABFC /* 290_WalletHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2G0000000000000000ACFC /* 290_WalletHome.swift */; };
+		D2G0100000000000000ABFC /* 291_EusoWalletDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2G0100000000000000ACFC /* 291_EusoWalletDetail.swift */; };
+		D2G0200000000000000ABFC /* 292_SettlementsList.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2G0200000000000000ACFC /* 292_SettlementsList.swift */; };
+		D2G0300000000000000ABFC /* 293_SettlementDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2G0300000000000000ACFC /* 293_SettlementDetail.swift */; };
+		D2G0400000000000000ABFC /* 294_DisputeSettlement.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2G0400000000000000ACFC /* 294_DisputeSettlement.swift */; };
+		D2G0500000000000000ABFC /* 295_PaymentMethods.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2G0500000000000000ACFC /* 295_PaymentMethods.swift */; };
+		D2G0600000000000000ABFC /* 296_AddPaymentMethod.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2G0600000000000000ACFC /* 296_AddPaymentMethod.swift */; };
+		D2G0700000000000000ABFC /* 297_MonthlyStatement.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2G0700000000000000ACFC /* 297_MonthlyStatement.swift */; };
+		D2G0800000000000000ABFC /* 298_Sustainability.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2G0800000000000000ACFC /* 298_Sustainability.swift */; };
+		D2G0900000000000000ABFC /* 299_Reports.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2G0900000000000000ACFC /* 299_Reports.swift */; };
+		D2H0000000000000000ABFB /* 300_DocumentsAll.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2H0000000000000000ACFB /* 300_DocumentsAll.swift */; };
+		D2H0100000000000000ABFB /* 301_DocumentPdfViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2H0100000000000000ACFB /* 301_DocumentPdfViewer.swift */; };
+		D2H0200000000000000ABFB /* 302_DocumentImageViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2H0200000000000000ACFB /* 302_DocumentImageViewer.swift */; };
+		D2H0300000000000000ABFB /* 303_EusoTicketBol.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2H0300000000000000ACFB /* 303_EusoTicketBol.swift */; };
+		D2H0400000000000000ABFB /* 304_EusoTicketRunTicket.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2H0400000000000000ACFB /* 304_EusoTicketRunTicket.swift */; };
+		D2H0500000000000000ABFB /* 305_EusoTicketHaulReceipt.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2H0500000000000000ACFB /* 305_EusoTicketHaulReceipt.swift */; };
+		D2H0600000000000000ABFB /* 306_BolCounterSign.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2H0600000000000000ACFB /* 306_BolCounterSign.swift */; };
+		D2H0700000000000000ABFB /* 307_RateConSign.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2H0700000000000000ACFB /* 307_RateConSign.swift */; };
+		D2H0800000000000000ABFB /* 308_PodPhotoCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2H0800000000000000ACFB /* 308_PodPhotoCapture.swift */; };
+		D2H0900000000000000ABFB /* 309_WalletPass.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2H0900000000000000ACFB /* 309_WalletPass.swift */; };
+		D2I0000000000000000ABFA /* 310_EsangThreadList.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2I0000000000000000ACFA /* 310_EsangThreadList.swift */; };
+		D2I0100000000000000ABFA /* 311_EsangThread.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2I0100000000000000ACFA /* 311_EsangThread.swift */; };
+		D2I0200000000000000ABFA /* 312_EsangAttachmentPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2I0200000000000000ACFA /* 312_EsangAttachmentPicker.swift */; };
+		D2I0300000000000000ABFA /* 313_EsangVoiceListening.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2I0300000000000000ACFA /* 313_EsangVoiceListening.swift */; };
+		D2I0400000000000000ABFA /* 314_EsangTranscribing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2I0400000000000000ACFA /* 314_EsangTranscribing.swift */; };
+		D2I0500000000000000ABFA /* 315_EsangAssistRankBids.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2I0500000000000000ACFA /* 315_EsangAssistRankBids.swift */; };
+		D2I0600000000000000ABFA /* 316_EsangAssistStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2I0600000000000000ACFA /* 316_EsangAssistStatus.swift */; };
+		D2I0700000000000000ABFA /* 317_EsangAssistForecast.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2I0700000000000000ACFA /* 317_EsangAssistForecast.swift */; };
+		D2I0800000000000000ABFA /* 318_EsangDispatchEscalation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2I0800000000000000ACFA /* 318_EsangDispatchEscalation.swift */; };
+		D2I0900000000000000ABFA /* 319_EsangSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2I0900000000000000ACFA /* 319_EsangSettings.swift */; };
+		D2N0000000000000000ABF9 /* 380_RfpInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2N0000000000000000ACF9 /* 380_RfpInbox.swift */; };
+		D2N0100000000000000ABF9 /* 381_RfpDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2N0100000000000000ACF9 /* 381_RfpDetail.swift */; };
+		D2N0200000000000000ABF9 /* 382_ContractList.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2N0200000000000000ACF9 /* 382_ContractList.swift */; };
+		D2N0300000000000000ABF9 /* 383_ContractDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2N0300000000000000ACF9 /* 383_ContractDetail.swift */; };
+		D2N0400000000000000ABF9 /* 384_BulkRetender.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2N0400000000000000ACF9 /* 384_BulkRetender.swift */; };
+		D2N0500000000000000ABF9 /* 385_BatchTender.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2N0500000000000000ACF9 /* 385_BatchTender.swift */; };
+		D2N0600000000000000ABF9 /* 386_FreightClaimComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2N0600000000000000ACF9 /* 386_FreightClaimComposer.swift */; };
+		D2N0700000000000000ABF9 /* 387_FinanceReconciliation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2N0700000000000000ACF9 /* 387_FinanceReconciliation.swift */; };
+		D2J0000000000000000ABF8 /* 320_MeHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2J0000000000000000ACF8 /* 320_MeHome.swift */; };
+		D2J0100000000000000ABF8 /* 322_ProfileEdit.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2J0100000000000000ACF8 /* 322_ProfileEdit.swift */; };
+		D2J0200000000000000ABF8 /* 323_TierDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2J0200000000000000ACF8 /* 323_TierDetail.swift */; };
+		D2J0300000000000000ABF8 /* 324_ComplianceDashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2J0300000000000000ACF8 /* 324_ComplianceDashboard.swift */; };
+		D2J0400000000000000ABF8 /* 325_InsuranceDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2J0400000000000000ACF8 /* 325_InsuranceDetail.swift */; };
+		D2J0500000000000000ABF8 /* 326_FmcsaSaferMirror.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2J0500000000000000ACF8 /* 326_FmcsaSaferMirror.swift */; };
+		D2J0600000000000000ABF8 /* 327_HazmatAudit.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2J0600000000000000ACF8 /* 327_HazmatAudit.swift */; };
+		D2J0700000000000000ABF8 /* 333_ContactDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2J0700000000000000ACF8 /* 333_ContactDetail.swift */; };
+		D2J0800000000000000ABF8 /* 334_AddContact.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2J0800000000000000ACF8 /* 334_AddContact.swift */; };
+		D2J0900000000000000ABF8 /* 336_GradeDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2J0900000000000000ACF8 /* 336_GradeDetail.swift */; };
+		D2K0000000000000000ABF7 /* 340_SettingsHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2K0000000000000000ACF7 /* 340_SettingsHome.swift */; };
+		D2K0100000000000000ABF7 /* 341_LaneTemplatesList.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2K0100000000000000ACF7 /* 341_LaneTemplatesList.swift */; };
+		D2K0200000000000000ABF7 /* 342_LaneTemplateEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2K0200000000000000ACF7 /* 342_LaneTemplateEditor.swift */; };
+		D2K0300000000000000ABF7 /* 343_NotificationPrefs.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2K0300000000000000ACF7 /* 343_NotificationPrefs.swift */; };
+		D2K0400000000000000ABF7 /* 344_SecuritySessions.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2K0400000000000000ACF7 /* 344_SecuritySessions.swift */; };
+		D2K0500000000000000ABF7 /* 345_TwoFactorManage.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2K0500000000000000ACF7 /* 345_TwoFactorManage.swift */; };
+		D2K0600000000000000ABF7 /* 346_ConnectedApps.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2K0600000000000000ACF7 /* 346_ConnectedApps.swift */; };
+		D2K0700000000000000ABF7 /* 347_HelpSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2K0700000000000000ACF7 /* 347_HelpSupport.swift */; };
+		D2K0800000000000000ABF7 /* 348_Legal.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2K0800000000000000ACF7 /* 348_Legal.swift */; };
+		D2K0900000000000000ABF7 /* 349_AccountExportDelete.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2K0900000000000000ACF7 /* 349_AccountExportDelete.swift */; };
+		D2M0000000000000000ABF6 /* PermissionRationale.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2M0000000000000000ACF6 /* PermissionRationale.swift */; };
+		D2M0100000000000000ABF6 /* 360_PushPermission.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2M0100000000000000ACF6 /* 360_PushPermission.swift */; };
+		D2M0200000000000000ABF6 /* 361_LocationPermission.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2M0200000000000000ACF6 /* 361_LocationPermission.swift */; };
+		D2M0300000000000000ABF6 /* 362_CameraPermission.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2M0300000000000000ACF6 /* 362_CameraPermission.swift */; };
+		D2M0400000000000000ABF6 /* 363_MicPermission.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2M0400000000000000ACF6 /* 363_MicPermission.swift */; };
+		D2M0500000000000000ABF6 /* 364_OfflineBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2M0500000000000000ACF6 /* 364_OfflineBanner.swift */; };
+		D2M0600000000000000ABF6 /* 365_NetworkErrorRetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2M0600000000000000ACF6 /* 365_NetworkErrorRetry.swift */; };
+		D2M0700000000000000ABF6 /* 366_ForceUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2M0700000000000000ACF6 /* 366_ForceUpdate.swift */; };
+		D2M0800000000000000ABF6 /* 367_AccountSuspended.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2M0800000000000000ACF6 /* 367_AccountSuspended.swift */; };
+		D2M0900000000000000ABF6 /* 368_KybRejected.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2M0900000000000000ACF6 /* 368_KybRejected.swift */; };
+		D2M1000000000000000ABF6 /* 369_BackgroundBiometric.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2M1000000000000000ACF6 /* 369_BackgroundBiometric.swift */; };
+		D2P0000000000000000ABF5 /* 390_NotificationsInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2P0000000000000000ACF5 /* 390_NotificationsInbox.swift */; };
+		D2P0100000000000000ABF5 /* 391_NotificationDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2P0100000000000000ACF5 /* 391_NotificationDetail.swift */; };
+		D2P0200000000000000ABF5 /* 392_SearchEverything.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2P0200000000000000ACF5 /* 392_SearchEverything.swift */; };
+		D2P0300000000000000ABF5 /* 393_SearchResults.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2P0300000000000000ACF5 /* 393_SearchResults.swift */; };
+		D2P0400000000000000ABF5 /* 394_QuoteInstant.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2P0400000000000000ACF5 /* 394_QuoteInstant.swift */; };
+		D2P0500000000000000ABF5 /* 395_QuoteSaved.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2P0500000000000000ACF5 /* 395_QuoteSaved.swift */; };
+		D2P0600000000000000ABF5 /* 396_HomeEmptyState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2P0600000000000000ACF5 /* 396_HomeEmptyState.swift */; };
+		D2P0700000000000000ABF5 /* 397_RolePick.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2P0700000000000000ACF5 /* 397_RolePick.swift */; };
+		D2P0800000000000000ABF5 /* 398_KybLegalEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2P0800000000000000ACF5 /* 398_KybLegalEntity.swift */; };
+		D2P0900000000000000ABF5 /* 399_EmailVerifyPending.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2P0900000000000000ACF5 /* 399_EmailVerifyPending.swift */; };
+		D2Q0000000000000000ABF4 /* 400_BulkUploadShell.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2Q0000000000000000ACF4 /* 400_BulkUploadShell.swift */; };
+		D2260000000000000AB0004 /* 260_PostedAwaitingBids.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2260000000000000AC0004 /* 260_PostedAwaitingBids.swift */; };
+		D2261000000000000AB0005 /* 261_BiddingLiveFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2261000000000000AC0005 /* 261_BiddingLiveFeed.swift */; };
+		D2262000000000000AB0006 /* 262_AwardedPrePickup.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2262000000000000AC0006 /* 262_AwardedPrePickup.swift */; };
+		D2263000000000000AB0007 /* 263_PickupApproaching.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2263000000000000AC0007 /* 263_PickupApproaching.swift */; };
+		D2264000000000000AB0008 /* 264_PickupAtGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2264000000000000AC0008 /* 264_PickupAtGate.swift */; };
+		D2265000000000000AB0009 /* 265_PickupAtDock.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2265000000000000AC0009 /* 265_PickupAtDock.swift */; };
+		D2266000000000000AB000A /* 266_PickupBolSigning.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2266000000000000AC000A /* 266_PickupBolSigning.swift */; };
+		D2267000000000000AB000B /* 267_InTransitLive.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2267000000000000AC000B /* 267_InTransitLive.swift */; };
+		D2268000000000000AB000C /* 268_InTransitHosPause.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2268000000000000AC000C /* 268_InTransitHosPause.swift */; };
+		D2269000000000000AB000D /* 269_InTransitException.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2269000000000000AC000D /* 269_InTransitException.swift */; };
+		D2270000000000000AB000E /* 270_DeliveryApproaching.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2270000000000000AC000E /* 270_DeliveryApproaching.swift */; };
+		D2271000000000000AB000F /* 271_DeliveryAtReceiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2271000000000000AC000F /* 271_DeliveryAtReceiver.swift */; };
+		D2272000000000000AB0010 /* 272_DeliveryPodSigned.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2272000000000000AC0010 /* 272_DeliveryPodSigned.swift */; };
+		D2273000000000000AB0011 /* 273_PaperworkBolFinal.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2273000000000000AC0011 /* 273_PaperworkBolFinal.swift */; };
+		D2274000000000000AB0012 /* 274_PaperworkAccessorials.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2274000000000000AC0012 /* 274_PaperworkAccessorials.swift */; };
+		D2275000000000000AB0013 /* 275_ClosedSettlementPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2275000000000000AC0013 /* 275_ClosedSettlementPreview.swift */; };
+		D2276000000000000AB0014 /* 276_ClosedPaid.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2276000000000000AC0014 /* 276_ClosedPaid.swift */; };
+		D2277000000000000AB0015 /* 277_CancelledPrePickup.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2277000000000000AC0015 /* 277_CancelledPrePickup.swift */; };
+		D2278000000000000AB0016 /* 278_CancelledInTransit.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2278000000000000AC0016 /* 278_CancelledInTransit.swift */; };
+		D2279000000000000AB0017 /* 279_ReeferTempExcursion.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2279000000000000AC0017 /* 279_ReeferTempExcursion.swift */; };
+		D2140000000000000021CO /* 214_ShipperSustainability.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2140000000000000021CN /* 214_ShipperSustainability.swift */; };
+		D2150000000000000021CM /* 215_ShipperRFP.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2150000000000000021CL /* 215_ShipperRFP.swift */; };
+		D2160000000000000021CK /* 216_ShipperCompliance.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2160000000000000021CJ /* 216_ShipperCompliance.swift */; };
+		D2170000000000000021CI /* 217_ShipperContracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2170000000000000021CH /* 217_ShipperContracts.swift */; };
+		D2180000000000000021CG /* 218_ShipperDispatchControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2180000000000000021CF /* 218_ShipperDispatchControl.swift */; };
+		D2190000000000000021CE /* 219_ShipperFreightClaims.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2190000000000000021CD /* 219_ShipperFreightClaims.swift */; };
+		D2200000000000000022CB /* 220_ShipperRateBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2200000000000000022CA /* 220_ShipperRateBoard.swift */; };
+		D2210000000000000022CD /* 221_ShipperRecurringLoads.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2210000000000000022CC /* 221_ShipperRecurringLoads.swift */; };
+		D2220000000000000022CF /* 222_ShipperLiveTracking.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2220000000000000022CE /* 222_ShipperLiveTracking.swift */; };
+		D2230000000000000023CB /* 223_ShipperAgreements.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2230000000000000023CA /* 223_ShipperAgreements.swift */; };
+		D2240000000000000024CB /* 224_ShipperPartnerDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2240000000000000024CA /* 224_ShipperPartnerDirectory.swift */; };
+		D2250000000000000025CB /* 225_ShipperHotZones.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2250000000000000025CA /* 225_ShipperHotZones.swift */; };
+		D2260000000000000026CB /* 226_ShipperDocumentCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2260000000000000026CA /* 226_ShipperDocumentCenter.swift */; };
+		D2270000000000000027CB /* 227_ShipperSettlementDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2270000000000000027CA /* 227_ShipperSettlementDetail.swift */; };
+		D2280000000000000028CB /* 228_ShipperBOLs.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2280000000000000028CA /* 228_ShipperBOLs.swift */; };
+		D2290000000000000029CB /* 229_ShipperAllocations.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2290000000000000029CA /* 229_ShipperAllocations.swift */; };
+		D2300000000000000030CB /* 230_ShipperBidThread.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2300000000000000030CA /* 230_ShipperBidThread.swift */; };
+		D22FNAV0000000000FFCB /* ShipperNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22FNAV0000000000FFCA /* ShipperNavController.swift */; };
 		D1A11111111111111111SE01 /* 206_ShipperSettlements.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111SE02 /* 206_ShipperSettlements.swift */; };
 		D1A11111111111111111SF01 /* 207_ShipperReports.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111SF02 /* 207_ShipperReports.swift */; };
 		D1A11111111111111111SG01 /* 208_ShipperPaymentMethods.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111SG02 /* 208_ShipperPaymentMethods.swift */; };
@@ -283,6 +434,7 @@
 
 /* Begin PBXFileReference section */
 		A1000000000000000000AAB1 /* EusoTrip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = EusoTrip.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1F1100000000000000011AA /* WeatherKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WeatherKit.framework; path = System/Library/Frameworks/WeatherKit.framework; sourceTree = SDKROOT; };
 		A1000000000000000000AAB9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A1000000000000000000AABC /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		A1006F894BE68F2F15836F50 /* EusoTripApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoTripApp.swift; sourceTree = "<group>"; };
@@ -443,6 +595,10 @@
 		B04D0FA2CE1A4B7E0000D062 /* 104_MeRateSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 104_MeRateSheet.swift; sourceTree = "<group>"; };
 		B05D0FA2CE1A4B7E0000D064 /* 105_MeAuthority.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 105_MeAuthority.swift; sourceTree = "<group>"; };
 		B06E0FA2CE1A4B7E0000D102 /* 106_MeEusoTickets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 106_MeEusoTickets.swift; sourceTree = "<group>"; };
+		B07E0FA2CE1A4B7E0000D108 /* 107_MeMyBids.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 107_MeMyBids.swift; sourceTree = "<group>"; };
+		B08E0FA2CE1A4B7E0000D110 /* 108_MeLoadBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 108_MeLoadBoard.swift; sourceTree = "<group>"; };
+		B09E0FA2CE1A4B7E0000D112 /* 109_MeBidDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 109_MeBidDetail.swift; sourceTree = "<group>"; };
+		B10E0FA2CE1A4B7E0000D114 /* 110_MeAutoAcceptRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 110_MeAutoAcceptRules.swift; sourceTree = "<group>"; };
 		B06D0FA2CE1A4B7E0000D066 /* ZeunMechanicsScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZeunMechanicsScreens.swift; sourceTree = "<group>"; };
 		B07D0FA2CE1A4B7E0000D068 /* SheetCloseButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SheetCloseButton.swift; sourceTree = "<group>"; };
 		B1A11111111111111111AA02 /* WeatherSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherSnapshot.swift; sourceTree = "<group>"; };
@@ -469,6 +625,7 @@
 		D1A11111111111111111AE02 /* TileReveal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TileReveal.swift; sourceTree = "<group>"; };
 		D1A11111111111111111AF02 /* AddPaymentAccountSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddPaymentAccountSheet.swift; sourceTree = "<group>"; };
 		D1A11111111111111111AH02 /* 800_AdminHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 800_AdminHome.swift; path = EusoTrip/Views/Admin/800_AdminHome.swift; sourceTree = SOURCE_ROOT; };
+		D1A11111111111111111CT02 /* 801_AdminControlTower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 801_AdminControlTower.swift; path = EusoTrip/Views/Admin/801_AdminControlTower.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111AT02 /* 802_AdminTenants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 802_AdminTenants.swift; path = EusoTrip/Views/Admin/802_AdminTenants.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111BA02 /* DriverConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverConversationView.swift; sourceTree = "<group>"; };
 		D1A11111111111111111BH02 /* 400_BrokerHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 400_BrokerHome.swift; path = EusoTrip/Views/Broker/400_BrokerHome.swift; sourceTree = SOURCE_ROOT; };
@@ -482,6 +639,8 @@
 		D1A11111111111111111CR02 /* 301_CarrierLoads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 301_CarrierLoads.swift; path = EusoTrip/Views/Carrier/301_CarrierLoads.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111EH02 /* 600_EscortHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 600_EscortHome.swift; path = EusoTrip/Views/Escort/600_EscortHome.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111EAD2 /* 601_EscortAssignmentDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 601_EscortAssignmentDetail.swift; path = EusoTrip/Views/Escort/601_EscortAssignmentDetail.swift; sourceTree = SOURCE_ROOT; };
+		D1A11111111111111111ECM2 /* 602_EscortCorridorMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 602_EscortCorridorMap.swift; path = EusoTrip/Views/Escort/602_EscortCorridorMap.swift; sourceTree = SOURCE_ROOT; };
+		D1A11111111111111111ATD2 /* 803_AdminTenantDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 803_AdminTenantDetail.swift; path = EusoTrip/Views/Admin/803_AdminTenantDetail.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111EV02 /* HereEVStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereEVStrip.swift; sourceTree = "<group>"; };
 		D1A11111111111111111HG02 /* DriverHomeGlances.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverHomeGlances.swift; sourceTree = "<group>"; };
 		D1A11111111111111111HZ02 /* HotZonesWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotZonesWidget.swift; sourceTree = "<group>"; };
@@ -495,6 +654,149 @@
 		D1A11111111111111111SB02 /* 203_ShipperBids.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 203_ShipperBids.swift; path = EusoTrip/Views/Shipper/203_ShipperBids.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111SC02 /* 204_ShipperPostLoad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 204_ShipperPostLoad.swift; path = EusoTrip/Views/Shipper/204_ShipperPostLoad.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111SD02 /* 205_ShipperLoadDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 205_ShipperLoadDetail.swift; path = EusoTrip/Views/Shipper/205_ShipperLoadDetail.swift; sourceTree = SOURCE_ROOT; };
+		D1A11111111111111111SC02 /* ShipperLoadCycleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ShipperLoadCycleView.swift; path = EusoTrip/Views/Shipper/ShipperLoadCycleView.swift; sourceTree = SOURCE_ROOT; };
+		D2120000000000000021CU /* 212_ShipperControlTower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 212_ShipperControlTower.swift; path = EusoTrip/Views/Shipper/212_ShipperControlTower.swift; sourceTree = SOURCE_ROOT; };
+		D2130000000000000021CR /* 213_ShipperCatalystScorecard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 213_ShipperCatalystScorecard.swift; path = EusoTrip/Views/Shipper/213_ShipperCatalystScorecard.swift; sourceTree = SOURCE_ROOT; };
+		D2280000000000000000ACFF /* LifecycleScaffold.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LifecycleScaffold.swift; path = EusoTrip/Views/Shipper/LifecycleScaffold.swift; sourceTree = SOURCE_ROOT; };
+		D2D0000000000000000ACFE /* PostLoadDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PostLoadDraft.swift; path = EusoTrip/Views/Shipper/PostLoadDraft.swift; sourceTree = SOURCE_ROOT; };
+		D2D0100000000000000ACFE /* 250_PostLoadStep1Lane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 250_PostLoadStep1Lane.swift; path = EusoTrip/Views/Shipper/250_PostLoadStep1Lane.swift; sourceTree = SOURCE_ROOT; };
+		D2D0200000000000000ACFE /* 251_PostLoadStep2Equipment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 251_PostLoadStep2Equipment.swift; path = EusoTrip/Views/Shipper/251_PostLoadStep2Equipment.swift; sourceTree = SOURCE_ROOT; };
+		D2D0300000000000000ACFE /* 252_PostLoadStep3Pricing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 252_PostLoadStep3Pricing.swift; path = EusoTrip/Views/Shipper/252_PostLoadStep3Pricing.swift; sourceTree = SOURCE_ROOT; };
+		D2D0400000000000000ACFE /* 253_PostLoadStep4Review.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 253_PostLoadStep4Review.swift; path = EusoTrip/Views/Shipper/253_PostLoadStep4Review.swift; sourceTree = SOURCE_ROOT; };
+		D2D0500000000000000ACFE /* 254_PostLoadSuccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 254_PostLoadSuccess.swift; path = EusoTrip/Views/Shipper/254_PostLoadSuccess.swift; sourceTree = SOURCE_ROOT; };
+		D2D0600000000000000ACFE /* 255_PostLoadMultiStop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 255_PostLoadMultiStop.swift; path = EusoTrip/Views/Shipper/255_PostLoadMultiStop.swift; sourceTree = SOURCE_ROOT; };
+		D2D0700000000000000ACFE /* 256_PostLoadAddressPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 256_PostLoadAddressPicker.swift; path = EusoTrip/Views/Shipper/256_PostLoadAddressPicker.swift; sourceTree = SOURCE_ROOT; };
+		D2D0800000000000000ACFE /* 257_PostLoadHazmatSubform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 257_PostLoadHazmatSubform.swift; path = EusoTrip/Views/Shipper/257_PostLoadHazmatSubform.swift; sourceTree = SOURCE_ROOT; };
+		D2D0900000000000000ACFE /* 258_PostLoadReeferSubform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 258_PostLoadReeferSubform.swift; path = EusoTrip/Views/Shipper/258_PostLoadReeferSubform.swift; sourceTree = SOURCE_ROOT; };
+		D2D1000000000000000ACFE /* 259_PostLoadTemplates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 259_PostLoadTemplates.swift; path = EusoTrip/Views/Shipper/259_PostLoadTemplates.swift; sourceTree = SOURCE_ROOT; };
+		D2F0000000000000000ACFD /* 280_CatalystDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 280_CatalystDirectory.swift; path = EusoTrip/Views/Shipper/280_CatalystDirectory.swift; sourceTree = SOURCE_ROOT; };
+		D2F0100000000000000ACFD /* 281_CatalystDetailSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 281_CatalystDetailSummary.swift; path = EusoTrip/Views/Shipper/281_CatalystDetailSummary.swift; sourceTree = SOURCE_ROOT; };
+		D2F0200000000000000ACFD /* 282_CatalystLoadsHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 282_CatalystLoadsHistory.swift; path = EusoTrip/Views/Shipper/282_CatalystLoadsHistory.swift; sourceTree = SOURCE_ROOT; };
+		D2F0300000000000000ACFD /* 283_CatalystRatings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 283_CatalystRatings.swift; path = EusoTrip/Views/Shipper/283_CatalystRatings.swift; sourceTree = SOURCE_ROOT; };
+		D2F0400000000000000ACFD /* 284_CatalystCompliancePeek.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 284_CatalystCompliancePeek.swift; path = EusoTrip/Views/Shipper/284_CatalystCompliancePeek.swift; sourceTree = SOURCE_ROOT; };
+		D2F0500000000000000ACFD /* 285_CatalystSparklineTrend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 285_CatalystSparklineTrend.swift; path = EusoTrip/Views/Shipper/285_CatalystSparklineTrend.swift; sourceTree = SOURCE_ROOT; };
+		D2F0600000000000000ACFD /* 286_AddFavoriteCatalyst.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 286_AddFavoriteCatalyst.swift; path = EusoTrip/Views/Shipper/286_AddFavoriteCatalyst.swift; sourceTree = SOURCE_ROOT; };
+		D2F0700000000000000ACFD /* 287_CatalystRiskFlag.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 287_CatalystRiskFlag.swift; path = EusoTrip/Views/Shipper/287_CatalystRiskFlag.swift; sourceTree = SOURCE_ROOT; };
+		D2F0800000000000000ACFD /* 288_CatalystContact.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 288_CatalystContact.swift; path = EusoTrip/Views/Shipper/288_CatalystContact.swift; sourceTree = SOURCE_ROOT; };
+		D2F0900000000000000ACFD /* 289_InviteCatalyst.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 289_InviteCatalyst.swift; path = EusoTrip/Views/Shipper/289_InviteCatalyst.swift; sourceTree = SOURCE_ROOT; };
+		D2G0000000000000000ACFC /* 290_WalletHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 290_WalletHome.swift; path = EusoTrip/Views/Shipper/290_WalletHome.swift; sourceTree = SOURCE_ROOT; };
+		D2G0100000000000000ACFC /* 291_EusoWalletDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 291_EusoWalletDetail.swift; path = EusoTrip/Views/Shipper/291_EusoWalletDetail.swift; sourceTree = SOURCE_ROOT; };
+		D2G0200000000000000ACFC /* 292_SettlementsList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 292_SettlementsList.swift; path = EusoTrip/Views/Shipper/292_SettlementsList.swift; sourceTree = SOURCE_ROOT; };
+		D2G0300000000000000ACFC /* 293_SettlementDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 293_SettlementDetail.swift; path = EusoTrip/Views/Shipper/293_SettlementDetail.swift; sourceTree = SOURCE_ROOT; };
+		D2G0400000000000000ACFC /* 294_DisputeSettlement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 294_DisputeSettlement.swift; path = EusoTrip/Views/Shipper/294_DisputeSettlement.swift; sourceTree = SOURCE_ROOT; };
+		D2G0500000000000000ACFC /* 295_PaymentMethods.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 295_PaymentMethods.swift; path = EusoTrip/Views/Shipper/295_PaymentMethods.swift; sourceTree = SOURCE_ROOT; };
+		D2G0600000000000000ACFC /* 296_AddPaymentMethod.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 296_AddPaymentMethod.swift; path = EusoTrip/Views/Shipper/296_AddPaymentMethod.swift; sourceTree = SOURCE_ROOT; };
+		D2G0700000000000000ACFC /* 297_MonthlyStatement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 297_MonthlyStatement.swift; path = EusoTrip/Views/Shipper/297_MonthlyStatement.swift; sourceTree = SOURCE_ROOT; };
+		D2G0800000000000000ACFC /* 298_Sustainability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 298_Sustainability.swift; path = EusoTrip/Views/Shipper/298_Sustainability.swift; sourceTree = SOURCE_ROOT; };
+		D2G0900000000000000ACFC /* 299_Reports.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 299_Reports.swift; path = EusoTrip/Views/Shipper/299_Reports.swift; sourceTree = SOURCE_ROOT; };
+		D2H0000000000000000ACFB /* 300_DocumentsAll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 300_DocumentsAll.swift; path = EusoTrip/Views/Shipper/300_DocumentsAll.swift; sourceTree = SOURCE_ROOT; };
+		D2H0100000000000000ACFB /* 301_DocumentPdfViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 301_DocumentPdfViewer.swift; path = EusoTrip/Views/Shipper/301_DocumentPdfViewer.swift; sourceTree = SOURCE_ROOT; };
+		D2H0200000000000000ACFB /* 302_DocumentImageViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 302_DocumentImageViewer.swift; path = EusoTrip/Views/Shipper/302_DocumentImageViewer.swift; sourceTree = SOURCE_ROOT; };
+		D2H0300000000000000ACFB /* 303_EusoTicketBol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 303_EusoTicketBol.swift; path = EusoTrip/Views/Shipper/303_EusoTicketBol.swift; sourceTree = SOURCE_ROOT; };
+		D2H0400000000000000ACFB /* 304_EusoTicketRunTicket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 304_EusoTicketRunTicket.swift; path = EusoTrip/Views/Shipper/304_EusoTicketRunTicket.swift; sourceTree = SOURCE_ROOT; };
+		D2H0500000000000000ACFB /* 305_EusoTicketHaulReceipt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 305_EusoTicketHaulReceipt.swift; path = EusoTrip/Views/Shipper/305_EusoTicketHaulReceipt.swift; sourceTree = SOURCE_ROOT; };
+		D2H0600000000000000ACFB /* 306_BolCounterSign.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 306_BolCounterSign.swift; path = EusoTrip/Views/Shipper/306_BolCounterSign.swift; sourceTree = SOURCE_ROOT; };
+		D2H0700000000000000ACFB /* 307_RateConSign.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 307_RateConSign.swift; path = EusoTrip/Views/Shipper/307_RateConSign.swift; sourceTree = SOURCE_ROOT; };
+		D2H0800000000000000ACFB /* 308_PodPhotoCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 308_PodPhotoCapture.swift; path = EusoTrip/Views/Shipper/308_PodPhotoCapture.swift; sourceTree = SOURCE_ROOT; };
+		D2H0900000000000000ACFB /* 309_WalletPass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 309_WalletPass.swift; path = EusoTrip/Views/Shipper/309_WalletPass.swift; sourceTree = SOURCE_ROOT; };
+		D2I0000000000000000ACFA /* 310_EsangThreadList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 310_EsangThreadList.swift; path = EusoTrip/Views/Shipper/310_EsangThreadList.swift; sourceTree = SOURCE_ROOT; };
+		D2I0100000000000000ACFA /* 311_EsangThread.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 311_EsangThread.swift; path = EusoTrip/Views/Shipper/311_EsangThread.swift; sourceTree = SOURCE_ROOT; };
+		D2I0200000000000000ACFA /* 312_EsangAttachmentPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 312_EsangAttachmentPicker.swift; path = EusoTrip/Views/Shipper/312_EsangAttachmentPicker.swift; sourceTree = SOURCE_ROOT; };
+		D2I0300000000000000ACFA /* 313_EsangVoiceListening.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 313_EsangVoiceListening.swift; path = EusoTrip/Views/Shipper/313_EsangVoiceListening.swift; sourceTree = SOURCE_ROOT; };
+		D2I0400000000000000ACFA /* 314_EsangTranscribing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 314_EsangTranscribing.swift; path = EusoTrip/Views/Shipper/314_EsangTranscribing.swift; sourceTree = SOURCE_ROOT; };
+		D2I0500000000000000ACFA /* 315_EsangAssistRankBids.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 315_EsangAssistRankBids.swift; path = EusoTrip/Views/Shipper/315_EsangAssistRankBids.swift; sourceTree = SOURCE_ROOT; };
+		D2I0600000000000000ACFA /* 316_EsangAssistStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 316_EsangAssistStatus.swift; path = EusoTrip/Views/Shipper/316_EsangAssistStatus.swift; sourceTree = SOURCE_ROOT; };
+		D2I0700000000000000ACFA /* 317_EsangAssistForecast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 317_EsangAssistForecast.swift; path = EusoTrip/Views/Shipper/317_EsangAssistForecast.swift; sourceTree = SOURCE_ROOT; };
+		D2I0800000000000000ACFA /* 318_EsangDispatchEscalation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 318_EsangDispatchEscalation.swift; path = EusoTrip/Views/Shipper/318_EsangDispatchEscalation.swift; sourceTree = SOURCE_ROOT; };
+		D2I0900000000000000ACFA /* 319_EsangSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 319_EsangSettings.swift; path = EusoTrip/Views/Shipper/319_EsangSettings.swift; sourceTree = SOURCE_ROOT; };
+		D2N0000000000000000ACF9 /* 380_RfpInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 380_RfpInbox.swift; path = EusoTrip/Views/Shipper/380_RfpInbox.swift; sourceTree = SOURCE_ROOT; };
+		D2N0100000000000000ACF9 /* 381_RfpDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 381_RfpDetail.swift; path = EusoTrip/Views/Shipper/381_RfpDetail.swift; sourceTree = SOURCE_ROOT; };
+		D2N0200000000000000ACF9 /* 382_ContractList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 382_ContractList.swift; path = EusoTrip/Views/Shipper/382_ContractList.swift; sourceTree = SOURCE_ROOT; };
+		D2N0300000000000000ACF9 /* 383_ContractDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 383_ContractDetail.swift; path = EusoTrip/Views/Shipper/383_ContractDetail.swift; sourceTree = SOURCE_ROOT; };
+		D2N0400000000000000ACF9 /* 384_BulkRetender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 384_BulkRetender.swift; path = EusoTrip/Views/Shipper/384_BulkRetender.swift; sourceTree = SOURCE_ROOT; };
+		D2N0500000000000000ACF9 /* 385_BatchTender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 385_BatchTender.swift; path = EusoTrip/Views/Shipper/385_BatchTender.swift; sourceTree = SOURCE_ROOT; };
+		D2N0600000000000000ACF9 /* 386_FreightClaimComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 386_FreightClaimComposer.swift; path = EusoTrip/Views/Shipper/386_FreightClaimComposer.swift; sourceTree = SOURCE_ROOT; };
+		D2N0700000000000000ACF9 /* 387_FinanceReconciliation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 387_FinanceReconciliation.swift; path = EusoTrip/Views/Shipper/387_FinanceReconciliation.swift; sourceTree = SOURCE_ROOT; };
+		D2J0000000000000000ACF8 /* 320_MeHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 320_MeHome.swift; path = EusoTrip/Views/Shipper/320_MeHome.swift; sourceTree = SOURCE_ROOT; };
+		D2J0100000000000000ACF8 /* 322_ProfileEdit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 322_ProfileEdit.swift; path = EusoTrip/Views/Shipper/322_ProfileEdit.swift; sourceTree = SOURCE_ROOT; };
+		D2J0200000000000000ACF8 /* 323_TierDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 323_TierDetail.swift; path = EusoTrip/Views/Shipper/323_TierDetail.swift; sourceTree = SOURCE_ROOT; };
+		D2J0300000000000000ACF8 /* 324_ComplianceDashboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 324_ComplianceDashboard.swift; path = EusoTrip/Views/Shipper/324_ComplianceDashboard.swift; sourceTree = SOURCE_ROOT; };
+		D2J0400000000000000ACF8 /* 325_InsuranceDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 325_InsuranceDetail.swift; path = EusoTrip/Views/Shipper/325_InsuranceDetail.swift; sourceTree = SOURCE_ROOT; };
+		D2J0500000000000000ACF8 /* 326_FmcsaSaferMirror.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 326_FmcsaSaferMirror.swift; path = EusoTrip/Views/Shipper/326_FmcsaSaferMirror.swift; sourceTree = SOURCE_ROOT; };
+		D2J0600000000000000ACF8 /* 327_HazmatAudit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 327_HazmatAudit.swift; path = EusoTrip/Views/Shipper/327_HazmatAudit.swift; sourceTree = SOURCE_ROOT; };
+		D2J0700000000000000ACF8 /* 333_ContactDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 333_ContactDetail.swift; path = EusoTrip/Views/Shipper/333_ContactDetail.swift; sourceTree = SOURCE_ROOT; };
+		D2J0800000000000000ACF8 /* 334_AddContact.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 334_AddContact.swift; path = EusoTrip/Views/Shipper/334_AddContact.swift; sourceTree = SOURCE_ROOT; };
+		D2J0900000000000000ACF8 /* 336_GradeDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 336_GradeDetail.swift; path = EusoTrip/Views/Shipper/336_GradeDetail.swift; sourceTree = SOURCE_ROOT; };
+		D2K0000000000000000ACF7 /* 340_SettingsHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 340_SettingsHome.swift; path = EusoTrip/Views/Shipper/340_SettingsHome.swift; sourceTree = SOURCE_ROOT; };
+		D2K0100000000000000ACF7 /* 341_LaneTemplatesList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 341_LaneTemplatesList.swift; path = EusoTrip/Views/Shipper/341_LaneTemplatesList.swift; sourceTree = SOURCE_ROOT; };
+		D2K0200000000000000ACF7 /* 342_LaneTemplateEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 342_LaneTemplateEditor.swift; path = EusoTrip/Views/Shipper/342_LaneTemplateEditor.swift; sourceTree = SOURCE_ROOT; };
+		D2K0300000000000000ACF7 /* 343_NotificationPrefs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 343_NotificationPrefs.swift; path = EusoTrip/Views/Shipper/343_NotificationPrefs.swift; sourceTree = SOURCE_ROOT; };
+		D2K0400000000000000ACF7 /* 344_SecuritySessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 344_SecuritySessions.swift; path = EusoTrip/Views/Shipper/344_SecuritySessions.swift; sourceTree = SOURCE_ROOT; };
+		D2K0500000000000000ACF7 /* 345_TwoFactorManage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 345_TwoFactorManage.swift; path = EusoTrip/Views/Shipper/345_TwoFactorManage.swift; sourceTree = SOURCE_ROOT; };
+		D2K0600000000000000ACF7 /* 346_ConnectedApps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 346_ConnectedApps.swift; path = EusoTrip/Views/Shipper/346_ConnectedApps.swift; sourceTree = SOURCE_ROOT; };
+		D2K0700000000000000ACF7 /* 347_HelpSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 347_HelpSupport.swift; path = EusoTrip/Views/Shipper/347_HelpSupport.swift; sourceTree = SOURCE_ROOT; };
+		D2K0800000000000000ACF7 /* 348_Legal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 348_Legal.swift; path = EusoTrip/Views/Shipper/348_Legal.swift; sourceTree = SOURCE_ROOT; };
+		D2K0900000000000000ACF7 /* 349_AccountExportDelete.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 349_AccountExportDelete.swift; path = EusoTrip/Views/Shipper/349_AccountExportDelete.swift; sourceTree = SOURCE_ROOT; };
+		D2M0000000000000000ACF6 /* PermissionRationale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PermissionRationale.swift; path = EusoTrip/Views/Shipper/PermissionRationale.swift; sourceTree = SOURCE_ROOT; };
+		D2M0100000000000000ACF6 /* 360_PushPermission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 360_PushPermission.swift; path = EusoTrip/Views/Shipper/360_PushPermission.swift; sourceTree = SOURCE_ROOT; };
+		D2M0200000000000000ACF6 /* 361_LocationPermission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 361_LocationPermission.swift; path = EusoTrip/Views/Shipper/361_LocationPermission.swift; sourceTree = SOURCE_ROOT; };
+		D2M0300000000000000ACF6 /* 362_CameraPermission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 362_CameraPermission.swift; path = EusoTrip/Views/Shipper/362_CameraPermission.swift; sourceTree = SOURCE_ROOT; };
+		D2M0400000000000000ACF6 /* 363_MicPermission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 363_MicPermission.swift; path = EusoTrip/Views/Shipper/363_MicPermission.swift; sourceTree = SOURCE_ROOT; };
+		D2M0500000000000000ACF6 /* 364_OfflineBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 364_OfflineBanner.swift; path = EusoTrip/Views/Shipper/364_OfflineBanner.swift; sourceTree = SOURCE_ROOT; };
+		D2M0600000000000000ACF6 /* 365_NetworkErrorRetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 365_NetworkErrorRetry.swift; path = EusoTrip/Views/Shipper/365_NetworkErrorRetry.swift; sourceTree = SOURCE_ROOT; };
+		D2M0700000000000000ACF6 /* 366_ForceUpdate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 366_ForceUpdate.swift; path = EusoTrip/Views/Shipper/366_ForceUpdate.swift; sourceTree = SOURCE_ROOT; };
+		D2M0800000000000000ACF6 /* 367_AccountSuspended.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 367_AccountSuspended.swift; path = EusoTrip/Views/Shipper/367_AccountSuspended.swift; sourceTree = SOURCE_ROOT; };
+		D2M0900000000000000ACF6 /* 368_KybRejected.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 368_KybRejected.swift; path = EusoTrip/Views/Shipper/368_KybRejected.swift; sourceTree = SOURCE_ROOT; };
+		D2M1000000000000000ACF6 /* 369_BackgroundBiometric.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 369_BackgroundBiometric.swift; path = EusoTrip/Views/Shipper/369_BackgroundBiometric.swift; sourceTree = SOURCE_ROOT; };
+		D2P0000000000000000ACF5 /* 390_NotificationsInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 390_NotificationsInbox.swift; path = EusoTrip/Views/Shipper/390_NotificationsInbox.swift; sourceTree = SOURCE_ROOT; };
+		D2P0100000000000000ACF5 /* 391_NotificationDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 391_NotificationDetail.swift; path = EusoTrip/Views/Shipper/391_NotificationDetail.swift; sourceTree = SOURCE_ROOT; };
+		D2P0200000000000000ACF5 /* 392_SearchEverything.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 392_SearchEverything.swift; path = EusoTrip/Views/Shipper/392_SearchEverything.swift; sourceTree = SOURCE_ROOT; };
+		D2P0300000000000000ACF5 /* 393_SearchResults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 393_SearchResults.swift; path = EusoTrip/Views/Shipper/393_SearchResults.swift; sourceTree = SOURCE_ROOT; };
+		D2P0400000000000000ACF5 /* 394_QuoteInstant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 394_QuoteInstant.swift; path = EusoTrip/Views/Shipper/394_QuoteInstant.swift; sourceTree = SOURCE_ROOT; };
+		D2P0500000000000000ACF5 /* 395_QuoteSaved.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 395_QuoteSaved.swift; path = EusoTrip/Views/Shipper/395_QuoteSaved.swift; sourceTree = SOURCE_ROOT; };
+		D2P0600000000000000ACF5 /* 396_HomeEmptyState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 396_HomeEmptyState.swift; path = EusoTrip/Views/Shipper/396_HomeEmptyState.swift; sourceTree = SOURCE_ROOT; };
+		D2P0700000000000000ACF5 /* 397_RolePick.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 397_RolePick.swift; path = EusoTrip/Views/Shipper/397_RolePick.swift; sourceTree = SOURCE_ROOT; };
+		D2P0800000000000000ACF5 /* 398_KybLegalEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 398_KybLegalEntity.swift; path = EusoTrip/Views/Shipper/398_KybLegalEntity.swift; sourceTree = SOURCE_ROOT; };
+		D2P0900000000000000ACF5 /* 399_EmailVerifyPending.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 399_EmailVerifyPending.swift; path = EusoTrip/Views/Shipper/399_EmailVerifyPending.swift; sourceTree = SOURCE_ROOT; };
+		D2Q0000000000000000ACF4 /* 400_BulkUploadShell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 400_BulkUploadShell.swift; path = EusoTrip/Views/Shipper/400_BulkUploadShell.swift; sourceTree = SOURCE_ROOT; };
+		D2260000000000000AC0004 /* 260_PostedAwaitingBids.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 260_PostedAwaitingBids.swift; path = EusoTrip/Views/Shipper/260_PostedAwaitingBids.swift; sourceTree = SOURCE_ROOT; };
+		D2261000000000000AC0005 /* 261_BiddingLiveFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 261_BiddingLiveFeed.swift; path = EusoTrip/Views/Shipper/261_BiddingLiveFeed.swift; sourceTree = SOURCE_ROOT; };
+		D2262000000000000AC0006 /* 262_AwardedPrePickup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 262_AwardedPrePickup.swift; path = EusoTrip/Views/Shipper/262_AwardedPrePickup.swift; sourceTree = SOURCE_ROOT; };
+		D2263000000000000AC0007 /* 263_PickupApproaching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 263_PickupApproaching.swift; path = EusoTrip/Views/Shipper/263_PickupApproaching.swift; sourceTree = SOURCE_ROOT; };
+		D2264000000000000AC0008 /* 264_PickupAtGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 264_PickupAtGate.swift; path = EusoTrip/Views/Shipper/264_PickupAtGate.swift; sourceTree = SOURCE_ROOT; };
+		D2265000000000000AC0009 /* 265_PickupAtDock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 265_PickupAtDock.swift; path = EusoTrip/Views/Shipper/265_PickupAtDock.swift; sourceTree = SOURCE_ROOT; };
+		D2266000000000000AC000A /* 266_PickupBolSigning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 266_PickupBolSigning.swift; path = EusoTrip/Views/Shipper/266_PickupBolSigning.swift; sourceTree = SOURCE_ROOT; };
+		D2267000000000000AC000B /* 267_InTransitLive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 267_InTransitLive.swift; path = EusoTrip/Views/Shipper/267_InTransitLive.swift; sourceTree = SOURCE_ROOT; };
+		D2268000000000000AC000C /* 268_InTransitHosPause.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 268_InTransitHosPause.swift; path = EusoTrip/Views/Shipper/268_InTransitHosPause.swift; sourceTree = SOURCE_ROOT; };
+		D2269000000000000AC000D /* 269_InTransitException.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 269_InTransitException.swift; path = EusoTrip/Views/Shipper/269_InTransitException.swift; sourceTree = SOURCE_ROOT; };
+		D2270000000000000AC000E /* 270_DeliveryApproaching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 270_DeliveryApproaching.swift; path = EusoTrip/Views/Shipper/270_DeliveryApproaching.swift; sourceTree = SOURCE_ROOT; };
+		D2271000000000000AC000F /* 271_DeliveryAtReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 271_DeliveryAtReceiver.swift; path = EusoTrip/Views/Shipper/271_DeliveryAtReceiver.swift; sourceTree = SOURCE_ROOT; };
+		D2272000000000000AC0010 /* 272_DeliveryPodSigned.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 272_DeliveryPodSigned.swift; path = EusoTrip/Views/Shipper/272_DeliveryPodSigned.swift; sourceTree = SOURCE_ROOT; };
+		D2273000000000000AC0011 /* 273_PaperworkBolFinal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 273_PaperworkBolFinal.swift; path = EusoTrip/Views/Shipper/273_PaperworkBolFinal.swift; sourceTree = SOURCE_ROOT; };
+		D2274000000000000AC0012 /* 274_PaperworkAccessorials.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 274_PaperworkAccessorials.swift; path = EusoTrip/Views/Shipper/274_PaperworkAccessorials.swift; sourceTree = SOURCE_ROOT; };
+		D2275000000000000AC0013 /* 275_ClosedSettlementPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 275_ClosedSettlementPreview.swift; path = EusoTrip/Views/Shipper/275_ClosedSettlementPreview.swift; sourceTree = SOURCE_ROOT; };
+		D2276000000000000AC0014 /* 276_ClosedPaid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 276_ClosedPaid.swift; path = EusoTrip/Views/Shipper/276_ClosedPaid.swift; sourceTree = SOURCE_ROOT; };
+		D2277000000000000AC0015 /* 277_CancelledPrePickup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 277_CancelledPrePickup.swift; path = EusoTrip/Views/Shipper/277_CancelledPrePickup.swift; sourceTree = SOURCE_ROOT; };
+		D2278000000000000AC0016 /* 278_CancelledInTransit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 278_CancelledInTransit.swift; path = EusoTrip/Views/Shipper/278_CancelledInTransit.swift; sourceTree = SOURCE_ROOT; };
+		D2279000000000000AC0017 /* 279_ReeferTempExcursion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 279_ReeferTempExcursion.swift; path = EusoTrip/Views/Shipper/279_ReeferTempExcursion.swift; sourceTree = SOURCE_ROOT; };
+		D2140000000000000021CN /* 214_ShipperSustainability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 214_ShipperSustainability.swift; path = EusoTrip/Views/Shipper/214_ShipperSustainability.swift; sourceTree = SOURCE_ROOT; };
+		D2150000000000000021CL /* 215_ShipperRFP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 215_ShipperRFP.swift; path = EusoTrip/Views/Shipper/215_ShipperRFP.swift; sourceTree = SOURCE_ROOT; };
+		D2160000000000000021CJ /* 216_ShipperCompliance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 216_ShipperCompliance.swift; path = EusoTrip/Views/Shipper/216_ShipperCompliance.swift; sourceTree = SOURCE_ROOT; };
+		D2170000000000000021CH /* 217_ShipperContracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 217_ShipperContracts.swift; path = EusoTrip/Views/Shipper/217_ShipperContracts.swift; sourceTree = SOURCE_ROOT; };
+		D2180000000000000021CF /* 218_ShipperDispatchControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 218_ShipperDispatchControl.swift; path = EusoTrip/Views/Shipper/218_ShipperDispatchControl.swift; sourceTree = SOURCE_ROOT; };
+		D2190000000000000021CD /* 219_ShipperFreightClaims.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 219_ShipperFreightClaims.swift; path = EusoTrip/Views/Shipper/219_ShipperFreightClaims.swift; sourceTree = SOURCE_ROOT; };
+		D2200000000000000022CA /* 220_ShipperRateBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 220_ShipperRateBoard.swift; path = EusoTrip/Views/Shipper/220_ShipperRateBoard.swift; sourceTree = SOURCE_ROOT; };
+		D2210000000000000022CC /* 221_ShipperRecurringLoads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 221_ShipperRecurringLoads.swift; path = EusoTrip/Views/Shipper/221_ShipperRecurringLoads.swift; sourceTree = SOURCE_ROOT; };
+		D2220000000000000022CE /* 222_ShipperLiveTracking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 222_ShipperLiveTracking.swift; path = EusoTrip/Views/Shipper/222_ShipperLiveTracking.swift; sourceTree = SOURCE_ROOT; };
+		D2230000000000000023CA /* 223_ShipperAgreements.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 223_ShipperAgreements.swift; path = EusoTrip/Views/Shipper/223_ShipperAgreements.swift; sourceTree = SOURCE_ROOT; };
+		D2240000000000000024CA /* 224_ShipperPartnerDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 224_ShipperPartnerDirectory.swift; path = EusoTrip/Views/Shipper/224_ShipperPartnerDirectory.swift; sourceTree = SOURCE_ROOT; };
+		D2250000000000000025CA /* 225_ShipperHotZones.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 225_ShipperHotZones.swift; path = EusoTrip/Views/Shipper/225_ShipperHotZones.swift; sourceTree = SOURCE_ROOT; };
+		D2260000000000000026CA /* 226_ShipperDocumentCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 226_ShipperDocumentCenter.swift; path = EusoTrip/Views/Shipper/226_ShipperDocumentCenter.swift; sourceTree = SOURCE_ROOT; };
+		D2270000000000000027CA /* 227_ShipperSettlementDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 227_ShipperSettlementDetail.swift; path = EusoTrip/Views/Shipper/227_ShipperSettlementDetail.swift; sourceTree = SOURCE_ROOT; };
+		D2280000000000000028CA /* 228_ShipperBOLs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 228_ShipperBOLs.swift; path = EusoTrip/Views/Shipper/228_ShipperBOLs.swift; sourceTree = SOURCE_ROOT; };
+		D2290000000000000029CA /* 229_ShipperAllocations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 229_ShipperAllocations.swift; path = EusoTrip/Views/Shipper/229_ShipperAllocations.swift; sourceTree = SOURCE_ROOT; };
+		D2300000000000000030CA /* 230_ShipperBidThread.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 230_ShipperBidThread.swift; path = EusoTrip/Views/Shipper/230_ShipperBidThread.swift; sourceTree = SOURCE_ROOT; };
+		D22FNAV0000000000FFCA /* ShipperNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ShipperNavController.swift; path = EusoTrip/Views/Shipper/ShipperNavController.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111SE02 /* 206_ShipperSettlements.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 206_ShipperSettlements.swift; path = EusoTrip/Views/Shipper/206_ShipperSettlements.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111SF02 /* 207_ShipperReports.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 207_ShipperReports.swift; path = EusoTrip/Views/Shipper/207_ShipperReports.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111SG02 /* 208_ShipperPaymentMethods.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 208_ShipperPaymentMethods.swift; path = EusoTrip/Views/Shipper/208_ShipperPaymentMethods.swift; sourceTree = SOURCE_ROOT; };
@@ -534,6 +836,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1F1000000000000000003AA /* Lottie in Frameworks */,
+				A1F1100000000000000010AA /* WeatherKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -733,6 +1036,10 @@
 				B04D0FA2CE1A4B7E0000D062 /* 104_MeRateSheet.swift */,
 				B05D0FA2CE1A4B7E0000D064 /* 105_MeAuthority.swift */,
 				B06E0FA2CE1A4B7E0000D102 /* 106_MeEusoTickets.swift */,
+				B07E0FA2CE1A4B7E0000D108 /* 107_MeMyBids.swift */,
+				B08E0FA2CE1A4B7E0000D110 /* 108_MeLoadBoard.swift */,
+				B09E0FA2CE1A4B7E0000D112 /* 109_MeBidDetail.swift */,
+				B10E0FA2CE1A4B7E0000D114 /* 110_MeAutoAcceptRules.swift */,
 				B06D0FA2CE1A4B7E0000D066 /* ZeunMechanicsScreens.swift */,
 				A40C0FA9CE1A4B7E0000C012 /* MeComplianceView.swift */,
 				B1A11111111111111111AA08 /* DriverTabPanes.swift */,
@@ -758,6 +1065,149 @@
 				D1A11111111111111111SB02 /* 203_ShipperBids.swift */,
 				D1A11111111111111111SC02 /* 204_ShipperPostLoad.swift */,
 				D1A11111111111111111SD02 /* 205_ShipperLoadDetail.swift */,
+				D1A11111111111111111SC02 /* ShipperLoadCycleView.swift */,
+				D2120000000000000021CU /* 212_ShipperControlTower.swift */,
+				D2130000000000000021CR /* 213_ShipperCatalystScorecard.swift */,
+				D2280000000000000000ACFF /* LifecycleScaffold.swift */,
+				D2D0000000000000000ACFE /* PostLoadDraft.swift */,
+				D2D0100000000000000ACFE /* 250_PostLoadStep1Lane.swift */,
+				D2D0200000000000000ACFE /* 251_PostLoadStep2Equipment.swift */,
+				D2D0300000000000000ACFE /* 252_PostLoadStep3Pricing.swift */,
+				D2D0400000000000000ACFE /* 253_PostLoadStep4Review.swift */,
+				D2D0500000000000000ACFE /* 254_PostLoadSuccess.swift */,
+				D2D0600000000000000ACFE /* 255_PostLoadMultiStop.swift */,
+				D2D0700000000000000ACFE /* 256_PostLoadAddressPicker.swift */,
+				D2D0800000000000000ACFE /* 257_PostLoadHazmatSubform.swift */,
+				D2D0900000000000000ACFE /* 258_PostLoadReeferSubform.swift */,
+				D2D1000000000000000ACFE /* 259_PostLoadTemplates.swift */,
+				D2F0000000000000000ACFD /* 280_CatalystDirectory.swift */,
+				D2F0100000000000000ACFD /* 281_CatalystDetailSummary.swift */,
+				D2F0200000000000000ACFD /* 282_CatalystLoadsHistory.swift */,
+				D2F0300000000000000ACFD /* 283_CatalystRatings.swift */,
+				D2F0400000000000000ACFD /* 284_CatalystCompliancePeek.swift */,
+				D2F0500000000000000ACFD /* 285_CatalystSparklineTrend.swift */,
+				D2F0600000000000000ACFD /* 286_AddFavoriteCatalyst.swift */,
+				D2F0700000000000000ACFD /* 287_CatalystRiskFlag.swift */,
+				D2F0800000000000000ACFD /* 288_CatalystContact.swift */,
+				D2F0900000000000000ACFD /* 289_InviteCatalyst.swift */,
+				D2G0000000000000000ACFC /* 290_WalletHome.swift */,
+				D2G0100000000000000ACFC /* 291_EusoWalletDetail.swift */,
+				D2G0200000000000000ACFC /* 292_SettlementsList.swift */,
+				D2G0300000000000000ACFC /* 293_SettlementDetail.swift */,
+				D2G0400000000000000ACFC /* 294_DisputeSettlement.swift */,
+				D2G0500000000000000ACFC /* 295_PaymentMethods.swift */,
+				D2G0600000000000000ACFC /* 296_AddPaymentMethod.swift */,
+				D2G0700000000000000ACFC /* 297_MonthlyStatement.swift */,
+				D2G0800000000000000ACFC /* 298_Sustainability.swift */,
+				D2G0900000000000000ACFC /* 299_Reports.swift */,
+				D2H0000000000000000ACFB /* 300_DocumentsAll.swift */,
+				D2H0100000000000000ACFB /* 301_DocumentPdfViewer.swift */,
+				D2H0200000000000000ACFB /* 302_DocumentImageViewer.swift */,
+				D2H0300000000000000ACFB /* 303_EusoTicketBol.swift */,
+				D2H0400000000000000ACFB /* 304_EusoTicketRunTicket.swift */,
+				D2H0500000000000000ACFB /* 305_EusoTicketHaulReceipt.swift */,
+				D2H0600000000000000ACFB /* 306_BolCounterSign.swift */,
+				D2H0700000000000000ACFB /* 307_RateConSign.swift */,
+				D2H0800000000000000ACFB /* 308_PodPhotoCapture.swift */,
+				D2H0900000000000000ACFB /* 309_WalletPass.swift */,
+				D2I0000000000000000ACFA /* 310_EsangThreadList.swift */,
+				D2I0100000000000000ACFA /* 311_EsangThread.swift */,
+				D2I0200000000000000ACFA /* 312_EsangAttachmentPicker.swift */,
+				D2I0300000000000000ACFA /* 313_EsangVoiceListening.swift */,
+				D2I0400000000000000ACFA /* 314_EsangTranscribing.swift */,
+				D2I0500000000000000ACFA /* 315_EsangAssistRankBids.swift */,
+				D2I0600000000000000ACFA /* 316_EsangAssistStatus.swift */,
+				D2I0700000000000000ACFA /* 317_EsangAssistForecast.swift */,
+				D2I0800000000000000ACFA /* 318_EsangDispatchEscalation.swift */,
+				D2I0900000000000000ACFA /* 319_EsangSettings.swift */,
+				D2N0000000000000000ACF9 /* 380_RfpInbox.swift */,
+				D2N0100000000000000ACF9 /* 381_RfpDetail.swift */,
+				D2N0200000000000000ACF9 /* 382_ContractList.swift */,
+				D2N0300000000000000ACF9 /* 383_ContractDetail.swift */,
+				D2N0400000000000000ACF9 /* 384_BulkRetender.swift */,
+				D2N0500000000000000ACF9 /* 385_BatchTender.swift */,
+				D2N0600000000000000ACF9 /* 386_FreightClaimComposer.swift */,
+				D2N0700000000000000ACF9 /* 387_FinanceReconciliation.swift */,
+				D2J0000000000000000ACF8 /* 320_MeHome.swift */,
+				D2J0100000000000000ACF8 /* 322_ProfileEdit.swift */,
+				D2J0200000000000000ACF8 /* 323_TierDetail.swift */,
+				D2J0300000000000000ACF8 /* 324_ComplianceDashboard.swift */,
+				D2J0400000000000000ACF8 /* 325_InsuranceDetail.swift */,
+				D2J0500000000000000ACF8 /* 326_FmcsaSaferMirror.swift */,
+				D2J0600000000000000ACF8 /* 327_HazmatAudit.swift */,
+				D2J0700000000000000ACF8 /* 333_ContactDetail.swift */,
+				D2J0800000000000000ACF8 /* 334_AddContact.swift */,
+				D2J0900000000000000ACF8 /* 336_GradeDetail.swift */,
+				D2K0000000000000000ACF7 /* 340_SettingsHome.swift */,
+				D2K0100000000000000ACF7 /* 341_LaneTemplatesList.swift */,
+				D2K0200000000000000ACF7 /* 342_LaneTemplateEditor.swift */,
+				D2K0300000000000000ACF7 /* 343_NotificationPrefs.swift */,
+				D2K0400000000000000ACF7 /* 344_SecuritySessions.swift */,
+				D2K0500000000000000ACF7 /* 345_TwoFactorManage.swift */,
+				D2K0600000000000000ACF7 /* 346_ConnectedApps.swift */,
+				D2K0700000000000000ACF7 /* 347_HelpSupport.swift */,
+				D2K0800000000000000ACF7 /* 348_Legal.swift */,
+				D2K0900000000000000ACF7 /* 349_AccountExportDelete.swift */,
+				D2M0000000000000000ACF6 /* PermissionRationale.swift */,
+				D2M0100000000000000ACF6 /* 360_PushPermission.swift */,
+				D2M0200000000000000ACF6 /* 361_LocationPermission.swift */,
+				D2M0300000000000000ACF6 /* 362_CameraPermission.swift */,
+				D2M0400000000000000ACF6 /* 363_MicPermission.swift */,
+				D2M0500000000000000ACF6 /* 364_OfflineBanner.swift */,
+				D2M0600000000000000ACF6 /* 365_NetworkErrorRetry.swift */,
+				D2M0700000000000000ACF6 /* 366_ForceUpdate.swift */,
+				D2M0800000000000000ACF6 /* 367_AccountSuspended.swift */,
+				D2M0900000000000000ACF6 /* 368_KybRejected.swift */,
+				D2M1000000000000000ACF6 /* 369_BackgroundBiometric.swift */,
+				D2P0000000000000000ACF5 /* 390_NotificationsInbox.swift */,
+				D2P0100000000000000ACF5 /* 391_NotificationDetail.swift */,
+				D2P0200000000000000ACF5 /* 392_SearchEverything.swift */,
+				D2P0300000000000000ACF5 /* 393_SearchResults.swift */,
+				D2P0400000000000000ACF5 /* 394_QuoteInstant.swift */,
+				D2P0500000000000000ACF5 /* 395_QuoteSaved.swift */,
+				D2P0600000000000000ACF5 /* 396_HomeEmptyState.swift */,
+				D2P0700000000000000ACF5 /* 397_RolePick.swift */,
+				D2P0800000000000000ACF5 /* 398_KybLegalEntity.swift */,
+				D2P0900000000000000ACF5 /* 399_EmailVerifyPending.swift */,
+				D2Q0000000000000000ACF4 /* 400_BulkUploadShell.swift */,
+				D2260000000000000AC0004 /* 260_PostedAwaitingBids.swift */,
+				D2261000000000000AC0005 /* 261_BiddingLiveFeed.swift */,
+				D2262000000000000AC0006 /* 262_AwardedPrePickup.swift */,
+				D2263000000000000AC0007 /* 263_PickupApproaching.swift */,
+				D2264000000000000AC0008 /* 264_PickupAtGate.swift */,
+				D2265000000000000AC0009 /* 265_PickupAtDock.swift */,
+				D2266000000000000AC000A /* 266_PickupBolSigning.swift */,
+				D2267000000000000AC000B /* 267_InTransitLive.swift */,
+				D2268000000000000AC000C /* 268_InTransitHosPause.swift */,
+				D2269000000000000AC000D /* 269_InTransitException.swift */,
+				D2270000000000000AC000E /* 270_DeliveryApproaching.swift */,
+				D2271000000000000AC000F /* 271_DeliveryAtReceiver.swift */,
+				D2272000000000000AC0010 /* 272_DeliveryPodSigned.swift */,
+				D2273000000000000AC0011 /* 273_PaperworkBolFinal.swift */,
+				D2274000000000000AC0012 /* 274_PaperworkAccessorials.swift */,
+				D2275000000000000AC0013 /* 275_ClosedSettlementPreview.swift */,
+				D2276000000000000AC0014 /* 276_ClosedPaid.swift */,
+				D2277000000000000AC0015 /* 277_CancelledPrePickup.swift */,
+				D2278000000000000AC0016 /* 278_CancelledInTransit.swift */,
+				D2279000000000000AC0017 /* 279_ReeferTempExcursion.swift */,
+				D2140000000000000021CN /* 214_ShipperSustainability.swift */,
+				D2150000000000000021CL /* 215_ShipperRFP.swift */,
+				D2160000000000000021CJ /* 216_ShipperCompliance.swift */,
+				D2170000000000000021CH /* 217_ShipperContracts.swift */,
+				D2180000000000000021CF /* 218_ShipperDispatchControl.swift */,
+				D2190000000000000021CD /* 219_ShipperFreightClaims.swift */,
+				D2200000000000000022CA /* 220_ShipperRateBoard.swift */,
+				D2210000000000000022CC /* 221_ShipperRecurringLoads.swift */,
+				D2220000000000000022CE /* 222_ShipperLiveTracking.swift */,
+				D2230000000000000023CA /* 223_ShipperAgreements.swift */,
+				D2240000000000000024CA /* 224_ShipperPartnerDirectory.swift */,
+				D2250000000000000025CA /* 225_ShipperHotZones.swift */,
+				D2260000000000000026CA /* 226_ShipperDocumentCenter.swift */,
+				D2270000000000000027CA /* 227_ShipperSettlementDetail.swift */,
+				D2280000000000000028CA /* 228_ShipperBOLs.swift */,
+				D2290000000000000029CA /* 229_ShipperAllocations.swift */,
+				D2300000000000000030CA /* 230_ShipperBidThread.swift */,
+				D22FNAV0000000000FFCA /* ShipperNavController.swift */,
 				D1A11111111111111111SE02 /* 206_ShipperSettlements.swift */,
 				D1A11111111111111111SF02 /* 207_ShipperReports.swift */,
 				D1A11111111111111111SG02 /* 208_ShipperPaymentMethods.swift */,
@@ -777,11 +1227,14 @@
 				D1A11111111111111111KMD2 /* 502_CatalystMatchDetail.swift */,
 				D1A11111111111111111EH02 /* 600_EscortHome.swift */,
 				D1A11111111111111111EAD2 /* 601_EscortAssignmentDetail.swift */,
+				D1A11111111111111111ECM2 /* 602_EscortCorridorMap.swift */,
 				D1A11111111111111111TH02 /* 700_TerminalHome.swift */,
 				D1A11111111111111111TQ02 /* 701_TerminalGateQueue.swift */,
 				D1A11111111111111111YM02 /* 702_TerminalYardMap.swift */,
 				D1A11111111111111111AH02 /* 800_AdminHome.swift */,
+				D1A11111111111111111CT02 /* 801_AdminControlTower.swift */,
 				D1A11111111111111111AT02 /* 802_AdminTenants.swift */,
+				D1A11111111111111111ATD2 /* 803_AdminTenantDetail.swift */,
 				D1A11111111111111111LP02 /* LifecycleProductContext.swift */,
 				E1D1ED0411111111111111AA /* ELDIntegrationView.swift */,
 			);
@@ -1235,6 +1688,10 @@
 				B04D0FA2CE1A4B7E0000D061 /* 104_MeRateSheet.swift in Sources */,
 				B05D0FA2CE1A4B7E0000D063 /* 105_MeAuthority.swift in Sources */,
 				B06E0FA2CE1A4B7E0000D101 /* 106_MeEusoTickets.swift in Sources */,
+				B07E0FA2CE1A4B7E0000D107 /* 107_MeMyBids.swift in Sources */,
+				B08E0FA2CE1A4B7E0000D109 /* 108_MeLoadBoard.swift in Sources */,
+				B09E0FA2CE1A4B7E0000D111 /* 109_MeBidDetail.swift in Sources */,
+				B10E0FA2CE1A4B7E0000D113 /* 110_MeAutoAcceptRules.swift in Sources */,
 				B06D0FA2CE1A4B7E0000D065 /* ZeunMechanicsScreens.swift in Sources */,
 				B07D0FA2CE1A4B7E0000D067 /* SheetCloseButton.swift in Sources */,
 				A40C0FA9CE1A4B7E0000C011 /* MeComplianceView.swift in Sources */,
@@ -1315,6 +1772,149 @@
 				D1A11111111111111111SB01 /* 203_ShipperBids.swift in Sources */,
 				D1A11111111111111111SC01 /* 204_ShipperPostLoad.swift in Sources */,
 				D1A11111111111111111SD01 /* 205_ShipperLoadDetail.swift in Sources */,
+				D1A11111111111111111SC01 /* ShipperLoadCycleView.swift in Sources */,
+				D2120000000000000021CT /* 212_ShipperControlTower.swift in Sources */,
+				D2130000000000000021CS /* 213_ShipperCatalystScorecard.swift in Sources */,
+				D2280000000000000000ABFF /* LifecycleScaffold.swift in Sources */,
+				D2D0000000000000000ABFE /* PostLoadDraft.swift in Sources */,
+				D2D0100000000000000ABFE /* 250_PostLoadStep1Lane.swift in Sources */,
+				D2D0200000000000000ABFE /* 251_PostLoadStep2Equipment.swift in Sources */,
+				D2D0300000000000000ABFE /* 252_PostLoadStep3Pricing.swift in Sources */,
+				D2D0400000000000000ABFE /* 253_PostLoadStep4Review.swift in Sources */,
+				D2D0500000000000000ABFE /* 254_PostLoadSuccess.swift in Sources */,
+				D2D0600000000000000ABFE /* 255_PostLoadMultiStop.swift in Sources */,
+				D2D0700000000000000ABFE /* 256_PostLoadAddressPicker.swift in Sources */,
+				D2D0800000000000000ABFE /* 257_PostLoadHazmatSubform.swift in Sources */,
+				D2D0900000000000000ABFE /* 258_PostLoadReeferSubform.swift in Sources */,
+				D2D1000000000000000ABFE /* 259_PostLoadTemplates.swift in Sources */,
+				D2F0000000000000000ABFD /* 280_CatalystDirectory.swift in Sources */,
+				D2F0100000000000000ABFD /* 281_CatalystDetailSummary.swift in Sources */,
+				D2F0200000000000000ABFD /* 282_CatalystLoadsHistory.swift in Sources */,
+				D2F0300000000000000ABFD /* 283_CatalystRatings.swift in Sources */,
+				D2F0400000000000000ABFD /* 284_CatalystCompliancePeek.swift in Sources */,
+				D2F0500000000000000ABFD /* 285_CatalystSparklineTrend.swift in Sources */,
+				D2F0600000000000000ABFD /* 286_AddFavoriteCatalyst.swift in Sources */,
+				D2F0700000000000000ABFD /* 287_CatalystRiskFlag.swift in Sources */,
+				D2F0800000000000000ABFD /* 288_CatalystContact.swift in Sources */,
+				D2F0900000000000000ABFD /* 289_InviteCatalyst.swift in Sources */,
+				D2G0000000000000000ABFC /* 290_WalletHome.swift in Sources */,
+				D2G0100000000000000ABFC /* 291_EusoWalletDetail.swift in Sources */,
+				D2G0200000000000000ABFC /* 292_SettlementsList.swift in Sources */,
+				D2G0300000000000000ABFC /* 293_SettlementDetail.swift in Sources */,
+				D2G0400000000000000ABFC /* 294_DisputeSettlement.swift in Sources */,
+				D2G0500000000000000ABFC /* 295_PaymentMethods.swift in Sources */,
+				D2G0600000000000000ABFC /* 296_AddPaymentMethod.swift in Sources */,
+				D2G0700000000000000ABFC /* 297_MonthlyStatement.swift in Sources */,
+				D2G0800000000000000ABFC /* 298_Sustainability.swift in Sources */,
+				D2G0900000000000000ABFC /* 299_Reports.swift in Sources */,
+				D2H0000000000000000ABFB /* 300_DocumentsAll.swift in Sources */,
+				D2H0100000000000000ABFB /* 301_DocumentPdfViewer.swift in Sources */,
+				D2H0200000000000000ABFB /* 302_DocumentImageViewer.swift in Sources */,
+				D2H0300000000000000ABFB /* 303_EusoTicketBol.swift in Sources */,
+				D2H0400000000000000ABFB /* 304_EusoTicketRunTicket.swift in Sources */,
+				D2H0500000000000000ABFB /* 305_EusoTicketHaulReceipt.swift in Sources */,
+				D2H0600000000000000ABFB /* 306_BolCounterSign.swift in Sources */,
+				D2H0700000000000000ABFB /* 307_RateConSign.swift in Sources */,
+				D2H0800000000000000ABFB /* 308_PodPhotoCapture.swift in Sources */,
+				D2H0900000000000000ABFB /* 309_WalletPass.swift in Sources */,
+				D2I0000000000000000ABFA /* 310_EsangThreadList.swift in Sources */,
+				D2I0100000000000000ABFA /* 311_EsangThread.swift in Sources */,
+				D2I0200000000000000ABFA /* 312_EsangAttachmentPicker.swift in Sources */,
+				D2I0300000000000000ABFA /* 313_EsangVoiceListening.swift in Sources */,
+				D2I0400000000000000ABFA /* 314_EsangTranscribing.swift in Sources */,
+				D2I0500000000000000ABFA /* 315_EsangAssistRankBids.swift in Sources */,
+				D2I0600000000000000ABFA /* 316_EsangAssistStatus.swift in Sources */,
+				D2I0700000000000000ABFA /* 317_EsangAssistForecast.swift in Sources */,
+				D2I0800000000000000ABFA /* 318_EsangDispatchEscalation.swift in Sources */,
+				D2I0900000000000000ABFA /* 319_EsangSettings.swift in Sources */,
+				D2N0000000000000000ABF9 /* 380_RfpInbox.swift in Sources */,
+				D2N0100000000000000ABF9 /* 381_RfpDetail.swift in Sources */,
+				D2N0200000000000000ABF9 /* 382_ContractList.swift in Sources */,
+				D2N0300000000000000ABF9 /* 383_ContractDetail.swift in Sources */,
+				D2N0400000000000000ABF9 /* 384_BulkRetender.swift in Sources */,
+				D2N0500000000000000ABF9 /* 385_BatchTender.swift in Sources */,
+				D2N0600000000000000ABF9 /* 386_FreightClaimComposer.swift in Sources */,
+				D2N0700000000000000ABF9 /* 387_FinanceReconciliation.swift in Sources */,
+				D2J0000000000000000ABF8 /* 320_MeHome.swift in Sources */,
+				D2J0100000000000000ABF8 /* 322_ProfileEdit.swift in Sources */,
+				D2J0200000000000000ABF8 /* 323_TierDetail.swift in Sources */,
+				D2J0300000000000000ABF8 /* 324_ComplianceDashboard.swift in Sources */,
+				D2J0400000000000000ABF8 /* 325_InsuranceDetail.swift in Sources */,
+				D2J0500000000000000ABF8 /* 326_FmcsaSaferMirror.swift in Sources */,
+				D2J0600000000000000ABF8 /* 327_HazmatAudit.swift in Sources */,
+				D2J0700000000000000ABF8 /* 333_ContactDetail.swift in Sources */,
+				D2J0800000000000000ABF8 /* 334_AddContact.swift in Sources */,
+				D2J0900000000000000ABF8 /* 336_GradeDetail.swift in Sources */,
+				D2K0000000000000000ABF7 /* 340_SettingsHome.swift in Sources */,
+				D2K0100000000000000ABF7 /* 341_LaneTemplatesList.swift in Sources */,
+				D2K0200000000000000ABF7 /* 342_LaneTemplateEditor.swift in Sources */,
+				D2K0300000000000000ABF7 /* 343_NotificationPrefs.swift in Sources */,
+				D2K0400000000000000ABF7 /* 344_SecuritySessions.swift in Sources */,
+				D2K0500000000000000ABF7 /* 345_TwoFactorManage.swift in Sources */,
+				D2K0600000000000000ABF7 /* 346_ConnectedApps.swift in Sources */,
+				D2K0700000000000000ABF7 /* 347_HelpSupport.swift in Sources */,
+				D2K0800000000000000ABF7 /* 348_Legal.swift in Sources */,
+				D2K0900000000000000ABF7 /* 349_AccountExportDelete.swift in Sources */,
+				D2M0000000000000000ABF6 /* PermissionRationale.swift in Sources */,
+				D2M0100000000000000ABF6 /* 360_PushPermission.swift in Sources */,
+				D2M0200000000000000ABF6 /* 361_LocationPermission.swift in Sources */,
+				D2M0300000000000000ABF6 /* 362_CameraPermission.swift in Sources */,
+				D2M0400000000000000ABF6 /* 363_MicPermission.swift in Sources */,
+				D2M0500000000000000ABF6 /* 364_OfflineBanner.swift in Sources */,
+				D2M0600000000000000ABF6 /* 365_NetworkErrorRetry.swift in Sources */,
+				D2M0700000000000000ABF6 /* 366_ForceUpdate.swift in Sources */,
+				D2M0800000000000000ABF6 /* 367_AccountSuspended.swift in Sources */,
+				D2M0900000000000000ABF6 /* 368_KybRejected.swift in Sources */,
+				D2M1000000000000000ABF6 /* 369_BackgroundBiometric.swift in Sources */,
+				D2P0000000000000000ABF5 /* 390_NotificationsInbox.swift in Sources */,
+				D2P0100000000000000ABF5 /* 391_NotificationDetail.swift in Sources */,
+				D2P0200000000000000ABF5 /* 392_SearchEverything.swift in Sources */,
+				D2P0300000000000000ABF5 /* 393_SearchResults.swift in Sources */,
+				D2P0400000000000000ABF5 /* 394_QuoteInstant.swift in Sources */,
+				D2P0500000000000000ABF5 /* 395_QuoteSaved.swift in Sources */,
+				D2P0600000000000000ABF5 /* 396_HomeEmptyState.swift in Sources */,
+				D2P0700000000000000ABF5 /* 397_RolePick.swift in Sources */,
+				D2P0800000000000000ABF5 /* 398_KybLegalEntity.swift in Sources */,
+				D2P0900000000000000ABF5 /* 399_EmailVerifyPending.swift in Sources */,
+				D2Q0000000000000000ABF4 /* 400_BulkUploadShell.swift in Sources */,
+				D2260000000000000AB0004 /* 260_PostedAwaitingBids.swift in Sources */,
+				D2261000000000000AB0005 /* 261_BiddingLiveFeed.swift in Sources */,
+				D2262000000000000AB0006 /* 262_AwardedPrePickup.swift in Sources */,
+				D2263000000000000AB0007 /* 263_PickupApproaching.swift in Sources */,
+				D2264000000000000AB0008 /* 264_PickupAtGate.swift in Sources */,
+				D2265000000000000AB0009 /* 265_PickupAtDock.swift in Sources */,
+				D2266000000000000AB000A /* 266_PickupBolSigning.swift in Sources */,
+				D2267000000000000AB000B /* 267_InTransitLive.swift in Sources */,
+				D2268000000000000AB000C /* 268_InTransitHosPause.swift in Sources */,
+				D2269000000000000AB000D /* 269_InTransitException.swift in Sources */,
+				D2270000000000000AB000E /* 270_DeliveryApproaching.swift in Sources */,
+				D2271000000000000AB000F /* 271_DeliveryAtReceiver.swift in Sources */,
+				D2272000000000000AB0010 /* 272_DeliveryPodSigned.swift in Sources */,
+				D2273000000000000AB0011 /* 273_PaperworkBolFinal.swift in Sources */,
+				D2274000000000000AB0012 /* 274_PaperworkAccessorials.swift in Sources */,
+				D2275000000000000AB0013 /* 275_ClosedSettlementPreview.swift in Sources */,
+				D2276000000000000AB0014 /* 276_ClosedPaid.swift in Sources */,
+				D2277000000000000AB0015 /* 277_CancelledPrePickup.swift in Sources */,
+				D2278000000000000AB0016 /* 278_CancelledInTransit.swift in Sources */,
+				D2279000000000000AB0017 /* 279_ReeferTempExcursion.swift in Sources */,
+				D2140000000000000021CO /* 214_ShipperSustainability.swift in Sources */,
+				D2150000000000000021CM /* 215_ShipperRFP.swift in Sources */,
+				D2160000000000000021CK /* 216_ShipperCompliance.swift in Sources */,
+				D2170000000000000021CI /* 217_ShipperContracts.swift in Sources */,
+				D2180000000000000021CG /* 218_ShipperDispatchControl.swift in Sources */,
+				D2190000000000000021CE /* 219_ShipperFreightClaims.swift in Sources */,
+				D2200000000000000022CB /* 220_ShipperRateBoard.swift in Sources */,
+				D2210000000000000022CD /* 221_ShipperRecurringLoads.swift in Sources */,
+				D2220000000000000022CF /* 222_ShipperLiveTracking.swift in Sources */,
+				D2230000000000000023CB /* 223_ShipperAgreements.swift in Sources */,
+				D2240000000000000024CB /* 224_ShipperPartnerDirectory.swift in Sources */,
+				D2250000000000000025CB /* 225_ShipperHotZones.swift in Sources */,
+				D2260000000000000026CB /* 226_ShipperDocumentCenter.swift in Sources */,
+				D2270000000000000027CB /* 227_ShipperSettlementDetail.swift in Sources */,
+				D2280000000000000028CB /* 228_ShipperBOLs.swift in Sources */,
+				D2290000000000000029CB /* 229_ShipperAllocations.swift in Sources */,
+				D2300000000000000030CB /* 230_ShipperBidThread.swift in Sources */,
+				D22FNAV0000000000FFCB /* ShipperNavController.swift in Sources */,
 				D1A11111111111111111SE01 /* 206_ShipperSettlements.swift in Sources */,
 				D1A11111111111111111SF01 /* 207_ShipperReports.swift in Sources */,
 				D1A11111111111111111SG01 /* 208_ShipperPaymentMethods.swift in Sources */,
@@ -1334,11 +1934,14 @@
 				D1A11111111111111111KMD1 /* 502_CatalystMatchDetail.swift in Sources */,
 				D1A11111111111111111EH01 /* 600_EscortHome.swift in Sources */,
 				D1A11111111111111111EAD1 /* 601_EscortAssignmentDetail.swift in Sources */,
+				D1A11111111111111111ECM1 /* 602_EscortCorridorMap.swift in Sources */,
 				D1A11111111111111111TH01 /* 700_TerminalHome.swift in Sources */,
 				D1A11111111111111111TQ01 /* 701_TerminalGateQueue.swift in Sources */,
 				D1A11111111111111111YM01 /* 702_TerminalYardMap.swift in Sources */,
 				D1A11111111111111111AH01 /* 800_AdminHome.swift in Sources */,
+				D1A11111111111111111CT01 /* 801_AdminControlTower.swift in Sources */,
 				D1A11111111111111111AT01 /* 802_AdminTenants.swift in Sources */,
+				D1A11111111111111111ATD1 /* 803_AdminTenantDetail.swift in Sources */,
 				D1A11111111111111111LP01 /* LifecycleProductContext.swift in Sources */,
 				A1A11111111111111111F001 /* PushService.swift in Sources */,
 				A1A11111111111111111F002 /* RealtimeService.swift in Sources */,
