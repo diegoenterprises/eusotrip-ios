@@ -358,6 +358,14 @@
 		D2S1400000000000000ABF2 /* 434_PartnerDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2S1400000000000000ACF2 /* 434_PartnerDetail.swift */; };
 		D2S1500000000000000ABF2 /* 435_PartnerAgreements.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2S1500000000000000ACF2 /* 435_PartnerAgreements.swift */; };
 		D2S1600000000000000ABF2 /* 436_HotZoneCityDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2S1600000000000000ACF2 /* 436_HotZoneCityDetail.swift */; };
+		D2T0000000000000000ABF1 /* 305_CarrierCounterResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2T0000000000000000ACF1 /* 305_CarrierCounterResponse.swift */; };
+		D2T0100000000000000ABF1 /* 306_CarrierMarketplace.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2T0100000000000000ACF1 /* 306_CarrierMarketplace.swift */; };
+		D2T0200000000000000ABF1 /* 307_CarrierBidCompose.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2T0200000000000000ACF1 /* 307_CarrierBidCompose.swift */; };
+		D2T0300000000000000ABF1 /* 308_CarrierMyBids.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2T0300000000000000ACF1 /* 308_CarrierMyBids.swift */; };
+		D2T0400000000000000ABF1 /* 309_CarrierAwardedLoads.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2T0400000000000000ACF1 /* 309_CarrierAwardedLoads.swift */; };
+		D2T0500000000000000ABF1 /* 310_CarrierAssignDriver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2T0500000000000000ACF1 /* 310_CarrierAssignDriver.swift */; };
+		D2T0600000000000000ABF1 /* 311_CarrierActiveLoad.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2T0600000000000000ACF1 /* 311_CarrierActiveLoad.swift */; };
+		D2T0700000000000000ABF1 /* 312_CarrierEarningsHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2T0700000000000000ACF1 /* 312_CarrierEarningsHome.swift */; };
 		D2260000000000000AB0004 /* 260_PostedAwaitingBids.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2260000000000000AC0004 /* 260_PostedAwaitingBids.swift */; };
 		D2261000000000000AB0005 /* 261_BiddingLiveFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2261000000000000AC0005 /* 261_BiddingLiveFeed.swift */; };
 		D2262000000000000AB0006 /* 262_AwardedPrePickup.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2262000000000000AC0006 /* 262_AwardedPrePickup.swift */; };
@@ -813,6 +821,14 @@
 		D2S1400000000000000ACF2 /* 434_PartnerDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 434_PartnerDetail.swift; path = EusoTrip/Views/Shipper/434_PartnerDetail.swift; sourceTree = SOURCE_ROOT; };
 		D2S1500000000000000ACF2 /* 435_PartnerAgreements.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 435_PartnerAgreements.swift; path = EusoTrip/Views/Shipper/435_PartnerAgreements.swift; sourceTree = SOURCE_ROOT; };
 		D2S1600000000000000ACF2 /* 436_HotZoneCityDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 436_HotZoneCityDetail.swift; path = EusoTrip/Views/Shipper/436_HotZoneCityDetail.swift; sourceTree = SOURCE_ROOT; };
+		D2T0000000000000000ACF1 /* 305_CarrierCounterResponse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 305_CarrierCounterResponse.swift; path = EusoTrip/Views/Carrier/305_CarrierCounterResponse.swift; sourceTree = SOURCE_ROOT; };
+		D2T0100000000000000ACF1 /* 306_CarrierMarketplace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 306_CarrierMarketplace.swift; path = EusoTrip/Views/Carrier/306_CarrierMarketplace.swift; sourceTree = SOURCE_ROOT; };
+		D2T0200000000000000ACF1 /* 307_CarrierBidCompose.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 307_CarrierBidCompose.swift; path = EusoTrip/Views/Carrier/307_CarrierBidCompose.swift; sourceTree = SOURCE_ROOT; };
+		D2T0300000000000000ACF1 /* 308_CarrierMyBids.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 308_CarrierMyBids.swift; path = EusoTrip/Views/Carrier/308_CarrierMyBids.swift; sourceTree = SOURCE_ROOT; };
+		D2T0400000000000000ACF1 /* 309_CarrierAwardedLoads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 309_CarrierAwardedLoads.swift; path = EusoTrip/Views/Carrier/309_CarrierAwardedLoads.swift; sourceTree = SOURCE_ROOT; };
+		D2T0500000000000000ACF1 /* 310_CarrierAssignDriver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 310_CarrierAssignDriver.swift; path = EusoTrip/Views/Carrier/310_CarrierAssignDriver.swift; sourceTree = SOURCE_ROOT; };
+		D2T0600000000000000ACF1 /* 311_CarrierActiveLoad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 311_CarrierActiveLoad.swift; path = EusoTrip/Views/Carrier/311_CarrierActiveLoad.swift; sourceTree = SOURCE_ROOT; };
+		D2T0700000000000000ACF1 /* 312_CarrierEarningsHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 312_CarrierEarningsHome.swift; path = EusoTrip/Views/Carrier/312_CarrierEarningsHome.swift; sourceTree = SOURCE_ROOT; };
 		D2260000000000000AC0004 /* 260_PostedAwaitingBids.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 260_PostedAwaitingBids.swift; path = EusoTrip/Views/Shipper/260_PostedAwaitingBids.swift; sourceTree = SOURCE_ROOT; };
 		D2261000000000000AC0005 /* 261_BiddingLiveFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 261_BiddingLiveFeed.swift; path = EusoTrip/Views/Shipper/261_BiddingLiveFeed.swift; sourceTree = SOURCE_ROOT; };
 		D2262000000000000AC0006 /* 262_AwardedPrePickup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 262_AwardedPrePickup.swift; path = EusoTrip/Views/Shipper/262_AwardedPrePickup.swift; sourceTree = SOURCE_ROOT; };
@@ -1251,6 +1267,14 @@
 				D2S1400000000000000ACF2 /* 434_PartnerDetail.swift */,
 				D2S1500000000000000ACF2 /* 435_PartnerAgreements.swift */,
 				D2S1600000000000000ACF2 /* 436_HotZoneCityDetail.swift */,
+				D2T0000000000000000ACF1 /* 305_CarrierCounterResponse.swift */,
+				D2T0100000000000000ACF1 /* 306_CarrierMarketplace.swift */,
+				D2T0200000000000000ACF1 /* 307_CarrierBidCompose.swift */,
+				D2T0300000000000000ACF1 /* 308_CarrierMyBids.swift */,
+				D2T0400000000000000ACF1 /* 309_CarrierAwardedLoads.swift */,
+				D2T0500000000000000ACF1 /* 310_CarrierAssignDriver.swift */,
+				D2T0600000000000000ACF1 /* 311_CarrierActiveLoad.swift */,
+				D2T0700000000000000ACF1 /* 312_CarrierEarningsHome.swift */,
 				D2260000000000000AC0004 /* 260_PostedAwaitingBids.swift */,
 				D2261000000000000AC0005 /* 261_BiddingLiveFeed.swift */,
 				D2262000000000000AC0006 /* 262_AwardedPrePickup.swift */,
@@ -1985,6 +2009,14 @@
 				D2S1400000000000000ABF2 /* 434_PartnerDetail.swift in Sources */,
 				D2S1500000000000000ABF2 /* 435_PartnerAgreements.swift in Sources */,
 				D2S1600000000000000ABF2 /* 436_HotZoneCityDetail.swift in Sources */,
+				D2T0000000000000000ABF1 /* 305_CarrierCounterResponse.swift in Sources */,
+				D2T0100000000000000ABF1 /* 306_CarrierMarketplace.swift in Sources */,
+				D2T0200000000000000ABF1 /* 307_CarrierBidCompose.swift in Sources */,
+				D2T0300000000000000ABF1 /* 308_CarrierMyBids.swift in Sources */,
+				D2T0400000000000000ABF1 /* 309_CarrierAwardedLoads.swift in Sources */,
+				D2T0500000000000000ABF1 /* 310_CarrierAssignDriver.swift in Sources */,
+				D2T0600000000000000ABF1 /* 311_CarrierActiveLoad.swift in Sources */,
+				D2T0700000000000000ABF1 /* 312_CarrierEarningsHome.swift in Sources */,
 				D2260000000000000AB0004 /* 260_PostedAwaitingBids.swift in Sources */,
 				D2261000000000000AB0005 /* 261_BiddingLiveFeed.swift in Sources */,
 				D2262000000000000AB0006 /* 262_AwardedPrePickup.swift in Sources */,
