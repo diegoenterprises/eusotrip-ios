@@ -374,6 +374,11 @@
 		D2U0500000000000000ABF0 /* 318_CarrierELD.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2U0500000000000000ACF0 /* 318_CarrierELD.swift */; };
 		D2U0600000000000000ABF0 /* 319_CarrierDriversList.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2U0600000000000000ACF0 /* 319_CarrierDriversList.swift */; };
 		D2U0700000000000000ABF0 /* 320_CarrierVehiclesList.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2U0700000000000000ACF0 /* 320_CarrierVehiclesList.swift */; };
+		D2V0000000000000000ABFE /* 401_BrokerLoadBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2V0000000000000000ACFE /* 401_BrokerLoadBoard.swift */; };
+		D2V0100000000000000ABFE /* 402_BrokerCarrierVet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2V0100000000000000ACFE /* 402_BrokerCarrierVet.swift */; };
+		D2V0200000000000000ABFE /* 403_BrokerTenderToCarrier.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2V0200000000000000ACFE /* 403_BrokerTenderToCarrier.swift */; };
+		D2V0300000000000000ABFE /* 404_BrokerCommissionQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2V0300000000000000ACFE /* 404_BrokerCommissionQueue.swift */; };
+		D2V0400000000000000ABFE /* 405_BrokerActiveBrokerages.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2V0400000000000000ACFE /* 405_BrokerActiveBrokerages.swift */; };
 		D2260000000000000AB0004 /* 260_PostedAwaitingBids.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2260000000000000AC0004 /* 260_PostedAwaitingBids.swift */; };
 		D2261000000000000AB0005 /* 261_BiddingLiveFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2261000000000000AC0005 /* 261_BiddingLiveFeed.swift */; };
 		D2262000000000000AB0006 /* 262_AwardedPrePickup.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2262000000000000AC0006 /* 262_AwardedPrePickup.swift */; };
@@ -845,6 +850,11 @@
 		D2U0500000000000000ACF0 /* 318_CarrierELD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 318_CarrierELD.swift; path = EusoTrip/Views/Carrier/318_CarrierELD.swift; sourceTree = SOURCE_ROOT; };
 		D2U0600000000000000ACF0 /* 319_CarrierDriversList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 319_CarrierDriversList.swift; path = EusoTrip/Views/Carrier/319_CarrierDriversList.swift; sourceTree = SOURCE_ROOT; };
 		D2U0700000000000000ACF0 /* 320_CarrierVehiclesList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 320_CarrierVehiclesList.swift; path = EusoTrip/Views/Carrier/320_CarrierVehiclesList.swift; sourceTree = SOURCE_ROOT; };
+		D2V0000000000000000ACFE /* 401_BrokerLoadBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 401_BrokerLoadBoard.swift; path = EusoTrip/Views/Broker/401_BrokerLoadBoard.swift; sourceTree = SOURCE_ROOT; };
+		D2V0100000000000000ACFE /* 402_BrokerCarrierVet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 402_BrokerCarrierVet.swift; path = EusoTrip/Views/Broker/402_BrokerCarrierVet.swift; sourceTree = SOURCE_ROOT; };
+		D2V0200000000000000ACFE /* 403_BrokerTenderToCarrier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 403_BrokerTenderToCarrier.swift; path = EusoTrip/Views/Broker/403_BrokerTenderToCarrier.swift; sourceTree = SOURCE_ROOT; };
+		D2V0300000000000000ACFE /* 404_BrokerCommissionQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 404_BrokerCommissionQueue.swift; path = EusoTrip/Views/Broker/404_BrokerCommissionQueue.swift; sourceTree = SOURCE_ROOT; };
+		D2V0400000000000000ACFE /* 405_BrokerActiveBrokerages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 405_BrokerActiveBrokerages.swift; path = EusoTrip/Views/Broker/405_BrokerActiveBrokerages.swift; sourceTree = SOURCE_ROOT; };
 		D2260000000000000AC0004 /* 260_PostedAwaitingBids.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 260_PostedAwaitingBids.swift; path = EusoTrip/Views/Shipper/260_PostedAwaitingBids.swift; sourceTree = SOURCE_ROOT; };
 		D2261000000000000AC0005 /* 261_BiddingLiveFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 261_BiddingLiveFeed.swift; path = EusoTrip/Views/Shipper/261_BiddingLiveFeed.swift; sourceTree = SOURCE_ROOT; };
 		D2262000000000000AC0006 /* 262_AwardedPrePickup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 262_AwardedPrePickup.swift; path = EusoTrip/Views/Shipper/262_AwardedPrePickup.swift; sourceTree = SOURCE_ROOT; };
@@ -1299,6 +1309,11 @@
 				D2U0500000000000000ACF0 /* 318_CarrierELD.swift */,
 				D2U0600000000000000ACF0 /* 319_CarrierDriversList.swift */,
 				D2U0700000000000000ACF0 /* 320_CarrierVehiclesList.swift */,
+				D2V0000000000000000ACFE /* 401_BrokerLoadBoard.swift */,
+				D2V0100000000000000ACFE /* 402_BrokerCarrierVet.swift */,
+				D2V0200000000000000ACFE /* 403_BrokerTenderToCarrier.swift */,
+				D2V0300000000000000ACFE /* 404_BrokerCommissionQueue.swift */,
+				D2V0400000000000000ACFE /* 405_BrokerActiveBrokerages.swift */,
 				D2260000000000000AC0004 /* 260_PostedAwaitingBids.swift */,
 				D2261000000000000AC0005 /* 261_BiddingLiveFeed.swift */,
 				D2262000000000000AC0006 /* 262_AwardedPrePickup.swift */,
@@ -2049,6 +2064,11 @@
 				D2U0500000000000000ABF0 /* 318_CarrierELD.swift in Sources */,
 				D2U0600000000000000ABF0 /* 319_CarrierDriversList.swift in Sources */,
 				D2U0700000000000000ABF0 /* 320_CarrierVehiclesList.swift in Sources */,
+				D2V0000000000000000ABFE /* 401_BrokerLoadBoard.swift in Sources */,
+				D2V0100000000000000ABFE /* 402_BrokerCarrierVet.swift in Sources */,
+				D2V0200000000000000ABFE /* 403_BrokerTenderToCarrier.swift in Sources */,
+				D2V0300000000000000ABFE /* 404_BrokerCommissionQueue.swift in Sources */,
+				D2V0400000000000000ABFE /* 405_BrokerActiveBrokerages.swift in Sources */,
 				D2260000000000000AB0004 /* 260_PostedAwaitingBids.swift in Sources */,
 				D2261000000000000AB0005 /* 261_BiddingLiveFeed.swift in Sources */,
 				D2262000000000000AB0006 /* 262_AwardedPrePickup.swift in Sources */,
