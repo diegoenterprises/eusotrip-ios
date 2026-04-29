@@ -3,8 +3,13 @@
 //  EusoTrip — REST client for HERE Traffic Analytics Speed Data.
 //
 //  Endpoint (enterprise product):
-//      GET https://traffic.ls.hereapi.com/traffic/6.3/flow.json
+//      GET https://traffic.hereapi.com/traffic/6.3/flow.json
 //      (historical speed profile aggregated per-link per-hour)
+//
+//  Note: HERE retired the legacy *.ls.hereapi.com host family.
+//  `1.base.maps.ls.hereapi.com` already returns 410 Gone on the web,
+//  and the rest of the family will follow. Updated 2026-04-29 to
+//  use the modern `traffic.hereapi.com` host (no `.ls.` prefix).
 //
 //  Traffic Analytics surfaces historical and typical speed patterns
 //  that feed lane-level ETA refinement. Unlike `HereTrafficClient`
@@ -74,7 +79,7 @@ final class HereTrafficAnalyticsClient {
         bbox: (minLng: Double, minLat: Double, maxLng: Double, maxLat: Double),
         time: Date? = nil
     ) async throws -> [HereAnalyticsFlowItem] {
-        var comps = URLComponents(string: "https://traffic.ls.hereapi.com/traffic/6.3/flow.json")!
+        var comps = URLComponents(string: "https://traffic.hereapi.com/traffic/6.3/flow.json")!
         var items: [URLQueryItem] = [
             URLQueryItem(
                 name: "bbox",
