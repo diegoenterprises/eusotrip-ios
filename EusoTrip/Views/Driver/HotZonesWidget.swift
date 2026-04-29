@@ -976,40 +976,56 @@ struct HotZonesHeatmapWebView: UIViewRepresentable {
 
               try {
                 var platform = new H.service.Platform({ apikey: "\(apiKey)" });
-                var defaultLayers = platform.createDefaultLayers({ tileSize: 512, ppi: 400 });
-
-                // Vector basemap. Authorized on the apiKey now that the
-                // HERE plan has a payment method on file (vector tile
-                // OMV endpoint returns 200; was 403 on the prior free
-                // tier, which is why this code previously fell back to
-                // raster). For night styling we try `mapnight` first
-                // since HERE ships it on paid tiers, then fall back to
-                // the default `.map` style — no YAML loader, since the
-                // night.yaml endpoint stays 403 on every tier path
-                // we've probed.
                 var styleName = "\(styleName)";
 
-                // Basemap selection — mirrors the web /hot-zones fix.
-                // Dark mode: vector.normal.night YAML returns 403 on every
-                // HERE plan we have probed (paid + free), so for night
-                // styling we prefer raster.normal.mapnight which authorizes
-                // cleanly. Day stays on vector.normal.map (200 OK on web).
-                // Each candidate is wrapped in a guard so a missing layer
-                // on a given plan tier never throws — the chain falls
-                // through to the next viable basemap instead of crashing
-                // H.Map() and leaving an empty rect.
-                function pickLayer(){
+                // Build basemap from HERE's modern OMV v2 vector tile
+                // service directly. Bypasses createDefaultLayers() which
+                // leans on H.service.MapTileService — flagged deprecated
+                // by HERE 2026-04-29 ("Use HERE Vector Tile API or Raster
+                // Tile API v3 instead"). Several tile coords already
+                // return 410 Gone from `1.base.maps.ls.hereapi.com/maptile/2.1/`,
+                // so the legacy raster fallback path is dead and the
+                // path createDefaultLayers walks for many tiers is
+                // following it. Going straight to OMV avoids both
+                // chains. Mirrors the web /hot-zones fix in
+                // client/src/components/maps/HereMap.tsx (commit ba7e32fe).
+                function buildOmvBaseLayer(){
                   try {
+                    if (!platform.getOMVService) return null;
+                    var omvService = platform.getOMVService({
+                      path: "v2/vectortiles/core/mc"
+                    });
+                    var styleUrl = (styleName === "normal.night")
+                      ? "https://js.api.here.com/v3/3.1/styles/omv/oslo/japan/night.yaml"
+                      : "https://js.api.here.com/v3/3.1/styles/omv/oslo/japan/normal.day.yaml";
+                    var style = new H.map.render.Style(styleUrl);
+                    var provider = new H.service.omv.Provider(omvService, style);
+                    return new H.map.layer.TileLayer(provider, { tileSize: 512 });
+                  } catch (e) {
+                    log("buildOmvBaseLayer error: " + e);
+                    return null;
+                  }
+                }
+
+                // Legacy fallback. Same defensive pickLayer as before
+                // but vector-first in BOTH modes — raster maptile/2.1
+                // is the dead path, no reason to ever prefer it.
+                var defaultLayers = null;
+                function pickLegacyLayer(){
+                  try {
+                    if (!defaultLayers) {
+                      defaultLayers = platform.createDefaultLayers({ tileSize: 512, ppi: 400 });
+                    }
                     if (styleName === "normal.night") {
-                      if (defaultLayers.raster
-                          && defaultLayers.raster.normal
-                          && defaultLayers.raster.normal.mapnight) {
-                        return defaultLayers.raster.normal.mapnight;
-                      }
                       if (defaultLayers.vector
                           && defaultLayers.vector.normal
                           && defaultLayers.vector.normal.mapnight) {
                         return defaultLayers.vector.normal.mapnight;
+                      }
+                      if (defaultLayers.raster
+                          && defaultLayers.raster.normal
+                          && defaultLayers.raster.normal.mapnight) {
+                        return defaultLayers.raster.normal.mapnight;
                       }
                     }
                     if (defaultLayers.vector
@@ -1023,9 +1039,10 @@ struct HotZonesHeatmapWebView: UIViewRepresentable {
                       return defaultLayers.raster.normal.map;
                     }
                     return null;
-                  } catch (e) { log("pickLayer error: " + e); return null; }
+                  } catch (e) { log("pickLegacyLayer error: " + e); return null; }
                 }
-                var baseLayer = pickLayer();
+
+                var baseLayer = buildOmvBaseLayer() || pickLegacyLayer();
                 if (!baseLayer) {
                   log("no basemap available — defaultLayers keys: " + Object.keys(defaultLayers||{}).join(","));
                   document.getElementById("map").innerHTML =
