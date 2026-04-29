@@ -995,9 +995,14 @@ struct HotZonesHeatmapWebView: UIViewRepresentable {
                     var omvService = platform.getOMVService({
                       path: "v2/vectortiles/core/mc"
                     });
-                    var styleUrl = (styleName === "normal.night")
-                      ? "https://js.api.here.com/v3/3.1/styles/omv/oslo/japan/night.yaml"
-                      : "https://js.api.here.com/v3/3.1/styles/omv/oslo/japan/normal.day.yaml";
+                    // Day YAML is the only one returning 200 on our HERE
+                    // plan tier (probed 2026-04-29). Every night YAML
+                    // candidate (oslo/normal.night, oslo/japan/night,
+                    // miami/normal.night, etc.) returns 403. Use day
+                    // for both modes; dark-mode tint is applied via the
+                    // brand-tint CSS overlay above the map.
+                    var styleUrl = "https://js.api.here.com/v3/3.1/styles/omv/normal.day.yaml";
+                    void styleName; // reserved for future night-tier swap
                     var style = new H.map.render.Style(styleUrl);
                     var provider = new H.service.omv.Provider(omvService, style);
                     return new H.map.layer.TileLayer(provider, { tileSize: 512 });
