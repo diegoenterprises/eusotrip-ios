@@ -64,14 +64,17 @@ private struct DispatchHomeBody: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
+                // Canonical lead: morning brief → weather. Driver 010 is the
+                // baseline; every role home opens with these two cards.
+                RoleHomeIntro()
                 if loading {
                     LifecycleCard { Text("Loading dispatch pulse…").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 } else if let err = loadError {
                     LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
                 } else if let k = kpi {
+                    if let e = topException { priorityWidget(e) }
                     kpiHero(k)
                     statsGrid(k)
-                    if let e = topException { priorityWidget(e) }
                     if !hosWatchlist.isEmpty { hosWidget }
                 }
                 Color.clear.frame(height: 96)

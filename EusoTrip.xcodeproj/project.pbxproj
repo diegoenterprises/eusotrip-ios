@@ -177,6 +177,7 @@
 		B1A11111111111111111AA01 /* WeatherSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA02 /* WeatherSnapshot.swift */; };
 		B1A11111111111111111AA03 /* WeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA04 /* WeatherService.swift */; };
 		B1A11111111111111111AA05 /* WeatherCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA06 /* WeatherCard.swift */; };
+		D2RHIN000000000000ABDS /* RoleHomeIntro.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RHIN000000000000ACDS /* RoleHomeIntro.swift */; };
 		B1A11111111111111111AA07 /* DriverTabPanes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA08 /* DriverTabPanes.swift */; };
 		B1A11111111111111111AB01 /* ESangParticleBurst.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AB02 /* ESangParticleBurst.swift */; };
 		B1A11111111111111111AC01 /* MeDetailScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AC02 /* MeDetailScreens.swift */; };
@@ -668,6 +669,7 @@
 		B1A11111111111111111AA02 /* WeatherSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherSnapshot.swift; sourceTree = "<group>"; };
 		B1A11111111111111111AA04 /* WeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherService.swift; sourceTree = "<group>"; };
 		B1A11111111111111111AA06 /* WeatherCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherCard.swift; sourceTree = "<group>"; };
+		D2RHIN000000000000ACDS /* RoleHomeIntro.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RoleHomeIntro.swift; path = EusoTrip/Views/Components/RoleHomeIntro.swift; sourceTree = SOURCE_ROOT; };
 		B1A11111111111111111AA08 /* DriverTabPanes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverTabPanes.swift; sourceTree = "<group>"; };
 		B1A11111111111111111AA09 /* EusoTrip.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = EusoTrip.entitlements; sourceTree = "<group>"; };
 		B1A11111111111111111AB02 /* ESangParticleBurst.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESangParticleBurst.swift; sourceTree = "<group>"; };
@@ -1531,6 +1533,7 @@
 			children = (
 				A12E1A1C0010CE0FF1000012 /* HereMapView.swift */,
 				B1A11111111111111111AA06 /* WeatherCard.swift */,
+				D2RHIN000000000000ACDS /* RoleHomeIntro.swift */,
 				B1A11111111111111111AB02 /* ESangParticleBurst.swift */,
 				B1A11111111111111111AE02 /* LoadDetailSheet.swift */,
 				B1A11111111111111111AF02 /* SOSEmergencySheet.swift */,
@@ -1935,6 +1938,7 @@
 				B1A11111111111111111AA03 /* WeatherService.swift in Sources */,
 				A1DMC0001000000000000020 /* DriverLocationResolver.swift in Sources */,
 				B1A11111111111111111AA05 /* WeatherCard.swift in Sources */,
+				D2RHIN000000000000ABDS /* RoleHomeIntro.swift in Sources */,
 				B1A11111111111111111AA07 /* DriverTabPanes.swift in Sources */,
 				B1A11111111111111111AB01 /* ESangParticleBurst.swift in Sources */,
 				B1A11111111111111111AC01 /* MeDetailScreens.swift in Sources */,
