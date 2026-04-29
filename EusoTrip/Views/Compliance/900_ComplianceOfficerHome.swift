@@ -33,9 +33,18 @@ private struct ComplianceDash: Decodable, Hashable {
     let nonCompliant: Int?
 }
 
+private struct ExpiringDocPriority: Decodable, Identifiable, Hashable {
+    let id: String
+    let type: String?
+    let driver: String?
+    let expiresAt: String?
+    let daysRemaining: Int?
+}
+
 private struct ComplianceHomeBody: View {
     @Environment(\.palette) private var palette
     @State private var dash: ComplianceDash? = nil
+    @State private var topExpiring: ExpiringDocPriority? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
 
@@ -45,7 +54,11 @@ private struct ComplianceHomeBody: View {
                 header
                 if loading { LifecycleCard { Text("Loading compliance score…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
                 else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
-                else if let d = dash { hero(d); statsGrid(d); cellLinks }
+                else if let d = dash {
+                    hero(d)
+                    statsGrid(d)
+                    if let e = topExpiring { expiringWidget(e) }
+                }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 8)
@@ -87,26 +100,22 @@ private struct ComplianceHomeBody: View {
         }
     }
 
-    private var cellLinks: some View {
-        VStack(spacing: 8) {
-            link(icon: "calendar.badge.exclamationmark", label: "Expiring documents", screen: "901")
-            link(icon: "exclamationmark.triangle.fill", label: "Recent violations", screen: "902")
-            link(icon: "shield.lefthalf.filled", label: "Hazmat certifications", screen: "903")
-            link(icon: "clock.fill", label: "HOS audit queue", screen: "904")
-            link(icon: "stethoscope", label: "Medical certifications", screen: "905")
-        }
-    }
-
-    private func link(icon: String, label: String, screen: String) -> some View {
+    private func expiringWidget(_ e: ExpiringDocPriority) -> some View {
         Button {
-            NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": screen])
+            NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "901"])
         } label: {
-            LifecycleCard {
-                HStack {
-                    Image(systemName: icon).foregroundStyle(LinearGradient.diagonal)
-                    Text(label).font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+            LifecycleCard(accentDanger: (e.daysRemaining ?? 99) < 7) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("CLOSEST EXPIRY").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle((e.daysRemaining ?? 99) < 7 ? Brand.danger : palette.textSecondary)
+                        Text(e.type ?? "Document").font(.system(size: 18, weight: .heavy)).foregroundStyle(palette.textPrimary).lineLimit(1)
+                        Text("\(e.driver ?? "—") · expires \(e.expiresAt ?? "—")").font(EType.caption).foregroundStyle(palette.textSecondary)
+                    }
                     Spacer(minLength: 0)
-                    Image(systemName: "chevron.right").foregroundStyle(palette.textTertiary)
+                    VStack(spacing: 0) {
+                        Text(e.daysRemaining.map { "\($0)" } ?? "—").font(.system(size: 28, weight: .heavy)).foregroundStyle(palette.textPrimary).monospacedDigit()
+                        Text("DAYS").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
+                    }
                 }
             }
         }.buttonStyle(.plain)
@@ -114,9 +123,13 @@ private struct ComplianceHomeBody: View {
 
     private func load() async {
         loading = true; loadError = nil
+        struct In: Encodable { let limit: Int }
         do {
-            let d: ComplianceDash = try await EusoTripAPI.shared.api.queryNoInput("compliance.getDashboardStats")
-            dash = d
+            async let d: ComplianceDash = EusoTripAPI.shared.api.queryNoInput("compliance.getDashboardStats")
+            async let exp: [ExpiringDocPriority] = EusoTripAPI.shared.api.query("compliance.getExpiringItems", input: In(limit: 10))
+            let (dash, items) = try await (d, exp)
+            self.dash = dash
+            self.topExpiring = items.sorted { ($0.daysRemaining ?? 999) < ($1.daysRemaining ?? 999) }.first
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }

@@ -1,6 +1,11 @@
 //
 //  700_DispatchHome.swift
-//  EusoTrip — Dispatch · Home (daily ops dashboard).
+//  EusoTrip — Dispatch · Home (glanceable widgets only).
+//
+//  Doctrine: Home is glanceable widgets — KPI hero, stat strip, and 1–2
+//  priority widgets. Never a list of nav cells. Heavy boards (kanban,
+//  bulk funnel, run-ticket capture, price book, reports) live under
+//  the operational bottom-nav tabs (Drivers · Loads · Me).
 //
 
 import SwiftUI
@@ -30,9 +35,28 @@ private struct DispatchKPI: Decodable, Hashable {
     let avgUtilizationPct: Int?
 }
 
+private struct PriorityException: Decodable, Identifiable, Hashable {
+    let id: String
+    let type: String?
+    let severity: String?
+    let driverName: String?
+    let loadNumber: String?
+    let createdAt: String?
+}
+
+private struct PriorityHOSDriver: Decodable, Identifiable, Hashable {
+    let id: String
+    let name: String
+    let status: String
+    let load: String?
+    let hoursRemaining: Double?
+}
+
 private struct DispatchHomeBody: View {
     @Environment(\.palette) private var palette
     @State private var kpi: DispatchKPI? = nil
+    @State private var topException: PriorityException? = nil
+    @State private var hosWatchlist: [PriorityHOSDriver] = []
     @State private var loading = true
     @State private var loadError: String? = nil
 
@@ -40,14 +64,22 @@ private struct DispatchHomeBody: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
-                if loading { LifecycleCard { Text("Loading KPIs…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
-                else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
-                else if let k = kpi { kpiHero(k); statsGrid(k); cellLinks }
+                if loading {
+                    LifecycleCard { Text("Loading dispatch pulse…").font(EType.caption).foregroundStyle(palette.textSecondary) }
+                } else if let err = loadError {
+                    LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
+                } else if let k = kpi {
+                    kpiHero(k)
+                    statsGrid(k)
+                    if let e = topException { priorityWidget(e) }
+                    if !hosWatchlist.isEmpty { hosWidget }
+                }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
+        .refreshable { await load() }
     }
 
     private var header: some View {
@@ -82,43 +114,71 @@ private struct DispatchHomeBody: View {
         }
     }
 
-    private var cellLinks: some View {
-        VStack(spacing: 8) {
-            link(icon: "rectangle.split.3x1.fill", label: "Lifecycle kanban", screen: "708")
-            link(icon: "square.stack.3d.up", label: "Bulk import funnel", screen: "709")
-            link(icon: "ticket.fill", label: "Run-ticket capture (EusoTicket)", screen: "710")
-            link(icon: "book.closed.fill", label: "Price book", screen: "711")
-            link(icon: "doc.text.magnifyingglass", label: "Reports hub", screen: "712")
-            link(icon: "person.3.fill", label: "Driver board (live)", screen: "701")
-            link(icon: "shippingbox.fill", label: "Load assignments", screen: "702")
-            link(icon: "exclamationmark.triangle.fill", label: "Exception triage", screen: "703")
-            link(icon: "clock.fill", label: "HOS alerts", screen: "704")
-            link(icon: "map.fill", label: "Route optimization", screen: "705")
-            link(icon: "message.fill", label: "Driver chat", screen: "706")
-            link(icon: "chart.bar.fill", label: "Daily KPI digest", screen: "707")
-        }
-    }
-
-    private func link(icon: String, label: String, screen: String) -> some View {
+    private func priorityWidget(_ e: PriorityException) -> some View {
         Button {
-            NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": screen])
+            NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "703"])
         } label: {
-            LifecycleCard {
-                HStack {
-                    Image(systemName: icon).foregroundStyle(LinearGradient.diagonal)
-                    Text(label).font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+            LifecycleCard(accentDanger: true) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("TRIAGE NOW").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(Brand.danger)
+                        Text(e.type ?? "Open exception").font(.system(size: 18, weight: .heavy)).foregroundStyle(palette.textPrimary).lineLimit(1)
+                        Text("\(e.driverName ?? "—") · \(e.loadNumber ?? "—")").font(EType.caption).foregroundStyle(palette.textSecondary)
+                        if let s = e.severity {
+                            Text(s.uppercased())
+                                .font(.system(size: 9, weight: .heavy)).tracking(0.6).foregroundStyle(.white)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(s.lowercased() == "high" || s.lowercased() == "critical" ? Brand.danger : palette.textTertiary)
+                                .clipShape(Capsule())
+                                .padding(.top, 4)
+                        }
+                    }
                     Spacer(minLength: 0)
-                    Image(systemName: "chevron.right").foregroundStyle(palette.textTertiary)
+                    Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 28)).foregroundStyle(LinearGradient.diagonal)
                 }
             }
         }.buttonStyle(.plain)
     }
 
+    private var hosWidget: some View {
+        LifecycleCard {
+            HStack {
+                Text("HOS WATCHLIST").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textSecondary)
+                Spacer(minLength: 0)
+                Text("UNDER 4H").font(.system(size: 9, weight: .heavy)).foregroundStyle(.white)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(LinearGradient.diagonal).clipShape(Capsule())
+            }
+            ForEach(hosWatchlist) { d in
+                HStack {
+                    Text(d.name).font(EType.bodyStrong).foregroundStyle(palette.textPrimary).lineLimit(1)
+                    Spacer(minLength: 0)
+                    if let load = d.load, !load.isEmpty {
+                        Text(load).font(EType.caption).foregroundStyle(palette.textTertiary).lineLimit(1)
+                    }
+                    Text(d.hoursRemaining.map { String(format: "%.1fh", $0) } ?? "—")
+                        .font(EType.bodyStrong).monospacedDigit()
+                        .foregroundStyle((d.hoursRemaining ?? 999) < 2 ? Brand.danger : palette.textPrimary)
+                }
+                .padding(.vertical, 4)
+            }
+        }
+    }
+
     private func load() async {
         loading = true; loadError = nil
+        struct DriverIn: Encodable { let limit: Int }
         do {
-            let k: DispatchKPI = try await EusoTripAPI.shared.api.queryNoInput("dispatch.getKPI")
+            async let kpiR: DispatchKPI = EusoTripAPI.shared.api.queryNoInput("dispatch.getKPI")
+            async let issuesR: [PriorityException] = EusoTripAPI.shared.api.queryNoInput("dispatch.getActiveIssues")
+            async let driversR: [PriorityHOSDriver] = EusoTripAPI.shared.api.query("dispatch.getDriverStatuses", input: DriverIn(limit: 100))
+            let (k, issues, drivers) = try await (kpiR, issuesR, driversR)
             kpi = k
+            topException = issues.first { ($0.severity?.lowercased() == "high" || $0.severity?.lowercased() == "critical") } ?? issues.first
+            hosWatchlist = drivers
+                .filter { ($0.hoursRemaining ?? 999) < 4 }
+                .sorted { ($0.hoursRemaining ?? 999) < ($1.hoursRemaining ?? 999) }
+                .prefix(3).map { $0 }
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
