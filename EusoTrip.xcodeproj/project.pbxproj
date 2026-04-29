@@ -387,6 +387,14 @@
 		D2DSPDSP0500000000000ABDS /* 705_DispatchRouteOptimization.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSPDSP0500000000000ACDS /* 705_DispatchRouteOptimization.swift */; };
 		D2DSPDSP0600000000000ABDS /* 706_DispatchDriverChat.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSPDSP0600000000000ACDS /* 706_DispatchDriverChat.swift */; };
 		D2DSPDSP0700000000000ABDS /* 707_DispatchDailyKPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSPDSP0700000000000ACDS /* 707_DispatchDailyKPI.swift */; };
+		D2DSP0800000000000ABDS /* 708_DispatchKanbanBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSP0800000000000ACDS /* 708_DispatchKanbanBoard.swift */; };
+		D2DSP0900000000000ABDS /* 709_DispatchBulkUploadKanban.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSP0900000000000ACDS /* 709_DispatchBulkUploadKanban.swift */; };
+		D2DSP1000000000000ABDS /* 710_DispatchRunTicketCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSP1000000000000ACDS /* 710_DispatchRunTicketCapture.swift */; };
+		D2DSP1100000000000ABDS /* 711_DispatchPriceBook.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSP1100000000000ACDS /* 711_DispatchPriceBook.swift */; };
+		D2DSP1200000000000ABDS /* 712_DispatchReportsHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSP1200000000000ACDS /* 712_DispatchReportsHub.swift */; };
+		D2CMP0000000000000ABDS /* 900_ComplianceOfficerHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2CMP0000000000000ACDS /* 900_ComplianceOfficerHome.swift */; };
+		D2CMP0100000000000ABDS /* 901_ComplianceExpiringDocs.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2CMP0100000000000ACDS /* 901_ComplianceExpiringDocs.swift */; };
+		D2CMP0200000000000ABDS /* 902_ComplianceViolations.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2CMP0200000000000ACDS /* 902_ComplianceViolations.swift */; };
 		D2260000000000000AB0004 /* 260_PostedAwaitingBids.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2260000000000000AC0004 /* 260_PostedAwaitingBids.swift */; };
 		D2261000000000000AB0005 /* 261_BiddingLiveFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2261000000000000AC0005 /* 261_BiddingLiveFeed.swift */; };
 		D2262000000000000AB0006 /* 262_AwardedPrePickup.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2262000000000000AC0006 /* 262_AwardedPrePickup.swift */; };
@@ -871,6 +879,14 @@
 		D2DSPDSP0500000000000ACDS /* 705_DispatchRouteOptimization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 705_DispatchRouteOptimization.swift; path = EusoTrip/Views/Dispatch/705_DispatchRouteOptimization.swift; sourceTree = SOURCE_ROOT; };
 		D2DSPDSP0600000000000ACDS /* 706_DispatchDriverChat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 706_DispatchDriverChat.swift; path = EusoTrip/Views/Dispatch/706_DispatchDriverChat.swift; sourceTree = SOURCE_ROOT; };
 		D2DSPDSP0700000000000ACDS /* 707_DispatchDailyKPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 707_DispatchDailyKPI.swift; path = EusoTrip/Views/Dispatch/707_DispatchDailyKPI.swift; sourceTree = SOURCE_ROOT; };
+		D2DSP0800000000000ACDS /* 708_DispatchKanbanBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 708_DispatchKanbanBoard.swift; path = EusoTrip/Views/Dispatch/708_DispatchKanbanBoard.swift; sourceTree = SOURCE_ROOT; };
+		D2DSP0900000000000ACDS /* 709_DispatchBulkUploadKanban.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 709_DispatchBulkUploadKanban.swift; path = EusoTrip/Views/Dispatch/709_DispatchBulkUploadKanban.swift; sourceTree = SOURCE_ROOT; };
+		D2DSP1000000000000ACDS /* 710_DispatchRunTicketCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 710_DispatchRunTicketCapture.swift; path = EusoTrip/Views/Dispatch/710_DispatchRunTicketCapture.swift; sourceTree = SOURCE_ROOT; };
+		D2DSP1100000000000ACDS /* 711_DispatchPriceBook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 711_DispatchPriceBook.swift; path = EusoTrip/Views/Dispatch/711_DispatchPriceBook.swift; sourceTree = SOURCE_ROOT; };
+		D2DSP1200000000000ACDS /* 712_DispatchReportsHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 712_DispatchReportsHub.swift; path = EusoTrip/Views/Dispatch/712_DispatchReportsHub.swift; sourceTree = SOURCE_ROOT; };
+		D2CMP0000000000000ACDS /* 900_ComplianceOfficerHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 900_ComplianceOfficerHome.swift; path = EusoTrip/Views/Compliance/900_ComplianceOfficerHome.swift; sourceTree = SOURCE_ROOT; };
+		D2CMP0100000000000ACDS /* 901_ComplianceExpiringDocs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 901_ComplianceExpiringDocs.swift; path = EusoTrip/Views/Compliance/901_ComplianceExpiringDocs.swift; sourceTree = SOURCE_ROOT; };
+		D2CMP0200000000000ACDS /* 902_ComplianceViolations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 902_ComplianceViolations.swift; path = EusoTrip/Views/Compliance/902_ComplianceViolations.swift; sourceTree = SOURCE_ROOT; };
 		D2260000000000000AC0004 /* 260_PostedAwaitingBids.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 260_PostedAwaitingBids.swift; path = EusoTrip/Views/Shipper/260_PostedAwaitingBids.swift; sourceTree = SOURCE_ROOT; };
 		D2261000000000000AC0005 /* 261_BiddingLiveFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 261_BiddingLiveFeed.swift; path = EusoTrip/Views/Shipper/261_BiddingLiveFeed.swift; sourceTree = SOURCE_ROOT; };
 		D2262000000000000AC0006 /* 262_AwardedPrePickup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 262_AwardedPrePickup.swift; path = EusoTrip/Views/Shipper/262_AwardedPrePickup.swift; sourceTree = SOURCE_ROOT; };
@@ -1338,6 +1354,14 @@
 				D2DSPDSP0500000000000ACDS /* 705_DispatchRouteOptimization.swift */,
 				D2DSPDSP0600000000000ACDS /* 706_DispatchDriverChat.swift */,
 				D2DSPDSP0700000000000ACDS /* 707_DispatchDailyKPI.swift */,
+				D2DSP0800000000000ACDS /* 708_DispatchKanbanBoard.swift */,
+				D2DSP0900000000000ACDS /* 709_DispatchBulkUploadKanban.swift */,
+				D2DSP1000000000000ACDS /* 710_DispatchRunTicketCapture.swift */,
+				D2DSP1100000000000ACDS /* 711_DispatchPriceBook.swift */,
+				D2DSP1200000000000ACDS /* 712_DispatchReportsHub.swift */,
+				D2CMP0000000000000ACDS /* 900_ComplianceOfficerHome.swift */,
+				D2CMP0100000000000ACDS /* 901_ComplianceExpiringDocs.swift */,
+				D2CMP0200000000000ACDS /* 902_ComplianceViolations.swift */,
 				D2260000000000000AC0004 /* 260_PostedAwaitingBids.swift */,
 				D2261000000000000AC0005 /* 261_BiddingLiveFeed.swift */,
 				D2262000000000000AC0006 /* 262_AwardedPrePickup.swift */,
@@ -2101,6 +2125,14 @@
 				D2DSPDSP0500000000000ABDS /* 705_DispatchRouteOptimization.swift in Sources */,
 				D2DSPDSP0600000000000ABDS /* 706_DispatchDriverChat.swift in Sources */,
 				D2DSPDSP0700000000000ABDS /* 707_DispatchDailyKPI.swift in Sources */,
+				D2DSP0800000000000ABDS /* 708_DispatchKanbanBoard.swift in Sources */,
+				D2DSP0900000000000ABDS /* 709_DispatchBulkUploadKanban.swift in Sources */,
+				D2DSP1000000000000ABDS /* 710_DispatchRunTicketCapture.swift in Sources */,
+				D2DSP1100000000000ABDS /* 711_DispatchPriceBook.swift in Sources */,
+				D2DSP1200000000000ABDS /* 712_DispatchReportsHub.swift in Sources */,
+				D2CMP0000000000000ABDS /* 900_ComplianceOfficerHome.swift in Sources */,
+				D2CMP0100000000000ABDS /* 901_ComplianceExpiringDocs.swift in Sources */,
+				D2CMP0200000000000ABDS /* 902_ComplianceViolations.swift in Sources */,
 				D2260000000000000AB0004 /* 260_PostedAwaitingBids.swift in Sources */,
 				D2261000000000000AB0005 /* 261_BiddingLiveFeed.swift in Sources */,
 				D2262000000000000AB0006 /* 262_AwardedPrePickup.swift in Sources */,

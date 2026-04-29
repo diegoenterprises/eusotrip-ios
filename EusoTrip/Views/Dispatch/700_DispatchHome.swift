@@ -84,12 +84,18 @@ private struct DispatchHomeBody: View {
 
     private var cellLinks: some View {
         VStack(spacing: 8) {
+            link(icon: "rectangle.split.3x1.fill", label: "Lifecycle kanban", screen: "708")
+            link(icon: "square.stack.3d.up", label: "Bulk import funnel", screen: "709")
+            link(icon: "ticket.fill", label: "Run-ticket capture (EusoTicket)", screen: "710")
+            link(icon: "book.closed.fill", label: "Price book", screen: "711")
+            link(icon: "doc.text.magnifyingglass", label: "Reports hub", screen: "712")
             link(icon: "person.3.fill", label: "Driver board (live)", screen: "701")
             link(icon: "shippingbox.fill", label: "Load assignments", screen: "702")
             link(icon: "exclamationmark.triangle.fill", label: "Exception triage", screen: "703")
             link(icon: "clock.fill", label: "HOS alerts", screen: "704")
             link(icon: "map.fill", label: "Route optimization", screen: "705")
             link(icon: "message.fill", label: "Driver chat", screen: "706")
+            link(icon: "chart.bar.fill", label: "Daily KPI digest", screen: "707")
         }
     }
 
