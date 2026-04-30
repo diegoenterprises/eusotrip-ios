@@ -19,7 +19,9 @@
 //      turn banner "In 0.8 mi · Turn right onto Rockfish Rd" +
 //      keep-right subtitle.
 //    • Geofence pill — "0.4 MI · ARMING DASH-CAM ON ENTRY".
-//    • Facility card — "Walmart SC 2718 / Hope Mills, NC · Receiving Dock".
+//    • Facility card — receiver brand + city/state + dock name (e.g.
+//      "ACME DC 7271 / SOMECITY, ST · Receiving Dock"); rendered live
+//      from `activeLoad.deliveryLocation`.
 //    • Hero — big gradient "2.0 mi to delivery" + right-column
 //      ETA / appt window / on-time chip.
 //    • 4-row product-specific pre-gate checklist with READY/PENDING/NA chips.
@@ -51,7 +53,7 @@ struct ApproachingDelivery: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
-    // MARK: - Figma fallback (2026-04-24 frame — Walmart SC 2718)
+    // MARK: - Figma fallback (2026-04-24 frame — receiver-DC variant)
     private let fallbackClock    = "00:08"
     private let fallbackTurnIn   = "0.8"
     private let fallbackTurnWord = "In"
@@ -373,13 +375,16 @@ struct ApproachingDeliveryScreen: View {
     }
 }
 
+// PNG canon at `01 Driver/{Light,Dark}/020 Approaching Delivery.png`
+// pins TRIPS current on lifecycle Ring 3 (active-trip approach).
+// Icon set + trailing slot normalized to canonical 010-019 layout.
 private func driverNavLeading_020() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
 }
 private func driverNavTrailing_020() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person", isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
 }
 
 #Preview("020 · Approaching Delivery · Dark") {
