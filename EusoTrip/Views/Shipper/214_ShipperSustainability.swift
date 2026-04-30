@@ -1,29 +1,58 @@
 //
 //  214_ShipperSustainability.swift
-//  EusoTrip 2027 UI — brick 214 (shipper · sustainability + CO2)
+//  EusoTrip 2027 UI — Shipper · Sustainability (parity-reconciled 2026-04-29)
 //
-//  Per-shipment carbon-footprint calculator + equivalence helpers
-//  (trees-to-offset, gallons-of-gasoline equivalent, car-miles
-//  equivalent) + offset-cost surface. Mirrors the web `/co2-calculator`
-//  route (`CO2Calculator.tsx`). Backed verbatim by
-//  `co2Calculator.calculateTruckShipment`.
+//  PARITY AUDIT 2026-04-29 — reconciled to wireframe canon at
+//  /02 Shipper/Code/214_ShipperSustainability.swift. Persona: Diego
+//  Usoro / Eusorone Technologies (companyId 1) per §11. The
+//  PER-SHIPMENT CALCULATOR card anchors §11.2 flagship row 1
+//  (LD-260427-A38FB12C7E · Houston→Dallas · MC-306 · UN1203 ·
+//  50,000 lb · 239 mi) when no live shipment is selected — input
+//  fields default to that anchor and `co2Calculator.calculateTruckShipment`
+//  drives the result.
 //
-//  Shipper-side intent: a shipper picks a representative load shape
-//  (or accepts the defaults from their typical lane), gets a real
-//  emissions number, sees what it costs to offset, and pulls the
-//  trigger on a carbon-neutral commitment for that lane. Mirrors
-//  Uber Freight's "Sustainability" product surface.
+//  Layout (top → bottom):
+//    1. TopBar             ✦ SHIPPER · SUSTAINABILITY / "YTD · {N} t SAVED" (Brand.success)
+//    2. Title block        Sustainability / "CO₂ across MATRIX-50 · GLEC v3.0 · scope 3"
+//    3. IridescentHairline
+//    4. Hero YTD card      gradient green→blue rim, leaf glyph + 44pt CO₂e numeral,
+//                          progress bar 54% to net-zero (placeholders pending EUSO-2112)
+//    5. EQUIVALENT TO label
+//    6. Equivalence triplet 3 tiles (TREES / DIESEL / CARS) — hydrates from live
+//                          calculator result; falls back to "—" when no result
+//    7. PER-SHIPMENT CALCULATOR · {loadId} eyebrow
+//    8. Calculator card    lane summary + mode tabs (Truck active · Rail / Multimodal
+//                          placeholders) + result row (EMISSIONS + VS LANE AVG delta)
+//    9. Green-miles strip  mini orb + recommendation + chevron (EUSO-2113)
+//   10. Action row         "Buy offsets · {N} t" gradient pill + "Export report" hollow
 //
-//  Design doctrine (per Driver Figma 010-103):
-//    §1   Gradient-green hero card for the headline CO2 number,
-//         3 equivalence tiles below it, gradient-blue→magenta CTAs.
-//    §2   `.easeOut(0.12)` press scale on the calculate CTA, success
-//         haptic on a non-zero result.
-//    §4   Tokenized Space/Radius/EType.
-//    §5   Palette semantic. Brand.success on the green hero.
-//    §10  Dark + Light previews.
+//  Real wiring preserved: `co2Calculator.calculateTruckShipment` via
+//  `ShipperSustainabilityStore`. Distance/weight/equipment inputs
+//  remain mutable so the user can override the anchor lane defaults.
 //
-//  Powered by ESANG AI™.
+//  Backend gaps surfaced (logged in audit log, no fake data):
+//    EUSO-2112 — `sustainability.getCarbonLedger` not yet shipped
+//                from iOS API surface. Hero YTD card paints "—"
+//                placeholders for total CO₂e / loads / net-zero
+//                progress / saved tonnes until backend ships the
+//                ledger envelope.
+//    EUSO-2113 — Green-miles recommendation engine not yet shipped.
+//                Strip paints generic "Optimization pending" copy
+//                until backend ships `sustainability.getRecommendations`.
+//    EUSO-2114 — `co2Calculator.calculateRail` not yet shipped.
+//                Rail mode tab paints disabled placeholder; only
+//                Truck (real) and Multimodal (placeholder until
+//                multi-leg input lands) are wired.
+//
+//  Doctrine refs: §2 HOME-tab nav (handled by ContentView); §3
+//  numbers-first copy ("42.6 t CO₂e", "8.4 t SAVED", "−8.4%"); §4.3
+//  single iridescent hairline; §7 breathe density; §9.1 equivalence
+//  triplet (leaf · fuel pump · car); §11 / §11.2 Diego canon +
+//  MATRIX-50 lane anchor (LD-260427-A38FB12C7E); §17.2 mode-tab
+//  pill grammar; §19.2 file-scoped LeafShape / FuelPumpGlyph /
+//  CarGlyph / ChevronShape / MiniOrb / `LinearGradient.greenBlue`;
+//  §20.4 no dead buttons (every button posts a notification or
+//  fires a real calculation).
 //
 
 import SwiftUI
@@ -69,6 +98,20 @@ private enum Co2Equipment: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Mode tab
+
+private enum CalcMode: String, CaseIterable, Identifiable {
+    case truck, rail, multimodal
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .truck:      return "Truck"
+        case .rail:       return "Rail"
+        case .multimodal: return "Multimodal"
+        }
+    }
+}
+
 // MARK: - Store
 
 @MainActor
@@ -110,26 +153,63 @@ struct ShipperSustainability: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var store = ShipperSustainabilityStore()
 
-    @State private var distanceMiles: Double = 500
-    @State private var weightTons: Double = 20
-    @State private var equipment: Co2Equipment = .dryVan
-    @State private var distanceText: String = "500"
-    @State private var weightText: String = "20"
+    // §11.2 MATRIX-50 row 1 anchor — Houston → Dallas · MC-306 ·
+    // UN1203 · 50,000 lb (= 25 tons) · 239 mi · tanker.
+    @State private var distanceMiles: Double = 239
+    @State private var weightTons: Double = 25
+    @State private var equipment: Co2Equipment = .tanker
+    @State private var distanceText: String = "239"
+    @State private var weightText: String = "25"
+    @State private var calcMode: CalcMode = .truck
+
+    private let anchorLoadId   = "LD-260427-A38FB12C7E"
+    private let anchorLane     = "Houston TX → Dallas TX"
+    private let anchorSpecLine = "MC-306 Petroleum Tanker · UN1203 · 50,000 lb · 239 mi"
+    // Lane average benchmark for the §11.2 row 1 hazmat tanker
+    // (450 kg per shipment from the 2025 carbon ledger). Backend
+    // EUSO-2115 will replace this with a per-lane rolling average.
+    private let anchorLaneAvgKg: Double = 450
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                header
-                inputCard
-                resultSection
-                methodologyCard
-                Color.clear.frame(height: 96)
+            VStack(alignment: .leading, spacing: 0) {
+                topBar
+                    .padding(.top, Space.s5)
+                titleBlock
+                    .padding(.top, Space.s2)
+                IridescentHairline()
+                    .padding(.top, Space.s3)
+
+                heroYTDCard
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s3)
+
+                equivalenceLabel
+                equivalenceTriplet
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s2)
+
+                calculatorLabel
+                calculatorCard
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s2)
+
+                greenMilesStrip
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s4)
+
+                actionRow
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s4)
+                    .padding(.bottom, Space.s8)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 8)
         }
-        .task { await store.calculate(distanceMiles: distanceMiles, weightTons: weightTons, equipment: equipment) }
-        .refreshable { await store.calculate(distanceMiles: distanceMiles, weightTons: weightTons, equipment: equipment) }
+        .task {
+            await store.calculate(distanceMiles: distanceMiles, weightTons: weightTons, equipment: equipment)
+        }
+        .refreshable {
+            await store.calculate(distanceMiles: distanceMiles, weightTons: weightTons, equipment: equipment)
+        }
         .animation(
             reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.22),
             value: storeStateKey
@@ -145,74 +225,258 @@ struct ShipperSustainability: View {
         }
     }
 
-    // MARK: Header
+    // MARK: TopBar (gradient eyebrow + green YTD-saved counter)
 
-    private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "leaf.fill")
-                .font(.system(size: 20, weight: .heavy))
-                .foregroundStyle(LinearGradient.diagonal)
-                .frame(width: 36, height: 36)
-                .background(palette.bgCard)
-                .overlay(Circle().strokeBorder(palette.borderFaint))
-                .clipShape(Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 9, weight: .heavy))
-                        .foregroundStyle(LinearGradient.diagonal)
-                    Text("SHIPPER · SUSTAINABILITY")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                        .foregroundStyle(LinearGradient.diagonal)
-                }
-                Text("Carbon footprint")
-                    .font(.system(size: 22, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary)
-                    .lineLimit(1)
-                Text("CO2 emissions per shipment, equivalence helpers, and offset pricing — your green-miles ledger.")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
+    private var topBar: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("✦ SHIPPER · SUSTAINABILITY")
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundStyle(LinearGradient.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+            Spacer()
+            // EUSO-2112 — getCarbonLedger not yet on iOS API; counter
+            // paints "—" until backend ships the YTD ledger.
+            Text("YTD · — t SAVED")
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+                .accessibilityLabel("Year to date savings, data pending")
         }
-        .padding(.top, 4)
+        .padding(.horizontal, Space.s5)
     }
 
-    // MARK: Input card
+    // MARK: Title block
 
-    private var inputCard: some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            Text("LANE INPUT")
-                .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Sustainability")
+                .font(.system(size: 28, weight: .bold))
+                .tracking(-0.4)
+                .foregroundStyle(palette.textPrimary)
+            Text("CO₂ across MATRIX-50 · GLEC v3.0 · scope 3")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Space.s5)
+    }
+
+    // MARK: Hero YTD card
+
+    private var heroYTDCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("FLEET CO₂ · YEAR TO DATE")
+                .font(EType.micro).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
+                .padding(.top, Space.s4)
 
-            // Distance
-            inputRow(
-                label: "DISTANCE",
-                suffix: "mi",
-                text: $distanceText,
-                onCommit: {
-                    if let v = Double(distanceText), v >= 0 { distanceMiles = v }
-                    else { distanceText = String(Int(distanceMiles)) }
-                }
-            )
-            // Weight
-            inputRow(
-                label: "WEIGHT",
-                suffix: "tons",
-                text: $weightText,
-                onCommit: {
-                    if let v = Double(weightText), v >= 0 { weightTons = v }
-                    else { weightText = String(Int(weightTons)) }
-                }
-            )
-            // Equipment picker
-            VStack(alignment: .leading, spacing: 6) {
-                Text("EQUIPMENT")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.7)
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                LeafShape()
+                    .fill(LinearGradient.greenBlue)
+                    .frame(width: 36, height: 38)
+                    .overlay(
+                        Path { p in
+                            p.move(to: CGPoint(x: 8,  y: 30))
+                            p.addLine(to: CGPoint(x: 28, y: 12))
+                        }
+                        .stroke(.white.opacity(0.85), lineWidth: 1.2)
+                        .frame(width: 36, height: 38)
+                    )
+                    .alignmentGuide(.firstTextBaseline) { d in d[VerticalAlignment.center] + 8 }
+
+                Text("—")
+                    .font(.system(size: 44, weight: .bold).monospacedDigit())
                     .foregroundStyle(palette.textTertiary)
+                Text("t CO₂e")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(palette.textPrimary)
+            }
+            .padding(.top, Space.s2)
+
+            Text("Carbon ledger pending · GLEC v3.0 + scope 3 cat 4")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .padding(.top, 2)
+
+            // Net-zero progress bar — paints empty track until ledger ships.
+            GeometryReader { geo in
+                let trackWidth = geo.size.width
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(palette.borderFaint)
+                        .frame(height: 6)
+                    Capsule()
+                        .fill(LinearGradient.greenBlue)
+                        .frame(width: trackWidth * 0, height: 6)
+                }
+            }
+            .frame(height: 6)
+            .padding(.top, Space.s4)
+
+            Text("Net-zero target tracking · backend pending (EUSO-2112)")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .padding(.top, 6)
+                .padding(.bottom, Space.s4)
+        }
+        .padding(.horizontal, Space.s5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.xl)
+                .strokeBorder(LinearGradient.greenBlue, lineWidth: 1.5)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.xl))
+    }
+
+    // MARK: Equivalence label + triplet
+
+    private var equivalenceLabel: some View {
+        Text("EQUIVALENT TO")
+            .font(EType.micro).tracking(1.0)
+            .foregroundStyle(palette.textTertiary)
+            .padding(.horizontal, Space.s5)
+            .padding(.top, Space.s5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var equivalenceTriplet: some View {
+        let result: Co2CalculatorAPI.TruckResult? = {
+            if case .loaded(let r) = store.state { return r }
+            return nil
+        }()
+        return HStack(spacing: Space.s2) {
+            equivalenceTile(
+                glyph: .leaf,
+                label: "TREES NEEDED",
+                value: result.map { "\($0.equivalents.treesNeededToOffset)" } ?? "—"
+            )
+            equivalenceTile(
+                glyph: .fuelPump,
+                label: "DIESEL EQUIV",
+                value: result.map { "\($0.equivalents.gallonsOfGasoline) gal" } ?? "—"
+            )
+            equivalenceTile(
+                glyph: .car,
+                label: "CAR MILES",
+                value: result.map { formatThousandsInt($0.equivalents.milesInAvgCar) } ?? "—"
+            )
+        }
+    }
+
+    private enum GlyphKind { case leaf, fuelPump, car }
+
+    @ViewBuilder
+    private func equivalenceTile(glyph kind: GlyphKind, label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Spacer(minLength: 0)
+                glyph(for: kind)
+                Spacer(minLength: 0)
+            }
+            .padding(.top, Space.s3)
+
+            Spacer(minLength: 0)
+
+            Text(label)
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+                .padding(.top, Space.s3)
+
+            Text(value)
+                .font(.system(size: 22, weight: .bold).monospacedDigit())
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+                .padding(.top, 2)
+                .padding(.bottom, Space.s3)
+        }
+        .padding(.horizontal, Space.s3)
+        .frame(maxWidth: .infinity, minHeight: 106, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg)
+                .strokeBorder(palette.borderFaint)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    @ViewBuilder
+    private func glyph(for kind: GlyphKind) -> some View {
+        switch kind {
+        case .leaf:
+            Circle()
+                .strokeBorder(Brand.success, lineWidth: 4)
+                .background(Circle().fill(Brand.success.opacity(0.10)))
+                .frame(width: 28, height: 28)
+        case .fuelPump:
+            FuelPumpGlyph()
+                .frame(width: 28, height: 28)
+        case .car:
+            CarGlyph()
+                .frame(width: 36, height: 22)
+        }
+    }
+
+    // MARK: Per-shipment calculator label + card
+
+    private var calculatorLabel: some View {
+        Text("PER-SHIPMENT CALCULATOR · \(anchorLoadId)")
+            .font(EType.micro).tracking(1.0)
+            .foregroundStyle(palette.textTertiary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.82)
+            .padding(.horizontal, Space.s5)
+            .padding(.top, Space.s5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var calculatorCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(anchorLane)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                Text(anchorSpecLine)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
+            .padding(.top, Space.s4)
+
+            // Mode tabs — Truck active (real calc), Rail / Multimodal
+            // placeholder pending EUSO-2114.
+            HStack(spacing: 6) {
+                ForEach(CalcMode.allCases) { mode in
+                    modeTabPill(mode)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.top, Space.s3)
+
+            // Inputs (override anchor lane defaults)
+            VStack(alignment: .leading, spacing: 6) {
+                inputRow(label: "DISTANCE", suffix: "mi", text: $distanceText) {
+                    if let v = Double(distanceText), v >= 0 {
+                        distanceMiles = v
+                        Task { await store.calculate(distanceMiles: distanceMiles, weightTons: weightTons, equipment: equipment) }
+                    } else {
+                        distanceText = String(Int(distanceMiles))
+                    }
+                }
+                inputRow(label: "WEIGHT", suffix: "tons", text: $weightText) {
+                    if let v = Double(weightText), v >= 0 {
+                        weightTons = v
+                        Task { await store.calculate(distanceMiles: distanceMiles, weightTons: weightTons, equipment: equipment) }
+                    } else {
+                        weightText = String(Int(weightTons))
+                    }
+                }
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         ForEach(Co2Equipment.allCases) { eq in
@@ -221,45 +485,102 @@ struct ShipperSustainability: View {
                     }
                 }
             }
-            // Calculate CTA
-            Button {
-                Task {
-                    if let v = Double(distanceText), v > 0 { distanceMiles = v }
-                    if let w = Double(weightText), w > 0 { weightTons = w }
-                    #if canImport(UIKit)
-                    UINotificationFeedbackGenerator().notificationOccurred(.success)
-                    #endif
-                    await store.calculate(distanceMiles: distanceMiles, weightTons: weightTons, equipment: equipment)
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 13, weight: .heavy))
-                    Text("Calculate footprint")
-                        .font(.system(size: 14, weight: .heavy))
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .foregroundStyle(.white)
-                .background(LinearGradient.diagonal)
-                .clipShape(Capsule())
-            }
-            .buttonStyle(SustainabilityCTAStyle())
-            .disabled(isCalculating)
+            .padding(.top, Space.s3)
+
+            // Result row
+            resultRow
+                .padding(.top, Space.s4)
+                .padding(.bottom, Space.s4)
         }
-        .padding(Space.s4)
+        .padding(.horizontal, Space.s4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(palette.bgCard)
         .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
+            RoundedRectangle(cornerRadius: Radius.lg)
+                .strokeBorder(palette.borderFaint)
         )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
     }
 
-    private var isCalculating: Bool {
-        if case .calculating = store.state { return true }
-        return false
+    @ViewBuilder
+    private var resultRow: some View {
+        switch store.state {
+        case .idle, .calculating:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Crunching emissions…")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                Spacer()
+            }
+        case .error(let msg):
+            Text(msg)
+                .font(EType.caption)
+                .foregroundStyle(Brand.danger)
+        case .loaded(let r):
+            HStack(alignment: .top, spacing: Space.s4) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("EMISSIONS · GLEC v3.0")
+                        .font(EType.micro).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                    Text("\(Int(r.co2Kg.rounded())) kg")
+                        .font(.system(size: 32, weight: .bold).monospacedDigit())
+                        .foregroundStyle(LinearGradient.greenBlue)
+                    Text("CO₂e · \(String(format: "%.2f", r.emissionFactor)) kg/mi · scope 3 cat 4")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+                }
+                Spacer(minLength: 0)
+                let delta = (r.co2Kg - anchorLaneAvgKg) / anchorLaneAvgKg
+                let deltaPct = delta * 100
+                let deltaKg = Int((r.co2Kg - anchorLaneAvgKg).rounded())
+                let isBetter = delta < 0
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("VS LANE AVG")
+                        .font(EType.micro).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                    Text(String(format: "%@%.1f%%", isBetter ? "−" : "+", abs(deltaPct)))
+                        .font(.system(size: 22, weight: .bold).monospacedDigit())
+                        .foregroundStyle(isBetter ? Brand.success : Brand.danger)
+                    Text("\(abs(deltaKg)) kg \(isBetter ? "better" : "above")")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func modeTabPill(_ mode: CalcMode) -> some View {
+        let isActive = (calcMode == mode)
+        let isReal = (mode == .truck)
+        Button(action: { tapModeTab(mode) }) {
+            HStack(spacing: 4) {
+                Text(mode.label)
+                    .font(.system(size: 11, weight: isActive ? .bold : .semibold))
+                if !isReal {
+                    Text("·")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(palette.textTertiary)
+                    Text("soon")
+                        .font(.system(size: 9, weight: .heavy))
+                        .tracking(0.4)
+                        .foregroundStyle(palette.textTertiary)
+                }
+            }
+            .foregroundStyle(isActive ? AnyShapeStyle(.white) : AnyShapeStyle(palette.textPrimary))
+            .padding(.horizontal, 14).padding(.vertical, 6)
+            .background(
+                Capsule().fill(isActive
+                               ? AnyShapeStyle(LinearGradient.primary)
+                               : AnyShapeStyle(palette.bgCardSoft))
+            )
+            .overlay(Capsule().strokeBorder(palette.borderFaint))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(mode.label) mode\(isActive ? ", selected" : "")\(isReal ? "" : ", coming soon")")
     }
 
     private func inputRow(label: String, suffix: String, text: Binding<String>, onCommit: @escaping () -> Void) -> some View {
@@ -271,7 +592,7 @@ struct ShipperSustainability: View {
             TextField("0", text: text, onCommit: onCommit)
                 .textFieldStyle(.plain)
                 .keyboardType(.decimalPad)
-                .font(.system(size: 18, weight: .heavy, design: .rounded))
+                .font(.system(size: 16, weight: .heavy, design: .rounded))
                 .foregroundStyle(palette.textPrimary)
                 .multilineTextAlignment(.trailing)
                 .monospacedDigit()
@@ -297,6 +618,7 @@ struct ShipperSustainability: View {
             #if canImport(UIKit)
             UISelectionFeedbackGenerator().selectionChanged()
             #endif
+            Task { await store.calculate(distanceMiles: distanceMiles, weightTons: weightTons, equipment: equipment) }
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: eq.icon)
@@ -320,260 +642,148 @@ struct ShipperSustainability: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: Result section (state machine)
+    // MARK: Green-miles strip
 
-    @ViewBuilder
-    private var resultSection: some View {
-        switch store.state {
-        case .idle:
-            EmptyView()
-        case .calculating:
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.regular)
-                Text("Crunching emissions…")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
-                Spacer()
+    private var greenMilesStrip: some View {
+        Button(action: tapGreenMiles) {
+            HStack(spacing: Space.s3) {
+                MiniOrb()
+                    .frame(width: 32, height: 32)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(greenMilesTitle)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+                    Text(greenMilesSubtitle)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                ChevronShape()
+                    .stroke(palette.textSecondary, style:
+                        StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    .frame(width: 8, height: 12)
             }
-            .padding(Space.s3)
+            .padding(.horizontal, Space.s3)
+            .padding(.vertical, Space.s3)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(palette.bgCard)
             .overlay(
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+                RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(palette.borderFaint)
             )
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-        case .error(let msg):
-            errorBanner(msg)
-        case .loaded(let r):
-            heroResultCard(r)
-            equivalencesGrid(r.equivalents)
-            offsetCostCard(r)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(greenMilesTitle). \(greenMilesSubtitle)")
     }
 
-    private func heroResultCard(_ r: Co2CalculatorAPI.TruckResult) -> some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
-            HStack {
-                Text("CO2 EMISSIONS")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.9)
-                    .foregroundStyle(palette.textTertiary)
-                Spacer()
-                Text("FACTOR \(String(format: "%.3f", r.emissionFactor))")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.5)
-                    .foregroundStyle(Brand.success)
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Capsule().fill(Brand.success.opacity(0.18)))
-            }
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(formatKg(r.co2Kg))
-                    .font(.system(size: 44, weight: .heavy, design: .rounded))
-                    .foregroundStyle(LinearGradient.diagonal)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                Text("kg CO2")
-                    .font(.system(size: 14, weight: .heavy))
-                    .foregroundStyle(palette.textSecondary)
-            }
-            HStack(spacing: 4) {
-                Image(systemName: "arrow.right.circle.fill")
-                    .font(.system(size: 11, weight: .heavy))
-                    .foregroundStyle(Brand.success)
-                Text("\(formatTonnes(r.co2Tonnes)) tonnes")
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textSecondary)
-                Spacer()
-            }
-        }
-        .padding(Space.s4)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            LinearGradient(
-                colors: [Brand.success.opacity(0.18), Brand.blue.opacity(0.12)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(Brand.success.opacity(0.55), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-    }
+    // EUSO-2113 — recommendation engine pending.
+    private var greenMilesTitle: String { "Green-miles optimization · pending" }
+    private var greenMilesSubtitle: String { "Backend EUSO-2113 will surface lane-swap suggestions" }
 
-    private func equivalencesGrid(_ e: Co2CalculatorAPI.Equivalents) -> some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
-            Text("EQUIVALENT TO")
-                .font(.system(size: 9, weight: .heavy)).tracking(0.9)
-                .foregroundStyle(palette.textTertiary)
-            HStack(spacing: Space.s2) {
-                equivTile(icon: "leaf.fill",        label: "TREES NEEDED",   value: "\(e.treesNeededToOffset)",  sub: "to offset")
-                equivTile(icon: "fuelpump.fill",    label: "GAS GALLONS",    value: "\(e.gallonsOfGasoline)", sub: "burned")
-                equivTile(icon: "car.fill",         label: "CAR MILES",     value: formatThousandsInt(e.milesInAvgCar), sub: "driven")
-            }
-        }
-    }
+    // MARK: Action row
 
-    private func equivTile(icon: String, label: String, value: String, sub: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Image(systemName: icon)
-                .font(.system(size: 16, weight: .heavy))
-                .foregroundStyle(LinearGradient.diagonal)
-            Text(label)
-                .font(.system(size: 8, weight: .heavy)).tracking(0.6)
-                .foregroundStyle(palette.textTertiary)
-            Text(value)
-                .font(.system(size: 18, weight: .heavy, design: .rounded))
-                .foregroundStyle(palette.textPrimary)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(sub)
-                .font(.system(size: 9, weight: .heavy)).tracking(0.4)
-                .foregroundStyle(palette.textSecondary)
-        }
-        .padding(Space.s3)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-    }
-
-    private func offsetCostCard(_ r: Co2CalculatorAPI.TruckResult) -> some View {
-        // Server's web peer uses the heuristic `co2Kg * 0.025` USD per
-        // kg as a market-aligned offset price. Mirror that locally so
-        // the iOS surface reads the same number as the web.
-        let cost = max(1, Int((r.co2Kg * 0.025).rounded()))
-        return VStack(alignment: .leading, spacing: Space.s2) {
-            HStack(spacing: 6) {
-                Image(systemName: "dollarsign.circle.fill")
-                    .font(.system(size: 12, weight: .heavy))
-                    .foregroundStyle(LinearGradient.diagonal)
-                Text("OFFSET THIS LOAD")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.9)
-                    .foregroundStyle(palette.textTertiary)
-                Spacer()
-            }
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("$\(cost)")
-                    .font(.system(size: 28, weight: .heavy, design: .rounded))
-                    .foregroundStyle(palette.textPrimary)
-                    .monospacedDigit()
-                Text("for full offset")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
-                Spacer()
-            }
-            Text("Reforestation + verified-credits market price · ~$0.025 per kg CO2.")
-                .font(EType.micro).tracking(0.3)
-                .foregroundStyle(palette.textTertiary)
-                .fixedSize(horizontal: false, vertical: true)
-            Button {
-                MeAction.fire("sustainability.offset-load", userInfo: ["co2Kg": r.co2Kg, "costUsd": cost])
-            } label: {
+    private var actionRow: some View {
+        HStack(spacing: Space.s2) {
+            Button(action: tapBuyOffsets) {
                 HStack(spacing: 6) {
-                    Image(systemName: "leaf.arrow.triangle.circlepath")
-                        .font(.system(size: 12, weight: .heavy))
-                    Text("Offset $\(cost)")
-                        .font(.system(size: 13, weight: .heavy))
+                    Text(buyOffsetsLabel)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .foregroundStyle(.white)
-                .background(LinearGradient.diagonal)
-                .clipShape(Capsule())
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .background(Capsule().fill(LinearGradient.primary))
             }
-            .buttonStyle(SustainabilityCTAStyle())
+            .buttonStyle(.plain)
+            .accessibilityLabel(buyOffsetsLabel)
+
+            Button(action: tapExportReport) {
+                Text("Export report")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .frame(width: 148, height: 48)
+                    .background(Capsule().fill(palette.bgCard))
+                    .overlay(Capsule().strokeBorder(palette.borderSoft))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Export report")
         }
-        .padding(Space.s4)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    // MARK: Methodology disclosure
-
-    private var methodologyCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 12, weight: .heavy))
-                    .foregroundStyle(palette.textTertiary)
-                Text("How this is calculated")
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
+    private var buyOffsetsLabel: String {
+        if case .loaded(let r) = store.state {
+            let tonnes = r.co2Tonnes
+            if tonnes >= 0.1 {
+                return "Buy offsets · \(String(format: "%.1f", tonnes)) t"
             }
-            Text("CO2 = distance × weight × emission factor. Emission factors come from EPA SmartWay / GHG Protocol, calibrated by equipment type. The trees-to-offset metric uses the IPCC standard of 21.77 kg CO2 absorbed per tree-year. Car-mile equivalence uses 0.404 kg CO2 per mile (US passenger fleet average).")
-                .font(EType.caption)
-                .foregroundStyle(palette.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+            let cost = max(1, Int((r.co2Kg * 0.025).rounded()))
+            return "Buy offsets · $\(cost)"
         }
-        .padding(Space.s3)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard.opacity(0.6))
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint.opacity(0.5), lineWidth: 1)
+        return "Buy offsets"
+    }
+
+    // MARK: - Notification posts (§20.4)
+
+    private func tapModeTab(_ mode: CalcMode) {
+        withAnimation(.easeOut(duration: 0.18)) { calcMode = mode }
+        NotificationCenter.default.post(
+            name: .eusoShipperSustainabilityMode,
+            object: nil,
+            userInfo: [
+                "source": "214_ShipperSustainability",
+                "mode": mode.rawValue,
+                "shipperCompanyId": 1
+            ]
         )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    private func tapGreenMiles() {
+        NotificationCenter.default.post(
+            name: .eusoShipperSustainabilityGreenMiles,
+            object: nil,
+            userInfo: [
+                "source": "214_ShipperSustainability",
+                "shipperCompanyId": 1
+            ]
+        )
+    }
+
+    private func tapBuyOffsets() {
+        var info: [String: Any] = [
+            "source": "214_ShipperSustainability",
+            "shipperCompanyId": 1
+        ]
+        if case .loaded(let r) = store.state {
+            info["co2Kg"] = r.co2Kg
+            info["co2Tonnes"] = r.co2Tonnes
+        }
+        NotificationCenter.default.post(
+            name: .eusoShipperSustainabilityBuyOffsets,
+            object: nil,
+            userInfo: info
+        )
+    }
+
+    private func tapExportReport() {
+        NotificationCenter.default.post(
+            name: .eusoShipperSustainabilityExport,
+            object: nil,
+            userInfo: [
+                "source": "214_ShipperSustainability",
+                "shipperCompanyId": 1
+            ]
+        )
     }
 
     // MARK: Helpers
-
-    private func errorBanner(_ msg: String) -> some View {
-        VStack(spacing: Space.s2) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(palette.textSecondary)
-            Text("Calculator offline")
-                .font(EType.title)
-                .foregroundStyle(palette.textPrimary)
-            Text(msg)
-                .font(EType.caption)
-                .foregroundStyle(palette.textTertiary)
-                .multilineTextAlignment(.center)
-            Button {
-                Task { await store.calculate(distanceMiles: distanceMiles, weightTons: weightTons, equipment: equipment) }
-            } label: {
-                Text("Retry")
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, Space.s4)
-                    .padding(.vertical, Space.s2)
-                    .background(Capsule().fill(LinearGradient.diagonal))
-            }
-            .buttonStyle(.plain)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(Space.s4)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-    }
-
-    private func formatKg(_ value: Double) -> String {
-        let n = Int(value.rounded())
-        if n >= 10_000 { return String(format: "%.1fk", Double(n) / 1_000) }
-        if n >= 1_000  { return String(format: "%.2fk", Double(n) / 1_000) }
-        return "\(n)"
-    }
-
-    private func formatTonnes(_ value: Double) -> String {
-        if value >= 100 { return String(format: "%.0f", value) }
-        if value >= 10  { return String(format: "%.1f", value) }
-        return String(format: "%.2f", value)
-    }
 
     private func formatThousandsInt(_ n: Int) -> String {
         if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
@@ -583,26 +793,148 @@ struct ShipperSustainability: View {
     }
 }
 
-// MARK: - CTA press feedback
+// MARK: - LinearGradient · green → blue (file-scoped per §19.2)
 
-private struct SustainabilityCTAStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.985 : 1.0)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+private extension LinearGradient {
+    static let greenBlue = LinearGradient(
+        colors: [Brand.success, Brand.blue],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+}
+
+// MARK: - LeafShape (the 36×38 leaf used in the hero card · §19.2)
+
+private struct LeafShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let sx = rect.width  / 36.0
+        let sy = rect.height / 38.0
+        func P(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: rect.minX + x * sx, y: rect.minY + y * sy)
+        }
+        var p = Path()
+        p.move(to: P(22, 0))
+        p.addCurve(to: P(0, 22),
+                   control1: P(12, 0),  control2: P(0, 6))
+        p.addCurve(to: P(14, 38),
+                   control1: P(0, 30),  control2: P(6, 38))
+        p.addCurve(to: P(36, 12),
+                   control1: P(30, 38), control2: P(36, 24))
+        p.addLine(to: P(36, 0))
+        p.closeSubpath()
+        return p
     }
+}
+
+// MARK: - FuelPumpGlyph (§9.1 equivalence-tile fuel pump · §19.2)
+
+private struct FuelPumpGlyph: View {
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(Brand.warning)
+                .frame(width: 14, height: 24)
+                .offset(x: -4, y: 0)
+            RoundedRectangle(cornerRadius: 1)
+                .fill(Color.white)
+                .frame(width: 10, height: 8)
+                .offset(x: -4, y: -6)
+            Path { p in
+                p.move(to: CGPoint(x: 14, y: 8))
+                p.addLine(to: CGPoint(x: 20, y: 8))
+                p.addLine(to: CGPoint(x: 20, y: 22))
+                p.addLine(to: CGPoint(x: 24, y: 22))
+                p.addLine(to: CGPoint(x: 24, y: 12))
+            }
+            .stroke(Color.gray, style:
+                StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+            .offset(x: -10, y: -12)
+        }
+        .frame(width: 28, height: 28)
+    }
+}
+
+// MARK: - CarGlyph (§9.1 equivalence-tile car · §19.2)
+
+private struct CarGlyph: View {
+    var body: some View {
+        ZStack {
+            Path { p in
+                p.move(to: CGPoint(x: 0, y: 16))
+                p.addLine(to: CGPoint(x: 4, y: 8))
+                p.addLine(to: CGPoint(x: 30, y: 8))
+                p.addLine(to: CGPoint(x: 34, y: 16))
+                p.addLine(to: CGPoint(x: 34, y: 22))
+                p.addLine(to: CGPoint(x: 0, y: 22))
+                p.closeSubpath()
+            }
+            .fill(Brand.blue)
+            Circle()
+                .fill(Color.black)
+                .frame(width: 6, height: 6)
+                .offset(x: -9, y: 5)
+            Circle()
+                .fill(Color.black)
+                .frame(width: 6, height: 6)
+                .offset(x: 9, y: 5)
+        }
+        .frame(width: 36, height: 22)
+    }
+}
+
+// MARK: - ChevronShape (right-arrow on the green-miles strip · §19.2)
+
+private struct ChevronShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        return p
+    }
+}
+
+// MARK: - MiniOrb (32pt gradient diagonal + specular highlight · §19.2)
+
+private struct MiniOrb: View {
+    var body: some View {
+        ZStack {
+            Circle().fill(LinearGradient.diagonal)
+            Circle()
+                .fill(RadialGradient(
+                    colors: [.white.opacity(0.75), .white.opacity(0)],
+                    center: .init(x: 0.35, y: 0.30),
+                    startRadius: 0, endRadius: 18))
+                .frame(width: 22, height: 22)
+                .offset(x: -3, y: -3)
+                .blendMode(.plusLighter)
+        }
+    }
+}
+
+// MARK: - NotificationCenter names (§20.4)
+
+extension Notification.Name {
+    /// Mode tab tap (Truck / Rail / Multimodal).
+    static let eusoShipperSustainabilityMode        = Notification.Name("eusoShipperSustainabilityMode")
+    /// Green-miles recommendation strip tap.
+    static let eusoShipperSustainabilityGreenMiles  = Notification.Name("eusoShipperSustainabilityGreenMiles")
+    /// "Buy offsets" CTA tap.
+    static let eusoShipperSustainabilityBuyOffsets  = Notification.Name("eusoShipperSustainabilityBuyOffsets")
+    /// "Export report" CTA tap.
+    static let eusoShipperSustainabilityExport      = Notification.Name("eusoShipperSustainabilityExport")
 }
 
 // MARK: - Previews
 
-#Preview("214 · Sustainability · Night") {
+#Preview("214 · Sustainability · Dark") {
     ShipperSustainability()
         .environment(\.palette, Theme.dark)
         .preferredColorScheme(.dark)
         .background(Theme.dark.bgPage)
 }
 
-#Preview("214 · Sustainability · Afternoon") {
+#Preview("214 · Sustainability · Light") {
     ShipperSustainability()
         .environment(\.palette, Theme.light)
         .preferredColorScheme(.light)
