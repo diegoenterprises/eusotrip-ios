@@ -5,7 +5,7 @@
 
 import SwiftUI
 
-struct PickupBolSigningScreen: View {
+struct ShipperPickupBolSigningScreen: View {
     let theme: Theme.Palette
     let loadId: String
     var body: some View {
@@ -84,8 +84,8 @@ private struct BolSigningBody: View {
 }
 
 #Preview("266 · Pickup · BOL signing · Night") {
-    PickupBolSigningScreen(theme: Theme.dark, loadId: "0").environmentObject(EusoTripSession()).preferredColorScheme(.dark)
+    ShipperPickupBolSigningScreen(theme: Theme.dark, loadId: "0").environmentObject(EusoTripSession()).preferredColorScheme(.dark)
 }
 #Preview("266 · Pickup · BOL signing · Afternoon") {
-    PickupBolSigningScreen(theme: Theme.light, loadId: "0").environmentObject(EusoTripSession()).preferredColorScheme(.light)
+    ShipperPickupBolSigningScreen(theme: Theme.light, loadId: "0").environmentObject(EusoTripSession()).preferredColorScheme(.light)
 }
