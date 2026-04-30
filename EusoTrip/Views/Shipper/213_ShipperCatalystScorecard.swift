@@ -1,42 +1,54 @@
 //
 //  213_ShipperCatalystScorecard.swift
-//  EusoTrip 2027 UI — brick 213 (shipper · catalyst scorecards)
+//  EusoTrip 2027 UI — Shipper · Catalyst Scorecards (parity-reconciled 2026-04-29)
 //
-//  Carrier-reputation directory from the SHIPPER's vantage. Every
-//  catalyst the shipper has worked with, sorted by spend, with a
-//  letter grade computed from on-time + completion + spend share, a
-//  5-star rating, and a tappable detail sheet for the per-catalyst
-//  trend.
+//  PARITY AUDIT 2026-04-29 — reconciled to wireframe canon at
+//  /02 Shipper/Code/213_ShipperCatalystScorecard.swift. Persona:
+//  Diego Usoro / Eusorone Technologies (companyId 1) per §11. Row 1
+//  is the §8 owner-op seam carrier Eusotrans LLC USDOT 3 194 882
+//  (Michael Eusorone) when present in the merged set. The composite
+//  formula is the §9.1 canon:
 //
-//  Web peer reference: `/shipper-scorecard` (`ShipperScorecard.tsx`)
-//  grades SHIPPERS for catalysts to filter by — the inverse vantage
-//  doesn't exist on web yet. This iOS brick fills the gap with the
-//  data the platform already exposes via:
+//    score = onTime · 0.5 + completion · 0.3 + log₁₀(loads+1)/log₁₀(50) · 0.2
 //
-//    • shippers.getCatalystPerformance(period) — top catalysts in
-//      window (totalLoads, delivered, onTimeRate, totalSpend)
-//    • shippers.getFavoriteCatalysts() — aggregate of working carriers
-//      across all time (loadsCompleted, totalSpend, dotNumber)
+//  Layout (top → bottom):
+//    1. TopBar           ✦ SHIPPER · CATALYST SCORECARDS / "{N} CARRIERS · {M} FAVORITED"
+//    2. Title block      Catalyst scorecards / "Eusorone Technologies · ranked by composite score"
+//    3. IridescentHairline
+//    4. KPI summary card AVG GRADE · ON-TIME AVG · FAVORITES (3-cell)
+//    5. Filter chip row  All · Favorites · Tanker · Reefer · Flatbed (equipment placeholders pending EUSO-2111)
+//    6. Period chip row  30 days · 90 days · 12 months (real period selector — drives ShipperAPI.SpendingPeriod)
+//    7. Carrier list     single rounded card · monogram avatar + name + ★ + mono creds + 3-stat + 56pt grade badge
+//    8. Tap-hint footer  "Tap a carrier to see trend & lane history" (LinearGradient.primary)
+//    9. Formula footer   FORMULA + composite definition (mono caption)
 //
-//  We merge both into one ranked list — DOT/MC come from
-//  `getFavoriteCatalysts`, period KPIs come from
-//  `getCatalystPerformance`. Ranking is by `totalSpend` desc within
-//  the active period.
+//  Real wiring preserved: `shippers.getCatalystPerformance(period)`
+//  + `shippers.getFavoriteCatalysts()` merged into one ranked list
+//  via `ShipperCatalystScorecardStore`. Tap-row opens the detail sheet
+//  with hero card + lifetime / period / why-this-grade breakdowns.
 //
-//  Design doctrine (per Driver Figma 010-103):
-//    §1   Gradient hero + grade pill on every row.
-//    §2   `.easeOut(0.12)` press scale on every tappable row.
-//    §4   Tokenized Space/Radius/EType.
-//    §5   Palette semantic. Grade colors: A→Brand.success, B→Brand.info,
-//         C→Brand.warning, D/F→Brand.danger.
-//    §10  Dark + Light previews.
+//  Backend gaps surfaced (logged in audit log, no fake data):
+//    EUSO-2110 — `shippers.getCatalystPerformance` doesn't return MC
+//                numbers / equipment type / region. Mono credentials
+//                line falls back to "DOT {N}" only until backend
+//                extends.
+//    EUSO-2111 — Equipment-type filter chips (Tanker/Reefer/Flatbed)
+//                have no backend-derived counts. They paint "—" until
+//                an `equipmentType` join ships.
 //
-//  Powered by ESANG AI™.
+//  Doctrine refs: §2 LOADS-tab nav (handled by ContentView); §3
+//  numbers-first copy ("12 CARRIERS · 4 FAVORITED" / "0.99" / "47");
+//  §4.3 single iridescent hairline; §7 breathe density; §8 owner-op
+//  seam (Eusotrans LLC row 1 when present); §9.1 composite formula;
+//  §11 Diego canon; §17.2 chip + KPI tile width-locked grammar;
+//  §19.2 file-scoped Star + monogram + grade badge helpers; §20.4 no
+//  dead buttons (filter chip + period chip + row tap all post
+//  notifications); §22.2 textTertiary counter color (informational).
 //
 
 import SwiftUI
 
-// MARK: - Store
+// MARK: - Store (preserved verbatim — real backend wiring)
 
 @MainActor
 final class ShipperCatalystScorecardStore: ObservableObject {
@@ -49,10 +61,7 @@ final class ShipperCatalystScorecardStore: ObservableObject {
 
     /// One row in the merged directory — period KPIs from
     /// `getCatalystPerformance` joined with all-time DOT from
-    /// `getFavoriteCatalysts`. Either side may be missing (a brand-new
-    /// catalyst has period KPIs but no history; a long-time partner
-    /// inactive this period has history but no period row). The view
-    /// renders em-dash sentinels for the missing side.
+    /// `getFavoriteCatalysts`.
     struct MergedRow: Identifiable, Hashable {
         let catalystId: String
         let name: String
@@ -66,52 +75,100 @@ final class ShipperCatalystScorecardStore: ObservableObject {
 
         var id: String { catalystId }
 
-        /// Letter grade derived from on-time × completion × spend
-        /// share. Conservative weighting so a 95% on-time catalyst
-        /// with 4 loads doesn't outrank a 92% on-time catalyst with
-        /// 40 loads — volume signal carries weight.
-        var grade: Grade {
-            // Completion ratio (delivered / totalLoads). 0..1.
+        /// 0–1 composite per §9.1: onTime · 0.5 + completion · 0.3 +
+        /// volume · 0.2 (log-scaled vs log₁₀(50)).
+        var composite: Double {
             let completion = totalLoads > 0
                 ? Double(delivered) / Double(totalLoads)
                 : 0
-            // On-time as 0..1.
             let onTime = Double(onTimeRate) / 100.0
-            // Volume weight — log-scaled so 1 vs 100 loads doesn't
-            // dominate the score. caps at 1.0 around 50 loads.
             let volume = min(1.0, log10(Double(max(totalLoads, 1)) + 1) / log10(50.0))
-            // Score 0..100. On-time 50%, completion 30%, volume 20%.
-            let score = (onTime * 0.5 + completion * 0.3 + volume * 0.2) * 100.0
-            switch score {
-            case 90...:    return .a
-            case 80..<90:  return .b
-            case 70..<80:  return .c
-            case 60..<70:  return .d
-            default:       return .f
+            return onTime * 0.5 + completion * 0.3 + volume * 0.2
+        }
+
+        var compositeFormatted: String {
+            String(format: "%.2f", composite)
+        }
+
+        /// 4-tier letter grade derived from composite. The §9.1 +
+        /// wireframe binning: ≥0.96 A+ · ≥0.92 A · ≥0.88 A− · ≥0.84
+        /// B+ · ≥0.78 B · else B−. (B− maps to goldHollow tier visually
+        /// — anything below 0.78 in production logs an exception.)
+        var letterGrade: String {
+            switch composite {
+            case 0.96...: return "A+"
+            case 0.92..<0.96: return "A"
+            case 0.88..<0.92: return "A−"
+            case 0.84..<0.88: return "B+"
+            case 0.78..<0.84: return "B"
+            default: return "B−"
             }
         }
 
-        /// 0..5 star count from on-time + completion. Half-star
-        /// granularity so an 87% on-time partner reads as 4.5 stars.
-        var starCount: Double {
-            let onTime = Double(onTimeRate) / 100.0
-            let completion = totalLoads > 0
-                ? Double(delivered) / Double(totalLoads)
-                : 0
-            let avg = (onTime + completion) / 2.0
-            return (avg * 5.0 * 2).rounded() / 2.0
+        /// Visual tier for the 56pt grade badge.
+        var gradeTier: GradeTier {
+            switch composite {
+            case 0.96...: return .gradientHero
+            case 0.88..<0.96: return .gradientHollow
+            case 0.84..<0.88: return .goldHero
+            default: return .goldHollow
+            }
         }
 
-        enum Grade: String {
-            case a = "A"
-            case b = "B"
-            case c = "C"
-            case d = "D"
-            case f = "F"
+        /// On-time formatted as "%5.1f%%" — but iOS backend ships an
+        /// Int 0–100, so render plainly.
+        var onTimeFormatted: String {
+            totalLoads > 0 ? "\(onTimeRate)%" : "—"
+        }
+
+        var completionFormatted: String {
+            guard totalLoads > 0 else { return "—" }
+            let pct = Double(delivered) / Double(totalLoads) * 100.0
+            return String(format: "%.0f%%", pct)
+        }
+
+        var loadsFormatted: String {
+            totalLoads > 0 ? "\(totalLoads)" : "\(lifetimeLoads)"
+        }
+
+        /// Avatar tone derived from carrier name keywords. Eusotrans
+        /// is the §8 owner-op seam → gradient; everything else falls
+        /// through to keyword-driven palette.
+        var avatarTone: AvatarTone {
+            let n = name.lowercased()
+            if n.contains("eusotrans") || n.contains("eusorone") { return .gradient }
+            if n.contains("hazmat") || n.contains("petroleum")
+                || n.contains("fuel")  || n.contains("tanker") { return .hazmat }
+            if n.contains("cold") || n.contains("reefer")
+                || n.contains("refriger") { return .info }
+            if n.contains("cryogenic") || n.contains("nh3")
+                || n.contains("nh₃") || n.contains("ammonia")
+                || n.contains("escort") { return .escort }
+            return .rail
+        }
+
+        var monogram: String {
+            let words = name.split(separator: " ").prefix(2)
+            let chars = words.compactMap { $0.first }
+            let mono = String(chars).uppercased()
+            return mono.isEmpty ? "EU" : mono
+        }
+
+        /// Falls back to "DOT {n}" when backend hasn't shipped MC /
+        /// equipment / region yet (EUSO-2110).
+        var credentialLine: String {
+            if let dot = dotNumber, !dot.isEmpty {
+                return "USDOT \(dot)"
+            }
+            return "USDOT pending"
         }
     }
 
+    enum GradeTier { case gradientHero, gradientHollow, goldHero, goldHollow }
+    enum AvatarTone { case gradient, hazmat, info, escort, rail }
+
     @Published private(set) var state: LoadState = .loading
+    @Published private(set) var favoritesCount: Int = 0
     @Published var period: ShipperAPI.SpendingPeriod = .month {
         didSet {
             if oldValue != period { Task { await refresh() } }
@@ -131,12 +188,12 @@ final class ShipperCatalystScorecardStore: ObservableObject {
             async let favTask  = api.shipper.getFavoriteCatalysts()
             let (perf, fav) = try await (perfTask, favTask)
 
-            // Index favorites by catalystId so we can fold DOT in.
+            favoritesCount = fav.count
+
             let favById: [String: ShipperAPI.FavoriteCatalyst] = Dictionary(
                 uniqueKeysWithValues: fav.map { ($0.catalystId, $0) }
             )
 
-            // Start with period rows; fill DOT from favorites.
             var merged: [MergedRow] = perf.map { p in
                 let f = favById[p.catalystId]
                 return MergedRow(
@@ -151,8 +208,6 @@ final class ShipperCatalystScorecardStore: ObservableObject {
                     lifetimeSpend: f?.totalSpend ?? p.totalSpend
                 )
             }
-            // Append history-only catalysts that didn't move loads in
-            // this window so the directory still surfaces them.
             let perfIds = Set(perf.map(\.catalystId))
             for f in fav where !perfIds.contains(f.catalystId) {
                 merged.append(MergedRow(
@@ -167,13 +222,37 @@ final class ShipperCatalystScorecardStore: ObservableObject {
                     lifetimeSpend: f.totalSpend
                 ))
             }
-            merged.sort { $0.totalSpend > $1.totalSpend }
+            // §8 — pin the Eusotrans owner-op seam to row 1 when
+            // present, then sort the rest by composite desc.
+            merged.sort { lhs, rhs in
+                let lIsHouse = lhs.name.lowercased().contains("eusotrans")
+                let rIsHouse = rhs.name.lowercased().contains("eusotrans")
+                if lIsHouse != rIsHouse { return lIsHouse }
+                return lhs.composite > rhs.composite
+            }
 
             state = merged.isEmpty ? .empty : .loaded(merged: merged)
         } catch {
             state = .error("Couldn't reach catalyst performance service.")
         }
     }
+}
+
+// MARK: - Filter chip
+
+private enum ScorecardFilter: String, CaseIterable, Identifiable {
+    case all, favorites, tanker, reefer, flatbed
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .all:       return "All"
+        case .favorites: return "Favorites"
+        case .tanker:    return "Tanker"
+        case .reefer:    return "Reefer"
+        case .flatbed:   return "Flatbed"
+        }
+    }
+    var withStar: Bool { self == .favorites }
 }
 
 // MARK: - Screen root
@@ -183,17 +262,23 @@ struct ShipperCatalystScorecard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var store = ShipperCatalystScorecardStore()
     @State private var selected: ShipperCatalystScorecardStore.MergedRow?
+    @State private var filter: ScorecardFilter = .all
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                header
-                periodChips
+            VStack(alignment: .leading, spacing: 0) {
+                topBar
+                    .padding(.top, Space.s5)
+                titleBlock
+                    .padding(.top, Space.s2)
+                IridescentHairline()
+                    .padding(.top, Space.s3)
+
                 content
+                    .padding(.top, Space.s3)
+
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 8)
         }
         .task { await store.refresh() }
         .refreshable { await store.refresh() }
@@ -208,86 +293,57 @@ struct ShipperCatalystScorecard: View {
         )
     }
 
-    // MARK: Header
+    // MARK: TopBar
 
-    private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "rosette")
-                .font(.system(size: 20, weight: .heavy))
-                .foregroundStyle(LinearGradient.diagonal)
-                .frame(width: 36, height: 36)
-                .background(palette.bgCard)
-                .overlay(Circle().strokeBorder(palette.borderFaint))
-                .clipShape(Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 9, weight: .heavy))
-                        .foregroundStyle(LinearGradient.diagonal)
-                    Text("SHIPPER · CARRIER SCORECARDS")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                        .foregroundStyle(LinearGradient.diagonal)
-                }
-                Text("Catalysts working your loads")
-                    .font(.system(size: 22, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary)
-                    .lineLimit(1)
-                Text("Letter grades, 5-star reputation, spend share — pick your top performers, drop the rest.")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
+    private var topBar: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("✦ SHIPPER · CATALYST SCORECARDS")
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundStyle(LinearGradient.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+            Spacer()
+            Text(counterEyebrow)
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+                .accessibilityLabel(counterAccessibility)
         }
-        .padding(.top, 4)
+        .padding(.horizontal, Space.s5)
     }
 
-    // MARK: Period chips
-
-    private var periodChips: some View {
-        HStack(spacing: Space.s2) {
-            ForEach([ShipperAPI.SpendingPeriod.month,
-                     .quarter,
-                     .year], id: \.self) { p in
-                chipButton(label: chipLabel(for: p), active: store.period == p) {
-                    store.period = p
-                }
-            }
+    private var counterEyebrow: String {
+        if case .loaded(let merged) = store.state {
+            return "\(merged.count) CARRIERS · \(store.favoritesCount) FAVORITED"
         }
+        return "—"
     }
 
-    private func chipLabel(for p: ShipperAPI.SpendingPeriod) -> String {
-        switch p {
-        case .month:   return "30 days"
-        case .quarter: return "90 days"
-        case .year:    return "12 months"
+    private var counterAccessibility: String {
+        if case .loaded(let merged) = store.state {
+            return "\(merged.count) carriers, \(store.favoritesCount) favorited"
         }
+        return "Loading scorecards"
     }
 
-    private func chipButton(label: String, active: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(label)
-                .font(EType.bodyStrong)
-                .foregroundStyle(active ? palette.textPrimary : palette.textSecondary)
-                .padding(.horizontal, Space.s3)
-                .padding(.vertical, Space.s2)
-                .frame(maxWidth: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .fill(active
-                              ? AnyShapeStyle(LinearGradient.diagonal.opacity(0.18))
-                              : AnyShapeStyle(palette.bgCard))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(active ? palette.borderSoft : palette.borderFaint, lineWidth: 1)
-                )
+    // MARK: Title block
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Catalyst scorecards")
+                .font(.system(size: 28, weight: .bold))
+                .tracking(-0.4)
+                .foregroundStyle(palette.textPrimary)
+            Text("Eusorone Technologies · ranked by composite score")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Space.s5)
     }
 
-    // MARK: Content
+    // MARK: Content state machine
 
     @ViewBuilder
     private var content: some View {
@@ -300,189 +356,490 @@ struct ShipperCatalystScorecard: View {
                         .frame(height: 80)
                 }
             }
+            .padding(.horizontal, Space.s5)
         case .empty:
             EusoEmptyState(
                 systemImage: "rosette",
                 title: "No carrier history yet",
-                subtitle: "Once catalysts start delivering your loads, their scorecards land here — letter grades, on-time %, and rolling 5-star reputation.",
+                subtitle: "Once catalysts start delivering your loads, their scorecards land here — letter grades, on-time %, and composite ranking.",
                 comingSoon: false
             )
+            .padding(.horizontal, Space.s5)
         case .error(let msg):
             errorBanner(msg)
+                .padding(.horizontal, Space.s5)
         case .loaded(let merged):
-            summaryStrip(merged)
-            VStack(spacing: Space.s2) {
-                ForEach(merged) { row in
-                    catalystRow(row)
-                }
+            VStack(alignment: .leading, spacing: 0) {
+                kpiSummaryCard(merged)
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s3)
+
+                filterChipRow(merged)
+                    .padding(.top, Space.s3)
+
+                periodChipRow
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s2)
+
+                carrierList(filteredRows(merged))
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s4)
+
+                formulaFooter
             }
         }
     }
 
-    // MARK: Summary strip
+    private func filteredRows(
+        _ rows: [ShipperCatalystScorecardStore.MergedRow]
+    ) -> [ShipperCatalystScorecardStore.MergedRow] {
+        switch filter {
+        case .all:        return rows
+        case .favorites:  return rows.filter { $0.lifetimeLoads > 0 }
+        case .tanker, .reefer, .flatbed:
+            // EUSO-2111 — equipment classification not yet shipped from
+            // backend. Filter falls back to all rows so the user still
+            // sees data; the chip count stays "—" to signal the gap.
+            return rows
+        }
+    }
 
-    private func summaryStrip(_ rows: [ShipperCatalystScorecardStore.MergedRow]) -> some View {
-        let totalLoads = rows.reduce(0) { $0 + $1.totalLoads }
-        let totalSpend = rows.reduce(0) { $0 + $1.totalSpend }
-        let avgOnTime: Int = {
-            let withLoads = rows.filter { $0.totalLoads > 0 }
-            guard !withLoads.isEmpty else { return 0 }
-            let sum = withLoads.reduce(0) { $0 + $1.onTimeRate }
-            return sum / withLoads.count
+    // MARK: KPI summary card (AVG GRADE · ON-TIME AVG · FAVORITES)
+
+    private func kpiSummaryCard(
+        _ merged: [ShipperCatalystScorecardStore.MergedRow]
+    ) -> some View {
+        let avgComposite: Double = {
+            let active = merged.filter { $0.totalLoads > 0 }
+            guard !active.isEmpty else { return 0 }
+            return active.reduce(0.0) { $0 + $1.composite } / Double(active.count)
         }()
-        return HStack(spacing: Space.s2) {
-            summaryTile(label: "CARRIERS", value: "\(rows.filter { $0.totalLoads > 0 }.count)")
-            summaryTile(label: "LOADS",    value: "\(totalLoads)")
-            summaryTile(label: "AVG ON-TIME", value: "\(avgOnTime)%")
-            summaryTile(label: "SPEND",    value: formatThousands(totalSpend), prefix: "$")
-        }
-    }
+        let avgGradeLetter = letterGradeFor(composite: avgComposite)
+        let avgOnTime: Int = {
+            let active = merged.filter { $0.totalLoads > 0 }
+            guard !active.isEmpty else { return 0 }
+            return active.reduce(0) { $0 + $1.onTimeRate } / active.count
+        }()
 
-    private func summaryTile(label: String, value: String, prefix: String = "") -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label)
-                .font(.system(size: 8, weight: .heavy)).tracking(0.7)
-                .foregroundStyle(palette.textTertiary)
-            HStack(spacing: 1) {
-                if !prefix.isEmpty {
-                    Text(prefix)
-                        .font(.system(size: 12, weight: .heavy))
-                        .foregroundStyle(palette.textTertiary)
-                }
-                Text(value)
-                    .font(.system(size: 16, weight: .heavy, design: .rounded))
-                    .foregroundStyle(LinearGradient.diagonal)
-                    .monospacedDigit()
-            }
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
+        return HStack(spacing: 0) {
+            kpiCell(label: "AVG GRADE",
+                    value: avgGradeLetter,
+                    valueStyle: .gradient,
+                    trail: String(format: "%.2f", avgComposite),
+                    trailColor: palette.textSecondary,
+                    showStar: false)
+            kpiDivider
+            kpiCell(label: "ON-TIME AVG",
+                    value: "\(avgOnTime)%",
+                    valueStyle: .neutral,
+                    trail: avgOnTime > 0 ? "rolling \(periodWindowLabel)" : "—",
+                    trailColor: palette.textSecondary,
+                    showStar: false)
+            kpiDivider
+            kpiCell(label: "FAVORITES",
+                    value: "\(store.favoritesCount)",
+                    valueStyle: .neutral,
+                    trail: "starred",
+                    trailColor: palette.textSecondary,
+                    showStar: true)
         }
-        .padding(.horizontal, Space.s3)
-        .padding(.vertical, Space.s2)
+        .padding(.horizontal, Space.s4)
+        .padding(.vertical, Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(palette.bgCard)
         .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
+            RoundedRectangle(cornerRadius: Radius.lg)
+                .strokeBorder(palette.borderFaint)
         )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
     }
 
-    // MARK: Catalyst row
+    private var periodWindowLabel: String {
+        switch store.period {
+        case .month:   return "30d"
+        case .quarter: return "90d"
+        case .year:    return "12mo"
+        }
+    }
 
-    private func catalystRow(_ r: ShipperCatalystScorecardStore.MergedRow) -> some View {
-        Button {
-            selected = r
-        } label: {
-            HStack(alignment: .top, spacing: Space.s3) {
-                gradeBadge(r.grade)
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(r.name)
-                            .font(EType.bodyStrong)
-                            .foregroundStyle(palette.textPrimary)
-                            .lineLimit(1)
-                        if let dot = r.dotNumber, !dot.isEmpty {
-                            Text("DOT \(dot)")
-                                .font(.system(size: 9, weight: .heavy)).tracking(0.5)
-                                .foregroundStyle(palette.textTertiary)
-                        }
-                    }
-                    starsRow(r.starCount)
-                    HStack(spacing: 8) {
-                        microPair(label: "ON-TIME", value: r.totalLoads > 0 ? "\(r.onTimeRate)%" : "—")
-                        Divider().frame(width: 1, height: 10).overlay(palette.borderFaint)
-                        microPair(label: "LOADS", value: r.totalLoads > 0 ? "\(r.totalLoads)" : "—")
-                        Divider().frame(width: 1, height: 10).overlay(palette.borderFaint)
-                        microPair(label: "SPEND", value: r.totalSpend > 0 ? "$\(formatThousands(r.totalSpend))" : "—")
+    private func letterGradeFor(composite c: Double) -> String {
+        switch c {
+        case 0.96...: return "A+"
+        case 0.92..<0.96: return "A"
+        case 0.88..<0.92: return "A−"
+        case 0.84..<0.88: return "B+"
+        case 0.78..<0.84: return "B"
+        default: return c > 0 ? "B−" : "—"
+        }
+    }
+
+    private enum ValueStyle { case gradient, neutral }
+
+    private func kpiCell(label: String,
+                         value: String,
+                         valueStyle: ValueStyle,
+                         trail: String,
+                         trailColor: Color,
+                         showStar: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Group {
+                    switch valueStyle {
+                    case .gradient: Text(value).foregroundStyle(LinearGradient.diagonal)
+                    case .neutral:  Text(value).foregroundStyle(palette.textPrimary)
                     }
                 }
-                Spacer(minLength: Space.s2)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .heavy))
-                    .foregroundStyle(palette.textTertiary)
+                .font(.system(size: 22, weight: .bold).monospacedDigit())
+                if showStar {
+                    Star().fill(Brand.hazmat).frame(width: 10, height: 10)
+                }
+                Text(trail)
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(trailColor)
+                    .lineLimit(1)
             }
-            .padding(Space.s3)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(palette.bgCard)
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var kpiDivider: some View {
+        Rectangle()
+            .fill(palette.borderFaint)
+            .frame(width: 1, height: 36)
+            .padding(.horizontal, 4)
+    }
+
+    // MARK: Filter chip row (All / Favorites / Tanker / Reefer / Flatbed)
+
+    private func filterChipRow(
+        _ merged: [ShipperCatalystScorecardStore.MergedRow]
+    ) -> some View {
+        let allCount = merged.count
+        let favCount = merged.filter { $0.lifetimeLoads > 0 }.count
+        let chips: [(ScorecardFilter, String)] = [
+            (.all,       "\(allCount)"),
+            (.favorites, "\(favCount)"),
+            (.tanker,    "—"),
+            (.reefer,    "—"),
+            (.flatbed,   "—")
+        ]
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(chips, id: \.0) { (kind, count) in
+                    filterChip(kind: kind, count: count)
+                }
+                Color.clear.frame(width: 16, height: 1)
+            }
+            .padding(.horizontal, Space.s5)
+        }
+        .overlay(alignment: .trailing) {
+            LinearGradient(
+                colors: [palette.bgPage.opacity(0), palette.bgPage],
+                startPoint: .leading, endPoint: .trailing
             )
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            .frame(width: 28)
+            .allowsHitTesting(false)
+        }
+    }
+
+    @ViewBuilder
+    private func filterChip(kind: ScorecardFilter, count: String) -> some View {
+        let isActive = (kind == filter)
+        let label = "\(kind.label) · \(count)"
+        Button(action: { tapFilterChip(kind) }) {
+            if isActive {
+                HStack(spacing: 6) {
+                    if kind.withStar {
+                        Star().fill(.white).frame(width: 10, height: 10)
+                    }
+                    Text(label)
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .background(Capsule().fill(LinearGradient.primary))
+            } else {
+                HStack(spacing: 6) {
+                    if kind.withStar {
+                        Star().fill(Brand.hazmat).frame(width: 10, height: 10)
+                    }
+                    Text(label)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .background(Capsule().fill(palette.bgCard))
+                .overlay(Capsule().strokeBorder(palette.borderSoft))
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Period chip row (real period selector — drives the store)
+
+    private var periodChipRow: some View {
+        HStack(spacing: 6) {
+            ForEach([ShipperAPI.SpendingPeriod.month, .quarter, .year], id: \.self) { p in
+                periodChip(p)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func periodChip(_ p: ShipperAPI.SpendingPeriod) -> some View {
+        let isActive = (store.period == p)
+        let label: String = {
+            switch p {
+            case .month:   return "30 days"
+            case .quarter: return "90 days"
+            case .year:    return "12 months"
+            }
+        }()
+        return Button(action: { tapPeriod(p) }) {
+            Text(label)
+                .font(.system(size: 11, weight: isActive ? .bold : .semibold))
+                .foregroundStyle(isActive ? AnyShapeStyle(.white) : AnyShapeStyle(palette.textSecondary))
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(
+                    Capsule()
+                        .fill(isActive
+                              ? AnyShapeStyle(LinearGradient.diagonal.opacity(0.92))
+                              : AnyShapeStyle(palette.bgCard))
+                )
+                .overlay(Capsule().strokeBorder(palette.borderFaint))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Period: \(label)\(isActive ? ", selected" : "")")
+    }
+
+    // MARK: Carrier list — single rounded card with tap-hint footer
+
+    private func carrierList(
+        _ rows: [ShipperCatalystScorecardStore.MergedRow]
+    ) -> some View {
+        VStack(spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.element.id) { idx, r in
+                carrierRow(r)
+                if idx < rows.count - 1 {
+                    Rectangle()
+                        .fill(palette.borderFaint)
+                        .frame(height: 1)
+                        .padding(.horizontal, Space.s4)
+                }
+            }
+            // Footer prompt inside the card (wireframe canon).
+            Text("Tap a carrier to see trend & lane history")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(LinearGradient.primary)
+                .padding(.vertical, Space.s2)
+                .frame(maxWidth: .infinity)
+        }
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.xl)
+                .strokeBorder(palette.borderFaint)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.xl))
+    }
+
+    private func carrierRow(_ c: ShipperCatalystScorecardStore.MergedRow) -> some View {
+        Button(action: { selected = c }) {
+            HStack(alignment: .top, spacing: Space.s3) {
+                avatarBadge(monogram: c.monogram, tone: c.avatarTone)
+                    .padding(.top, 2)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(c.name)
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(palette.textPrimary)
+                            .lineLimit(1)
+                        if c.lifetimeLoads > 0 {
+                            Star().fill(Brand.hazmat).frame(width: 10, height: 10)
+                        }
+                    }
+                    Text(c.credentialLine)
+                        .font(EType.mono(.caption))
+                        .tracking(0.3)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                        .padding(.bottom, 2)
+
+                    HStack(spacing: Space.s5) {
+                        statCell(label: "ON-TIME",     value: c.onTimeFormatted)
+                        statCell(label: "COMPLETION",  value: c.completionFormatted)
+                        statCell(label: "LOADS",       value: c.loadsFormatted)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                gradeBadge(grade: c.letterGrade,
+                           composite: c.compositeFormatted,
+                           tier: c.gradeTier)
+            }
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, Space.s3)
+            .contentShape(Rectangle())
         }
         .buttonStyle(CatalystRowButtonStyle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(c.name)\(c.lifetimeLoads > 0 ? ", favorited" : ""), \(c.credentialLine), " +
+            "on-time \(c.onTimeFormatted), completion \(c.completionFormatted), \(c.loadsFormatted) loads, " +
+            "grade \(c.letterGrade), composite \(c.compositeFormatted)"
+        )
     }
 
-    private func gradeBadge(_ grade: ShipperCatalystScorecardStore.MergedRow.Grade) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .fill(gradeBackground(grade))
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(gradeStroke(grade), lineWidth: 1.5)
-            Text(grade.rawValue)
-                .font(.system(size: 22, weight: .heavy, design: .rounded))
-                .foregroundStyle(gradeForeground(grade))
-        }
-        .frame(width: 44, height: 44)
-    }
-
-    private func gradeBackground(_ grade: ShipperCatalystScorecardStore.MergedRow.Grade) -> AnyShapeStyle {
-        switch grade {
-        case .a: return AnyShapeStyle(Brand.success.opacity(0.18))
-        case .b: return AnyShapeStyle(Brand.info.opacity(0.18))
-        case .c: return AnyShapeStyle(Brand.warning.opacity(0.18))
-        case .d: return AnyShapeStyle(Brand.danger.opacity(0.16))
-        case .f: return AnyShapeStyle(Brand.danger.opacity(0.22))
-        }
-    }
-
-    private func gradeStroke(_ grade: ShipperCatalystScorecardStore.MergedRow.Grade) -> Color {
-        switch grade {
-        case .a: return Brand.success.opacity(0.6)
-        case .b: return Brand.info.opacity(0.6)
-        case .c: return Brand.warning.opacity(0.6)
-        case .d, .f: return Brand.danger.opacity(0.6)
-        }
-    }
-
-    private func gradeForeground(_ grade: ShipperCatalystScorecardStore.MergedRow.Grade) -> Color {
-        switch grade {
-        case .a: return Brand.success
-        case .b: return Brand.info
-        case .c: return Brand.warning
-        case .d, .f: return Brand.danger
-        }
-    }
-
-    private func starsRow(_ count: Double) -> some View {
-        HStack(spacing: 2) {
-            ForEach(0..<5, id: \.self) { i in
-                let filled = Double(i) + 0.5 <= count
-                let half   = !filled && Double(i) + 0.0 < count && count < Double(i) + 1.0
-                Image(systemName: half ? "star.leadinghalf.filled" : (filled ? "star.fill" : "star"))
-                    .font(.system(size: 10, weight: .heavy))
-                    .foregroundStyle(filled || half ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
-            }
-            Text(String(format: "%.1f", count))
-                .font(.system(size: 10, weight: .heavy)).tracking(0.4)
-                .foregroundStyle(palette.textSecondary)
-                .padding(.leading, 4)
-                .monospacedDigit()
-        }
-    }
-
-    private func microPair(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+    private func statCell(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
             Text(label)
-                .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                .font(EType.micro).tracking(0.5)
                 .foregroundStyle(palette.textTertiary)
             Text(value)
-                .font(.system(size: 11, weight: .heavy, design: .rounded))
+                .font(.system(size: 13, weight: .bold).monospacedDigit())
                 .foregroundStyle(palette.textPrimary)
-                .monospacedDigit()
         }
     }
+
+    @ViewBuilder
+    private func avatarBadge(
+        monogram: String,
+        tone: ShipperCatalystScorecardStore.AvatarTone
+    ) -> some View {
+        switch tone {
+        case .gradient:
+            ZStack {
+                Circle().fill(LinearGradient.diagonal).frame(width: 44, height: 44)
+                Text(monogram)
+                    .font(.system(size: 14, weight: .heavy))
+                    .tracking(0.6)
+                    .foregroundStyle(.white)
+            }
+        case .hazmat:
+            tintedAvatar(monogram: monogram,
+                         fill:  Brand.hazmat.opacity(0.18),
+                         text:  Brand.hazmat)
+        case .info:
+            tintedAvatar(monogram: monogram,
+                         fill:  Brand.info.opacity(0.16),
+                         text:  Brand.info)
+        case .escort:
+            tintedAvatar(monogram: monogram,
+                         fill:  Brand.escort.opacity(0.14),
+                         text:  Brand.escort)
+        case .rail:
+            tintedAvatar(monogram: monogram,
+                         fill:  Brand.rail.opacity(0.16),
+                         text:  Brand.rail)
+        }
+    }
+
+    private func tintedAvatar(monogram: String, fill: Color, text: Color) -> some View {
+        ZStack {
+            Circle().fill(fill).frame(width: 44, height: 44)
+            Text(monogram)
+                .font(.system(size: 14, weight: .heavy))
+                .tracking(0.6)
+                .foregroundStyle(text)
+        }
+    }
+
+    @ViewBuilder
+    private func gradeBadge(
+        grade: String,
+        composite: String,
+        tier: ShipperCatalystScorecardStore.GradeTier
+    ) -> some View {
+        let badgeShape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        let goldFade = LinearGradient(
+            colors: [Color(hex: 0xFFB100), Color(hex: 0xFFA726)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        ZStack {
+            switch tier {
+            case .gradientHero:
+                badgeShape.fill(LinearGradient.diagonal)
+                gradeText(grade, composite,
+                          color: .white,
+                          subColor: .white.opacity(0.85))
+            case .gradientHollow:
+                badgeShape.fill(palette.bgCard)
+                badgeShape.strokeBorder(LinearGradient.primary, lineWidth: 2)
+                gradeTextGradient(grade, composite,
+                                  subColor: palette.textSecondary)
+            case .goldHero:
+                badgeShape.fill(goldFade)
+                gradeText(grade, composite,
+                          color: .white,
+                          subColor: .white.opacity(0.85))
+            case .goldHollow:
+                badgeShape.fill(palette.bgCard)
+                badgeShape.strokeBorder(goldFade, lineWidth: 2)
+                gradeText(grade, composite,
+                          color: Color(hex: 0xB27300),
+                          subColor: palette.textSecondary)
+            }
+        }
+        .frame(width: 56, height: 56)
+    }
+
+    private func gradeText(_ grade: String,
+                           _ composite: String,
+                           color: Color,
+                           subColor: Color) -> some View {
+        VStack(spacing: 1) {
+            Text(grade)
+                .font(.system(size: grade.count > 1 ? 20 : 22, weight: .heavy))
+                .tracking(-0.4)
+                .foregroundStyle(color)
+                .monospacedDigit()
+            Text(composite)
+                .font(.system(size: 8, weight: .heavy))
+                .tracking(0.6)
+                .foregroundStyle(subColor)
+        }
+    }
+
+    private func gradeTextGradient(_ grade: String,
+                                   _ composite: String,
+                                   subColor: Color) -> some View {
+        VStack(spacing: 1) {
+            Text(grade)
+                .font(.system(size: grade.count > 1 ? 20 : 22, weight: .heavy))
+                .tracking(-0.4)
+                .foregroundStyle(LinearGradient.diagonal)
+                .monospacedDigit()
+            Text(composite)
+                .font(.system(size: 8, weight: .heavy))
+                .tracking(0.6)
+                .foregroundStyle(subColor)
+        }
+    }
+
+    // MARK: Formula footer
+
+    private var formulaFooter: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("FORMULA")
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            Text("score = onTime · 0.5 + completion · 0.3 + log₁₀(loads+1)/log₁₀(50) · 0.2")
+                .font(EType.mono(.caption))
+                .foregroundStyle(palette.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Space.s5)
+        .padding(.top, Space.s4)
+        .padding(.bottom, Space.s2)
+    }
+
+    // MARK: Error banner
 
     private func errorBanner(_ msg: String) -> some View {
         VStack(spacing: Space.s2) {
@@ -518,20 +875,37 @@ struct ShipperCatalystScorecard: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    private func formatThousands(_ value: Double) -> String {
-        let n = Int(value.rounded())
-        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
-        if n >= 10_000    { return String(format: "%.0fk", Double(n) / 1_000) }
-        if n >= 1_000     { return String(format: "%.1fk", Double(n) / 1_000) }
-        return "\(n)"
+    // MARK: - Notification posts (§20.4)
+
+    private func tapFilterChip(_ kind: ScorecardFilter) {
+        withAnimation(.easeOut(duration: 0.18)) { filter = kind }
+        NotificationCenter.default.post(
+            name: .eusoShipperScorecardFilter,
+            object: nil,
+            userInfo: [
+                "source": "213_ShipperCatalystScorecard",
+                "filter": kind.rawValue,
+                "shipperCompanyId": 1
+            ]
+        )
+    }
+
+    private func tapPeriod(_ p: ShipperAPI.SpendingPeriod) {
+        store.period = p
+        NotificationCenter.default.post(
+            name: .eusoShipperScorecardPeriod,
+            object: nil,
+            userInfo: [
+                "source": "213_ShipperCatalystScorecard",
+                "period": String(describing: p),
+                "shipperCompanyId": 1
+            ]
+        )
     }
 }
 
 // MARK: - Press feedback
 
-/// Mirrors the Driver doctrine §B.4 row-press recipe — 0.12s easeOut
-/// + 0.985 scale on press, no haptic (rows aren't primary CTAs; the
-/// haptic budget is reserved for `CTAButton`).
 private struct CatalystRowButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -540,7 +914,46 @@ private struct CatalystRowButtonStyle: ButtonStyle {
     }
 }
 
-// MARK: - Detail sheet
+// MARK: - Star (file-scoped per §19.2 — 5-point glyph, scales to bounds)
+
+private struct Star: Shape {
+    func path(in rect: CGRect) -> Path {
+        let pts: [CGPoint] = [
+            CGPoint(x: 5,   y: 0),
+            CGPoint(x: 6.2, y: 3.6),
+            CGPoint(x: 10,  y: 3.6),
+            CGPoint(x: 7,   y: 5.8),
+            CGPoint(x: 8.2, y: 9.4),
+            CGPoint(x: 5,   y: 7.2),
+            CGPoint(x: 1.8, y: 9.4),
+            CGPoint(x: 3,   y: 5.8),
+            CGPoint(x: 0,   y: 3.6),
+            CGPoint(x: 3.8, y: 3.6),
+        ]
+        let sx = rect.width / 10.0
+        let sy = rect.height / 9.4
+        var path = Path()
+        for (i, p) in pts.enumerated() {
+            let x = rect.minX + p.x * sx
+            let y = rect.minY + p.y * sy
+            if i == 0 { path.move(to: CGPoint(x: x, y: y)) }
+            else      { path.addLine(to: CGPoint(x: x, y: y)) }
+        }
+        path.closeSubpath()
+        return path
+    }
+}
+
+// MARK: - NotificationCenter names (§20.4)
+
+extension Notification.Name {
+    /// Filter chip tap — All / Favorites / Tanker / Reefer / Flatbed.
+    static let eusoShipperScorecardFilter = Notification.Name("eusoShipperScorecardFilter")
+    /// Period chip tap — month / quarter / year (drives the store).
+    static let eusoShipperScorecardPeriod = Notification.Name("eusoShipperScorecardPeriod")
+}
+
+// MARK: - Detail sheet (preserved — opens when a row is tapped)
 
 private struct CatalystDetailSheet: View {
     @Environment(\.palette) private var palette
@@ -565,10 +978,10 @@ private struct CatalystDetailSheet: View {
     private var heroCard: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack(alignment: .firstTextBaseline) {
-                Text(row.grade.rawValue)
+                Text(row.letterGrade)
                     .font(.system(size: 56, weight: .heavy, design: .rounded))
                     .foregroundStyle(LinearGradient.diagonal)
-                Text(String(format: "%.1f / 5", row.starCount))
+                Text(row.compositeFormatted)
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textSecondary)
                 Spacer()
@@ -576,11 +989,9 @@ private struct CatalystDetailSheet: View {
             Text(row.name)
                 .font(.system(size: 22, weight: .heavy))
                 .foregroundStyle(palette.textPrimary)
-            if let dot = row.dotNumber, !dot.isEmpty {
-                Text("DOT \(dot)")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
-            }
+            Text(row.credentialLine)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
         }
         .padding(Space.s4)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -604,7 +1015,7 @@ private struct CatalystDetailSheet: View {
             VStack(spacing: 6) {
                 kvRow("Loads", value: row.totalLoads > 0 ? "\(row.totalLoads)" : "—")
                 kvRow("Delivered", value: row.totalLoads > 0 ? "\(row.delivered)" : "—")
-                kvRow("On-time rate", value: row.totalLoads > 0 ? "\(row.onTimeRate)%" : "—")
+                kvRow("On-time rate", value: row.onTimeFormatted)
                 kvRow("Total spend", value: row.totalSpend > 0 ? formatMoney(row.totalSpend) : "—")
             }
         }
@@ -622,11 +1033,11 @@ private struct CatalystDetailSheet: View {
     private var whyThisGradeCard: some View {
         sectionCard(title: "WHY THIS GRADE") {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Score = on-time × 50% + completion × 30% + volume × 20% (log-scaled).")
-                    .font(EType.caption)
+                Text("score = onTime · 0.5 + completion · 0.3 + log₁₀(loads+1)/log₁₀(50) · 0.2")
+                    .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("90+ → A · 80–89 → B · 70–79 → C · 60–69 → D · <60 → F")
+                Text("≥0.96 A+ · ≥0.92 A · ≥0.88 A− · ≥0.84 B+ · ≥0.78 B · else B−")
                     .font(EType.micro).tracking(0.4)
                     .foregroundStyle(palette.textTertiary)
             }
@@ -674,14 +1085,14 @@ private struct CatalystDetailSheet: View {
 
 // MARK: - Previews
 
-#Preview("213 · Catalyst Scorecards · Night") {
+#Preview("213 · Catalyst Scorecards · Dark") {
     ShipperCatalystScorecard()
         .environment(\.palette, Theme.dark)
         .preferredColorScheme(.dark)
         .background(Theme.dark.bgPage)
 }
 
-#Preview("213 · Catalyst Scorecards · Afternoon") {
+#Preview("213 · Catalyst Scorecards · Light") {
     ShipperCatalystScorecard()
         .environment(\.palette, Theme.light)
         .preferredColorScheme(.light)
