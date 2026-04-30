@@ -1194,6 +1194,24 @@ struct LoadsAPI {
         return try await api.query("loads.getById", input: Input(id: id))
     }
 
+    /// Mirrors `loads.getShipperSummary` (loads.ts:769). Topline counts
+    /// for the 201 Shipper Loads filter chips + the 200 Home stat strip.
+    /// Server returns a 7-key envelope; we project all of them so screens
+    /// can read what they need without re-querying.
+    struct ShipperSummary: Decodable, Hashable {
+        let totalLoads: Int
+        let activeLoads: Int
+        let inTransit: Int
+        let delivered: Int
+        let pendingBids: Int
+        let pending: Int
+        let totalSpend: Double
+    }
+
+    func getShipperSummary() async throws -> ShipperSummary {
+        try await api.queryNoInput("loads.getShipperSummary")
+    }
+
     // MARK: - Commercial context (broker + agreement)
 
     /// Mirrors the `loads.getCommercialContext` server projection.

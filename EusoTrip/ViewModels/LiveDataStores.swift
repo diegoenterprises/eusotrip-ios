@@ -3369,6 +3369,18 @@ final class ShipperMyLoadsStore: BaseDynamicListStore<ShipperAPI.MyLoad> {
     }
 }
 
+// MARK: - ShipperLoadsSummaryStore — `loads.getShipperSummary`
+//
+// Topline counts for 201 Shipper Loads filter chips + 200 Home stat
+// strip. MCP-verified at `frontend/server/routers/loads.ts:769`.
+
+@MainActor
+final class ShipperLoadsSummaryStore: BaseDynamicStore<LoadsAPI.ShipperSummary?> {
+    override func fetch() async throws -> LoadsAPI.ShipperSummary? {
+        try await EusoTripAPI.shared.loads.getShipperSummary()
+    }
+}
+
 // =====================================================================
 // ShipperProfileStore + ShipperStatsStore — Shipper role profile
 // (brick 202_ShipperProfile).
