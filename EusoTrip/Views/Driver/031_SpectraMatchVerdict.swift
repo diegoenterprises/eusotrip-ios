@@ -424,13 +424,18 @@ struct SpectraMatchVerdictScreen: View {
     }
 }
 
+// PNG canon at `01 Driver/{Light,Dark}/031 Spectra-Match Verdict.png`
+// pins TRIPS current — Spectra-Match RVP verdict on the gasoline
+// load with PASS / fail decision + EusoShield backing + ESANG AI
+// lineage attribution. Icon set + trailing slot normalized to
+// canonical 010-030 layout.
 private func driverNavLeading_031() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
 }
 private func driverNavTrailing_031() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
 }
 
 #Preview("031 · Spectra-Match Verdict · Dark") {
