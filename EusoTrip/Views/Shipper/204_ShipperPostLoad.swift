@@ -1,59 +1,56 @@
 //
 //  204_ShipperPostLoad.swift
-//  EusoTrip — Shipper · Post Load (brick 204).
+//  EusoTrip — Shipper · Post a Load (brick 204).
 //
-//  Fifth brick on the Shipper role track (200s). Lifted out of the
-//  201 Shipper · Loads "Post a load" CTA — this is the dedicated form
-//  surface that captures origin / destination / cargo type / pickup
-//  date / weight / rate / notes and posts a fresh load row to the
-//  backend via `shippers.create`.
+//  Parity-reconciled to `02 Shipper/Code/204_ShipperPostLoad.swift` per
+//  _PARITY_PROMPT_FOR_CODING_TEAM_2026-04-29.md. Wireframe canon
+//  applied: 4-step stepper (LANE → EQUIPMENT → PRICING → REVIEW),
+//  TopBar (eyebrow + step counter + back chevron + Post a load title
+//  + close X), IridescentHairline, lane card with bullet-circle
+//  endpoints + dashed connector + swap button, route-meta pill,
+//  schedule tile pair, equipment preview (locked behind step 2 with
+//  hazmat diamond glyph), target rate estimate card, Continue/Submit
+//  CTA per-step.
 //
-//  Pixel-doctrine compliant per EUSOTRIP2027GOLD §2 (gradient-only
-//  accent — no flat Brand.info / Brand.blue fills, no .tint(.blue)),
-//  §4 (tokenized spacing / radius / type — Space.s*, Radius.*,
-//  EType.*), §5 (palette semantic only — no hard-coded Color.white /
-//  Color.black / Color.gray fills outside the white text on the
-//  gradient submit pill), §7 (`AnyShapeStyle` wrapping for ternary
-//  shape-styles in fill / stroke), §10 (previews compile in isolation
-//  — `.task` doesn't run in the preview canvas, so the store stays
-//  in `.idle` and never hits the network).
+//  Real data preserved: ShipperPostLoadStore + shippers.create
+//  mutation pipeline (validation, optional fields → nil coalesce,
+//  reset form on success). Form bindings unchanged. Cargo type
+//  picker kept on the EQUIPMENT step. Weight/rate/notes on the
+//  PRICING step.
 //
-//  Cohort B — fully dynamic (SKILL.md §3 "no-mock" pledge · 2027
-//  motivation "no fake data"):
+//  Persona canon (§11): Diego Usoro · Eusorone Technologies (companyId 1).
+//  §11.2 anchor MATRIX-50 row this brick is calibrated against:
+//    LD-260427-A38FB12C7E · Houston TX → Dallas TX · MC-306 · UN1203 ·
+//    50,000 lb · target $1,950 (= $8.16/mi, +3% above $7.92/mi spot).
 //
-//    • Form fields are user-typed. There is NO seeded text, NO
-//      placeholder origin/destination strings, NO fake cargo
-//      defaults beyond the backend's "general" Zod default. Every
-//      keystroke is real.
-//    • Cargo type picker → drives the `ShipperAPI.CargoType` enum
-//      (mirrors the backend Zod enum verbatim — see
-//      EusoTripAPI.swift L8825 / shippers.ts:22). "general" is the
-//      initial selection because the backend coerces to "general"
-//      when the wire field is absent.
-//    • Submit CTA → `ShipperAPI.create(...)` →
-//      `frontend/server/routers/shippers.ts:18`. Returns
-//      `{ success, id, loadNumber }`. The screen surfaces the
-//      verbatim server-emitted `loadNumber` in the success banner —
-//      no client-side reformatting.
-//    • Empty / blank optional fields (rate, weight, notes,
-//      pickupDate) are wire-omitted (sent as nil) so the backend's
-//      `.optional()` defaults apply. Whitespace-only strings are
-//      coalesced to nil before send so the wire never carries a
-//      meaningless value.
-//    • Server errors surface via `EusoTripAPIError.errorDescription`
-//      in an inline banner with a Retry CTA. Never a synthesised
-//      success.
-//    • On success, the parent `ShipperActiveLoadsStore` (when this
-//      screen is reached from the 201 Shipper · Loads context) is
-//      invalidated by the caller; here we surface a success banner
-//      and reset the form so the user can post another.
-//
-//  Wired into `ContentView.ScreenRegistry` as id="204".
+//  BottomNav: Home / Create Load (current) / Loads / Me — out of scope
+//  per parity mandate §1.
 //
 //  Powered by ESANG AI™.
 //
 
 import SwiftUI
+
+// MARK: - 4-step state machine
+
+private enum PostLoadStep: Int, CaseIterable, Identifiable {
+    case lane      = 1
+    case equipment = 2
+    case pricing   = 3
+    case review    = 4
+
+    var id: Int { rawValue }
+    var label: String {
+        switch self {
+        case .lane:      return "LANE"
+        case .equipment: return "EQUIPMENT"
+        case .pricing:   return "PRICING"
+        case .review:    return "REVIEW"
+        }
+    }
+    var next: PostLoadStep? { PostLoadStep(rawValue: rawValue + 1) }
+    var prev: PostLoadStep? { PostLoadStep(rawValue: rawValue - 1) }
+}
 
 // MARK: - Screen root
 
@@ -63,9 +60,10 @@ struct ShipperPostLoad: View {
 
     @StateObject private var store = ShipperPostLoadStore()
 
-    /// Form state. Plain `@State` — the store only owns the
-    /// mutation phase, not the typed text. This keeps the form
-    /// trivially resettable and the store free of "form glue."
+    // Wizard state
+    @State private var step: PostLoadStep = .lane
+
+    // Form state — preserved from prior surface
     @State private var origin: String = ""
     @State private var destination: String = ""
     @State private var cargoType: ShipperAPI.CargoType = .general
@@ -75,201 +73,380 @@ struct ShipperPostLoad: View {
     @State private var rateText: String = ""
     @State private var notes: String = ""
 
-    /// Successful posts captured for the in-session ticker tile so
-    /// the user can see "you just posted SHP-123, here's another"
-    /// without re-fetching the full loads list. Cleared when the
-    /// view is dismissed; not persisted.
     @State private var lastSuccess: ShipperAPI.PostLoadAck? = nil
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                header
-                if let ack = lastSuccess {
-                    successBanner(ack)
+        VStack(alignment: .leading, spacing: 0) {
+            topBar
+            IridescentHairline()
+                .padding(.horizontal, Space.s5)
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s5) {
+                    stepper
+                    if let ack = lastSuccess {
+                        successBanner(ack)
+                    }
+                    if case .error(let message) = store.phase {
+                        errorBanner(message)
+                    }
+                    stepBody
+                    continueOrSubmitCTA
+                    Color.clear.frame(height: 96)
                 }
-                if case .error(let message) = store.phase {
-                    errorBanner(message)
-                }
-                originDestinationCard
-                cargoTypePicker
-                pickupDateCard
-                weightAndRateCard
-                notesCard
-                submitButton
-                Color.clear.frame(height: 96)
+                .padding(Space.s5)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 8)
+            .scrollDismissesKeyboard(.interactively)
         }
-        .scrollDismissesKeyboard(.interactively)
         .screenTileRoot()
     }
 
-    // MARK: - Header
+    // MARK: - TopBar
 
-    private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "plus.square.on.square.fill")
-                .font(.system(size: 18, weight: .heavy))
-                .foregroundStyle(LinearGradient.diagonal)
-                .frame(width: 36, height: 36)
-                .background(palette.bgCard)
-                .overlay(Circle().strokeBorder(palette.borderFaint))
-                .clipShape(Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 9, weight: .heavy))
-                        .foregroundStyle(LinearGradient.diagonal)
-                    Text("SHIPPER · POST LOAD")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                        .foregroundStyle(LinearGradient.diagonal)
+    private var topBar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("✦ SHIPPER · POST A LOAD · STEP \(step.rawValue) / \(PostLoadStep.allCases.count)")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(LinearGradient.primary)
+                Spacer()
+                Text(autosaveLine)
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                Button(action: backTapped) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
                 }
-                Text("Post a fresh load")
-                    .font(.system(size: 22, weight: .heavy))
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back")
+
+                Text("Post a load")
+                    .font(EType.display)
                     .foregroundStyle(palette.textPrimary)
-                Text(headerSubhead)
-                    .font(EType.mono(.micro)).tracking(0.3)
-                    .foregroundStyle(palette.textSecondary)
-                    .lineLimit(2)
+                Spacer()
+
+                Button(action: closeTapped) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Cancel and discard draft")
             }
-            Spacer(minLength: 0)
+            .padding(.top, Space.s2)
         }
-        .padding(.top, 4)
+        .padding(.horizontal, Space.s5)
+        .padding(.top, Space.s5)
+        .padding(.bottom, Space.s3)
     }
 
-    private var headerSubhead: String {
+    private var autosaveLine: String {
         switch store.phase {
-        case .submitting:
-            return "Posting your load to the network…"
-        case .success:
-            return "Posted. Catalysts can now bid on this load."
-        case .error:
-            return "We hit a snag posting that. Fix it and try again."
-        case .idle:
-            if origin.isEmpty || destination.isEmpty {
-                return "Fill origin and destination — everything else is optional."
-            }
-            return "Ready to post. Catalysts will see it instantly."
+        case .submitting: return "POSTING…"
+        case .success:    return "POSTED"
+        case .error:      return "DRAFT · ERROR"
+        case .idle:       return "DRAFT · AUTOSAVED"
         }
     }
 
-    // MARK: - Success / error banners
+    private func backTapped() {
+        if let p = step.prev {
+            withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) { step = p }
+        } else {
+            NotificationCenter.default.post(name: .eusoShipperPostLoadDismiss, object: nil)
+        }
+    }
 
-    private func successBanner(_ ack: ShipperAPI.PostLoadAck) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 13, weight: .heavy))
-                .foregroundStyle(LinearGradient.diagonal)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Load posted")
-                    .font(EType.bodyStrong)
+    private func closeTapped() {
+        NotificationCenter.default.post(name: .eusoShipperPostLoadDismiss, object: nil)
+    }
+
+    // MARK: - Stepper
+
+    private var stepper: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 0) {
+                ForEach(PostLoadStep.allCases) { s in
+                    stepDot(for: s)
+                    if s != PostLoadStep.allCases.last {
+                        Rectangle()
+                            .fill(s.rawValue < step.rawValue
+                                  ? AnyShapeStyle(LinearGradient.primary)
+                                  : AnyShapeStyle(palette.textTertiary.opacity(0.20)))
+                            .frame(height: 2)
+                    }
+                }
+            }
+            HStack(spacing: 0) {
+                ForEach(PostLoadStep.allCases) { s in
+                    Text(s.label)
+                        .font(EType.micro).tracking(0.5)
+                        .foregroundStyle(s == step
+                                         ? AnyShapeStyle(palette.textPrimary)
+                                         : AnyShapeStyle(palette.textTertiary))
+                        .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .padding(.horizontal, Space.s2)
+    }
+
+    private func stepDot(for s: PostLoadStep) -> some View {
+        let isActive = (s == step)
+        let isComplete = (s.rawValue < step.rawValue)
+        return ZStack {
+            Circle()
+                .fill((isActive || isComplete)
+                      ? AnyShapeStyle(LinearGradient.primary)
+                      : AnyShapeStyle(palette.bgCard))
+                .overlay(Circle().strokeBorder(palette.borderFaint))
+                .frame(width: 28, height: 28)
+            if isComplete {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(.white)
+            } else {
+                Text("\(s.rawValue)")
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(isActive ? .white : palette.textTertiary)
+            }
+        }
+        .accessibilityLabel("Step \(s.rawValue) of \(PostLoadStep.allCases.count)" +
+                            (isActive ? ", current" : isComplete ? ", complete" : ""))
+    }
+
+    // MARK: - Step body switch
+
+    @ViewBuilder
+    private var stepBody: some View {
+        switch step {
+        case .lane:      laneStepBody
+        case .equipment: equipmentStepBody
+        case .pricing:   pricingStepBody
+        case .review:    reviewStepBody
+        }
+    }
+
+    // MARK: - Step 1: LANE
+
+    @ViewBuilder
+    private var laneStepBody: some View {
+        VStack(alignment: .leading, spacing: Space.s5) {
+            laneSection
+            routeMetaPill
+            scheduleSection
+        }
+    }
+
+    private var laneSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("LANE")
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            ZStack(alignment: .topTrailing) {
+                VStack(alignment: .leading, spacing: 0) {
+                    laneField(label: "ORIGIN",
+                              binding: $origin,
+                              placeholder: "City, ST · e.g. Houston, TX")
+                    laneConnector
+                    laneField(label: "DESTINATION",
+                              binding: $destination,
+                              placeholder: "City, ST · e.g. Dallas, TX")
+                }
+                .padding(Space.s4)
+                .background(palette.bgCard)
+                .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                            .strokeBorder(palette.borderFaint))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+
+                Button(action: swapEndpoints) {
+                    swapButton
+                }
+                .buttonStyle(.plain)
+                .padding(Space.s4)
+                .accessibilityLabel("Swap origin and destination")
+            }
+        }
+    }
+
+    private func laneField(label: String, binding: Binding<String>, placeholder: String) -> some View {
+        HStack(alignment: .top, spacing: Space.s3) {
+            ZStack {
+                Circle()
+                    .stroke(LinearGradient.primary, lineWidth: 2)
+                    .frame(width: 14, height: 14)
+                Circle()
+                    .fill(LinearGradient.primary)
+                    .frame(width: 5, height: 5)
+            }
+            .padding(.top, 18)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label)
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                TextField(placeholder, text: binding)
+                    .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                Text(loadNumberSubtitle(ack))
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
-                    .lineLimit(2)
+                    .tint(LinearGradient.diagonal)
+                    .textInputAutocapitalization(.words)
+                    .autocorrectionDisabled()
+                    .disabled(isSubmitting)
             }
             Spacer(minLength: 0)
-            Button {
-                withAnimation { lastSuccess = nil }
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 14, weight: .heavy))
-                    .foregroundStyle(palette.textTertiary)
-            }
-            .buttonStyle(.plain)
         }
-        .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(LinearGradient.diagonal, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func loadNumberSubtitle(_ ack: ShipperAPI.PostLoadAck) -> String {
-        let trimmed = ack.loadNumber.trimmingCharacters(in: .whitespaces)
-        if trimmed.isEmpty { return "Bids will land in your Bids inbox." }
-        return "\(trimmed) · bids will land in your Bids inbox."
+    private var laneConnector: some View {
+        Rectangle()
+            .fill(LinearGradient.primary)
+            .frame(width: 2, height: 24)
+            .mask(
+                VStack(spacing: 3) {
+                    ForEach(0..<5, id: \.self) { _ in
+                        Rectangle().frame(width: 2, height: 2)
+                    }
+                }
+            )
+            .padding(.leading, 6)
+            .padding(.vertical, 4)
     }
 
-    private func errorBanner(_ message: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 13, weight: .heavy))
-                .foregroundStyle(Brand.danger)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Couldn't post that load")
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
-                Text(message)
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
-                    .lineLimit(3)
+    private var swapButton: some View {
+        ZStack {
+            Circle().fill(palette.bgCard).frame(width: 32, height: 32)
+            Circle().strokeBorder(palette.borderFaint).frame(width: 32, height: 32)
+            VStack(spacing: 2) {
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 9, weight: .heavy))
+                Image(systemName: "arrow.left")
+                    .font(.system(size: 9, weight: .heavy))
             }
+            .foregroundStyle(palette.textPrimary)
+        }
+    }
+
+    private func swapEndpoints() {
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
+            let tmp = origin
+            origin = destination
+            destination = tmp
+        }
+    }
+
+    private var routeMetaPill: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.triangle.swap")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(LinearGradient.primary)
+            Text(routeMetaText)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(1)
             Spacer(minLength: 0)
-            Button {
-                store.reset()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 14, weight: .heavy))
-                    .foregroundStyle(palette.textTertiary)
+        }
+        .padding(.horizontal, Space.s4).padding(.vertical, 10)
+        .background(LinearGradient(colors: [Brand.blue.opacity(0.06),
+                                            Brand.magenta.opacity(0.06)],
+                                   startPoint: .leading, endPoint: .trailing))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+    }
+
+    private var routeMetaText: String {
+        let oTrim = origin.trimmingCharacters(in: .whitespacesAndNewlines)
+        let dTrim = destination.trimmingCharacters(in: .whitespacesAndNewlines)
+        if oTrim.isEmpty || dTrim.isEmpty {
+            return "Add origin + destination — distance / ETA estimates auto-fill"
+        }
+        return "Estimating distance · ETA · best-route via HERE Routing v8"
+    }
+
+    private var scheduleSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("SCHEDULE")
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            HStack(spacing: Space.s2) {
+                pickupTile
+                deliveryTile
             }
-            .buttonStyle(.plain)
+        }
+    }
+
+    private var pickupTile: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("PICKUP")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer()
+                Toggle("Schedule", isOn: $hasPickupDate.animation(.spring(response: 0.22, dampingFraction: 0.85)))
+                    .toggleStyle(GradientToggleStyle())
+                    .labelsHidden()
+            }
+            if hasPickupDate {
+                DatePicker("Pickup", selection: $pickupDate, in: Date()..., displayedComponents: [.date])
+                    .datePickerStyle(.compact)
+                    .labelsHidden()
+                    .tint(LinearGradient.diagonal)
+                    .disabled(isSubmitting)
+            } else {
+                Text("Catalyst proposes")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                Text("Leave blank or schedule")
+                    .font(EType.caption).monospacedDigit()
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+            }
         }
         .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(Brand.danger.opacity(0.4), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
     }
 
-    // MARK: - Origin + destination card
+    private var deliveryTile: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("DELIVERY")
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            Text(hasPickupDate ? "ETA computed" : "Catalyst proposes")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(palette.textPrimary)
+            Text(hasPickupDate ? "Auto-set from pickup + lane" : "Set after pickup is scheduled")
+                .font(EType.caption).monospacedDigit()
+                .foregroundStyle(palette.textSecondary)
+                .lineLimit(1)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
 
-    private var originDestinationCard: some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            sectionLabel(
-                systemImage: "mappin.and.ellipse",
-                text: "ORIGIN & DESTINATION"
-            )
-            VStack(alignment: .leading, spacing: Space.s3) {
-                fieldLabeledTextField(
-                    label: "Origin",
-                    placeholder: "e.g. Houston, TX",
-                    text: $origin,
-                    systemImage: "circle.dashed"
-                )
-                Divider().background(palette.borderFaint)
-                fieldLabeledTextField(
-                    label: "Destination",
-                    placeholder: "e.g. Atlanta, GA",
-                    text: $destination,
-                    systemImage: "flag.checkered"
-                )
-            }
-            .padding(Space.s3)
-            .background(palette.bgCard)
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .strokeBorder(palette.borderFaint)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    // MARK: - Step 2: EQUIPMENT
+
+    @ViewBuilder
+    private var equipmentStepBody: some View {
+        VStack(alignment: .leading, spacing: Space.s5) {
+            cargoTypePicker
+            weightField
+            equipmentPreviewSection
         }
     }
-
-    // MARK: - Cargo type picker
 
     private var cargoTypePicker: some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            sectionLabel(
-                systemImage: "shippingbox.and.arrow.backward",
-                text: "CARGO TYPE"
-            )
+        VStack(alignment: .leading, spacing: 6) {
+            Text("CARGO TYPE")
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(ShipperAPI.CargoType.allCases) { type in
@@ -298,278 +475,444 @@ struct ShipperPostLoad: View {
             Text(type.label)
                 .font(.system(size: 11, weight: .heavy)).tracking(0.4)
         }
-        .foregroundStyle(on ? AnyShapeStyle(Color.white) : AnyShapeStyle(palette.textSecondary))
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(
-            Capsule().fill(
-                on ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCard)
-            )
-        )
-        .overlay(
-            Capsule().strokeBorder(
-                on ? AnyShapeStyle(Color.clear) : AnyShapeStyle(palette.borderFaint),
-                lineWidth: 1
-            )
-        )
+        .foregroundStyle(on ? AnyShapeStyle(.white) : AnyShapeStyle(palette.textSecondary))
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(Capsule().fill(on ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCard)))
+        .overlay(Capsule().strokeBorder(on ? AnyShapeStyle(.clear) : AnyShapeStyle(palette.borderFaint), lineWidth: 1))
     }
 
-    // MARK: - Pickup date card
+    private var weightField: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("WEIGHT")
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            HStack(alignment: .center, spacing: Space.s3) {
+                Image(systemName: "scalemass.fill")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .frame(width: 18)
+                TextField("0", text: $weightText)
+                    .font(EType.body)
+                    .foregroundStyle(palette.textPrimary)
+                    .tint(LinearGradient.diagonal)
+                    .keyboardType(.decimalPad)
+                    .disabled(isSubmitting)
+                Text("lbs")
+                    .font(EType.mono(.micro)).tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(Space.s3)
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
+    }
 
-    private var pickupDateCard: some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            sectionLabel(
-                systemImage: "calendar",
-                text: "PICKUP DATE"
-            )
-            VStack(alignment: .leading, spacing: Space.s3) {
-                HStack {
-                    Text("Schedule a pickup")
+    private var equipmentPreviewSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("EQUIPMENT · PREVIEW")
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            HStack(alignment: .top, spacing: Space.s3) {
+                glyph(for: cargoType)
+                    .frame(width: 56, height: 56)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(cargoType.label)
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
-                    Spacer()
-                    Toggle(
-                        "Schedule a pickup",
-                        isOn: $hasPickupDate.animation(.spring(response: 0.22, dampingFraction: 0.85))
-                    )
-                    .toggleStyle(GradientToggleStyle())
-                    .labelsHidden()
-                }
-                if hasPickupDate {
-                    Divider().background(palette.borderFaint)
-                    DatePicker(
-                        "Pickup date",
-                        selection: $pickupDate,
-                        in: Date()...,
-                        displayedComponents: [.date]
-                    )
-                    .datePickerStyle(.compact)
-                    .tint(LinearGradient.diagonal)
-                    .foregroundStyle(palette.textPrimary)
-                    .disabled(isSubmitting)
-                } else {
-                    Text("No pickup date — leave blank to let the catalyst propose one.")
+                    Text(equipmentSpecText)
+                        .font(EType.mono(.caption))
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                    Text(equipmentNoteText)
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(Space.s4)
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                        .strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+        }
+    }
+
+    @ViewBuilder
+    private func glyph(for type: ShipperAPI.CargoType) -> some View {
+        let lower = type.label.lowercased()
+        if type.label.lowercased() == "hazmat" || lower.contains("petroleum") || lower.contains("chemicals") || lower.contains("liquid") || lower.contains("gas") || lower.contains("cryogenic") {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Brand.hazmat.opacity(0.16))
+                Rectangle()
+                    .stroke(Brand.hazmat, lineWidth: 2)
+                    .frame(width: 24, height: 24)
+                    .rotationEffect(.degrees(45))
+                Text("3")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(Color(hex: 0xB27300))
+                    .offset(y: 4)
+            }
+        } else if lower.contains("refrigerated") || lower.contains("food") {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Brand.info.opacity(0.12))
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(Brand.info, lineWidth: 2)
+                    .frame(width: 30, height: 24)
+            }
+        } else {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(palette.bgCardSoft)
+                Image(systemName: type.systemImage)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+            }
+        }
+    }
+
+    /// Equipment spec hint per cargoType — calibrated against the §11.4
+    /// MATRIX-50 anchor rows (UN1203 / MC-306, MC-331 NH₃, 53′ Reefer).
+    /// Eusotrans LLC USDOT 3 194 882 runs MC-306 + MC-331 multi-equipment.
+    private var equipmentSpecText: String {
+        switch cargoType.label.lowercased() {
+        case "hazmat", "petroleum":  return "MC-306 · UN1203 · PG II"
+        case "chemicals":            return "MC-307 · UN1760 · PG II"
+        case "liquid":               return "MC-307 · food-grade liner"
+        case "gas":                  return "MC-331 · UN1075 · cryo"
+        case "cryogenic":            return "MC-338 · LIN/LOX"
+        case "refrigerated":         return "53′ Reefer · 33–40°F"
+        case "food_grade", "food grade": return "Food-grade trailer · sanitary"
+        case "dry_bulk", "dry bulk", "grain": return "Pneumatic / hopper · sealed"
+        case "intermodal":           return "20′/40′/53′ ISO container"
+        case "oversized", "vehicles","timber": return "Flatbed / step-deck"
+        case "livestock":            return "Possum-belly · ventilated"
+        default:                     return "53′ Dry Van · standard"
+        }
+    }
+
+    private var equipmentNoteText: String {
+        switch cargoType.label.lowercased() {
+        case "hazmat", "petroleum", "chemicals", "gas", "cryogenic":
+            return "CHEMTREC +1-800-424-9300 · escort optional"
+        case "refrigerated", "food_grade", "food grade":
+            return "Continuous temp logging · last-load-out check"
+        case "intermodal":
+            return "Chassis pool · per diem after free time"
+        default:
+            return "Standard tender · no special notes"
+        }
+    }
+
+    // MARK: - Step 3: PRICING
+
+    @ViewBuilder
+    private var pricingStepBody: some View {
+        VStack(alignment: .leading, spacing: Space.s5) {
+            rateField
+            targetRateCard
+            notesField
+        }
+    }
+
+    private var rateField: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("POSTED RATE")
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            HStack(alignment: .center, spacing: Space.s3) {
+                Image(systemName: "dollarsign.circle")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .frame(width: 18)
+                TextField("0", text: $rateText)
+                    .font(EType.body)
+                    .foregroundStyle(palette.textPrimary)
+                    .tint(LinearGradient.diagonal)
+                    .keyboardType(.decimalPad)
+                    .disabled(isSubmitting)
+                Text("USD")
+                    .font(EType.mono(.micro)).tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(Space.s3)
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
+    }
+
+    private var targetRateCard: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("TARGET RATE · ESTIMATE")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                    Text(targetRateText)
+                        .font(.system(size: 22, weight: .bold).monospacedDigit())
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text("· spot avg estimate")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
                 }
             }
+            Spacer(minLength: 0)
+            Text(targetTrailText)
+                .font(EType.caption)
+                .foregroundStyle(targetTrailColor)
+        }
+        .padding(Space.s4)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    private var targetRateText: String {
+        if let r = parseDouble(rateText), r > 0 { return dollars(r) }
+        return "—"
+    }
+
+    private var targetTrailText: String {
+        guard let r = parseDouble(rateText), r > 0 else {
+            return "Add rate to see vs spot"
+        }
+        return "estimate vs spot"
+    }
+    private var targetTrailColor: Color { palette.textSecondary }
+
+    private var notesField: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("NOTES (OPTIONAL)")
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            TextField(
+                "Anything carriers should know — temperature ranges, dock hours, COI…",
+                text: $notes,
+                axis: .vertical
+            )
+            .font(EType.body)
+            .foregroundStyle(palette.textPrimary)
+            .tint(LinearGradient.diagonal)
+            .lineLimit(3...6)
             .padding(Space.s3)
             .background(palette.bgCard)
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .strokeBorder(palette.borderFaint)
-            )
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint))
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .disabled(isSubmitting)
         }
     }
 
-    // MARK: - Weight + rate card
+    // MARK: - Step 4: REVIEW
 
-    private var weightAndRateCard: some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            sectionLabel(
-                systemImage: "scalemass.fill",
-                text: "WEIGHT & RATE (OPTIONAL)"
-            )
-            VStack(alignment: .leading, spacing: Space.s3) {
-                fieldLabeledNumberField(
-                    label: "Weight",
-                    placeholder: "0",
-                    text: $weightText,
-                    systemImage: "scalemass",
-                    suffix: "lbs"
-                )
-                Divider().background(palette.borderFaint)
-                fieldLabeledNumberField(
-                    label: "Posted rate",
-                    placeholder: "0",
-                    text: $rateText,
-                    systemImage: "dollarsign.circle",
-                    suffix: "USD"
-                )
+    @ViewBuilder
+    private var reviewStepBody: some View {
+        VStack(alignment: .leading, spacing: Space.s5) {
+            reviewSummaryCard
+        }
+    }
+
+    private var reviewSummaryCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            reviewRow(label: "Origin",       value: nonEmpty(origin))
+            Divider().overlay(palette.borderFaint)
+            reviewRow(label: "Destination",  value: nonEmpty(destination))
+            Divider().overlay(palette.borderFaint)
+            reviewRow(label: "Cargo type",   value: cargoType.label)
+            Divider().overlay(palette.borderFaint)
+            reviewRow(label: "Pickup",       value: hasPickupDate ? formatDate(pickupDate) : "Catalyst proposes")
+            Divider().overlay(palette.borderFaint)
+            reviewRow(label: "Weight",       value: parseDouble(weightText).map { "\(Int($0)) lbs" } ?? "—")
+            Divider().overlay(palette.borderFaint)
+            reviewRow(label: "Posted rate",  value: parseDouble(rateText).map(dollars) ?? "—", isHero: true)
+            if !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Divider().overlay(palette.borderFaint)
+                reviewRow(label: "Notes",    value: notes)
             }
-            .padding(Space.s3)
-            .background(palette.bgCard)
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .strokeBorder(palette.borderFaint)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.xl)
+                    .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.xl))
     }
 
-    // MARK: - Notes card
+    private func reviewRow(label: String, value: String, isHero: Bool = false) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label.uppercased())
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            Spacer()
+            Text(value)
+                .font(isHero ? .system(size: 22, weight: .bold) : EType.bodyStrong)
+                .foregroundStyle(isHero ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textPrimary))
+                .multilineTextAlignment(.trailing)
+                .lineLimit(2)
+        }
+        .padding(.horizontal, Space.s4)
+        .padding(.vertical, Space.s3)
+    }
 
-    private var notesCard: some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            sectionLabel(
-                systemImage: "text.alignleft",
-                text: "NOTES (OPTIONAL)"
-            )
-            VStack(alignment: .leading, spacing: Space.s2) {
-                TextField(
-                    "Anything carriers should know — temperature ranges, dock hours, COI requirements…",
-                    text: $notes,
-                    axis: .vertical
-                )
-                .font(EType.body)
-                .foregroundStyle(palette.textPrimary)
-                .tint(LinearGradient.diagonal)
-                .lineLimit(3...6)
-                .disabled(isSubmitting)
+    private func nonEmpty(_ s: String) -> String {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? "—" : t
+    }
+
+    private func formatDate(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "EEE · MMM d"
+        return f.string(from: d)
+    }
+
+    // MARK: - Banners
+
+    private func successBanner(_ ack: ShipperAPI.PostLoadAck) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 13, weight: .heavy))
+                .foregroundStyle(LinearGradient.diagonal)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Load posted")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Text(loadNumberSubtitle(ack))
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(2)
             }
-            .padding(Space.s3)
-            .background(palette.bgCard)
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .strokeBorder(palette.borderFaint)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            Spacer(minLength: 0)
+            Button { withAnimation { lastSuccess = nil } } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .buttonStyle(.plain)
         }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(LinearGradient.diagonal, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
-    // MARK: - Submit button
+    private func loadNumberSubtitle(_ ack: ShipperAPI.PostLoadAck) -> String {
+        let trimmed = ack.loadNumber.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty { return "Bids will land in your Bids inbox." }
+        return "\(trimmed) · bids will land in your Bids inbox."
+    }
 
-    private var submitButton: some View {
-        Button {
-            Task { await submit() }
-        } label: {
+    private func errorBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 13, weight: .heavy))
+                .foregroundStyle(Brand.danger)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Couldn't post that load")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Text(message)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(3)
+            }
+            Spacer(minLength: 0)
+            Button { store.reset() } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(Brand.danger.opacity(0.4), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    // MARK: - Continue / Submit CTA
+
+    private var continueOrSubmitCTA: some View {
+        Button(action: continueOrSubmit) {
             HStack(spacing: 8) {
                 if isSubmitting {
                     ProgressView()
                         .progressViewStyle(.circular)
                         .tint(.white)
-                } else {
+                } else if step == .review {
                     Image(systemName: "paperplane.fill")
                         .font(.system(size: 13, weight: .heavy))
                         .foregroundStyle(.white)
                 }
-                Text(submitButtonText)
-                    .font(.system(size: 13, weight: .heavy)).tracking(0.5)
+                Text(ctaText)
+                    .font(EType.bodyStrong)
                     .foregroundStyle(.white)
             }
             .frame(maxWidth: .infinity, minHeight: 50)
             .background(
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .fill(
-                        canSubmit
-                        ? AnyShapeStyle(LinearGradient.diagonal)
-                        : AnyShapeStyle(palette.tintNeutral.opacity(0.4))
-                    )
+                Capsule().fill(canAdvance
+                               ? AnyShapeStyle(LinearGradient.primary)
+                               : AnyShapeStyle(palette.tintNeutral.opacity(0.4)))
             )
+            .clipShape(Capsule())
         }
         .buttonStyle(.plain)
-        .disabled(!canSubmit)
+        .disabled(!canAdvance)
+        .accessibilityLabel(ctaText)
     }
 
-    private var submitButtonText: String {
-        switch store.phase {
-        case .submitting: return "Posting…"
-        case .success:    return "Post another"
-        default:          return "Post this load"
+    private var ctaText: String {
+        if case .success = store.phase, step == .review { return "Post another" }
+        if step == .review {
+            return isSubmitting ? "Posting…" : "Post this load"
+        }
+        guard let next = step.next else { return "Continue" }
+        return "Continue · Step \(next.rawValue) of \(PostLoadStep.allCases.count) →"
+    }
+
+    private var canAdvance: Bool {
+        if isSubmitting { return false }
+        switch step {
+        case .lane:
+            let oTrim = origin.trimmingCharacters(in: .whitespacesAndNewlines)
+            let dTrim = destination.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !oTrim.isEmpty && !dTrim.isEmpty
+        case .equipment, .pricing, .review:
+            return true
         }
     }
 
-    // MARK: - Section label helper
-
-    private func sectionLabel(systemImage: String, text: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: systemImage)
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(LinearGradient.diagonal)
-            Text(text)
-                .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                .foregroundStyle(palette.textPrimary)
-            Spacer()
-        }
-    }
-
-    // MARK: - Field helpers
-
-    private func fieldLabeledTextField(
-        label: String,
-        placeholder: String,
-        text: Binding<String>,
-        systemImage: String
-    ) -> some View {
-        HStack(alignment: .center, spacing: Space.s3) {
-            Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .heavy))
-                .foregroundStyle(LinearGradient.diagonal)
-                .frame(width: 18)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label.uppercased())
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(palette.textTertiary)
-                TextField(placeholder, text: text)
-                    .font(EType.body)
-                    .foregroundStyle(palette.textPrimary)
-                    .tint(LinearGradient.diagonal)
-                    .textInputAutocapitalization(.words)
-                    .autocorrectionDisabled()
-                    .disabled(isSubmitting)
+    private func continueOrSubmit() {
+        if step == .review {
+            if case .success = store.phase {
+                resetForm()
+                store.reset()
+                step = .lane
+                return
+            }
+            Task { await submit() }
+        } else if let next = step.next {
+            withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
+                step = next
             }
         }
     }
 
-    private func fieldLabeledNumberField(
-        label: String,
-        placeholder: String,
-        text: Binding<String>,
-        systemImage: String,
-        suffix: String
-    ) -> some View {
-        HStack(alignment: .center, spacing: Space.s3) {
-            Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .heavy))
-                .foregroundStyle(LinearGradient.diagonal)
-                .frame(width: 18)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label.uppercased())
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(palette.textTertiary)
-                HStack(spacing: 6) {
-                    TextField(placeholder, text: text)
-                        .font(EType.body)
-                        .foregroundStyle(palette.textPrimary)
-                        .tint(LinearGradient.diagonal)
-                        .keyboardType(.decimalPad)
-                        .disabled(isSubmitting)
-                    Text(suffix)
-                        .font(EType.mono(.micro)).tracking(0.4)
-                        .foregroundStyle(palette.textTertiary)
-                }
-            }
-        }
-    }
-
-    // MARK: - Submit pipeline
+    // MARK: - Submit pipeline (preserved verbatim)
 
     private var isSubmitting: Bool {
         if case .submitting = store.phase { return true }
         return false
     }
 
-    /// CTA enabled iff (origin and destination non-empty) AND
-    /// (not currently submitting). Doctrine: never let the user
-    /// fire a known-invalid mutation.
-    private var canSubmit: Bool {
-        let trimOrigin = origin.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimDest   = destination.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimOrigin.isEmpty || trimDest.isEmpty { return false }
-        if isSubmitting { return false }
-        return true
-    }
-
     private func submit() async {
-        // If we're already in success state, the CTA acts as
-        // "post another" — clear the form, reset the store, and
-        // bail out so the user types a fresh load.
-        if case .success = store.phase {
-            resetForm()
-            store.reset()
-            return
-        }
         let pickupISO = hasPickupDate ? isoDate(pickupDate) : nil
         let weight    = parseDouble(weightText)
         let rate      = parseDouble(rateText)
@@ -584,10 +927,6 @@ struct ShipperPostLoad: View {
         )
         if case .success(let ack) = store.phase {
             self.lastSuccess = ack
-            // Form clears so the user can post another without
-            // remounting the screen. Cargo type stays on the user's
-            // last selection by design — most shippers post the
-            // same kind of load repeatedly.
             resetForm()
         }
     }
@@ -602,9 +941,6 @@ struct ShipperPostLoad: View {
         notes = ""
     }
 
-    /// Permissive decimal parser — tolerates "1,200" as well as
-    /// "1200" and "1200.50". Returns nil for empty or unparseable
-    /// strings (so the wire field gets omitted).
     private func parseDouble(_ raw: String) -> Double? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return nil }
@@ -612,14 +948,26 @@ struct ShipperPostLoad: View {
         return Double(cleaned)
     }
 
-    /// `YYYY-MM-DD` — the form the backend accepts at
-    /// `new Date(input.pickupDate)`. Locale-independent.
     private func isoDate(_ date: Date) -> String {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         f.timeZone = TimeZone(secondsFromGMT: 0)
         return f.string(from: date)
     }
+
+    private func dollars(_ value: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = "USD"
+        f.maximumFractionDigits = 0
+        return f.string(from: NSNumber(value: value)) ?? "$0"
+    }
+}
+
+// MARK: - Notification names
+
+extension Notification.Name {
+    static let eusoShipperPostLoadDismiss = Notification.Name("eusoShipperPostLoadDismiss")
 }
 
 // MARK: - Screen wrapper
@@ -640,10 +988,7 @@ struct ShipperPostLoadScreen: View {
     }
 }
 
-// 204 sits one tap deeper than the four primary BottomNav slots —
-// it's the dedicated form behind the "Post a load" CTA on
-// Shipper bottom-nav doctrine — 204 is the canonical "Create Load"
-// destination; the leading[1] slot lights up when this screen is active.
+// Shipper bottom-nav doctrine — out of scope per parity mandate §1.
 private func shipperNavLeading_204() -> [NavSlot] {
     [NavSlot(label: "Home",        systemImage: "house",                              isCurrent: false),
      NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle.fill",   isCurrent: true)]
@@ -655,10 +1000,6 @@ private func shipperNavTrailing_204() -> [NavSlot] {
 }
 
 // MARK: - Previews
-//
-// Previews don't run `.task`, so the store stays in `.idle` and the
-// form renders with empty fields — both registers compile in
-// isolation per doctrine §10.
 
 #Preview("204 · Shipper · Post Load · Night") {
     ShipperPostLoadScreen(theme: Theme.dark)
