@@ -357,13 +357,16 @@ struct PaperworkScreen: View {
     }
 }
 
+// PNG canon at `01 Driver/{Light,Dark}/025 Paperwork.png` pins
+// TRIPS current on lifecycle Ring 3 (load-close paperwork). Icon
+// set + trailing slot normalized to canonical 010-024 layout.
 private func driverNavLeading_025() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
 }
 private func driverNavTrailing_025() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person", isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
 }
 
 #Preview("025 · Paperwork · Dark") {
