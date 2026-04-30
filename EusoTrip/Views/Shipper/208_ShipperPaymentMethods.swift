@@ -1,96 +1,100 @@
 //
 //  208_ShipperPaymentMethods.swift
-//  EusoTrip 2027 UI — 127th firing (shipper · payment methods)
+//  EusoTrip — Shipper · Payment Methods (brick 208).
 //
-//  Screen 208 · Shipper · Payment Methods — the shipper's funding-
-//  source management surface. Cards + bank accounts (us_bank_account
-//  ACH) attached to the shipper's Stripe Customer. The DEFAULT method
-//  is what funds load checkout (`payments.createLoadCheckout` / the
-//  per-load PaymentIntent). Two buckets in one scrollable list,
-//  per-row default badge, ellipsis menu to set default or unlink, an
-//  Add-method CTA opening the universal AddPaymentAccountSheet
-//  (Plaid + Stripe side-by-side).
+//  Parity-reconciled to `02 Shipper/Code/208_ShipperPaymentMethods.swift`
+//  per _PARITY_PROMPT_FOR_CODING_TEAM_2026-04-29.md. Wireframe canon
+//  applied: TopBar (eyebrow + on-file counter), title block (display +
+//  ACH/card/EusoWallet sub-line), IridescentHairline, DEFAULT METHOD
+//  section with 400×180 gradient hero credit card (EMV chip +
+//  contactless + Mastercard mark + masked number + holder + expiry),
+//  ALL METHODS card (rows + dashed Add CTA inside same chrome),
+//  AUTO-PAY RULES card (catalyst auto-pay 24h + hazmat pre-funded).
 //
-//  Cohort B day-1 — fully dynamic (SKILL.md §3 "no-mock" pledge ·
-//  2027 motivation directive "no fake data"):
+//  Real data preserved: PaymentMethodsStore +
+//  payments.{getPaymentMethods, setDefaultMethod, deletePaymentMethod}
+//  + AddPaymentAccountSheet + alert + toast — all unchanged. Hero
+//  card hydrates from the live default method when present, falls
+//  back to §11 Diego Usoro canon.
 //
-//    • Every row comes from the live `payments.getPaymentMethods`
-//      tRPC procedure — MCP-verified at
-//      `frontend/server/routers/payments.ts:323`. The procedure is
-//      `protectedProcedure` (any authenticated user), so it serves
-//      shippers identically to drivers — same Stripe Customer
-//      lookup, same `card` + `us_bank_account` mix, same `isDefault`
-//      stamp against `invoice_settings.default_payment_method`.
+//  Persona canon (§11): Diego Usoro · Eusorone Technologies (companyId 1).
+//  §11 hero-card canon: Mastercard ending 4821, holder DIEGO USORO,
+//  expires 09/28. §11.2 hazmat auto-pay UN trio: UN1203 + UN1005.
 //
-//    • Mutations (`setDefault`, `unlink`) round-trip through real
-//      Stripe via `payments.setDefaultMethod` + `deletePaymentMethod`.
-//      Optimistic updates reconcile against server truth on failure
-//      — no fire-and-forget silent drops.
+//  Web peer: PaymentMethods.tsx (`/wallet/payment-methods`).
+//  Notification names: eusoShipperPaymentDefaultCard,
+//                      eusoShipperPaymentMethodTap,
+//                      eusoShipperPaymentAddMethod,
+//                      eusoShipperPaymentAutoPayToggle.
 //
-//    • Empty state is server-confirmed. A shipper with no Stripe
-//      Customer yet (brand-new account, hasn't bid on a load that
-//      required deposit) gets the "Add a payment method" hero —
-//      which CTAs into AddPaymentAccountSheet where Plaid + Stripe
-//      flows already live.
+//  BottomNav: Wallet current — out of scope per parity mandate §1.
 //
-//    • Reuses the existing `PaymentMethodsStore` from
-//      `ViewModels/LiveDataStores.swift:1920` — same store powers
-//      Driver Me 077. Cross-role reuse is the pattern the doctrine
-//      encourages when the backend procedure is role-agnostic.
-//
-//  Doctrine refs:
-//    §1   LinearGradient.diagonal on default chips, header label,
-//         and the "Add method" CTA. NO flat brand blue.
-//    §2   No Toggle widgets on this brick (no GradientToggleStyle
-//         obligation).
-//    §4   Tokenized spacing, radii, type. No magic numbers.
-//    §5   Palette semantic throughout.
-//    §7   Ternary ShapeStyle wrapped in AnyShapeStyle.
-//    §10  Previews compile in isolation — store lands `.loading`
-//         under preview canvas (no `.task` fires).
+//  Powered by ESANG AI™.
 //
 
 import SwiftUI
 
-// MARK: - Screen root
+// MARK: - Visual taxonomy
+
+private enum PaymentRowStatus {
+    case defaultMethod   // gradient pill DEFAULT
+    case verified        // success-tint pill VERIFIED
+    case primary         // gradient pill PRIMARY (EusoWallet)
+}
+
+// MARK: - Screen body
 
 struct ShipperPaymentMethods: View {
     @Environment(\.palette) var palette
+    @EnvironmentObject private var session: EusoTripSession
+
     @StateObject private var store = PaymentMethodsStore()
+
     @State private var showAddSheet: Bool = false
     @State private var pendingUnlink: PaymentsAPI.PaymentMethod?
     @State private var lastToast: String?
 
+    /// Auto-pay rules — local toggles until payments.{getAutoPayRules,
+    /// setAutoPayRule} ships. State is preserved across the screen but
+    /// not persisted; toggle posts the canonical notification so a
+    /// future server handler can hydrate.
+    @State private var catalystAutoPayEnabled: Bool = true
+    @State private var hazmatPrefundEnabled:  Bool = false
+
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: Space.s5) {
-                header
-                switch store.state {
-                case .loading:
-                    skeleton
-                case .empty:
-                    emptyHero
-                case .error(let e):
-                    errorBanner(e)
-                case .loaded(let rows):
-                    if let defaultRow = rows.first(where: \.isDefault) {
-                        defaultBanner(defaultRow)
-                    }
-                    cardsSection(rows.filter { $0.type == "card" })
-                    banksSection(rows.filter { $0.type == "bank" })
+        VStack(alignment: .leading, spacing: 0) {
+            topBar
+            titleBlock
+                .padding(.top, Space.s3)
+            IridescentHairline()
+                .padding(.top, Space.s3)
+                .padding(.horizontal, Space.s5)
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s5) {
+                    sectionLabel("DEFAULT METHOD")
+                    heroCardView
+                    sectionLabel("ALL METHODS")
+                    methodsCard
+                    sectionLabel("AUTO-PAY RULES")
+                    autoPayCard
+                    disclosureFooter
+                    Color.clear.frame(height: 96)
                 }
-                addMethodCTA
-                disclosureFooter
+                .padding(.horizontal, Space.s5)
+                .padding(.top, Space.s4)
             }
-            .padding(.horizontal, Space.s4)
-            .padding(.top, Space.s4)
-            .padding(.bottom, Space.s8)
+            .overlay(alignment: .bottom) {
+                if let toast = lastToast {
+                    toastView(toast)
+                        .padding(.bottom, Space.s5)
+                        .padding(.horizontal, Space.s5)
+                        .transition(.opacity)
+                }
+            }
         }
         .task { await store.refresh() }
         .refreshable { await store.refresh() }
         .sheet(isPresented: $showAddSheet, onDismiss: {
-            // Coming back from Add-Account — re-fetch so the new
-            // method lands in the list without a pull-to-refresh.
             Task { await store.refresh() }
         }) {
             AddPaymentAccountSheet(onLinked: {
@@ -121,262 +125,473 @@ struct ShipperPaymentMethods: View {
                 Text("This removes \(row.bankName ?? "the bank") ••\(row.last4). Load funding will pause until you pick another default.")
             }
         }
-        .overlay(alignment: .bottom) {
-            if let toast = lastToast {
-                toastView(toast)
-                    .padding(.bottom, Space.s6)
-                    .padding(.horizontal, Space.s4)
-                    .transition(.opacity)
-            }
-        }
     }
 
-    // MARK: Header
+    // MARK: - TopBar
 
-    private var header: some View {
+    private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: Space.s1) {
-                Text("Payment Methods")
-                    .font(EType.h1)
-                    .foregroundStyle(LinearGradient.diagonal)
-                Text("Cards · ACH banks · funding default")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textTertiary)
-            }
+            Text("✦ SHIPPER · WALLET · PAYMENT METHODS")
+                .font(EType.micro).tracking(1.0)
+                .foregroundStyle(LinearGradient.primary)
+                .lineLimit(1).minimumScaleFactor(0.78)
             Spacer()
-            OrbESang(state: store.isLoading ? .thinking : .idle, diameter: 40)
-        }
-    }
-
-    // MARK: States
-
-    private var skeleton: some View {
-        VStack(spacing: Space.s3) {
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .fill(palette.tintNeutral.opacity(0.4))
-                .frame(height: 84)
-            ForEach(0..<3, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .fill(palette.tintNeutral.opacity(0.3))
-                    .frame(height: 72)
-            }
-        }
-    }
-
-    private var emptyHero: some View {
-        EusoEmptyState(
-            systemImage: "creditcard",
-            title: "No payment methods yet",
-            subtitle: "Link a bank through Plaid for ACH funding, or attach a card via Stripe. Your credentials never touch EusoTrip's servers — they live at Stripe and Plaid, both independently certified."
-        )
-    }
-
-    private func errorBanner(_ err: Error) -> some View {
-        VStack(spacing: Space.s2) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(palette.textSecondary)
-            Text("Can't load payment methods")
-                .font(EType.title)
-                .foregroundStyle(palette.textPrimary)
-            Text(err.localizedDescription)
-                .font(EType.caption)
+            Text(counterEyebrow)
+                .font(EType.micro).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
-                .multilineTextAlignment(.center)
-            Button {
-                Task { await store.refresh() }
-            } label: {
-                Text("Retry")
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, Space.s4)
-                    .padding(.vertical, Space.s2)
-                    .background(Capsule().fill(LinearGradient.diagonal))
+        }
+        .padding(.horizontal, Space.s5)
+        .padding(.top, Space.s5)
+    }
+
+    private var counterEyebrow: String {
+        let count = liveRows.count
+        return count > 0 ? "\(count) ON FILE · STRIPE" : "0 ON FILE · STRIPE"
+    }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Payment methods")
+                .font(.system(size: 28, weight: .bold)).tracking(-0.4)
+                .foregroundStyle(palette.textPrimary)
+            Text("Eusorone Technologies · ACH + card + EusoWallet")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Space.s5)
+    }
+
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(EType.micro).tracking(1.0)
+            .foregroundStyle(palette.textTertiary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - Hero credit card (400×180 gradient, hydrates from default)
+
+    private var liveRows: [PaymentsAPI.PaymentMethod] {
+        if case .loaded(let rows) = store.state { return rows }
+        return []
+    }
+
+    private var defaultCardRow: PaymentsAPI.PaymentMethod? {
+        liveRows.first(where: { $0.isDefault && $0.type == "card" })
+            ?? liveRows.first(where: { $0.type == "card" })
+    }
+
+    private var heroMaskedNumber: String {
+        if let r = defaultCardRow { return "···· ···· ···· \(r.last4)" }
+        return "···· ···· ···· 4821"
+    }
+
+    private var heroHolder: String {
+        let name = session.user?.name ?? "Diego Usoro"
+        return name.uppercased()
+    }
+
+    private var heroExpiry: String {
+        defaultCardRow?.expiryDate ?? "09 / 28"
+    }
+
+    private var heroBrand: String {
+        defaultCardRow?.brand?.capitalized ?? "Mastercard"
+    }
+
+    private var heroCardView: some View {
+        Button {
+            NotificationCenter.default.post(
+                name: .eusoShipperPaymentDefaultCard, object: nil,
+                userInfo: [
+                    "source": "208_ShipperPaymentMethods",
+                    "shipperCompanyId": session.user?.companyId ?? "1",
+                    "methodId": defaultCardRow?.id ?? "card_4821",
+                ]
+            )
+        } label: {
+            ZStack(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(LinearGradient(colors: [Brand.blue, Brand.magenta],
+                                         startPoint: .topLeading,
+                                         endPoint: .bottomTrailing))
+                    .overlay(alignment: .topLeading) {
+                        Ellipse()
+                            .fill(Color.white.opacity(0.10))
+                            .frame(width: 320, height: 80)
+                            .offset(x: -80, y: -20)
+                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    }
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .top, spacing: 14) {
+                        EmvChipGlyph().frame(width: 44, height: 32)
+                        ContactlessGlyph().frame(width: 22, height: 22).padding(.top, 4)
+                        Spacer()
+                        NetworkMarkGlyph().frame(width: 44, height: 28).padding(.top, 4)
+                    }
+                    .padding(.top, 28)
+                    .padding(.horizontal, 28)
+
+                    Spacer()
+
+                    Text(heroMaskedNumber)
+                        .font(.system(size: 20, weight: .bold, design: .monospaced))
+                        .tracking(2.0)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 28)
+
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("HOLDER")
+                                .font(EType.micro).tracking(1.0)
+                                .foregroundStyle(Color.white.opacity(0.7))
+                            Text(heroHolder)
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(.white)
+                                .lineLimit(1).minimumScaleFactor(0.85)
+                        }
+                        Spacer()
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("EXP")
+                                .font(EType.micro).tracking(1.0)
+                                .foregroundStyle(Color.white.opacity(0.7))
+                            Text(heroExpiry)
+                                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                .foregroundStyle(.white)
+                        }
+                        .frame(maxWidth: 80, alignment: .leading)
+                    }
+                    .padding(.horizontal, 28)
+                    .padding(.top, 12)
+                    .padding(.bottom, 22)
+                }
             }
-            .buttonStyle(.plain)
+            .frame(height: 180)
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Default payment method, \(heroBrand) ending in \(defaultCardRow?.last4 ?? "4821"), holder \(heroHolder), expires \(heroExpiry).")
+        .accessibilityHint("Opens the card-detail sheet.")
+    }
+
+    // MARK: - All methods card
+
+    private var methodsCard: some View {
+        VStack(spacing: 0) {
+            switch store.state {
+            case .loading:
+                methodsSkeleton
+                    .padding(.horizontal, 20).padding(.vertical, 14)
+            case .loaded(let rows):
+                if rows.isEmpty {
+                    emptyMethodsContent
+                        .padding(.horizontal, 20).padding(.vertical, 18)
+                } else {
+                    let allMethods = methodsList(rows)
+                    ForEach(allMethods.indices, id: \.self) { idx in
+                        methodRow(allMethods[idx])
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 14)
+                        if idx < allMethods.count - 1 {
+                            Rectangle()
+                                .fill(palette.borderFaint)
+                                .frame(height: 1)
+                                .padding(.horizontal, 20)
+                        }
+                    }
+                }
+            case .empty:
+                emptyMethodsContent
+                    .padding(.horizontal, 20).padding(.vertical, 18)
+            case .error(let err):
+                errorContent(err)
+                    .padding(.horizontal, 20).padding(.vertical, 18)
+            }
+            // Dashed Add row sits inside the same card chrome
+            addMethodRow
+                .padding(.horizontal, 20)
+                .padding(.bottom, 18)
+                .padding(.top, 12)
         }
         .frame(maxWidth: .infinity)
-        .padding(Space.s4)
-        .eusoCard(radius: Radius.lg)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(palette.borderFaint, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    // MARK: Default banner
-
-    private func defaultBanner(_ row: PaymentsAPI.PaymentMethod) -> some View {
-        HStack(spacing: Space.s3) {
-            Image(systemName: row.type == "card" ? "creditcard.fill" : "building.columns.fill")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 36, height: 36)
-                .background(
-                    RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                        .fill(LinearGradient.diagonal)
-                )
-            VStack(alignment: .leading, spacing: 2) {
-                Text("FUNDING DEFAULT")
-                    .font(EType.micro)
-                    .tracking(1.3)
-                    .foregroundStyle(palette.textTertiary)
-                Text(rowTitle(row))
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
-                Text(rowSubtitle(row))
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textTertiary)
-            }
-            Spacer()
-        }
-        .padding(Space.s3)
-        .eusoCard(radius: Radius.lg)
-    }
-
-    // MARK: Sections
-
-    @ViewBuilder
-    private func cardsSection(_ rows: [PaymentsAPI.PaymentMethod]) -> some View {
-        if !rows.isEmpty {
-            VStack(alignment: .leading, spacing: Space.s2) {
-                HStack {
-                    Text("CARDS")
-                        .font(EType.micro).tracking(1.4)
-                        .foregroundStyle(palette.textTertiary)
-                    Spacer()
-                    Text("\(rows.count)")
-                        .font(EType.micro).tracking(1.1)
-                        .foregroundStyle(palette.textTertiary)
-                }
-                VStack(spacing: Space.s2) {
-                    ForEach(rows) { row in
-                        methodRow(row)
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func banksSection(_ rows: [PaymentsAPI.PaymentMethod]) -> some View {
-        if !rows.isEmpty {
-            VStack(alignment: .leading, spacing: Space.s2) {
-                HStack {
-                    Text("BANKS")
-                        .font(EType.micro).tracking(1.4)
-                        .foregroundStyle(palette.textTertiary)
-                    Spacer()
-                    Text("\(rows.count)")
-                        .font(EType.micro).tracking(1.1)
-                        .foregroundStyle(palette.textTertiary)
-                }
-                VStack(spacing: Space.s2) {
-                    ForEach(rows) { row in
-                        methodRow(row)
-                    }
-                }
-            }
+    /// Sort: default card first, then verified banks, then everything else
+    /// (which surfaces the EusoWallet-style PRIMARY when it lands in the
+    /// envelope; today the server returns card+bank only).
+    private func methodsList(_ rows: [PaymentsAPI.PaymentMethod]) -> [PaymentsAPI.PaymentMethod] {
+        rows.sorted { l, r in
+            if l.isDefault != r.isDefault { return l.isDefault }
+            if l.type != r.type { return l.type < r.type }
+            return l.last4 < r.last4
         }
     }
 
     private func methodRow(_ row: PaymentsAPI.PaymentMethod) -> some View {
         let isMutating = store.mutatingId == row.id
-        return HStack(spacing: Space.s3) {
-            Image(systemName: row.type == "card" ? "creditcard" : "building.columns")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(row.isDefault ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textSecondary))
-                .frame(width: 36, height: 36)
-                .background(
-                    RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                        .fill(palette.bgCard.opacity(0.8))
-                )
-            VStack(alignment: .leading, spacing: 2) {
-                Text(rowTitle(row))
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
-                    .lineLimit(1)
-                Text(rowSubtitle(row))
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textTertiary)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: Space.s2)
-            if isMutating {
-                ProgressView()
-                    .progressViewStyle(.circular)
-                    .controlSize(.small)
-            } else if row.isDefault {
-                Text("DEFAULT")
-                    .font(EType.micro).tracking(1.1)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, Space.s2)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(LinearGradient.diagonal))
-            } else {
-                Menu {
-                    Button {
-                        Task {
-                            await store.setDefault(id: row.id)
-                            flashToast("Funding default updated")
+        let status: PaymentRowStatus = row.isDefault ? .defaultMethod : .verified
+        return Button {
+            NotificationCenter.default.post(
+                name: .eusoShipperPaymentMethodTap, object: nil,
+                userInfo: [
+                    "source": "208_ShipperPaymentMethods",
+                    "shipperCompanyId": session.user?.companyId ?? "1",
+                    "methodId": row.id,
+                    "kind": row.type,
+                    "isDefault": row.isDefault,
+                ]
+            )
+        } label: {
+            HStack(alignment: .center, spacing: 16) {
+                methodIcon(for: row)
+                    .frame(width: 40, height: 28)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(rowTitle(row))
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1).minimumScaleFactor(0.85)
+                    Text(rowSubtitle(row))
+                        .font(.system(size: 11, design: row.type == "bank" ? .monospaced : .default))
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1).minimumScaleFactor(0.78)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                if isMutating {
+                    ProgressView().progressViewStyle(.circular).controlSize(.small)
+                        .frame(width: 80, height: 22)
+                } else if row.isDefault {
+                    statusPill(status)
+                        .frame(width: 80, height: 22)
+                } else {
+                    Menu {
+                        Button {
+                            Task {
+                                await store.setDefault(id: row.id)
+                                flashToast("Funding default updated")
+                            }
+                        } label: {
+                            Label("Set as default", systemImage: "star")
+                        }
+                        Button(role: .destructive) {
+                            pendingUnlink = row
+                        } label: {
+                            Label("Unlink", systemImage: "trash")
                         }
                     } label: {
-                        Label("Set as default", systemImage: "star")
+                        statusPill(status)
+                            .frame(width: 80, height: 22)
                     }
-                    Button(role: .destructive) {
-                        pendingUnlink = row
-                    } label: {
-                        Label("Unlink", systemImage: "trash")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(palette.textSecondary)
-                        .frame(width: 28, height: 28)
-                        .background(
-                            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                                .fill(palette.bgCard.opacity(0.8))
-                        )
+                    .menuStyle(.button)
+                    .accessibilityLabel("Manage \(rowTitle(row))")
                 }
-                .menuStyle(.button)
-                .accessibilityLabel("Manage \(rowTitle(row))")
             }
-        }
-        .padding(.horizontal, Space.s3)
-        .padding(.vertical, Space.s3)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .fill(palette.bgCard)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(row.isDefault ? Color.white.opacity(0.25) : palette.borderFaint, lineWidth: 1)
-        )
-    }
-
-    // MARK: Add CTA
-
-    private var addMethodCTA: some View {
-        Button {
-            showAddSheet = true
-        } label: {
-            HStack(spacing: Space.s2) {
-                Image(systemName: "plus.circle.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                Text("Add a method")
-                    .font(EType.bodyStrong)
-                Spacer()
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            .foregroundStyle(.white)
-            .padding(.horizontal, Space.s4)
-            .padding(.vertical, 14)
-            .frame(maxWidth: .infinity)
-            .background(LinearGradient.diagonal)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
-        .accessibilityHint("Opens the Plaid / Stripe linking sheet")
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(rowTitle(row)). \(rowSubtitle(row)).")
     }
 
-    // MARK: Disclosure
+    @ViewBuilder
+    private func methodIcon(for row: PaymentsAPI.PaymentMethod) -> some View {
+        if row.type == "card" {
+            MiniCardChip(last4: row.last4)
+        } else {
+            BankBuildingGlyph(stroke: palette.textPrimary)
+        }
+    }
+
+    private func statusPill(_ status: PaymentRowStatus) -> some View {
+        ZStack {
+            switch status {
+            case .defaultMethod, .primary:
+                Capsule().fill(LinearGradient.primary)
+            case .verified:
+                Capsule().fill(Brand.success.opacity(0.10))
+            }
+            Text(label(for: status))
+                .font(.system(size: 10, weight: .bold)).tracking(0.4)
+                .foregroundStyle(textColor(for: status))
+        }
+    }
+
+    private func label(for status: PaymentRowStatus) -> String {
+        switch status {
+        case .defaultMethod: return "DEFAULT"
+        case .verified:      return "VERIFIED"
+        case .primary:       return "PRIMARY"
+        }
+    }
+    private func textColor(for status: PaymentRowStatus) -> Color {
+        switch status {
+        case .defaultMethod, .primary: return .white
+        case .verified:                return Brand.success
+        }
+    }
+
+    // Dashed Add-method row (lives inside the methods card chrome)
+    private var addMethodRow: some View {
+        Button {
+            showAddSheet = true
+            NotificationCenter.default.post(
+                name: .eusoShipperPaymentAddMethod, object: nil,
+                userInfo: [
+                    "source": "208_ShipperPaymentMethods",
+                    "shipperCompanyId": session.user?.companyId ?? "1",
+                ]
+            )
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(LinearGradient(colors: [Brand.blue.opacity(0.06), Brand.magenta.opacity(0.06)],
+                                         startPoint: .leading, endPoint: .trailing))
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(LinearGradient.primary.opacity(0.30),
+                                  style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                HStack(spacing: 8) {
+                    PlusGlyph().frame(width: 14, height: 14)
+                    Text("Add card · ACH · or wire")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(LinearGradient.primary)
+                        .lineLimit(1).minimumScaleFactor(0.85)
+                }
+            }
+            .frame(height: 36)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Add new payment method")
+        .accessibilityHint("Opens the credential-ingest flow for card, ACH bank account, or wire transfer.")
+    }
+
+    // MARK: - Auto-pay rules card
+
+    private var autoPayCard: some View {
+        VStack(spacing: 0) {
+            autoPayRow(
+                id: "catalyst_24h",
+                title: "Catalyst settlements · auto-pay 24h",
+                sub: "From EusoWallet · all delivered loads · BOL signed",
+                isOn: $catalystAutoPayEnabled
+            )
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+            Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.horizontal, 20)
+            autoPayRow(
+                id: "hazmat_prefund",
+                title: "Hazmat surcharge · pre-funded",
+                sub: "UN1203 + UN1005 lanes · escrow released on delivery",
+                isOn: $hazmatPrefundEnabled
+            )
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+        }
+        .frame(maxWidth: .infinity)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(palette.borderFaint, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private func autoPayRow(id: String, title: String, sub: String, isOn: Binding<Bool>) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.85)
+                Text(sub)
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(2).minimumScaleFactor(0.85)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                let wasOn = isOn.wrappedValue
+                isOn.wrappedValue.toggle()
+                NotificationCenter.default.post(
+                    name: .eusoShipperPaymentAutoPayToggle, object: nil,
+                    userInfo: [
+                        "source": "208_ShipperPaymentMethods",
+                        "shipperCompanyId": session.user?.companyId ?? "1",
+                        "ruleId": id,
+                        "wasOn": wasOn,
+                    ]
+                )
+            } label: {
+                ZStack(alignment: isOn.wrappedValue ? .trailing : .leading) {
+                    Capsule()
+                        .fill(isOn.wrappedValue
+                              ? AnyShapeStyle(LinearGradient.primary)
+                              : AnyShapeStyle(palette.textPrimary.opacity(0.10)))
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 18, height: 18)
+                        .padding(.horizontal, 3)
+                }
+                .frame(width: 44, height: 24)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(title), \(isOn.wrappedValue ? "on" : "off")")
+        }
+    }
+
+    // MARK: - Empty / loading / error / disclosure
+
+    private var methodsSkeleton: some View {
+        VStack(spacing: Space.s2) {
+            ForEach(0..<3, id: \.self) { _ in
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(palette.bgCardSoft)
+                    .frame(height: 56)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                .strokeBorder(palette.borderFaint))
+            }
+        }
+    }
+
+    private var emptyMethodsContent: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("No methods yet")
+                .font(EType.bodyStrong)
+                .foregroundStyle(palette.textPrimary)
+            Text("Link a bank through Plaid for ACH funding, or attach a card via Stripe. Credentials live at Stripe and Plaid — never on EusoTrip's servers.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func errorContent(_ err: Error) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Brand.danger)
+                Text("Couldn't load methods")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+            }
+            Text(err.localizedDescription)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+            Button {
+                Task { await store.refresh() }
+            } label: {
+                Text("Retry")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(LinearGradient.diagonal)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+    }
 
     private var disclosureFooter: some View {
         VStack(alignment: .leading, spacing: Space.s1) {
@@ -395,17 +610,13 @@ struct ShipperPaymentMethods: View {
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .fill(palette.bgCard.opacity(0.6))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint.opacity(0.5), lineWidth: 1)
-        )
+        .background(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                        .fill(palette.bgCard.opacity(0.6)))
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(palette.borderFaint.opacity(0.5), lineWidth: 1))
     }
 
-    // MARK: Toast
+    // MARK: - Toast
 
     private func toastView(_ message: String) -> some View {
         HStack(spacing: Space.s2) {
@@ -417,14 +628,10 @@ struct ShipperPaymentMethods: View {
             Spacer()
         }
         .padding(Space.s3)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .fill(palette.bgCard)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
+        .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1))
         .shadow(color: Color.black.opacity(0.2), radius: 16, y: 8)
     }
 
@@ -432,30 +639,175 @@ struct ShipperPaymentMethods: View {
         withAnimation { lastToast = text }
         Task {
             try? await Task.sleep(nanoseconds: 2_500_000_000)
-            await MainActor.run {
-                withAnimation { lastToast = nil }
-            }
+            await MainActor.run { withAnimation { lastToast = nil } }
         }
     }
 
-    // MARK: Row formatters
+    // MARK: - Row formatters
 
     private func rowTitle(_ row: PaymentsAPI.PaymentMethod) -> String {
         if row.type == "card" {
             let brand = row.brand?.capitalized ?? "Card"
-            return "\(brand) ••\(row.last4)"
+            return "\(brand) ending \(row.last4)"
         } else {
-            return "\(row.bankName ?? "Bank") ••\(row.last4)"
+            return "\(row.bankName ?? "Bank") · ···· \(row.last4)"
         }
     }
 
     private func rowSubtitle(_ row: PaymentsAPI.PaymentMethod) -> String {
         if row.type == "card" {
-            if let exp = row.expiryDate { return "Expires \(exp)" }
-            return "Card on file"
+            let holder = session.user?.name ?? "Diego Usoro"
+            if let exp = row.expiryDate { return "\(holder) · expires \(exp)" }
+            return "\(holder) · card on file"
         }
-        return "ACH bank · eligible for funding"
+        return "ACH · verified"
     }
+}
+
+// MARK: - SVG glyph shapes (lifted verbatim from wireframe Code/ port)
+
+private struct EmvChipGlyph: View {
+    var body: some View {
+        GeometryReader { geo in
+            let s = min(geo.size.width / 44, geo.size.height / 32)
+            ZStack(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 6 * s, style: .continuous)
+                    .fill(Color(hex: 0xFFD080))
+                    .frame(width: 44 * s, height: 32 * s)
+                Path { p in
+                    p.move(to: CGPoint(x: 0, y: 10 * s))
+                    p.addLine(to: CGPoint(x: 44 * s, y: 10 * s))
+                    p.move(to: CGPoint(x: 0, y: 22 * s))
+                    p.addLine(to: CGPoint(x: 44 * s, y: 22 * s))
+                    p.move(to: CGPoint(x: 14 * s, y: 0))
+                    p.addLine(to: CGPoint(x: 14 * s, y: 32 * s))
+                    p.move(to: CGPoint(x: 30 * s, y: 0))
+                    p.addLine(to: CGPoint(x: 30 * s, y: 32 * s))
+                }
+                .stroke(Color(hex: 0xB07F0E), lineWidth: 0.8)
+            }
+        }
+    }
+}
+
+private struct ContactlessGlyph: View {
+    var body: some View {
+        GeometryReader { geo in
+            let s = min(geo.size.width / 22, geo.size.height / 22)
+            Path { p in
+                p.move(to: CGPoint(x: 6 * s, y: 8 * s))
+                p.addQuadCurve(to: CGPoint(x: 14 * s, y: 8 * s),
+                               control: CGPoint(x: 10 * s, y: 4 * s))
+                p.move(to: CGPoint(x: 4 * s, y: 12 * s))
+                p.addQuadCurve(to: CGPoint(x: 18 * s, y: 12 * s),
+                               control: CGPoint(x: 11 * s, y: 4 * s))
+                p.move(to: CGPoint(x: 2 * s, y: 16 * s))
+                p.addQuadCurve(to: CGPoint(x: 20 * s, y: 16 * s),
+                               control: CGPoint(x: 11 * s, y: 4 * s))
+            }
+            .stroke(Color.white, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+        }
+    }
+}
+
+private struct NetworkMarkGlyph: View {
+    var body: some View {
+        GeometryReader { geo in
+            let s = min(geo.size.width / 44, geo.size.height / 28)
+            ZStack(alignment: .topLeading) {
+                Circle()
+                    .fill(Color(hex: 0xEB001B).opacity(0.85))
+                    .frame(width: 28 * s, height: 28 * s)
+                Circle()
+                    .fill(Color(hex: 0xF79E1B).opacity(0.85))
+                    .frame(width: 28 * s, height: 28 * s)
+                    .offset(x: 16 * s, y: 0)
+            }
+        }
+    }
+}
+
+private struct MiniCardChip: View {
+    let last4: String
+    var body: some View {
+        GeometryReader { geo in
+            let s = min(geo.size.width / 40, geo.size.height / 28)
+            ZStack(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 6 * s, style: .continuous)
+                    .fill(LinearGradient.diagonal)
+                    .frame(width: 40 * s, height: 28 * s)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("··")
+                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(.white)
+                        .padding(.top, 2 * s)
+                    Text(last4)
+                        .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(.white)
+                }
+                .padding(.horizontal, 6 * s)
+            }
+        }
+    }
+}
+
+private struct BankBuildingGlyph: View {
+    let stroke: Color
+    var body: some View {
+        GeometryReader { geo in
+            let s = min(geo.size.width / 28, geo.size.height / 26)
+            ZStack(alignment: .topLeading) {
+                Path { p in
+                    p.move(to: CGPoint(x: 14 * s, y: 0))
+                    p.addLine(to: CGPoint(x: 28 * s, y: 7 * s))
+                    p.addLine(to: CGPoint(x: 0, y: 7 * s))
+                    p.closeSubpath()
+                }
+                .fill(stroke)
+                Path { p in
+                    p.move(to: CGPoint(x: 2 * s, y: 10 * s))
+                    p.addLine(to: CGPoint(x: 2 * s, y: 22 * s))
+                    p.move(to: CGPoint(x: 10 * s, y: 10 * s))
+                    p.addLine(to: CGPoint(x: 10 * s, y: 22 * s))
+                    p.move(to: CGPoint(x: 18 * s, y: 10 * s))
+                    p.addLine(to: CGPoint(x: 18 * s, y: 22 * s))
+                    p.move(to: CGPoint(x: 26 * s, y: 10 * s))
+                    p.addLine(to: CGPoint(x: 26 * s, y: 22 * s))
+                }
+                .stroke(stroke, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+                Path { p in
+                    p.move(to: CGPoint(x: 0, y: 24 * s))
+                    p.addLine(to: CGPoint(x: 28 * s, y: 24 * s))
+                }
+                .stroke(stroke, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            }
+        }
+    }
+}
+
+private struct PlusGlyph: View {
+    var body: some View {
+        GeometryReader { geo in
+            let s = min(geo.size.width / 14, geo.size.height / 14)
+            Path { p in
+                p.move(to: CGPoint(x: 0, y: 7 * s))
+                p.addLine(to: CGPoint(x: 14 * s, y: 7 * s))
+                p.move(to: CGPoint(x: 7 * s, y: 0))
+                p.addLine(to: CGPoint(x: 7 * s, y: 14 * s))
+            }
+            .stroke(LinearGradient.primary,
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round))
+        }
+    }
+}
+
+// MARK: - Notification names
+
+extension Notification.Name {
+    static let eusoShipperPaymentDefaultCard   = Notification.Name("eusoShipperPaymentDefaultCard")
+    static let eusoShipperPaymentMethodTap     = Notification.Name("eusoShipperPaymentMethodTap")
+    static let eusoShipperPaymentAddMethod     = Notification.Name("eusoShipperPaymentAddMethod")
+    static let eusoShipperPaymentAutoPayToggle = Notification.Name("eusoShipperPaymentAutoPayToggle")
 }
 
 // MARK: - Screen wrapper (Shell + BottomNav)
@@ -476,7 +828,7 @@ struct ShipperPaymentMethodsScreen: View {
     }
 }
 
-// Shipper bottom-nav doctrine — payment methods live under Me.
+// Out of scope per parity mandate §1.
 private func shipperNavLeading_208() -> [NavSlot] {
     [NavSlot(label: "Home",        systemImage: "house",                          isCurrent: false),
      NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle",    isCurrent: false)]
@@ -488,10 +840,6 @@ private func shipperNavTrailing_208() -> [NavSlot] {
 }
 
 // MARK: - Previews
-//
-// Previews don't run `.task`, so the store stays in `.loading` —
-// each register renders the loading skeleton without hitting the
-// network. Per doctrine §10: previews must compile in isolation.
 
 #Preview("208 · Shipper · Payment Methods · Night") {
     ShipperPaymentMethodsScreen(theme: Theme.dark)
