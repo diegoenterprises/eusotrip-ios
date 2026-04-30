@@ -291,6 +291,16 @@ final class DriverHomeViewModel: ObservableObject {
         hos?.drivingRemainingDisplay ?? "—"
     }
 
+    /// 14-hour on-duty window remaining (§395.3(a)(2)) — "4h 48m".
+    var hosOnDutyDisplay: String {
+        hos?.onDutyRemainingDisplay ?? "—"
+    }
+
+    /// 70-hour/8-day or 60-hour/7-day cycle remaining (§395.3(b)) — "38h 30m".
+    var hosCycleDisplay: String {
+        hos?.cycleRemainingDisplay ?? "—"
+    }
+
     /// Wallet available — "$4,118". Fed from `wallet.getBalance.available`
     /// out-of-band (see `load()`); left nil on unauthenticated backends so
     /// the tile falls back to "—".

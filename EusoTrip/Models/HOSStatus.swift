@@ -34,6 +34,11 @@ struct HOSStatus: Codable, Hashable {
         HOSStatus.formatHours(onDutyRemaining)
     }
 
+    /// "58h 0m" — 70-hour/8-day or 60-hour/7-day cycle counter (§395.3(b)).
+    var cycleRemainingDisplay: String {
+        HOSStatus.formatHours(cycleRemaining)
+    }
+
     static func formatHours(_ hours: Double) -> String {
         let totalMin = Int((hours * 60).rounded())
         let h = totalMin / 60

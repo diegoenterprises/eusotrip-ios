@@ -612,15 +612,25 @@ struct DriverHome: View {
                 }
                 .padding(.top, Space.s4)
 
-                // Figma 212:444 — 2fr / 1fr split: primary gradient pill wide,
-                // outlined "Details" pill narrow (~110pt fixed).
+                // PNG canon (`01 Driver/{Light,Dark}/010 Driver Home.png`):
+                // primary "Continue pre-trip" + outlined "Review load brief".
+                // "Continue" honors the in-progress DVIR state surfaced by
+                // PreTripDVIRStatusPill above; "Review load brief" routes to
+                // the rich LoadDetailSheet (route map + rate breakdown +
+                // broker card + permits) rather than a generic metadata pane.
+                // PNG canon shows the two CTAs at roughly equal width
+                // (50/50). "Review load brief" is wider than the legacy
+                // "Details" copy, so the outlined CTA expands with
+                // `maxWidth: .infinity` instead of the prior 110pt fixed
+                // frame to keep the label on a single line at all device
+                // widths.
                 HStack(spacing: Space.s2) {
-                    LifecycleCTAButton(title: "Start pre-trip")
+                    LifecycleCTAButton(title: "Continue pre-trip")
                         .frame(maxWidth: .infinity)
-                    Button("Details") { showAssignedLoadDetail = true }
+                    Button("Review load brief") { showAssignedLoadDetail = true }
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
-                        .frame(width: 110, height: 50)
+                        .frame(maxWidth: .infinity, minHeight: 50)
                         .background(palette.bgCardSoft)
                         .overlay(
                             RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
@@ -660,29 +670,29 @@ struct DriverHome: View {
     // Wallet shows plain white bold numeral ($4,118 when wired).
 
     private var metricRow: some View {
-        HStack(spacing: Space.s3) {
-            // HOS tile → presents the full HOS Duty Status port screen
-            // (019_HosDutyStatus) with live banks, 24h timeline, and the
-            // 3-meter strip (drive / on-duty / cycle) per the Figma.
-            Button {
-                showHosSheet = true
-            } label: {
-                HosTile(value: vm.hosDriveLeftDisplay)
+        // 3-meter §395.3 HOS strip per the Light/Dark PNG canon
+        // (`01 Driver/{Light,Dark}/010 Driver Home.png`):
+        //   DRIVE     · §395.3(a)(3)(i) 11-hour drive limit
+        //   ON-DUTY   · §395.3(a)(2) 14-hour on-duty window
+        //   CYCLE     · §395.3(b) 70-hour/8-day or 60-hour/7-day cycle
+        // The full row tap-target opens the HOS Duty Status port screen
+        // (019_HosDutyStatus) where the same three meters render with live
+        // banks + 24h timeline + per-segment log entries. Wallet moved off
+        // the Home metric row — still reachable via bottom-nav Wallet tab
+        // and from per-row deep-links in the Recent activity card below.
+        Button {
+            showHosSheet = true
+        } label: {
+            HStack(spacing: Space.s3) {
+                HosTile(value: vm.hosDriveLeftDisplay, label: "DRIVE")
+                HosTile(value: vm.hosOnDutyDisplay,    label: "ON-DUTY")
+                HosTile(value: vm.hosCycleDisplay,     label: "CYCLE")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Hours of service remaining, \(vm.hosDriveLeftDisplay)")
-            .accessibilityHint("Opens the HOS duty status port")
-            // Wallet tile → presents EusoWallet (DriverWalletPane) with
-            // settlements, payouts, and wallet CTAs.
-            Button {
-                showWalletSheet = true
-            } label: {
-                MetricTile(label: "Wallet available", value: vm.walletAvailableDisplay)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Wallet available \(vm.walletAvailableDisplay)")
-            .accessibilityHint("Opens your EusoWallet")
         }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Hours of service. Drive \(vm.hosDriveLeftDisplay). On-duty \(vm.hosOnDutyDisplay). Cycle \(vm.hosCycleDisplay).")
+        .accessibilityHint("Opens the HOS duty status port")
     }
 
     // MARK: Recent — three activity rows (Figma 212:444)
@@ -843,6 +853,12 @@ private struct ActivityRowButtonStyle: ButtonStyle {
 /// with tiny lowercase "h" / "m" unit suffixes baselined under the numerals.
 private struct HosTile: View {
     let value: String
+    /// Override the eyebrow label. Default keeps the original
+    /// `HOS DRIVE LEFT` rendering for legacy callers; the 3-meter strip
+    /// passes `DRIVE` / `ON-DUTY` / `CYCLE` to mirror the §395.3 PNG
+    /// canon (49 CFR 395.3(a)(3)(i) drive · §395.3(a)(2) on-duty ·
+    /// §395.3(b) cycle).
+    var label: String = "HOS DRIVE LEFT"
     @Environment(\.palette) var palette
 
     /// Parse "7h 22m" → (hours, minutes). Falls back gracefully on "—" / bad input.
@@ -858,7 +874,7 @@ private struct HosTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s1) {
-            Text("HOS DRIVE LEFT")
+            Text(label)
                 .font(EType.micro).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
             Group {
