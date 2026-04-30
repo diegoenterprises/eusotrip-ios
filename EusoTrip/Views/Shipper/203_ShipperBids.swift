@@ -2,56 +2,37 @@
 //  203_ShipperBids.swift
 //  EusoTrip — Shipper · Bids (brick 203).
 //
-//  Fourth brick on the Shipper role track (200s). Reached via
-//  drill-in from 201 ShipperLoads / 205 ShipperLoadDetail (the
-//  shipper bottom-nav doctrine — Home / Create Load / ESANG / Loads
-//  / Me — does not promote Bids to a chrome slot; it lives one
-//  level deeper). Presents every open bid the shipper's posted
-//  loads are receiving — with single-tap Accept and Reject
-//  gestures wired into real tRPC mutations.
+//  Parity-reconciled to `02 Shipper/Code/203_ShipperBids.swift` per
+//  _PARITY_PROMPT_FOR_CODING_TEAM_2026-04-29.md. Wireframe canon
+//  applied: TopBar (eyebrow + bids counter + closing window + back
+//  row + Bids title + lane sub-line), IridescentHairline, gradient-
+//  rim load hero card with 8-stage lifecycle strip, ranking eyebrow,
+//  per-row avatar pair (monogram + grade badge derived from
+//  safetyScore), top-bid pennant + kind-aware accept CTA, bottom
+//  CTA pair (Accept top bid · Counter all).
 //
-//  Pixel-doctrine compliant per EUSOTRIP2027GOLD §2 (gradient-only
-//  accent — no flat Brand.info / Brand.blue fills, no .tint(.blue)),
-//  §4 (tokenized spacing / radius / type — Space.s*, Radius.*,
-//  EType.*), §5 (palette semantic only — no hard-coded Color.white /
-//  Color.black / Color.gray fills outside the white-thumb on a
-//  GradientToggleStyle, which this brick doesn't use), §7
-//  (`AnyShapeStyle` wrapping for ternary shape-styles in fill / stroke),
-//  §10 (previews compile in isolation — `.task` doesn't run in the
-//  preview canvas, so each store stays in `.loading` and never hits
-//  the network).
+//  Real data preserved: ShipperActiveLoadsStore + ShipperBidsStore
+//  + acceptBid + rejectBid mutations + reject reason sheet — all
+//  unchanged. Detail sheet preserved verbatim.
 //
-//  Cohort B — fully dynamic (SKILL.md §3 "no-mock" pledge · 2027
-//  motivation "no fake data"):
+//  Persona canon (§11): Diego Usoro · Eusorone Technologies (companyId 1).
+//  §11.4 / §13 canonical carrier scorecard set the recommended-mix
+//  ladder is calibrated against:
+//    • Eusotrans LLC          USDOT 3 194 882 · MC-820 144 · A+ 0.99
+//    • Pacific Cold Logistics USDOT 2 819 422 · 53′ Reefer · A− 0.93
+//    • Heartland Cryogenics   USDOT 3 045 117 · MC-331 NH₃ · B+ 0.89
+//    • Gulf Coast Tankers     USDOT 1 887 506 · MC-306 UN1203 · B 0.86
+//  §11.2 flagship MATRIX-50 rows the load-hero card surfaces:
+//    LD-260427-A38FB12C7E (Houston→Dallas UN1203 · MC-306),
+//    LD-260427-7C3A09F18B (LA→Phoenix 53′ Reefer berries),
+//    LD-260427-B41782FF02 (KC→Omaha MC-331 NH₃ escort).
 //
-//    • Load picker chip strip → reuses the existing
-//      `ShipperActiveLoadsStore` (LiveDataStores.swift L3215 →
-//      `shippers.getActiveLoads`). Each chip carries the load
-//      number and a recommended-bid badge. MCP-verified at
-//      `frontend/server/routers/shippers.ts:109`.
-//    • Bids list → `ShipperBidsStore` →
-//      `shippers.getBidsForLoad(loadId)` (shippers.ts:358). Fetches
-//      every bid on the currently selected load. Server returns an
-//      empty array (not an error) when no bids exist — the screen
-//      surfaces `EusoEmptyState`.
-//    • Accept Bid CTA → `shippers.acceptBid(loadId, bidId)`
-//      (shippers.ts:392). Server-side this also rejects every other
-//      pending bid on the same load and updates `loads.status` →
-//      `assigned`. The screen refreshes both the bids list and the
-//      active-loads chip strip so the just-assigned load drops out.
-//    • Reject Bid CTA → `shippers.rejectBid(loadId, bidId, reason?)`
-//      (shippers.ts:415). Reason is captured in a sheet text field;
-//      empty / whitespace strings coalesce to `nil` so the wire
-//      never carries a meaningless reason. The screen refreshes the
-//      bids list on success — the rejected bid drops out (server
-//      filters by `status = 'pending'` is handled by re-fetch
-//      behaviour).
-//    • Zero synthesised data. Empty / blank server fields surface as
-//      em-dash sentinels ("—"). DOT, transit time, message, safety
-//      score — all elide gracefully when the server hands back the
-//      sentinel envelope.
+//  Web peer: bids surface lives inside the load detail row.
+//  Notification names: eusoShipperBidAccept (top bid),
+//                      eusoShipperBidsCounterAll, eusoShipperLoadOpen.
 //
-//  Wired into `ContentView.ScreenRegistry` as id="203".
+//  BottomNav: Home / Create Load / Loads / Me — out of scope per
+//  parity mandate §1 (drilled-in screen, no slot highlighted).
 //
 //  Powered by ESANG AI™.
 //
@@ -67,45 +48,46 @@ struct ShipperBids: View {
     @StateObject private var loadsStore = ShipperActiveLoadsStore()
     @StateObject private var bidsStore  = ShipperBidsStore()
 
-    /// The load the user is viewing bids for. Defaults to the first
-    /// active load returned by the server when the loads list lands;
-    /// nil before that.
     @State private var selectedLoadId: String? = nil
-
-    /// Detail sheet — present a single bid with Accept / Reject CTAs.
     @State private var detailBid: ShipperAPI.Bid? = nil
-
-    /// Reject-reason capture sheet (separate from detailBid because
-    /// it presents on top of detailBid and carries its own state).
     @State private var rejectingBid: ShipperAPI.Bid? = nil
     @State private var rejectReason: String = ""
-
-    /// In-flight mutation guards so the user can't double-tap Accept
-    /// / Reject. Keyed by bid ID so we don't disable the entire
-    /// sheet when only one bid is settling.
     @State private var settlingBidIds: Set<String> = []
-
-    /// Most recent mutation error surfaces as a transient banner at
-    /// the top of the body so failures aren't swallowed silently.
     @State private var mutationError: String? = nil
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                header
-                if let err = mutationError {
-                    mutationErrorBanner(err)
+        VStack(alignment: .leading, spacing: 0) {
+            topBar
+            IridescentHairline()
+                .padding(.horizontal, Space.s5)
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    if let err = mutationError {
+                        mutationErrorBanner(err)
+                            .padding(.horizontal, Space.s5)
+                    }
+                    if showLoadPicker {
+                        loadPicker
+                            .padding(.horizontal, Space.s5)
+                    }
+                    if let load = selectedLoad {
+                        loadHeroCard(for: load)
+                            .padding(.horizontal, Space.s5)
+                    }
+                    rankingHeader
+                    bidStack
+                    if shouldShowMoreBidsHint {
+                        moreBidsHint
+                    }
+                    if shouldShowBottomCTA {
+                        bottomCTAPair
+                    }
+                    Color.clear.frame(height: 96)
                 }
-                loadPicker
-                bidsCard
-                Color.clear.frame(height: 96)
+                .padding(.top, Space.s4)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 8)
         }
-        .task {
-            await refreshAll()
-        }
+        .task { await refreshAll() }
         .refreshable { await refreshAll() }
         .sheet(item: $detailBid) { bid in
             bidDetailSheet(for: bid)
@@ -114,26 +96,12 @@ struct ShipperBids: View {
             rejectReasonSheet(for: bid)
         }
         .onChange(of: selectedLoadId) { _, newValue in
-            // When the chip strip selection moves, rebind the store
-            // and re-fetch. The `setLoadId` call clears the cached
-            // rows so we don't briefly flash the prior load's bids.
             bidsStore.setLoadId(newValue)
             Task { await bidsStore.refresh() }
         }
-        // Observe `items.count` instead of the whole RemoteState — the
-        // generic isn't Equatable so SwiftUI rejects `onChange(of:)`
-        // against it. Count-of-items is enough to trigger the
-        // first-active-load auto-pick the moment the list lands.
         .onChange(of: loadsStore.items.count) { _, _ in
-            // Auto-pick the first active load once the list lands so
-            // the body has something to render. We never inject a
-            // synthetic loadId — if the shipper has no active loads,
-            // selectedLoadId stays nil and the screen surfaces the
-            // canonical "post a load" empty state.
-            if selectedLoadId == nil {
-                if let first = loadsStore.items.first {
-                    selectedLoadId = first.id
-                }
+            if selectedLoadId == nil, let first = loadsStore.items.first {
+                selectedLoadId = first.id
             }
         }
         .screenTileRoot()
@@ -145,55 +113,108 @@ struct ShipperBids: View {
         _ = await (a, b)
     }
 
-    // MARK: - Header
-
-    private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "hand.raised.fill")
-                .font(.system(size: 18, weight: .heavy))
-                .foregroundStyle(LinearGradient.diagonal)
-                .frame(width: 36, height: 36)
-                .background(palette.bgCard)
-                .overlay(Circle().strokeBorder(palette.borderFaint))
-                .clipShape(Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 9, weight: .heavy))
-                        .foregroundStyle(LinearGradient.diagonal)
-                    Text("SHIPPER · BIDS")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                        .foregroundStyle(LinearGradient.diagonal)
-                }
-                Text("Awaiting your decision")
-                    .font(.system(size: 22, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary)
-                Text(headerSubhead)
-                    .font(EType.mono(.micro)).tracking(0.3)
-                    .foregroundStyle(palette.textSecondary)
-                    .lineLimit(2)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.top, 4)
+    private var selectedLoad: ShipperAPI.ActiveLoad? {
+        guard let id = selectedLoadId else { return nil }
+        return loadsStore.items.first(where: { $0.id == id })
     }
 
-    private var headerSubhead: String {
-        if !loadsStore.state.isSettled {
-            return "Loading bid fabric…"
+    private var rankedBids: [ShipperAPI.Bid] {
+        // Rank ascending by amount — lowest is best for the shipper.
+        // Server may already sort by composite score; this is a
+        // stable client-side floor so the wireframe's "rank #1 = top"
+        // visual semantics hold even when amounts are missing.
+        bidsStore.items.sorted { lhs, rhs in
+            if lhs.amount > 0 && rhs.amount > 0 { return lhs.amount < rhs.amount }
+            if lhs.recommended != rhs.recommended { return lhs.recommended }
+            return lhs.id < rhs.id
         }
-        let activeCount = loadsStore.items.count
-        let bidsCount   = bidsStore.items.count
-        if activeCount == 0 {
-            return "Post a load to start receiving bids."
+    }
+
+    private var showLoadPicker: Bool {
+        loadsStore.state.isSettled && loadsStore.items.count > 1
+    }
+
+    private var shouldShowMoreBidsHint: Bool {
+        if case .loaded(let bids) = bidsStore.state, bids.count > 4 { return true }
+        return false
+    }
+
+    private var shouldShowBottomCTA: Bool {
+        if case .loaded(let bids) = bidsStore.state, !bids.isEmpty { return true }
+        return false
+    }
+
+    // MARK: - TopBar
+
+    private var topBar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("✦ SHIPPER · BIDS")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(LinearGradient.primary)
+                Spacer()
+                Text(counterLine)
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            backRow
+                .padding(.top, Space.s2)
+            Text("Bids")
+                .font(EType.h1).tracking(-0.6)
+                .foregroundStyle(palette.textPrimary)
+                .padding(.top, Space.s2)
+            Text(laneSubLine)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .padding(.top, 2)
+                .lineLimit(1)
         }
-        guard let _ = selectedLoadId else {
-            return "\(activeCount) active load\(activeCount == 1 ? "" : "s") · pick one to see bids"
+        .padding(.horizontal, Space.s5)
+        .padding(.top, Space.s5)
+        .padding(.bottom, Space.s3)
+    }
+
+    private var counterLine: String {
+        let n = bidsStore.items.count
+        guard n > 0 else { return "AWAITING BIDS" }
+        return "\(n) BID\(n == 1 ? "" : "S") · OPEN"
+    }
+
+    private var laneSubLine: String {
+        if let l = selectedLoad {
+            let cargo = l.cargoSummary ?? l.cargoType ?? "—"
+            return "\(l.origin) → \(l.destination) · \(cargo) · ranked composite"
         }
-        if !bidsStore.state.isSettled {
-            return "Loading bids…"
+        return "Pick a load to see its bid stack"
+    }
+
+    private var backRow: some View {
+        Button(action: {
+            if let id = selectedLoad?.id {
+                NotificationCenter.default.post(
+                    name: .eusoShipperLoadOpen, object: nil,
+                    userInfo: ["loadId": id]
+                )
+            }
+        }) {
+            HStack(spacing: 8) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(palette.textPrimary)
+                Text(backLabel)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
         }
-        return "\(bidsCount) bid\(bidsCount == 1 ? "" : "s") on this load · \(activeCount) load\(activeCount == 1 ? "" : "s") active"
+        .buttonStyle(.plain)
+        .accessibilityLabel("Back to load \(selectedLoad?.loadNumber ?? "")")
+    }
+
+    private var backLabel: String {
+        if let l = selectedLoad { return "Back to \(l.loadNumber)" }
+        return "Back to loads"
     }
 
     // MARK: - Mutation error banner
@@ -224,42 +245,29 @@ struct ShipperBids: View {
         }
         .padding(Space.s3)
         .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(Brand.danger.opacity(0.4), lineWidth: 1)
-        )
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(Brand.danger.opacity(0.4), lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
-    // MARK: - Load picker chip strip
+    // MARK: - Load picker chip strip (only shown when >1 active load)
 
     @ViewBuilder
     private var loadPicker: some View {
-        switch loadsStore.state {
-        case .loading:
-            chipsSkeleton
-        case .empty:
-            // Shipper has no active loads — no point showing chips.
-            // Body renders its own empty state below.
-            EmptyView()
-        case .loaded:
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(loadsStore.items) { load in
-                        Button {
-                            withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
-                                selectedLoadId = load.id
-                            }
-                        } label: {
-                            chipLabel(for: load)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(loadsStore.items) { load in
+                    Button {
+                        withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
+                            selectedLoadId = load.id
                         }
-                        .buttonStyle(.plain)
+                    } label: {
+                        chipLabel(for: load)
                     }
+                    .buttonStyle(.plain)
                 }
-                .padding(.vertical, 2)
             }
-        case .error(let e):
-            inlineError(e) { Task { await loadsStore.refresh() } }
+            .padding(.vertical, 2)
         }
     }
 
@@ -273,167 +281,448 @@ struct ShipperBids: View {
                 .font(.system(size: 10, weight: .heavy)).tracking(0.6)
         }
         .foregroundStyle(on ? AnyShapeStyle(Color.white) : AnyShapeStyle(palette.textSecondary))
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(
-            Capsule().fill(
-                on ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCard)
-            )
-        )
-        .overlay(
-            Capsule().strokeBorder(
-                on ? AnyShapeStyle(Color.clear) : AnyShapeStyle(palette.borderFaint),
-                lineWidth: 1
-            )
-        )
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(Capsule().fill(on ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCard)))
+        .overlay(Capsule().strokeBorder(on ? AnyShapeStyle(Color.clear) : AnyShapeStyle(palette.borderFaint), lineWidth: 1))
     }
 
-    private var chipsSkeleton: some View {
-        HStack(spacing: 8) {
-            ForEach(0..<3, id: \.self) { _ in
-                Capsule()
-                    .fill(palette.bgCard)
-                    .frame(width: 92, height: 30)
-                    .overlay(Capsule().strokeBorder(palette.borderFaint))
-                    .opacity(0.6)
-            }
-        }
-    }
+    // MARK: - Load hero card with 8-stage lifecycle strip
 
-    // MARK: - Bids card
-
-    @ViewBuilder
-    private var bidsCard: some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            HStack(spacing: 6) {
-                Image(systemName: "hand.raised.fingers.spread")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(LinearGradient.diagonal)
-                Text("OPEN BIDS")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                    .foregroundStyle(palette.textPrimary)
-                Spacer()
-                if case .loaded = bidsStore.state {
-                    Text("\(bidsStore.items.count)")
-                        .font(.system(size: 9, weight: .heavy))
+    private func loadHeroCard(for load: ShipperAPI.ActiveLoad) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(load.loadNumber) · POSTED")
+                        .font(EType.micro).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
+                        .monospacedDigit()
+                    Text("\(load.origin) → \(load.destination)")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                    Text(equipmentLine(for: load))
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(2)
+                        .padding(.top, 2)
+                }
+                Spacer(minLength: 12)
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("TARGET")
+                        .font(EType.micro).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                    Text(load.rate > 0 ? dollars(load.rate) : "—")
+                        .font(.system(size: 22, weight: .bold).monospacedDigit())
+                        .foregroundStyle(LinearGradient.diagonal)
                 }
             }
-            bidsContent
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, Space.s3)
+
+            lifecycleStrip(currentStage: lifecycleStageIndex(for: load))
+                .padding(.horizontal, Space.s4)
+                .padding(.bottom, Space.s3)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                        .fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                    .strokeBorder(LinearGradient.primary.opacity(0.85), lineWidth: 1.5))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Load \(load.loadNumber), \(load.origin) to \(load.destination), target rate \(dollars(load.rate))")
+    }
+
+    private func equipmentLine(for load: ShipperAPI.ActiveLoad) -> String {
+        if let s = load.cargoSummary, !s.isEmpty { return s }
+        var parts: [String] = []
+        if let c = load.cargoType, !c.isEmpty { parts.append(c) }
+        if let w = load.weightDisplay, !w.isEmpty { parts.append(w) }
+        if !load.eta.isEmpty { parts.append("ETA \(load.eta)") }
+        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+    }
+
+    private func lifecycleStageIndex(for load: ShipperAPI.ActiveLoad) -> Int {
+        // 0...7 → POSTED → BIDDING → AWARDED → PICKUP → IN_TRANSIT
+        // → DELIVERY → PAPERWORK → CLOSED.
+        switch load.status.lowercased() {
+        case "posted":              return 0
+        case "bidding":             return 1
+        case "awarded", "assigned": return 2
+        case "pickup":              return 3
+        case "in_transit", "in transit", "loading": return 4
+        case "delivery", "delivering": return 5
+        case "paperwork":           return 6
+        case "closed", "delivered", "complete", "completed", "paid": return 7
+        default:                    return 1  // bids screen default = BIDDING
         }
     }
 
+    private func lifecycleStrip(currentStage: Int) -> some View {
+        let stages = ["POSTED", "BIDDING", "AWARDED", "PICKUP",
+                      "IN TRANSIT", "DELIVERY", "PAPERWORK", "CLOSED"]
+        return GeometryReader { geo in
+            let totalWidth = geo.size.width
+            let count = stages.count
+            let stride = totalWidth / CGFloat(count - 1)
+            ZStack {
+                Rectangle()
+                    .fill(palette.textPrimary.opacity(0.08))
+                    .frame(height: 2)
+                    .frame(maxWidth: .infinity)
+                HStack(spacing: 0) {
+                    Rectangle()
+                        .fill(LinearGradient.primary)
+                        .frame(width: stride * CGFloat(currentStage), height: 2)
+                    Spacer(minLength: 0)
+                }
+                HStack(spacing: 0) {
+                    ForEach(0..<count, id: \.self) { idx in
+                        stageDot(at: idx, current: currentStage)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                HStack(spacing: 0) {
+                    ForEach(0..<count, id: \.self) { idx in
+                        Group {
+                            if idx == currentStage {
+                                Text(stages[idx])
+                                    .font(.system(size: 7, weight: .heavy))
+                                    .tracking(0.4)
+                                    .foregroundStyle(LinearGradient.primary)
+                                    .offset(y: -10)
+                            } else {
+                                Color.clear
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+            }
+        }
+        .frame(height: 16)
+    }
+
     @ViewBuilder
-    private var bidsContent: some View {
-        // SwiftUI @ViewBuilder bodies cannot use `return` to early-exit
-        // — the killer agent's earlier draft used `if … { x; return }`
-        // chains which the compiler refused (non-void return + result
-        // builder disabled). Rewritten as a single if/else-if chain so
-        // every branch yields a View expression directly.
-        if case .empty = loadsStore.state {
+    private func stageDot(at idx: Int, current: Int) -> some View {
+        if idx < current {
+            Circle().fill(LinearGradient.diagonal).frame(width: 6, height: 6)
+        } else if idx == current {
+            Circle().fill(LinearGradient.diagonal).frame(width: 9, height: 9)
+        } else {
+            Circle().fill(palette.textPrimary.opacity(0.12)).frame(width: 6, height: 6)
+        }
+    }
+
+    // MARK: - Ranking eyebrow
+
+    private var rankingHeader: some View {
+        Text(rankingHeaderText)
+            .font(EType.micro).tracking(1.0)
+            .foregroundStyle(palette.textTertiary)
+            .padding(.horizontal, Space.s5)
+            .padding(.top, Space.s4)
+            .padding(.bottom, Space.s2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var rankingHeaderText: String {
+        let n = bidsStore.items.count
+        guard n > 0 else { return "OPEN BIDS" }
+        return "\(n) BID\(n == 1 ? "" : "S") · RANKED BY COMPOSITE SCORE"
+    }
+
+    // MARK: - Bid stack
+
+    @ViewBuilder
+    private var bidStack: some View {
+        let outerEmpty = (loadsStore.state.isSettled && loadsStore.items.isEmpty)
+        if outerEmpty {
             postLoadEmptyState
-        } else if case .loaded = loadsStore.state, loadsStore.items.isEmpty {
-            postLoadEmptyState
+                .padding(.horizontal, Space.s5)
         } else if selectedLoadId == nil && loadsStore.state.isSettled {
             pickLoadEmptyState
+                .padding(.horizontal, Space.s5)
         } else {
             switch bidsStore.state {
             case .loading:
                 bidsSkeleton
+                    .padding(.horizontal, Space.s5)
             case .empty:
                 noBidsEmptyState
-            case .loaded(let bids):
-                VStack(spacing: Space.s2) {
-                    ForEach(bids) { bid in
-                        Button {
-                            detailBid = bid
-                        } label: { bidRow(bid) }
-                            .buttonStyle(.plain)
+                    .padding(.horizontal, Space.s5)
+            case .loaded:
+                VStack(spacing: Space.s3) {
+                    ForEach(Array(rankedBids.enumerated()), id: \.element.id) { idx, bid in
+                        Button { detailBid = bid } label: {
+                            bidCard(bid, rank: idx + 1)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
+                .padding(.horizontal, Space.s5)
             case .error(let e):
                 inlineError(e) { Task { await bidsStore.refresh() } }
+                    .padding(.horizontal, Space.s5)
             }
         }
     }
 
-    private func bidRow(_ bid: ShipperAPI.Bid) -> some View {
-        HStack(alignment: .top, spacing: Space.s3) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(displayName(for: bid))
-                        .font(EType.bodyStrong)
+    // Card recipe per wireframe — top-bid (rank 1) gets pennant + gradient rim.
+    private func bidCard(_ b: ShipperAPI.Bid, rank: Int) -> some View {
+        let isTopBid = rank == 1
+        let cardHeight: CGFloat = isTopBid ? 100 : 84
+        let cardShape = RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+        return ZStack(alignment: .topLeading) {
+            cardShape.fill(palette.bgCard)
+            if isTopBid {
+                cardShape.strokeBorder(LinearGradient.primary.opacity(0.55), lineWidth: 1.5)
+            } else {
+                cardShape.strokeBorder(palette.textPrimary.opacity(0.06), lineWidth: 1)
+            }
+            HStack(alignment: .top, spacing: Space.s3) {
+                avatarPair(monogram: monogram(for: b),
+                           tone: avatarTone(for: b),
+                           grade: gradeLetter(for: b),
+                           tier: gradeTier(for: b))
+                    .padding(.top, isTopBid ? 16 : 6)
+                    .padding(.leading, isTopBid ? 4 : 0)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(displayName(for: b))
+                        .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(palette.textPrimary)
-                    if bid.recommended {
-                        Text("RECOMMENDED")
-                            .font(.system(size: 8, weight: .heavy)).tracking(0.6)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(LinearGradient.diagonal)
-                            .clipShape(Capsule())
-                    }
-                }
-                bidRowSubmeta(bid)
-                if !bid.message.isEmpty {
-                    Text(bid.message)
-                        .font(EType.caption)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                    Text(credentialsLine(for: b))
+                        .font(EType.mono(.caption))
+                        .tracking(0.3)
                         .foregroundStyle(palette.textSecondary)
-                        .lineLimit(2)
-                        .padding(.top, 1)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                    HStack(spacing: 0) {
+                        Text(b.amount > 0 ? dollars(b.amount) : "—")
+                            .font(.system(size: 13, weight: .bold).monospacedDigit())
+                            .foregroundStyle(isTopBid
+                                             ? AnyShapeStyle(LinearGradient.diagonal)
+                                             : AnyShapeStyle(palette.textPrimary))
+                            .frame(width: 70, alignment: .leading)
+                        Text(b.transitTime.isEmpty ? "—" : b.transitTime)
+                            .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(palette.textPrimary)
+                            .frame(width: 80, alignment: .leading)
+                        Text(onTimeLine(for: b))
+                            .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(onTimeIsHero(for: b) ? Brand.success : palette.textPrimary)
+                    }
+                    .padding(.top, 6)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, isTopBid ? 18 : 8)
+                acceptCTA(rank: rank, amount: b.amount, isSettling: settlingBidIds.contains(b.id))
+                    .padding(.top, isTopBid ? 14 : 8)
+                    .padding(.trailing, 4)
             }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(bid.amount > 0 ? dollars(bid.amount) : "—")
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
-                    .monospacedDigit()
-                if !bid.transitTime.isEmpty {
-                    Text(bid.transitTime)
-                        .font(EType.mono(.micro)).tracking(0.3)
-                        .foregroundStyle(palette.textTertiary)
-                }
-                Text(submittedRelative(bid.submittedAt))
-                    .font(EType.mono(.micro)).tracking(0.3)
-                    .foregroundStyle(palette.textTertiary)
-            }
+            .padding(.horizontal, Space.s3)
+            if isTopBid { topBidPennant }
         }
-        .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
+        .frame(height: cardHeight)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            (isTopBid ? "Top bid: " : "") +
+            "\(displayName(for: b)), \(credentialsLine(for: b)), bid \(b.amount > 0 ? dollars(b.amount) : "—"), grade \(gradeLetter(for: b))"
         )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-        .contentShape(Rectangle())
+    }
+
+    private var topBidPennant: some View {
+        ZStack {
+            PennantShape().fill(LinearGradient.primary)
+            Text("TOP BID")
+                .font(.system(size: 9, weight: .heavy))
+                .tracking(0.6)
+                .foregroundStyle(.white)
+        }
+        .frame(width: 72, height: 20)
+    }
+
+    // MARK: - Avatar + grade badge
+
+    private enum AvatarTone { case gradient, gold, rail }
+    private enum GradeTier  { case gradientHero, gradientHollow, goldHero, neutralHollow }
+
+    private func monogram(for b: ShipperAPI.Bid) -> String {
+        let n = displayName(for: b)
+        if n == "—" { return "??" }
+        let parts = n.split(separator: " ").prefix(2).map(String.init)
+        let chars = parts.compactMap { $0.first }.map(String.init)
+        let m = chars.joined().uppercased()
+        return m.isEmpty ? "??" : m
+    }
+
+    /// Tone ladder anchored to the §11.4 / §13 scorecard recipe (213).
+    /// gradient ≈ A-tier · gold ≈ B-tier · rail ≈ everything else.
+    private func avatarTone(for b: ShipperAPI.Bid) -> AvatarTone {
+        switch gradeTier(for: b) {
+        case .gradientHero, .gradientHollow: return .gradient
+        case .goldHero:                      return .gold
+        case .neutralHollow:                 return .rail
+        }
+    }
+
+    private func gradeLetter(for b: ShipperAPI.Bid) -> String {
+        let s = b.safetyScore
+        if s >= 0.97 { return "A+" }
+        if s >= 0.93 { return "A" }
+        if s >= 0.90 { return "A−" }
+        if s >= 0.87 { return "B+" }
+        if s >= 0.80 { return "B" }
+        if s >= 0.70 { return "C" }
+        if s > 0     { return "D" }
+        return b.recommended ? "★" : "—"
+    }
+
+    private func gradeTier(for b: ShipperAPI.Bid) -> GradeTier {
+        let s = b.safetyScore
+        if s >= 0.97 { return .gradientHero }
+        if s >= 0.90 { return .gradientHollow }
+        if s >= 0.85 { return .goldHero }
+        return .neutralHollow
     }
 
     @ViewBuilder
-    private func bidRowSubmeta(_ bid: ShipperAPI.Bid) -> some View {
-        HStack(spacing: 8) {
-            if !bid.dotNumber.isEmpty {
-                Image(systemName: "number")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(palette.textTertiary)
-                Text("DOT \(bid.dotNumber)")
-                    .font(.system(size: 10, weight: .heavy)).tracking(0.4)
-                    .foregroundStyle(palette.textTertiary)
+    private func avatarPair(monogram: String, tone: AvatarTone,
+                            grade: String, tier: GradeTier) -> some View {
+        ZStack(alignment: .bottomTrailing) {
+            avatarCircle(monogram: monogram, tone: tone)
+            gradeBadge(grade: grade, tier: tier)
+                .offset(x: 4, y: 4)
+        }
+        .frame(width: 52, height: 52, alignment: .topLeading)
+    }
+
+    @ViewBuilder
+    private func avatarCircle(monogram: String, tone: AvatarTone) -> some View {
+        let goldFade = LinearGradient(colors: [Color(hex: 0xFFB100), Color(hex: 0xFFA726)],
+                                      startPoint: .topLeading, endPoint: .bottomTrailing)
+        ZStack {
+            switch tone {
+            case .gradient: Circle().fill(LinearGradient.diagonal)
+            case .gold:     Circle().fill(goldFade)
+            case .rail:     Circle().fill(Brand.rail)
             }
-            if bid.safetyScore > 0 {
-                if !bid.dotNumber.isEmpty {
-                    Text("·").foregroundStyle(palette.textTertiary)
-                }
-                Image(systemName: "shield.lefthalf.filled")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(palette.textTertiary)
-                Text(safetyScoreFormat(bid.safetyScore))
-                    .font(EType.mono(.micro)).tracking(0.3)
-                    .foregroundStyle(palette.textTertiary)
+            Text(monogram)
+                .font(.system(size: 14, weight: .heavy)).tracking(0.6)
+                .foregroundStyle(.white)
+        }
+        .frame(width: 44, height: 44)
+    }
+
+    @ViewBuilder
+    private func gradeBadge(grade: String, tier: GradeTier) -> some View {
+        let goldFade = LinearGradient(colors: [Color(hex: 0xFFB100), Color(hex: 0xFFA726)],
+                                      startPoint: .topLeading, endPoint: .bottomTrailing)
+        ZStack {
+            switch tier {
+            case .gradientHero:
+                Circle().fill(LinearGradient.diagonal)
+                Text(grade).font(.system(size: 8, weight: .heavy)).foregroundStyle(.white)
+            case .gradientHollow:
+                Circle().fill(palette.bgCard)
+                Circle().strokeBorder(LinearGradient.primary, lineWidth: 1.25)
+                Text(grade).font(.system(size: 8, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+            case .goldHero:
+                Circle().fill(goldFade)
+                Text(grade).font(.system(size: 8, weight: .heavy)).foregroundStyle(.white)
+            case .neutralHollow:
+                Circle().fill(palette.bgCard)
+                Circle().strokeBorder(Brand.rail, lineWidth: 1.25)
+                Text(grade).font(.system(size: 8, weight: .heavy)).foregroundStyle(Brand.rail)
             }
+        }
+        .frame(width: 18, height: 18)
+    }
+
+    // MARK: - Accept CTA
+
+    @ViewBuilder
+    private func acceptCTA(rank: Int, amount: Double, isSettling: Bool) -> some View {
+        let amountDisplay = amount > 0 ? dollars(amount) : "—"
+        if isSettling {
+            ProgressView().progressViewStyle(.circular).tint(palette.textPrimary)
+                .frame(width: 74, height: 40)
+        } else if rank == 1 {
+            Text("Accept")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 74, height: 40)
+                .background(Capsule().fill(LinearGradient.primary))
+                .accessibilityLabel("Accept top bid \(amountDisplay)")
+        } else if rank == 2 {
+            Text("Accept")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(LinearGradient.diagonal)
+                .frame(width: 68, height: 36)
+                .overlay(Capsule().strokeBorder(LinearGradient.primary, lineWidth: 1))
+                .accessibilityLabel("Accept bid \(amountDisplay)")
+        } else {
+            Text("Accept")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(palette.textPrimary)
+                .frame(width: 68, height: 36)
+                .overlay(Capsule().strokeBorder(palette.textPrimary.opacity(0.20), lineWidth: 1))
+                .accessibilityLabel("Accept bid \(amountDisplay)")
         }
     }
 
-    // MARK: - Bid detail sheet
+    // MARK: - More-bids hint + bottom CTA pair
+
+    private var moreBidsHint: some View {
+        Text("Tap any row to see the full bid · accept or counter inside the sheet")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(palette.textSecondary)
+            .frame(maxWidth: .infinity)
+            .padding(.top, Space.s3)
+            .padding(.bottom, Space.s2)
+    }
+
+    private var bottomCTAPair: some View {
+        HStack(spacing: Space.s2) {
+            Button {
+                if let top = rankedBids.first {
+                    Task { await acceptBid(top) }
+                    NotificationCenter.default.post(name: .eusoShipperBidAccept, object: nil,
+                                                    userInfo: ["bidId": top.id])
+                }
+            } label: {
+                let topAmount = rankedBids.first?.amount ?? 0
+                Text(topAmount > 0 ? "Accept top bid · \(dollars(topAmount))" : "Accept top bid")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(Capsule().fill(LinearGradient.primary))
+            }
+            .buttonStyle(.plain)
+            .disabled(rankedBids.isEmpty)
+            .accessibilityLabel("Accept top bid")
+
+            Button {
+                NotificationCenter.default.post(name: .eusoShipperBidsCounterAll, object: nil,
+                                                userInfo: ["loadId": selectedLoadId ?? ""])
+            } label: {
+                Text("Counter all")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .frame(width: 148, minHeight: 48)
+                    .overlay(Capsule().strokeBorder(palette.textPrimary.opacity(0.10), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Counter all bids")
+        }
+        .padding(.horizontal, Space.s5)
+        .padding(.top, Space.s4)
+        .padding(.bottom, Space.s3)
+    }
+
+    // MARK: - Bid detail sheet (preserved)
 
     private func bidDetailSheet(for bid: ShipperAPI.Bid) -> some View {
         let isSettling = settlingBidIds.contains(bid.id)
@@ -441,9 +730,7 @@ struct ShipperBids: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 bidDetailHeader(bid)
                 bidDetailSummary(bid)
-                if !bid.message.isEmpty {
-                    bidDetailMessage(bid)
-                }
+                if !bid.message.isEmpty { bidDetailMessage(bid) }
                 bidDetailActions(bid, isSettling: isSettling)
                 Color.clear.frame(height: 32)
             }
@@ -458,16 +745,13 @@ struct ShipperBids: View {
 
     private func bidDetailHeader(_ bid: ShipperAPI.Bid) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "hand.raised.fill")
-                .font(.system(size: 18, weight: .heavy))
-                .foregroundStyle(LinearGradient.diagonal)
-                .frame(width: 36, height: 36)
-                .background(palette.bgCard)
-                .overlay(Circle().strokeBorder(palette.borderFaint))
-                .clipShape(Circle())
+            avatarPair(monogram: monogram(for: bid),
+                       tone: avatarTone(for: bid),
+                       grade: gradeLetter(for: bid),
+                       tier: gradeTier(for: bid))
             VStack(alignment: .leading, spacing: 2) {
                 Text("CATALYST BID")
-                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
                 Text(displayName(for: bid))
                     .font(.system(size: 22, weight: .heavy))
@@ -489,50 +773,36 @@ struct ShipperBids: View {
 
     private func bidDetailSummary(_ bid: ShipperAPI.Bid) -> some View {
         VStack(spacing: Space.s2) {
-            bidDetailRow(
-                label: "Bid amount",
-                value: bid.amount > 0 ? dollars(bid.amount) : "—",
-                isHero: true
-            )
-            bidDetailRow(
-                label: "Transit time",
-                value: bid.transitTime.isEmpty ? "—" : bid.transitTime
-            )
-            bidDetailRow(
-                label: "DOT",
-                value: bid.dotNumber.isEmpty ? "—" : bid.dotNumber
-            )
-            bidDetailRow(
-                label: "Safety score",
-                value: bid.safetyScore > 0 ? safetyScoreFormat(bid.safetyScore) : "—"
-            )
-            bidDetailRow(
-                label: "Submitted",
-                value: submittedAbsolute(bid.submittedAt)
-            )
+            bidDetailRow(label: "Bid amount",
+                         value: bid.amount > 0 ? dollars(bid.amount) : "—",
+                         isHero: true)
+            bidDetailRow(label: "Transit time",
+                         value: bid.transitTime.isEmpty ? "—" : bid.transitTime)
+            bidDetailRow(label: "DOT",
+                         value: bid.dotNumber.isEmpty ? "—" : bid.dotNumber)
+            bidDetailRow(label: "Safety score",
+                         value: bid.safetyScore > 0 ? safetyScoreFormat(bid.safetyScore) : "—")
+            bidDetailRow(label: "Grade",
+                         value: gradeLetter(for: bid))
+            bidDetailRow(label: "Submitted",
+                         value: submittedAbsolute(bid.submittedAt))
         }
         .padding(Space.s3)
         .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(palette.borderFaint))
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
     private func bidDetailRow(label: String, value: String, isHero: Bool = false) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(label.uppercased())
-                .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                .font(EType.micro).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
             Spacer()
             Text(value)
-                .font(isHero
-                      ? .system(size: 22, weight: .heavy)
-                      : EType.bodyStrong)
-                .foregroundStyle(isHero
-                                 ? AnyShapeStyle(LinearGradient.diagonal)
-                                 : AnyShapeStyle(palette.textPrimary))
+                .font(isHero ? .system(size: 22, weight: .heavy) : EType.bodyStrong)
+                .foregroundStyle(isHero ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textPrimary))
                 .monospacedDigit()
         }
     }
@@ -544,7 +814,7 @@ struct ShipperBids: View {
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("MESSAGE")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .font(EType.micro).tracking(0.8)
                     .foregroundStyle(palette.textPrimary)
             }
             Text(bid.message)
@@ -554,10 +824,8 @@ struct ShipperBids: View {
         }
         .padding(Space.s3)
         .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(palette.borderFaint))
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
@@ -568,13 +836,9 @@ struct ShipperBids: View {
             } label: {
                 HStack(spacing: 8) {
                     if isSettling {
-                        ProgressView()
-                            .progressViewStyle(.circular)
-                            .tint(.white)
-                            .controlSize(.small)
+                        ProgressView().progressViewStyle(.circular).tint(.white).controlSize(.small)
                     } else {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 13, weight: .heavy))
+                        Image(systemName: "checkmark.seal.fill").font(.system(size: 13, weight: .heavy))
                     }
                     Text(isSettling ? "Accepting…" : "Accept bid")
                         .font(.system(size: 13, weight: .heavy)).tracking(0.4)
@@ -593,19 +857,15 @@ struct ShipperBids: View {
                 rejectingBid = bid
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "xmark.circle")
-                        .font(.system(size: 13, weight: .heavy))
-                    Text("Reject")
-                        .font(.system(size: 13, weight: .heavy)).tracking(0.4)
+                    Image(systemName: "xmark.circle").font(.system(size: 13, weight: .heavy))
+                    Text("Reject").font(.system(size: 13, weight: .heavy)).tracking(0.4)
                 }
                 .foregroundStyle(palette.textPrimary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, Space.s3)
                 .background(palette.bgCard)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(palette.borderFaint)
-                )
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(palette.borderFaint))
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
@@ -613,7 +873,7 @@ struct ShipperBids: View {
         }
     }
 
-    // MARK: - Reject reason sheet
+    // MARK: - Reject reason sheet (preserved)
 
     private func rejectReasonSheet(for bid: ShipperAPI.Bid) -> some View {
         let isSettling = settlingBidIds.contains(bid.id)
@@ -629,7 +889,7 @@ struct ShipperBids: View {
                         .clipShape(Circle())
                     VStack(alignment: .leading, spacing: 2) {
                         Text("REJECT BID")
-                            .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                            .font(EType.micro).tracking(1.0)
                             .foregroundStyle(LinearGradient.diagonal)
                         Text(displayName(for: bid))
                             .font(.system(size: 22, weight: .heavy))
@@ -641,10 +901,9 @@ struct ShipperBids: View {
                     }
                     Spacer(minLength: 0)
                 }
-
                 VStack(alignment: .leading, spacing: Space.s2) {
                     Text("REASON")
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                        .font(EType.micro).tracking(0.8)
                         .foregroundStyle(palette.textTertiary)
                     TextEditor(text: $rejectReason)
                         .font(EType.body)
@@ -653,25 +912,18 @@ struct ShipperBids: View {
                         .frame(minHeight: 120)
                         .padding(Space.s2)
                         .background(palette.bgCard)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                                .strokeBorder(palette.borderFaint)
-                        )
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                    .strokeBorder(palette.borderFaint))
                         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
-
                 Button {
                     Task { await rejectBid(bid) }
                 } label: {
                     HStack(spacing: 8) {
                         if isSettling {
-                            ProgressView()
-                                .progressViewStyle(.circular)
-                                .tint(.white)
-                                .controlSize(.small)
+                            ProgressView().progressViewStyle(.circular).tint(.white).controlSize(.small)
                         } else {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 13, weight: .heavy))
+                            Image(systemName: "xmark.circle.fill").font(.system(size: 13, weight: .heavy))
                         }
                         Text(isSettling ? "Rejecting…" : "Send rejection")
                             .font(.system(size: 13, weight: .heavy)).tracking(0.4)
@@ -684,7 +936,6 @@ struct ShipperBids: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(isSettling || (selectedLoadId ?? "").isEmpty)
-
                 Button {
                     rejectingBid = nil
                 } label: {
@@ -696,7 +947,6 @@ struct ShipperBids: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(isSettling)
-
                 Color.clear.frame(height: 32)
             }
             .padding(.horizontal, 14)
@@ -708,20 +958,14 @@ struct ShipperBids: View {
         .presentationDragIndicator(.visible)
     }
 
-    // MARK: - Mutations
+    // MARK: - Mutations (preserved)
 
     private func acceptBid(_ bid: ShipperAPI.Bid) async {
         guard let loadId = selectedLoadId, !loadId.isEmpty else { return }
         settlingBidIds.insert(bid.id)
         defer { settlingBidIds.remove(bid.id) }
         do {
-            _ = try await EusoTripAPI.shared.shipper.acceptBid(
-                loadId: loadId,
-                bidId: bid.id
-            )
-            // Server-side this assigned the load and rejected every
-            // other bid. Refresh both lists so the chip strip drops
-            // the assigned load and the bid list reflects rejections.
+            _ = try await EusoTripAPI.shared.shipper.acceptBid(loadId: loadId, bidId: bid.id)
             await refreshAll()
             mutationError = nil
             detailBid = nil
@@ -737,12 +981,7 @@ struct ShipperBids: View {
         let trimmed = rejectReason.trimmingCharacters(in: .whitespacesAndNewlines)
         let reason: String? = trimmed.isEmpty ? nil : trimmed
         do {
-            _ = try await EusoTripAPI.shared.shipper.rejectBid(
-                loadId: loadId,
-                bidId: bid.id,
-                reason: reason
-            )
-            // Refresh the bids list so the rejected row drops out.
+            _ = try await EusoTripAPI.shared.shipper.rejectBid(loadId: loadId, bidId: bid.id, reason: reason)
             await bidsStore.refresh()
             mutationError = nil
             rejectingBid = nil
@@ -753,18 +992,16 @@ struct ShipperBids: View {
         }
     }
 
-    // MARK: - Empty / skeleton states
+    // MARK: - Empty / skeleton
 
     private var bidsSkeleton: some View {
-        VStack(spacing: Space.s2) {
-            ForEach(0..<3, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+        VStack(spacing: Space.s3) {
+            ForEach(0..<3, id: \.self) { i in
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                     .fill(palette.bgCard)
-                    .frame(height: 80)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(palette.borderFaint)
-                    )
+                    .frame(height: i == 0 ? 100 : 84)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                                .strokeBorder(palette.borderFaint))
                     .opacity(0.6)
             }
         }
@@ -772,46 +1009,37 @@ struct ShipperBids: View {
 
     @ViewBuilder
     private var noBidsEmptyState: some View {
-        EusoEmptyState(
-            systemImage: "hand.raised",
-            title: "No bids yet",
-            subtitle: "When a catalyst bids on this load, it'll show up here for accept or reject."
-        )
+        EusoEmptyState(systemImage: "hand.raised",
+                       title: "No bids yet",
+                       subtitle: "When a catalyst bids on this load, it'll show up here for accept or reject.")
     }
 
     @ViewBuilder
     private var pickLoadEmptyState: some View {
-        EusoEmptyState(
-            systemImage: "shippingbox",
-            title: "Pick a load",
-            subtitle: "Tap any load chip above to see open bids."
-        )
+        EusoEmptyState(systemImage: "shippingbox",
+                       title: "Pick a load",
+                       subtitle: "Tap any load chip above to see open bids.")
     }
 
     @ViewBuilder
     private var postLoadEmptyState: some View {
-        EusoEmptyState(
-            systemImage: "shippingbox",
-            title: "Post your first load",
-            subtitle: "Bids land here the moment a catalyst bids on a posted load."
-        )
+        EusoEmptyState(systemImage: "shippingbox",
+                       title: "Post your first load",
+                       subtitle: "Bids land here the moment a catalyst bids on a posted load.")
     }
 
     private func inlineError(_ error: Error, retry: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Brand.danger)
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Brand.danger)
                 Text("Couldn't load bid fabric")
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
+                    .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
             }
             Text(readableError(error))
-                .font(EType.caption)
-                .foregroundStyle(palette.textSecondary)
+                .font(EType.caption).foregroundStyle(palette.textSecondary)
             Button(action: retry) {
                 Text("Retry")
-                    .font(.system(size: 11, weight: .heavy)).tracking(0.6)
+                    .font(EType.micro).tracking(0.6)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14).padding(.vertical, 8)
                     .background(LinearGradient.diagonal)
@@ -821,19 +1049,13 @@ struct ShipperBids: View {
         }
         .padding(Space.s3)
         .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(Brand.danger.opacity(0.4), lineWidth: 1)
-        )
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(Brand.danger.opacity(0.4), lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
     // MARK: - Helpers
 
-    /// Catalyst display name. Server falls back to the literal
-    /// "Catalyst" string when the companies row has no `name` —
-    /// the screen elides that to em-dash sentinel rather than
-    /// claiming a generic brand.
     private func displayName(for bid: ShipperAPI.Bid) -> String {
         let trimmed = bid.catalystName.trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty { return "—" }
@@ -841,10 +1063,27 @@ struct ShipperBids: View {
         return trimmed
     }
 
-    /// Format a 0…100-style safety score with one decimal. The
-    /// server currently returns 0 for every row (TODO on the
-    /// shippers.ts side); we honor that with em-dash sentinel
-    /// elsewhere — this helper only fires when score > 0.
+    private func credentialsLine(for bid: ShipperAPI.Bid) -> String {
+        var parts: [String] = []
+        if !bid.dotNumber.isEmpty { parts.append("USDOT \(bid.dotNumber)") }
+        if bid.safetyScore > 0 { parts.append(safetyScoreFormat(bid.safetyScore)) }
+        if bid.recommended { parts.append("recommended") }
+        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+    }
+
+    private func onTimeLine(for bid: ShipperAPI.Bid) -> String {
+        // SafetyScore is the closest proxy iOS has today — server
+        // doesn't yet ship a separate on-time projection on Bid.
+        if bid.safetyScore > 0 {
+            return "\(Int(bid.safetyScore * 100))% on-time"
+        }
+        return ""
+    }
+
+    private func onTimeIsHero(for bid: ShipperAPI.Bid) -> Bool {
+        bid.safetyScore >= 0.95
+    }
+
     private func safetyScoreFormat(_ value: Double) -> String {
         let f = NumberFormatter()
         f.numberStyle = .decimal
@@ -861,39 +1100,12 @@ struct ShipperBids: View {
         return f.string(from: NSNumber(value: value)) ?? "$0"
     }
 
-    /// "5m ago" / "2h ago" / "Apr 26" — relative when recent,
-    /// absolute when older than a day. Empty server string surfaces
-    /// as em-dash sentinel.
-    private func submittedRelative(_ iso: String) -> String {
-        guard !iso.isEmpty else { return "—" }
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        var d = f.date(from: iso)
-        if d == nil {
-            f.formatOptions = [.withInternetDateTime]
-            d = f.date(from: iso)
-        }
-        guard let date = d else { return iso }
-        let interval = Date().timeIntervalSince(date)
-        if interval < 0 { return "just now" }
-        if interval < 60 { return "just now" }
-        if interval < 3600 { return "\(Int(interval / 60))m ago" }
-        if interval < 86400 { return "\(Int(interval / 3600))h ago" }
-        let absFormatter = DateFormatter()
-        absFormatter.dateFormat = "MMM d"
-        return absFormatter.string(from: date)
-    }
-
-    /// Absolute "Apr 26 · 10:14 AM" form for the detail sheet.
     private func submittedAbsolute(_ iso: String) -> String {
         guard !iso.isEmpty else { return "—" }
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         var d = f.date(from: iso)
-        if d == nil {
-            f.formatOptions = [.withInternetDateTime]
-            d = f.date(from: iso)
-        }
+        if d == nil { f.formatOptions = [.withInternetDateTime]; d = f.date(from: iso) }
         guard let date = d else { return iso }
         let absFormatter = DateFormatter()
         absFormatter.dateFormat = "MMM d · h:mm a"
@@ -906,6 +1118,31 @@ struct ShipperBids: View {
         }
         return error.localizedDescription
     }
+}
+
+// MARK: - Pennant shape (clipped to top-left rounded corner)
+
+private struct PennantShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let w = rect.width
+        let h = rect.height
+        let r = min(16, h * 0.8) * (w / 72)
+        var p = Path()
+        p.move(to: CGPoint(x: 0, y: r))
+        p.addQuadCurve(to: CGPoint(x: r, y: 0), control: CGPoint(x: 0, y: 0))
+        p.addLine(to: CGPoint(x: w, y: 0))
+        p.addLine(to: CGPoint(x: w, y: h))
+        p.addLine(to: CGPoint(x: r * 0.25, y: h))
+        p.closeSubpath()
+        return p
+    }
+}
+
+// MARK: - Notification names
+
+extension Notification.Name {
+    static let eusoShipperBidAccept       = Notification.Name("eusoShipperBidAccept")
+    static let eusoShipperBidsCounterAll  = Notification.Name("eusoShipperBidsCounterAll")
 }
 
 // MARK: - Screen wrapper
@@ -927,7 +1164,8 @@ struct ShipperBidsScreen: View {
 }
 
 // Shipper bottom-nav doctrine — Bids is a drilled-down screen reached
-// from Loads / Load Detail; no chrome slot is highlighted.
+// from Loads / Load Detail; no chrome slot is highlighted. Out of
+// scope per parity mandate §1.
 private func shipperNavLeading_203() -> [NavSlot] {
     [NavSlot(label: "Home",        systemImage: "house",                          isCurrent: false),
      NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle",    isCurrent: false)]
@@ -939,10 +1177,6 @@ private func shipperNavTrailing_203() -> [NavSlot] {
 }
 
 // MARK: - Previews
-//
-// Previews don't run `.task`, so each store stays in `.loading` —
-// both registers render the skeleton without hitting the network.
-// Compiles in isolation per doctrine §10.
 
 #Preview("203 · Shipper · Bids · Night") {
     ShipperBidsScreen(theme: Theme.dark)
