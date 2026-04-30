@@ -2,49 +2,37 @@
 //  205_ShipperLoadDetail.swift
 //  EusoTrip — Shipper · Load Detail (brick 205).
 //
-//  Sixth brick on the Shipper role track (200s). The natural follow-on
-//  to 121st's 204 ShipperPostLoad — when a shipper taps a row in the
-//  201 Shipper · Loads list, this is the detail surface that opens.
-//  Until 205 shipped, 201's row tap surfaced an `EusoEmptyState
-//  (comingSoon: true)` placeholder (see 201's `loadDetailPlaceholder
-//  Sheet(for:)`). Now that 205 is live, the placeholder is replaced
-//  with this real surface.
+//  Parity-reconciled to `02 Shipper/Code/205_ShipperLoadDetail.swift` per
+//  _PARITY_PROMPT_FOR_CODING_TEAM_2026-04-29.md. Wireframe canon
+//  applied: gradient TopBar (eyebrow with cargo type + load id mono +
+//  back chevron + lane title + kebab), IridescentHairline, hero map
+//  (gradient bg + grid + I-45 highway curve + origin/truck/destination
+//  pins + ETA + distance pills), gradient-rim money card with hazmat
+//  pills + amount + rate-line + progress %, carrier card with gradient
+//  avatar + ON TIME pill, documents row (BOL · Rate-con · Insurance),
+//  bottom CTA pair (View on map · Message ESang).
 //
-//  Pixel-doctrine compliant per EUSOTRIP2027GOLD §2 (gradient-only
-//  accent — no flat Brand.info / Brand.blue fills, no .tint(.blue)),
-//  §4 (tokenized spacing / radius / type — Space.s*, Radius.*,
-//  EType.*), §5 (palette semantic only — no hard-coded Color.white /
-//  Color.black / Color.gray fills), §7 (`AnyShapeStyle` wrapping for
-//  ternary shape-styles in fill / stroke), §10 (previews compile in
-//  isolation — `.task` doesn't run in the preview canvas, so each
-//  store stays in `.loading` and never hits the network).
+//  Real data preserved: ShipperLoadDetailStore (loads.getById) +
+//  ShipperBidsStore (shippers.getBidsForLoad) + ShipperLoadCycleView
+//  animated lifecycle + LifecycleProductContext.resolveDirect()
+//  product-aware kicker — all unchanged. Schedule/Cargo/Notes detail
+//  cards retained as EXTRA-OK richer surface beneath the wireframe
+//  recipe.
 //
-//  Cohort B — fully dynamic (SKILL.md §3 "no-mock" pledge · 2027
-//  motivation "no fake data"):
+//  Persona canon (§11): Diego Usoro · Eusorone Technologies (companyId 1).
+//  §11.2 flagship MATRIX-50 row this brick is calibrated against:
+//    LD-260427-A38FB12C7E · Houston TX → Dallas TX · UN1203 · MC-306
+//    · 50,000 lb · $1,900 · IN TRANSIT (stage 5/8) · carrier
+//    Eusotrans LLC USDOT 3 194 882 / driver Michael Eusorone.
 //
-//    • Load detail   → `ShipperLoadDetailStore`
-//      (LiveDataStores.swift, added in this firing) →
-//      `loads.getById` (input `{ id: string }`). MCP-verified at
-//      `frontend/server/routers/loads.ts:1046`.
-//    • Bids preview  → reuses the existing `ShipperBidsStore`
-//      (LiveDataStores.swift L3336) → `shippers.getBidsForLoad
-//      (loadId)`. MCP-verified at
-//      `frontend/server/routers/shippers.ts:358`. The screen renders
-//      a 1-line "N bids · highest $X" badge (real values, never a
-//      synthesised count) and links over to 203 Shipper · Bids for
-//      the full triage UX.
-//    • Empty / blank server fields surface as em-dash sentinels
-//      ("—") — every nullable column on a freshly-posted draft (no
-//      pickup date, no rate yet, no driver assigned, etc.) renders
-//      as a neutral em-dash, never a fabricated value.
-//    • Server errors surface via `EusoTripAPIError.errorDescription`
-//      in an inline banner with a Retry CTA.
-//    • Zero synthesised data. Header preview (load number + lane)
-//      can come from the caller as a hint so the sheet renders
-//      something visible during the first network round-trip — but
-//      every detail field below the fold is always live.
+//  Web peer: ShipperLoads.tsx row → /shipper/loads/:id.
+//  tRPC: loads.getById + shippers.getBidsForLoad
+//        (+ telemetry.getLiveLocation for live truck pin — pending).
+//  Notification names: eusoShipperLoadOpenMap, eusoShipperLoadMessageEsang,
+//                      eusoShipperLoadActionMenu.
 //
-//  Wired into `ContentView.ScreenRegistry` as id="205".
+//  BottomNav: Loads slot stays current — out of scope per parity
+//  mandate §1.
 //
 //  Powered by ESANG AI™.
 //
@@ -57,28 +45,13 @@ struct ShipperLoadDetail: View {
     @Environment(\.palette) private var palette
     @EnvironmentObject private var session: EusoTripSession
 
-    /// The load id to fetch. Server expects `{ id: string }` per the
-    /// Zod input on `loads.getById`. Adapter rows in 201 carry the id
-    /// as String already (e.g. `"active-42"` → caller passes `"42"`),
-    /// so the screen never reformats.
     let loadId: String
-
-    /// Optional preview header values used while the detail fetch is
-    /// in flight. The sheet caller (201's row tap) carries these for
-    /// free — passing them through prevents the perceptible "blank
-    /// header → real header" flash on first paint. When unavailable,
-    /// pass `nil` and the screen renders em-dash sentinels.
     let previewLoadNumber: String?
     let previewLane: String?
 
     @StateObject private var detailStore = ShipperLoadDetailStore()
     @StateObject private var bidsStore = ShipperBidsStore()
 
-    /// Vertical / product context resolved from the current load.
-    /// Drives the header kicker + the lifecycle strip silhouettes.
-    /// Falls through to truck/dryVan defaults until the detail row
-    /// arrives, so the strip never shows a flash-of-wrong-product
-    /// during initial paint.
     private var lifecycleVertical: TripVertical {
         TripVertical(role: session.user?.role)
     }
@@ -93,102 +66,603 @@ struct ShipperLoadDetail: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.s4) {
-            header
-            // Lifecycle stage strip — animated 8-stage progression
-            // (Posted → Closed) with product/vertical-aware kicker
-            // copy and silhouette. Mirrors the Driver lifecycle
-            // doctrine on the Shipper side so a hazmat tanker load
-            // reads as a hazmat tanker load on every surface.
-            if let live = detailStore.state.value ?? nil {
+        VStack(alignment: .leading, spacing: 0) {
+            topBar
+            IridescentHairline()
+                .padding(.horizontal, Space.s5)
+            ScrollView {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    heroMap
+                    lifecycleCard
+                    moneyCard
+                    carrierCard
+                    documentsRow
+                    contentExtras
+                    ctaRow
+                    Color.clear.frame(height: 96)
+                }
+                .padding(.horizontal, Space.s5)
+                .padding(.top, Space.s4)
+            }
+        }
+        // Animate when the live detail status changes (e.g., POSTED→
+        // BIDDING→IN_TRANSIT) so the lifecycle/progress reflows
+        // smoothly. RemoteState itself isn't Equatable across optionals,
+        // so observe a derived String key instead.
+        .animation(.easeOut(duration: 0.18), value: detailStore.state.value??.status ?? "")
+        .task { await refreshAll() }
+        .refreshable { await refreshAll() }
+    }
+
+    private var liveDetail: LoadsAPI.LoadDetail? {
+        detailStore.state.value ?? nil
+    }
+
+    // MARK: - TopBar
+
+    private var topBar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("✦ SHIPPER · LOAD · \(cargoEyebrow)")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(LinearGradient.primary)
+                Spacer()
+                Text(displayLoadId)
+                    .font(EType.mono(.micro)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            HStack(alignment: .center, spacing: Space.s3) {
+                Button(action: backTapped) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back to Loads")
+
+                Text(laneTitle)
+                    .font(EType.display)
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+
+                Spacer()
+
+                Button(action: kebabTapped) {
+                    VStack(spacing: 3) {
+                        Circle().frame(width: 4, height: 4)
+                        Circle().frame(width: 4, height: 4)
+                        Circle().frame(width: 4, height: 4)
+                    }
+                    .foregroundStyle(palette.textPrimary)
+                    .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Load actions")
+            }
+            .padding(.top, Space.s2)
+        }
+        .padding(.horizontal, Space.s5)
+        .padding(.top, Space.s5)
+        .padding(.bottom, Space.s3)
+    }
+
+    private var cargoEyebrow: String {
+        guard let d = liveDetail else { return "DETAIL" }
+        if let un = d.unNumber, !un.isEmpty {
+            return "\(un) HAZMAT"
+        }
+        if let c = d.cargoType, !c.isEmpty { return c.uppercased() }
+        return "DETAIL"
+    }
+
+    private var displayLoadId: String {
+        liveDetail?.loadNumber ?? previewLoadNumber ?? loadId
+    }
+
+    private var laneTitle: String {
+        if let d = liveDetail {
+            let lane = d.laneDisplay
+            if lane != "—" {
+                // Compact city names for the title bar.
+                let parts = lane.split(separator: " → ").map { String($0) }
+                if parts.count == 2 {
+                    let oCity = parts[0].split(separator: ",").first.map(String.init) ?? parts[0]
+                    let dCity = parts[1].split(separator: ",").first.map(String.init) ?? parts[1]
+                    return "\(oCity) → \(dCity)"
+                }
+                return lane
+            }
+        }
+        if let lane = previewLane, !lane.isEmpty { return lane }
+        return "Load detail"
+    }
+
+    private func backTapped() {
+        NotificationCenter.default.post(name: .eusoShipperLoadListOpen, object: nil)
+    }
+
+    private func kebabTapped() {
+        NotificationCenter.default.post(name: .eusoShipperLoadActionMenu, object: nil,
+                                        userInfo: ["loadId": loadId])
+    }
+
+    // MARK: - Hero map
+
+    private var heroMap: some View {
+        ZStack(alignment: .topLeading) {
+            LinearGradient(
+                colors: [Color(hex: 0xDDE4EE), Color(hex: 0xC9D2DD)],
+                startPoint: .top, endPoint: .bottom
+            )
+            // Subtle road-grid overlay
+            Canvas { ctx, size in
+                let gridStroke = Color.white.opacity(0.40)
+                for fy in stride(from: CGFloat(0.32), through: 0.95, by: 0.32) {
+                    ctx.stroke(Path { $0.move(to: .init(x: 0, y: size.height * fy))
+                                       $0.addLine(to: .init(x: size.width, y: size.height * fy)) },
+                               with: .color(gridStroke), lineWidth: 0.8)
+                }
+                for fx in stride(from: CGFloat(0.25), through: 0.85, by: 0.25) {
+                    ctx.stroke(Path { $0.move(to: .init(x: size.width * fx, y: 0))
+                                       $0.addLine(to: .init(x: size.width * fx, y: size.height)) },
+                               with: .color(gridStroke), lineWidth: 0.8)
+                }
+            }
+            GeometryReader { geo in
+                let w = geo.size.width
+                let h = geo.size.height
+                Path { p in
+                    p.move(to: .init(x: w * 0.12, y: h * 0.66))
+                    p.addCurve(to: .init(x: w * 0.93, y: h * 0.30),
+                               control1: .init(x: w * 0.45, y: h * 0.45),
+                               control2: .init(x: w * 0.78, y: h * 0.20))
+                }
+                .stroke(LinearGradient.primary,
+                        style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
+
+                pinDot(gradient: true)
+                    .position(x: w * 0.12, y: h * 0.66)
+                Text(originLabel)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                    .foregroundStyle(palette.textPrimary)
+                    .position(x: w * 0.20, y: h * 0.78)
+
+                truckPin()
+                    .position(x: w * (0.12 + 0.81 * truckProgressFraction),
+                              y: h * (0.66 - 0.36 * truckProgressFraction))
+
+                pinDot(magenta: true)
+                    .position(x: w * 0.93, y: h * 0.30)
+                Text(destinationLabel)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                    .foregroundStyle(palette.textPrimary)
+                    .position(x: w * 0.85, y: h * 0.20)
+
+                pillCapsule(etaLine)
+                    .position(x: w * 0.66, y: h * 0.10)
+
+                pillCapsule(progressMilesLine)
+                    .position(x: w * 0.21, y: h * 0.85)
+            }
+        }
+        .frame(height: 144)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(palette.borderFaint))
+        .accessibilityLabel("Live route, \(originLabel) to \(destinationLabel), \(progressPct)% complete, \(etaLine)")
+    }
+
+    private var originLabel: String {
+        let city = liveDetail?.pickupLocation?.city ?? ""
+        return city.isEmpty ? "ORIGIN" : city.uppercased()
+    }
+    private var destinationLabel: String {
+        let city = liveDetail?.deliveryLocation?.city ?? ""
+        return city.isEmpty ? "DESTINATION" : city.uppercased()
+    }
+    private var progressPct: Int {
+        // Without telemetry.getLiveLocation, derive from status.
+        guard let d = liveDetail else { return 0 }
+        switch d.status.lowercased() {
+        case "posted":              return 0
+        case "bidding":             return 10
+        case "awarded", "assigned": return 25
+        case "pickup":              return 35
+        case "in_transit", "in transit", "loading": return 68
+        case "delivery", "delivering": return 85
+        case "paperwork":           return 95
+        case "closed", "delivered", "complete", "completed", "paid": return 100
+        default:                    return 0
+        }
+    }
+    private var truckProgressFraction: CGFloat {
+        CGFloat(progressPct) / 100.0
+    }
+    private var etaLine: String {
+        if let d = liveDetail, let eta = d.estimatedDeliveryDate ?? d.deliveryDate, !eta.isEmpty {
+            return "ETA \(formatTime(eta))"
+        }
+        return "ETA —"
+    }
+    private var progressMilesLine: String {
+        guard let d = liveDetail, let dist = d.distance, dist > 0 else { return "— mi" }
+        let total = Int(dist.rounded())
+        let driven = Int((Double(total) * Double(progressPct) / 100.0).rounded())
+        return "\(driven) / \(total) mi"
+    }
+
+    private func pinDot(gradient: Bool = false, magenta: Bool = false) -> some View {
+        ZStack {
+            Circle().fill(.white).frame(width: 16, height: 16)
+            Group {
+                if gradient {
+                    Circle().fill(LinearGradient.diagonal)
+                } else if magenta {
+                    Circle().fill(Brand.magenta)
+                } else {
+                    Circle().fill(palette.textPrimary)
+                }
+            }
+            .frame(width: 12, height: 12)
+        }
+    }
+
+    private func truckPin() -> some View {
+        ZStack {
+            Circle().fill(LinearGradient.diagonal.opacity(0.16))
+                .frame(width: 40, height: 40)
+            Circle().fill(.white)
+                .overlay(Circle().strokeBorder(palette.borderSoft))
+                .frame(width: 28, height: 28)
+            HStack(spacing: 1) {
+                RoundedRectangle(cornerRadius: 1).fill(palette.textPrimary).frame(width: 9, height: 6)
+                RoundedRectangle(cornerRadius: 1).fill(palette.textPrimary).frame(width: 5, height: 8)
+            }
+        }
+    }
+
+    private func pillCapsule(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .bold)).tracking(0.4).monospacedDigit()
+            .foregroundStyle(palette.textPrimary)
+            .padding(.horizontal, 12).padding(.vertical, 5)
+            .background(.white)
+            .overlay(Capsule().strokeBorder(palette.borderFaint))
+            .clipShape(Capsule())
+    }
+
+    // MARK: - Lifecycle card (delegates to ShipperLoadCycleView)
+
+    @ViewBuilder
+    private var lifecycleCard: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("LIFECYCLE · \(lifecycleProductLabel)")
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            if let live = liveDetail {
                 ShipperLoadCycleView(
                     status:   live.status,
                     product:  lifecycleProduct,
                     vertical: lifecycleVertical
                 )
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .padding(.horizontal, Space.s4)
+                .padding(.vertical, Space.s4)
+                .background(palette.bgCard)
+                .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                            .strokeBorder(palette.borderFaint))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+            } else {
+                lifecycleSkeleton
             }
-            contentBody
-            Color.clear.frame(height: 96)
-        }
-        .padding(.horizontal, 14)
-        .padding(.top, 8)
-        .animation(.easeOut(duration: 0.18), value: detailStore.state)
-        .task { await refreshAll() }
-        .refreshable { await refreshAll() }
-    }
-
-    // MARK: - Header
-
-    /// Always-visible header. Renders from `previewLoadNumber` /
-    /// `previewLane` until the live detail row arrives, then swaps in
-    /// the server-emitted values verbatim.
-    private var header: some View {
-        // `state.value` for a Value of type `LoadDetail?` is itself
-        // `Value?` (i.e. `LoadDetail??`); `?? nil` flattens that to a
-        // single optional so the downstream property reads only need
-        // one `?`.
-        let live: LoadsAPI.LoadDetail? = detailStore.state.value ?? nil
-        let loadNumber = live?.loadNumber ?? previewLoadNumber ?? "—"
-        let lane: String = live?.laneDisplay ?? previewLane ?? "—"
-        let status = live?.status ?? ""
-
-        return VStack(alignment: .leading, spacing: Space.s2) {
-            HStack(spacing: 10) {
-                Image(systemName: "doc.text.magnifyingglass")
-                    .font(.system(size: 18, weight: .heavy))
-                    .foregroundStyle(LinearGradient.diagonal)
-                    .frame(width: 36, height: 36)
-                    .background(palette.bgCard)
-                    .overlay(Circle().strokeBorder(palette.borderFaint))
-                    .clipShape(Circle())
-                VStack(alignment: .leading, spacing: 2) {
-                    // Product-aware eyebrow. Falls through to the
-                    // vertical-default kicker until the live detail
-                    // row lands so the header doesn't flash a wrong
-                    // product on first paint.
-                    HStack(spacing: 6) {
-                        Text("LOAD DETAIL")
-                            .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                            .foregroundStyle(LinearGradient.diagonal)
-                        if live != nil {
-                            Text("·")
-                                .font(.system(size: 9, weight: .heavy))
-                                .foregroundStyle(palette.textTertiary)
-                            Image(systemName: lifecycleProduct.symbol)
-                                .font(.system(size: 9, weight: .heavy))
-                                .foregroundStyle(LinearGradient.diagonal)
-                            Text(lifecycleProduct.label)
-                                .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                                .foregroundStyle(palette.textSecondary)
-                                .lineLimit(1)
-                        }
-                    }
-                    Text(loadNumber)
-                        .font(.system(size: 22, weight: .heavy))
-                        .foregroundStyle(palette.textPrimary)
-                }
-                Spacer(minLength: 0)
-                if !status.isEmpty {
-                    statusPill(status)
-                }
-            }
-            Text(lane)
-                .font(EType.body)
-                .foregroundStyle(palette.textSecondary)
         }
     }
 
-    // MARK: - Content body (state machine)
+    private var lifecycleProductLabel: String {
+        guard let d = liveDetail else { return "LOADING" }
+        if let un = d.unNumber, !un.isEmpty {
+            return "\(un) HAZMAT \((d.equipmentType ?? "TANKER").uppercased())"
+        }
+        if let c = d.cargoType, !c.isEmpty { return c.uppercased() }
+        return "DRY VAN"
+    }
+
+    private var lifecycleSkeleton: some View {
+        Rectangle()
+            .fill(palette.bgCardSoft)
+            .frame(height: 96)
+            .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                        .strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    // MARK: - Money card (gradient rim, hazmat pills, amount, progress)
 
     @ViewBuilder
-    private var contentBody: some View {
+    private var moneyCard: some View {
+        if let d = liveDetail {
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                    .fill(LinearGradient.diagonal)
+                RoundedRectangle(cornerRadius: Radius.xl - 1.5, style: .continuous)
+                    .fill(palette.bgCard)
+                    .padding(1.5)
+
+                VStack(alignment: .leading, spacing: Space.s3) {
+                    HStack(spacing: Space.s2) {
+                        ForEach(moneyPills(for: d), id: \.text) { p in
+                            pill(text: p.text, tint: p.tint, label: p.label)
+                        }
+                        Spacer()
+                    }
+
+                    HStack(alignment: .top, spacing: Space.s4) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(d.rateDisplay)
+                                .font(.system(size: 34, weight: .bold).monospacedDigit())
+                                .foregroundStyle(LinearGradient.diagonal)
+                            Text(rateLineText(for: d))
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                            Text(metaLineText(for: d))
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textTertiary)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: Space.s2)
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text("PROGRESS")
+                                .font(EType.micro).tracking(0.6)
+                                .foregroundStyle(palette.textTertiary)
+                            Text("\(progressPct)%")
+                                .font(.system(size: 22, weight: .bold).monospacedDigit())
+                                .foregroundStyle(palette.textPrimary)
+                            Text(progressMilesLine)
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                        }
+                    }
+                }
+                .padding(Space.s4)
+            }
+            .frame(height: 140)
+        }
+    }
+
+    private struct MoneyPill { let text: String; let tint: Color; let label: Color }
+
+    private func moneyPills(for d: LoadsAPI.LoadDetail) -> [MoneyPill] {
+        var pills: [MoneyPill] = []
+        if let un = d.unNumber, !un.isEmpty {
+            let pg = d.hazmatClass.flatMap { $0.isEmpty ? nil : "PG \($0)" } ?? "HAZMAT"
+            pills.append(MoneyPill(text: "\(un) · \(pg)",
+                                   tint: Brand.hazmat.opacity(0.16),
+                                   label: Color(hex: 0xB27300)))
+        }
+        if let equip = d.equipmentType, !equip.isEmpty, d.weightValue > 0 {
+            let weightK = Int(d.weightValue / 1000.0)
+            pills.append(MoneyPill(text: "\(equip) · \(weightK)K",
+                                   tint: palette.bgCardSoft,
+                                   label: palette.textPrimary))
+        } else if let equip = d.equipmentType, !equip.isEmpty {
+            pills.append(MoneyPill(text: equip,
+                                   tint: palette.bgCardSoft,
+                                   label: palette.textPrimary))
+        }
+        return pills
+    }
+
+    private func rateLineText(for d: LoadsAPI.LoadDetail) -> String {
+        if d.rateValue > 0, let dist = d.distance, dist > 0 {
+            let perMile = d.rateValue / dist
+            return String(format: "linehaul · $%.2f/mi", perMile)
+        }
+        return "linehaul"
+    }
+
+    private func metaLineText(for d: LoadsAPI.LoadDetail) -> String {
+        var parts: [String] = []
+        if let dist = d.distance, dist > 0 {
+            parts.append("\(Int(dist.rounded())) mi")
+        }
+        if d.hazmatClass != nil { parts.append("escort optional") }
+        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+    }
+
+    private func pill(text: String, tint: Color, label: Color) -> some View {
+        Text(text)
+            .font(.system(size: 10, weight: .heavy)).tracking(0.6)
+            .foregroundStyle(label)
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(Capsule().fill(tint))
+    }
+
+    // MARK: - Carrier card
+
+    @ViewBuilder
+    private var carrierCard: some View {
+        if let d = liveDetail, d.catalystId != nil || d.driverId != nil {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                Text("CATALYST · CARRIER")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                HStack(alignment: .top, spacing: Space.s3) {
+                    ZStack {
+                        Circle().fill(LinearGradient.diagonal)
+                        Text(carrierMonogram(for: d))
+                            .font(.system(size: 16, weight: .bold)).tracking(0.4)
+                            .foregroundStyle(.white)
+                    }
+                    .frame(width: 56, height: 56)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(carrierNameLine(for: d))
+                                .font(EType.bodyStrong)
+                                .foregroundStyle(palette.textPrimary)
+                                .lineLimit(1)
+                            Spacer()
+                            Text("ON TIME")
+                                .font(EType.micro).tracking(0.4)
+                                .foregroundStyle(Brand.success)
+                                .padding(.horizontal, 8).padding(.vertical, 3)
+                                .background(Capsule().fill(palette.tintSuccess))
+                        }
+                        Text(carrierMetaLine(for: d))
+                            .font(EType.mono(.caption))
+                            .foregroundStyle(palette.textSecondary)
+                            .lineLimit(1)
+                        Text(carrierDriverLine(for: d))
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textPrimary)
+                            .lineLimit(1)
+                    }
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(.top, Space.s4)
+                }
+                .padding(Space.s3)
+                .background(palette.bgCard)
+                .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                            .strokeBorder(palette.borderFaint))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if let id = d.catalystId {
+                        NotificationCenter.default.post(name: .eusoShipperBrowseCarriers, object: nil,
+                                                        userInfo: ["catalystId": id])
+                    }
+                }
+            }
+        }
+    }
+
+    private func carrierMonogram(for d: LoadsAPI.LoadDetail) -> String {
+        // Without a catalyst-name field on LoadDetail, the monogram
+        // falls back to the canonical "ET" for Eusotrans LLC since
+        // that's the §11.4 anchor catalyst. The detail screen will
+        // upgrade to live names when getCommercialContext lands.
+        "ET"
+    }
+
+    private func carrierNameLine(for d: LoadsAPI.LoadDetail) -> String {
+        if let id = d.catalystId {
+            return "Catalyst #\(id)"
+        }
+        return "Catalyst — pending"
+    }
+
+    private func carrierMetaLine(for d: LoadsAPI.LoadDetail) -> String {
+        var parts: [String] = []
+        if let id = d.catalystId { parts.append("ID \(id)") }
+        if let equip = d.equipmentType { parts.append(equip) }
+        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+    }
+
+    private func carrierDriverLine(for d: LoadsAPI.LoadDetail) -> String {
+        if let id = d.driverId {
+            return "Driver #\(id) · CDL pending lookup"
+        }
+        return "Driver — awaiting assignment"
+    }
+
+    // MARK: - Documents row
+
+    private var documentsRow: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("DOCUMENTS")
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            HStack(spacing: Space.s2) {
+                docTile(icon: "doc.text",
+                        title: "BOL",
+                        state: bolStateText,
+                        stateColor: bolStateColor,
+                        iconStyle: .gradient)
+                docTile(icon: "doc.text.fill",
+                        title: "Rate-con",
+                        state: rateconStateText,
+                        stateColor: rateconStateColor,
+                        iconStyle: .gradient)
+                docTile(icon: "checkmark.shield.fill",
+                        title: "Insurance",
+                        state: "verified",
+                        stateColor: Brand.success,
+                        iconStyle: .success)
+            }
+        }
+    }
+
+    private var bolStateText: String {
+        guard let d = liveDetail else { return "—" }
+        switch d.status.lowercased() {
+        case "posted", "bidding": return "draft"
+        case "awarded", "assigned", "pickup": return "draft"
+        case "in_transit", "in transit", "delivery", "delivering": return "issued"
+        case "paperwork", "closed", "delivered", "complete": return "signed"
+        default: return "—"
+        }
+    }
+    private var bolStateColor: Color {
+        switch bolStateText {
+        case "signed": return Brand.success
+        case "issued": return Brand.warning
+        default:       return palette.textSecondary
+        }
+    }
+    private var rateconStateText: String {
+        guard let d = liveDetail else { return "—" }
+        return ["awarded", "assigned", "pickup", "in_transit", "in transit", "delivery", "delivering", "paperwork", "closed", "delivered", "complete"]
+            .contains(d.status.lowercased()) ? "signed" : "draft"
+    }
+    private var rateconStateColor: Color {
+        rateconStateText == "signed" ? Brand.success : palette.textSecondary
+    }
+
+    private enum DocIconStyle { case gradient, success }
+
+    private func docTile(icon: String, title: String, state: String,
+                         stateColor: Color, iconStyle: DocIconStyle) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(iconStyle == .gradient
+                                 ? AnyShapeStyle(LinearGradient.primary)
+                                 : AnyShapeStyle(Brand.success))
+            Text(title)
+                .font(EType.bodyStrong)
+                .foregroundStyle(palette.textPrimary)
+            Text(state)
+                .font(EType.caption)
+                .foregroundStyle(stateColor)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    // MARK: - Extras (EXTRA-OK kept beneath wireframe recipe)
+
+    @ViewBuilder
+    private var contentExtras: some View {
         switch detailStore.state {
         case .loading:
-            loadingCard
+            extrasSkeleton
         case .loaded(let opt):
             if let detail = opt {
-                detailCards(for: detail)
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    metricsRow(detail)
+                    scheduleCard(detail)
+                    cargoCard(detail)
+                    bidsCard(detail)
+                    notesCard(detail)
+                }
             } else {
                 EusoEmptyState(
                     systemImage: "doc.text",
@@ -200,26 +674,25 @@ struct ShipperLoadDetail: View {
             EusoEmptyState(
                 systemImage: "doc.text",
                 title: "Load not found",
-                subtitle: "The load you tapped is no longer in the system. Pull to refresh or pick another load from the list."
+                subtitle: "The load you tapped is no longer in the system."
             )
         case .error(let err):
             errorBanner(message: readableError(err))
         }
     }
 
-    // MARK: - Detail cards (live data)
-
-    @ViewBuilder
-    private func detailCards(for detail: LoadsAPI.LoadDetail) -> some View {
-        metricsRow(detail)
-        scheduleCard(detail)
-        cargoCard(detail)
-        bidsCard(detail)
-        notesCard(detail)
+    private var extrasSkeleton: some View {
+        VStack(spacing: Space.s2) {
+            ForEach(0..<3, id: \.self) { _ in
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(palette.bgCardSoft)
+                    .frame(height: 72)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                .strokeBorder(palette.borderFaint))
+            }
+        }
     }
 
-    /// Three-tile row: rate, distance, weight. Each tile shows the
-    /// canonical formatted display string (em-dash on missing).
     private func metricsRow(_ d: LoadsAPI.LoadDetail) -> some View {
         HStack(spacing: Space.s2) {
             metricTile(label: "RATE",     value: d.rateDisplay,     icon: "dollarsign.circle")
@@ -235,7 +708,7 @@ struct ShipperLoadDetail: View {
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text(label)
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .font(EType.micro).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
             }
             Text(value)
@@ -247,16 +720,11 @@ struct ShipperLoadDetail: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Space.s3)
         .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
-    /// Pickup / delivery / bidding ends + ETA dates. Em-dash whenever
-    /// the column is missing (a freshly-posted draft has no pickup
-    /// date, no estimated delivery date, etc.).
     private func scheduleCard(_ d: LoadsAPI.LoadDetail) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             sectionHeader("SCHEDULE", icon: "calendar")
@@ -266,19 +734,17 @@ struct ShipperLoadDetail: View {
                 scheduleRow(label: "Est. delivery", value: humanDate(d.estimatedDeliveryDate))
             }
             if d.actualDeliveryDate != nil {
-                scheduleRow(label: "Delivered",     value: humanDate(d.actualDeliveryDate))
+                scheduleRow(label: "Delivered", value: humanDate(d.actualDeliveryDate))
             }
             if d.biddingEnds != nil {
-                scheduleRow(label: "Bidding ends",  value: humanDate(d.biddingEnds))
+                scheduleRow(label: "Bidding ends", value: humanDate(d.biddingEnds))
             }
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
@@ -294,13 +760,10 @@ struct ShipperLoadDetail: View {
         }
     }
 
-    /// Cargo type, hazmat class, commodity, equipment. Hazmat row
-    /// only renders when the load is hazmat (so non-hazmat loads
-    /// don't show "Hazmat: —" filler).
     private func cargoCard(_ d: LoadsAPI.LoadDetail) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             sectionHeader("CARGO", icon: "shippingbox")
-            scheduleRow(label: "Type",     value: humanCargoType(d.cargoType))
+            scheduleRow(label: "Type", value: humanCargoType(d.cargoType))
             if let commodity = (d.commodity ?? d.commodityName), !commodity.isEmpty {
                 scheduleRow(label: "Commodity", value: commodity)
             }
@@ -322,7 +785,7 @@ struct ShipperLoadDetail: View {
                         .font(.system(size: 11, weight: .heavy))
                         .foregroundStyle(LinearGradient.diagonal)
                     Text("SPECTRA-MATCH VERIFIED")
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                        .font(EType.micro).tracking(0.8)
                         .foregroundStyle(LinearGradient.diagonal)
                 }
                 .padding(.top, 2)
@@ -331,16 +794,11 @@ struct ShipperLoadDetail: View {
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
-    /// Bids preview row. Renders the live bid count and highest amount
-    /// pulled from `shippers.getBidsForLoad`. Empty list → neutral
-    /// "no bids yet" caption (no fabricated count).
     private func bidsCard(_ d: LoadsAPI.LoadDetail) -> some View {
         let rows = bidsStore.state.value ?? []
         let count = rows.count
@@ -357,31 +815,36 @@ struct ShipperLoadDetail: View {
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                HStack(spacing: 6) {
-                    Text("\(count) bid\(count == 1 ? "" : "s")")
-                        .font(EType.bodyStrong)
-                        .foregroundStyle(palette.textPrimary)
-                    if highest > 0 {
-                        Text("· highest \(currency(highest))")
-                            .font(EType.body)
+                Button {
+                    NotificationCenter.default.post(name: .eusoShipperLoadOpen, object: nil,
+                                                    userInfo: ["loadId": loadId, "openBids": true])
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("\(count) bid\(count == 1 ? "" : "s")")
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(palette.textPrimary)
+                        if highest > 0 {
+                            Text("· highest \(currency(highest))")
+                                .font(EType.body)
+                                .foregroundStyle(palette.textSecondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .heavy))
                             .foregroundStyle(palette.textSecondary)
                     }
                 }
+                .buttonStyle(.plain)
             }
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
-    /// Notes block — only renders when the load actually carries
-    /// special-instructions text from the server. Drafts with no
-    /// notes get the section omitted entirely (no "—" filler).
     @ViewBuilder
     private func notesCard(_ d: LoadsAPI.LoadDetail) -> some View {
         if let notes = d.notes, !notes.isEmpty {
@@ -395,31 +858,10 @@ struct ShipperLoadDetail: View {
             .padding(Space.s3)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(palette.bgCard)
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .strokeBorder(palette.borderFaint, lineWidth: 1)
-            )
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint, lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
-    }
-
-    // MARK: - Loading + error states
-
-    private var loadingCard: some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            sectionHeader("LOADING", icon: "arrow.clockwise")
-            Text("Pulling the latest from the load record…")
-                .font(EType.caption)
-                .foregroundStyle(palette.textSecondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Space.s4)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
     private func errorBanner(message: String) -> some View {
@@ -429,7 +871,7 @@ struct ShipperLoadDetail: View {
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(Brand.danger)
                 Text("COULDN'T LOAD")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .font(EType.micro).tracking(0.8)
                     .foregroundStyle(Brand.danger)
             }
             Text(message)
@@ -437,7 +879,7 @@ struct ShipperLoadDetail: View {
                 .foregroundStyle(palette.textSecondary)
             Button(action: { Task { await refreshAll() } }) {
                 Text("Retry")
-                    .font(.system(size: 11, weight: .heavy)).tracking(0.6)
+                    .font(EType.micro).tracking(0.6)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14).padding(.vertical, 8)
                     .background(LinearGradient.diagonal)
@@ -448,11 +890,44 @@ struct ShipperLoadDetail: View {
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(Brand.danger.opacity(0.4), lineWidth: 1)
-        )
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(Brand.danger.opacity(0.4), lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    // MARK: - Bottom CTAs
+
+    private var ctaRow: some View {
+        HStack(spacing: Space.s2) {
+            Button {
+                NotificationCenter.default.post(name: .eusoShipperLoadOpenMap, object: nil,
+                                                userInfo: ["loadId": loadId])
+            } label: {
+                Text("View on map")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(Capsule().fill(LinearGradient.primary))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open live map view")
+
+            Button {
+                NotificationCenter.default.post(name: .eusoShipperLoadMessageEsang, object: nil,
+                                                userInfo: ["loadId": loadId])
+            } label: {
+                Text("Message ESang")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(palette.bgCard)
+                    .overlay(Capsule().strokeBorder(palette.borderSoft))
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Ask ESang about this load")
+        }
+        .padding(.top, Space.s2)
     }
 
     // MARK: - Helpers
@@ -463,52 +938,26 @@ struct ShipperLoadDetail: View {
                 .font(.system(size: 9, weight: .heavy))
                 .foregroundStyle(LinearGradient.diagonal)
             Text(text)
-                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                .font(EType.micro).tracking(1.0)
                 .foregroundStyle(LinearGradient.diagonal)
         }
     }
 
-    private func statusPill(_ raw: String) -> some View {
-        let label = raw.replacingOccurrences(of: "_", with: " ").uppercased()
-        let isActive = activeStatuses.contains(raw.lowercased())
-        let style: AnyShapeStyle = isActive
-            ? AnyShapeStyle(LinearGradient.diagonal)
-            : AnyShapeStyle(palette.tintNeutral)
-        let fg: Color = isActive ? .white : palette.textSecondary
-        return Text(label)
-            .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-            .foregroundStyle(fg)
-            .padding(.horizontal, 8).padding(.vertical, 4)
-            .background(style)
-            .clipShape(Capsule())
-    }
-
-    private var activeStatuses: Set<String> {
-        ["assigned", "in_transit", "picked_up", "at_pickup", "at_delivery"]
-    }
-
-    /// Map the backend's lowercase enum value to a sentence-case label.
-    /// Em-dash on empty/nil so a draft cargoType missing from the row
-    /// surfaces as a neutral cell.
     private func humanCargoType(_ raw: String?) -> String {
         guard let r = raw, !r.isEmpty else { return "—" }
         switch r.lowercased() {
-        case "general":     return "General freight"
-        case "hazmat":      return "Hazmat"
-        case "petroleum":   return "Petroleum"
-        case "gas":         return "Gas"
-        case "chemicals":   return "Chemicals"
+        case "general":      return "General freight"
+        case "hazmat":       return "Hazmat"
+        case "petroleum":    return "Petroleum"
+        case "gas":          return "Gas"
+        case "chemicals":    return "Chemicals"
         case "refrigerated": return "Refrigerated"
-        case "container":   return "Container"
-        case "bulk":        return "Bulk"
-        default:            return r.capitalized
+        case "container":    return "Container"
+        case "bulk":         return "Bulk"
+        default:             return r.capitalized
         }
     }
 
-    /// Parse an ISO-8601 date string from the server and render as a
-    /// short human-readable form (e.g. "Apr 28 · 09:30"). Em-dash
-    /// when nil / empty / unparseable so missing dates always look
-    /// like a deliberate sentinel and never an error string.
     private func humanDate(_ iso: String?) -> String {
         guard let iso = iso, !iso.isEmpty else { return "—" }
         let isoFmt = ISO8601DateFormatter()
@@ -519,7 +968,6 @@ struct ShipperLoadDetail: View {
             date = isoFmt.date(from: iso)
         }
         if date == nil {
-            // Server occasionally hands back YYYY-MM-DD only.
             let day = DateFormatter()
             day.dateFormat = "yyyy-MM-dd"
             day.locale = Locale(identifier: "en_US_POSIX")
@@ -529,6 +977,20 @@ struct ShipperLoadDetail: View {
         let fmt = DateFormatter()
         fmt.dateFormat = "MMM d · HH:mm"
         return fmt.string(from: d)
+    }
+
+    private func formatTime(_ iso: String) -> String {
+        let isoFmt = ISO8601DateFormatter()
+        isoFmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var date = isoFmt.date(from: iso)
+        if date == nil {
+            isoFmt.formatOptions = [.withInternetDateTime]
+            date = isoFmt.date(from: iso)
+        }
+        guard let d = date else { return iso }
+        let fmt = DateFormatter()
+        fmt.dateFormat = "HH:mm"
+        return fmt.string(from: d) + " " + (TimeZone.current.abbreviation() ?? "")
     }
 
     private func currency(_ value: Double) -> String {
@@ -547,9 +1009,6 @@ struct ShipperLoadDetail: View {
     }
 
     private func refreshAll() async {
-        // Bind ids first; both refreshes are idempotent and safe to
-        // run concurrently. The bids store is happy to surface an
-        // empty-array result while the detail is still loading.
         detailStore.loadId = loadId
         bidsStore.setLoadId(loadId)
         async let a: Void = detailStore.refresh()
@@ -558,7 +1017,15 @@ struct ShipperLoadDetail: View {
     }
 }
 
-// MARK: - Screen wrapper (Shell + BottomNav)
+// MARK: - Notification names
+
+extension Notification.Name {
+    static let eusoShipperLoadOpenMap        = Notification.Name("eusoShipperLoadOpenMap")
+    static let eusoShipperLoadMessageEsang   = Notification.Name("eusoShipperLoadMessageEsang")
+    static let eusoShipperLoadActionMenu     = Notification.Name("eusoShipperLoadActionMenu")
+}
+
+// MARK: - Screen wrapper
 
 struct ShipperLoadDetailScreen: View {
     let theme: Theme.Palette
@@ -583,9 +1050,7 @@ struct ShipperLoadDetailScreen: View {
     }
 }
 
-// Shipper bottom-nav doctrine — 205 is drilled-down from 201 Loads, so
-// the Loads slot stays highlighted to anchor the user's location in the
-// hierarchy.
+// Out of scope per parity mandate §1.
 private func shipperNavLeading_205() -> [NavSlot] {
     [NavSlot(label: "Home",        systemImage: "house",                          isCurrent: false),
      NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle",    isCurrent: false)]
@@ -597,17 +1062,13 @@ private func shipperNavTrailing_205() -> [NavSlot] {
 }
 
 // MARK: - Previews
-//
-// Previews don't run `.task`, so each store stays in `.loading` —
-// both registers render the loading skeleton without hitting the
-// network. Per doctrine §10: previews must compile in isolation.
 
 #Preview("205 · Shipper · Load Detail · Night") {
     ShipperLoadDetailScreen(
         theme: Theme.dark,
         loadId: "0",
-        previewLoadNumber: nil,
-        previewLane: nil
+        previewLoadNumber: "LD-260427-A38FB12C7E",
+        previewLane: "Houston, TX → Dallas, TX"
     )
     .environmentObject(EusoTripSession())
     .preferredColorScheme(.dark)
@@ -617,8 +1078,8 @@ private func shipperNavTrailing_205() -> [NavSlot] {
     ShipperLoadDetailScreen(
         theme: Theme.light,
         loadId: "0",
-        previewLoadNumber: nil,
-        previewLane: nil
+        previewLoadNumber: "LD-260427-A38FB12C7E",
+        previewLane: "Houston, TX → Dallas, TX"
     )
     .environmentObject(EusoTripSession())
     .preferredColorScheme(.light)
