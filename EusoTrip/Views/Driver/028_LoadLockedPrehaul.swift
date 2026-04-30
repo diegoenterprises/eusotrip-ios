@@ -462,13 +462,18 @@ struct LoadLockedPrehaulScreen: View {
     }
 }
 
+// PNG canon at `01 Driver/{Light,Dark}/028 Load Locked Prehaul.png`
+// pins TRIPS current on the hazmat pre-haul checklist surface (49 CFR
+// 177.817 papers + ERG 128 + placards + MC-306 cert + endorsements +
+// binder + driver acknowledgment). Icon set + trailing slot
+// normalized to canonical 010-027 layout.
 private func driverNavLeading_028() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
 }
 private func driverNavTrailing_028() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
 }
 
 #Preview("028 · Load Locked Prehaul · Dark") {
