@@ -1,34 +1,57 @@
 //
 //  218_ShipperDispatchControl.swift
-//  EusoTrip 2027 UI — brick 218 (shipper · dispatch control)
+//  EusoTrip 2027 UI — Shipper · Dispatch Control (parity-reconciled 2026-04-29)
 //
-//  Real-time dispatch board for shipper-side operations. Live view of
-//  every active load with its current lifecycle stage, the assigned
-//  catalyst, the driver-of-record, ETA, and a tap-to-drill detail
-//  sheet that re-uses `ShipperLoadCycleView` so the visualization is
-//  consistent with 205 ShipperLoadDetail.
+//  PARITY AUDIT 2026-04-29 — reconciled to wireframe canon at
+//  /02 Shipper/Code/218_ShipperDispatchControl.swift. Persona:
+//  Diego Usoro / Eusorone Technologies (companyId 1) per §11. The
+//  primary surface is the PENDING TENDER decision flow (countdown
+//  hero + Accept/Counter/Reject triplet + queue + auto-dispatch
+//  rules). Live ACTIVE LOADS (`shippers.getActiveLoads`) stays
+//  below as supplemental drilldown.
 //
-//  Mirrors web `/shipper/dispatch-control` (`ShipperDispatchControl.tsx`)
-//  in spirit — the heavyweight edit form (multi-stop reroute, time-
-//  window changes, dispatch-note rewrites) lives on web. iOS surfaces
-//  the read + a "Notify carrier" affordance that fires the canonical
-//  `MeAction` so the future backend adapter can intercept without a
-//  per-screen refactor.
+//  Layout (top → bottom):
+//    1. TopBar           ✦ SHIPPER · DISPATCH CONTROL / "{N} PENDING TENDERS"
+//    2. Title block      Dispatch control / "Accept · counter · reject · auto-dispatch rules"
+//    3. IridescentHairline
+//    4. PENDING TENDER · COUNTDOWN — gradient-rim hero card with countdown ring
+//                                     (placeholder until EUSO-2122 ships)
+//    5. QUEUE · {N} MORE PENDING — 2-row card (placeholder until EUSO-2122)
+//    6. AUTO-DISPATCH RULES — 3 toggle rows (local state until EUSO-2123)
+//    7. ACTIVE LOADS supplemental — search · 6-chip filter · 5-tile strip · row list
 //
-//  Cohort B day-1 — fully dynamic. No fixtures.
+//  Real wiring preserved: `shippers.getActiveLoads(limit:50)` via
+//  `ShipperDispatchControlStore`. Detail sheet (preserved) opens
+//  on row tap with `ShipperLoadCycleView` lifecycle strip.
 //
-//    • Active-loads list → `shippers.getActiveLoads(limit: 50)`
-//    • Status auto-refresh on appear + pull-to-refresh
-//    • Per-load detail shows the same `ShipperLoadCycleView`
-//      lifecycle strip the 205 detail screen renders, so the
-//      shipper sees the SAME stage progression on every surface.
+//  Backend gaps surfaced (logged in audit log, no fake data):
+//    EUSO-2122 — `dispatch.{getPendingTenders, acceptTender,
+//                counterTender, rejectTender}` not yet on iOS API
+//                surface. PENDING TENDER hero + QUEUE paint
+//                placeholder cards until backend ships the tender
+//                envelope.
+//    EUSO-2123 — `dispatch.{getAutoDispatchRules,
+//                setAutoDispatchRule}` not yet shipped. AUTO-DISPATCH
+//                RULES card uses local `@State` for the 3 toggles
+//                with §11.4 / §11.2 canon copy; tapping a toggle
+//                posts a notification but doesn't persist until
+//                backend lands.
 //
-//  Powered by ESANG AI™.
+//  Doctrine refs: §2 LOADS-tab nav (handled by ContentView); §3
+//  numbers-first copy; §4.3 single iridescent hairline; §7 breathe
+//  density; §11 / §11.2 / §11.4 Diego canon + UN1203/UN1005/UN1267;
+//  §15.2 gradient progress arc (`trim(from:to:)` recipe); §17.2
+//  toggle row recipe; §19.2 file-scoped helpers; §20.4 no dead
+//  buttons (every Button posts a notification or fires a real
+//  mutation); §22.2 action triplet pattern; §22.2 counter color.
 //
 
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
-// MARK: - Status filter
+// MARK: - Status filter (active-loads supplemental)
 
 private enum DispatchStatusFilter: String, CaseIterable, Identifiable {
     case all
@@ -75,7 +98,7 @@ private enum DispatchStatusFilter: String, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - Store
+// MARK: - Store (preserved)
 
 @MainActor
 final class ShipperDispatchControlStore: ObservableObject {
@@ -106,8 +129,6 @@ final class ShipperDispatchControlStore: ObservableObject {
         }
     }
 
-    /// Loads matching the current filter + search term. Computed
-    /// here so the view body stays declarative.
     var filtered: [ShipperAPI.ActiveLoad] {
         guard case .loaded(let rows) = state else { return [] }
         let q = searchTerm.lowercased().trimmingCharacters(in: .whitespaces)
@@ -123,6 +144,15 @@ final class ShipperDispatchControlStore: ObservableObject {
     }
 }
 
+// MARK: - Auto-dispatch rule (local state until EUSO-2123)
+
+private struct AutoRule: Identifiable {
+    let id: String
+    let title: String
+    let sub: String
+    var enabled: Bool
+}
+
 // MARK: - Screen root
 
 struct ShipperDispatchControl: View {
@@ -132,17 +162,42 @@ struct ShipperDispatchControl: View {
     @StateObject private var store = ShipperDispatchControlStore()
     @State private var selected: ShipperAPI.ActiveLoad?
 
+    // EUSO-2123 — local toggle state until `dispatch.getAutoDispatchRules`
+    // ships. Copy + ids match §11.4 / §11.2 canon (UN1203/UN1005/UN1267).
+    @State private var rules: [AutoRule] = [
+        AutoRule(id: "auto_accept_under_795",
+                 title: "Auto-accept under $7.95/mi · A+ catalyst",
+                 sub:   "Restricted to: Eusotrans LLC · Test Carrier · Plainview",
+                 enabled: false),
+        AutoRule(id: "auto_reject_hazmat_no_escort",
+                 title: "Auto-reject hazmat without escort",
+                 sub:   "UN1005 NH₃ · UN1203 PG II · UN1267 crude",
+                 enabled: false),
+        AutoRule(id: "esang_counter_assist",
+                 title: "ESang counter-offer assist",
+                 sub:   "AI suggests counter price within ±2% of spot avg",
+                 enabled: false)
+    ]
+
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                header
-                searchBar
-                filterChipRow
-                content
-                Color.clear.frame(height: 96)
+            VStack(alignment: .leading, spacing: 0) {
+                topBar
+                    .padding(.top, Space.s5)
+                titleBlock
+                    .padding(.top, Space.s2)
+                IridescentHairline()
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s5)
+
+                wireframeSections
+                    .padding(.top, Space.s4)
+
+                supplementalActiveLoads
+                    .padding(.horizontal, 14)
+                    .padding(.top, Space.s5)
+                    .padding(.bottom, Space.s8)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 8)
         }
         .task { await store.refresh() }
         .refreshable { await store.refresh() }
@@ -157,39 +212,262 @@ struct ShipperDispatchControl: View {
         )
     }
 
-    // MARK: Header
+    // MARK: TopBar
 
-    private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "antenna.radiowaves.left.and.right")
-                .font(.system(size: 20, weight: .heavy))
-                .foregroundStyle(LinearGradient.diagonal)
-                .frame(width: 36, height: 36)
-                .background(palette.bgCard)
-                .overlay(Circle().strokeBorder(palette.borderFaint))
-                .clipShape(Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 9, weight: .heavy))
-                        .foregroundStyle(LinearGradient.diagonal)
-                    Text("SHIPPER · DISPATCH CONTROL")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                        .foregroundStyle(LinearGradient.diagonal)
+    private var topBar: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("✦ SHIPPER · DISPATCH CONTROL")
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundStyle(LinearGradient.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+            Spacer()
+            // EUSO-2122 — pending-tender count not yet on API surface.
+            Text("— PENDING TENDERS")
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+                .accessibilityLabel("Pending tender count, data pending")
+        }
+        .padding(.horizontal, Space.s5)
+    }
+
+    // MARK: Title block
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Dispatch control")
+                .font(.system(size: 28, weight: .bold))
+                .tracking(-0.4)
+                .foregroundStyle(palette.textPrimary)
+            Text("Accept · counter · reject · auto-dispatch rules")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Space.s5)
+    }
+
+    // MARK: Wireframe sections (Pending tender + Queue + Auto-rules)
+
+    private var wireframeSections: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionLabel("PENDING TENDER · COUNTDOWN")
+                .padding(.top, Space.s2)
+
+            heroPendingPlaceholder
+                .padding(.horizontal, Space.s5)
+                .padding(.top, Space.s2)
+
+            sectionLabel("QUEUE · BACKEND PENDING")
+                .padding(.top, Space.s4)
+
+            queuePlaceholder
+                .padding(.horizontal, Space.s5)
+                .padding(.top, Space.s2)
+
+            sectionLabel("AUTO-DISPATCH RULES")
+                .padding(.top, Space.s4)
+
+            autoRulesCard
+                .padding(.horizontal, Space.s5)
+                .padding(.top, Space.s2)
+        }
+    }
+
+    @ViewBuilder
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(EType.micro)
+            .tracking(1.0)
+            .foregroundStyle(palette.textTertiary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Space.s5)
+    }
+
+    // MARK: Pending tender hero (placeholder · EUSO-2122)
+
+    private var heroPendingPlaceholder: some View {
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(LinearGradient.diagonal)
+            RoundedRectangle(cornerRadius: 18.5, style: .continuous)
+                .fill(palette.bgCard)
+                .padding(1.5)
+
+            HStack(alignment: .top, spacing: Space.s3) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("PENDING TENDER")
+                        .font(EType.micro)
+                        .tracking(1.0)
+                        .foregroundStyle(palette.textTertiary)
+                    Text("Tender flow pending")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Accept / Counter / Reject decisions ship when `dispatch.getPendingTenders` lands (EUSO-2122).")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Text("Live operations")
-                    .font(.system(size: 22, weight: .heavy))
+                Spacer(minLength: 0)
+                placeholderRing
+                    .frame(width: 64, height: 64)
+            }
+            .padding(20)
+        }
+        .frame(minHeight: 148)
+    }
+
+    private var placeholderRing: some View {
+        ZStack {
+            Circle()
+                .stroke(palette.borderFaint, lineWidth: 6)
+            Circle()
+                .trim(from: 0, to: 0.0)
+                .stroke(LinearGradient.primary,
+                        style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Text("—")
+                .font(.system(size: 14, weight: .heavy))
+                .foregroundStyle(palette.textTertiary)
+        }
+    }
+
+    // MARK: Queue placeholder
+
+    private var queuePlaceholder: some View {
+        HStack(spacing: Space.s3) {
+            Image(systemName: "tray.2")
+                .font(.system(size: 22, weight: .light))
+                .foregroundStyle(palette.textTertiary)
+                .frame(width: 36, height: 36)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Queue pending")
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                    .lineLimit(1)
-                Text("Every active load · who's pulling it · where it's at · ETA. Drill in to ping the carrier or trigger a re-route on web.")
+                Text("Two-row pending-tender queue lands when EUSO-2122 ships.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
-                    .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 0)
+            Spacer()
         }
-        .padding(.top, 4)
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    // MARK: Auto-dispatch rules card (3 toggles · local state)
+
+    private var autoRulesCard: some View {
+        VStack(spacing: 0) {
+            ForEach(rules.indices, id: \.self) { idx in
+                autoRuleRow(idx)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 18)
+                if idx < rules.count - 1 {
+                    Rectangle()
+                        .fill(palette.borderFaint)
+                        .frame(height: 1)
+                        .padding(.horizontal, 20)
+                }
+            }
+        }
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func autoRuleRow(_ idx: Int) -> some View {
+        let rule = rules[idx]
+        HStack(alignment: .top, spacing: Space.s3) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(rule.title)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+                Text(rule.sub)
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 2)
+
+            Button(action: { tapToggleRule(idx) }) {
+                ZStack(alignment: rule.enabled ? .trailing : .leading) {
+                    Capsule()
+                        .fill(rule.enabled
+                              ? AnyShapeStyle(LinearGradient.primary)
+                              : AnyShapeStyle(palette.bgCardSoft))
+                        .frame(width: 44, height: 24)
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 18, height: 18)
+                        .padding(.horizontal, 3)
+                        .shadow(color: .black.opacity(0.15), radius: 1, y: 1)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(rule.title)
+            .accessibilityValue(rule.enabled ? "On" : "Off")
+        }
+    }
+
+    private func tapToggleRule(_ idx: Int) {
+        let prior = rules[idx].enabled
+        withAnimation(.easeOut(duration: 0.18)) {
+            rules[idx].enabled.toggle()
+        }
+        #if canImport(UIKit)
+        UISelectionFeedbackGenerator().selectionChanged()
+        #endif
+        NotificationCenter.default.post(
+            name: .eusoShipperAutoRuleToggle,
+            object: nil,
+            userInfo: [
+                "source": "218_ShipperDispatchControl",
+                "ruleId": rules[idx].id,
+                "ruleTitle": rules[idx].title,
+                "currentEnabled": prior,
+                "newEnabled": rules[idx].enabled,
+                "shipperCompanyId": 1
+            ]
+        )
+    }
+
+    // MARK: Active loads supplemental (preserved real backend)
+
+    private var supplementalActiveLoads: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack {
+                Text("ACTIVE LOADS · LIVE OPERATIONS")
+                    .font(EType.micro)
+                    .tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer()
+                if case .loaded(let rows) = store.state {
+                    Text("\(rows.count) live")
+                        .font(EType.micro).tracking(0.5)
+                        .foregroundStyle(palette.textTertiary)
+                }
+            }
+            searchBar
+            filterChipRow
+            content
+        }
     }
 
     // MARK: Search bar
@@ -495,7 +773,22 @@ private struct DispatchRowStyle: ButtonStyle {
     }
 }
 
-// MARK: - Detail sheet
+// MARK: - NotificationCenter names (§20.4)
+
+extension Notification.Name {
+    /// Tender hero "Accept" tap (placeholder until EUSO-2122 ships).
+    static let eusoShipperTenderAccept     = Notification.Name("eusoShipperTenderAccept")
+    /// Tender hero "Counter" tap.
+    static let eusoShipperTenderCounter    = Notification.Name("eusoShipperTenderCounter")
+    /// Tender hero "Reject" tap.
+    static let eusoShipperTenderReject     = Notification.Name("eusoShipperTenderReject")
+    /// Queue row "Review" tap.
+    static let eusoShipperDispatchReview   = Notification.Name("eusoShipperDispatchReview")
+    /// Auto-dispatch rule toggle tap.
+    static let eusoShipperAutoRuleToggle   = Notification.Name("eusoShipperAutoRuleToggle")
+}
+
+// MARK: - Detail sheet (preserved)
 
 private struct DispatchDetailSheet: View {
     let load: ShipperAPI.ActiveLoad
@@ -503,11 +796,6 @@ private struct DispatchDetailSheet: View {
     @Environment(\.palette) private var palette
 
     private var vertical: TripVertical { TripVertical(role: role) }
-    /// Best-effort product resolution from the active-load envelope.
-    /// `getActiveLoads` doesn't ship cargoType/hazmatClass yet — we
-    /// fall through to the vertical default (`dryVan` / `railIntermodal`
-    /// / `vesselContainer`) so the silhouette never shows the wrong
-    /// product on a generic active-load card.
     private var product: TripProduct {
         TripProduct.resolveDirect(cargoType: nil, hazmatClass: nil, vertical: vertical)
     }
@@ -681,16 +969,18 @@ private struct DispatchDetailSheet: View {
 
 // MARK: - Previews
 
-#Preview("218 · Dispatch Control · Night") {
+#Preview("218 · Dispatch Control · Dark") {
     ShipperDispatchControl()
         .environment(\.palette, Theme.dark)
+        .environmentObject(EusoTripSession())
         .preferredColorScheme(.dark)
         .background(Theme.dark.bgPage)
 }
 
-#Preview("218 · Dispatch Control · Afternoon") {
+#Preview("218 · Dispatch Control · Light") {
     ShipperDispatchControl()
         .environment(\.palette, Theme.light)
+        .environmentObject(EusoTripSession())
         .preferredColorScheme(.light)
         .background(Theme.light.bgPage)
 }
