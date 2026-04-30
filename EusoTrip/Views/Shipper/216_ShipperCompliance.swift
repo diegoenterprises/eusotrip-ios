@@ -1,31 +1,48 @@
 //
 //  216_ShipperCompliance.swift
-//  EusoTrip 2027 UI — brick 216 (shipper · compliance dashboard)
+//  EusoTrip 2027 UI — Shipper · Compliance (parity-reconciled 2026-04-29)
 //
-//  Business verification · credit standing · insurance status ·
-//  compliance document vault. Mirrors web `/shipper/compliance`
-//  (`ShipperCompliance.tsx`) backed by the shipper-scope subset of
-//  `complianceRouter` (`getShipperCompliance`, `getShipperDocuments`,
-//  `uploadDocument`).
+//  PARITY AUDIT 2026-04-29 — reconciled to wireframe canon at
+//  /02 Shipper/Code/216_ShipperCompliance.swift. Persona: Diego
+//  Usoro / Eusorone Technologies (companyId 1) per §11. The
+//  primary surface is the FLEET-SCOPE compliance audit (catalyst
+//  insurance / FMCSA SAFER / hazmat / claims posture) — the
+//  shipper-self credit + insurance + document vault data shipped
+//  by `compliance.getShipperCompliance` lives below as MY
+//  DOCUMENTS supplemental cards.
 //
-//  Cohort B day-1 — fully dynamic. No fixtures.
+//  Layout (top → bottom):
+//    1. TopBar           ✦ SHIPPER · COMPLIANCE / "{N} CATALYSTS · {V} VIOLATIONS"
+//    2. Title block      Compliance / "Eusorone Technologies · last sync — · FMCSA SAFER"
+//    3. IridescentHairline
+//    4. Score hero card  148pt gradient rim · 48pt big score numeral · 80pt ring gauge
+//    5. 2×2 compliance grid (INSURANCE · FMCSA SAFER · HAZMAT · CLAIMS YTD)
+//    6. CATALYST COMPLIANCE section (3 rows · monogram + pills + 36pt grade badge)
+//    7. Action ribbon (warn-wash · expiring doc reminder + Notify CTA)
+//    8. MY DOCUMENTS supplemental — credit · insurance · document vault (real backend)
 //
-//    • Compliance score hero  → `compliance.getShipperCompliance`
-//    • Credit + insurance row → same envelope
-//    • Document vault         → `compliance.getShipperDocuments`
+//  Real wiring preserved: `compliance.getShipperCompliance` +
+//  `compliance.getShipperDocuments` via `ShipperComplianceStore`.
+//  The score hero hydrates from `summary.score` and the ring gauge
+//  trims to that value. Document vault + credit + insurance cards
+//  preserved verbatim as supplemental.
 //
-//  Doctrine refs:
-//    §1   Score hero is gradient-blue→magenta. Credit "Approved"
-//         pill in success tint. Insurance status pill keys color
-//         off active/expiring/missing.
-//    §2   `.easeOut(0.12)` press scale on every CTA. Success haptic
-//         on a verified status.
-//    §4   Tokenized Space/Radius/EType.
-//    §5   Palette semantic. Brand.success / .warning / .danger for
-//         status keying.
-//    §10  Dark + Light previews under the empty-envelope path.
+//  Backend gaps surfaced (logged in audit log, no fake data):
+//    EUSO-2118 — `compliance.getFleetCompliance` / per-catalyst
+//                compliance status not yet shipped. CATALYST
+//                COMPLIANCE section paints a single placeholder card
+//                ("Fleet-scope catalyst compliance pending") instead
+//                of synthesising rows. 2×2 grid tiles paint "—" for
+//                Insurance/FMCSA/Hazmat/Claims values.
+//    EUSO-2119 — TopBar "{N} CATALYSTS · {V} VIOLATIONS" counter
+//                paints "—" until fleet-scope endpoint lands.
 //
-//  Powered by ESANG AI™.
+//  Doctrine refs: §2 ME-tab nav (handled by ContentView); §3
+//  numbers-first copy ("98.2 / 100"); §4.3 single iridescent
+//  hairline; §7 breathe density; §11 / §11.4 / §13 Diego canon +
+//  carrier mix; §16.2 action ribbon CTA pattern (warn-wash variant);
+//  §17.2 2×2 credentials-grid recipe; §19.2 file-scoped glyphs +
+//  warnWash gradient; §20.4 no dead buttons; §22.2 counter color.
 //
 
 import SwiftUI
@@ -64,9 +81,6 @@ private enum ComplianceCategory: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Heuristic mapping from a server-emitted `type` string back
-    /// to one of the 5 canonical categories. Matches the web
-    /// constant `SHIPPER_DOCS` taxonomy.
     static func resolve(_ type: String?) -> ComplianceCategory {
         let t = (type ?? "").lowercased()
         if t.contains("license") || t.contains("ein") || t.contains("incorporation") || t.contains("duns") {
@@ -87,13 +101,6 @@ private enum ComplianceCategory: String, CaseIterable, Identifiable {
         return .business
     }
 }
-
-// MARK: - Required-document fixture (mirrors web SHIPPER_DOCS)
-//
-// The server's `getShipperDocuments` returns only the docs that have
-// actually been uploaded. The web peer overlays a static list of
-// REQUIRED docs so the shipper sees what's still missing. We do the
-// same here so the iOS surface stays parity.
 
 private struct RequiredDoc: Hashable, Identifiable {
     let id: String
@@ -122,7 +129,7 @@ private struct RequiredDoc: Hashable, Identifiable {
     ]
 }
 
-// MARK: - Store
+// MARK: - Store (preserved verbatim)
 
 @MainActor
 final class ShipperComplianceStore: ObservableObject {
@@ -166,13 +173,20 @@ struct ShipperCompliance: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                header
+            VStack(alignment: .leading, spacing: 0) {
+                topBar
+                    .padding(.top, Space.s5)
+                titleBlock
+                    .padding(.top, Space.s2)
+                IridescentHairline()
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s5)
+
                 content
+                    .padding(.top, Space.s3)
+
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 8)
         }
         .task { await store.refresh() }
         .refreshable { await store.refresh() }
@@ -182,39 +196,41 @@ struct ShipperCompliance: View {
         )
     }
 
-    // MARK: Header
+    // MARK: TopBar
 
-    private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "shield.checkerboard")
-                .font(.system(size: 20, weight: .heavy))
-                .foregroundStyle(LinearGradient.diagonal)
-                .frame(width: 36, height: 36)
-                .background(palette.bgCard)
-                .overlay(Circle().strokeBorder(palette.borderFaint))
-                .clipShape(Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 9, weight: .heavy))
-                        .foregroundStyle(LinearGradient.diagonal)
-                    Text("SHIPPER · COMPLIANCE")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                        .foregroundStyle(LinearGradient.diagonal)
-                }
-                Text("Verification & vault")
-                    .font(.system(size: 22, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary)
-                    .lineLimit(1)
-                Text("Business verified · credit standing · insurance · compliance vault — every doc carriers will check before they accept your loads.")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
+    private var topBar: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("✦ SHIPPER · COMPLIANCE")
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundStyle(LinearGradient.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+            Spacer()
+            // EUSO-2119 — fleet-scope catalyst count + violations not on API surface yet.
+            Text("— CATALYSTS · — VIOLATIONS")
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+                .accessibilityLabel("Fleet violation count, data pending")
         }
-        .padding(.top, 4)
+        .padding(.horizontal, Space.s5)
+    }
+
+    // MARK: Title block
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Compliance")
+                .font(.system(size: 28, weight: .bold))
+                .tracking(-0.4)
+                .foregroundStyle(palette.textPrimary)
+            Text("Eusorone Technologies · last sync — · FMCSA SAFER")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Space.s5)
     }
 
     // MARK: Content state machine
@@ -224,94 +240,318 @@ struct ShipperCompliance: View {
         switch store.state {
         case .loading:
             VStack(spacing: Space.s2) {
-                ForEach(0..<4, id: \.self) { _ in
+                ForEach(0..<5, id: \.self) { _ in
                     RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                         .fill(palette.tintNeutral.opacity(0.3))
                         .frame(height: 80)
                 }
             }
+            .padding(.horizontal, Space.s5)
         case .error(let msg):
             errorBanner(msg)
+                .padding(.horizontal, Space.s5)
         case .loaded(let summary, let documents):
-            scoreHero(summary)
+            VStack(alignment: .leading, spacing: 0) {
+                scoreHeroCard(summary)
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s3)
+                complianceGrid
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s4)
+                catalystSection
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s5)
+                if let expiring = firstExpiring(documents) {
+                    actionRibbon(for: expiring)
+                        .padding(.horizontal, Space.s5)
+                        .padding(.top, Space.s4)
+                }
+                myDocumentsSection(summary: summary, documents: documents)
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s5)
+            }
+        }
+    }
+
+    private func firstExpiring(_ documents: [ShipperComplianceAPI.Document]) -> ShipperComplianceAPI.Document? {
+        documents.first(where: { $0.status.lowercased() == "expiring" })
+    }
+
+    // MARK: Score hero card (gradient rim · 148pt · big numeral + ring gauge)
+
+    private func scoreHeroCard(_ s: ShipperComplianceAPI.Summary) -> some View {
+        let scoreString = "\(s.score)"
+        let scopeBlurb: String = {
+            if s.businessVerified { return "FMCSA SAFER · business verified" }
+            return "FMCSA SAFER · scope: shipper company"
+        }()
+        let letter = letterFromScore(s.score)
+        return ZStack(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(LinearGradient.diagonal)
+            RoundedRectangle(cornerRadius: 18.5, style: .continuous)
+                .fill(palette.bgCard)
+                .padding(1.5)
+            HStack(alignment: .top, spacing: 0) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("FLEET COMPLIANCE SCORE")
+                        .font(EType.micro)
+                        .tracking(1.0)
+                        .foregroundStyle(palette.textTertiary)
+                        .padding(.top, 28)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(scoreString)
+                            .font(.system(size: 48, weight: .bold).monospacedDigit())
+                            .foregroundStyle(LinearGradient.diagonal)
+                        Text("/ 100")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(palette.textPrimary)
+                    }
+                    .padding(.top, 16)
+                    Text(scopeBlurb)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(.top, 8)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+                .padding(.leading, 20)
+                Spacer(minLength: 0)
+                ringGauge(percent: CGFloat(min(100, max(0, s.score))) / 100, letter: letter)
+                    .frame(width: 80, height: 80)
+                    .padding(.top, 32)
+                    .padding(.trailing, 20)
+            }
+        }
+        .frame(height: 148)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Compliance score \(s.score) out of 100, \(scopeBlurb), grade \(letter)")
+    }
+
+    private func letterFromScore(_ score: Int) -> String {
+        switch score {
+        case 95...:     return "A+"
+        case 90..<95:   return "A"
+        case 85..<90:   return "A−"
+        case 80..<85:   return "B+"
+        case 75..<80:   return "B"
+        default:         return "C"
+        }
+    }
+
+    private func ringGauge(percent: CGFloat, letter: String) -> some View {
+        ZStack {
+            Circle()
+                .stroke(palette.borderFaint, lineWidth: 6)
+            Circle()
+                .trim(from: 0, to: percent)
+                .stroke(LinearGradient.primary, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            VStack(spacing: 2) {
+                Text("PASS")
+                    .font(.system(size: 10, weight: .heavy))
+                    .tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+                Text(letter)
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+            }
+        }
+    }
+
+    // MARK: 2×2 compliance grid
+
+    private var complianceGrid: some View {
+        LazyVGrid(
+            columns: [
+                GridItem(.flexible(), spacing: Space.s3, alignment: .leading),
+                GridItem(.flexible(), spacing: Space.s3, alignment: .leading),
+            ],
+            spacing: Space.s3
+        ) {
+            // EUSO-2118 — fleet-scope tile values pending. Label + glyph
+            // canon from §17.2 / §11.4; values paint "—".
+            tile(kind: .insurance, label: "INSURANCE",   big: "—", sub: "fleet rollup pending", tone: .success)
+            tile(kind: .fmcsa,     label: "FMCSA SAFER", big: "—", sub: "fleet rollup pending", tone: .success)
+            tile(kind: .hazmat,    label: "HAZMAT · IMDG", big: "—", sub: "active hazmat lanes",   tone: .hazmat)
+            tile(kind: .claims,    label: "CLAIMS YTD",   big: "—", sub: "open · closed",          tone: .info)
+        }
+    }
+
+    private enum TileKind { case insurance, fmcsa, hazmat, claims }
+    private enum TileTone { case success, hazmat, info }
+
+    @ViewBuilder
+    private func tile(kind: TileKind, label: String, big: String, sub: String, tone: TileTone) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            tileGlyph(kind, tone: tone)
+                .frame(width: 28, height: 28)
+                .padding(.top, 14)
+                .padding(.leading, 14)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(label)
+                    .font(EType.micro)
+                    .tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                    .padding(.top, 18)
+                Text(big)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .padding(.top, 8)
+                Text(sub)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .padding(.top, 4)
+            }
+            .padding(.leading, 8)
+            .padding(.trailing, 12)
+            Spacer(minLength: 0)
+        }
+        .frame(height: 80)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(palette.bgCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label), \(big), \(sub)")
+    }
+
+    @ViewBuilder
+    private func tileGlyph(_ kind: TileKind, tone: TileTone) -> some View {
+        let stroke: Color = {
+            switch tone {
+            case .success: return Brand.success
+            case .hazmat:  return Brand.hazmat
+            case .info:    return Brand.info
+            }
+        }()
+        switch kind {
+        case .insurance:
+            ShieldCheckGlyph()
+                .stroke(stroke, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+        case .fmcsa:
+            CircleCheckGlyph()
+                .stroke(stroke, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+        case .hazmat:
+            HazmatDiamondGlyph()
+                .stroke(stroke, style: StrokeStyle(lineWidth: 1.8, lineJoin: .round))
+        case .claims:
+            DocumentLinesGlyph()
+                .stroke(stroke, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+        }
+    }
+
+    // MARK: Catalyst compliance section
+
+    private var catalystSection: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            Text("CATALYST COMPLIANCE")
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+
+            // EUSO-2118 — fleet-scope catalyst compliance ledger
+            // not yet shipped. Render an honest placeholder card
+            // instead of synthesising rows.
+            VStack(spacing: Space.s2) {
+                HStack(spacing: Space.s3) {
+                    Image(systemName: "person.2.crop.square.stack")
+                        .font(.system(size: 22, weight: .light))
+                        .foregroundStyle(palette.textTertiary)
+                        .frame(width: 36, height: 36)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Catalyst-scope compliance pending")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(palette.textPrimary)
+                        Text("Per-catalyst INS / FMCSA / HAZMAT / DQ posture lands when `compliance.getFleetCompliance` ships (EUSO-2118).")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                }
+                .padding(Space.s4)
+            }
+            .background(
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .fill(palette.bgCard)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(palette.borderFaint)
+            )
+        }
+    }
+
+    // MARK: Action ribbon (warn-wash · expiring doc reminder)
+
+    private func actionRibbon(for doc: ShipperComplianceAPI.Document) -> some View {
+        let headline = "\(doc.name) · expiring"
+        let sub = doc.expiresAt.isEmpty ? "request renewal certificate" : "expires \(doc.expiresAt) · request renewal certificate"
+        return HStack(spacing: Space.s3) {
+            WarningTriangleGlyph()
+                .stroke(Brand.warning, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+                .frame(width: 24, height: 24)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(headline)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                Text(sub)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+            Spacer(minLength: 0)
+            Button(action: { tapNotify(doc) }) {
+                Text("Notify")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .frame(width: 60, height: 24)
+                    .background(Capsule().fill(palette.bgCard))
+                    .overlay(Capsule().strokeBorder(palette.borderSoft))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Notify renewal for \(doc.name)")
+        }
+        .padding(.horizontal, Space.s4)
+        .frame(height: 48)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(LinearGradient.warnWash)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Brand.warning.opacity(0.30))
+        )
+    }
+
+    // MARK: MY DOCUMENTS supplemental (real backend wiring · EXTRA-OK)
+
+    private func myDocumentsSection(
+        summary: ShipperComplianceAPI.Summary,
+        documents: [ShipperComplianceAPI.Document]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            Text("MY DOCUMENTS")
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
             statusStrip(summary, documents: documents)
             creditCard(summary)
             insuranceCard(summary)
             documentsCard(documents)
         }
     }
-
-    // MARK: Score hero
-
-    private func scoreHero(_ s: ShipperComplianceAPI.Summary) -> some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            HStack {
-                Text("COMPLIANCE SCORE")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.9)
-                    .foregroundStyle(palette.textTertiary)
-                Spacer()
-                if s.businessVerified {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 9, weight: .heavy))
-                        Text("BUSINESS VERIFIED")
-                            .font(.system(size: 9, weight: .heavy)).tracking(0.5)
-                    }
-                    .foregroundStyle(Brand.success)
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Capsule().fill(Brand.success.opacity(0.18)))
-                }
-            }
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text("\(s.score)")
-                    .font(.system(size: 56, weight: .heavy, design: .rounded))
-                    .foregroundStyle(LinearGradient.diagonal)
-                    .monospacedDigit()
-                Text("/ 100")
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textSecondary)
-            }
-            // Progress bar
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(palette.bgCardSoft).frame(height: 5)
-                    Capsule()
-                        .fill(LinearGradient.diagonal)
-                        .frame(width: geo.size.width * CGFloat(min(100, max(0, s.score))) / 100, height: 5)
-                }
-            }
-            .frame(height: 5)
-            Text(scoreCommentary(s.score))
-                .font(EType.caption)
-                .foregroundStyle(palette.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(Space.s4)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            LinearGradient(
-                colors: [Brand.blue.opacity(0.30), Brand.magenta.opacity(0.22)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(LinearGradient.diagonal.opacity(0.5), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-    }
-
-    private func scoreCommentary(_ score: Int) -> String {
-        switch score {
-        case 90...:    return "Top-tier — every required document on file. Carriers can accept your loads with one tap."
-        case 75..<90:  return "Solid standing — a few optional docs would push you to top-tier."
-        case 60..<75:  return "Acceptable — required docs are mostly in place. Address the missing items above."
-        default:        return "Action needed — required documents are missing. Carriers may pause acceptance."
-        }
-    }
-
-    // MARK: Status strip (4 quick counts)
 
     private func statusStrip(_ s: ShipperComplianceAPI.Summary,
                              documents: [ShipperComplianceAPI.Document]) -> some View {
@@ -346,8 +586,6 @@ struct ShipperCompliance: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
-
-    // MARK: Credit card
 
     private func creditCard(_ s: ShipperComplianceAPI.Summary) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
@@ -396,8 +634,6 @@ struct ShipperCompliance: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: Insurance card
-
     private func insuranceCard(_ s: ShipperComplianceAPI.Summary) -> some View {
         let lib = s.generalLiability
         let (chip, chipColor) = insuranceChipStyle(lib.status)
@@ -441,8 +677,6 @@ struct ShipperCompliance: View {
         }
     }
 
-    // MARK: Documents card
-
     private func documentsCard(_ documents: [ShipperComplianceAPI.Document]) -> some View {
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack(spacing: 6) {
@@ -457,7 +691,6 @@ struct ShipperCompliance: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.4)
                     .foregroundStyle(palette.textTertiary)
             }
-            // Category filter chips
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(ComplianceCategory.allCases) { c in
@@ -465,17 +698,11 @@ struct ShipperCompliance: View {
                     }
                 }
             }
-
             VStack(spacing: Space.s2) {
                 ForEach(filteredRequiredDocs, id: \.id) { doc in
                     documentRow(doc, documents: documents)
                 }
             }
-
-            // Doctrine note: server upload mutation is currently a
-            // stub. iOS surfaces an honest "upload from web" disclosure
-            // until the S3/Blob path lands server-side, instead of
-            // hiding the upload affordance.
             HStack(spacing: 6) {
                 Image(systemName: "info.circle")
                     .font(.system(size: 11, weight: .heavy))
@@ -544,9 +771,6 @@ struct ShipperCompliance: View {
     }
 
     private func documentRow(_ doc: RequiredDoc, documents: [ShipperComplianceAPI.Document]) -> some View {
-        // Try to find a matching uploaded document by type prefix
-        // match. Server emits free-form `type` strings so a strict
-        // equality check would miss most uploads.
         let lookup = doc.id.lowercased()
         let match = documents.first { ($0.type?.lowercased() ?? "").contains(lookup) || $0.name.lowercased().contains(lookup.replacingOccurrences(of: "_", with: " ")) }
         let (chip, color) = docStatusChip(match?.status, required: doc.required)
@@ -600,7 +824,23 @@ struct ShipperCompliance: View {
         }
     }
 
-    // MARK: Helpers
+    // MARK: Notify post (§20.4)
+
+    private func tapNotify(_ doc: ShipperComplianceAPI.Document) {
+        NotificationCenter.default.post(
+            name: .eusoShipperComplianceNotify,
+            object: nil,
+            userInfo: [
+                "source": "216_ShipperCompliance",
+                "documentId": doc.id,
+                "documentName": doc.name,
+                "expiresAt": doc.expiresAt,
+                "shipperCompanyId": 1
+            ]
+        )
+    }
+
+    // MARK: Error banner
 
     private func errorBanner(_ msg: String) -> some View {
         VStack(spacing: Space.s2) {
@@ -646,16 +886,117 @@ struct ShipperCompliance: View {
     }
 }
 
+// MARK: - Glyph shapes (file-scoped per §19.2)
+
+private struct ShieldCheckGlyph: Shape {
+    func path(in rect: CGRect) -> Path {
+        let s = min(rect.width, rect.height) / 28
+        var p = Path()
+        p.move(to: CGPoint(x: 14 * s, y: 0 * s))
+        p.addLine(to: CGPoint(x: 0 * s, y: 5 * s))
+        p.addLine(to: CGPoint(x: 0 * s, y: 14 * s))
+        p.addCurve(to: CGPoint(x: 14 * s, y: 28 * s),
+                   control1: CGPoint(x: 0 * s, y: 22 * s),
+                   control2: CGPoint(x: 14 * s, y: 28 * s))
+        p.addCurve(to: CGPoint(x: 28 * s, y: 14 * s),
+                   control1: CGPoint(x: 14 * s, y: 28 * s),
+                   control2: CGPoint(x: 28 * s, y: 22 * s))
+        p.addLine(to: CGPoint(x: 28 * s, y: 5 * s))
+        p.closeSubpath()
+        p.move(to: CGPoint(x: 9 * s, y: 14 * s))
+        p.addLine(to: CGPoint(x: 13 * s, y: 18 * s))
+        p.addLine(to: CGPoint(x: 20 * s, y: 11 * s))
+        return p
+    }
+}
+
+private struct CircleCheckGlyph: Shape {
+    func path(in rect: CGRect) -> Path {
+        let s = min(rect.width, rect.height) / 28
+        var p = Path()
+        p.addEllipse(in: CGRect(x: 0, y: 0, width: 28 * s, height: 28 * s))
+        p.move(to: CGPoint(x: 8 * s, y: 14 * s))
+        p.addLine(to: CGPoint(x: 12 * s, y: 18 * s))
+        p.addLine(to: CGPoint(x: 20 * s, y: 10 * s))
+        return p
+    }
+}
+
+private struct HazmatDiamondGlyph: Shape {
+    func path(in rect: CGRect) -> Path {
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let half = min(rect.width, rect.height) / 2 * 0.95
+        var p = Path()
+        p.move(to:    CGPoint(x: center.x,        y: center.y - half))
+        p.addLine(to: CGPoint(x: center.x + half, y: center.y))
+        p.addLine(to: CGPoint(x: center.x,        y: center.y + half))
+        p.addLine(to: CGPoint(x: center.x - half, y: center.y))
+        p.closeSubpath()
+        return p
+    }
+}
+
+private struct DocumentLinesGlyph: Shape {
+    func path(in rect: CGRect) -> Path {
+        let s = min(rect.width, rect.height) / 28
+        var p = Path()
+        p.move(to: CGPoint(x: 0, y: 0))
+        p.addLine(to: CGPoint(x: 22 * s, y: 0))
+        p.addLine(to: CGPoint(x: 28 * s, y: 6 * s))
+        p.addLine(to: CGPoint(x: 28 * s, y: 28 * s))
+        p.addLine(to: CGPoint(x: 0, y: 28 * s))
+        p.closeSubpath()
+        p.move(to: CGPoint(x: 6 * s, y: 14 * s))
+        p.addLine(to: CGPoint(x: 22 * s, y: 14 * s))
+        p.move(to: CGPoint(x: 6 * s, y: 20 * s))
+        p.addLine(to: CGPoint(x: 18 * s, y: 20 * s))
+        return p
+    }
+}
+
+private struct WarningTriangleGlyph: Shape {
+    func path(in rect: CGRect) -> Path {
+        let s = min(rect.width, rect.height) / 24
+        var p = Path()
+        p.move(to: CGPoint(x: 12 * s, y: 2 * s))
+        p.addLine(to: CGPoint(x: 24 * s, y: 22 * s))
+        p.addLine(to: CGPoint(x: 0 * s,  y: 22 * s))
+        p.closeSubpath()
+        p.move(to: CGPoint(x: 12 * s, y: 9 * s))
+        p.addLine(to: CGPoint(x: 12 * s, y: 15 * s))
+        p.move(to: CGPoint(x: 12 * s, y: 18.5 * s))
+        p.addLine(to: CGPoint(x: 12 * s, y: 19 * s))
+        return p
+    }
+}
+
+// MARK: - Warn-wash gradient (§19.2 file-scoped)
+
+private extension LinearGradient {
+    static let warnWash = LinearGradient(
+        colors: [Brand.warning.opacity(0.13), Brand.danger.opacity(0.13)],
+        startPoint: .leading, endPoint: .trailing
+    )
+}
+
+// MARK: - NotificationCenter names (§20.4)
+
+extension Notification.Name {
+    /// Action ribbon "Notify" tap — sends a renewal reminder for an
+    /// expiring document.
+    static let eusoShipperComplianceNotify = Notification.Name("eusoShipperComplianceNotify")
+}
+
 // MARK: - Previews
 
-#Preview("216 · Shipper Compliance · Night") {
+#Preview("216 · Shipper Compliance · Dark") {
     ShipperCompliance()
         .environment(\.palette, Theme.dark)
         .preferredColorScheme(.dark)
         .background(Theme.dark.bgPage)
 }
 
-#Preview("216 · Shipper Compliance · Afternoon") {
+#Preview("216 · Shipper Compliance · Light") {
     ShipperCompliance()
         .environment(\.palette, Theme.light)
         .preferredColorScheme(.light)
