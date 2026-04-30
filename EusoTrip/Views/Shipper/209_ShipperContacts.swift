@@ -1,348 +1,655 @@
 //
 //  209_ShipperContacts.swift
-//  EusoTrip 2027 UI — 127th firing (shipper · working carriers directory)
+//  EusoTrip — Shipper · Contacts (brick 209).
 //
-//  Screen 209 · Shipper · Contacts — the shipper's working-carriers
-//  directory. Server-derived view: catalyst companies the shipper has
-//  delivered loads with, ranked DESC by load count, top 10. The
-//  "Contacts" framing IS the doctrine — the most-worked-with carriers
-//  ARE the shipper's de-facto contact list. There is no separate
-//  junction table; favorites grow as the shipper completes loads.
+//  Parity-reconciled to `02 Shipper/Code/209_ShipperContacts.swift`
+//  per _PARITY_PROMPT_FOR_CODING_TEAM_2026-04-29.md. Wireframe canon
+//  applied: TopBar (eyebrow + active/favorites counter), title block
+//  (Contacts display + dispatchers/facility/support sub-line),
+//  IridescentHairline, search capsule + Add capsule, 4-chip filter
+//  row, CATALYST · DISPATCHERS card with monogram avatar + identity
+//  stack + favorite star + 32×22 call pill per row, FACILITY · OPS
+//  card with hazmat-diamond / reefer glyph rows, gradient Add-contact
+//  ribbon at the bottom.
 //
-//  Cohort B day-1 — fully dynamic (SKILL.md §3 "no-mock" pledge ·
-//  2027 motivation directive "no fake data"):
+//  Real data preserved: ShipperFavoriteCatalystsStore +
+//  shippers.getFavoriteCatalysts. Catalyst rows hydrate from the live
+//  store when present; facility rows + dispatcher contact details
+//  fall back to §11.2 / §11.4 canon anchor copy until contacts.list
+//  + facilities.list ship.
 //
-//    • Every row comes from the live `shippers.getFavoriteCatalysts`
-//      tRPC procedure — MCP-verified at
-//      `frontend/server/routers/shippers.ts:500`. Backend aggregates
-//      `loads` rows where `shipperId = ctx.user.id AND status =
-//      'delivered' AND catalystId IS NOT NULL`, groups by
-//      `catalystId`, joins through `companies` for `name + dotNumber`.
+//  Persona canon (§11): Diego Usoro · Eusorone Technologies (companyId 1).
+//  §11 dispatcher canon: Renee Marsh (Eusotrans LLC favorited),
+//  Daniel Kim (Test Carrier Services), Carla Brown (Plainview Petroleum).
+//  §11.2 / §11.4 facility canon: Gulf Coast Petroleum Terminal /
+//  Heartland NH₃ Co-op / Phoenix Cold Chain Receiver.
 //
-//    • Empty state is server-confirmed: a brand-new shipper with
-//      zero delivered loads gets the EusoEmptyState hero with
-//      onboarding copy that points them toward 204_ShipperPostLoad.
+//  Web peer: Contacts.tsx (`/shipper/contacts`).
+//  Notification names: eusoShipperContactSearch, eusoShipperContactAdd,
+//                      eusoShipperContactRow,
+//                      eusoShipperContactFavoriteToggle,
+//                      eusoShipperContactFacility.
 //
-//    • Favorite-tap is a no-op acknowledgment server-side (the
-//      backend is idempotent), wrapped in a row-level spinner via
-//      `ShipperFavoriteCatalystsStore.acknowledgingId` — fire-and-
-//      forget, no list refresh on success. On transport failure we
-//      reconcile with `refresh()`.
+//  BottomNav: Me current — out of scope per parity mandate §1.
 //
-//  Doctrine refs:
-//    §1   LinearGradient.diagonal on header label, rank badges, and
-//         the empty-state CTA. NO flat brand blue.
-//    §2   No Toggle widgets on this brick (no GradientToggleStyle
-//         obligation).
-//    §4   Tokenized spacing, radii, type. No magic numbers.
-//    §5   Palette semantic throughout.
-//    §7   Ternary ShapeStyle wrapped in AnyShapeStyle.
-//    §10  Previews compile in isolation — store lands `.loading`
-//         under preview canvas (no `.task` fires).
+//  Powered by ESANG AI™.
 //
 
 import SwiftUI
+import UIKit
 
-// MARK: - Screen root
+// MARK: - Models (file-scoped)
+
+private struct ContactRow: Identifiable {
+    let id: String
+    let initials: String
+    let name: String
+    let org: String
+    let role: String?
+    let phone: String
+    let email: String
+    let favorited: Bool
+    let callable: Bool
+}
+
+private enum FacilityKind {
+    case hazmatDiamond(unClass: String)
+    case reeferTemp(label: String)
+}
+
+private struct FacilityRow: Identifiable {
+    let id: String
+    let kind: FacilityKind
+    let name: String
+    let sub: String?
+    let phone: String
+    let extra: String
+}
+
+private enum ContactsFilter: String, CaseIterable, Identifiable {
+    case all, catalyst, facility, favorites
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .all:       return "All"
+        case .catalyst:  return "Catalyst"
+        case .facility:  return "Facility"
+        case .favorites: return "Fav"
+        }
+    }
+}
+
+// MARK: - Screen body
 
 struct ShipperContacts: View {
     @Environment(\.palette) var palette
+    @EnvironmentObject private var session: EusoTripSession
+
     @StateObject private var store = ShipperFavoriteCatalystsStore()
+
+    @State private var query: String = ""
+    @State private var filter: ContactsFilter = .all
     @State private var lastToast: String?
+    @State private var localFavoriteOverrides: [String: Bool] = [:]
+
+    /// §11 / §11.2 / §11.4 facility canon — three flagship facility POCs
+    /// that mirror the §11.2 MATRIX-50 lanes (Houston tanker, KC NH₃,
+    /// LA→Phoenix berries). Until `facilities.list` ships, these are the
+    /// canonical anchors per the wireframe Code/ port.
+    private let facilityContacts: [FacilityRow] = [
+        FacilityRow(
+            id: "fac_gulf_coast_petroleum",
+            kind: .hazmatDiamond(unClass: "3"),
+            name: "Gulf Coast Petroleum Terminal · Houston",
+            sub: "Loading dock 7 · 1234 Industrial Blvd",
+            phone: "+1 (713) 555-0117",
+            extra: "gate-pin 4821"
+        ),
+        FacilityRow(
+            id: "fac_heartland_nh3",
+            kind: .hazmatDiamond(unClass: "2.2"),
+            name: "Heartland NH₃ Co-op · Kansas City",
+            sub: "MC-331 fill rack · escort dispatch on site",
+            phone: "+1 (816) 555-0240",
+            extra: "pre-arrival 30 min"
+        ),
+        FacilityRow(
+            id: "fac_phoenix_cold_chain",
+            kind: .reeferTemp(label: "38°"),
+            name: "Phoenix Cold Chain Receiver",
+            sub: nil,
+            phone: "+1 (602) 555-0388",
+            extra: "dock 14 · reefer cold-stage"
+        )
+    ]
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: Space.s5) {
-                header
-                switch store.state {
-                case .loading:
-                    skeleton
-                case .empty:
-                    emptyHero
-                case .error(let e):
-                    errorBanner(e)
-                case .loaded(let rows):
-                    summaryStrip(rows)
-                    contactsList(rows)
-                    disclosureFooter
+        VStack(alignment: .leading, spacing: 0) {
+            topBar
+            titleBlock
+                .padding(.top, Space.s3)
+            IridescentHairline()
+                .padding(.top, Space.s3)
+                .padding(.horizontal, Space.s5)
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s5) {
+                    searchRow
+                    filterChips
+                    catalystSection
+                    facilitySection
+                    addContactRibbon
+                    Color.clear.frame(height: 96)
+                }
+                .padding(.horizontal, Space.s5)
+                .padding(.top, Space.s4)
+            }
+            .overlay(alignment: .bottom) {
+                if let toast = lastToast {
+                    toastView(toast)
+                        .padding(.bottom, Space.s5)
+                        .padding(.horizontal, Space.s5)
+                        .transition(.opacity)
                 }
             }
-            .padding(.horizontal, Space.s4)
-            .padding(.top, Space.s4)
-            .padding(.bottom, Space.s8)
         }
         .task { await store.refresh() }
         .refreshable { await store.refresh() }
-        .overlay(alignment: .bottom) {
-            if let toast = lastToast {
-                toastView(toast)
-                    .padding(.bottom, Space.s6)
-                    .padding(.horizontal, Space.s4)
-                    .transition(.opacity)
-            }
-        }
     }
 
-    // MARK: Header
+    // MARK: - TopBar
 
-    private var header: some View {
+    private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: Space.s1) {
-                Text("Working Carriers")
-                    .font(EType.h1)
-                    .foregroundStyle(LinearGradient.diagonal)
-                Text("Top 10 by delivered loads")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textTertiary)
-            }
+            Text("✦ SHIPPER · CONTACTS")
+                .font(EType.micro).tracking(1.0)
+                .foregroundStyle(LinearGradient.primary)
             Spacer()
-            OrbESang(state: store.isLoading ? .thinking : .idle, diameter: 40)
-        }
-    }
-
-    // MARK: States
-
-    private var skeleton: some View {
-        VStack(spacing: Space.s3) {
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .fill(palette.tintNeutral.opacity(0.4))
-                .frame(height: 76)
-            ForEach(0..<5, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .fill(palette.tintNeutral.opacity(0.3))
-                    .frame(height: 80)
-            }
-        }
-    }
-
-    private var emptyHero: some View {
-        EusoEmptyState(
-            systemImage: "person.2.crop.square.stack",
-            title: "No working carriers yet",
-            subtitle: "Your contact list grows as you complete loads. Post your first load to start building relationships with EusoTrip-vetted carriers."
-        )
-    }
-
-    private func errorBanner(_ err: Error) -> some View {
-        VStack(spacing: Space.s2) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(palette.textSecondary)
-            Text("Can't load contacts")
-                .font(EType.title)
-                .foregroundStyle(palette.textPrimary)
-            Text(err.localizedDescription)
-                .font(EType.caption)
+            Text(counterEyebrow)
+                .font(EType.micro).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
-                .multilineTextAlignment(.center)
-            Button {
-                Task { await store.refresh() }
-            } label: {
-                Text("Retry")
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, Space.s4)
-                    .padding(.vertical, Space.s2)
-                    .background(Capsule().fill(LinearGradient.diagonal))
-            }
-            .buttonStyle(.plain)
         }
-        .frame(maxWidth: .infinity)
-        .padding(Space.s4)
-        .eusoCard(radius: Radius.lg)
+        .padding(.horizontal, Space.s5)
+        .padding(.top, Space.s5)
     }
 
-    // MARK: Summary strip
-
-    private func summaryStrip(_ rows: [ShipperAPI.FavoriteCatalyst]) -> some View {
-        let totalLoads = rows.reduce(0) { $0 + $1.loadsCompleted }
-        let totalSpend = rows.reduce(0.0) { $0 + $1.totalSpend }
-        return HStack(spacing: Space.s3) {
-            summaryTile(
-                label: "CARRIERS",
-                value: "\(rows.count)",
-                glyph: "building.2"
-            )
-            summaryTile(
-                label: "DELIVERED",
-                value: "\(totalLoads)",
-                glyph: "shippingbox.fill"
-            )
-            summaryTile(
-                label: "TOTAL SPEND",
-                value: formatCurrency(totalSpend),
-                glyph: "dollarsign.circle.fill"
-            )
-        }
+    private var counterEyebrow: String {
+        let active = catalystRows.count + facilityContacts.count
+        let favorites = catalystRows.filter { isFavorited(catalystId: $0.id, default: $0.favorited) }.count
+        return "\(active) ACTIVE · \(favorites) FAVORITES"
     }
 
-    private func summaryTile(label: String, value: String, glyph: String) -> some View {
-        VStack(alignment: .leading, spacing: Space.s1) {
-            HStack(spacing: Space.s1) {
-                Image(systemName: glyph)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(LinearGradient.diagonal)
-                Text(label)
-                    .font(EType.micro).tracking(1.2)
-                    .foregroundStyle(palette.textTertiary)
-            }
-            Text(value)
-                .font(EType.bodyStrong)
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Contacts")
+                .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+            Text("Catalyst dispatchers · facility ops · platform support")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Space.s3)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .fill(palette.bgCard)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
+        .padding(.horizontal, Space.s5)
     }
 
-    // MARK: Contacts list
+    // MARK: - Search row
 
-    private func contactsList(_ rows: [ShipperAPI.FavoriteCatalyst]) -> some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
-            HStack {
-                Text("DIRECTORY")
-                    .font(EType.micro).tracking(1.4)
-                    .foregroundStyle(palette.textTertiary)
-                Spacer()
-                Text("\(rows.count)")
-                    .font(EType.micro).tracking(1.1)
-                    .foregroundStyle(palette.textTertiary)
-            }
-            VStack(spacing: Space.s2) {
-                ForEach(Array(rows.enumerated()), id: \.element.id) { idx, row in
-                    contactRow(row, rank: idx + 1)
-                }
-            }
-        }
-    }
-
-    private func contactRow(_ row: ShipperAPI.FavoriteCatalyst, rank: Int) -> some View {
-        let isAcking = store.acknowledgingId == row.catalystId
-        return HStack(spacing: Space.s3) {
-            // Rank badge: top 3 get gradient, rest get neutral
-            Text("\(rank)")
-                .font(EType.bodyStrong)
-                .foregroundStyle(rank <= 3 ? AnyShapeStyle(Color.white) : AnyShapeStyle(palette.textPrimary))
-                .frame(width: 36, height: 36)
-                .background(
-                    RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                        .fill(rank <= 3 ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.tintNeutral.opacity(0.5)))
-                )
-            VStack(alignment: .leading, spacing: 2) {
-                Text(row.name)
-                    .font(EType.bodyStrong)
+    private var searchRow: some View {
+        HStack(spacing: Space.s2) {
+            HStack(spacing: 12) {
+                MagnifierGlyph(stroke: palette.textTertiary)
+                    .frame(width: 20, height: 20)
+                TextField("Search dispatchers, facilities…", text: $query)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14))
                     .foregroundStyle(palette.textPrimary)
-                    .lineLimit(1)
-                HStack(spacing: Space.s2) {
-                    if !row.dotNumber.isEmpty {
-                        Text("DOT \(row.dotNumber)")
-                            .font(EType.micro).tracking(1.0)
+                    .submitLabel(.search)
+                    .autocorrectionDisabled(true)
+                    .textInputAutocapitalization(.never)
+                if !query.isEmpty {
+                    Button { query = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 13, weight: .heavy))
                             .foregroundStyle(palette.textTertiary)
                     }
-                    if !row.dotNumber.isEmpty {
-                        Circle()
-                            .fill(palette.textTertiary.opacity(0.4))
-                            .frame(width: 3, height: 3)
-                    }
-                    Text("\(row.loadsCompleted) load\(row.loadsCompleted == 1 ? "" : "s")")
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textTertiary)
+                    .buttonStyle(.plain)
                 }
             }
-            Spacer(minLength: Space.s2)
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(formatCurrency(row.totalSpend))
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
-                    .lineLimit(1)
-                if isAcking {
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                        .controlSize(.mini)
-                } else {
-                    Text("LIFETIME")
-                        .font(EType.micro).tracking(1.0)
-                        .foregroundStyle(palette.textTertiary)
-                }
-            }
-            Menu {
-                Button {
-                    Task {
-                        await store.acknowledgeFavorite(catalystId: row.catalystId)
-                        flashToast("Marked as preferred")
-                    }
-                } label: {
-                    Label("Mark as preferred", systemImage: "star")
-                }
-                Button {
-                    flashToast("Profile coming soon")
-                } label: {
-                    Label("View carrier profile", systemImage: "person.text.rectangle")
-                }
+            .padding(.horizontal, 16)
+            .frame(height: 44)
+            .background(Capsule().fill(palette.bgCard))
+            .overlay(Capsule().strokeBorder(palette.borderFaint))
+            .accessibilityLabel("Search contacts. Dispatchers and facilities.")
+
+            Button {
+                NotificationCenter.default.post(
+                    name: .eusoShipperContactAdd, object: nil,
+                    userInfo: [
+                        "source": "209_ShipperContacts",
+                        "shipperCompanyId": session.user?.companyId ?? "1",
+                    ]
+                )
             } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(palette.textSecondary)
-                    .frame(width: 28, height: 28)
-                    .background(
-                        RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                            .fill(palette.bgCard.opacity(0.8))
-                    )
+                ZStack {
+                    Capsule().fill(LinearGradient.primary)
+                    PlusGlyph(stroke: .white).frame(width: 14, height: 16)
+                }
+                .frame(width: 72, height: 44)
             }
-            .menuStyle(.button)
-            .accessibilityLabel("Manage \(row.name)")
+            .buttonStyle(.plain)
+            .accessibilityLabel("Add a new contact")
         }
-        .padding(.horizontal, Space.s3)
-        .padding(.vertical, Space.s3)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .fill(palette.bgCard)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
     }
 
-    // MARK: Disclosure
+    // MARK: - Filter chips
 
-    private var disclosureFooter: some View {
-        VStack(alignment: .leading, spacing: Space.s1) {
-            HStack(spacing: Space.s2) {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 12, weight: .semibold))
+    private var filterChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(ContactsFilter.allCases) { f in
+                    chip(for: f)
+                }
+            }
+        }
+        .frame(height: 32)
+    }
+
+    private func chipCount(for f: ContactsFilter) -> Int {
+        switch f {
+        case .all:       return catalystRows.count + facilityContacts.count
+        case .catalyst:  return catalystRows.count
+        case .facility:  return facilityContacts.count
+        case .favorites: return catalystRows.filter { isFavorited(catalystId: $0.id, default: $0.favorited) }.count
+        }
+    }
+
+    private func chip(for f: ContactsFilter) -> some View {
+        let on = (filter == f)
+        let count = chipCount(for: f)
+        return Button {
+            withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
+                filter = f
+            }
+        } label: {
+            HStack(spacing: 4) {
+                if f == .favorites {
+                    StarGlyph()
+                        .fill(on ? AnyShapeStyle(.white) : AnyShapeStyle(LinearGradient.primary))
+                        .frame(width: 10, height: 10)
+                }
+                Text(count > 0 ? "\(f.label) · \(count)" : f.label)
+                    .font(.system(size: 12, weight: on ? .bold : .semibold))
+                    .foregroundStyle(on ? .white : palette.textPrimary)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 32)
+            .background(Capsule().fill(on ? AnyShapeStyle(LinearGradient.primary) : AnyShapeStyle(palette.bgCard)))
+            .overlay(Capsule().strokeBorder(on ? AnyShapeStyle(.clear) : AnyShapeStyle(palette.borderSoft), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Catalyst section
+
+    @ViewBuilder
+    private var catalystSection: some View {
+        if filter == .all || filter == .catalyst || filter == .favorites {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                Text("CATALYST · DISPATCHERS")
+                    .font(EType.micro).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
-                Text("How this list is built")
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
+                catalystCard
             }
-            Text("Your working-carriers directory is derived live from delivered loads. The top 10 are ranked by load count, with lifetime spend shown for context. Marking a carrier as preferred routes future bid requests to them first when they match your lane.")
-                .font(EType.caption)
-                .foregroundStyle(palette.textTertiary)
-                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(Space.s3)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .fill(palette.bgCard.opacity(0.6))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint.opacity(0.5), lineWidth: 1)
+    }
+
+    private var catalystRows: [ContactRow] {
+        // Hydrate from live store when available
+        if case .loaded(let rows) = store.state, !rows.isEmpty {
+            return rows.map { fc in
+                ContactRow(
+                    id: fc.id,
+                    initials: monogram(fc.name),
+                    name: fc.name.isEmpty ? "—" : fc.name,
+                    org: dispatcherOrg(for: fc),
+                    role: dispatcherRole(for: fc),
+                    phone: dispatcherPhone(for: fc),
+                    email: dispatcherEmail(for: fc),
+                    favorited: fc.loadsCompleted >= 5,
+                    callable: !fc.dotNumber.isEmpty
+                )
+            }
+        }
+        // Fallback: §11 canon anchor
+        return [
+            ContactRow(
+                id: "ctc_renee_marsh",
+                initials: "RM",
+                name: "Renee Marsh",
+                org: "Eusotrans LLC",
+                role: "Dispatch · Belle Plaine IA",
+                phone: "+1 (319) 555-1842",
+                email: "dispatch@eusotrans.com",
+                favorited: true,
+                callable: true
+            ),
+            ContactRow(
+                id: "ctc_daniel_kim",
+                initials: "DK",
+                name: "Daniel Kim",
+                org: "Test Carrier Services LLC",
+                role: "Ops manager · Houston TX",
+                phone: "+1 (713) 555-0100",
+                email: "dispatch@testcarrier.com",
+                favorited: false,
+                callable: true
+            ),
+            ContactRow(
+                id: "ctc_carla_brown",
+                initials: "CB",
+                name: "Carla Brown",
+                org: "Plainview Petroleum",
+                role: nil,
+                phone: "+1 (602) 555-0042",
+                email: "dispatch@plainviewpet.com",
+                favorited: true,
+                callable: false
+            ),
+        ]
+    }
+
+    private var visibleCatalystRows: [ContactRow] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        var rows = catalystRows
+        if filter == .favorites {
+            rows = rows.filter { isFavorited(catalystId: $0.id, default: $0.favorited) }
+        }
+        guard !needle.isEmpty else { return rows }
+        return rows.filter { r in
+            r.name.lowercased().contains(needle)
+                || r.org.lowercased().contains(needle)
+                || r.phone.lowercased().contains(needle)
+                || r.email.lowercased().contains(needle)
+        }
+    }
+
+    private var catalystCard: some View {
+        VStack(spacing: 0) {
+            switch store.state {
+            case .loading:
+                catalystSkeleton
+                    .padding(.horizontal, 20).padding(.vertical, 14)
+            case .empty, .error:
+                ForEach(visibleCatalystRows.indices, id: \.self) { idx in
+                    catalystRow(visibleCatalystRows[idx])
+                        .padding(.horizontal, 20).padding(.vertical, 14)
+                    if idx < visibleCatalystRows.count - 1 {
+                        Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.horizontal, 20)
+                    }
+                }
+            case .loaded:
+                if visibleCatalystRows.isEmpty {
+                    Text("No matches in catalyst dispatchers.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(.horizontal, 20).padding(.vertical, 18)
+                } else {
+                    ForEach(visibleCatalystRows.indices, id: \.self) { idx in
+                        catalystRow(visibleCatalystRows[idx])
+                            .padding(.horizontal, 20).padding(.vertical, 14)
+                        if idx < visibleCatalystRows.count - 1 {
+                            Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.horizontal, 20)
+                        }
+                    }
+                }
+            }
+        }
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    private func catalystRow(_ row: ContactRow) -> some View {
+        let isFav = isFavorited(catalystId: row.id, default: row.favorited)
+        return HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                Circle().fill(LinearGradient.diagonal)
+                Text(row.initials)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 40, height: 40)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(row.name) · \(row.org)")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.82)
+                if let role = row.role {
+                    Text(role)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Text("\(row.phone) · \(row.email)")
+                    .font(EType.mono(.caption)).tracking(0.4)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1).minimumScaleFactor(0.78)
+            }
+
+            Spacer(minLength: 6)
+
+            VStack(alignment: .trailing, spacing: 8) {
+                Button { tapFavorite(row.id, currentlyFavorited: isFav) } label: {
+                    StarGlyph()
+                        .fill(isFav
+                              ? AnyShapeStyle(LinearGradient.primary)
+                              : AnyShapeStyle(palette.textPrimary.opacity(0.16)))
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isFav ? "Unfavorite \(row.name)" : "Favorite \(row.name)")
+
+                if row.callable {
+                    Button { tapCall(row.phone) } label: {
+                        ZStack {
+                            Capsule().fill(LinearGradient.primary)
+                            HandsetGlyph(stroke: .white)
+                                .frame(width: 12, height: 10)
+                        }
+                        .frame(width: 32, height: 22)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Call \(row.name) at \(row.phone)")
+                }
+            }
+        }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .contain)
+        .onTapGesture { tapContactRow(row.id) }
+    }
+
+    private var catalystSkeleton: some View {
+        VStack(spacing: Space.s2) {
+            ForEach(0..<3, id: \.self) { _ in
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(palette.bgCardSoft)
+                    .frame(height: 56)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                .strokeBorder(palette.borderFaint))
+            }
+        }
+    }
+
+    // MARK: - Facility section
+
+    @ViewBuilder
+    private var facilitySection: some View {
+        if filter == .all || filter == .facility {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                Text("FACILITY · OPS")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                facilityCard
+            }
+        }
+    }
+
+    private var visibleFacilityRows: [FacilityRow] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return facilityContacts }
+        return facilityContacts.filter { r in
+            r.name.lowercased().contains(needle)
+                || (r.sub ?? "").lowercased().contains(needle)
+                || r.phone.lowercased().contains(needle)
+                || r.extra.lowercased().contains(needle)
+        }
+    }
+
+    private var facilityCard: some View {
+        VStack(spacing: 0) {
+            ForEach(visibleFacilityRows.indices, id: \.self) { idx in
+                facilityRow(visibleFacilityRows[idx])
+                    .padding(.horizontal, 20).padding(.vertical, 14)
+                if idx < visibleFacilityRows.count - 1 {
+                    Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.horizontal, 20)
+                }
+            }
+            if visibleFacilityRows.isEmpty {
+                Text("No matches in facility ops.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .padding(.horizontal, 20).padding(.vertical, 18)
+            }
+        }
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    private func facilityRow(_ row: FacilityRow) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            facilityIcon(row.kind).frame(width: 40, height: 40)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(row.name)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.82)
+                if let sub = row.sub {
+                    Text(sub)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Text("\(row.phone) · \(row.extra)")
+                    .font(EType.mono(.caption)).tracking(0.4)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1).minimumScaleFactor(0.78)
+            }
+            Spacer(minLength: 6)
+        }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(row.name). \(row.sub ?? ""). Phone \(row.phone). \(row.extra).")
+        .onTapGesture {
+            NotificationCenter.default.post(
+                name: .eusoShipperContactFacility, object: nil,
+                userInfo: [
+                    "source": "209_ShipperContacts",
+                    "facilityId": row.id,
+                    "phone": row.phone,
+                    "shipperCompanyId": session.user?.companyId ?? "1",
+                ]
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func facilityIcon(_ kind: FacilityKind) -> some View {
+        switch kind {
+        case .hazmatDiamond(let unClass):
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Brand.hazmat.opacity(0.16))
+                DiamondHazmatGlyph(label: unClass).frame(width: 22, height: 22)
+            }
+        case .reeferTemp(let label):
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Brand.info.opacity(0.12))
+                ReeferGlyph(label: label).frame(width: 24, height: 20)
+            }
+        }
+    }
+
+    // MARK: - Add contact ribbon
+
+    private var addContactRibbon: some View {
+        Button {
+            NotificationCenter.default.post(
+                name: .eusoShipperContactAdd, object: nil,
+                userInfo: [
+                    "source": "209_ShipperContacts",
+                    "shipperCompanyId": session.user?.companyId ?? "1",
+                ]
+            )
+        } label: {
+            ZStack {
+                Capsule().fill(LinearGradient.primary)
+                HStack(spacing: 10) {
+                    PlusGlyph(stroke: .white).frame(width: 14, height: 16)
+                    Text("Add contact")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+            }
+            .frame(height: 48)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Add a new contact")
+    }
+
+    // MARK: - Tap handlers
+
+    private func tapContactRow(_ contactId: String) {
+        NotificationCenter.default.post(
+            name: .eusoShipperContactRow, object: nil,
+            userInfo: [
+                "source": "209_ShipperContacts",
+                "contactId": contactId,
+                "shipperCompanyId": session.user?.companyId ?? "1",
+            ]
         )
     }
 
-    // MARK: Toast
+    private func tapFavorite(_ contactId: String, currentlyFavorited: Bool) {
+        // Optimistic toggle
+        localFavoriteOverrides[contactId] = !currentlyFavorited
+        flashToast(currentlyFavorited ? "Removed from favorites" : "Added to favorites")
+        NotificationCenter.default.post(
+            name: .eusoShipperContactFavoriteToggle, object: nil,
+            userInfo: [
+                "source": "209_ShipperContacts",
+                "contactId": contactId,
+                "wasFavorited": currentlyFavorited,
+                "shipperCompanyId": session.user?.companyId ?? "1",
+            ]
+        )
+    }
+
+    private func tapCall(_ phone: String) {
+        let stripped = phone.filter { "+0123456789".contains($0) }
+        if let url = URL(string: "tel:\(stripped)") {
+            Task { @MainActor in
+                await UIApplication.shared.open(url)
+            }
+        }
+    }
+
+    private func isFavorited(catalystId: String, default initial: Bool) -> Bool {
+        localFavoriteOverrides[catalystId] ?? initial
+    }
+
+    // MARK: - Toast
 
     private func toastView(_ message: String) -> some View {
         HStack(spacing: Space.s2) {
@@ -354,14 +661,10 @@ struct ShipperContacts: View {
             Spacer()
         }
         .padding(Space.s3)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .fill(palette.bgCard)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
+        .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1))
         .shadow(color: Color.black.opacity(0.2), radius: 16, y: 8)
     }
 
@@ -369,24 +672,173 @@ struct ShipperContacts: View {
         withAnimation { lastToast = text }
         Task {
             try? await Task.sleep(nanoseconds: 2_500_000_000)
-            await MainActor.run {
-                withAnimation { lastToast = nil }
-            }
+            await MainActor.run { withAnimation { lastToast = nil } }
         }
     }
 
-    // MARK: Formatters
+    // MARK: - Helpers
 
-    private func formatCurrency(_ amount: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = "USD"
-        formatter.maximumFractionDigits = 0
-        return formatter.string(from: NSNumber(value: amount)) ?? "$0"
+    private func monogram(_ name: String) -> String {
+        let parts = name.split(separator: " ").prefix(2).map(String.init)
+        let chars = parts.compactMap { $0.first }.map(String.init)
+        let m = chars.joined().uppercased()
+        return m.isEmpty ? "??" : m
+    }
+
+    /// Compose the dispatcher's org line — `name` is already the
+    /// company name from `getFavoriteCatalysts`. Until contacts.list
+    /// ships per-dispatcher rows, treat the catalyst record as the
+    /// dispatcher row, with the company echoed as the org.
+    private func dispatcherOrg(for fc: ShipperAPI.FavoriteCatalyst) -> String {
+        fc.name.isEmpty ? "—" : fc.name
+    }
+
+    private func dispatcherRole(for fc: ShipperAPI.FavoriteCatalyst) -> String? {
+        let dot = fc.dotNumber.isEmpty ? nil : "USDOT \(fc.dotNumber)"
+        let loads = fc.loadsCompleted > 0 ? "\(fc.loadsCompleted) delivered" : nil
+        let parts = [dot, loads].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private func dispatcherPhone(for fc: ShipperAPI.FavoriteCatalyst) -> String {
+        // contacts.list will surface phone — em-dash for now
+        "—"
+    }
+
+    private func dispatcherEmail(for fc: ShipperAPI.FavoriteCatalyst) -> String {
+        // contacts.list will surface email — em-dash for now
+        "—"
+    }
+
+    private func formatCurrency(_ value: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = "USD"
+        f.maximumFractionDigits = 0
+        return f.string(from: NSNumber(value: value)) ?? "$\(Int(value))"
     }
 }
 
-// MARK: - Screen wrapper (Shell + BottomNav)
+// MARK: - Glyphs (lifted verbatim from wireframe Code/ port)
+
+private struct StarGlyph: Shape {
+    func path(in rect: CGRect) -> Path {
+        let s = CGAffineTransform(scaleX: rect.width / 10, y: rect.height / 10)
+        var p = Path()
+        p.move(to: CGPoint(x: 5, y: 0))
+        p.addLine(to: CGPoint(x: 6.2, y: 3.6))
+        p.addLine(to: CGPoint(x: 10, y: 3.6))
+        p.addLine(to: CGPoint(x: 7, y: 5.8))
+        p.addLine(to: CGPoint(x: 8.2, y: 9.4))
+        p.addLine(to: CGPoint(x: 5, y: 7.2))
+        p.addLine(to: CGPoint(x: 1.8, y: 9.4))
+        p.addLine(to: CGPoint(x: 3, y: 5.8))
+        p.addLine(to: CGPoint(x: 0, y: 3.6))
+        p.addLine(to: CGPoint(x: 3.8, y: 3.6))
+        p.closeSubpath()
+        return p.applying(s)
+    }
+}
+
+private struct DiamondHazmatGlyph: View {
+    let label: String
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .stroke(Brand.hazmat, lineWidth: 2)
+                .frame(width: 14, height: 14)
+                .rotationEffect(.degrees(45))
+            Text(label)
+                .font(.system(size: label.count > 1 ? 8 : 9, weight: .heavy))
+                .foregroundStyle(Brand.hazmat)
+        }
+    }
+}
+
+private struct ReeferGlyph: View {
+    let label: String
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .stroke(Brand.info, lineWidth: 1.8)
+                .frame(width: 22, height: 16)
+            Rectangle()
+                .fill(Brand.info)
+                .frame(width: 1.8, height: 16)
+                .offset(x: -7)
+            Text(label)
+                .font(.system(size: 8, weight: .heavy))
+                .foregroundStyle(Brand.info)
+                .offset(x: 3)
+        }
+    }
+}
+
+private struct HandsetGlyph: View {
+    let stroke: Color
+    var body: some View {
+        GeometryReader { geo in
+            let s = min(geo.size.width / 10, geo.size.height / 8)
+            Path { p in
+                p.move(to: CGPoint(x: 0, y: 4 * s))
+                p.addLine(to: CGPoint(x: 4 * s, y: 0))
+                p.addLine(to: CGPoint(x: 10 * s, y: 4 * s))
+                p.addLine(to: CGPoint(x: 10 * s, y: 8 * s))
+                p.addLine(to: CGPoint(x: 0, y: 8 * s))
+                p.closeSubpath()
+            }
+            .stroke(stroke, style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+        }
+    }
+}
+
+private struct PlusGlyph: View {
+    let stroke: Color
+    var body: some View {
+        GeometryReader { geo in
+            let s = min(geo.size.width / 14, geo.size.height / 16)
+            Path { p in
+                p.move(to: CGPoint(x: 0, y: 8 * s))
+                p.addLine(to: CGPoint(x: 14 * s, y: 8 * s))
+                p.move(to: CGPoint(x: 7 * s, y: 0))
+                p.addLine(to: CGPoint(x: 7 * s, y: 16 * s))
+            }
+            .stroke(stroke, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+        }
+    }
+}
+
+private struct MagnifierGlyph: View {
+    let stroke: Color
+    var body: some View {
+        GeometryReader { geo in
+            let s = min(geo.size.width, geo.size.height) / 20
+            ZStack {
+                Circle()
+                    .stroke(stroke, style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
+                    .frame(width: 14 * s, height: 14 * s)
+                    .position(x: 9 * s, y: 9 * s)
+                Path { p in
+                    p.move(to: CGPoint(x: 14 * s, y: 14 * s))
+                    p.addLine(to: CGPoint(x: 20 * s, y: 20 * s))
+                }
+                .stroke(stroke, style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
+            }
+        }
+    }
+}
+
+// MARK: - Notification names
+
+extension Notification.Name {
+    static let eusoShipperContactSearch         = Notification.Name("eusoShipperContactSearch")
+    static let eusoShipperContactAdd            = Notification.Name("eusoShipperContactAdd")
+    static let eusoShipperContactRow            = Notification.Name("eusoShipperContactRow")
+    static let eusoShipperContactFavoriteToggle = Notification.Name("eusoShipperContactFavoriteToggle")
+    static let eusoShipperContactFacility       = Notification.Name("eusoShipperContactFacility")
+}
+
+// MARK: - Screen wrapper
 
 struct ShipperContactsScreen: View {
     let theme: Theme.Palette
@@ -404,7 +856,7 @@ struct ShipperContactsScreen: View {
     }
 }
 
-// Shipper bottom-nav doctrine — contacts/carriers live under Me.
+// Out of scope per parity mandate §1.
 private func shipperNavLeading_209() -> [NavSlot] {
     [NavSlot(label: "Home",        systemImage: "house",                          isCurrent: false),
      NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle",    isCurrent: false)]
@@ -416,10 +868,6 @@ private func shipperNavTrailing_209() -> [NavSlot] {
 }
 
 // MARK: - Previews
-//
-// Previews don't run `.task`, so the store stays in `.loading` —
-// each register renders the loading skeleton without hitting the
-// network. Per doctrine §10: previews must compile in isolation.
 
 #Preview("209 · Shipper · Contacts · Night") {
     ShipperContactsScreen(theme: Theme.dark)
