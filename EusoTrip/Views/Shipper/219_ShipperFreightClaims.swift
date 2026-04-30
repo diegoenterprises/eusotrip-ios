@@ -1,27 +1,55 @@
 //
 //  219_ShipperFreightClaims.swift
-//  EusoTrip 2027 UI — brick 219 (shipper · freight claims)
+//  EusoTrip 2027 UI — Shipper · Freight Claims (parity-reconciled 2026-04-29)
 //
-//  Damage / loss / shortage / delay / contamination claims dashboard
-//  for the shipper-as-claimant. Mirrors web `/freight-claims`
-//  (`FreightClaims.tsx`) backed by the shipper-scope subset of
-//  `freightClaimsRouter`.
+//  PARITY AUDIT 2026-04-29 — reconciled to wireframe canon at
+//  /02 Shipper/Code/219_ShipperFreightClaims.swift. Persona: Diego
+//  Usoro / Eusorone Technologies (companyId 1) per §11. Resolved
+//  history rows reference the §11.2 MATRIX-50 audit trail — claim
+//  records join historical `loads` rows on the LD- hex tail (e.g.
+//  LD-260224, LD-260118, LD-251114). When the active set is on the
+//  MATRIX-50-2026-04-26 batch (UN1203 gasoline / NH₃ MC-306 /
+//  reefer berries) the hero counter reads "0 OPEN · {N} PAID YTD"
+//  in textTertiary because clean-record is the canonical Diego
+//  posture. The primary surface is the clean-record claims summary
+//  (3-tile KPI strip · empty-state success hero · File-a-claim CTA
+//  · resolved history rows with success-tinted check glyphs). When
+//  open claims exist, the empty hero swaps for the AGING breakdown
+//  + filter row + claim list (real backend wiring preserved).
 //
-//  Cohort B day-1 — fully dynamic. No fixtures.
+//  Layout (top → bottom):
+//    1. TopBar           ✦ SHIPPER · FREIGHT CLAIMS / "{N} OPEN · {M} PAID YTD"
+//    2. Title block      Freight claims / "Damage · short · loss · contamination · temp excursion"
+//    3. IridescentHairline
+//    4. KPI strip        OPEN (success-sub when 0) · RESOLVED YTD (avg cycle) · RECOVERED (gradient $)
+//    5. OPEN CLAIMS section eyebrow
+//        - empty path:  empty-state success hero (CheckCircleGlyph + clean-record copy)
+//        - active path: AGING breakdown card + search · filter chips · claim list
+//    6. File a claim     gradient pill CTA (always present)
+//    7. CLAIM HISTORY · {N} RESOLVED — 3 resolved rows with success-tinted
+//                        check glyphs + "See full history" gradient mid-link
 //
-//    • Dashboard hero (open/pending/resolved/denied counts +
-//      total value + avg resolution days + aging breakdown +
-//      recent claims) → `freightClaims.getClaimsDashboard`
-//    • Claims list (status/type/search filters)
-//      → `freightClaims.getClaims(...)`
+//  Real wiring preserved: `freightClaims.getClaimsDashboard` +
+//  `freightClaims.getClaims(...)` via `ShipperFreightClaimsStore`.
+//  Detail sheet (preserved) opens on row tap with hero / meta /
+//  association / description / actions cards.
 //
-//  Filing a new claim is intentionally NOT wired on this brick — the
-//  multi-field form (type · severity · description · evidence
-//  upload · carrier attribution · damages valuation) is heavy
-//  enough to deserve its own brick. iOS surfaces a "File on web"
-//  disclosure on the empty state so a shipper isn't blocked.
+//  Backend gaps surfaced (logged in audit log, no fake data):
+//    EUSO-2124 — `freightClaims.fileClaim` not yet on iOS API
+//                surface. File-a-claim CTA posts notification only;
+//                wizard intake (type · severity · description ·
+//                evidence · valuation) lands when backend ships.
+//    EUSO-2125 — `dashboard.totalValue` is the lifetime aggregate.
+//                Wireframe RECOVERED tile sub-line wants per-year
+//                breakdown ("2024 + 2025 + 2026"); paint single
+//                lifetime sub-line until per-year split ships.
 //
-//  Powered by ESANG AI™.
+//  Doctrine refs: §2 ME-tab nav (handled by ContentView); §3
+//  numbers-first copy ("0 OPEN · 1 PAID YTD"); §4.3 single
+//  iridescent hairline; §11 Diego canon; §15.2 gradient mid-link
+//  recipe; §17.2 success-tinted check-circle glyph; §19.2 file-
+//  scoped paint extensions; §20.4 no dead buttons; §22.2 counter
+//  color (textTertiary informational).
 //
 
 import SwiftUI
@@ -57,7 +85,6 @@ private enum ClaimStatusFilter: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Maps to the server's status enum. Open = investigating.
     var serverStatus: String? {
         switch self {
         case .all:      return nil
@@ -69,7 +96,7 @@ private enum ClaimStatusFilter: String, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - Store
+// MARK: - Store (preserved)
 
 @MainActor
 final class ShipperFreightClaimsStore: ObservableObject {
@@ -120,7 +147,7 @@ final class ShipperFreightClaimsStore: ObservableObject {
     }
 }
 
-// MARK: - Severity helpers
+// MARK: - Severity / status helpers
 
 private struct SeverityStyle {
     let label: String
@@ -174,13 +201,20 @@ struct ShipperFreightClaims: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                header
+            VStack(alignment: .leading, spacing: 0) {
+                topBar
+                    .padding(.top, Space.s5)
+                titleBlock
+                    .padding(.top, Space.s2)
+                IridescentHairline()
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s5)
+
                 content
+                    .padding(.top, Space.s4)
+
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 8)
         }
         .task { await store.refresh() }
         .refreshable { await store.refresh() }
@@ -195,39 +229,54 @@ struct ShipperFreightClaims: View {
         )
     }
 
-    // MARK: Header
+    // MARK: TopBar
 
-    private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "exclamationmark.shield.fill")
-                .font(.system(size: 20, weight: .heavy))
-                .foregroundStyle(LinearGradient.diagonal)
-                .frame(width: 36, height: 36)
-                .background(palette.bgCard)
-                .overlay(Circle().strokeBorder(palette.borderFaint))
-                .clipShape(Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 9, weight: .heavy))
-                        .foregroundStyle(LinearGradient.diagonal)
-                    Text("SHIPPER · FREIGHT CLAIMS")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                        .foregroundStyle(LinearGradient.diagonal)
-                }
-                Text("Damage & loss recovery")
-                    .font(.system(size: 22, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary)
-                    .lineLimit(1)
-                Text("Open · pending · resolved · denied — every claim against a delivered load, with carrier attribution and aging.")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
+    private var topBar: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("✦ SHIPPER · FREIGHT CLAIMS")
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundStyle(LinearGradient.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+            Spacer()
+            Text(counterEyebrow)
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+                .accessibilityLabel(counterAccessibility)
         }
-        .padding(.top, 4)
+        .padding(.horizontal, Space.s5)
+    }
+
+    private var counterEyebrow: String {
+        if case .loaded(let d, _) = store.state {
+            return "\(d.open) OPEN · \(d.resolved) PAID YTD"
+        }
+        return "—"
+    }
+
+    private var counterAccessibility: String {
+        if case .loaded(let d, _) = store.state {
+            return "\(d.open) open claims, \(d.resolved) paid year to date"
+        }
+        return "Loading freight claims"
+    }
+
+    // MARK: Title block
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Freight claims")
+                .font(.system(size: 28, weight: .bold))
+                .tracking(-0.4)
+                .foregroundStyle(palette.textPrimary)
+            Text("Damage · short · loss · contamination · temp excursion")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Space.s5)
     }
 
     // MARK: Content state machine
@@ -243,13 +292,202 @@ struct ShipperFreightClaims: View {
                         .frame(height: 84)
                 }
             }
+            .padding(.horizontal, Space.s5)
         case .empty:
-            emptyHero
+            VStack(alignment: .leading, spacing: 0) {
+                kpiStrip(d: nil)
+                    .padding(.horizontal, Space.s5)
+                sectionLabel("OPEN CLAIMS")
+                    .padding(.top, Space.s4)
+                emptyHeroCard
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s2)
+                fileClaimCTA
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s4)
+            }
         case .error(let msg):
             errorBanner(msg)
+                .padding(.horizontal, Space.s5)
         case .loaded(let dashboard, let claims):
-            dashboardHero(dashboard)
-            agingCard(dashboard.aging)
+            VStack(alignment: .leading, spacing: 0) {
+                kpiStrip(d: dashboard)
+                    .padding(.horizontal, Space.s5)
+
+                sectionLabel("OPEN CLAIMS")
+                    .padding(.top, Space.s4)
+
+                if dashboard.open == 0 {
+                    emptyHeroCard
+                        .padding(.horizontal, Space.s5)
+                        .padding(.top, Space.s2)
+                } else {
+                    activeClaimsBlock(dashboard: dashboard, claims: claims)
+                        .padding(.horizontal, Space.s5)
+                        .padding(.top, Space.s2)
+                }
+
+                fileClaimCTA
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s4)
+
+                let history = resolvedHistory(from: claims, dashboard: dashboard)
+                if !history.isEmpty {
+                    sectionLabel("CLAIM HISTORY · \(dashboard.resolved) RESOLVED")
+                        .padding(.top, Space.s5)
+                    historyCard(rows: history, total: dashboard.resolved)
+                        .padding(.horizontal, Space.s5)
+                        .padding(.top, Space.s2)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(EType.micro)
+            .tracking(1.0)
+            .foregroundStyle(palette.textTertiary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Space.s5)
+    }
+
+    // MARK: KPI strip (3 tiles · OPEN / RESOLVED YTD / RECOVERED)
+
+    @ViewBuilder
+    private func kpiStrip(d: ShipperFreightClaimsAPI.Dashboard?) -> some View {
+        let openValue     = d.map { "\($0.open)" } ?? "—"
+        let openSub       = (d?.open ?? 0) == 0 ? "none active" : "needs triage"
+        let openSubTone: SubTone = (d?.open ?? 0) == 0 ? .success : .secondary
+        let resolvedValue = d.map { "\($0.resolved)" } ?? "—"
+        let resolvedSub: String = {
+            guard let d, d.avgResolutionDays > 0 else { return "avg cycle —" }
+            return "avg cycle \(Int(d.avgResolutionDays.rounded())) days"
+        }()
+        let recoveredValue = d.map { formatMoney($0.totalValue) } ?? "—"
+        // EUSO-2125 — per-year breakdown not on API surface.
+        let recoveredSub = d.map { _ in "lifetime · per-year split pending" } ?? "—"
+
+        HStack(spacing: 8) {
+            kpiTile(label: "OPEN",
+                    value: openValue,
+                    sub:   openSub,
+                    valueStyle: .primary,
+                    valueSize: 28,
+                    subTone: openSubTone)
+            kpiTile(label: "RESOLVED YTD",
+                    value: resolvedValue,
+                    sub:   resolvedSub,
+                    valueStyle: .primary,
+                    valueSize: 28,
+                    subTone: .secondary)
+            kpiTile(label: "RECOVERED",
+                    value: recoveredValue,
+                    sub:   recoveredSub,
+                    valueStyle: .gradient,
+                    valueSize: 22,
+                    subTone: .secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private func kpiTile(label: String,
+                         value: String,
+                         sub: String,
+                         valueStyle: KpiValueStyle,
+                         valueSize: CGFloat,
+                         subTone: SubTone) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(label)
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+                .padding(.top, 14)
+                .padding(.leading, 14)
+            valueText(value, size: valueSize, style: valueStyle)
+                .padding(.top, 12)
+                .padding(.leading, 14)
+            Text(sub)
+                .font(.system(size: 11))
+                .foregroundStyle(subTone.color(palette: palette))
+                .padding(.top, 6)
+                .padding(.leading, 14)
+                .padding(.trailing, 14)
+                .padding(.bottom, 14)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(minHeight: 96)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func valueText(_ value: String, size: CGFloat, style: KpiValueStyle) -> some View {
+        switch style {
+        case .gradient:
+            Text(value)
+                .font(.system(size: size, weight: .semibold).monospacedDigit())
+                .foregroundStyle(LinearGradient.diagonal)
+        case .primary:
+            Text(value)
+                .font(.system(size: size, weight: .semibold).monospacedDigit())
+                .foregroundStyle(palette.textPrimary)
+        case .success:
+            Text(value)
+                .font(.system(size: size, weight: .semibold).monospacedDigit())
+                .foregroundStyle(Brand.success)
+        case .danger:
+            Text(value)
+                .font(.system(size: size, weight: .semibold).monospacedDigit())
+                .foregroundStyle(Brand.danger)
+        }
+    }
+
+    // MARK: Empty hero card (clean-record success message)
+
+    private var emptyHeroCard: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(palette.bgCard)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(palette.borderFaint, lineWidth: 1)
+
+            VStack(spacing: 12) {
+                CheckCircleGlyph()
+                    .frame(width: 48, height: 48)
+                VStack(spacing: 4) {
+                    Text("No open claims · clean record")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                        .multilineTextAlignment(.center)
+                    Text("All deliveries closed without dispute")
+                        .font(.system(size: 11))
+                        .foregroundStyle(palette.textSecondary)
+                        .multilineTextAlignment(.center)
+                }
+            }
+            .padding(20)
+        }
+        .frame(minHeight: 140)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("No open claims, clean record. All deliveries closed without dispute.")
+    }
+
+    // MARK: Active claims block (when open > 0 — supplemental EXTRA-OK)
+
+    @ViewBuilder
+    private func activeClaimsBlock(dashboard d: ShipperFreightClaimsAPI.Dashboard,
+                                   claims: [ShipperFreightClaimsAPI.ClaimRow]) -> some View {
+        VStack(spacing: Space.s3) {
+            agingCard(d.aging)
             searchBar
             filterChipRow
             if claims.isEmpty {
@@ -266,7 +504,7 @@ struct ShipperFreightClaims: View {
                     .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
             } else {
                 VStack(spacing: Space.s2) {
-                    ForEach(claims) { row in
+                    ForEach(claims.filter { $0.status.lowercased() != "resolved" }) { row in
                         claimRow(row)
                     }
                 }
@@ -274,77 +512,151 @@ struct ShipperFreightClaims: View {
         }
     }
 
-    // MARK: Dashboard hero
+    // MARK: File a claim CTA
 
-    private func dashboardHero(_ d: ShipperFreightClaimsAPI.Dashboard) -> some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            HStack {
-                Text("CLAIMS PIPELINE")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.9)
-                    .foregroundStyle(palette.textTertiary)
-                Spacer()
-                if d.totalValue > 0 {
-                    Text(formatMoney(d.totalValue))
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.5)
-                        .foregroundStyle(LinearGradient.diagonal)
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Capsule().fill(LinearGradient.diagonal.opacity(0.18)))
+    private var fileClaimCTA: some View {
+        Button(action: tapFileClaim) {
+            HStack(spacing: 8) {
+                ZStack {
+                    Rectangle()
+                        .fill(.white)
+                        .frame(width: 14, height: 2.2)
+                        .cornerRadius(1.1)
+                    Rectangle()
+                        .fill(.white)
+                        .frame(width: 2.2, height: 14)
+                        .cornerRadius(1.1)
                 }
+                .frame(width: 14, height: 14)
+                Text("File a claim")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
             }
-            HStack(spacing: Space.s2) {
-                heroTile(value: "\(d.open)",     label: "OPEN",     tint: Brand.warning)
-                heroTile(value: "\(d.pending)",  label: "PENDING",  tint: Brand.info)
-                heroTile(value: "\(d.resolved)", label: "RESOLVED", tint: Brand.success)
-                heroTile(value: "\(d.denied)",   label: "DENIED",   tint: Brand.danger)
-            }
-            if d.avgResolutionDays > 0 {
-                HStack(spacing: 6) {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 11, weight: .heavy))
-                        .foregroundStyle(palette.textSecondary)
-                    Text("Avg resolution \(Int(d.avgResolutionDays.rounded())) days")
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textSecondary)
-                }
-            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 48)
+            .background(LinearGradient.primary)
+            .clipShape(Capsule())
         }
-        .padding(Space.s4)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            LinearGradient(
-                colors: [Brand.blue.opacity(0.30), Brand.magenta.opacity(0.22)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(LinearGradient.diagonal.opacity(0.5), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .buttonStyle(.plain)
+        .accessibilityLabel("File a claim")
+        .accessibilityHint("Opens the new-claim wizard")
     }
 
-    private func heroTile(value: String, label: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(value)
-                .font(.system(size: 22, weight: .heavy, design: .rounded))
-                .foregroundStyle(tint)
-                .monospacedDigit()
-            Text(label)
-                .font(.system(size: 8, weight: .heavy)).tracking(0.7)
-                .foregroundStyle(palette.textTertiary)
-        }
-        .padding(Space.s3)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCardSoft.opacity(0.6))
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint.opacity(0.6), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    // MARK: History card (resolved rows + see-all gradient mid-link)
+
+    private func resolvedHistory(
+        from claims: [ShipperFreightClaimsAPI.ClaimRow],
+        dashboard: ShipperFreightClaimsAPI.Dashboard
+    ) -> [ShipperFreightClaimsAPI.ClaimRow] {
+        // Prefer resolved claims from the active list; fall back to
+        // dashboard.recentClaims filtered to resolved.
+        let inList = claims.filter { $0.status.lowercased() == "resolved" }
+        if !inList.isEmpty { return Array(inList.prefix(3)) }
+        return Array(dashboard.recentClaims.filter { $0.status.lowercased() == "resolved" }.prefix(3))
     }
 
-    // MARK: Aging breakdown card
+    private func historyCard(rows: [ShipperFreightClaimsAPI.ClaimRow], total: Int) -> some View {
+        VStack(spacing: 0) {
+            ForEach(rows.indices, id: \.self) { idx in
+                historyRowView(rows[idx])
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 18)
+                if idx < rows.count - 1 {
+                    Rectangle()
+                        .fill(palette.borderFaint)
+                        .frame(height: 1)
+                        .padding(.horizontal, 20)
+                }
+            }
+            Rectangle()
+                .fill(palette.borderFaint)
+                .frame(height: 1)
+                .padding(.horizontal, 20)
+            Button(action: tapSeeFullHistory) {
+                Text("See full history → \(total) resolved")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(LinearGradient.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("See full history. \(total) resolved claims.")
+        }
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func historyRowView(_ row: ShipperFreightClaimsAPI.ClaimRow) -> some View {
+        Button(action: { selected = row }) {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(LinearGradient.successTint)
+                        .frame(width: 40, height: 40)
+                    CheckPolyline()
+                        .stroke(Brand.success,
+                                style: StrokeStyle(lineWidth: 2.2,
+                                                   lineCap: .round,
+                                                   lineJoin: .round))
+                        .frame(width: 40, height: 40)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(historyTitle(row))
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                    Text(historyKicker(row))
+                        .font(EType.mono(.caption))
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                    Text(historyTiming(row))
+                        .font(.system(size: 11))
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(ClaimRowStyle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(historyTitle(row)). \(historyKicker(row)). \(historyTiming(row)).")
+    }
+
+    private func historyTitle(_ row: ShipperFreightClaimsAPI.ClaimRow) -> String {
+        let kind = prettifyType(row.type)
+        let amt = row.amount > 0 ? formatMoney(row.amount) : "—"
+        return "\(kind) · settled \(amt)"
+    }
+
+    private func historyKicker(_ row: ShipperFreightClaimsAPI.ClaimRow) -> String {
+        var parts: [String] = []
+        if let load = row.loadNumber, !load.isEmpty, load != "-" {
+            parts.append(load)
+        }
+        if !row.description.isEmpty {
+            parts.append(row.description)
+        }
+        return parts.isEmpty ? row.claimNumber : parts.joined(separator: " · ")
+    }
+
+    private func historyTiming(_ row: ShipperFreightClaimsAPI.ClaimRow) -> String {
+        if !row.filedDate.isEmpty {
+            return "Filed \(row.filedDate) · resolved"
+        }
+        return "Resolved"
+    }
+
+    // MARK: Aging breakdown card (preserved)
 
     private func agingCard(_ aging: ShipperFreightClaimsAPI.AgingBuckets) -> some View {
         let total = aging.under30 + aging.days30to60 + aging.days60to90 + aging.over90
@@ -367,7 +679,6 @@ struct ShipperFreightClaims: View {
                     .foregroundStyle(palette.textTertiary)
                     .padding(.vertical, Space.s2)
             } else {
-                // Stacked bar
                 GeometryReader { geo in
                     HStack(spacing: 1) {
                         agingSegment(width: width(for: aging.under30,    total: total, in: geo), color: Brand.success)
@@ -377,7 +688,6 @@ struct ShipperFreightClaims: View {
                     }
                 }
                 .frame(height: 6)
-
                 HStack(spacing: Space.s3) {
                     agingLegend(label: "<30d",    value: aging.under30,    color: Brand.success)
                     agingLegend(label: "30-60",   value: aging.days30to60, color: Brand.info)
@@ -420,7 +730,7 @@ struct ShipperFreightClaims: View {
         }
     }
 
-    // MARK: Search + filter
+    // MARK: Search + filter (preserved)
 
     private var searchBar: some View {
         HStack(spacing: Space.s2) {
@@ -495,7 +805,7 @@ struct ShipperFreightClaims: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: Claim row
+    // MARK: Active claim row (preserved)
 
     private func claimRow(_ row: ShipperFreightClaimsAPI.ClaimRow) -> some View {
         let sev = severityStyle(row.severity)
@@ -574,36 +884,31 @@ struct ShipperFreightClaims: View {
             .overlay(Capsule().strokeBorder(color.opacity(0.4), lineWidth: 0.75))
     }
 
-    // MARK: States
+    // MARK: Notification posts (§20.4)
 
-    private var emptyHero: some View {
-        VStack(spacing: Space.s2) {
-            Image(systemName: "exclamationmark.shield")
-                .font(.system(size: 32, weight: .light))
-                .foregroundStyle(LinearGradient.diagonal)
-            Text("No claims filed")
-                .font(EType.title)
-                .foregroundStyle(palette.textPrimary)
-            Text("Cargo damaged, short, or never made it? File on web — multi-step intake (type / severity / evidence / valuation) lives at eusotrip.com/freight-claims.")
-                .font(EType.caption)
-                .foregroundStyle(palette.textSecondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, Space.s4)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("eusotrip.com/freight-claims")
-                .font(.system(size: 11, weight: .heavy, design: .monospaced))
-                .foregroundStyle(LinearGradient.diagonal)
-                .padding(.top, 4)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(Space.s5)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
+    private func tapFileClaim() {
+        NotificationCenter.default.post(
+            name: .eusoShipperClaimFile,
+            object: nil,
+            userInfo: [
+                "source": "219_ShipperFreightClaims",
+                "shipperCompanyId": 1
+            ]
         )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
+
+    private func tapSeeFullHistory() {
+        NotificationCenter.default.post(
+            name: .eusoShipperClaimHistory,
+            object: nil,
+            userInfo: [
+                "source": "219_ShipperFreightClaims",
+                "shipperCompanyId": 1
+            ]
+        )
+    }
+
+    // MARK: Error banner
 
     private func errorBanner(_ msg: String) -> some View {
         VStack(spacing: Space.s2) {
@@ -659,7 +964,75 @@ private struct ClaimRowStyle: ButtonStyle {
     }
 }
 
-// MARK: - Detail sheet
+// MARK: - KPI value style + sub-line tone
+
+private enum KpiValueStyle { case gradient, primary, success, danger }
+
+private enum SubTone {
+    case success, secondary
+
+    func color(palette: Theme.Palette) -> Color {
+        switch self {
+        case .success:   return Brand.success
+        case .secondary: return palette.textSecondary
+        }
+    }
+}
+
+// MARK: - File-scoped paint extensions (§19.2)
+
+private extension LinearGradient {
+    static let successTint = LinearGradient(
+        colors: [Brand.success.opacity(0.10), Brand.success.opacity(0.10)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+}
+
+// MARK: - Glyph shapes (§19.2 file-scoped)
+
+private struct CheckCircleGlyph: View {
+    var body: some View {
+        ZStack {
+            Circle().fill(Brand.success.opacity(0.10))
+            CheckPolyline()
+                .stroke(Brand.success,
+                        style: StrokeStyle(lineWidth: 2.4,
+                                           lineCap: .round,
+                                           lineJoin: .round))
+                .padding(8)
+        }
+    }
+}
+
+private struct CheckPolyline: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let pStart  = CGPoint(x: rect.minX + rect.width * 0.25,
+                              y: rect.minY + rect.height * 0.50)
+        let pMiddle = CGPoint(x: rect.minX + rect.width * 0.45,
+                              y: rect.minY + rect.height * 0.70)
+        let pEnd    = CGPoint(x: rect.minX + rect.width * 0.75,
+                              y: rect.minY + rect.height * 0.30)
+        p.move(to: pStart)
+        p.addLine(to: pMiddle)
+        p.addLine(to: pEnd)
+        return p
+    }
+}
+
+// MARK: - NotificationCenter names (§20.4)
+
+extension Notification.Name {
+    /// "File a claim" gradient pill tap.
+    static let eusoShipperClaimFile    = Notification.Name("eusoShipperClaimFile")
+    /// History row tap (currently routes through the existing `selected` sheet).
+    static let eusoShipperClaimRow     = Notification.Name("eusoShipperClaimRow")
+    /// "See full history" gradient mid-link tap.
+    static let eusoShipperClaimHistory = Notification.Name("eusoShipperClaimHistory")
+}
+
+// MARK: - Detail sheet (preserved)
 
 private struct ClaimDetailSheet: View {
     let claim: ShipperFreightClaimsAPI.ClaimRow
@@ -872,14 +1245,14 @@ private struct ClaimDetailSheet: View {
 
 // MARK: - Previews
 
-#Preview("219 · Freight Claims · Night") {
+#Preview("219 · Freight Claims · Dark") {
     ShipperFreightClaims()
         .environment(\.palette, Theme.dark)
         .preferredColorScheme(.dark)
         .background(Theme.dark.bgPage)
 }
 
-#Preview("219 · Freight Claims · Afternoon") {
+#Preview("219 · Freight Claims · Light") {
     ShipperFreightClaims()
         .environment(\.palette, Theme.light)
         .preferredColorScheme(.light)
