@@ -575,13 +575,22 @@ struct DvirSubmittedScreen: View {
     }
 }
 
+// PNG canon at `01 Driver/{Light,Dark}/012 DVIR Submitted.png` and
+// wireframe Code/012 both pin the canonical Driver bottom-nav slot
+// layout (Home / Trips / Wallet / Me) — DVIR Submitted is a child of
+// the active-load flow rooted on Home, not a Loads-tab surface. Prior
+// trailing layout (Loads instead of Wallet) drifted from the per-track
+// canon and from sibling 010_DriverHome + 011_PretripDVIR. Per
+// `feedback_bottom_nav_frozen` doctrine the nav layout is pinned to
+// the canonical PNG; this restores it. Icon set bumped to `.fill`
+// variants to match the canonical 010/011 nav.
 private func driverNavLeading_012() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: true),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: false)]
+    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: true),
+     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: false)]
 }
 private func driverNavTrailing_012() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person", isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
 }
 
 // MARK: - Previews (doctrine §12.10 + §12.11: both themes, both rendered)
