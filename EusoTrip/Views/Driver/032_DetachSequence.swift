@@ -346,13 +346,17 @@ struct DetachSequenceScreen: View {
     }
 }
 
+// PNG canon at `01 Driver/{Light,Dark}/032 Detach Sequence.png` pins
+// TRIPS current — ESANG-led 6-step gauge-stick / vapor-recovery-boot
+// / bond / BOL detach sequence. Icon set + trailing slot normalized
+// to canonical 010-031 layout.
 private func driverNavLeading_032() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
 }
 private func driverNavTrailing_032() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
 }
 
 #Preview("032 · Detach Sequence · Dark") {
