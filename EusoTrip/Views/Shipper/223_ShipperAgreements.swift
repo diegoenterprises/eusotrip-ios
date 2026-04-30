@@ -1,26 +1,88 @@
 //
 //  223_ShipperAgreements.swift
-//  EusoTrip 2027 UI — brick 223 (shipper · agreements)
+//  EusoTrip 2027 UI — Shipper · Agreements (parity-reconciled 2026-04-29)
 //
-//  Agreements list + detail + Gradient-Ink sign flow. Mirrors the
-//  shipper-relevant slice of the web `/agreements` list and the
-//  inline `Sign` modal from `ShipperAgreementWizard.tsx`.
+//  PARITY AUDIT 2026-04-29 — reconciled to wireframe canon at
+//  /02 Shipper/Code/223_ShipperAgreements.swift. Persona: Diego
+//  Usoro / Eusorone Technologies (companyId 1) per §11. Agreement
+//  IDs reuse the §11.2 LD- audit-trail convention (AGR-260427-{hex})
+//  so the audit-trail joins the `loads` and `agreements` tables on
+//  the same suffix.
 //
-//  The web wizard (mode → parties → financial → lanes → review →
-//  sign → complete) is multi-form-heavy; this brick surfaces the
-//  high-frequency RUN-state actions an iOS shipper actually does
-//  in the field — read existing agreements + sign one when prompted.
-//  Wizard CREATION is deferred to web via the
-//  `MeAction.fire("shipper.agreement.create")` CTA.
+//  Layout (top → bottom):
+//    1. TopBar           ✦ SHIPPER · AGREEMENTS / "{N} ACTIVE · {M} AWAITING"
+//    2. Title block      Agreements (34pt) / "Eusorone Technologies · volume commitments · MATRIX-50"
+//    3. IridescentHairline
+//    4. KPI summary card 3-cell · ACTIVE · AWAITING SIG · EXPIRES <30d (warn)
+//    5. Filter chip row  All / Active / Pending / Drafts / Expired
+//    6. Agreement rows   3pt tier rim · AGR id · status pill · lane title ·
+//                        spec line · 3-stat row · 6-stage lifecycle strip
+//    7. Compact expired  76pt variant for status=expired/terminated rows
+//    8. "+ New Agreement" gradient pill CTA
 //
-//  Wires:
-//    • `agreements.list` — `ShipperAgreementsAPI.list()`.
-//    • `agreements.sign` — `ShipperAgreementsAPI.sign(...)`.
+//  Real wiring preserved: `agreements.list(limit:100, offset:0)` +
+//  `agreements.sign(...)` via `ShipperAgreementsStore`. Detail sheet
+//  preserved with Gradient-Ink sign flow for status=pending_signature.
+//
+//  Backend gaps surfaced (logged in audit log, no fake data):
+//    EUSO-2134 — `agreements.list` doesn't ship origin/destination
+//                lane metadata. Lane title falls back to the
+//                agreementNumber (mono); the wireframe canon "Houston
+//                TX → Dallas TX" lane line lands when backend extends
+//                the envelope with `originCity / originState /
+//                destinationCity / destinationState`.
+//    EUSO-2135 — No countered-delta or term-length aggregates on the
+//                row envelope. 3-stat row's term + countered slots
+//                paint "—" until backend ships explicit fields.
+//
+//  Doctrine refs: §2 LOADS-tab nav (handled by ContentView); §3
+//  numbers-first copy; §4.3 single iridescent hairline; §11 / §11.2
+//  Diego canon + audit-trail; §15.2 per-row 3pt tier rim grammar;
+//  §15.3 audit-trail-suffix doctrine; §16 hero KPI strip; §16.2
+//  gradient pill CTA; §17.2 status pill grammar; §19.2 file-scoped
+//  `warnGrad` + LifecycleStrip6 helper; §20.4 no dead buttons;
+//  §22.2 textTertiary informational counter.
 //
 
 import SwiftUI
 
-// MARK: - Store
+// MARK: - Filter (wireframe canon labels)
+
+private enum AgreementFilter: String, CaseIterable, Identifiable {
+    case all
+    case active
+    case pending
+    case drafts
+    case expired
+
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .all:     return "All"
+        case .active:  return "Active"
+        case .pending: return "Pending"
+        case .drafts:  return "Drafts"
+        case .expired: return "Expired"
+        }
+    }
+
+    /// Maps to the server's status filter; nil = pass through all.
+    var serverStatus: String? {
+        switch self {
+        case .all:     return nil
+        case .active:  return "active"
+        case .pending: return "pending_signature"
+        case .drafts:  return "draft"
+        case .expired: return nil  // expired+terminated merged client-side
+        }
+    }
+}
+
+private enum AgreementTierRim { case gradient, warn, success, neutral }
+
+private enum AgreementStage { case draft, review, sent, counter, signed, active }
+
+// MARK: - Store (preserved + extended)
 
 @MainActor
 final class ShipperAgreementsStore: ObservableObject {
@@ -32,17 +94,14 @@ final class ShipperAgreementsStore: ObservableObject {
     }
 
     @Published private(set) var phase: Phase = .idle
-    @Published var statusFilter: String? = nil
+    @Published private(set) var unfiltered: [ShipperAgreementsAPI.Agreement] = []
+    @Published var filter: AgreementFilter = .all {
+        didSet {
+            if oldValue != filter { Task { await load() } }
+        }
+    }
     @Published var lastSigned: String? = nil
     @Published var lastError: String? = nil
-
-    static let statusFilters: [(String?, String)] = [
-        (nil, "All"),
-        ("draft", "Draft"),
-        ("pending_signature", "To sign"),
-        ("active", "Active"),
-        ("expired", "Expired"),
-    ]
 
     private let api: EusoTripAPI
     init(api: EusoTripAPI = .shared) { self.api = api }
@@ -51,13 +110,31 @@ final class ShipperAgreementsStore: ObservableObject {
         phase = .loading
         do {
             let r = try await api.shipperAgreements.list(limit: 100, offset: 0)
-            var rows = r.agreements ?? []
-            if let f = statusFilter {
-                rows = rows.filter { ($0.status ?? "").lowercased() == f }
-            }
+            let all = r.agreements ?? []
+            unfiltered = all
+            let rows = applyClientFilter(rows: all, filter: filter)
             phase = .loaded(rows)
         } catch {
             phase = .error("Couldn't load agreements.")
+        }
+    }
+
+    func applyClientFilter(rows: [ShipperAgreementsAPI.Agreement],
+                           filter: AgreementFilter) -> [ShipperAgreementsAPI.Agreement] {
+        switch filter {
+        case .all:
+            return rows
+        case .active:
+            return rows.filter { ($0.status ?? "").lowercased() == "active" }
+        case .pending:
+            return rows.filter { ($0.status ?? "").lowercased() == "pending_signature" }
+        case .drafts:
+            return rows.filter { ($0.status ?? "").lowercased() == "draft" }
+        case .expired:
+            return rows.filter {
+                let s = ($0.status ?? "").lowercased()
+                return s == "expired" || s == "terminated"
+            }
         }
     }
 
@@ -83,7 +160,7 @@ final class ShipperAgreementsStore: ObservableObject {
     }
 }
 
-// MARK: - Brick
+// MARK: - Screen root
 
 struct ShipperAgreements: View {
     @Environment(\.palette) private var palette
@@ -93,20 +170,26 @@ struct ShipperAgreements: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                header
-                statsHero
-                filterRow
-                listSection
+            VStack(alignment: .leading, spacing: 0) {
+                topBar
+                    .padding(.top, Space.s5)
+                titleBlock
+                    .padding(.top, Space.s2)
+                IridescentHairline()
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s5)
+
+                content
+                    .padding(.top, Space.s3)
+
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 8)
         }
         .task { await store.load() }
-        .onChange(of: store.statusFilter) { _, _ in Task { await store.load() } }
         .onChange(of: store.lastSigned ?? "") { _, v in if !v.isEmpty { showSignedToast = true } }
-        .sheet(item: $detail) { ShipperAgreementDetailSheet(row: $0).environmentObject(store) }
+        .sheet(item: $detail) {
+            ShipperAgreementDetailSheet(row: $0).environmentObject(store)
+        }
         .alert("Signed", isPresented: $showSignedToast, actions: {
             Button("OK") { store.lastSigned = nil }
         }, message: {
@@ -114,190 +197,650 @@ struct ShipperAgreements: View {
         })
     }
 
-    private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "doc.text.fill").font(.system(size: 20, weight: .heavy))
-                .foregroundStyle(LinearGradient.diagonal)
-                .frame(width: 36, height: 36).background(palette.bgCard)
-                .overlay(Circle().strokeBorder(palette.borderFaint)).clipShape(Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles").font(.system(size: 9, weight: .heavy))
-                        .foregroundStyle(LinearGradient.diagonal)
-                    Text("SHIPPER · AGREEMENTS").font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                        .foregroundStyle(LinearGradient.diagonal)
-                }
-                Text("Contracts").font(.system(size: 22, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary).lineLimit(1)
-                Text("Active rate sheets · pending signatures · Gradient-Ink audit trail.")
-                    .font(EType.caption).foregroundStyle(palette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true).lineLimit(2)
-            }
-            Spacer(minLength: 0)
-            Button {
-                MeAction.fire("shipper.agreement.create", userInfo: nil)
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "plus.rectangle.on.rectangle").font(.system(size: 11, weight: .heavy))
-                    Text("New").font(.system(size: 11, weight: .heavy))
-                }.foregroundStyle(.white)
-                .padding(.horizontal, 10).padding(.vertical, 7)
-                .background(LinearGradient.diagonal).clipShape(Capsule())
-            }.buttonStyle(.plain)
-        }.padding(.top, 4)
-    }
+    // MARK: TopBar
 
-    private var statsHero: some View {
-        let rows: [ShipperAgreementsAPI.Agreement] = {
-            if case .loaded(let r) = store.phase { return r } else { return [] }
-        }()
-        let active = rows.filter { ($0.status ?? "").lowercased() == "active" }.count
-        let pending = rows.filter { ($0.status ?? "").lowercased() == "pending_signature" }.count
-        let expired = rows.filter { ($0.status ?? "").lowercased() == "expired" }.count
-        return HStack(spacing: Space.s2) {
-            statTile(label: "ACTIVE", value: "\(active)", color: Brand.success)
-            statTile(label: "PENDING", value: "\(pending)", color: Brand.warning)
-            statTile(label: "EXPIRED", value: "\(expired)", color: Brand.danger)
+    private var topBar: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("✦ SHIPPER · AGREEMENTS")
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundStyle(LinearGradient.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+            Spacer()
+            Text(counterEyebrow)
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+                .accessibilityLabel(counterAccessibility)
         }
+        .padding(.horizontal, Space.s5)
     }
 
-    private func statTile(label: String, value: String, color: Color?) -> some View {
+    private var counterEyebrow: String {
+        let active = countActive
+        let awaiting = countAwaiting
+        return "\(active) ACTIVE · \(awaiting) AWAITING"
+    }
+
+    private var counterAccessibility: String {
+        "\(countActive) active agreements, \(countAwaiting) awaiting signature"
+    }
+
+    private var countActive: Int {
+        store.unfiltered.filter { ($0.status ?? "").lowercased() == "active" }.count
+    }
+
+    private var countAwaiting: Int {
+        store.unfiltered.filter { ($0.status ?? "").lowercased() == "pending_signature" }.count
+    }
+
+    private var countDrafts: Int {
+        store.unfiltered.filter { ($0.status ?? "").lowercased() == "draft" }.count
+    }
+
+    private var countExpired: Int {
+        store.unfiltered.filter {
+            let s = ($0.status ?? "").lowercased()
+            return s == "expired" || s == "terminated"
+        }.count
+    }
+
+    private var countExpiringSoon: Int {
+        let now = Date()
+        let cutoff = now.addingTimeInterval(30 * 86400)
+        return store.unfiltered.filter {
+            guard ($0.status ?? "").lowercased() == "active",
+                  let d = $0.expirationDate.flatMap(parseDate) else { return false }
+            return d >= now && d <= cutoff
+        }.count
+    }
+
+    private func parseDate(_ s: String) -> Date? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f.date(from: s) { return d }
+        let ymd = DateFormatter()
+        ymd.locale = Locale(identifier: "en_US_POSIX")
+        ymd.dateFormat = "yyyy-MM-dd"
+        ymd.timeZone = TimeZone(identifier: "UTC")
+        return ymd.date(from: String(s.prefix(10)))
+    }
+
+    // MARK: Title block
+
+    private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(.system(size: 8, weight: .heavy)).tracking(0.7).foregroundStyle(palette.textTertiary)
-            Text(value).font(.system(size: 22, weight: .heavy, design: .rounded))
-                .foregroundStyle(color.map { AnyShapeStyle($0) } ?? AnyShapeStyle(LinearGradient.diagonal))
-                .monospacedDigit().lineLimit(1)
+            Text("Agreements")
+                .font(.system(size: 34, weight: .bold))
+                .tracking(-0.6)
+                .foregroundStyle(palette.textPrimary)
+            Text("Eusorone Technologies · volume commitments · MATRIX-50")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s3).padding(.vertical, Space.s3)
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .padding(.horizontal, Space.s5)
     }
 
-    private var filterRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(ShipperAgreementsStore.statusFilters, id: \.1) { item in
-                    chip(label: item.1, active: store.statusFilter == item.0) {
-                        store.statusFilter = item.0
-                    }
+    // MARK: Content state machine
+
+    @ViewBuilder
+    private var content: some View {
+        switch store.phase {
+        case .idle, .loading:
+            VStack(spacing: Space.s2) {
+                ForEach(0..<4, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                        .fill(palette.tintNeutral.opacity(0.3))
+                        .frame(height: 124)
                 }
+            }
+            .padding(.horizontal, Space.s5)
+        case .error(let m):
+            errorCard(m)
+                .padding(.horizontal, Space.s5)
+        case .loaded(let rows):
+            VStack(alignment: .leading, spacing: 0) {
+                kpiSummaryCard
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s3)
+
+                filterRow
+                    .padding(.top, Space.s5)
+
+                if rows.isEmpty {
+                    emptyOrNoMatchCard
+                        .padding(.horizontal, Space.s5)
+                        .padding(.top, Space.s4)
+                } else {
+                    VStack(spacing: Space.s4) {
+                        ForEach(rows) { row in
+                            agreementRowView(row)
+                        }
+                    }
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s4)
+                }
+
+                newAgreementButton
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s5)
             }
         }
     }
 
-    private func chip(label: String, active: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(label).font(.system(size: 11, weight: .heavy))
-                .padding(.horizontal, Space.s3).padding(.vertical, 7)
-                .foregroundStyle(active ? palette.textPrimary : palette.textSecondary)
-                .background(Capsule().fill(active ? AnyShapeStyle(LinearGradient.diagonal.opacity(0.18)) : AnyShapeStyle(palette.bgCard)))
-                .overlay(Capsule().strokeBorder(active ? palette.borderSoft : palette.borderFaint, lineWidth: 1))
-        }.buttonStyle(.plain)
+    // MARK: KPI summary card (3-cell · ACTIVE / AWAITING SIG / EXPIRES <30d)
+
+    private var kpiSummaryCard: some View {
+        let active = countActive
+        let awaiting = countAwaiting
+        let expiringSoon = countExpiringSoon
+        return HStack(spacing: 0) {
+            kpiCell(label: "ACTIVE", value: "\(active)", gradient: true, delta: nil, deltaColor: .clear, valueColor: nil)
+            divider
+            kpiCell(label: "AWAITING SIG", value: "\(awaiting)", gradient: false, delta: nil, deltaColor: .clear, valueColor: nil)
+            divider
+            kpiCell(label: "EXPIRES <30d", value: "\(expiringSoon)", gradient: false,
+                    delta: expiringSoon > 0 ? "renew now" : nil,
+                    deltaColor: Brand.warning,
+                    valueColor: expiringSoon > 0 ? Brand.warning : nil)
+        }
+        .padding(.vertical, Space.s4)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg)
+                .fill(palette.bgCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg)
+                .strokeBorder(palette.borderFaint)
+        )
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(palette.borderFaint)
+            .frame(width: 1, height: 36)
     }
 
     @ViewBuilder
-    private var listSection: some View {
-        switch store.phase {
-        case .idle, .loading:
-            HStack {
-                ProgressView()
-                Text("Loading agreements…").font(EType.caption).foregroundStyle(palette.textSecondary)
-                Spacer()
-            }
-            .padding(Space.s3).frame(maxWidth: .infinity, alignment: .leading).background(palette.bgCard)
-            .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-        case .error(let m):
-            errorCard(m)
-        case .loaded(let rows):
-            if rows.isEmpty {
-                emptyCard
-            } else {
-                VStack(spacing: 8) {
-                    ForEach(rows) { row in
-                        Button { detail = row } label: { agreementRow(row) }
-                            .buttonStyle(.plain)
-                    }
-                }
-            }
-        }
-    }
-
-    private func agreementRow(_ a: ShipperAgreementsAPI.Agreement) -> some View {
-        let style = AgreementStatusStyle.from(a.status)
-        return HStack(alignment: .top, spacing: 10) {
-            statusDot(color: style.color)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(a.agreementNumber ?? "#\(a.id)").font(EType.bodyStrong)
-                        .foregroundStyle(palette.textPrimary).lineLimit(1)
-                    statusPill(style.label, color: style.color)
-                }
-                if let t = a.agreementType {
-                    Text(t.replacingOccurrences(of: "_", with: " ").capitalized)
-                        .font(EType.caption).foregroundStyle(palette.textSecondary).lineLimit(1)
-                }
-                HStack(spacing: 8) {
-                    if let r = a.baseRate, !r.isEmpty {
-                        Label("$\(r)", systemImage: "dollarsign.circle.fill")
-                            .font(.system(size: 10, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                    }
-                    if let d = a.effectiveDate { dateChip("Effective", d) }
-                    if let d = a.expirationDate { dateChip("Expires", d) }
-                }
-            }
-            Spacer(minLength: 0)
-            Image(systemName: "chevron.right").font(.system(size: 10, weight: .heavy))
+    private func kpiCell(label: String,
+                         value: String,
+                         gradient: Bool,
+                         delta: String?,
+                         deltaColor: Color,
+                         valueColor: Color?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(EType.micro)
+                .tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Group {
+                    if gradient {
+                        Text(value).foregroundStyle(LinearGradient.diagonal)
+                    } else if let valueColor {
+                        Text(value).foregroundStyle(valueColor)
+                    } else {
+                        Text(value).foregroundStyle(palette.textPrimary)
+                    }
+                }
+                .font(.system(size: 22, weight: .bold).monospacedDigit())
+                if let delta {
+                    Text(delta)
+                        .font(EType.caption)
+                        .foregroundStyle(deltaColor)
+                }
+            }
         }
-        .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .padding(.horizontal, Space.s5)
     }
 
-    private func statusDot(color: Color) -> some View {
-        Circle().fill(color).frame(width: 8, height: 8)
-            .overlay(Circle().strokeBorder(color.opacity(0.4), lineWidth: 2).scaleEffect(1.6))
-            .padding(.top, 6)
+    // MARK: Filter row
+
+    private var filterRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(AgreementFilter.allCases) { f in
+                    filterChip(f, count: count(for: f))
+                }
+            }
+            .padding(.horizontal, Space.s5)
+        }
+        .overlay(alignment: .trailing) {
+            LinearGradient(
+                colors: [palette.bgPage.opacity(0), palette.bgPage],
+                startPoint: .leading, endPoint: .trailing
+            )
+            .frame(width: 28)
+            .allowsHitTesting(false)
+        }
     }
 
-    private func statusPill(_ s: String, color: Color) -> some View {
-        Text(s.uppercased()).font(.system(size: 8, weight: .heavy)).tracking(0.7)
-            .foregroundStyle(color)
-            .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(Capsule().fill(color.opacity(0.15)))
-            .overlay(Capsule().strokeBorder(color.opacity(0.5)))
+    private func count(for filter: AgreementFilter) -> Int? {
+        switch filter {
+        case .all:     return nil
+        case .active:  return countActive
+        case .pending: return countAwaiting
+        case .drafts:  return countDrafts
+        case .expired: return countExpired
+        }
     }
 
-    private func dateChip(_ k: String, _ d: String) -> some View {
-        let display = String(d.prefix(10))
-        return HStack(spacing: 3) {
-            Text(k.uppercased()).font(.system(size: 8, weight: .heavy)).tracking(0.6)
-                .foregroundStyle(palette.textTertiary)
-            Text(display).font(.system(size: 9, weight: .heavy, design: .monospaced))
+    private func filterChip(_ f: AgreementFilter, count: Int?) -> some View {
+        let isActive = (store.filter == f)
+        let label: String = {
+            if let c = count, c > 0 { return "\(f.label) · \(c)" }
+            return f.label
+        }()
+        return Button(action: { tapFilter(f) }) {
+            Text(label)
+                .font(.system(size: 11, weight: isActive ? .bold : .semibold))
+                .foregroundStyle(isActive ? Color.white : palette.textPrimary)
+                .padding(.horizontal, 14)
+                .frame(height: 30)
+                .background {
+                    if isActive {
+                        Capsule().fill(LinearGradient.primary)
+                    } else {
+                        Capsule().fill(palette.bgCardSoft)
+                    }
+                }
+                .overlay {
+                    if !isActive {
+                        Capsule().strokeBorder(palette.borderFaint)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(f.label) filter")
+        .accessibilityAddTraits(isActive ? [.isSelected] : [])
+    }
+
+    private func tapFilter(_ f: AgreementFilter) {
+        store.filter = f
+        NotificationCenter.default.post(
+            name: .eusoShipperAgreementFilter,
+            object: nil,
+            userInfo: [
+                "source": "223_ShipperAgreements",
+                "filter": f.rawValue,
+                "shipperCompanyId": 1
+            ]
+        )
+    }
+
+    // MARK: Agreement row (wireframe canon · tier rim + AGR id + status pill + lane + spec + 3-stat + lifecycle)
+
+    @ViewBuilder
+    private func agreementRowView(_ row: ShipperAgreementsAPI.Agreement) -> some View {
+        let canon = canonStatus(for: row)
+        if canon.isCompactExpired {
+            agreementCompactRow(row)
+        } else {
+            agreementFullRow(row, canon: canon)
+        }
+    }
+
+    private struct CanonStatus {
+        let tier: AgreementTierRim
+        let pillKind: PillKind
+        let pillLegend: String
+        let pillWidth: CGFloat
+        let stage: AgreementStage
+        let isCompactExpired: Bool
+        enum PillKind { case awaiting, counterOutlined, active, expired, draft }
+    }
+
+    private func canonStatus(for row: ShipperAgreementsAPI.Agreement) -> CanonStatus {
+        let s = (row.status ?? "").lowercased()
+        switch s {
+        case "draft":
+            return CanonStatus(tier: .neutral, pillKind: .draft,
+                               pillLegend: "DRAFT", pillWidth: 84,
+                               stage: .draft, isCompactExpired: false)
+        case "negotiating":
+            return CanonStatus(tier: .gradient, pillKind: .counterOutlined,
+                               pillLegend: "COUNTER", pillWidth: 84,
+                               stage: .counter, isCompactExpired: false)
+        case "pending_signature":
+            return CanonStatus(tier: .warn, pillKind: .awaiting,
+                               pillLegend: "AWAITING SIG", pillWidth: 116,
+                               stage: .sent, isCompactExpired: false)
+        case "active":
+            return CanonStatus(tier: .success, pillKind: .active,
+                               pillLegend: "ACTIVE", pillWidth: 84,
+                               stage: .active, isCompactExpired: false)
+        case "expired", "terminated":
+            return CanonStatus(tier: .neutral, pillKind: .expired,
+                               pillLegend: s == "terminated" ? "TERMINATED" : "EXPIRED",
+                               pillWidth: s == "terminated" ? 100 : 84,
+                               stage: .active, isCompactExpired: true)
+        default:
+            return CanonStatus(tier: .neutral, pillKind: .draft,
+                               pillLegend: (row.status ?? "—").uppercased(), pillWidth: 84,
+                               stage: .draft, isCompactExpired: false)
+        }
+    }
+
+    @ViewBuilder
+    private func agreementFullRow(_ row: ShipperAgreementsAPI.Agreement, canon: CanonStatus) -> some View {
+        Button(action: { tapRow(row) }) {
+            HStack(spacing: 0) {
+                tierRimShape(canon.tier).frame(width: 3)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .center) {
+                        Text(rowDisplayId(row))
+                            .font(EType.mono(.micro))
+                            .tracking(0.6)
+                            .foregroundStyle(palette.textTertiary)
+                        Spacer()
+                        statusPillView(canon.pillKind, legend: canon.pillLegend, width: canon.pillWidth)
+                    }
+                    .padding(.top, Space.s4)
+
+                    Text(laneTitle(row))
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                        .padding(.top, Space.s2 + 2)
+
+                    Text(specLine(row))
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                        .padding(.top, 4)
+
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        statCell(value: rateValue(row), unit: "rate")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        statCell(value: termValue(row), unit: "term")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        statCell(value: sentValue(row), unit: sentUnit(row))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(.top, Space.s2 + 2)
+
+                    LifecycleStrip6(activeStage: canon.stage)
+                        .padding(.top, Space.s4 + 2)
+                        .padding(.bottom, Space.s4)
+                }
+                .padding(.leading, Space.s4)
+                .padding(.trailing, Space.s4)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.lg).fill(palette.bgCard)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(palette.borderFaint)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(AgreementRowStyle())
+    }
+
+    @ViewBuilder
+    private func agreementCompactRow(_ row: ShipperAgreementsAPI.Agreement) -> some View {
+        Button(action: { tapRow(row) }) {
+            HStack(spacing: 0) {
+                tierRimShape(.neutral).frame(width: 3)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .center) {
+                        Text(rowDisplayId(row))
+                            .font(EType.mono(.micro))
+                            .tracking(0.6)
+                            .foregroundStyle(palette.textTertiary)
+                        Spacer()
+                        statusPillView(.expired, legend: "EXPIRED", width: 84)
+                    }
+                    .padding(.top, Space.s3 + 2)
+
+                    Text(laneTitle(row))
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                        .padding(.top, Space.s2 + 2)
+
+                    Text(expiredSubline(row))
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                        .padding(.top, 4)
+                        .padding(.bottom, Space.s3 + 2)
+                }
+                .padding(.leading, Space.s4)
+                .padding(.trailing, Space.s4)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.lg).fill(palette.bgCard)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(palette.borderFaint)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(AgreementRowStyle())
+    }
+
+    private func rowDisplayId(_ row: ShipperAgreementsAPI.Agreement) -> String {
+        if let n = row.agreementNumber, !n.isEmpty {
+            return n.uppercased().hasPrefix("AGR-") ? n : "AGR-\(n)"
+        }
+        return "AGR-\(row.id)"
+    }
+
+    private func laneTitle(_ row: ShipperAgreementsAPI.Agreement) -> String {
+        // EUSO-2134 — agreements.list doesn't ship origin/destination.
+        if let t = row.agreementType, !t.isEmpty {
+            return t.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+        return rowDisplayId(row)
+    }
+
+    private func specLine(_ row: ShipperAgreementsAPI.Agreement) -> String {
+        var parts: [String] = []
+        if let eff = row.effectiveDate {
+            parts.append("effective \(String(eff.prefix(10)))")
+        }
+        if let exp = row.expirationDate {
+            parts.append("expires \(String(exp.prefix(10)))")
+        }
+        if let a = row.partyAUserId {
+            parts.append("party A #\(a)")
+        }
+        return parts.isEmpty ? "Agreement details on tap" : parts.joined(separator: " · ")
+    }
+
+    private func rateValue(_ row: ShipperAgreementsAPI.Agreement) -> String {
+        guard let r = row.baseRate, !r.isEmpty else { return "—" }
+        return "$\(r)"
+    }
+
+    private func termValue(_ row: ShipperAgreementsAPI.Agreement) -> String {
+        // EUSO-2135 — term length aggregate not on envelope.
+        guard let eff = row.effectiveDate.flatMap(parseDate),
+              let exp = row.expirationDate.flatMap(parseDate) else { return "—" }
+        let days = max(0, Int(exp.timeIntervalSince(eff) / 86400))
+        if days >= 365 { return "\(days / 365)y" }
+        if days >= 30 { return "\(days / 30)mo" }
+        if days > 0 { return "\(days)d" }
+        return "—"
+    }
+
+    private func sentValue(_ row: ShipperAgreementsAPI.Agreement) -> String {
+        guard let s = row.createdAt else { return "—" }
+        let trimmed = String(s.prefix(10))
+        let parts = trimmed.split(separator: "-")
+        guard parts.count == 3 else { return trimmed }
+        let monthIdx = Int(parts[1]) ?? 1
+        let months = ["—", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        let month = (monthIdx >= 1 && monthIdx <= 12) ? months[monthIdx] : "—"
+        let day = parts[2]
+        return "\(month) \(day)"
+    }
+
+    private func sentUnit(_ row: ShipperAgreementsAPI.Agreement) -> String {
+        switch (row.status ?? "").lowercased() {
+        case "active": return "started"
+        case "expired", "terminated": return "ended"
+        default: return "sent"
+        }
+    }
+
+    private func expiredSubline(_ row: ShipperAgreementsAPI.Agreement) -> String {
+        var parts: [String] = []
+        if let exp = row.expirationDate {
+            parts.append("expired \(String(exp.prefix(10)))")
+        }
+        if let t = row.agreementType, !t.isEmpty {
+            parts.append(t.replacingOccurrences(of: "_", with: " ").capitalized)
+        }
+        return parts.isEmpty ? "Expired agreement" : parts.joined(separator: " · ")
+    }
+
+    @ViewBuilder
+    private func statCell(value: String, unit: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text(value)
+                .font(.system(size: 11, weight: .bold).monospacedDigit())
+                .foregroundStyle(palette.textPrimary)
+            Text(unit)
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(palette.textSecondary)
         }
-        .padding(.horizontal, 5).padding(.vertical, 2)
-        .background(Capsule().fill(palette.bgCardSoft))
-        .overlay(Capsule().strokeBorder(palette.borderFaint))
     }
 
-    private var emptyCard: some View {
+    @ViewBuilder
+    private func tierRimShape(_ kind: AgreementTierRim) -> some View {
+        switch kind {
+        case .gradient:
+            RoundedRectangle(cornerRadius: 1.5).fill(LinearGradient.diagonal)
+        case .warn:
+            RoundedRectangle(cornerRadius: 1.5).fill(LinearGradient.agreementWarnGrad)
+        case .success:
+            RoundedRectangle(cornerRadius: 1.5).fill(Brand.success)
+        case .neutral:
+            RoundedRectangle(cornerRadius: 1.5).fill(palette.textTertiary)
+        }
+    }
+
+    @ViewBuilder
+    private func statusPillView(_ kind: CanonStatus.PillKind, legend: String, width: CGFloat) -> some View {
+        switch kind {
+        case .awaiting:
+            Text(legend)
+                .font(EType.micro)
+                .tracking(0.6)
+                .foregroundStyle(.white)
+                .frame(width: width, height: 20)
+                .background(Capsule().fill(LinearGradient.agreementWarnGrad))
+        case .counterOutlined:
+            Text(legend)
+                .font(EType.micro)
+                .tracking(0.6)
+                .foregroundStyle(LinearGradient.primary)
+                .frame(width: width, height: 20)
+                .overlay(Capsule().strokeBorder(LinearGradient.primary, lineWidth: 1))
+                .background(Capsule().fill(palette.bgCard))
+        case .active:
+            Text(legend)
+                .font(EType.micro)
+                .tracking(0.6)
+                .foregroundStyle(.white)
+                .frame(width: width, height: 20)
+                .background(Capsule().fill(Brand.success))
+        case .expired:
+            Text(legend)
+                .font(EType.micro)
+                .tracking(0.6)
+                .foregroundStyle(palette.textSecondary)
+                .frame(width: width, height: 20)
+                .overlay(Capsule().strokeBorder(palette.textTertiary, lineWidth: 1))
+                .background(Capsule().fill(palette.bgCard))
+        case .draft:
+            Text(legend)
+                .font(EType.micro)
+                .tracking(0.6)
+                .foregroundStyle(palette.textSecondary)
+                .frame(width: width, height: 20)
+                .overlay(Capsule().strokeBorder(palette.textTertiary, lineWidth: 1))
+                .background(Capsule().fill(palette.bgCardSoft))
+        }
+    }
+
+    // MARK: New Agreement CTA
+
+    private var newAgreementButton: some View {
+        Button(action: tapNewAgreement) {
+            Text("+ New Agreement")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .background(Capsule().fill(LinearGradient.primary))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Create a new agreement")
+    }
+
+    // MARK: Notification posts (§20.4)
+
+    private func tapRow(_ row: ShipperAgreementsAPI.Agreement) {
+        detail = row
+        NotificationCenter.default.post(
+            name: .eusoShipperAgreementRow,
+            object: nil,
+            userInfo: [
+                "source": "223_ShipperAgreements",
+                "agreementId": row.id,
+                "shipperCompanyId": 1
+            ]
+        )
+    }
+
+    private func tapNewAgreement() {
+        MeAction.fire("shipper.agreement.create", userInfo: nil)
+        NotificationCenter.default.post(
+            name: .eusoShipperAgreementCreate,
+            object: nil,
+            userInfo: [
+                "source": "223_ShipperAgreements",
+                "shipperCompanyId": 1
+            ]
+        )
+    }
+
+    // MARK: Empty / error
+
+    private var emptyOrNoMatchCard: some View {
         VStack(spacing: 10) {
-            Image(systemName: "doc.text").font(.system(size: 28, weight: .heavy))
+            Image(systemName: "doc.text")
+                .font(.system(size: 28, weight: .heavy))
                 .foregroundStyle(palette.textTertiary)
-            Text("No agreements yet").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-            Text("Send a counter-party an agreement from the web wizard. It'll appear here for sign-off.")
-                .font(EType.caption).foregroundStyle(palette.textSecondary)
+            Text(store.filter == .all ? "No agreements yet" : "No agreements match this filter")
+                .font(EType.bodyStrong)
+                .foregroundStyle(palette.textPrimary)
+            Text(store.filter == .all
+                 ? "Send a counter-party an agreement from the New button below — it'll appear here for sign-off."
+                 : "Try a different filter, or create a new agreement.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
         }
-        .padding(Space.s4).frame(maxWidth: .infinity)
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity)
         .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
@@ -307,34 +850,123 @@ struct ShipperAgreements: View {
             Text(m).font(EType.caption).foregroundStyle(palette.textPrimary)
             Spacer()
             Button("Retry") { Task { await store.load() } }
-                .font(.system(size: 11, weight: .heavy)).foregroundStyle(Brand.info)
+                .font(.system(size: 11, weight: .heavy))
+                .foregroundStyle(Brand.info)
         }
-        .padding(Space.s3).background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 }
 
-// MARK: - status style
+// MARK: - Press feedback
 
-private struct AgreementStatusStyle {
-    let label: String
-    let color: Color
-
-    static func from(_ raw: String?) -> AgreementStatusStyle {
-        switch (raw ?? "").lowercased() {
-        case "active":             return .init(label: "Active",   color: Brand.success)
-        case "pending_signature":  return .init(label: "To sign",  color: Brand.warning)
-        case "draft":              return .init(label: "Draft",    color: Brand.info)
-        case "negotiating":        return .init(label: "Negotiating", color: Brand.info)
-        case "expired":            return .init(label: "Expired",  color: Brand.danger)
-        case "terminated":         return .init(label: "Terminated", color: Brand.danger)
-        default:                   return .init(label: (raw ?? "Unknown").capitalized, color: .gray)
-        }
+private struct AgreementRowStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.985 : 1.0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
-// MARK: - Detail sheet
+// MARK: - 6-stage lifecycle strip (file-scoped per §19.2)
+
+private struct LifecycleStrip6: View {
+    let activeStage: AgreementStage
+    @Environment(\.palette) var palette
+
+    private let stages: [(key: AgreementStage, label: String)] = [
+        (.draft,   "DRAFT"),
+        (.review,  "REVIEW"),
+        (.sent,    "SENT"),
+        (.counter, "COUNTER"),
+        (.signed,  "SIGNED"),
+        (.active,  "ACTIVE"),
+    ]
+
+    private var activeIndex: Int {
+        stages.firstIndex(where: { $0.key == activeStage }) ?? 0
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let total = geo.size.width
+            let count = stages.count
+            let stride = total / CGFloat(count - 1)
+
+            ZStack(alignment: .leading) {
+                Rectangle()
+                    .fill(palette.borderFaint)
+                    .frame(width: total, height: 2)
+                Rectangle()
+                    .fill(LinearGradient.primary)
+                    .frame(width: stride * CGFloat(activeIndex), height: 2)
+                ForEach(0..<count, id: \.self) { i in
+                    let isActive = i == activeIndex
+                    let isCompleted = i < activeIndex
+                    Circle()
+                        .fill(isCompleted || isActive
+                              ? AnyShapeStyle(LinearGradient.diagonal)
+                              : AnyShapeStyle(palette.borderFaint))
+                        .frame(width: isActive ? 9 : 7, height: isActive ? 9 : 7)
+                        .offset(x: stride * CGFloat(i) - (isActive ? 4.5 : 3.5))
+                }
+                ForEach(0..<count, id: \.self) { i in
+                    let isActive = i == activeIndex
+                    let isCompleted = i < activeIndex
+                    let label = stages[i].label
+                    Text(label)
+                        .font(.system(size: 7, weight: .bold))
+                        .tracking(0.4)
+                        .foregroundStyle(
+                            isActive
+                                ? AnyShapeStyle(LinearGradient.primary)
+                                : (isCompleted
+                                    ? AnyShapeStyle(palette.textSecondary)
+                                    : AnyShapeStyle(palette.textTertiary))
+                        )
+                        .offset(x: anchoredOffset(for: i, count: count, stride: stride, label: label),
+                                y: -10)
+                }
+            }
+        }
+        .frame(height: 18)
+    }
+
+    private func anchoredOffset(for i: Int, count: Int, stride: CGFloat, label: String) -> CGFloat {
+        let approxWidth: CGFloat = CGFloat(label.count) * 4.2
+        let baseX = stride * CGFloat(i)
+        if i == 0 { return baseX }
+        if i == count - 1 { return baseX - approxWidth }
+        return baseX - approxWidth / 2
+    }
+}
+
+// MARK: - File-scoped warn gradient (§19.2)
+
+private extension LinearGradient {
+    static let agreementWarnGrad = LinearGradient(
+        colors: [Brand.hazmat, Color(hex: 0xFF7A00)],
+        startPoint: .topLeading, endPoint: .bottomTrailing
+    )
+}
+
+// MARK: - NotificationCenter names (§20.4)
+
+extension Notification.Name {
+    /// Filter chip tap (All / Active / Pending / Drafts / Expired).
+    static let eusoShipperAgreementFilter = Notification.Name("eusoShipperAgreementFilter")
+    /// Agreement row tap — opens the detail sheet.
+    static let eusoShipperAgreementRow    = Notification.Name("eusoShipperAgreementRow")
+    /// "+ New Agreement" gradient pill tap (hands off via MeAction).
+    static let eusoShipperAgreementCreate = Notification.Name("eusoShipperAgreementCreate")
+}
+
+// MARK: - Detail sheet (preserved · Gradient-Ink sign flow)
 
 struct ShipperAgreementDetailSheet: View {
     let row: ShipperAgreementsAPI.Agreement
@@ -387,9 +1019,13 @@ struct ShipperAgreementDetailSheet: View {
             }
         }
         .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
-        .background(LinearGradient(colors: [Brand.blue.opacity(0.30), Brand.magenta.opacity(0.22)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing))
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
+        .background(LinearGradient(
+            colors: [Brand.blue.opacity(0.30), Brand.magenta.opacity(0.22)],
+            startPoint: .topLeading, endPoint: .bottomTrailing))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1)
+        )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
@@ -405,7 +1041,10 @@ struct ShipperAgreementDetailSheet: View {
         }
         .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
         .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
@@ -426,19 +1065,27 @@ struct ShipperAgreementDetailSheet: View {
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 6) {
-                Text("FULL NAME").font(.system(size: 8, weight: .heavy)).tracking(0.7).foregroundStyle(palette.textTertiary)
+                Text("FULL NAME").font(.system(size: 8, weight: .heavy)).tracking(0.7)
+                    .foregroundStyle(palette.textTertiary)
                 TextField("e.g. Diego Usoro", text: $signerName)
                     .textFieldStyle(.plain).padding(.horizontal, Space.s3).padding(.vertical, Space.s2)
                     .background(palette.bgCardSoft)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).strokeBorder(palette.borderFaint))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                            .strokeBorder(palette.borderFaint)
+                    )
                     .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
             }
             VStack(alignment: .leading, spacing: 6) {
-                Text("TITLE").font(.system(size: 8, weight: .heavy)).tracking(0.7).foregroundStyle(palette.textTertiary)
+                Text("TITLE").font(.system(size: 8, weight: .heavy)).tracking(0.7)
+                    .foregroundStyle(palette.textTertiary)
                 TextField("e.g. Founder & CEO", text: $signerTitle)
                     .textFieldStyle(.plain).padding(.horizontal, Space.s3).padding(.vertical, Space.s2)
                     .background(palette.bgCardSoft)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).strokeBorder(palette.borderFaint))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                            .strokeBorder(palette.borderFaint)
+                    )
                     .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
             }
             Button {
@@ -466,7 +1113,10 @@ struct ShipperAgreementDetailSheet: View {
         }
         .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
         .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1)
+        )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
@@ -475,23 +1125,51 @@ struct ShipperAgreementDetailSheet: View {
             MeAction.fire("shipper.agreement.openOnWeb", userInfo: ["agreementId": row.id])
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "rectangle.portrait.and.arrow.right").font(.system(size: 12, weight: .heavy))
-                Text("Open full contract on web").font(.system(size: 12, weight: .heavy))
+                Image(systemName: "rectangle.portrait.and.arrow.right")
+                    .font(.system(size: 12, weight: .heavy))
+                Text("Open full contract on web")
+                    .font(.system(size: 12, weight: .heavy))
             }
             .frame(maxWidth: .infinity).padding(.vertical, 11)
             .foregroundStyle(palette.textPrimary).background(palette.bgCard)
             .overlay(Capsule().strokeBorder(palette.borderFaint))
             .clipShape(Capsule())
-        }.buttonStyle(.plain)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Status style helper
+
+private struct AgreementStatusStyle {
+    let label: String
+    let color: Color
+
+    static func from(_ raw: String?) -> AgreementStatusStyle {
+        switch (raw ?? "").lowercased() {
+        case "active":             return .init(label: "Active",   color: Brand.success)
+        case "pending_signature":  return .init(label: "To sign",  color: Brand.warning)
+        case "draft":              return .init(label: "Draft",    color: Brand.info)
+        case "negotiating":        return .init(label: "Negotiating", color: Brand.info)
+        case "expired":            return .init(label: "Expired",  color: Brand.danger)
+        case "terminated":         return .init(label: "Terminated", color: Brand.danger)
+        default:                   return .init(label: (raw ?? "Unknown").capitalized, color: .gray)
+        }
     }
 }
 
 // MARK: - Previews
 
-#Preview("Agreements · Dark") {
-    ShipperAgreements().preferredColorScheme(.dark)
+#Preview("223 · Agreements · Dark") {
+    ShipperAgreements()
+        .environment(\.palette, Theme.dark)
+        .preferredColorScheme(.dark)
+        .background(Theme.dark.bgPage)
 }
 
-#Preview("Agreements · Light") {
-    ShipperAgreements().preferredColorScheme(.light)
+#Preview("223 · Agreements · Light") {
+    ShipperAgreements()
+        .environment(\.palette, Theme.light)
+        .preferredColorScheme(.light)
+        .background(Theme.light.bgPage)
 }
