@@ -2,10 +2,10 @@
 //  EusoTrip 2027 UI — Wave 1
 //
 //  Screen 018 · Active Load — en route to delivery (loaded, long-haul eastbound).
-//  Moment (night):     Marcus Reyes, 10:24 AM CDT, I-20 E near Pell City AL,
+//  Moment (night):     Michael Eusorone, 10:24 AM CDT, I-20 E near Pell City AL,
 //                      247 mi of 620 done, 373 mi remaining, ETA 18:12 EDT
 //                      (+1h 42m after 16:00–16:30 window). Receiver is 24/7.
-//  Moment (afternoon): Marcus Reyes, 16:24 CDT, I-20 E approaching Birmingham,
+//  Moment (afternoon): Michael Eusorone, 16:24 CDT, I-20 E approaching Birmingham,
 //                      193 mi of 620 done, 427 mi remaining, ETA 00:42 EDT
 //                      (+43m after 23:30–23:59 window). Receiver is 24/7.
 //
@@ -83,7 +83,7 @@ struct ActiveEnrouteLoaded: View {
     /// em-dash when the Load hasn't hydrated yet.
     /// Doctrine: 0% mock data — never render a fabricated brand name
     /// in the production map overlay (110th firing leak fix —
-    /// previous literal "Walmart SC 2718" excised).
+    /// the previous fabricated big-box-retailer DC literal was excised).
     private var destFlagText: String {
         if let dest = activeLoad?.deliveryLocation {
             let city = dest.cityState
@@ -108,10 +108,11 @@ struct ActiveEnrouteLoaded: View {
     private var originName: String {
         activeLoad?.pickupLocation?.cityState ?? fallbackOriginName
     }
-    /// "Walmart SC 2718 · Hope Mills, NC" — builds from the Load's
-    /// deliveryLocation when available; falls back to the Figma
-    /// verbatim string. `LoadLocation.cityState` already does the
-    /// "City, ST" formatting.
+    /// Receiver brand · receiver city + state — builds from the
+    /// Load's deliveryLocation when available; falls back to the
+    /// Figma-verbatim string when the Load hasn't hydrated yet.
+    /// `LoadLocation.cityState` already does the "City, ST"
+    /// formatting.
     private var destTitle: String {
         guard let dest = activeLoad?.deliveryLocation else {
             return fallbackDestTitle
@@ -528,12 +529,12 @@ struct ActiveEnrouteLoaded: View {
             }
 
             // Destination flag (future, prominent) — Cohort B M2 retrofit
-            // 110th firing: literal "Walmart SC 2718" / "Hope Mills NC"
-            // excised. Pill copy + a11y both bind to the same live
-            // `destFlagText` getter that derives from
-            // `activeLoad.deliveryLocation.cityState`. Renders em-dash
-            // until the load hydrates so production never shows a
-            // fabricated brand on the map.
+            // (110th firing): the prior fabricated big-box-retailer DC
+            // literal + city/state pair was excised. Pill copy + a11y
+            // both bind to the same live `destFlagText` getter that
+            // derives from `activeLoad.deliveryLocation.cityState`.
+            // Renders em-dash until the load hydrates so production
+            // never shows a fabricated brand on the map.
             GeometryReader { geo in
                 VStack(spacing: 3) {
                     Text(destFlagText)
@@ -751,13 +752,16 @@ struct ActiveEnrouteLoadedScreen: View {
     }
 }
 
+// PNG canon at `01 Driver/{Light,Dark}/018 En Route Loaded.png` pins
+// TRIPS current on lifecycle Ring 3. Icon set + trailing slot
+// normalized to canonical 010-017 layout.
 private func driverNavLeading_018() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
 }
 private func driverNavTrailing_018() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person", isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
 }
 
 // MARK: - Previews
