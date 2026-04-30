@@ -259,7 +259,7 @@ struct ShipperWatchComplication: View {
                         .font(.system(size: 10))
                         .foregroundStyle(palette.textTertiary)
                     Text("CLKComplicationFamilyGraphicCorner")
-                        .font(EType.mono(.caption2))
+                        .font(EType.mono(.micro))
                         .tracking(0.3)
                         .foregroundStyle(palette.textTertiary)
                 }
@@ -290,7 +290,7 @@ struct ShipperWatchComplication: View {
                         .font(.system(size: 10))
                         .foregroundStyle(palette.textTertiary)
                     Text("CLKComplicationFamilyGraphicCircular")
-                        .font(EType.mono(.caption2))
+                        .font(EType.mono(.micro))
                         .tracking(0.3)
                         .foregroundStyle(palette.textTertiary)
                     Text("Carrier grade \"A\" inline next to eyebrow ✦ tier-letter primitive · 213 recipe")
@@ -326,7 +326,7 @@ struct ShipperWatchComplication: View {
                         .font(.system(size: 10))
                         .foregroundStyle(palette.textTertiary)
                     Text("CLKComplicationFamilyGraphicRectangular")
-                        .font(EType.mono(.caption2))
+                        .font(EType.mono(.micro))
                         .tracking(0.3)
                         .foregroundStyle(palette.textTertiary)
                 }
@@ -591,7 +591,7 @@ private struct CornerComplication: View {
             .offset(x: 8, y: 8)
 
             Text(payload.stageTag)
-                .font(EType.mono(.caption2))
+                .font(EType.mono(.micro))
                 .foregroundStyle(.white)
                 .frame(width: 60, alignment: .trailing)
                 .padding(.trailing, 10)
