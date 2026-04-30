@@ -547,13 +547,18 @@ struct NextLoadBriefScreen: View {
     }
 }
 
+// PNG canon at `01 Driver/{Light,Dark}/027 Next Load Brief.png` pins
+// TRIPS current — 027 is the auto-accept-countdown brief surface
+// shown after a new load is offered (per [Driver E2E map] "Assigned
+// load card on 010 Home · 027 Next Load Brief"). Icon set + trailing
+// slot normalized to canonical 010-026 layout.
 private func driverNavLeading_027() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",       isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
 }
 private func driverNavTrailing_027() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
 }
 
 #Preview("027 · Next Load Brief · Dark") {
