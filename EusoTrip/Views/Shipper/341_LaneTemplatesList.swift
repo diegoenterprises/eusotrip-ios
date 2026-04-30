@@ -93,7 +93,7 @@ private struct LaneTemplatesListBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [LaneTemplate] = try await EusoTripAPI.shared.api.queryNoInput("loadTemplates.list")
+            let r: [LaneTemplate] = try await EusoTripAPI.shared.queryNoInput("loadTemplates.list")
             templates = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

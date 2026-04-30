@@ -110,7 +110,7 @@ private struct NotificationPrefsBody: View {
         struct Channel: Decodable { let push: Bool?; let email: Bool?; let sms: Bool? }
         struct Out: Decodable { let prefs: [String: Channel]? }
         do {
-            let r: Out = try await EusoTripAPI.shared.api.queryNoInput("users.getNotificationPreferences")
+            let r: Out = try await EusoTripAPI.shared.queryNoInput("users.getNotificationPreferences")
             for (k, v) in (r.prefs ?? [:]) {
                 prefs[k] = ChannelToggle(push: v.push ?? true, email: v.email ?? true, sms: v.sms ?? false)
             }
@@ -125,7 +125,7 @@ private struct NotificationPrefsBody: View {
         struct Out: Decodable { let success: Bool }
         let payload: [String: ChannelIn] = prefs.mapValues { ChannelIn(push: $0.push, email: $0.email, sms: $0.sms) }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation("users.setNotificationPreferences", input: In(prefs: payload))
+            let _ : Out = try await EusoTripAPI.shared.mutation("users.setNotificationPreferences", input: In(prefs: payload))
             saved = true
         } catch { /* surface inline */ }
         sending = false

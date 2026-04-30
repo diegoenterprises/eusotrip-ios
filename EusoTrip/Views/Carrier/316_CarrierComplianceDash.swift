@@ -106,7 +106,7 @@ private struct ComplianceBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let d: CarrierCompliance = try await EusoTripAPI.shared.api.queryNoInput("catalysts.getComplianceSnapshot")
+            let d: CarrierCompliance = try await EusoTripAPI.shared.queryNoInput("catalysts.getComplianceSnapshot")
             data = d
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

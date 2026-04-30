@@ -110,7 +110,7 @@ private struct ReeferBody: View {
         let intId = Int(loadId.replacingOccurrences(of: "load_", with: "")) ?? Int(loadId) ?? -1
         guard intId > 0 else { loading = false; return }
         do {
-            let rs: [ReeferReading] = try await EusoTripAPI.shared.api.query(
+            let rs: [ReeferReading] = try await EusoTripAPI.shared.query(
                 "reeferTemp.getReadings",
                 input: ReadingsInput(loadId: intId)
             )

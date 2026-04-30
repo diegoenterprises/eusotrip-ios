@@ -146,7 +146,7 @@ private struct AddressPickerBody: View {
         // state so manual entry is the path of least resistance.
         struct Empty: Decodable {}
         do {
-            let _ : Empty = try await EusoTripAPI.shared.api.queryNoInput("users.getSavedAddresses")
+            let _ : Empty = try await EusoTripAPI.shared.queryNoInput("users.getSavedAddresses")
             // If the call returns an array, decode it into `saved` —
             // but the endpoint shape is undefined, so this branch is
             // documentation more than code. Keeping `saved` empty is

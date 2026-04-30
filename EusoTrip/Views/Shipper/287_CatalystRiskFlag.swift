@@ -89,7 +89,7 @@ private struct CatalystRiskFlagBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let catalystId: String }
         do {
-            let e: RiskFlagsEnvelope = try await EusoTripAPI.shared.api.query(
+            let e: RiskFlagsEnvelope = try await EusoTripAPI.shared.query(
                 "carrierIntelligence.riskFlags",
                 input: In(catalystId: catalystId)
             )

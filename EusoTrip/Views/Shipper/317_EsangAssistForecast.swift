@@ -100,7 +100,7 @@ private struct ForecastBody: View {
         loading = true; loadError = nil; env = nil
         struct In: Encodable { let lane: String }
         do {
-            let r: ForecastEnvelope = try await EusoTripAPI.shared.api.query("esangAI.tenderForecast", input: In(lane: lane))
+            let r: ForecastEnvelope = try await EusoTripAPI.shared.query("esangAI.tenderForecast", input: In(lane: lane))
             env = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

@@ -126,8 +126,8 @@ private struct DocumentsAllBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let search: String?; let category: String? }
         do {
-            async let d: [DocRow]      = EusoTripAPI.shared.api.query("documents.getAll", input: In(search: search.isEmpty ? nil : search, category: category))
-            async let s: DocStats      = EusoTripAPI.shared.api.queryNoInput("documents.getStats")
+            async let d: [DocRow]      = EusoTripAPI.shared.query("documents.getAll", input: In(search: search.isEmpty ? nil : search, category: category))
+            async let s: DocStats      = EusoTripAPI.shared.queryNoInput("documents.getStats")
             docs  = try await d
             stats = (try? await s)
         } catch {

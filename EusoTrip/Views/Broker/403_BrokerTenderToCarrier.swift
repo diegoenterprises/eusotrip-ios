@@ -111,7 +111,7 @@ private struct TenderBody: View {
         struct Out: Decodable { let success: Bool; let agreementId: String? }
         let f = ISO8601DateFormatter()
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation(
+            let _ : Out = try await EusoTripAPI.shared.mutation(
                 "brokers.tenderToCarrier",
                 input: In(loadId: loadId, catalystId: catalystId, carrierRate: carrierRate ?? 0, commission: commission, pickupByISO: f.string(from: pickupBy))
             )

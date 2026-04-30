@@ -5,21 +5,47 @@
 //  EusoTrip by Eusorone Technologies, Inc.
 //  Powered by ESANG AI™
 //
-//  First-launch intro. Plays the branded Lottie reveal (3.0s native
-//  composition, slowed to 4.0s by a 0.75× playback speed) and then fades
-//  into AppRoot.
+//  Two-mode launch surface:
 //
-//  Light/Dark animations are separate compositions chosen by colorScheme.
+//    1) FIRST INSTALL — full branded Lottie reveal (3.0s native, slowed
+//       to ~4.0s wall-clock at 0.75× playback). Light/Dark compositions
+//       are separate Lottie bundles selected by colorScheme. Sets the
+//       persistence flag on completion so it never plays again.
+//
+//    2) EVERY SUBSEQUENT LAUNCH — quick gradient-wordmark splash:
+//       flame logo + "EUSOTRIP" wordmark center-stacked, ~700ms total
+//       (200ms fade-in, 350ms hold, 200ms fade-out). Black background
+//       on dark, white on light. Matches the founder's reference shot
+//       2026-04-27 (logo + EUSOTRIP wordmark, blue→magenta gradient).
+//
+//  Persistence: `UserDefaults.standard.bool(forKey: "EusoTrip.hasShownFullIntro")`
+//  flips to `true` the first time the Lottie animation completes (or
+//  the hardTimeout fires). Reinstalling the app clears UserDefaults and
+//  the full intro plays again — exactly the founder's intent.
 //
 
 import SwiftUI
 import Lottie
 
+// MARK: - Persistence key
+
+private enum IntroPersistence {
+    static let key = "EusoTrip.hasShownFullIntro"
+
+    static var hasShownFull: Bool {
+        UserDefaults.standard.bool(forKey: key)
+    }
+
+    static func markShown() {
+        UserDefaults.standard.set(true, forKey: key)
+    }
+}
+
 // MARK: - Public wrapper
 
-/// Full-screen intro splash. Calls `onFinish` once the Lottie animation
-/// reports complete, or falls back to a hard timeout so the app can never
-/// get stuck on the intro.
+/// Full-screen intro splash. On first install plays the Lottie reveal
+/// then fires `onFinish`. On every subsequent launch plays a quick
+/// gradient-wordmark splash (~700ms) and fires `onFinish`.
 struct IntroSplash: View {
     @Environment(\.colorScheme) private var colorScheme
     var onFinish: () -> Void
@@ -30,25 +56,48 @@ struct IntroSplash: View {
     /// complete naturally when it fires correctly.
     private let hardTimeout: Double = 5.0
 
+    /// Quick-splash duration on warm launches. 700ms total — long
+    /// enough to register as branding, short enough to feel like a
+    /// boot, not an animation.
+    private let quickSplashDuration: Double = 0.7
+
     @State private var didFinish = false
+    /// Resolved on appear so the choice is made once per launch and
+    /// the view body doesn't keep re-querying UserDefaults.
+    @State private var mode: SplashMode = .quick
+
+    private enum SplashMode { case full, quick }
 
     var body: some View {
         ZStack {
-            // Match the composition's outer stage — black on dark, white on light.
+            // Stage color matches the comp / quick-splash background.
             (colorScheme == .dark ? Color.black : Color.white)
                 .ignoresSafeArea()
 
-            LottieIntroView(
-                animationName: colorScheme == .dark ? "intro_dark" : "intro_light",
-                // 0.75× → stretches the 3.0s comp to ~4.0s wall-clock.
-                speed: 0.75,
-                onComplete: finishOnce
-            )
-            .ignoresSafeArea()
+            switch mode {
+            case .full:
+                LottieIntroView(
+                    animationName: colorScheme == .dark ? "intro_dark" : "intro_light",
+                    speed: 0.75,
+                    onComplete: finishOnce
+                )
+                .ignoresSafeArea()
+
+            case .quick:
+                QuickWordmarkSplash(colorScheme: colorScheme)
+            }
         }
         .transition(.opacity)
+        .onAppear {
+            mode = IntroPersistence.hasShownFull ? .quick : .full
+        }
         .task {
-            try? await Task.sleep(nanoseconds: UInt64(hardTimeout * 1_000_000_000))
+            // Branch the timeout off the resolved mode so quick splash
+            // doesn't sit through the 5s Lottie ceiling.
+            let waited = IntroPersistence.hasShownFull
+                ? quickSplashDuration
+                : hardTimeout
+            try? await Task.sleep(nanoseconds: UInt64(waited * 1_000_000_000))
             finishOnce()
         }
         // Uniform cafe-door entrance.
@@ -58,7 +107,62 @@ struct IntroSplash: View {
     private func finishOnce() {
         guard !didFinish else { return }
         didFinish = true
+        // The first time we ever finish, persist the flag so future
+        // launches take the quick-splash path. We mark it AFTER the
+        // animation finishes (or the hardTimeout fires) so a user
+        // who force-quits during the very first reveal still gets the
+        // full intro on their next launch.
+        if !IntroPersistence.hasShownFull {
+            IntroPersistence.markShown()
+        }
         onFinish()
+    }
+}
+
+// MARK: - Quick wordmark splash (warm launches)
+
+/// Lightweight 2-frame splash matching the founder's reference shot
+/// (2026-04-27): EusoTrip flame logo + "EUSOTRIP" wordmark with the
+/// canonical blue→magenta gradient, center-stacked, animated in/out
+/// with a quick fade. Black background on dark, white on light —
+/// matches the system status-bar so the launch feels seamless.
+private struct QuickWordmarkSplash: View {
+    let colorScheme: ColorScheme
+
+    @State private var visible = false
+
+    var body: some View {
+        VStack(spacing: 14) {
+            // Flame mark from the asset catalog. SwiftUI tints a
+            // template image, but the logo is rendered with multiple
+            // gradient stops so we ship it as a regular asset and let
+            // the image carry its own coloring.
+            Image("EusoTripLogo")
+                .resizable()
+                .renderingMode(.original)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 96, height: 96)
+
+            // Wordmark — gradient text over a transparent backdrop.
+            // Uses the canonical `LinearGradient.diagonal` so the
+            // splash matches every other gradient surface in the app.
+            Text("EUSOTRIP")
+                .font(.system(size: 18, weight: .heavy)).tracking(4)
+                .foregroundStyle(LinearGradient.diagonal)
+        }
+        .opacity(visible ? 1.0 : 0.0)
+        .scaleEffect(visible ? 1.0 : 0.96)
+        .onAppear {
+            // 200ms fade-in. The parent view's task clock holds for
+            // ~700ms total before firing onFinish, so the visible
+            // window is ~500ms — long enough to read, short enough
+            // to feel snappy.
+            withAnimation(.easeOut(duration: 0.20)) {
+                visible = true
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("EusoTrip")
     }
 }
 

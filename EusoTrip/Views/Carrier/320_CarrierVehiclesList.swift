@@ -86,7 +86,7 @@ private struct VehiclesBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [CarrierVehicle] = try await EusoTripAPI.shared.api.queryNoInput("catalysts.getMyVehicles")
+            let r: [CarrierVehicle] = try await EusoTripAPI.shared.queryNoInput("catalysts.getMyVehicles")
             vehicles = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

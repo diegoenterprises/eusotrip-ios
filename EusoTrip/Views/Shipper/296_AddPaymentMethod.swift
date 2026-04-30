@@ -75,7 +75,7 @@ private struct AddPaymentMethodBody: View {
         loading = true; loadError = nil
         struct Out: Decodable { let url: String? }
         do {
-            let r: Out = try await EusoTripAPI.shared.api.queryNoInput("payments.createSetupSession")
+            let r: Out = try await EusoTripAPI.shared.queryNoInput("payments.createSetupSession")
             setupUrl = r.url
         } catch {
             // Endpoint not yet wired in this deploy — surface clean state.

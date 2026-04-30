@@ -85,7 +85,7 @@ private struct PaymentMethodsBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [PaymentMethod] = try await EusoTripAPI.shared.api.queryNoInput("payments.getPaymentMethods")
+            let r: [PaymentMethod] = try await EusoTripAPI.shared.queryNoInput("payments.getPaymentMethods")
             methods = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

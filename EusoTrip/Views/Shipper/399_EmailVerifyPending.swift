@@ -57,7 +57,7 @@ private struct EmailVerifyBody: View {
         resending = true; actionError = nil
         struct Out: Decodable { let success: Bool }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation("auth.resendEmailVerification", input: ["": ""] as [String: String])
+            let _ : Out = try await EusoTripAPI.shared.mutation("auth.resendEmailVerification", input: ["": ""] as [String: String])
             resent = true
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -69,7 +69,7 @@ private struct EmailVerifyBody: View {
         checking = true; actionError = nil
         struct Out: Decodable { let verified: Bool }
         do {
-            let r: Out = try await EusoTripAPI.shared.api.queryNoInput("auth.checkEmailVerified")
+            let r: Out = try await EusoTripAPI.shared.queryNoInput("auth.checkEmailVerified")
             if r.verified {
                 NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "200"])
             } else {

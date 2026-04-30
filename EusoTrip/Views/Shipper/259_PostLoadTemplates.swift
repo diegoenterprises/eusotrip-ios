@@ -113,7 +113,7 @@ private struct TemplatesBody: View {
     private func loadTemplates() async {
         loading = true; loadError = nil
         do {
-            let rs: [LoadTemplate] = try await EusoTripAPI.shared.api.queryNoInput("loadTemplates.list")
+            let rs: [LoadTemplate] = try await EusoTripAPI.shared.queryNoInput("loadTemplates.list")
             templates = rs
         } catch {
             // Endpoint may not be wired on iOS-side yet — surface a real

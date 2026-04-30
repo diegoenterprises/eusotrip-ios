@@ -112,7 +112,7 @@ private struct ContactDetailBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let id: String }
         do {
-            let c: Contact = try await EusoTripAPI.shared.api.query("contacts.getById", input: In(id: contactId))
+            let c: Contact = try await EusoTripAPI.shared.query("contacts.getById", input: In(id: contactId))
             contact = c
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

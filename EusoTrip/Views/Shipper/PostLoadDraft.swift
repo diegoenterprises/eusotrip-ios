@@ -217,7 +217,7 @@ final class PostLoadDraft: ObservableObject {
             struct Out: Decodable {
                 let success: Bool; let id: Int; let loadNumber: String
             }
-            let result: Out = try await EusoTripAPI.shared.api.mutation(
+            let result: Out = try await EusoTripAPI.shared.mutation(
                 "shippers.create",
                 input: In(
                     origin: origin,

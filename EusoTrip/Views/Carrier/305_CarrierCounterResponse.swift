@@ -125,7 +125,7 @@ private struct CounterResponseBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [CounteredBid] = try await EusoTripAPI.shared.api.queryNoInput("catalysts.getMyCounteredBids")
+            let r: [CounteredBid] = try await EusoTripAPI.shared.queryNoInput("catalysts.getMyCounteredBids")
             rows = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -138,7 +138,7 @@ private struct CounterResponseBody: View {
         struct In: Encodable { let bidId: String; let accept: Bool; let counterRate: Double?; let note: String? }
         struct Out: Decodable { let success: Bool }
         let cr = parseCounter(bid.notes)
-        let _ : Out = (try? await EusoTripAPI.shared.api.mutation(
+        let _ : Out = (try? await EusoTripAPI.shared.mutation(
             "catalysts.respondToCounter",
             input: In(bidId: bid.bidId, accept: accept, counterRate: accept ? cr : nil, note: nil)
         )) ?? Out(success: false)

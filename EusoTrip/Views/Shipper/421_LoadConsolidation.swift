@@ -80,7 +80,7 @@ private struct LoadConsolBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [ConsolGroup] = try await EusoTripAPI.shared.api.queryNoInput("shippers.getConsolidationSuggestions")
+            let r: [ConsolGroup] = try await EusoTripAPI.shared.queryNoInput("shippers.getConsolidationSuggestions")
             groups = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -92,7 +92,7 @@ private struct LoadConsolBody: View {
         executing = id
         struct In: Encodable { let groupId: String }
         struct Out: Decodable { let success: Bool; let consolidatedLoadId: String? }
-        let _ : Out = (try? await EusoTripAPI.shared.api.mutation("shippers.executeConsolidation", input: In(groupId: id))) ?? Out(success: false, consolidatedLoadId: nil)
+        let _ : Out = (try? await EusoTripAPI.shared.mutation("shippers.executeConsolidation", input: In(groupId: id))) ?? Out(success: false, consolidatedLoadId: nil)
         await load()
         executing = nil
     }

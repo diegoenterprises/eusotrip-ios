@@ -110,7 +110,7 @@ private struct AuthorityBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let d: AuthorityRecord = try await EusoTripAPI.shared.api.queryNoInput("catalysts.getAuthority")
+            let d: AuthorityRecord = try await EusoTripAPI.shared.queryNoInput("catalysts.getAuthority")
             data = d
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

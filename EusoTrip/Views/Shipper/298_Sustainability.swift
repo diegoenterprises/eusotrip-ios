@@ -92,7 +92,7 @@ private struct SustainabilityBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let s: CO2Summary = try await EusoTripAPI.shared.api.queryNoInput("co2Calculator.shipperSummary")
+            let s: CO2Summary = try await EusoTripAPI.shared.queryNoInput("co2Calculator.shipperSummary")
             summary = s
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

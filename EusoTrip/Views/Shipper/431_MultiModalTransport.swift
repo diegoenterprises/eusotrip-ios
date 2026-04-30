@@ -78,7 +78,7 @@ private struct MultiModalBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [ModalLeg] = try await EusoTripAPI.shared.api.queryNoInput("shippers.getMultiModalLegs")
+            let r: [ModalLeg] = try await EusoTripAPI.shared.queryNoInput("shippers.getMultiModalLegs")
             legs = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

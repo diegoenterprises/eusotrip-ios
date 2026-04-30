@@ -118,7 +118,7 @@ private struct BidDetailBody: View {
     private func accept(_ id: String) async {
         processing = id + ":accept"; actionError = nil
         do {
-            _ = try await EusoTripAPI.shared.shippers.acceptBid(loadId: loadId, bidId: id)
+            _ = try await EusoTripAPI.shared.shipper.acceptBid(loadId: loadId, bidId: id)
             NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "417", "loadId": loadId, "bidId": id])
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

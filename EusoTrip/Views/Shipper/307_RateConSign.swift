@@ -84,7 +84,7 @@ private struct RateConSignBody: View {
         struct Out: Decodable { let success: Bool }
         let n = Int(loadId.replacingOccurrences(of: "load_", with: "")) ?? 0
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation("documents.signRateCon", input: In(loadId: n, signatureBase64: b64))
+            let _ : Out = try await EusoTripAPI.shared.mutation("documents.signRateCon", input: In(loadId: n, signatureBase64: b64))
             sent = true
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

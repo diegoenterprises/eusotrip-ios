@@ -102,7 +102,7 @@ private struct SettlementsListBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let status: String? }
         do {
-            let r: [SettlementRow] = try await EusoTripAPI.shared.api.query(
+            let r: [SettlementRow] = try await EusoTripAPI.shared.query(
                 "earnings.getSettlementHistory",
                 input: In(status: statusFilter)
             )

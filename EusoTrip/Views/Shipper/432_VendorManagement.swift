@@ -70,7 +70,7 @@ private struct VendorBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [VendorRow] = try await EusoTripAPI.shared.api.queryNoInput("vendors.list")
+            let r: [VendorRow] = try await EusoTripAPI.shared.queryNoInput("vendors.list")
             rows = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

@@ -98,7 +98,7 @@ private struct RfpDetailBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let rfpId: String }
         do {
-            let r: RfpDetail = try await EusoTripAPI.shared.api.query("rfpManager.getRFPDetail", input: In(rfpId: rfpId))
+            let r: RfpDetail = try await EusoTripAPI.shared.query("rfpManager.getRFPDetail", input: In(rfpId: rfpId))
             rfp = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -111,7 +111,7 @@ private struct RfpDetailBody: View {
         struct In: Encodable { let rfpId: String; let laneId: String }
         struct Out: Decodable { let success: Bool }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation("rfpManager.awardLane", input: In(rfpId: rfpId, laneId: laneId))
+            let _ : Out = try await EusoTripAPI.shared.mutation("rfpManager.awardLane", input: In(rfpId: rfpId, laneId: laneId))
             await load()
         } catch { /* surface inline */ }
         awarding = nil

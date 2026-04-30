@@ -172,9 +172,9 @@ private struct DispatchHomeBody: View {
         loading = true; loadError = nil
         struct DriverIn: Encodable { let limit: Int }
         do {
-            async let kpiR: DispatchKPI = EusoTripAPI.shared.api.queryNoInput("dispatch.getKPI")
-            async let issuesR: [PriorityException] = EusoTripAPI.shared.api.queryNoInput("dispatch.getActiveIssues")
-            async let driversR: [PriorityHOSDriver] = EusoTripAPI.shared.api.query("dispatch.getDriverStatuses", input: DriverIn(limit: 100))
+            async let kpiR: DispatchKPI = EusoTripAPI.shared.queryNoInput("dispatch.getKPI")
+            async let issuesR: [PriorityException] = EusoTripAPI.shared.queryNoInput("dispatch.getActiveIssues")
+            async let driversR: [PriorityHOSDriver] = EusoTripAPI.shared.query("dispatch.getDriverStatuses", input: DriverIn(limit: 100))
             let (k, issues, drivers) = try await (kpiR, issuesR, driversR)
             kpi = k
             topException = issues.first { ($0.severity?.lowercased() == "high" || $0.severity?.lowercased() == "critical") } ?? issues.first

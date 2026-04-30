@@ -259,7 +259,7 @@ private struct KanbanBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let mode: String; let limit: Int; let offset: Int }
         do {
-            let r: UnifiedLoadsResponse = try await EusoTripAPI.shared.api.query("dispatch.unifiedLoads", input: In(mode: "company", limit: 500, offset: 0))
+            let r: UnifiedLoadsResponse = try await EusoTripAPI.shared.query("dispatch.unifiedLoads", input: In(mode: "company", limit: 500, offset: 0))
             var grouped: [String: [KanbanLoad]] = [:]
             for l in r.loads {
                 let key = bucket(for: l.status) ?? "posted"
@@ -279,7 +279,7 @@ private struct KanbanBody: View {
         struct In: Encodable { let loadId: String; let status: String }
         struct Out: Decodable { let success: Bool? }
         do {
-            let _: Out = try await EusoTripAPI.shared.api.mutation("dispatch.updateLoadStatus", input: In(loadId: String(load.id), status: next))
+            let _: Out = try await EusoTripAPI.shared.mutation("dispatch.updateLoadStatus", input: In(loadId: String(load.id), status: next))
             lastAdvance = "\(load.loadNumber) → \(next.replacingOccurrences(of: "_", with: " ").uppercased())"
             sheetLoad = nil
             await self.load()

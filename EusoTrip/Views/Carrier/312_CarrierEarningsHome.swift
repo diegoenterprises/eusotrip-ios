@@ -20,7 +20,7 @@ struct CarrierEarningsHomeScreen: View {
     }
 }
 
-private struct EarningsSummary: Decodable, Hashable {
+private struct CarrierEarningsSummary: Decodable, Hashable {
     let mtdRevenue: Double?
     let ytdRevenue: Double?
     let pendingSettlements: Double?
@@ -31,7 +31,7 @@ private struct EarningsSummary: Decodable, Hashable {
 
 private struct EarningsBody: View {
     @Environment(\.palette) private var palette
-    @State private var summary: EarningsSummary? = nil
+    @State private var summary: CarrierEarningsSummary? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
 
@@ -60,7 +60,7 @@ private struct EarningsBody: View {
         }
     }
 
-    private func hero(_ s: EarningsSummary) -> some View {
+    private func hero(_ s: CarrierEarningsSummary) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("MTD REVENUE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(.white.opacity(0.85))
             Text(usd(s.mtdRevenue) == "—" ? "$0" : usd(s.mtdRevenue)).font(.system(size: 32, weight: .heavy)).foregroundStyle(.white).monospacedDigit()
@@ -74,7 +74,7 @@ private struct EarningsBody: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    private func breakdownCard(_ s: EarningsSummary) -> some View {
+    private func breakdownCard(_ s: CarrierEarningsSummary) -> some View {
         LifecycleCard {
             LifecycleSection(label: "BREAKDOWN", icon: "list.bullet")
             LifecycleRow(label: "Pending settlements", value: usd(s.pendingSettlements))
@@ -109,7 +109,7 @@ private struct EarningsBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let s: EarningsSummary = try await EusoTripAPI.shared.api.queryNoInput("catalysts.getEarningsSummary")
+            let s: CarrierEarningsSummary = try await EusoTripAPI.shared.queryNoInput("catalysts.getCarrierEarningsSummary")
             summary = s
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

@@ -35,7 +35,7 @@ private struct TierDetailBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 8)
         }
-        .task { do { stats = try await EusoTripAPI.shared.shippers.getStats() } catch {}; loading = false }
+        .task { do { stats = try await EusoTripAPI.shared.shipper.getStats() } catch {}; loading = false }
     }
 
     private var header: some View {

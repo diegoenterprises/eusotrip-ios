@@ -82,7 +82,7 @@ private struct DriversListBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [CarrierDriver] = try await EusoTripAPI.shared.api.queryNoInput("catalysts.getMyDrivers")
+            let r: [CarrierDriver] = try await EusoTripAPI.shared.queryNoInput("catalysts.getMyDrivers")
             drivers = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

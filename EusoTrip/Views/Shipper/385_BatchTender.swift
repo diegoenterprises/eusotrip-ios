@@ -100,7 +100,7 @@ private struct BatchTenderBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [DraftLoadRow] = try await EusoTripAPI.shared.api.queryNoInput("loads.listDrafts")
+            let r: [DraftLoadRow] = try await EusoTripAPI.shared.queryNoInput("loads.listDrafts")
             drafts = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -113,7 +113,7 @@ private struct BatchTenderBody: View {
         struct In: Encodable { let loadIds: [String]; let mode: String }
         struct Out: Decodable { let success: Bool }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation("loads.batchTender", input: In(loadIds: Array(selected), mode: "favorites"))
+            let _ : Out = try await EusoTripAPI.shared.mutation("loads.batchTender", input: In(loadIds: Array(selected), mode: "favorites"))
             sent = true; selected = []
         } catch { /* surface inline */ }
         sending = false

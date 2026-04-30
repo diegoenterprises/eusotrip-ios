@@ -88,7 +88,7 @@ private struct KybLegalBody: View {
         }
         struct Out: Decodable { let success: Bool; let kybId: String? }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation(
+            let _ : Out = try await EusoTripAPI.shared.mutation(
                 "kyb.submit",
                 input: In(legalName: legalName, ein: ein, duns: duns.isEmpty ? nil : duns,
                           dotNumber: dotNumber.isEmpty ? nil : dotNumber,

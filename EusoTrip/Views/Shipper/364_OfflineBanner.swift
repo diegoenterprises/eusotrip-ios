@@ -43,7 +43,7 @@ private struct OfflineBody: View {
     }
 
     private var statusCard: some View {
-        LifecycleCard(accentGradient: connected, accentWarning: !connected) {
+        LifecycleCard(accentWarning: !connected, accentGradient: connected) {
             LifecycleSection(label: connected ? "ALL CHANNELS LIVE" : "USING CACHED DATA", icon: connected ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
             LifecycleRow(label: "Network",          value: connected ? "Connected" : "Offline")
             LifecycleRow(label: "Sync",             value: connected ? "Live" : "Paused")

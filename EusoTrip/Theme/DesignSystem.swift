@@ -668,6 +668,12 @@ struct BottomNav: View {
     /// the nav cosmetic.  When `nil` (e.g. #Preview blocks in isolation),
     /// the per-slot `onTap` still runs so previews remain unchanged.
     @Environment(\.driverNavHandler) var driverNavHandler
+    /// Shipper-mode tap router. Mirror of `driverNavHandler` —
+    /// same signature, same fallback ladder. Lets the shipper-side
+    /// 200-210 BottomNav slots actually navigate (Home / Create
+    /// Load / Loads / Me) instead of being cosmetic. Defined in
+    /// `Views/Shipper/ShipperNavController.swift`.
+    @Environment(\.shipperNavHandler) var shipperNavHandler
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -735,6 +741,8 @@ struct BottomNav: View {
             // isolated previews keep working.
             Button(action: {
                 if let h = driverNavHandler {
+                    h("esang")
+                } else if let h = shipperNavHandler {
                     h("esang")
                 } else {
                     onTapOrb()
@@ -830,6 +838,8 @@ struct BottomNav: View {
         // closures (and the default no-op) working in isolation.
         Button(action: {
             if let h = driverNavHandler {
+                h(s.label)
+            } else if let h = shipperNavHandler {
                 h(s.label)
             } else {
                 s.onTap()

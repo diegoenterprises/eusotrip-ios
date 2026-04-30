@@ -74,7 +74,7 @@ private struct CatalystContactBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let rs = try await EusoTripAPI.shared.shippers.getFavoriteCatalysts()
+            let rs = try await EusoTripAPI.shared.shipper.getFavoriteCatalysts()
             fav = rs.first(where: { $0.catalystId == catalystId })
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

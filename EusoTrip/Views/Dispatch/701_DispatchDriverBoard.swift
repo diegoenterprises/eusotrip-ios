@@ -68,7 +68,7 @@ private struct DriverBoardBody: View {
                     Text(label).font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .padding(.horizontal, 10).padding(.vertical, 6)
                         .foregroundStyle(filter == code ? .white : palette.textSecondary)
-                        .background(filter == code ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.surface))
+                        .background(filter == code ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCardSoft))
                         .clipShape(Capsule())
                 }.buttonStyle(.plain)
             }
@@ -107,7 +107,7 @@ private struct DriverBoardBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let limit: Int; let filter: String? }
         do {
-            let r: [DriverRow] = try await EusoTripAPI.shared.api.query("dispatch.getDriverStatuses", input: In(limit: 100, filter: nil))
+            let r: [DriverRow] = try await EusoTripAPI.shared.query("dispatch.getDriverStatuses", input: In(limit: 100, filter: nil))
             rows = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

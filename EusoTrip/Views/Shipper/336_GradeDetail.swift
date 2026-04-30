@@ -14,7 +14,7 @@ struct GradeDetailScreen: View {
 
 private struct GradeDetailBody: View {
     @Environment(\.palette) private var palette
-    @StateObject private var perf = ShipperCatalystPerformanceStore()
+    @StateObject private var perf: ShipperCatalystPerformanceStore = ShipperCatalystPerformanceStore()
 
     private let gradeBuckets: [(label: String, min: Double, max: Double)] = [
         ("A+", 0.97, 1.00),

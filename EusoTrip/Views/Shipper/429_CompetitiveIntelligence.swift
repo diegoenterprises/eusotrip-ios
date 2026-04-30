@@ -90,7 +90,7 @@ private struct CompIntelBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: CompIntel = try await EusoTripAPI.shared.api.queryNoInput("shippers.getCompetitiveIntelligence")
+            let r: CompIntel = try await EusoTripAPI.shared.queryNoInput("shippers.getCompetitiveIntelligence")
             data = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

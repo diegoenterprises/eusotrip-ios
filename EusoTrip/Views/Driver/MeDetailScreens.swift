@@ -4030,7 +4030,26 @@ final class DriverCarrierStore: ObservableObject {
             let carrier = try await api.drivers.getMyCarrier()
             state = .loaded(carrier)
         } catch {
-            state = .error("Couldn't reach carrier service.")
+            // Surface the actual error in console output (every build,
+            // not just DEBUG) so a TestFlight / production console
+            // shows whether this is auth (401) vs role-gate (403) vs
+            // missing-deploy (500). Prior path collapsed every cause
+            // into the same "Couldn't reach carrier service" string.
+            let ns = error as NSError
+            print("[DriverCarrierStore] drivers.getMyCarrier failed — domain=\(ns.domain) code=\(ns.code) desc=\(error.localizedDescription)")
+            // The error string surfaces a hint when the domain matches
+            // common failure modes so support knows what to chase.
+            let userMsg: String = {
+                let desc = error.localizedDescription.lowercased()
+                if desc.contains("forbidden") || desc.contains("403") {
+                    return "Carrier service is gated for your role. The fix is deployed at server commit 522752e9 — check the Azure App Service has the latest deploy."
+                }
+                if desc.contains("unauthorized") || desc.contains("401") {
+                    return "Couldn't reach carrier service — sign-in session expired."
+                }
+                return "Couldn't reach carrier service."
+            }()
+            state = .error(userMsg)
         }
     }
 }

@@ -119,26 +119,48 @@ enum TripProduct {
     /// is a best-effort lowercase-substring match so server strings
     /// don't need to be enums.
     static func resolve(load: Load?, vertical: TripVertical) -> TripProduct {
-        let cargo = (load?.cargoType ?? "").lowercased()
-        let haz = load?.hazmatClass ?? ""
+        resolveDirect(
+            cargoType: load?.cargoType,
+            hazmatClass: load?.hazmatClass,
+            vertical: vertical
+        )
+    }
+
+    /// Same resolver as `resolve(load:vertical:)` but accepts the raw
+    /// `cargoType` + `hazmatClass` strings directly — used by Shipper-
+    /// side and Catalyst-side screens that read off `LoadsAPI.LoadDetail`
+    /// rather than the driver-shaped `Load` struct. Keeps the matching
+    /// rules in one place so a fixture change here lights up every
+    /// surface the same way.
+    static func resolveDirect(
+        cargoType: String?,
+        hazmatClass: String?,
+        vertical: TripVertical
+    ) -> TripProduct {
+        let cargo = (cargoType ?? "").lowercased()
+        let haz = hazmatClass ?? ""
         let isHazmat = !haz.isEmpty
+            || cargo.contains("hazmat")
+            || cargo.contains("petroleum")
+            || cargo.contains("chemicals")
+            || cargo.contains("cryogenic")
 
         switch vertical {
         case .rail:
-            if cargo.contains("bulk") || cargo.contains("tank") { return .railBulk }
+            if cargo.contains("bulk") || cargo.contains("tank") || cargo.contains("grain") { return .railBulk }
             return .railIntermodal
         case .vessel:
-            if isHazmat || cargo.contains("tank") { return .vesselTanker }
-            if cargo.contains("bulk") { return .vesselBulk }
+            if isHazmat || cargo.contains("tank") || cargo.contains("liquid") { return .vesselTanker }
+            if cargo.contains("bulk") || cargo.contains("grain") { return .vesselBulk }
             return .vesselContainer
         case .truck:
-            if isHazmat || cargo.contains("hazmat") || cargo.contains("tanker") {
+            if isHazmat || cargo.contains("tanker") || cargo.contains("liquid") || cargo.contains("gas") {
                 return .hazmatTanker
             }
-            if cargo.contains("reefer") || cargo.contains("cold") || cargo.contains("temperature") {
+            if cargo.contains("reefer") || cargo.contains("refrigerated") || cargo.contains("cold") || cargo.contains("temperature") || cargo.contains("food_grade") {
                 return .reefer
             }
-            if cargo.contains("flatbed") || cargo.contains("flat") {
+            if cargo.contains("flatbed") || cargo.contains("flat") || cargo.contains("oversized") || cargo.contains("timber") || cargo.contains("vehicles") {
                 return .flatbed
             }
             if cargo.contains("container") || cargo.contains("intermodal") || cargo.contains("imo") {

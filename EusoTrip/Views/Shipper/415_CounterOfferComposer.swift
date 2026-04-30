@@ -88,7 +88,7 @@ private struct CounterOfferBody: View {
         struct In: Encodable { let loadId: String; let bidId: String; let rate: Double; let note: String? }
         struct Out: Decodable { let success: Bool }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation("shippers.counterBid", input: In(loadId: loadId, bidId: bidId, rate: rate ?? 0, note: note.isEmpty ? nil : note))
+            let _ : Out = try await EusoTripAPI.shared.mutation("shippers.counterBid", input: In(loadId: loadId, bidId: bidId, rate: rate ?? 0, note: note.isEmpty ? nil : note))
             sent = true
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

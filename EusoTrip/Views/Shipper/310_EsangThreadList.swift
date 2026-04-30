@@ -88,7 +88,7 @@ private struct ThreadListBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [Conversation] = try await EusoTripAPI.shared.api.queryNoInput("messaging.getConversations")
+            let r: [Conversation] = try await EusoTripAPI.shared.queryNoInput("messaging.getConversations")
             rows = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

@@ -78,7 +78,7 @@ private struct BidReviewBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [BidReviewLane] = try await EusoTripAPI.shared.api.queryNoInput("shippers.getBidReviewBoard")
+            let r: [BidReviewLane] = try await EusoTripAPI.shared.queryNoInput("shippers.getBidReviewBoard")
             lanes = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

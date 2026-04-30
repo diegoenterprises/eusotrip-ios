@@ -51,7 +51,7 @@ private struct TwoFactorBody: View {
     }
 
     private func statusCard(_ s: TfaStatus) -> some View {
-        LifecycleCard(accentGradient: s.enabled, accentWarning: !s.enabled) {
+        LifecycleCard(accentWarning: !s.enabled, accentGradient: s.enabled) {
             LifecycleSection(label: "STATUS", icon: s.enabled ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
             LifecycleRow(label: "Enabled",  value: s.enabled ? "Yes" : "No")
             LifecycleRow(label: "Methods",  value: (s.methods ?? []).joined(separator: ", ").isEmpty ? "—" : (s.methods ?? []).joined(separator: ", "))
@@ -92,7 +92,7 @@ private struct TwoFactorBody: View {
     private func load() async {
         loading = true; actionError = nil
         do {
-            let s: TfaStatus = try await EusoTripAPI.shared.api.queryNoInput("auth.tfaStatus")
+            let s: TfaStatus = try await EusoTripAPI.shared.queryNoInput("auth.tfaStatus")
             status = s
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -104,7 +104,7 @@ private struct TwoFactorBody: View {
         working = true; actionError = nil
         struct Out: Decodable { let success: Bool }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation("auth.tfaEnable", input: ["": ""] as [String: String])
+            let _ : Out = try await EusoTripAPI.shared.mutation("auth.tfaEnable", input: ["": ""] as [String: String])
             await load()
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -116,7 +116,7 @@ private struct TwoFactorBody: View {
         working = true; actionError = nil
         struct Out: Decodable { let success: Bool }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation("auth.tfaDisable", input: ["": ""] as [String: String])
+            let _ : Out = try await EusoTripAPI.shared.mutation("auth.tfaDisable", input: ["": ""] as [String: String])
             await load()
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -128,7 +128,7 @@ private struct TwoFactorBody: View {
         working = true
         struct Out: Decodable { let success: Bool }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation("auth.tfaRegenerateBackupCodes", input: ["": ""] as [String: String])
+            let _ : Out = try await EusoTripAPI.shared.mutation("auth.tfaRegenerateBackupCodes", input: ["": ""] as [String: String])
             await load()
         } catch { /* surface inline */ }
         working = false

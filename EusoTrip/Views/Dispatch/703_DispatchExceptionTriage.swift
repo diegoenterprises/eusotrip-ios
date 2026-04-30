@@ -121,7 +121,7 @@ private struct ExceptionBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let status: String? }
         do {
-            let r: [ExceptionRow] = try await EusoTripAPI.shared.api.query("dispatch.getExceptions", input: In(status: filter == "all" ? nil : filter))
+            let r: [ExceptionRow] = try await EusoTripAPI.shared.query("dispatch.getExceptions", input: In(status: filter == "all" ? nil : filter))
             rows = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -134,7 +134,7 @@ private struct ExceptionBody: View {
         struct In: Encodable { let exceptionId: String; let resolution: String }
         struct Out: Decodable { let success: Bool? }
         do {
-            let _: Out = try await EusoTripAPI.shared.api.mutation("dispatch.resolveException", input: In(exceptionId: id, resolution: "Triaged from mobile dispatch"))
+            let _: Out = try await EusoTripAPI.shared.mutation("dispatch.resolveException", input: In(exceptionId: id, resolution: "Triaged from mobile dispatch"))
             lastResolved = "Resolved exception \(id)."
             await load()
         } catch {

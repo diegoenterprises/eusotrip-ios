@@ -3351,6 +3351,24 @@ final class ShipperRecentLoadsStore: BaseDynamicListStore<ShipperAPI.RecentLoad>
     }
 }
 
+// MARK: - ShipperMyLoadsStore — `shippers.getMyLoads`
+//
+// Drives the multi-select rows on 384 Bulk Re-tender, 412 Drafts,
+// 413 Archived. MCP-verified at `frontend/server/routers/shippers.ts:282`.
+// Optional `statusFilter` lets callers narrow to e.g. only posted/bidding
+// (the bulk re-tender screen) without re-implementing the filter client-side.
+
+@MainActor
+final class ShipperMyLoadsStore: BaseDynamicListStore<ShipperAPI.MyLoad> {
+    var statusFilter: String? = nil
+    var limit: Int = 50
+    var offset: Int = 0
+
+    override func fetch() async throws -> [ShipperAPI.MyLoad] {
+        try await EusoTripAPI.shared.shipper.getMyLoads(status: statusFilter, limit: limit, offset: offset)
+    }
+}
+
 // =====================================================================
 // ShipperProfileStore + ShipperStatsStore — Shipper role profile
 // (brick 202_ShipperProfile).
@@ -3644,7 +3662,7 @@ final class ShipperLifecycleSnapshotStore: BaseDynamicStore<ShipperAPI.Lifecycle
 
     override func fetch() async throws -> ShipperAPI.LifecycleSnapshot? {
         guard !loadId.isEmpty else { return nil }
-        return try await EusoTripAPI.shared.shippers.getLifecycleSnapshot(loadId: loadId)
+        return try await EusoTripAPI.shared.shipper.getLifecycleSnapshot(loadId: loadId)
     }
 
     override func foldState(
@@ -3661,7 +3679,7 @@ final class ShipperSettlementForLoadStore: BaseDynamicStore<ShipperAPI.Settlemen
 
     override func fetch() async throws -> ShipperAPI.SettlementForLoad? {
         guard !loadId.isEmpty else { return nil }
-        return try await EusoTripAPI.shared.shippers.getSettlementForLoad(loadId: loadId)
+        return try await EusoTripAPI.shared.shipper.getSettlementForLoad(loadId: loadId)
     }
 
     override func foldState(

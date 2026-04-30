@@ -106,7 +106,7 @@ private struct ClosedPaidBody: View {
         }
         do {
             struct Out: Decodable { let success: Bool }
-            let _ : Out = try await EusoTripAPI.shared.api.mutation(
+            let _ : Out = try await EusoTripAPI.shared.mutation(
                 "shippers.rateCatalyst",
                 input: In(loadId: loadId, catalystId: "car_\(cId)", rating: value, review: nil)
             )

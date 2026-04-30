@@ -108,7 +108,7 @@ private struct ExportDeleteBody: View {
         exporting = true; actionError = nil
         struct Out: Decodable { let url: String? }
         do {
-            let r: Out = try await EusoTripAPI.shared.api.queryNoInput("users.requestDataExport")
+            let r: Out = try await EusoTripAPI.shared.queryNoInput("users.requestDataExport")
             exportUrl = r.url
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -120,7 +120,7 @@ private struct ExportDeleteBody: View {
         deleting = true; actionError = nil
         struct Out: Decodable { let success: Bool }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation("users.requestAccountDeletion", input: ["": ""] as [String: String])
+            let _ : Out = try await EusoTripAPI.shared.mutation("users.requestAccountDeletion", input: ["": ""] as [String: String])
             deleteRequested = true
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

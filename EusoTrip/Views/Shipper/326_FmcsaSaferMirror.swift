@@ -85,7 +85,7 @@ private struct FmcsaBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: FmcsaSelf = try await EusoTripAPI.shared.api.queryNoInput("fmcsa.lookupSelf")
+            let r: FmcsaSelf = try await EusoTripAPI.shared.queryNoInput("fmcsa.lookupSelf")
             data = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

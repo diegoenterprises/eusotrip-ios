@@ -227,7 +227,7 @@ private struct BulkBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let limit: Int; let offset: Int; let entityType: String? }
         do {
-            let r: BulkHistoryResponse = try await EusoTripAPI.shared.api.query("bulkUpload.getJobHistory", input: In(limit: 100, offset: 0, entityType: entityType))
+            let r: BulkHistoryResponse = try await EusoTripAPI.shared.query("bulkUpload.getJobHistory", input: In(limit: 100, offset: 0, entityType: entityType))
             jobs = r.jobs
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -240,7 +240,7 @@ private struct BulkBody: View {
         struct In: Encodable { let jobId: Int }
         struct Out: Decodable { let success: Bool? }
         do {
-            let _: Out = try await EusoTripAPI.shared.api.mutation(proc, input: In(jobId: j.id))
+            let _: Out = try await EusoTripAPI.shared.mutation(proc, input: In(jobId: j.id))
             lastAction = "\(proc.split(separator: ".").last ?? "") · job \(j.id) queued."
             sheetJob = nil
             await load()
@@ -255,7 +255,7 @@ private struct BulkBody: View {
         struct In: Encodable { let jobId: Int }
         struct Out: Decodable { let success: Bool? }
         do {
-            let _: Out = try await EusoTripAPI.shared.api.mutation("bulkUpload.cancelJob", input: In(jobId: j.id))
+            let _: Out = try await EusoTripAPI.shared.mutation("bulkUpload.cancelJob", input: In(jobId: j.id))
             lastAction = "Cancelled job \(j.id)."
             sheetJob = nil
             await load()

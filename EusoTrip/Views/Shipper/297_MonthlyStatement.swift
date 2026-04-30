@@ -94,7 +94,7 @@ private struct MonthlyStatementBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let s: PayStatement = try await EusoTripAPI.shared.api.queryNoInput("earnings.getPayStatement")
+            let s: PayStatement = try await EusoTripAPI.shared.queryNoInput("earnings.getPayStatement")
             statement = s
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

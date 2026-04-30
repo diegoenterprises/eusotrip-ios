@@ -87,7 +87,7 @@ private struct AddContactBody: View {
         struct In: Encodable { let name: String; let role: String?; let company: String?; let email: String?; let phone: String? }
         struct Out: Decodable { let success: Bool; let contactId: String? }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation("contacts.create", input: In(name: name, role: role.isEmpty ? nil : role, company: company.isEmpty ? nil : company, email: email.isEmpty ? nil : email, phone: phone.isEmpty ? nil : phone))
+            let _ : Out = try await EusoTripAPI.shared.mutation("contacts.create", input: In(name: name, role: role.isEmpty ? nil : role, company: company.isEmpty ? nil : company, email: email.isEmpty ? nil : email, phone: phone.isEmpty ? nil : phone))
             saved = true
             name = ""; role = ""; company = ""; email = ""; phone = ""
         } catch {

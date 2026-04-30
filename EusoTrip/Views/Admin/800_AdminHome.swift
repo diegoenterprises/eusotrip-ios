@@ -83,11 +83,21 @@ struct AdminHome: View {
     /// with Terminal/Escort/Catalyst/Carrier/Broker.
     @State private var tenantsOpen: Bool = false
 
+    /// 801_AdminControlTower sheet host. Opened by tapping the
+    /// "Open tower →" CTA on the new PLATFORM CONTROL TOWER section
+    /// header. Same `.sheet([.large])` doctrine as `tenantsOpen`.
+    /// Added 2026-04-27 in the 156th eusotrip-killers firing alongside
+    /// the 801 brick port — closes the 800→802 leapfrog gap and
+    /// brings Admin to three-screen depth (parity with Terminal
+    /// 700/701/702 and Catalyst 500/501/502).
+    @State private var controlTowerOpen: Bool = false
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
                 kpiStrip
+                controlTowerLink
                 tenantsLink
                 attentionStrip
                 openTicketsCard
@@ -108,6 +118,51 @@ struct AdminHome: View {
                 .environmentObject(session)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
+        }
+        // 801_AdminControlTower sheet — opened by the PLATFORM
+        // CONTROL TOWER section header's "Open tower →" CTA. Same
+        // detents + drag indicator as the tenants sheet.
+        .sheet(isPresented: $controlTowerOpen) {
+            AdminControlTowerScreen(theme: palette)
+                .environmentObject(session)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+    }
+
+    // MARK: - Control Tower section link
+    //
+    // Compact section header that exposes the 801 drill-down without
+    // displacing the existing card layout. The active-exception count
+    // comes from the home dashboard's `pendingApprovals` rollup as a
+    // proxy until the control-tower pipeline lands its own count on
+    // the home envelope; the deep exception list lives on 801 and is
+    // fetched there on first open.
+    private var controlTowerLink: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "scope")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(LinearGradient.diagonal)
+            Text("PLATFORM CONTROL TOWER")
+                .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                .foregroundStyle(palette.textPrimary)
+            Spacer()
+            if let outer = dashboard.state.value, let s = outer {
+                Text("HEALTH \(Int((s.systemHealthScore * 100).rounded()))%")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Button { controlTowerOpen = true } label: {
+                HStack(spacing: 4) {
+                    Text("Open tower")
+                        .font(.system(size: 10, weight: .heavy)).tracking(0.5)
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                }
+            }
+            .buttonStyle(.plain)
         }
     }
 

@@ -99,9 +99,19 @@ final class WeatherService: NSObject, ObservableObject {
             let placemark = try? await reverseGeocode(location)
             return Self.compose(weather: weather, placemark: placemark)
         } catch {
-            #if DEBUG
-            print("[WeatherService] WeatherKit fetch failed: \(error.localizedDescription)")
-            #endif
+            // Surface the FULL error in every build (not just DEBUG) so a
+            // misconfigured signing / entitlement / portal-capability
+            // failure is visible in production crash logs / Xcode
+            // console — not silently masked by the NWS fallback.
+            // WeatherKit-specific failure modes we've seen:
+            //   • Code 2: missing entitlement on the bundle ID
+            //   • Code 3: app not signed by a team that owns the bundle
+            //   • Code 4: WeatherKit not enabled on developer.apple.com
+            //              for this bundle ID (user must add the
+            //              capability in the dev portal — code can't fix)
+            //   • Code 7: signing issue, framework not embedded
+            let ns = error as NSError
+            print("[WeatherService] WeatherKit fetch failed — domain=\(ns.domain) code=\(ns.code) desc=\(ns.localizedDescription) info=\(ns.userInfo)")
             let placemark = try? await reverseGeocode(location)
             // For US locations, prefer NWS (api.weather.gov). NWS pulls
             // from real ground stations + radar — accurate ground truth.
@@ -144,6 +154,7 @@ final class WeatherService: NSObject, ObservableObject {
         struct PointsResp: Decodable {
             struct Properties: Decodable {
                 let observationStations: String
+                let forecast: String
                 let relativeLocation: RelLoc?
             }
             struct RelLoc: Decodable { let properties: RelLocProps }
@@ -163,6 +174,23 @@ final class WeatherService: NSObject, ObservableObject {
                 let textDescription: String?
                 let icon: String?
             }
+            let properties: Properties
+        }
+        struct ForecastResp: Decodable {
+            struct Properties: Decodable {
+                let periods: [Period]
+            }
+            struct Period: Decodable {
+                let name: String
+                let startTime: String
+                let isDaytime: Bool
+                let temperature: Int?
+                let temperatureUnit: String?
+                let probabilityOfPrecipitation: Quant?
+                let shortForecast: String?
+                let icon: String?
+            }
+            struct Quant: Decodable { let value: Double?; let unitCode: String? }
             let properties: Properties
         }
 
@@ -216,6 +244,44 @@ final class WeatherService: NSObject, ObservableObject {
             return "Current location"
         }()
 
+        // Fetch the 7-day / 14-period forecast and fold day+night
+        // periods into 5 daily entries. NWS interleaves periods like
+        // "Today" (day) / "Tonight" (night) / "Tuesday" (day) / "Tuesday
+        // Night" / etc. — the day period carries the high, the night
+        // period carries the low. Without this the card flipped to
+        // "Forecast unavailable" any time WeatherKit failed and NWS
+        // succeeded, because the prior NWS path only fetched current
+        // observations and never populated `daily`.
+        let daily: [WeatherSnapshot.DailyForecast] = await Self.fetchNWSDaily(
+            forecastURL: URL(string: points.properties.forecast),
+            headers: headers
+        )
+
+        // Use today's high/low for the card's `nextAlert` line so the
+        // current conditions still ride with a forward-looking nudge
+        // (matches the WeatherKit + Open-Meteo paths).
+        let nextAlert: String? = {
+            guard let today = daily.first else { return nil }
+            return "today · H \(today.highF)° / L \(today.lowF)°"
+        }()
+
+        // Severity accent — promote to .warn on hazard text or low
+        // visibility / strong wind, .watch on moderate condition. NWS
+        // doesn't ship a numeric severity so we infer from the
+        // textDescription, mirroring the Open-Meteo branch's logic.
+        let accent: WeatherSnapshot.Accent = {
+            let t = conditionText.lowercased()
+            let severeText = t.contains("thunder") || t.contains("blizzard") ||
+                             t.contains("hurricane") || t.contains("tropical") ||
+                             t.contains("freezing rain") || t.contains("ice storm")
+            let watchText  = t.contains("rain") || t.contains("snow") ||
+                             t.contains("fog") || t.contains("haze") ||
+                             t.contains("drizzle") || t.contains("flurr")
+            if severeText || windMph >= 25 || visMi <= 2 { return .warn }
+            if watchText { return .watch }
+            return .calm
+        }()
+
         return WeatherSnapshot(
             city: cityFromPlacemark,
             tempF: tempF,
@@ -223,9 +289,126 @@ final class WeatherService: NSObject, ObservableObject {
             visibilityMi: visMi,
             condition: conditionText,
             symbol: symbol,
-            nextAlert: nil,
-            accent: .calm
+            nextAlert: nextAlert,
+            accent: accent,
+            daily: daily
         )
+    }
+
+    /// Fold NWS's interleaved day/night period list into 5 daily
+    /// entries. Returns `[]` on any error so the surrounding NWS path
+    /// still ships a usable current-observation snapshot — empty
+    /// `daily` triggers the WeatherCard's neutral fallback rather than
+    /// the entire fetch failing.
+    private static func fetchNWSDaily(
+        forecastURL: URL?,
+        headers: [String: String]
+    ) async -> [WeatherSnapshot.DailyForecast] {
+        guard let forecastURL else { return [] }
+        struct ForecastResp: Decodable {
+            struct Properties: Decodable {
+                let periods: [Period]
+            }
+            struct Period: Decodable {
+                let name: String
+                let startTime: String
+                let isDaytime: Bool
+                let temperature: Int?
+                let temperatureUnit: String?
+                let probabilityOfPrecipitation: Quant?
+                let shortForecast: String?
+                let icon: String?
+            }
+            struct Quant: Decodable { let value: Double?; let unitCode: String? }
+            let properties: Properties
+        }
+
+        var req = URLRequest(url: forecastURL)
+        req.timeoutInterval = 6
+        for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
+        let payload: ForecastResp
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            guard let http = resp as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else { return [] }
+            payload = try JSONDecoder().decode(ForecastResp.self, from: data)
+        } catch {
+            return []
+        }
+
+        // ISO8601 with offset — NWS startTime examples: "2026-04-27T06:00:00-05:00"
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime]
+
+        let dayKeyFmt = DateFormatter()
+        dayKeyFmt.locale = Locale(identifier: "en_US_POSIX")
+        dayKeyFmt.dateFormat = "yyyy-MM-dd"
+
+        let weekdayFmt = DateFormatter()
+        weekdayFmt.locale = .current
+        weekdayFmt.dateFormat = "EEE"
+
+        // Bucket periods by local date, tracking which side carried the
+        // day vs night reading. NWS guarantees day's temperature is the
+        // high, night's is the low, but not every bucket has both
+        // (today's bucket may only have a night period if it's already
+        // afternoon).
+        struct Acc {
+            var date: Date
+            var highF: Int?
+            var lowF: Int?
+            var symbol: String = "cloud.fill"
+            var condition: String = "Mixed"
+            var precipChance: Double?
+        }
+        var byDay: [(key: String, acc: Acc)] = []
+        for p in payload.properties.periods {
+            guard let date = iso.date(from: p.startTime) else { continue }
+            let key = dayKeyFmt.string(from: date)
+            if let idx = byDay.firstIndex(where: { $0.key == key }) {
+                if p.isDaytime {
+                    if let t = p.temperature { byDay[idx].acc.highF = t }
+                    byDay[idx].acc.symbol    = nwsSymbol(for: p.shortForecast ?? "", iconURL: p.icon)
+                    byDay[idx].acc.condition = p.shortForecast ?? byDay[idx].acc.condition
+                } else {
+                    if let t = p.temperature { byDay[idx].acc.lowF = t }
+                }
+                if let pop = p.probabilityOfPrecipitation?.value, byDay[idx].acc.precipChance == nil {
+                    byDay[idx].acc.precipChance = pop / 100.0
+                }
+            } else {
+                var acc = Acc(date: date)
+                if p.isDaytime {
+                    if let t = p.temperature { acc.highF = t }
+                    acc.symbol    = nwsSymbol(for: p.shortForecast ?? "", iconURL: p.icon)
+                    acc.condition = p.shortForecast ?? acc.condition
+                } else {
+                    if let t = p.temperature { acc.lowF = t }
+                    acc.symbol    = nwsSymbol(for: p.shortForecast ?? "", iconURL: p.icon)
+                    acc.condition = p.shortForecast ?? acc.condition
+                }
+                if let pop = p.probabilityOfPrecipitation?.value {
+                    acc.precipChance = pop / 100.0
+                }
+                byDay.append((key: key, acc: acc))
+            }
+        }
+
+        let cal = Calendar.current
+        return byDay.prefix(5).map { entry -> WeatherSnapshot.DailyForecast in
+            let high = entry.acc.highF ?? entry.acc.lowF ?? 0
+            let low  = entry.acc.lowF  ?? entry.acc.highF ?? 0
+            let label = cal.isDateInToday(entry.acc.date) ? "Today" : weekdayFmt.string(from: entry.acc.date)
+            return WeatherSnapshot.DailyForecast(
+                date: entry.acc.date,
+                weekdayLabel: label,
+                highF: high,
+                lowF: low,
+                symbol: entry.acc.symbol,
+                condition: entry.acc.condition,
+                precipChance: entry.acc.precipChance
+            )
+        }
     }
 
     /// Map NWS textDescription / icon URL → SF Symbol so the weather

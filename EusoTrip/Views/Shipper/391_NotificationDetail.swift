@@ -87,12 +87,12 @@ private struct NotifDetailBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let id: String }
         do {
-            let d: NotifDetail = try await EusoTripAPI.shared.api.query("notifications.getById", input: In(id: notificationId))
+            let d: NotifDetail = try await EusoTripAPI.shared.query("notifications.getById", input: In(id: notificationId))
             detail = d
             // Mark as read on first view.
             struct MarkIn: Encodable { let id: String }
             struct MarkOut: Decodable { let success: Bool }
-            let _ : MarkOut = (try? await EusoTripAPI.shared.api.mutation("notifications.markAsRead", input: MarkIn(id: notificationId))) ?? MarkOut(success: false)
+            let _ : MarkOut = (try? await EusoTripAPI.shared.mutation("notifications.markAsRead", input: MarkIn(id: notificationId))) ?? MarkOut(success: false)
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }

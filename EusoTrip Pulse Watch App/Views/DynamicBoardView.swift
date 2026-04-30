@@ -175,14 +175,28 @@ struct DynamicBoardView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            ModularTickBezel(
-                corners: .init(
-                    topLeading:     title.uppercased(),
-                    topTrailing:    regulator.uppercased(),
-                    bottomLeading:  counterLabel,
-                    bottomTrailing: staleLabel
-                )
-            )
+            // Corner-labels overlay — Modular Ultra-style four-corner
+            // micro labels flush to the bezel curve. Inlined here so
+            // the view is self-sufficient and builds even when the
+            // shared `ModularTickBezel` helper isn't in this target's
+            // index pass (the watch project's synchronized-group
+            // resolver has gone stale on this file before).
+            VStack {
+                HStack {
+                    bezelLabel(title.uppercased(),     align: .leading)
+                    Spacer(minLength: 0)
+                    bezelLabel(regulator.uppercased(), align: .trailing)
+                }
+                .padding(.top, 2)
+                Spacer()
+                HStack {
+                    bezelLabel(counterLabel, align: .leading)
+                    Spacer(minLength: 0)
+                    bezelLabel(staleLabel,   align: .trailing)
+                }
+                .padding(.bottom, 2)
+            }
+            .padding(.horizontal, 6)
             .allowsHitTesting(false)
         }
         .toolbar(.hidden)
@@ -198,6 +212,27 @@ struct DynamicBoardView: View {
     }
 
     // MARK: - Subviews
+
+    /// Modular Ultra-style corner label, flush to the bezel curve.
+    /// Inlined from `ModularTickBezel.cornerLabel` so this file builds
+    /// without a sibling-file dep.
+    @ViewBuilder
+    private func bezelLabel(
+        _ text: String,
+        align: HorizontalAlignment
+    ) -> some View {
+        Text(text)
+            .font(.system(size: 7, weight: .semibold, design: .rounded))
+            .tracking(0.6)
+            .foregroundStyle(.white.opacity(0.45))
+            .lineLimit(1)
+            .frame(
+                maxWidth: 56,
+                alignment: align == .leading ? .leading : .trailing
+            )
+            .allowsTightening(true)
+            .minimumScaleFactor(0.6)
+    }
 
     private var header: some View {
         HStack {
@@ -328,9 +363,26 @@ struct DynamicBoardView: View {
 // lands on the right relative-time label.
 
 private nonisolated enum BoardDate {
+    /// Local ISO-8601 formatter — replaces the shared
+    /// `ISO8601DateFormatter.iso` extension in LoadStore.swift, which
+    /// the Xcode index pass occasionally fails to surface in this
+    /// file's compile unit. Static-let so we still pay the formatter-
+    /// init cost only once per process.
+    nonisolated(unsafe) static let isoFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    nonisolated(unsafe) static let isoFormatterNoFractional: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
     static func parse(_ raw: String?) -> Date? {
         guard let s = raw, !s.isEmpty else { return nil }
-        if let d = ISO8601DateFormatter.iso.date(from: s) { return d }
+        if let d = isoFormatter.date(from: s) { return d }
+        if let d = isoFormatterNoFractional.date(from: s) { return d }
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         f.locale = Locale(identifier: "en_US_POSIX")

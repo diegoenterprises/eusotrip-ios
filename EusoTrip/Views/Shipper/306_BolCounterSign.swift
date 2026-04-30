@@ -103,7 +103,7 @@ private struct CounterSignBody: View {
         struct Out: Decodable { let success: Bool; let signatureId: String? }
         let n = Int(loadId.replacingOccurrences(of: "load_", with: "")) ?? 0
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation(
+            let _ : Out = try await EusoTripAPI.shared.mutation(
                 "documents.signBol",
                 input: In(loadId: n, signatureBase64: b64, role: "shipper")
             )

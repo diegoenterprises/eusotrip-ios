@@ -82,7 +82,7 @@ private struct InsuranceBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let c: InsuranceCert = try await EusoTripAPI.shared.api.queryNoInput("compliance.getInsurance")
+            let c: InsuranceCert = try await EusoTripAPI.shared.queryNoInput("compliance.getInsurance")
             cert = c
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

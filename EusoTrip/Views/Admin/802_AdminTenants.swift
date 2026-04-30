@@ -110,10 +110,22 @@ struct AdminTenants: View {
     /// Selected status filter chip — drives a refresh on change.
     @State private var filter: TenantStatusFilter = .all
 
-    /// Per-row local highlight (row id) — flashed when the operator
-    /// taps "View detail →" on a row, since 803 (the detail editor)
-    /// has not yet shipped. Cleared on the next refresh.
+    /// Per-row local highlight (row id) — flashed momentarily on tap
+    /// before the drill-in sheet presents. Kept for backward-compat
+    /// with the pre-803 placeholder pattern; now trails behind the
+    /// real drill-in.
     @State private var highlightedRowId: String? = nil
+
+    /// Drill-in sheet target. Set on row tap, presents the
+    /// `803_AdminTenantDetail` deep envelope for that tenant id.
+    /// Wrapped in `IdentifiedTenantId` so SwiftUI's `.sheet(item:)`
+    /// re-presents on identity change.
+    @State private var detailTenantId: IdentifiedTenantId? = nil
+
+    /// Light-preview hint passed to 803 so its hero card has paint-1
+    /// content (name + status pill) while the deep fetch is in flight.
+    /// Read from the row that triggered the drill-in.
+    @State private var detailPreviewHint: AdminAPI.Tenant? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -128,6 +140,20 @@ struct AdminTenants: View {
         }
         .task { await tenants.refresh() }
         .refreshable { await tenants.refresh() }
+        .sheet(item: $detailTenantId) { ident in
+            // 161st firing · brick 803: real drill-in. The 803 view
+            // owns its own `AdminTenantDetailStore`, so this sheet
+            // hands off the tenant id (+ optional preview hint) and
+            // gets out of the way.
+            AdminTenantDetailScreen(
+                tenantId: ident.id,
+                previewHint: detailPreviewHint
+            )
+            .environment(\.palette, palette)
+            .environmentObject(session)
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
     }
 
     // MARK: - Header
@@ -310,11 +336,15 @@ struct AdminTenants: View {
                 kpiCell(label: "MRR",        value: usd(row.mrrUsd))
                 Spacer()
                 Button {
-                    // Highlight the row briefly so the operator gets
-                    // tactile feedback. 803 (deep tenant editor) lands
-                    // in a future port — no destructive mutation this
-                    // firing.
+                    // 161st firing · brick 803: real drill-in. The
+                    // momentary row highlight stays for tactile feedback;
+                    // the sheet immediately follows with the deep
+                    // envelope. No destructive mutation here — admin
+                    // platform-state edits live inside the 803 surface
+                    // (suspend / reinstate / churn — guarded confirm).
                     highlightedRowId = row.id
+                    detailPreviewHint = row
+                    detailTenantId = IdentifiedTenantId(id: row.id)
                 } label: {
                     HStack(spacing: 4) {
                         Text("View detail")
@@ -326,13 +356,6 @@ struct AdminTenants: View {
                     }
                 }
                 .buttonStyle(.plain)
-            }
-
-            if isHighlighted {
-                Text("Detail view ships in a future port — 803.")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
-                    .padding(.top, 2)
             }
         }
         .padding(Space.s3)

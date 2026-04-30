@@ -67,7 +67,7 @@ private struct TranscribingBody: View {
         struct In: Encodable { let audioBase64: String; let mime: String }
         struct Out: Decodable { let text: String? }
         do {
-            let r: Out = try await EusoTripAPI.shared.api.mutation("transcription.transcribeAudio", input: In(audioBase64: audioBase64, mime: "audio/mp4"))
+            let r: Out = try await EusoTripAPI.shared.mutation("transcription.transcribeAudio", input: In(audioBase64: audioBase64, mime: "audio/mp4"))
             transcript = r.text ?? ""
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

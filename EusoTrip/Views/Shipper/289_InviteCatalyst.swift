@@ -103,7 +103,7 @@ private struct InviteCatalystBody: View {
         struct In: Encodable { let email: String; let dotNumber: String?; let note: String? }
         struct Out: Decodable { let success: Bool; let invitationId: String? }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation(
+            let _ : Out = try await EusoTripAPI.shared.mutation(
                 "referrals.inviteCarrier",
                 input: In(email: email, dotNumber: dotNumber.isEmpty ? nil : dotNumber, note: note.isEmpty ? nil : note)
             )

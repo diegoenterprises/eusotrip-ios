@@ -86,7 +86,7 @@ private struct ELDBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [ELDDevice] = try await EusoTripAPI.shared.api.queryNoInput("catalysts.getELDFleet")
+            let r: [ELDDevice] = try await EusoTripAPI.shared.queryNoInput("catalysts.getELDFleet")
             rows = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

@@ -85,7 +85,7 @@ private struct DraftsListBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [DraftRow] = try await EusoTripAPI.shared.api.queryNoInput("loads.listDrafts")
+            let r: [DraftRow] = try await EusoTripAPI.shared.queryNoInput("loads.listDrafts")
             rows = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -97,7 +97,7 @@ private struct DraftsListBody: View {
         deleting = id
         struct In: Encodable { let id: String }
         struct Out: Decodable { let success: Bool }
-        let _ : Out = (try? await EusoTripAPI.shared.api.mutation("loads.deleteDraft", input: In(id: id))) ?? Out(success: false)
+        let _ : Out = (try? await EusoTripAPI.shared.mutation("loads.deleteDraft", input: In(id: id))) ?? Out(success: false)
         await load()
         deleting = nil
     }

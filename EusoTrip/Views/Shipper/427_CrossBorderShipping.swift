@@ -83,7 +83,7 @@ private struct CrossBorderBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let e: CrossBorderEnvelope = try await EusoTripAPI.shared.api.queryNoInput("shippers.getCrossBorderSummary")
+            let e: CrossBorderEnvelope = try await EusoTripAPI.shared.queryNoInput("shippers.getCrossBorderSummary")
             env = e
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

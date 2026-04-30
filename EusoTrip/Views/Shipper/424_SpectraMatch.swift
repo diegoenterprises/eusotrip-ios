@@ -102,7 +102,7 @@ private struct SpectraMatchBody: View {
         loading = true; actionError = nil
         struct In: Encodable { let api: Double; let sulfur: Double?; let pour: Double? }
         do {
-            let r: SpectraResult = try await EusoTripAPI.shared.api.query("spectraMatch.identify", input: In(api: apiGravity ?? 0, sulfur: sulfur, pour: pourPoint))
+            let r: SpectraResult = try await EusoTripAPI.shared.query("spectraMatch.identify", input: In(api: apiGravity ?? 0, sulfur: sulfur, pour: pourPoint))
             result = r
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

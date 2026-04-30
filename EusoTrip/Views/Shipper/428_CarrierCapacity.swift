@@ -69,7 +69,7 @@ private struct CapacityBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [CapacityCarrier] = try await EusoTripAPI.shared.api.queryNoInput("carrierCapacity.shipperView")
+            let r: [CapacityCarrier] = try await EusoTripAPI.shared.queryNoInput("carrierCapacity.shipperView")
             rows = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

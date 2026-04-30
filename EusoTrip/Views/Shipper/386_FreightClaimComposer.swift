@@ -136,7 +136,7 @@ private struct ClaimComposerBody: View {
         struct Out: Decodable { let success: Bool; let claimId: String? }
         let evidenceB64 = photo?.jpegData(compressionQuality: 0.85)?.base64EncodedString()
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation("freightClaims.fileClaim", input: In(loadId: loadId, claimType: claimType, amount: amount ?? 0, description: description, evidenceBase64: evidenceB64))
+            let _ : Out = try await EusoTripAPI.shared.mutation("freightClaims.fileClaim", input: In(loadId: loadId, claimType: claimType, amount: amount ?? 0, description: description, evidenceBase64: evidenceB64))
             sent = true
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

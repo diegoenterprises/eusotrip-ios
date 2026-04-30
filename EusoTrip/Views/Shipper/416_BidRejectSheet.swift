@@ -95,7 +95,7 @@ private struct BidRejectBody: View {
         sending = true; actionError = nil
         let combined = note.isEmpty ? reason : "\(reason) — \(note)"
         do {
-            _ = try await EusoTripAPI.shared.shippers.rejectBid(loadId: loadId, bidId: bidId, reason: combined)
+            _ = try await EusoTripAPI.shared.shipper.rejectBid(loadId: loadId, bidId: bidId, reason: combined)
             sent = true
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

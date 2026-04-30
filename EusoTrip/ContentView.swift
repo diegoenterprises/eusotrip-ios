@@ -161,6 +161,10 @@ enum ScreenRegistry {
             .init(id: "104", title: "Me · Rate Sheets",             role: .driver) { p in AnyView(MeRateSheetScreen(theme: p)) },
             .init(id: "105", title: "Me · Authority",               role: .driver) { p in AnyView(MeAuthorityScreen(theme: p)) },
             .init(id: "106", title: "Me · EusoTicket",              role: .driver) { p in AnyView(MeEusoTicketsScreen(theme: p)) },
+            .init(id: "107", title: "Me · My Bids",                 role: .driver) { p in AnyView(MeMyBidsScreen(theme: p)) },
+            .init(id: "108", title: "Me · LoadBoard",               role: .driver) { p in AnyView(MeLoadBoardScreen(theme: p)) },
+            .init(id: "109", title: "Me · Bid Detail",              role: .driver) { p in AnyView(MeBidDetailScreen(theme: p, loadId: 0)) },
+            .init(id: "110", title: "Me · Auto-Accept",             role: .driver) { p in AnyView(MeAutoAcceptRulesScreen(theme: p)) },
         ]
 
         // MARK: Non-driver role placeholders (DEBUG only)
@@ -458,6 +462,110 @@ enum ScreenRegistry {
         list.append(
             .init(id: "211", title: "Shipper · Settings", role: .shipper) { p in
                 AnyView(ShipperSettingsScreen(theme: p))
+            }
+        )
+        // 2026-04-27 — eusotrip-killers 159th firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // 212 Shipper · Control Tower wire-up. The Mac-side dev
+        // workstream had landed `212_ShipperControlTower.swift` in the
+        // disk + pbxproj after the 158th hygiene close but had not
+        // wired the ScreenRegistry entry — the file was reachable by
+        // the Swift compiler but unreachable from the dev-chrome
+        // next/prev bar (a +1 bijection drift the 158th counter would
+        // have caught had the file landed before the audit).
+        // Closing that drift now so the bijection holds: registry
+        // numbered + auth = disk numbered (130 + 6 = 136 with this
+        // brick + the 602 wire-up earlier in this firing). Reads
+        // from the live `ControlTowerStore` defined in the screen
+        // file. No fixture data ever (doctrine §11 + `MockDataGuard`).
+        list.append(
+            .init(id: "212", title: "Shipper · Control Tower", role: .shipper) { p in
+                AnyView(
+                    ShipperControlTower()
+                        .environment(\.palette, p)
+                )
+            }
+        )
+        // 2026-04-27/28 — eusotrip-killers 160th firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // 5-file Shipper orphan drift close. Mac-side dev workstream
+        // landed five new shipper bricks on disk + pbxproj between
+        // 23:27 and 00:04 (after the 159th close at 23:25):
+        //   213_ShipperCatalystScorecard.swift  (689 lines, 23:27)
+        //   214_ShipperSustainability.swift     (610 lines, 23:35)
+        //   215_ShipperRFP.swift                (1046 lines, 23:44)
+        //   216_ShipperCompliance.swift         (663 lines, 23:53)
+        //   217_ShipperContracts.swift          (749 lines, 00:04)
+        // The five view types compile but are unreachable from the
+        // dev-chrome next/prev bar (a +5 bijection drift). Each view
+        // uses the same self-driving pattern as 212 (no theme init,
+        // `@Environment(\.palette)` reader, `@StateObject` store
+        // driven by `.task { await store.refresh() }`), so each
+        // registry entry pipes the palette via `.environment(\.palette, p)`.
+        // Bijection now holds: 130 (pre) + 5 (these) + 1 (803 next) = 136
+        // numbered registry IDs, and 6 Auth files routed via AppRoot
+        // remain off-registry. No fixture data — every store is
+        // backed by a real `EusoTripAPI` namespace and folds nil/empty
+        // payloads to `EusoEmptyState` (doctrine §11 + `MockDataGuard`).
+        list.append(
+            .init(id: "213", title: "Shipper · Catalyst Scorecard", role: .shipper) { p in
+                AnyView(
+                    ShipperCatalystScorecard()
+                        .environment(\.palette, p)
+                )
+            }
+        )
+        list.append(
+            .init(id: "214", title: "Shipper · Sustainability", role: .shipper) { p in
+                AnyView(
+                    ShipperSustainability()
+                        .environment(\.palette, p)
+                )
+            }
+        )
+        list.append(
+            .init(id: "215", title: "Shipper · RFP & Bids", role: .shipper) { p in
+                AnyView(
+                    ShipperRFP()
+                        .environment(\.palette, p)
+                )
+            }
+        )
+        list.append(
+            .init(id: "216", title: "Shipper · Compliance", role: .shipper) { p in
+                AnyView(
+                    ShipperCompliance()
+                        .environment(\.palette, p)
+                )
+            }
+        )
+        list.append(
+            .init(id: "217", title: "Shipper · Contracts", role: .shipper) { p in
+                AnyView(
+                    ShipperContracts()
+                        .environment(\.palette, p)
+                )
+            }
+        )
+        // 2026-04-28 — eusotrip-killers 161st firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // Mid-firing parallel-drift close. Mac-side dev workstream
+        // landed `218_ShipperDispatchControl.swift` (696 lines) on
+        // disk + pbxproj (4 sections — D2180000000000000021CG/CF) at
+        // 00:12 — during this firing's 803 brick-port window. The
+        // file lands the same self-driving pattern as 212-217
+        // (`@Environment(\.palette)`, `@StateObject`-driven store),
+        // so wire it the same way before the bijection drifts back
+        // to +1. 137 production registry IDs after this entry; the
+        // 803 brick takes us to 138 numbered registry IDs total
+        // (138 + 6 Auth = 144 — but disk count after the 218 land
+        // is 144, so bijection holds through this firing's close).
+        list.append(
+            .init(id: "218", title: "Shipper · Dispatch Control", role: .shipper) { p in
+                AnyView(
+                    ShipperDispatchControl()
+                        .environment(\.palette, p)
+                )
             }
         )
         // 2026-04-25 — eusotrip-killers 100th firing
@@ -763,6 +871,35 @@ enum ScreenRegistry {
                 )
             }
         )
+        // 2026-04-27 — eusotrip-killers 159th firing
+        // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
+        // Third real Escort-track brick lands. Brings Escort to
+        // three-screen depth, achieving the "all 8 of 8 non-driver
+        // roles ≥ 3-deep" milestone the 2027 motivation directive
+        // points at. Drilled into from
+        // 601_EscortAssignmentDetail's "View corridor →" sheet CTA —
+        // exposes the full corridor topology (legs + milestones +
+        // geofences + lead/chase pairing + KPIs) in a single
+        // server-shaped envelope. Backend wiring:
+        // `escorts.getCorridor` (input `{ id: string }`) — single
+        // read, server-shaped payload mirroring `terminals.getYardMap`
+        // convention. If the parallel router has not landed yet, the
+        // store resolves to `.error` and the screen surfaces an
+        // honest retry banner. No fixture data ever — em-dash
+        // sentinels for any nullable field on the wire (doctrine §11
+        // + `MockDataGuard`). Closes the role-by-role 3-deep parity
+        // gap from the 158th firing report (Escort was the only
+        // 2-deep non-driver role before this brick).
+        list.append(
+            .init(id: "602", title: "Escort · Corridor Map", role: .escort) { p in
+                AnyView(
+                    EscortCorridorMapScreen(
+                        theme: p,
+                        assignmentId: "0"
+                    )
+                )
+            }
+        )
 
 #if DEBUG
         // Phase 1 audit (eusotrip-killers §6, 2026-04-23):
@@ -837,6 +974,21 @@ enum ScreenRegistry {
             // This brick closes the role-anchor sweep so all 8 of 24
             // distinct role surfaces have at least one shipped screen.
             .init(id: "800", title: "Admin · Home",                   role: .admin)    { p in AnyView(AdminHomeScreen(theme: p)) },
+            // 801 — Admin · Control Tower (156th eusotrip-killers firing).
+            // Closes the 800→802 leapfrog gap. Third screen on the
+            // Admin role track (800s) — drilled into from 800's new
+            // "PLATFORM CONTROL TOWER" section header via the
+            // "Open tower →" CTA. Reads
+            // `admin.controlTower.getOverview` +
+            // `admin.controlTower.getExceptions` through
+            // `AdminControlTowerOverviewStore` +
+            // `AdminControlTowerExceptionsStore` — never any fixture
+            // data; if the backend hasn't shipped these procedures,
+            // the stores resolve to `.error` and the screen surfaces
+            // an honest retry banner (doctrine §11 + MockDataGuard).
+            // Brings Admin to three-screen depth, parity with Terminal
+            // 700/701/702 and Catalyst 500/501/502.
+            .init(id: "801", title: "Admin · Control Tower",          role: .admin)    { p in AnyView(AdminControlTowerScreen(theme: p)) },
             // 802 — Admin · Tenants (151st eusotrip-killers firing).
             // Second screen on the Admin role track (800s). Drilled
             // into from 800's "ACTIVE TENANTS" section header via the
@@ -848,6 +1000,24 @@ enum ScreenRegistry {
             // two-screen depth, parity with Terminal/Escort/Catalyst/
             // Carrier/Broker.
             .init(id: "802", title: "Admin · Tenants",                role: .admin)    { p in AnyView(AdminTenantsScreen(theme: p)) },
+            // 803 — Admin · Tenant Detail (161st eusotrip-killers firing).
+            // Fourth screen on the Admin role track (800s). Drilled
+            // into from 802's per-row "View detail →" CTA via a
+            // `.sheet([.large])` presenter. Reads `admin.getTenantDetail`
+            // through `AdminTenantDetailStore` — every nullable column
+            // surfaces as a neutral em-dash, every empty sub-section
+            // (contacts / usage / audit) surfaces an honest empty
+            // sub-card. No fixture data ever (doctrine §11 +
+            // MockDataGuard); if the backend hasn't shipped the
+            // procedure, the store resolves to `.error` and the
+            // screen offers retry. Lifts Admin to 4-deep parity
+            // with Driver / Shipper / Carrier. The registry-style
+            // wrapper passes a blank tenant id so the surface
+            // honestly renders the empty / loading state when
+            // accessed via the dev-chrome next/prev bar; the real
+            // production path is 802 → sheet → AdminTenantDetail
+            // (which carries the row's tenant id + preview hint).
+            .init(id: "803", title: "Admin · Tenant Detail",          role: .admin)    { p in AnyView(AdminTenantDetailScreen(theme: p)) },
         ])
 #endif
 
@@ -1133,6 +1303,34 @@ struct ContentView: View {
                 default:
                     break
                 }
+            }
+            // Shipper-mode tap router. Mirror of `driverNavHandler`.
+            // Resolves the slot label to the matching ScreenRegistry id
+            // (Home → 200, Create Load → 204, Loads → 201, Me → 202)
+            // and flips `currentIndex` so the screen swap is local —
+            // no NotificationCenter round-trip needed when ContentView
+            // already owns the index. Founder direction 2026-04-28:
+            // make the shipper bottom nav actually navigate.
+            .environment(\.shipperNavHandler) { label in
+#if DEBUG
+                let key = label.lowercased()
+                if ShipperNavRoute.orbLabels.contains(key) {
+                    nav.showESang = true
+                    return
+                }
+                guard let screenId = ShipperNavRoute.map[key] else { return }
+                let shipperScreens = ScreenRegistry.forRole(.shipper)
+                if let idx = shipperScreens.firstIndex(where: { $0.id == screenId }) {
+                    // currentIndex is dev-chrome-only state; the shipper
+                    // surface only renders in DEBUG builds via the
+                    // ScreenRegistry walker. In Release the shipper
+                    // chrome is unreachable today (driver-only
+                    // production target), so this branch is the right
+                    // place to wire the swap.
+                    if selectedRole != .shipper { selectedRole = .shipper }
+                    currentIndex = idx
+                }
+#endif
             }
             // Lifecycle forward-advance handler. Any `LifecycleCTAButton`
             // rendered within a driver lifecycle screen (010 → 027) reads

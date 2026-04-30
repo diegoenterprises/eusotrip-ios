@@ -104,7 +104,7 @@ private struct HOSBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let limit: Int }
         do {
-            let r: [HOSDriver] = try await EusoTripAPI.shared.api.query("dispatch.getDriverStatuses", input: In(limit: 200))
+            let r: [HOSDriver] = try await EusoTripAPI.shared.query("dispatch.getDriverStatuses", input: In(limit: 200))
             rows = r.sorted { ($0.hoursRemaining ?? 999) < ($1.hoursRemaining ?? 999) }
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

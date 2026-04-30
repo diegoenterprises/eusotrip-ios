@@ -132,7 +132,7 @@ private struct ReportsBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let category: String? }
         do {
-            let r: [ReportTemplate] = try await EusoTripAPI.shared.api.query("reports.list", input: In(category: category == "all" ? nil : category))
+            let r: [ReportTemplate] = try await EusoTripAPI.shared.query("reports.list", input: In(category: category == "all" ? nil : category))
             templates = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -149,7 +149,7 @@ private struct ReportsBody: View {
         let formatter = ISO8601DateFormatter()
         let start = Calendar.current.date(byAdding: .day, value: -30, to: now) ?? now
         do {
-            let r: Out = try await EusoTripAPI.shared.api.mutation("reports.generate", input: In(reportType: t.id, format: "pdf", dateRange: DateRange(start: formatter.string(from: start), end: formatter.string(from: now))))
+            let r: Out = try await EusoTripAPI.shared.mutation("reports.generate", input: In(reportType: t.id, format: "pdf", dateRange: DateRange(start: formatter.string(from: start), end: formatter.string(from: now))))
             lastRun = "\(t.name) queued · id \(r.reportId ?? "—") · rows \(r.rowCount ?? 0)."
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

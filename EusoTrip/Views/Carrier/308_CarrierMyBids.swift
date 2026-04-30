@@ -90,7 +90,7 @@ private struct MyBidsBody: View {
         else if filtered.isEmpty { EusoEmptyState(systemImage: "hand.raised", title: "No bids in this view", subtitle: "Bid on loads from the marketplace; outcomes show up here.") }
         else {
             ForEach(filtered) { b in
-                LifecycleCard(accentGradient: b.status == "accepted", accentWarning: b.status == "countered", accentDanger: b.status == "rejected") {
+                LifecycleCard(accentDanger: b.status == "rejected", accentWarning: b.status == "countered", accentGradient: b.status == "accepted") {
                     LifecycleSection(label: dashIfEmpty(b.loadNumber).uppercased(), icon: "doc.text")
                     LifecycleRow(label: "Lane",      value: dashIfEmpty(b.lane))
                     LifecycleRow(label: "Amount",    value: usd(b.amount))
@@ -113,7 +113,7 @@ private struct MyBidsBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [MyBid] = try await EusoTripAPI.shared.api.queryNoInput("catalysts.getMyBids")
+            let r: [MyBid] = try await EusoTripAPI.shared.queryNoInput("catalysts.getMyBids")
             bids = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

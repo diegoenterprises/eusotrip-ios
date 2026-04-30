@@ -102,7 +102,7 @@ private struct CatalystDirectoryBody: View {
     private func loadFavs() async {
         loadingFavs = true
         do {
-            let rs = try await EusoTripAPI.shared.shippers.getFavoriteCatalysts()
+            let rs = try await EusoTripAPI.shared.shipper.getFavoriteCatalysts()
             favorites = Set(rs.map(\.catalystId))
         } catch {
             // Tolerate missing favorites — surface the directory as-is.
@@ -111,12 +111,9 @@ private struct CatalystDirectoryBody: View {
     }
 }
 
-@MainActor
-final class ShipperCatalystPerformanceStore: BaseDynamicListStore<ShipperAPI.CatalystPerformance> {
-    override func fetch() async throws -> [ShipperAPI.CatalystPerformance] {
-        try await EusoTripAPI.shared.shippers.getCatalystPerformance(period: .month)
-    }
-}
+// ShipperCatalystPerformanceStore moved to LiveDataStores.swift:3798
+// (single canonical home). Removed local duplicate to fix ambiguous-
+// type-lookup error on 336 GradeDetail.
 
 #Preview("280 · Directory · Night") {
     CatalystDirectoryScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark)

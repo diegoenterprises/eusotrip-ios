@@ -99,7 +99,7 @@ private struct CSettlementsBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let status: String? }
         do {
-            let r: [CarrierSettlement] = try await EusoTripAPI.shared.api.query("catalysts.getSettlements", input: In(status: filter == "all" ? nil : filter))
+            let r: [CarrierSettlement] = try await EusoTripAPI.shared.query("catalysts.getSettlements", input: In(status: filter == "all" ? nil : filter))
             rows = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

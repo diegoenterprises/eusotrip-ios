@@ -107,7 +107,7 @@ private struct WalletHomeBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let b: WalletBalance = try await EusoTripAPI.shared.api.queryNoInput("wallet.getBalance")
+            let b: WalletBalance = try await EusoTripAPI.shared.queryNoInput("wallet.getBalance")
             balance = b
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

@@ -70,7 +70,7 @@ private struct MyTerminalsBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [TerminalRow] = try await EusoTripAPI.shared.api.queryNoInput("shippers.getMyTerminals")
+            let r: [TerminalRow] = try await EusoTripAPI.shared.queryNoInput("shippers.getMyTerminals")
             terminals = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

@@ -104,7 +104,7 @@ private struct DailyKPIBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let s: DashboardStats = try await EusoTripAPI.shared.api.queryNoInput("dispatch.getDashboardStats")
+            let s: DashboardStats = try await EusoTripAPI.shared.queryNoInput("dispatch.getDashboardStats")
             stats = s
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

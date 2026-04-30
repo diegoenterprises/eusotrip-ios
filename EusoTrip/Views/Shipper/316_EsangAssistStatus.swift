@@ -103,7 +103,7 @@ private struct StatusBody: View {
         loading = true; loadError = nil; env = nil
         struct In: Encodable { let query: String }
         do {
-            let r: StatusEnvelope = try await EusoTripAPI.shared.api.query("esangAI.statusQuery", input: In(query: query))
+            let r: StatusEnvelope = try await EusoTripAPI.shared.query("esangAI.statusQuery", input: In(query: query))
             env = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

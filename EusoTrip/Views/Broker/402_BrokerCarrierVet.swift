@@ -94,7 +94,7 @@ private struct CarrierVetBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let loadId: String }
         do {
-            let r: [VetCandidate] = try await EusoTripAPI.shared.api.query("brokers.getVetCandidates", input: In(loadId: loadId))
+            let r: [VetCandidate] = try await EusoTripAPI.shared.query("brokers.getVetCandidates", input: In(loadId: loadId))
             candidates = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

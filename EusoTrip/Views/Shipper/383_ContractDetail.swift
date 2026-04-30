@@ -101,7 +101,7 @@ private struct ContractDetailBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let id: String }
         do {
-            let c: Contract = try await EusoTripAPI.shared.api.query("shipperContracts.getById", input: In(id: contractId))
+            let c: Contract = try await EusoTripAPI.shared.query("shipperContracts.getById", input: In(id: contractId))
             contract = c
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

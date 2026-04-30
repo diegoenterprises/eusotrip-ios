@@ -73,7 +73,7 @@ private struct QuoteSavedBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [SavedQuote] = try await EusoTripAPI.shared.api.queryNoInput("predictivePricing.listSavedQuotes")
+            let r: [SavedQuote] = try await EusoTripAPI.shared.queryNoInput("predictivePricing.listSavedQuotes")
             quotes = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

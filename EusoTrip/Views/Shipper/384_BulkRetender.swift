@@ -94,7 +94,7 @@ private struct BulkRetenderBody: View {
         struct In: Encodable { let loadIds: [String] }
         struct Out: Decodable { let success: Bool; let count: Int? }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation("loads.bulkRetender", input: In(loadIds: Array(selected)))
+            let _ : Out = try await EusoTripAPI.shared.mutation("loads.bulkRetender", input: In(loadIds: Array(selected)))
             sent = true; selected = []
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

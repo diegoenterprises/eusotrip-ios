@@ -153,8 +153,8 @@ private struct TicketBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let limit: Int }
         do {
-            async let r: [RunTicketRow] = EusoTripAPI.shared.api.query("runTickets.list", input: In(limit: 100))
-            async let s: RunTicketStats = EusoTripAPI.shared.api.queryNoInput("runTickets.getStats")
+            async let r: [RunTicketRow] = EusoTripAPI.shared.query("runTickets.list", input: In(limit: 100))
+            async let s: RunTicketStats = EusoTripAPI.shared.queryNoInput("runTickets.getStats")
             let (rrows, sstats) = try await (r, s)
             rows = rrows
             stats = sstats
@@ -169,7 +169,7 @@ private struct TicketBody: View {
         struct In: Encodable { let loadNumber: String }
         struct Out: Decodable { let ticketNumber: String?; let id: Int? }
         do {
-            let r: Out = try await EusoTripAPI.shared.api.mutation("runTickets.create", input: In(loadNumber: loadNumber))
+            let r: Out = try await EusoTripAPI.shared.mutation("runTickets.create", input: In(loadNumber: loadNumber))
             lastCreated = "Opened ticket \(r.ticketNumber ?? "—") for \(loadNumber)."
             loadNumber = ""
             await loadAll()

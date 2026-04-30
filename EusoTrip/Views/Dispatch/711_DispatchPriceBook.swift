@@ -164,7 +164,7 @@ private struct PriceBookBody: View {
         let cargo = cargoFilter.trimmingCharacters(in: .whitespacesAndNewlines)
         let haz = hazmatFilter.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
-            let r: EntriesResponse = try await EusoTripAPI.shared.api.query("pricebook.getEntries", input: In(
+            let r: EntriesResponse = try await EusoTripAPI.shared.query("pricebook.getEntries", input: In(
                 cargoType: cargo.isEmpty ? nil : cargo,
                 hazmatClass: haz.isEmpty ? nil : haz,
                 isActive: true

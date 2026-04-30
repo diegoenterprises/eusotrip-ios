@@ -21,7 +21,7 @@ private struct WalletSnapshot: Decodable, Hashable {
     let totalLifetime: Double?
 }
 
-private struct WalletTxn: Decodable, Identifiable, Hashable {
+private struct ShipperWalletTxn: Decodable, Identifiable, Hashable {
     let id: Int
     let type: String?
     let amount: Double
@@ -32,7 +32,7 @@ private struct WalletTxn: Decodable, Identifiable, Hashable {
 private struct EusoWalletDetailBody: View {
     @Environment(\.palette) private var palette
     @State private var snap: WalletSnapshot? = nil
-    @State private var txns: [WalletTxn] = []
+    @State private var txns: [ShipperWalletTxn] = []
     @State private var loading: Bool = true
     @State private var loadError: String? = nil
 
@@ -96,8 +96,8 @@ private struct EusoWalletDetailBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            async let s: WalletSnapshot = EusoTripAPI.shared.api.queryNoInput("eusoWallet.getSnapshot")
-            async let ts: [WalletTxn]    = EusoTripAPI.shared.api.queryNoInput("eusoWallet.listTransactions")
+            async let s: WalletSnapshot = EusoTripAPI.shared.queryNoInput("eusoWallet.getSnapshot")
+            async let ts: [ShipperWalletTxn]    = EusoTripAPI.shared.queryNoInput("eusoWallet.listTransactions")
             snap = try await s
             txns = (try? await ts) ?? []
         } catch {

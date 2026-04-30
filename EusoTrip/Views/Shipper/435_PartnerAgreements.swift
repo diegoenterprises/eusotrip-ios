@@ -95,7 +95,7 @@ private struct PartnerAgreementsBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let partnerId: String }
         do {
-            let r: [AgreementRow] = try await EusoTripAPI.shared.api.query("agreements.listForPartner", input: In(partnerId: partnerId))
+            let r: [AgreementRow] = try await EusoTripAPI.shared.query("agreements.listForPartner", input: In(partnerId: partnerId))
             rows = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -107,7 +107,7 @@ private struct PartnerAgreementsBody: View {
         signing = id
         struct In: Encodable { let agreementId: String }
         struct Out: Decodable { let success: Bool }
-        let _ : Out = (try? await EusoTripAPI.shared.api.mutation("agreements.sign", input: In(agreementId: id))) ?? Out(success: false)
+        let _ : Out = (try? await EusoTripAPI.shared.mutation("agreements.sign", input: In(agreementId: id))) ?? Out(success: false)
         await load()
         signing = nil
     }

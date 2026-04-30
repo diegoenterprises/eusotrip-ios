@@ -163,8 +163,8 @@ private struct ChatBody: View {
     private func loadAll() async {
         loading = true; loadError = nil
         do {
-            async let c: [Conversation] = EusoTripAPI.shared.api.queryNoInput("messages.getConversations")
-            async let d: [DriverPick] = EusoTripAPI.shared.api.queryNoInput("dispatch.getDriverStatuses")
+            async let c: [Conversation] = EusoTripAPI.shared.queryNoInput("messages.getConversations")
+            async let d: [DriverPick] = EusoTripAPI.shared.queryNoInput("dispatch.getDriverStatuses")
             let (cs, ds) = try await (c, d)
             convs = cs
             drivers = ds
@@ -179,7 +179,7 @@ private struct ChatBody: View {
         struct In: Encodable { let driverId: String; let message: String }
         struct Out: Decodable { let success: Bool? }
         do {
-            let _: Out = try await EusoTripAPI.shared.api.mutation("dispatch.sendDriverMessage", input: In(driverId: d.id, message: composeText))
+            let _: Out = try await EusoTripAPI.shared.mutation("dispatch.sendDriverMessage", input: In(driverId: d.id, message: composeText))
             sentEcho = "Sent to \(d.name)."
             composeFor = nil
             composeText = ""

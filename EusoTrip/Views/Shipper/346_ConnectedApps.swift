@@ -109,8 +109,8 @@ private struct ConnectedAppsBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            async let a: [ConnectedApp] = EusoTripAPI.shared.api.queryNoInput("auth.listConnectedApps")
-            async let t: [ConnectedApp] = EusoTripAPI.shared.api.queryNoInput("auth.listApiTokens")
+            async let a: [ConnectedApp] = EusoTripAPI.shared.queryNoInput("auth.listConnectedApps")
+            async let t: [ConnectedApp] = EusoTripAPI.shared.queryNoInput("auth.listApiTokens")
             apps = (try? await a) ?? []
             tokens = (try? await t) ?? []
         }
@@ -122,7 +122,7 @@ private struct ConnectedAppsBody: View {
         struct In: Encodable { let id: String }
         struct Out: Decodable { let success: Bool }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation(kind == "app" ? "auth.revokeConnectedApp" : "auth.revokeApiToken", input: In(id: id))
+            let _ : Out = try await EusoTripAPI.shared.mutation(kind == "app" ? "auth.revokeConnectedApp" : "auth.revokeApiToken", input: In(id: id))
             await load()
         } catch { /* surface inline */ }
         revoking = nil

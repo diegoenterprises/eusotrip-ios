@@ -99,7 +99,7 @@ private struct ViolationsBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let limit: Int }
         do {
-            let r: [Violation] = try await EusoTripAPI.shared.api.query("compliance.getRecentViolations", input: In(limit: 100))
+            let r: [Violation] = try await EusoTripAPI.shared.query("compliance.getRecentViolations", input: In(limit: 100))
             rows = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -113,7 +113,7 @@ private struct ViolationsBody: View {
         struct In: Encodable { let violationId: String; let resolution: String }
         struct Out: Decodable { let success: Bool? }
         do {
-            let _: Out = try await EusoTripAPI.shared.api.mutation("compliance.resolveViolation", input: In(violationId: bare, resolution: "Resolved from mobile compliance officer"))
+            let _: Out = try await EusoTripAPI.shared.mutation("compliance.resolveViolation", input: In(violationId: bare, resolution: "Resolved from mobile compliance officer"))
             lastResolved = "Closed violation \(id)."
             await load()
         } catch {

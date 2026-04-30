@@ -84,7 +84,7 @@ private struct HaulReceiptBody: View {
         struct In: Encodable { let loadId: Int }
         let n = Int(loadId.replacingOccurrences(of: "load_", with: "")) ?? 0
         do {
-            let r: HaulReceipt = try await EusoTripAPI.shared.api.query("eusoTicket.getHaulReceipt", input: In(loadId: n))
+            let r: HaulReceipt = try await EusoTripAPI.shared.query("eusoTicket.getHaulReceipt", input: In(loadId: n))
             receipt = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

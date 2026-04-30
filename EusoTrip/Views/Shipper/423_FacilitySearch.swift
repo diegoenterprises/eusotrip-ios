@@ -94,7 +94,7 @@ private struct FacilitySearchBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let q: String }
         do {
-            let r: [FacilityHit] = try await EusoTripAPI.shared.api.query("facilities.search", input: In(q: query))
+            let r: [FacilityHit] = try await EusoTripAPI.shared.query("facilities.search", input: In(q: query))
             hits = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

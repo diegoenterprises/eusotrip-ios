@@ -103,7 +103,7 @@ private struct HotZoneDetailBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let city: String }
         do {
-            let d: HotZoneDetail = try await EusoTripAPI.shared.api.query("hotZones.getCity", input: In(city: city))
+            let d: HotZoneDetail = try await EusoTripAPI.shared.query("hotZones.getCity", input: In(city: city))
             detail = d
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

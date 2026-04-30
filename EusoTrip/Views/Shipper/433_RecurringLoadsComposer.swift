@@ -119,7 +119,7 @@ private struct RecurringComposerBody: View {
         struct In: Encodable { let lane: String; let startISO: String; let endISO: String; let cadence: String; let dayOfWeek: String?; let rate: Double }
         struct Out: Decodable { let success: Bool; let scheduleId: String? }
         let f = ISO8601DateFormatter()
-        let _ : Out = (try? await EusoTripAPI.shared.api.mutation("recurringLoads.create", input: In(lane: lane, startISO: f.string(from: startDate), endISO: f.string(from: endDate), cadence: cadence, dayOfWeek: cadence.contains("week") ? dayOfWeek : nil, rate: rate ?? 0))) ?? Out(success: false, scheduleId: nil)
+        let _ : Out = (try? await EusoTripAPI.shared.mutation("recurringLoads.create", input: In(lane: lane, startISO: f.string(from: startDate), endISO: f.string(from: endDate), cadence: cadence, dayOfWeek: cadence.contains("week") ? dayOfWeek : nil, rate: rate ?? 0))) ?? Out(success: false, scheduleId: nil)
         saved = true
         sending = false
     }

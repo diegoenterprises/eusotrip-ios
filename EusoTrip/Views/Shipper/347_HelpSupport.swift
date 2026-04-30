@@ -111,7 +111,7 @@ private struct HelpSupportBody: View {
         loading = true
         struct In: Encodable { let q: String? }
         do {
-            let r: [HelpArticle] = try await EusoTripAPI.shared.api.query("help.search", input: In(q: query.isEmpty ? nil : query))
+            let r: [HelpArticle] = try await EusoTripAPI.shared.query("help.search", input: In(q: query.isEmpty ? nil : query))
             articles = r
         } catch { articles = [] }
         loading = false

@@ -95,7 +95,7 @@ private struct DemurrageBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [DemurrageRow] = try await EusoTripAPI.shared.api.queryNoInput("demurrage.listForShipper")
+            let r: [DemurrageRow] = try await EusoTripAPI.shared.queryNoInput("demurrage.listForShipper")
             rows = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -107,7 +107,7 @@ private struct DemurrageBody: View {
         processing = id + (approve ? ":a" : ":d")
         struct In: Encodable { let id: String; let approve: Bool }
         struct Out: Decodable { let success: Bool }
-        let _ : Out = (try? await EusoTripAPI.shared.api.mutation("demurrage.respond", input: In(id: id, approve: approve))) ?? Out(success: false)
+        let _ : Out = (try? await EusoTripAPI.shared.mutation("demurrage.respond", input: In(id: id, approve: approve))) ?? Out(success: false)
         await load()
         processing = nil
     }

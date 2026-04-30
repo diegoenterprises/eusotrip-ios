@@ -175,7 +175,7 @@ private struct BulkUploadShellBody: View {
     }
 
     private func jobStatusCard(_ job: UploadJob) -> some View {
-        LifecycleCard(accentGradient: job.status == "completed", accentWarning: job.status == "processing", accentDanger: job.status == "failed") {
+        LifecycleCard(accentDanger: job.status == "failed", accentWarning: job.status == "processing", accentGradient: job.status == "completed") {
             LifecycleSection(label: "LATEST JOB", icon: "doc.text.below.ecg")
             LifecycleRow(label: "ID",        value: job.id)
             LifecycleRow(label: "Entity",     value: dashIfEmpty(job.entityType))
@@ -245,7 +245,7 @@ private struct BulkUploadShellBody: View {
     private func loadEntityTypes() async {
         loading = true; actionError = nil
         do {
-            let r: [EntityType] = try await EusoTripAPI.shared.api.queryNoInput("bulkUpload.getSupportedEntityTypes")
+            let r: [EntityType] = try await EusoTripAPI.shared.queryNoInput("bulkUpload.getSupportedEntityTypes")
             entityTypes = r
             selected = r.first
         } catch {
@@ -256,7 +256,7 @@ private struct BulkUploadShellBody: View {
 
     private func loadHistory() async {
         do {
-            let r: [UploadJob] = try await EusoTripAPI.shared.api.queryNoInput("bulkUpload.getJobHistory")
+            let r: [UploadJob] = try await EusoTripAPI.shared.queryNoInput("bulkUpload.getJobHistory")
             jobHistory = r
         } catch { /* tolerate */ }
     }
@@ -267,7 +267,7 @@ private struct BulkUploadShellBody: View {
         struct In: Encodable { let entityType: String; let payload: String; let payloadKind: String }
         struct Out: Decodable { let success: Bool; let jobId: String? }
         do {
-            let r: Out = try await EusoTripAPI.shared.api.mutation(
+            let r: Out = try await EusoTripAPI.shared.mutation(
                 "bulkUpload.uploadAndProcess",
                 input: In(entityType: entity.key, payload: rawCsv, payloadKind: "csv")
             )
@@ -287,7 +287,7 @@ private struct BulkUploadShellBody: View {
         for _ in 0..<10 {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             do {
-                let j: UploadJob = try await EusoTripAPI.shared.api.query("bulkUpload.getJobStatus", input: In(id: id))
+                let j: UploadJob = try await EusoTripAPI.shared.query("bulkUpload.getJobStatus", input: In(id: id))
                 lastJob = j
                 if j.status == "completed" || j.status == "failed" { return }
             } catch { return }

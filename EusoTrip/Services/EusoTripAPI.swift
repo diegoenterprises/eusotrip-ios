@@ -9258,6 +9258,16 @@ struct ShipperAPI {
         let catalystId: Int?
         let eta: String
         let rate: Double
+        // EUSO-2042 — cargo / commodity surface so 200 Shipper Home's
+        // active-loads row can render `LD-… · UN1203 · MC-306 · 50k lb`
+        // per wireframe canon. All optional — older server builds that
+        // don't carry these decode without error.
+        let cargoType: String?
+        let commodity: String?
+        let unNumber: String?
+        let hazmatClass: String?
+        let weightDisplay: String?
+        let cargoSummary: String?
     }
 
     struct GetActiveLoadsInput: Encodable { let limit: Int }
@@ -9305,6 +9315,85 @@ struct ShipperAPI {
             "shippers.getRecentLoads",
             input: GetRecentLoadsInput(limit: limit)
         )
+    }
+
+    /// One row in the Shipper's "my loads" table — the shipper-track
+    /// equivalent of the carrier-side dispatch board. Used by 384
+    /// Bulk Re-tender + 412 Drafts + 413 Archived. Mirrors
+    /// `shippers.getMyLoads` (line 282).
+    struct MyLoad: Decodable, Identifiable, Hashable {
+        struct LocationRef: Decodable, Hashable { let city: String; let state: String }
+        struct PartyRef: Decodable, Hashable { let id: String; let name: String }
+
+        let id: String
+        let loadNumber: String
+        let status: String
+        let originRef: LocationRef
+        let destinationRef: LocationRef
+        let pickupDate: String
+        let deliveryDate: String
+        let equipment: String
+        let weight: Double
+        let hazmat: Bool
+        let hazmatClass: String?
+        let product: String
+        let catalyst: PartyRef?
+        let driver: PartyRef?
+        // Server returns 0 when no rate is set; we project Optional so
+        // the 282/285 screens (`if let r = ld.rate`) work as written.
+        let rate: Double?
+        let eta: String
+        let bidsReceived: Int
+        let deliveredAt: String?
+        // Server-side timestamp of when the load was first persisted.
+        // Used by 285 sparkline trend to bucket loads per month.
+        // Optional — will be nil until backend ships the projection
+        // change (server ticket EUSO-2042b).
+        let createdAt: String?
+
+        // Map server JSON to the struct above. The server emits
+        // `origin` / `destination` as `{city,state}` — Swift can't bind
+        // those to non-conflicting names without explicit CodingKeys.
+        enum CodingKeys: String, CodingKey {
+            case id, loadNumber, status, pickupDate, deliveryDate
+            case equipment, weight, hazmat, hazmatClass, product
+            case catalyst, driver, rate, eta, bidsReceived, deliveredAt, createdAt
+            case originRef = "origin"
+            case destinationRef = "destination"
+        }
+
+        // Convenience flat strings for screens that don't care about
+        // city/state separation (e.g., 384's row label).
+        var origin: String {
+            "\(originRef.city), \(originRef.state)".trimmingCharacters(in: CharacterSet(charactersIn: ", "))
+        }
+        var destination: String {
+            "\(destinationRef.city), \(destinationRef.state)".trimmingCharacters(in: CharacterSet(charactersIn: ", "))
+        }
+        // Convenience: 282 filters by catalystId — server returns it
+        // nested as `catalyst.id`. Hoist it to the top level so client
+        // code reads naturally.
+        var catalystId: String? { catalyst?.id }
+        var driverId: String? { driver?.id }
+    }
+
+    struct GetMyLoadsInput: Encodable {
+        let status: String?
+        let limit: Int
+        let offset: Int
+    }
+
+    struct GetMyLoadsResponse: Decodable {
+        let loads: [MyLoad]
+        let total: Int
+    }
+
+    func getMyLoads(status: String? = nil, limit: Int = 50, offset: Int = 0) async throws -> [MyLoad] {
+        let env: GetMyLoadsResponse = try await api.query(
+            "shippers.getMyLoads",
+            input: GetMyLoadsInput(status: status, limit: limit, offset: offset)
+        )
+        return env.loads
     }
 
     // ===================================================================

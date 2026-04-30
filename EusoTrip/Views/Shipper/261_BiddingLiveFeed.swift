@@ -147,7 +147,7 @@ private struct BiddingBody: View {
         processingBidId = bidId
         actionError = nil
         do {
-            _ = try await EusoTripAPI.shared.shippers.acceptBid(loadId: loadId, bidId: bidId)
+            _ = try await EusoTripAPI.shared.shipper.acceptBid(loadId: loadId, bidId: bidId)
             await bids.refresh()
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

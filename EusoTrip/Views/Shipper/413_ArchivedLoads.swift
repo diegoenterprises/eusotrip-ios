@@ -95,7 +95,7 @@ private struct ArchivedBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let q: String? }
         do {
-            let r: [ArchivedRow] = try await EusoTripAPI.shared.api.query("loads.listArchive", input: In(q: search.isEmpty ? nil : search))
+            let r: [ArchivedRow] = try await EusoTripAPI.shared.query("loads.listArchive", input: In(q: search.isEmpty ? nil : search))
             rows = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -107,7 +107,7 @@ private struct ArchivedBody: View {
         restoring = id
         struct In: Encodable { let id: String }
         struct Out: Decodable { let success: Bool }
-        let _ : Out = (try? await EusoTripAPI.shared.api.mutation("loads.restoreArchive", input: In(id: id))) ?? Out(success: false)
+        let _ : Out = (try? await EusoTripAPI.shared.mutation("loads.restoreArchive", input: In(id: id))) ?? Out(success: false)
         await load()
         restoring = nil
     }

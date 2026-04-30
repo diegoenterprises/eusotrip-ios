@@ -139,8 +139,8 @@ private struct MeHomeBody: View {
 
     private func load() async {
         do {
-            async let p: ShipperAPI.Profile = EusoTripAPI.shared.shippers.getProfile()
-            async let st: ShipperAPI.Stats   = EusoTripAPI.shared.shippers.getStats()
+            async let p: ShipperAPI.Profile = EusoTripAPI.shared.shipper.getProfile()
+            async let st: ShipperAPI.Stats   = EusoTripAPI.shared.shipper.getStats()
             profile = try await p
             stats = (try? await st)
         } catch { /* tolerate */ }

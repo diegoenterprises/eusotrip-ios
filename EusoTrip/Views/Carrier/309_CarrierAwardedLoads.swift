@@ -96,7 +96,7 @@ private struct AwardedLoadsBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [AwardedLoad] = try await EusoTripAPI.shared.api.queryNoInput("catalysts.getMyAwardedLoads")
+            let r: [AwardedLoad] = try await EusoTripAPI.shared.queryNoInput("catalysts.getMyAwardedLoads")
             loads = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

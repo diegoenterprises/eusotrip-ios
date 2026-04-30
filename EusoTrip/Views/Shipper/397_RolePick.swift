@@ -86,7 +86,7 @@ private struct RolePickBody: View {
         struct In: Encodable { let role: String }
         struct Out: Decodable { let success: Bool }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation("auth.setRole", input: In(role: role))
+            let _ : Out = try await EusoTripAPI.shared.mutation("auth.setRole", input: In(role: role))
             NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "398"])
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

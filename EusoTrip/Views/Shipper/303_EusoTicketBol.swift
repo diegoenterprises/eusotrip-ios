@@ -88,7 +88,7 @@ private struct EusoTicketBolBody: View {
         struct In: Encodable { let loadId: Int }
         let n = Int(loadId.replacingOccurrences(of: "load_", with: "")) ?? 0
         do {
-            let b: BolDetail = try await EusoTripAPI.shared.api.mutation("eusoTicket.generateBOL", input: In(loadId: n))
+            let b: BolDetail = try await EusoTripAPI.shared.mutation("eusoTicket.generateBOL", input: In(loadId: n))
             bol = b
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

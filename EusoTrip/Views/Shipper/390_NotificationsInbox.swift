@@ -118,7 +118,7 @@ private struct InboxBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [InboxItem] = try await EusoTripAPI.shared.api.queryNoInput("notifications.list")
+            let r: [InboxItem] = try await EusoTripAPI.shared.queryNoInput("notifications.list")
             items = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -129,7 +129,7 @@ private struct InboxBody: View {
     private func markAllRead() async {
         struct Out: Decodable { let success: Bool }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation("notifications.markAllAsRead", input: ["": ""] as [String: String])
+            let _ : Out = try await EusoTripAPI.shared.mutation("notifications.markAllAsRead", input: ["": ""] as [String: String])
             await load()
         } catch { /* surface inline */ }
     }

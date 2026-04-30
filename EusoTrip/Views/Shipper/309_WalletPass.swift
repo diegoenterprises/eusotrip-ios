@@ -86,7 +86,7 @@ private struct WalletPassBody: View {
         struct In: Encodable { let loadId: Int }
         let n = Int(loadId.replacingOccurrences(of: "load_", with: "")) ?? 0
         do {
-            let p: PassUrl = try await EusoTripAPI.shared.api.query("documents.signWalletPass", input: In(loadId: n))
+            let p: PassUrl = try await EusoTripAPI.shared.query("documents.signWalletPass", input: In(loadId: n))
             pass = p
         } catch {
             // Pass signing requires the iOS Wallet pass-type ID and

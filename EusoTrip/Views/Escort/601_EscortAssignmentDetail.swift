@@ -94,6 +94,11 @@ struct EscortAssignmentDetail: View {
     /// waiting for the next refresh round-trip.
     @State private var localConfirmed: Bool = false
 
+    /// Toggle that presents the 602 corridor-map sheet. Set by the
+    /// "View corridor →" drill-in CTA. Added 2026-04-27 in the 159th
+    /// eusotrip-killers firing alongside the 602 brick.
+    @State private var showCorridorMap: Bool = false
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -106,6 +111,33 @@ struct EscortAssignmentDetail: View {
         }
         .task { await refreshAll() }
         .refreshable { await refreshAll() }
+        // Corridor-map sheet — opened by tapping the "View corridor →"
+        // drill-in CTA. Detents `[.large]` mirrors the Me sub-route
+        // pattern in MeDetailScreens. The corridor screen reads from
+        // `escorts.getCorridor` independently, so the parent's detail
+        // fetch does not block the corridor open.
+        .sheet(isPresented: $showCorridorMap) {
+            let live: EscortAPI.AssignmentDetail? = detailStore.state.value ?? nil
+            EscortCorridorMapScreen(
+                theme: palette,
+                assignmentId: assignmentId,
+                previewLoadNumber: live?.loadNumber ?? previewLoadNumber,
+                previewLane: corridorLanePreview,
+                previewStatus: live?.status
+            )
+            .environmentObject(session)
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+    }
+
+    /// Lane string used as a preview hint when opening the 602 sheet —
+    /// avoids a paint-1 blank header on the corridor screen.
+    private var corridorLanePreview: String? {
+        if let live = detailStore.state.value ?? nil {
+            return "\(live.origin) → \(live.destination)"
+        }
+        return previewLane
     }
 
     // MARK: - Header
@@ -190,7 +222,41 @@ struct EscortAssignmentDetail: View {
         pairingCard(detail)
         contactCard(detail)
         notesCard(detail)
+        viewCorridorMapCTA(detail)
         confirmRouteCTA(detail)
+    }
+
+    /// Drill-in CTA that opens the 602 corridor-map sheet. Added 2026-04-27
+    /// in the 159th eusotrip-killers firing alongside the 602 brick.
+    /// Closes the role-by-role 3-deep parity gap from the 158th firing
+    /// (Escort was the only 2-deep non-driver role before this brick).
+    @ViewBuilder
+    private func viewCorridorMapCTA(_ d: EscortAPI.AssignmentDetail) -> some View {
+        Button {
+            showCorridorMap = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "map.fill")
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("View corridor")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(palette.textSecondary)
+            }
+            .padding(Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(palette.bgCard)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     /// Three-tile row: corridor coverage / escort role / started.

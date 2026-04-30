@@ -88,7 +88,7 @@ private struct ProfileEditBody: View {
 
     private func load() async {
         do {
-            let p = try await EusoTripAPI.shared.shippers.getProfile()
+            let p = try await EusoTripAPI.shared.shipper.getProfile()
             contactName = p.contactName; email = p.email; phone = p.phone
             address = p.address; website = p.website
         } catch { /* tolerate */ }
@@ -100,7 +100,7 @@ private struct ProfileEditBody: View {
         struct In: Encodable { let contactName: String; let email: String; let phone: String; let address: String; let website: String }
         struct Out: Decodable { let success: Bool }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation("shippers.updateProfile", input: In(contactName: contactName, email: email, phone: phone, address: address, website: website))
+            let _ : Out = try await EusoTripAPI.shared.mutation("shippers.updateProfile", input: In(contactName: contactName, email: email, phone: phone, address: address, website: website))
             saved = true
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

@@ -117,7 +117,7 @@ private struct RouteBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [FleetPin] = try await EusoTripAPI.shared.api.queryNoInput("dispatch.getFleetLocations")
+            let r: [FleetPin] = try await EusoTripAPI.shared.queryNoInput("dispatch.getFleetLocations")
             pins = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

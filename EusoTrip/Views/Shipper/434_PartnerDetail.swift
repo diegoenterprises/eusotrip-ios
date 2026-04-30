@@ -95,7 +95,7 @@ private struct PartnerDetailBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let id: String }
         do {
-            let p: Partner = try await EusoTripAPI.shared.api.query("partners.getById", input: In(id: partnerId))
+            let p: Partner = try await EusoTripAPI.shared.query("partners.getById", input: In(id: partnerId))
             partner = p
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

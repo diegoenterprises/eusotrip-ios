@@ -38,6 +38,9 @@ struct ShipperHome: View {
     @StateObject private var alerts    = ShipperAlertsStore()
     @StateObject private var active    = ShipperActiveLoadsStore()
     @StateObject private var recent    = ShipperRecentLoadsStore()
+    // EUSO-2057 — gates the DU avatar's unread dot on real messaging
+    // unread count via the existing project-wide store.
+    @ObservedObject private var unread = UnreadMessageStore.shared
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -69,6 +72,7 @@ struct ShipperHome: View {
         async let c: Void = active.refresh()
         async let d: Void = recent.refresh()
         _ = await (a, b, c, d)
+        unread.refresh()  // EUSO-2057: kicks UnreadMessageStore -> messaging.getUnreadCount
     }
 
     // MARK: - TopBar — eyebrow + counter + greeting + DU avatar
@@ -155,13 +159,16 @@ struct ShipperHome: View {
             .frame(width: 40, height: 40)
             .accessibilityLabel("Diego Usoro · Eusorone Technologies")
 
-            // Unread dot — always visible until notifications API lands
-            // and gates it. See backend ticket EUSO-2057.
-            Circle()
-                .fill(.white)
-                .frame(width: 10, height: 10)
-                .overlay(Circle().fill(Brand.danger).frame(width: 7, height: 7))
-                .offset(x: 2, y: -2)
+            // EUSO-2057: gated on UnreadMessageStore.shared.total
+            // (messages.getUnreadCount). Hidden when zero unread.
+            if unread.total > 0 {
+                Circle()
+                    .fill(.white)
+                    .frame(width: 10, height: 10)
+                    .overlay(Circle().fill(Brand.danger).frame(width: 7, height: 7))
+                    .offset(x: 2, y: -2)
+                    .accessibilityLabel("\(unread.total) unread")
+            }
         }
     }
 
@@ -542,8 +549,14 @@ struct ShipperHome: View {
     }
 
     private func cargoLabel(for row: ShipperAPI.ActiveLoad) -> String {
-        // Server doesn't surface cargo on ActiveLoad today; placeholder
-        // until the field lands. See backend ticket EUSO-2042.
+        // EUSO-2042 wired: server now projects `cargoSummary` from
+        // unNumber + cargoType + commodity + weight. Falls back to
+        // driver line when the load has no cargo metadata yet.
+        if let s = row.cargoSummary, !s.isEmpty { return s }
+        if let unc = row.unNumber, !unc.isEmpty {
+            let parts = [unc, row.cargoType, row.weightDisplay].compactMap { $0 }
+            return parts.joined(separator: " · ")
+        }
         return row.driver.isEmpty ? "Awaiting driver" : "Driver: \(row.driver)"
     }
 

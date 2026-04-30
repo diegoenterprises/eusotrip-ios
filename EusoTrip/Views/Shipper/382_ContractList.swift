@@ -80,7 +80,7 @@ private struct ContractListBody: View {
         do {
             // shipperContracts.getSummary returns { contracts: [...] } — adapt
             struct Envelope: Decodable { let contracts: [ContractRow]? }
-            let e: Envelope = try await EusoTripAPI.shared.api.queryNoInput("shipperContracts.getSummary")
+            let e: Envelope = try await EusoTripAPI.shared.queryNoInput("shipperContracts.getSummary")
             rows = e.contracts ?? []
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

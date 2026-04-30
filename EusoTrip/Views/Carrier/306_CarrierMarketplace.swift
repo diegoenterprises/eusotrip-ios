@@ -23,7 +23,7 @@ struct CarrierMarketplaceScreen: View {
     }
 }
 
-private struct AvailableLoad: Decodable, Identifiable, Hashable {
+private struct CarrierAvailableLoad: Decodable, Identifiable, Hashable {
     let id: String
     let loadNumber: String
     let origin: String?
@@ -37,7 +37,7 @@ private struct AvailableLoad: Decodable, Identifiable, Hashable {
 
 private struct MarketplaceBody: View {
     @Environment(\.palette) private var palette
-    @State private var loads: [AvailableLoad] = []
+    @State private var loads: [CarrierAvailableLoad] = []
     @State private var loading = true
     @State private var loadError: String? = nil
 
@@ -90,7 +90,7 @@ private struct MarketplaceBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [AvailableLoad] = try await EusoTripAPI.shared.api.queryNoInput("catalysts.getAvailableLoads")
+            let r: [CarrierAvailableLoad] = try await EusoTripAPI.shared.queryNoInput("catalysts.getCarrierAvailableLoads")
             loads = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

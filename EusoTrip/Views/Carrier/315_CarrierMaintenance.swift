@@ -96,7 +96,7 @@ private struct MaintenanceBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [WorkOrder] = try await EusoTripAPI.shared.api.queryNoInput("zeun.getWorkOrdersForCarrier")
+            let r: [WorkOrder] = try await EusoTripAPI.shared.queryNoInput("zeun.getWorkOrdersForCarrier")
             orders = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

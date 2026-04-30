@@ -94,7 +94,7 @@ private struct EscalationBody: View {
         struct In: Encodable { let loadId: String?; let priority: String; let note: String }
         struct Out: Decodable { let success: Bool; let ticketId: String? }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation(
+            let _ : Out = try await EusoTripAPI.shared.mutation(
                 "support.createTicket",
                 input: In(loadId: loadId, priority: priority, note: note)
             )

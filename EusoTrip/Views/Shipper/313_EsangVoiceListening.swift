@@ -26,7 +26,7 @@ private struct VoiceListeningBody: View {
                     .frame(width: pulse ? 220 : 160, height: pulse ? 220 : 160)
                     .opacity(pulse ? 0.0 : 0.7)
                 Circle().fill(LinearGradient.diagonal).frame(width: 120, height: 120)
-                    .shadow(color: Brand.gradientEnd.opacity(0.5), radius: 20)
+                    .shadow(color: Brand.magenta.opacity(0.5), radius: 20)
                 Image(systemName: "mic.fill").font(.system(size: 44, weight: .heavy)).foregroundStyle(.white)
             }
             Text("Listening…").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)

@@ -116,7 +116,7 @@ private struct ResultsBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let q: String }
         do {
-            let e: SearchEnvelope = try await EusoTripAPI.shared.api.query("search.global", input: In(q: query))
+            let e: SearchEnvelope = try await EusoTripAPI.shared.query("search.global", input: In(q: query))
             env = e
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

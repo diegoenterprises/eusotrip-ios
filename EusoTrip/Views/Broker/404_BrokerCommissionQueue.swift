@@ -97,7 +97,7 @@ private struct CommissionQueueBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [Commission] = try await EusoTripAPI.shared.api.queryNoInput("brokers.getCommissionQueue")
+            let r: [Commission] = try await EusoTripAPI.shared.queryNoInput("brokers.getCommissionQueue")
             rows = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

@@ -75,7 +75,7 @@ private struct RfpInboxBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [RfpRow] = try await EusoTripAPI.shared.api.queryNoInput("rfpManager.getRFPs")
+            let r: [RfpRow] = try await EusoTripAPI.shared.queryNoInput("rfpManager.getRFPs")
             rfps = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

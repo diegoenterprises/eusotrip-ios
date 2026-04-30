@@ -82,7 +82,7 @@ private struct RankBidsBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let loadId: String }
         do {
-            let r: RankResult = try await EusoTripAPI.shared.api.query("esangAI.rankBidsForLoad", input: In(loadId: loadId))
+            let r: RankResult = try await EusoTripAPI.shared.query("esangAI.rankBidsForLoad", input: In(loadId: loadId))
             result = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

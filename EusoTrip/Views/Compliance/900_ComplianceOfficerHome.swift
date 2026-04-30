@@ -128,8 +128,8 @@ private struct ComplianceHomeBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let limit: Int }
         do {
-            async let d: ComplianceDash = EusoTripAPI.shared.api.queryNoInput("compliance.getDashboardStats")
-            async let exp: [ExpiringDocPriority] = EusoTripAPI.shared.api.query("compliance.getExpiringItems", input: In(limit: 10))
+            async let d: ComplianceDash = EusoTripAPI.shared.queryNoInput("compliance.getDashboardStats")
+            async let exp: [ExpiringDocPriority] = EusoTripAPI.shared.query("compliance.getExpiringItems", input: In(limit: 10))
             let (dash, items) = try await (d, exp)
             self.dash = dash
             self.topExpiring = items.sorted { ($0.daysRemaining ?? 999) < ($1.daysRemaining ?? 999) }.first

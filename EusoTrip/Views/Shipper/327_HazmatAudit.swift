@@ -82,7 +82,7 @@ private struct HazmatAuditBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [HazmatRow] = try await EusoTripAPI.shared.api.queryNoInput("hazmat.getShipperAuditTrail")
+            let r: [HazmatRow] = try await EusoTripAPI.shared.queryNoInput("hazmat.getShipperAuditTrail")
             rows = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

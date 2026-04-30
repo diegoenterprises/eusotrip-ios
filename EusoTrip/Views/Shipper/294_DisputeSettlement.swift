@@ -113,7 +113,7 @@ private struct DisputeBody: View {
         }
         struct Out: Decodable { let success: Bool; let claimId: String? }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation(
+            let _ : Out = try await EusoTripAPI.shared.mutation(
                 "freightClaims.fileClaim",
                 input: In(settlementId: settlementId, reason: reason, amount: amount ?? 0, detail: detail, claimType: "settlement_dispute")
             )

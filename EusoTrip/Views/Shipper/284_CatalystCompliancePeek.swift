@@ -96,7 +96,7 @@ private struct CatalystCompliancePeekBody: View {
         // input shape varies; try the conservative version first.
         struct In: Encodable { let catalystId: String }
         do {
-            let r: FmcsaPeek = try await EusoTripAPI.shared.api.query("fmcsa.lookupByCarrierId", input: In(catalystId: catalystId))
+            let r: FmcsaPeek = try await EusoTripAPI.shared.query("fmcsa.lookupByCarrierId", input: In(catalystId: catalystId))
             peek = r
         } catch {
             // Endpoint may not be wired or named differently. Surface

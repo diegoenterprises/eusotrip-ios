@@ -82,7 +82,7 @@ private struct FuelCardBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [FuelCard] = try await EusoTripAPI.shared.api.queryNoInput("catalysts.getFuelCards")
+            let r: [FuelCard] = try await EusoTripAPI.shared.queryNoInput("catalysts.getFuelCards")
             cards = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

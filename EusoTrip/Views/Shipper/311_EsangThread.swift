@@ -13,7 +13,7 @@ struct EsangThreadScreen: View {
     }
 }
 
-private struct ChatMessage: Decodable, Identifiable, Hashable {
+private struct EsangChatMessage: Decodable, Identifiable, Hashable {
     let id: String
     let senderId: String?
     let senderName: String?
@@ -25,7 +25,7 @@ private struct ChatMessage: Decodable, Identifiable, Hashable {
 private struct EsangThreadBody: View {
     @Environment(\.palette) private var palette
     let conversationId: String
-    @State private var messages: [ChatMessage] = []
+    @State private var messages: [EsangChatMessage] = []
     @State private var draft: String = ""
     @State private var sending: Bool = false
     @State private var loading = true
@@ -58,7 +58,7 @@ private struct EsangThreadBody: View {
         }
     }
 
-    private func bubble(_ m: ChatMessage) -> some View {
+    private func bubble(_ m: EsangChatMessage) -> some View {
         HStack {
             if m.isMine == true { Spacer(minLength: 40) }
             VStack(alignment: m.isMine == true ? .trailing : .leading, spacing: 2) {
@@ -97,7 +97,7 @@ private struct EsangThreadBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let conversationId: String }
         do {
-            let m: [ChatMessage] = try await EusoTripAPI.shared.api.query("messaging.getMessages", input: In(conversationId: conversationId))
+            let m: [EsangChatMessage] = try await EusoTripAPI.shared.query("messaging.getMessages", input: In(conversationId: conversationId))
             messages = m
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -110,7 +110,7 @@ private struct EsangThreadBody: View {
         struct In: Encodable { let conversationId: String; let body: String }
         struct Out: Decodable { let success: Bool }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation("messaging.sendMessage", input: In(conversationId: conversationId, body: draft))
+            let _ : Out = try await EusoTripAPI.shared.mutation("messaging.sendMessage", input: In(conversationId: conversationId, body: draft))
             draft = ""
             await load()
         } catch { /* surface inline */ }

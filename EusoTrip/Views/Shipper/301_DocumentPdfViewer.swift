@@ -67,7 +67,7 @@ private struct PdfViewerBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let id: String }
         do {
-            let d: PdfDoc = try await EusoTripAPI.shared.api.query("documents.getById", input: In(id: docId))
+            let d: PdfDoc = try await EusoTripAPI.shared.query("documents.getById", input: In(id: docId))
             doc = d
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

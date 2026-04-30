@@ -106,7 +106,7 @@ private struct BidComposeBody: View {
         struct In: Encodable { let loadId: String; let amount: Double; let transitTime: String?; let message: String? }
         struct Out: Decodable { let success: Bool; let bidId: String? }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation(
+            let _ : Out = try await EusoTripAPI.shared.mutation(
                 "catalysts.submitBid",
                 input: In(loadId: loadId, amount: amount ?? 0, transitTime: transitTime.isEmpty ? nil : transitTime, message: message.isEmpty ? nil : message)
             )

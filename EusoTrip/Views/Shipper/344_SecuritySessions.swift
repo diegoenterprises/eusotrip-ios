@@ -86,7 +86,7 @@ private struct SessionsBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [ActiveSession] = try await EusoTripAPI.shared.api.queryNoInput("auth.listSessions")
+            let r: [ActiveSession] = try await EusoTripAPI.shared.queryNoInput("auth.listSessions")
             sessions = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -99,7 +99,7 @@ private struct SessionsBody: View {
         struct In: Encodable { let id: String }
         struct Out: Decodable { let success: Bool }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation("auth.revokeSession", input: In(id: id))
+            let _ : Out = try await EusoTripAPI.shared.mutation("auth.revokeSession", input: In(id: id))
             await load()
         } catch { /* surface inline */ }
         revoking = nil

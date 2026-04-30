@@ -98,7 +98,7 @@ private struct ReconcileBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let e: ReconEnvelope = try await EusoTripAPI.shared.api.queryNoInput("wallet.getReconciliationSnapshot")
+            let e: ReconEnvelope = try await EusoTripAPI.shared.queryNoInput("wallet.getReconciliationSnapshot")
             env = e
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

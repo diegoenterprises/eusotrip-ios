@@ -115,7 +115,7 @@ private struct ComplianceBody: View {
         loading = true
         struct In: Encodable { let days: Int }
         do {
-            let r: [ExpiringItem] = try await EusoTripAPI.shared.api.query("compliance.getExpiringItems", input: In(days: 30))
+            let r: [ExpiringItem] = try await EusoTripAPI.shared.query("compliance.getExpiringItems", input: In(days: 30))
             expiring = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

@@ -117,7 +117,7 @@ private struct AssignDriverBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [AvailableDriver] = try await EusoTripAPI.shared.api.queryNoInput("catalysts.getAvailableDrivers")
+            let r: [AvailableDriver] = try await EusoTripAPI.shared.queryNoInput("catalysts.getAvailableDrivers")
             drivers = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -131,7 +131,7 @@ private struct AssignDriverBody: View {
         struct In: Encodable { let loadId: String; let driverId: String }
         struct Out: Decodable { let success: Bool }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation("catalysts.assignDriver", input: In(loadId: loadId, driverId: driverId))
+            let _ : Out = try await EusoTripAPI.shared.mutation("catalysts.assignDriver", input: In(loadId: loadId, driverId: driverId))
             assigned = true
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

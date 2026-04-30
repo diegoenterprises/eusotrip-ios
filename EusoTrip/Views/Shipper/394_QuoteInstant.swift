@@ -128,7 +128,7 @@ private struct QuoteBody: View {
         loading = true; actionError = nil
         struct In: Encodable { let origin: String; let destination: String; let equipmentType: String; let weight: Double? }
         do {
-            let r: QuoteResult = try await EusoTripAPI.shared.api.query("predictivePricing.quote", input: In(origin: origin, destination: destination, equipmentType: equipmentType, weight: weight))
+            let r: QuoteResult = try await EusoTripAPI.shared.query("predictivePricing.quote", input: In(origin: origin, destination: destination, equipmentType: equipmentType, weight: weight))
             result = r
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -139,7 +139,7 @@ private struct QuoteBody: View {
     private func save() async {
         struct In: Encodable { let origin: String; let destination: String; let equipmentType: String; let weight: Double? }
         struct Out: Decodable { let success: Bool }
-        let _ : Out = (try? await EusoTripAPI.shared.api.mutation("predictivePricing.saveQuote", input: In(origin: origin, destination: destination, equipmentType: equipmentType, weight: weight))) ?? Out(success: false)
+        let _ : Out = (try? await EusoTripAPI.shared.mutation("predictivePricing.saveQuote", input: In(origin: origin, destination: destination, equipmentType: equipmentType, weight: weight))) ?? Out(success: false)
     }
 }
 

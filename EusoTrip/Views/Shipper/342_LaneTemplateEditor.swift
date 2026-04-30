@@ -118,7 +118,7 @@ private struct LaneTemplateEditorBody: View {
             let cargoType: String?; let equipmentType: String?; let rate: Double?; let weight: Double?
         }
         do {
-            let t: Out = try await EusoTripAPI.shared.api.query("loadTemplates.getById", input: In(id: templateId))
+            let t: Out = try await EusoTripAPI.shared.query("loadTemplates.getById", input: In(id: templateId))
             name = t.name; origin = t.origin ?? ""; destination = t.destination ?? ""
             cargoType = t.cargoType ?? "general"; equipmentType = t.equipmentType ?? ""
             rate = t.rate; weight = t.weight
@@ -134,7 +134,7 @@ private struct LaneTemplateEditorBody: View {
         }
         struct Out: Decodable { let success: Bool; let templateId: String? }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation(
+            let _ : Out = try await EusoTripAPI.shared.mutation(
                 templateId == "new" ? "loadTemplates.create" : "loadTemplates.update",
                 input: In(id: templateId == "new" ? nil : templateId, name: name, origin: origin, destination: destination, cargoType: cargoType, equipmentType: equipmentType.isEmpty ? nil : equipmentType, rate: rate, weight: weight)
             )

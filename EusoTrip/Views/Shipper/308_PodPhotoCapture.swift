@@ -95,7 +95,7 @@ private struct PodCaptureBody: View {
         struct Out: Decodable { let success: Bool; let documentId: String? }
         let n = Int(loadId.replacingOccurrences(of: "load_", with: "")) ?? 0
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation("documents.uploadPod", input: In(loadId: n, imageBase64: data.base64EncodedString()))
+            let _ : Out = try await EusoTripAPI.shared.mutation("documents.uploadPod", input: In(loadId: n, imageBase64: data.base64EncodedString()))
             sent = true
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

@@ -108,7 +108,7 @@ private struct EsangSettingsBody: View {
             let pushEnabled: Bool?
         }
         do {
-            let s: Out = try await EusoTripAPI.shared.api.queryNoInput("esangAI.getPreferences")
+            let s: Out = try await EusoTripAPI.shared.queryNoInput("esangAI.getPreferences")
             voiceProfile = s.voiceProfile ?? voiceProfile
             language = s.language ?? language
             voiceEnabled = s.voiceEnabled ?? voiceEnabled
@@ -123,7 +123,7 @@ private struct EsangSettingsBody: View {
         }
         struct Out: Decodable { let success: Bool }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation("esangAI.savePreferences", input: In(voiceProfile: voiceProfile, language: language, voiceEnabled: voiceEnabled, pushEnabled: pushEnabled))
+            let _ : Out = try await EusoTripAPI.shared.mutation("esangAI.savePreferences", input: In(voiceProfile: voiceProfile, language: language, voiceEnabled: voiceEnabled, pushEnabled: pushEnabled))
             saved = true
         } catch { /* surface inline */ }
         sending = false

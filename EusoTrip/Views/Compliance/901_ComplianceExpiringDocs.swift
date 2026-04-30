@@ -80,7 +80,7 @@ private struct ExpiringBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let limit: Int }
         do {
-            let r: [ExpiringDoc] = try await EusoTripAPI.shared.api.query("compliance.getExpiringItems", input: In(limit: 200))
+            let r: [ExpiringDoc] = try await EusoTripAPI.shared.query("compliance.getExpiringItems", input: In(limit: 200))
             rows = r.sorted { ($0.daysRemaining ?? 999) < ($1.daysRemaining ?? 999) }
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

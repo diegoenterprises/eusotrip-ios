@@ -75,7 +75,7 @@ private struct KybRejectedBody: View {
         if !reasons.isEmpty { rs = reasons; loading = false; return }
         struct Out: Decodable { let reasons: [String] }
         do {
-            let r: Out = try await EusoTripAPI.shared.api.queryNoInput("auth.kybRejectionReasons")
+            let r: Out = try await EusoTripAPI.shared.queryNoInput("auth.kybRejectionReasons")
             rs = r.reasons
         } catch {
             // Empty list surfaces the email-support fallback.

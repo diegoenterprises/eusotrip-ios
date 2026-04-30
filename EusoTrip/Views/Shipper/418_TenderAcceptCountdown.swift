@@ -114,7 +114,7 @@ private struct TenderCountdownBody: View {
         struct In: Encodable { let loadId: String }
         struct Out: Decodable { let success: Bool }
         do {
-            let _ : Out = try await EusoTripAPI.shared.api.mutation("shippers.acceptTender", input: In(loadId: loadId))
+            let _ : Out = try await EusoTripAPI.shared.mutation("shippers.acceptTender", input: In(loadId: loadId))
             NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "262", "loadId": loadId])
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

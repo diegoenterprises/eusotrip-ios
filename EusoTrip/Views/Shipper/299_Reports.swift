@@ -121,7 +121,7 @@ private struct ReportsBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [SavedReport] = try await EusoTripAPI.shared.api.queryNoInput("reports.list")
+            let r: [SavedReport] = try await EusoTripAPI.shared.queryNoInput("reports.list")
             reports = r
         } catch {
             // No reports endpoint on iOS yet — surface clean state.
@@ -135,8 +135,8 @@ private struct ReportsBody: View {
         struct In: Encodable { let id: String }
         struct Out: Decodable { let url: String? }
         do {
-            let r: Out = try await EusoTripAPI.shared.api.mutation("reports.runById", input: In(id: id))
-            if let url = r.url, let u = URL(string: url) { UIApplication.shared.open(u) }
+            let r: Out = try await EusoTripAPI.shared.mutation("reports.runById", input: In(id: id))
+            if let url = r.url, let u = URL(string: url) { await UIApplication.shared.open(u) }
         } catch { /* surface inline if needed */ }
         rerunning = nil
     }

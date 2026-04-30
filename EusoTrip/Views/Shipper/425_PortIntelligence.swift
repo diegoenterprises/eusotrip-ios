@@ -82,7 +82,7 @@ private struct PortIntelBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let product: String }
         do {
-            let r: [PortRow] = try await EusoTripAPI.shared.api.query("portIntelligence.findByProduct", input: In(product: product))
+            let r: [PortRow] = try await EusoTripAPI.shared.query("portIntelligence.findByProduct", input: In(product: product))
             ports = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

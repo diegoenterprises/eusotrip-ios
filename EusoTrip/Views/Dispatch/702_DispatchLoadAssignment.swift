@@ -123,8 +123,8 @@ private struct LoadAssignBody: View {
     private func loadAll() async {
         loading = true; loadError = nil
         do {
-            async let l: [UnassignedLoad] = EusoTripAPI.shared.api.queryNoInput("dispatch.getUnassignedLoads")
-            async let d: [DriverPick] = EusoTripAPI.shared.api.queryNoInput("dispatch.getDriverStatuses")
+            async let l: [UnassignedLoad] = EusoTripAPI.shared.queryNoInput("dispatch.getUnassignedLoads")
+            async let d: [DriverPick] = EusoTripAPI.shared.queryNoInput("dispatch.getDriverStatuses")
             let (loadsRes, driversRes) = try await (l, d)
             loads = loadsRes
             drivers = driversRes.filter { $0.status == "available" }
@@ -139,7 +139,7 @@ private struct LoadAssignBody: View {
         struct In: Encodable { let loadId: String; let driverId: String }
         struct Out: Decodable { let success: Bool? }
         do {
-            let _: Out = try await EusoTripAPI.shared.api.mutation("dispatch.assignDriver", input: In(loadId: loadId, driverId: driverId))
+            let _: Out = try await EusoTripAPI.shared.mutation("dispatch.assignDriver", input: In(loadId: loadId, driverId: driverId))
             lastAssigned = "Assigned · driver \(driverId) → \(pickFor?.loadNumber ?? loadId)"
             pickFor = nil
             await loadAll()
