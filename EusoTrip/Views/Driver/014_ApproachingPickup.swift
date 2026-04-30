@@ -461,13 +461,19 @@ struct ApproachingPickupScreen: View {
     }
 }
 
+// PNG canon at `01 Driver/{Light,Dark}/014 Approaching Pickup.png`
+// pins TRIPS current on lifecycle Ring 3 surfaces. Icon set + trailing
+// slot normalized to the canonical 010-013 layout (Wallet / creditcard
+// + .fill variants). Per [feedback_bottom_nav_frozen]: layout +
+// isCurrent flags ship as-is; this only normalizes SF Symbol naming
+// and corrects the trailing Loads → Wallet drift.
 private func driverNavLeading_014() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",      isCurrent: false),
+    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
      NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
 }
 private func driverNavTrailing_014() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
 }
 
 // MARK: - Previews
