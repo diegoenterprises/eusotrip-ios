@@ -4,11 +4,11 @@
 //
 //  Screen 019 · HOS Duty Status — the mandatory 30-minute break.
 //
-//  Moment (night):     Marcus Reyes, 14:22 CDT, truck stopped at Flying J #651
+//  Moment (night):     Michael Eusorone, 14:22 CDT, truck stopped at Flying J #651
 //                      Meridian-adjacent, I-20 E MM 132. Switching Driving → Off-Duty
 //                      to start 8/2 split. 6h 58m drive bank, 10h 12m on-duty bank,
 //                      52h 44m cycle remaining.
-//  Moment (afternoon): Marcus Reyes, 20:53 CDT, Pilot #388 Heflin AL,
+//  Moment (afternoon): Michael Eusorone, 20:53 CDT, Pilot #388 Heflin AL,
 //                      I-20 E MM 210. Same break, later in the shift.
 //                      7h 27m drive bank, 8h 58m on-duty bank, 47h 11m cycle.
 //
@@ -805,13 +805,21 @@ struct HosDutyStatusScreen: View {
     }
 }
 
+// PNG canon at `01 Driver/{Light,Dark}/019 HOS Duty Status.png` +
+// [Driver E2E map] doctrine pin HOS / ELD (019, 074, 081) inside
+// Ring 1 Me. Restored canonical layout: Home / Trips · Wallet / Me
+// with **ME current**. Prior iOS shipped `Loads isCurrent: true`
+// which carried two drifts: (a) Loads is not a canonical trailing
+// slot (Wallet is), (b) HOS is a Me-ring compliance hub, not a
+// Wallet surface. Per [feedback_bottom_nav_frozen]: layout +
+// isCurrent flags ship as-is; this restores the canonical pin.
 private func driverNavLeading_019() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: false)]
+    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: false)]
 }
 private func driverNavTrailing_019() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: true),
-     NavSlot(label: "Me",     systemImage: "person", isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: true)]
 }
 
 // MARK: - Previews
