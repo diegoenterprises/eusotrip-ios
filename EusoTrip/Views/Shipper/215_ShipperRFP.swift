@@ -1,43 +1,48 @@
 //
 //  215_ShipperRFP.swift
-//  EusoTrip 2027 UI — brick 215 (shipper · RFP / procurement)
+//  EusoTrip 2027 UI — Shipper · RFP Manager (parity-reconciled 2026-04-29)
 //
-//  Procurement workflow — list active RFPs, drill into one to view
-//  lanes + bid responses + scored recommendations, publish drafts,
-//  award lanes to winning carriers. Mirrors web `/rfp-manager`
-//  (`RFPManagerPage.tsx`) 1:1, backed by `rfpManager.*` tRPC procs.
+//  PARITY AUDIT 2026-04-29 — reconciled to wireframe canon at
+//  /02 Shipper/Code/215_ShipperRFP.swift. Persona: Diego Usoro /
+//  Eusorone Technologies (companyId 1) per §11. RFP IDs reuse the
+//  LD- hex tail (`RFP-260427-XXXXXXXXXX`) so the audit trail joins
+//  the `loads` and `rfps` tables on the same suffix per §11.2.
 //
-//  Cohort B day-1 — fully dynamic. No fixtures.
+//  Layout (top → bottom):
+//    1. TopBar           ✦ SHIPPER · RFP MANAGER / "{N} ACTIVE · {M} BIDS"
+//    2. Title block      RFPs / "Eusorone Technologies · request for proposals · MATRIX-50"
+//    3. IridescentHairline
+//    4. KPI summary card 3-cell · ACTIVE · TOTAL BIDS · AWARDED YTD ($ saved trail)
+//    5. Filter chip row  All / Active / Awarded / Closed / Drafts
+//    6. RFP rows         3pt left tier rim · RFP id · status pill · lane title ·
+//                        spec line · 3-stat row · 4-stage lifecycle strip
+//    7. Compact closed   76pt variant for status=closed / cancelled rows
+//    8. Inline detail    expands below the active row · lanes + bids + scoring
+//    9. "+ New RFP" CTA  gradient ribbon
 //
-//    • RFP list                → `rfpManager.getRFPs`
-//    • RFP detail (lanes)      → folded into `getRFPs` envelope
-//    • Bid responses           → `rfpManager.getBidResponses(rfpId)`
-//    • Scored recommendations  → `rfpManager.scoreResponses(rfpId)`
-//    • Publish draft           → `rfpManager.publishRFP(rfpId)`
-//    • Award lane              → `rfpManager.awardLane(rfpId, laneId, carrierId)`
+//  Real wiring preserved: `rfpManager.getRFPs / getBidResponses /
+//  scoreResponses / publishRFP / awardLane` via `ShipperRFPStore`.
 //
-//  Tab structure (matches web peer):
-//    • RFPs & Bids   — list + detail + bid responses
-//    • Scoring & Awards — ranked scorecards with award CTA
+//  Backend gaps surfaced (logged in audit log, no fake data):
+//    EUSO-2116 — no rolled-up "$ saved YTD" metric on the API surface.
+//                Awarded YTD KPI cell trail paints "—" until backend
+//                ships `rfpManager.getStats` returning the YTD sum of
+//                (targetRate − awardedRate) per awarded lane.
+//    EUSO-2117 — no per-RFP low/high bid range on the list envelope.
+//                Stat triplet shows "{N} bids · low — · high —" until
+//                backend folds aggregate min/max into `getRFPs`.
 //
-//  RFP CREATION is intentionally NOT wired on this brick — the
-//  multi-lane wizard is a heavy form best done on web for now. iOS
-//  surfaces a "Create on web" disclosure on the empty state. A
-//  future brick (215b ShipperRFPCreate) can land the form when the
-//  shipper-side iOS demand justifies the build.
-//
-//  Design doctrine (per Driver Figma 010-103):
-//    §1   Status pills with color-keyed background + 1px tinted
-//         stroke. Recommendation chips with leading icon.
-//    §2   `.easeOut(0.12)` press scale on every CTA. Success haptic
-//         on publish + award.
-//    §4   Tokenized Space/Radius/EType.
-//    §5   Palette semantic. Status colors:
-//         draft→neutral, published→info, in_review→warning,
-//         awarded→success, closed→neutral, cancelled→danger.
-//    §10  Dark + Light previews compile in isolation under .empty.
-//
-//  Powered by ESANG AI™.
+//  Doctrine refs: §2 LOADS-tab nav (handled by ContentView); §3
+//  numbers-first copy; §4.3 single iridescent hairline; §7 breathe
+//  density; §11 / §11.2 Diego canon + RFP-260427 audit-trail
+//  convention; §11.4 / §13 carrier mix; §15.2 4-stage lifecycle strip
+//  + per-row tier rim + composite-score recipes; §16.2 action ribbon
+//  CTA pattern; §17.2 status pill grammar (closingSoon warn-grad /
+//  activeOutlined gradient outline / awarded success / closed
+//  neutral); §19.2 file-scoped LifecycleStrip4 + warnGrad helpers;
+//  §20.4 no dead buttons (filter / row / new-RFP / publish / award
+//  all post notifications or fire mutations); §22.2 textTertiary
+//  counter (informational).
 //
 
 import SwiftUI
@@ -45,7 +50,7 @@ import SwiftUI
 import UIKit
 #endif
 
-// MARK: - Status helpers (file-local so they don't pollute the ViewModel namespace)
+// MARK: - Status helpers (file-local)
 
 private struct StatusStyle {
     let label: String
@@ -86,6 +91,26 @@ private func tierColor(_ tier: String?, palette: Theme.Palette) -> Color {
     case "silver":   return palette.textSecondary
     case "bronze":   return Color(red: 0.85, green: 0.55, blue: 0.30)
     default:          return palette.textTertiary
+    }
+}
+
+// MARK: - Tier rim + lifecycle stage + filter
+
+private enum TierRim { case gradient, warn, success, neutral }
+
+private enum RFPStage { case posted, bidding, award, closed }
+
+private enum RFPFilter: String, CaseIterable, Identifiable {
+    case all, active, awarded, closed, drafts
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .all:     return "All"
+        case .active:  return "Active"
+        case .awarded: return "Awarded"
+        case .closed:  return "Closed"
+        case .drafts:  return "Drafts"
+        }
     }
 }
 
@@ -180,25 +205,24 @@ struct ShipperRFP: View {
     @StateObject private var store = ShipperRFPStore()
 
     @State private var selectedRfpId: String?
-    @State private var tab: Tab = .rfps
-
-    private enum Tab: String, CaseIterable, Identifiable {
-        case rfps, scoring
-        var id: String { rawValue }
-        var label: String { self == .rfps ? "RFPs & Bids" : "Scoring & Awards" }
-        var icon: String { self == .rfps ? "doc.text.fill" : "chart.bar.fill" }
-    }
+    @State private var filter: RFPFilter = .all
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                header
-                tabPicker
+            VStack(alignment: .leading, spacing: 0) {
+                topBar
+                    .padding(.top, Space.s5)
+                titleBlock
+                    .padding(.top, Space.s2)
+                IridescentHairline()
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s5)
+
                 content
+                    .padding(.top, Space.s3)
+
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 8)
         }
         .task { await store.refresh() }
         .refreshable { await store.refresh() }
@@ -218,7 +242,7 @@ struct ShipperRFP: View {
         .animation(.easeInOut(duration: 0.2), value: store.lastToast)
         .animation(
             reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.18),
-            value: tab
+            value: filter
         )
         .onChange(of: selectedRfpId) { _, newId in
             guard let id = newId else { return }
@@ -226,81 +250,65 @@ struct ShipperRFP: View {
         }
     }
 
-    // MARK: Header
+    // MARK: TopBar
 
-    private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "doc.text.below.ecg.fill")
-                .font(.system(size: 20, weight: .heavy))
-                .foregroundStyle(LinearGradient.diagonal)
-                .frame(width: 36, height: 36)
-                .background(palette.bgCard)
-                .overlay(Circle().strokeBorder(palette.borderFaint))
-                .clipShape(Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 9, weight: .heavy))
-                        .foregroundStyle(LinearGradient.diagonal)
-                    Text("SHIPPER · RFP MANAGER")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                        .foregroundStyle(LinearGradient.diagonal)
-                }
-                Text("Procurement & awards")
-                    .font(.system(size: 22, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary)
-                    .lineLimit(1)
-                Text("Distribute lane RFPs, collect bids, score carriers across rate · service · safety · capacity · experience.")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
+    private var topBar: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("✦ SHIPPER · RFP MANAGER")
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundStyle(LinearGradient.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+            Spacer()
+            Text(counterEyebrow)
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+                .accessibilityLabel(counterAccessibility)
         }
-        .padding(.top, 4)
+        .padding(.horizontal, Space.s5)
     }
 
-    // MARK: Tab picker
+    private var counterEyebrow: String {
+        if case .loaded(let rfps) = store.state {
+            let active = rfps.filter { isActive($0.status) }.count
+            let bids = rfps.reduce(0) { $0 + $1.responsesReceived }
+            return "\(active) ACTIVE · \(bids) BIDS"
+        }
+        return "—"
+    }
 
-    private var tabPicker: some View {
-        HStack(spacing: Space.s2) {
-            ForEach(Tab.allCases) { t in
-                tabButton(t)
-            }
+    private var counterAccessibility: String {
+        if case .loaded(let rfps) = store.state {
+            let active = rfps.filter { isActive($0.status) }.count
+            let bids = rfps.reduce(0) { $0 + $1.responsesReceived }
+            return "\(active) active RFPs, \(bids) total bids"
+        }
+        return "Loading RFPs"
+    }
+
+    private func isActive(_ status: String) -> Bool {
+        switch status.lowercased() {
+        case "published", "in_review": return true
+        default: return false
         }
     }
 
-    private func tabButton(_ t: Tab) -> some View {
-        let active = (tab == t)
-        return Button {
-            tab = t
-            #if canImport(UIKit)
-            UISelectionFeedbackGenerator().selectionChanged()
-            #endif
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: t.icon)
-                    .font(.system(size: 11, weight: .heavy))
-                Text(t.label)
-                    .font(EType.bodyStrong)
-            }
-            .padding(.horizontal, Space.s3)
-            .padding(.vertical, Space.s2)
-            .frame(maxWidth: .infinity)
-            .foregroundStyle(active ? palette.textPrimary : palette.textSecondary)
-            .background(
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .fill(active
-                          ? AnyShapeStyle(LinearGradient.diagonal.opacity(0.18))
-                          : AnyShapeStyle(palette.bgCard))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .strokeBorder(active ? palette.borderSoft : palette.borderFaint, lineWidth: 1)
-            )
+    // MARK: Title block
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("RFPs")
+                .font(.system(size: 34, weight: .bold))
+                .tracking(-0.6)
+                .foregroundStyle(palette.textPrimary)
+            Text("Eusorone Technologies · request for proposals · MATRIX-50")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Space.s5)
     }
 
     // MARK: Content state machine
@@ -313,216 +321,549 @@ struct ShipperRFP: View {
                 ForEach(0..<4, id: \.self) { _ in
                     RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                         .fill(palette.tintNeutral.opacity(0.3))
-                        .frame(height: 88)
+                        .frame(height: 124)
                 }
             }
+            .padding(.horizontal, Space.s5)
         case .empty:
             emptyHero
+                .padding(.horizontal, Space.s5)
         case .error(let msg):
             errorBanner(msg)
+                .padding(.horizontal, Space.s5)
         case .loaded(let rfps):
-            switch tab {
-            case .rfps:
-                rfpsAndBidsTab(rfps: rfps)
-            case .scoring:
-                scoringTab(rfps: rfps)
+            VStack(alignment: .leading, spacing: 0) {
+                kpiSummaryCard(rfps)
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s3)
+
+                filterRow
+                    .padding(.top, Space.s5)
+
+                rfpList(filteredRows(rfps))
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s4)
+
+                newRFPButton
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s5)
             }
         }
     }
 
-    private var emptyHero: some View {
-        VStack(spacing: Space.s2) {
-            Image(systemName: "doc.text.below.ecg")
-                .font(.system(size: 32, weight: .light))
-                .foregroundStyle(LinearGradient.diagonal)
-            Text("No active RFPs")
-                .font(EType.title)
-                .foregroundStyle(palette.textPrimary)
-            Text("Create your first lane RFP on web and distribute it to your carrier panel — bids land here for review and award.")
-                .font(EType.caption)
-                .foregroundStyle(palette.textSecondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, Space.s4)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("eusotrip.com/rfp-manager")
-                .font(.system(size: 11, weight: .heavy, design: .monospaced))
-                .foregroundStyle(LinearGradient.diagonal)
-                .padding(.top, 4)
+    private func filteredRows(_ rfps: [RFPManagerAPI.RFP]) -> [RFPManagerAPI.RFP] {
+        switch filter {
+        case .all: return rfps
+        case .active:
+            return rfps.filter { isActive($0.status) }
+        case .awarded:
+            return rfps.filter { $0.status.lowercased() == "awarded" }
+        case .closed:
+            return rfps.filter {
+                let s = $0.status.lowercased()
+                return s == "closed" || s == "cancelled" || s == "canceled"
+            }
+        case .drafts:
+            return rfps.filter { $0.status.lowercased() == "draft" }
         }
-        .frame(maxWidth: .infinity)
-        .padding(Space.s5)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    private func errorBanner(_ msg: String) -> some View {
-        VStack(spacing: Space.s2) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(palette.textSecondary)
-            Text("RFP service offline")
-                .font(EType.title)
-                .foregroundStyle(palette.textPrimary)
-            Text(msg)
-                .font(EType.caption)
+    // MARK: KPI summary card (ACTIVE / TOTAL BIDS / AWARDED YTD)
+
+    private func kpiSummaryCard(_ rfps: [RFPManagerAPI.RFP]) -> some View {
+        let active = rfps.filter { isActive($0.status) }.count
+        let totalBids = rfps.reduce(0) { $0 + $1.responsesReceived }
+        let awardedYtd = rfps.filter { $0.status.lowercased() == "awarded" }.count
+
+        return HStack(spacing: 0) {
+            kpiCell(label: "ACTIVE", value: "\(active)", gradient: true, delta: nil, deltaColor: .clear, valueColor: nil)
+            divider
+            kpiCell(label: "TOTAL BIDS", value: "\(totalBids)", gradient: false, delta: nil, deltaColor: .clear, valueColor: nil)
+            divider
+            // EUSO-2116 — backend doesn't ship `$ saved` aggregate yet.
+            kpiCell(label: "AWARDED YTD", value: "\(awardedYtd)", gradient: false, delta: "—", deltaColor: palette.textTertiary, valueColor: Brand.success)
+        }
+        .padding(.vertical, Space.s4)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg)
+                .fill(palette.bgCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg)
+                .strokeBorder(palette.borderFaint)
+        )
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(palette.borderFaint)
+            .frame(width: 1, height: 36)
+    }
+
+    @ViewBuilder
+    private func kpiCell(label: String,
+                         value: String,
+                         gradient: Bool,
+                         delta: String?,
+                         deltaColor: Color,
+                         valueColor: Color?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(EType.micro)
+                .tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
-                .multilineTextAlignment(.center)
-            Button {
-                Task { await store.refresh() }
-            } label: {
-                Text("Retry")
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, Space.s4)
-                    .padding(.vertical, Space.s2)
-                    .background(Capsule().fill(LinearGradient.diagonal))
+
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Group {
+                    if gradient {
+                        Text(value).foregroundStyle(LinearGradient.diagonal)
+                    } else if let valueColor {
+                        Text(value).foregroundStyle(valueColor)
+                    } else {
+                        Text(value).foregroundStyle(palette.textPrimary)
+                    }
+                }
+                .font(.system(size: 22, weight: .bold).monospacedDigit())
+
+                if let delta {
+                    Text(delta)
+                        .font(EType.caption)
+                        .foregroundStyle(deltaColor)
+                }
             }
-            .buttonStyle(.plain)
         }
-        .frame(maxWidth: .infinity)
-        .padding(Space.s4)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Space.s5)
     }
 
-    // MARK: RFPs & Bids tab
+    // MARK: Filter row
 
-    private func rfpsAndBidsTab(rfps: [RFPManagerAPI.RFP]) -> some View {
-        VStack(alignment: .leading, spacing: Space.s4) {
-            VStack(alignment: .leading, spacing: Space.s2) {
-                Text("YOUR RFPS")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+    private var filterRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Space.s2) {
+                ForEach(RFPFilter.allCases) { f in
+                    Button(action: { tapFilter(f) }) {
+                        Text(f.label)
+                            .font(.system(size: 11, weight: f == filter ? .bold : .semibold))
+                            .foregroundStyle(f == filter ? Color.white : palette.textPrimary)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .background {
+                                if f == filter {
+                                    Capsule().fill(LinearGradient.primary)
+                                } else {
+                                    Capsule().fill(palette.bgCardSoft)
+                                }
+                            }
+                            .overlay {
+                                if f != filter {
+                                    Capsule().strokeBorder(palette.borderFaint)
+                                }
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(f.label) filter")
+                    .accessibilityAddTraits(f == filter ? [.isSelected] : [])
+                }
+            }
+            .padding(.horizontal, Space.s5)
+        }
+        .overlay(alignment: .trailing) {
+            LinearGradient(
+                colors: [palette.bgPage.opacity(0), palette.bgPage],
+                startPoint: .leading, endPoint: .trailing
+            )
+            .frame(width: 28)
+            .allowsHitTesting(false)
+        }
+    }
+
+    // MARK: RFP list
+
+    @ViewBuilder
+    private func rfpList(_ rfps: [RFPManagerAPI.RFP]) -> some View {
+        VStack(spacing: Space.s4) {
+            if rfps.isEmpty {
+                Text("No RFPs match this filter.")
+                    .font(EType.caption)
                     .foregroundStyle(palette.textTertiary)
-                VStack(spacing: Space.s2) {
-                    ForEach(rfps) { rfp in
-                        rfpRow(rfp)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, Space.s4)
+            } else {
+                ForEach(rfps) { rfp in
+                    rfpRow(rfp)
+                    if selectedRfpId == rfp.id {
+                        rfpDetailBlock(rfp)
                     }
                 }
             }
-
-            if let active = rfps.first(where: { $0.id == selectedRfpId }) {
-                rfpDetailBlock(active)
-            }
         }
     }
 
+    // MARK: Wireframe-canon RFP row (3pt tier rim + spec + 3-stat + lifecycle strip)
+
+    @ViewBuilder
     private func rfpRow(_ rfp: RFPManagerAPI.RFP) -> some View {
-        let style = statusStyle(for: rfp.status, palette: palette)
-        let isSelected = (selectedRfpId == rfp.id)
-        return Button {
-            selectedRfpId = isSelected ? nil : rfp.id
-        } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Text(rfp.id)
-                        .font(.system(size: 9, weight: .heavy, design: .monospaced)).tracking(0.4)
-                        .foregroundStyle(palette.textTertiary)
-                    Spacer(minLength: 0)
-                    statusPill(style)
-                }
-                Text(rfp.title)
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 12) {
-                    chipMini(icon: "mappin.and.ellipse", value: "\(rfp.lanes.count) lanes")
-                    chipMini(icon: "person.2.fill",       value: "\(rfp.distributedTo) carriers")
-                    chipMini(icon: "tray.full.fill",      value: "\(rfp.responsesReceived) bids")
-                }
+        let canonStatus = canonStatus(for: rfp)
+        if canonStatus.isCompactClosed {
+            rfpCompactRow(rfp)
+        } else {
+            rfpFullRow(rfp, canon: canonStatus)
+        }
+    }
+
+    private struct CanonStatus {
+        let tier: TierRim
+        let pillKind: PillKind
+        let pillLegend: String
+        let pillWidth: CGFloat
+        let stage: RFPStage
+        let isCompactClosed: Bool
+        enum PillKind { case closingSoon, activeOutlined, awarded, closed, draft }
+    }
+
+    private func canonStatus(for rfp: RFPManagerAPI.RFP) -> CanonStatus {
+        let s = rfp.status.lowercased()
+        let daysLeft = daysUntilDeadline(rfp.responseDeadline)
+        switch s {
+        case "draft":
+            return CanonStatus(tier: .neutral, pillKind: .draft,
+                               pillLegend: "DRAFT", pillWidth: 84,
+                               stage: .posted, isCompactClosed: false)
+        case "published", "in_review":
+            if let d = daysLeft, d <= 1 {
+                let hours = max(0, hoursUntilDeadline(rfp.responseDeadline) ?? 0)
+                return CanonStatus(tier: .warn, pillKind: .closingSoon,
+                                   pillLegend: "CLOSING · \(hours)h LEFT",
+                                   pillWidth: 148, stage: .bidding,
+                                   isCompactClosed: false)
             }
-            .padding(Space.s3)
+            let legend = daysLeft.map { "ACTIVE · \($0)d" } ?? "ACTIVE"
+            return CanonStatus(tier: .gradient, pillKind: .activeOutlined,
+                               pillLegend: legend, pillWidth: 84,
+                               stage: .bidding, isCompactClosed: false)
+        case "awarded":
+            return CanonStatus(tier: .success, pillKind: .awarded,
+                               pillLegend: "AWARDED", pillWidth: 84,
+                               stage: .award, isCompactClosed: false)
+        case "closed", "cancelled", "canceled":
+            return CanonStatus(tier: .neutral, pillKind: .closed,
+                               pillLegend: "CLOSED", pillWidth: 84,
+                               stage: .closed, isCompactClosed: true)
+        default:
+            return CanonStatus(tier: .neutral, pillKind: .closed,
+                               pillLegend: rfp.status.uppercased(), pillWidth: 84,
+                               stage: .posted, isCompactClosed: false)
+        }
+    }
+
+    private func daysUntilDeadline(_ iso: String?) -> Int? {
+        guard let s = iso, !s.isEmpty else { return nil }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = f.date(from: s) ?? ISO8601DateFormatter().date(from: s)
+        guard let date else { return nil }
+        let interval = date.timeIntervalSinceNow
+        return max(0, Int((interval / 86400).rounded(.up)))
+    }
+
+    private func hoursUntilDeadline(_ iso: String?) -> Int? {
+        guard let s = iso, !s.isEmpty else { return nil }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = f.date(from: s) ?? ISO8601DateFormatter().date(from: s)
+        guard let date else { return nil }
+        return max(0, Int(date.timeIntervalSinceNow / 3600))
+    }
+
+    @ViewBuilder
+    private func rfpFullRow(_ rfp: RFPManagerAPI.RFP, canon: CanonStatus) -> some View {
+        Button(action: { tapRow(rfp) }) {
+            HStack(spacing: 0) {
+                tierRimShape(canon.tier)
+                    .frame(width: 3)
+
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .center) {
+                        Text(rfpDisplayId(rfp.id))
+                            .font(EType.mono(.micro))
+                            .tracking(0.6)
+                            .foregroundStyle(palette.textTertiary)
+                        Spacer()
+                        statusPillView(kind: canon.pillKind, legend: canon.pillLegend, width: canon.pillWidth)
+                    }
+                    .padding(.top, Space.s4)
+
+                    Text(laneTitle(rfp))
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                        .padding(.top, Space.s2 + 2)
+
+                    Text(specLine(rfp))
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                        .padding(.top, 4)
+
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        statCell(value: "\(rfp.responsesReceived)", unit: "bids", color: palette.textPrimary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        // EUSO-2117 — low/high bid range pending.
+                        statCell(value: "—", unit: "low", color: palette.textPrimary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        statCell(value: "—", unit: "high", color: palette.textPrimary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(.top, Space.s2 + 2)
+
+                    LifecycleStrip4(activeStage: canon.stage)
+                        .padding(.top, Space.s4 + 2)
+                        .padding(.bottom, Space.s4)
+                }
+                .padding(.leading, Space.s4)
+                .padding(.trailing, Space.s4)
+            }
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                isSelected
-                    ? AnyShapeStyle(LinearGradient.diagonal.opacity(0.10))
-                    : AnyShapeStyle(palette.bgCard)
+                RoundedRectangle(cornerRadius: Radius.lg)
+                    .fill(palette.bgCard)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .strokeBorder(
-                        isSelected
-                            ? AnyShapeStyle(LinearGradient.diagonal.opacity(0.55))
-                            : AnyShapeStyle(palette.borderFaint),
-                        lineWidth: 1
-                    )
+                RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(palette.borderFaint)
             )
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+            .contentShape(Rectangle())
         }
         .buttonStyle(RFPRowStyle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(rowAccessibility(rfp, canon: canon))
     }
 
-    private func statusPill(_ s: StatusStyle) -> some View {
-        Text(s.label.uppercased())
-            .font(.system(size: 9, weight: .heavy)).tracking(0.5)
-            .foregroundStyle(s.color)
-            .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(Capsule().fill(s.color.opacity(0.15)))
-            .overlay(Capsule().strokeBorder(s.color.opacity(0.4), lineWidth: 0.75))
-    }
+    @ViewBuilder
+    private func rfpCompactRow(_ rfp: RFPManagerAPI.RFP) -> some View {
+        Button(action: { tapRow(rfp) }) {
+            HStack(spacing: 0) {
+                tierRimShape(.neutral)
+                    .frame(width: 3)
 
-    private func chipMini(icon: String, value: String) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: icon)
-                .font(.system(size: 9, weight: .heavy))
-            Text(value)
-                .font(.system(size: 10, weight: .heavy)).tracking(0.3)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .center) {
+                        Text(rfpDisplayId(rfp.id))
+                            .font(EType.mono(.micro))
+                            .tracking(0.6)
+                            .foregroundStyle(palette.textTertiary)
+                        Spacer()
+                        statusPillView(kind: .closed, legend: "CLOSED", width: 84)
+                    }
+                    .padding(.top, Space.s3 + 2)
+
+                    Text(laneTitle(rfp))
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                        .padding(.top, Space.s2 + 2)
+
+                    Text(closedSubline(rfp))
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                        .padding(.top, 4)
+                        .padding(.bottom, Space.s3 + 2)
+                }
+                .padding(.leading, Space.s4)
+                .padding(.trailing, Space.s4)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.lg)
+                    .fill(palette.bgCard)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(palette.borderFaint)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+            .contentShape(Rectangle())
         }
-        .foregroundStyle(palette.textTertiary)
+        .buttonStyle(RFPRowStyle())
+        .accessibilityLabel("\(rfpDisplayId(rfp.id)), Closed, \(laneTitle(rfp)), \(closedSubline(rfp))")
     }
 
-    // MARK: RFP detail (when a row is selected)
+    private func rfpDisplayId(_ id: String) -> String {
+        // If backend returns a bare RFP id, display as-is. Wireframe
+        // canon prefers the `RFP-260427-XXXXXXXXXX` form per §11.2.
+        if id.uppercased().hasPrefix("RFP-") { return id }
+        return "RFP-\(id)"
+    }
+
+    private func laneTitle(_ rfp: RFPManagerAPI.RFP) -> String {
+        if let first = rfp.lanes.first {
+            let o = "\(first.origin.city), \(first.origin.state)"
+            let d = "\(first.destination.city), \(first.destination.state)"
+            return "\(o) → \(d)"
+        }
+        return rfp.title
+    }
+
+    private func specLine(_ rfp: RFPManagerAPI.RFP) -> String {
+        guard let first = rfp.lanes.first else { return rfp.title }
+        var parts: [String] = []
+        let eq = first.equipmentRequired.replacingOccurrences(of: "_", with: " ").capitalized
+        parts.append(eq)
+        if first.hazmat == true { parts.append("Hazmat") }
+        parts.append("\(first.estimatedDistance) mi")
+        if rfp.lanes.count > 1 {
+            parts.append("+\(rfp.lanes.count - 1) more lanes")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func closedSubline(_ rfp: RFPManagerAPI.RFP) -> String {
+        var parts: [String] = []
+        parts.append("\(rfp.responsesReceived) bids")
+        if let comp = rfp.companyName, !comp.isEmpty {
+            parts.append(comp)
+        }
+        if let pub = rfp.publishedAt {
+            parts.append("closed \(shortDate(pub))")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func rowAccessibility(_ rfp: RFPManagerAPI.RFP, canon: CanonStatus) -> String {
+        let pill = canon.pillLegend.replacingOccurrences(of: "·", with: ",")
+        return "\(rfpDisplayId(rfp.id)), \(pill), \(laneTitle(rfp)), \(specLine(rfp)), \(rfp.responsesReceived) bids"
+    }
+
+    @ViewBuilder
+    private func statCell(value: String, unit: String, color: Color) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text(value)
+                .font(.system(size: 11, weight: .bold).monospacedDigit())
+                .foregroundStyle(color)
+            Text(unit)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(palette.textSecondary)
+        }
+    }
+
+    @ViewBuilder
+    private func tierRimShape(_ kind: TierRim) -> some View {
+        switch kind {
+        case .gradient:
+            RoundedRectangle(cornerRadius: 1.5).fill(LinearGradient.diagonal)
+        case .warn:
+            RoundedRectangle(cornerRadius: 1.5).fill(LinearGradient.warnGrad)
+        case .success:
+            RoundedRectangle(cornerRadius: 1.5).fill(Brand.success)
+        case .neutral:
+            RoundedRectangle(cornerRadius: 1.5).fill(palette.textTertiary)
+        }
+    }
+
+    // MARK: Status pills (§17.2)
+
+    @ViewBuilder
+    private func statusPillView(kind: CanonStatus.PillKind, legend: String, width: CGFloat) -> some View {
+        switch kind {
+        case .closingSoon:
+            Text(legend)
+                .font(EType.micro)
+                .tracking(0.6)
+                .foregroundStyle(.white)
+                .frame(width: width, height: 20)
+                .background(Capsule().fill(LinearGradient.warnGrad))
+        case .activeOutlined:
+            Text(legend)
+                .font(EType.micro)
+                .tracking(0.6)
+                .foregroundStyle(LinearGradient.primary)
+                .frame(width: width, height: 20)
+                .overlay(Capsule().strokeBorder(LinearGradient.primary, lineWidth: 1))
+                .background(Capsule().fill(palette.bgCard))
+        case .awarded:
+            Text(legend)
+                .font(EType.micro)
+                .tracking(0.6)
+                .foregroundStyle(.white)
+                .frame(width: width, height: 20)
+                .background(Capsule().fill(Brand.success))
+        case .closed:
+            Text(legend)
+                .font(EType.micro)
+                .tracking(0.6)
+                .foregroundStyle(palette.textSecondary)
+                .frame(width: width, height: 20)
+                .overlay(Capsule().strokeBorder(palette.textTertiary, lineWidth: 1))
+                .background(Capsule().fill(palette.bgCard))
+        case .draft:
+            Text(legend)
+                .font(EType.micro)
+                .tracking(0.6)
+                .foregroundStyle(palette.textSecondary)
+                .frame(width: width, height: 20)
+                .overlay(Capsule().strokeBorder(palette.textTertiary, lineWidth: 1))
+                .background(Capsule().fill(palette.bgCardSoft))
+        }
+    }
+
+    // MARK: "+ New RFP" gradient ribbon CTA
+
+    private var newRFPButton: some View {
+        Button(action: tapNewRFP) {
+            Text("+ New RFP")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .background(Capsule().fill(LinearGradient.primary))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Create a new RFP")
+    }
+
+    // MARK: Inline detail (lanes + bids + scoring)
 
     @ViewBuilder
     private func rfpDetailBlock(_ rfp: RFPManagerAPI.RFP) -> some View {
         VStack(alignment: .leading, spacing: Space.s3) {
-            // Detail header — stats + publish CTA on draft RFPs.
-            VStack(alignment: .leading, spacing: Space.s2) {
-                HStack {
-                    Text("RFP DETAIL")
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.9)
-                        .foregroundStyle(palette.textTertiary)
-                    Spacer()
-                    if rfp.status.lowercased() == "draft" {
-                        publishButton(rfp)
-                    }
+            // Detail header (publish CTA on draft)
+            HStack(spacing: 8) {
+                Text("RFP DETAIL")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer()
+                if rfp.status.lowercased() == "draft" {
+                    publishButton(rfp)
                 }
-                Text(rfp.title)
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
-                if let desc = rfp.description, !desc.isEmpty {
-                    Text(desc)
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                detailStatsGrid(rfp)
             }
-            .padding(Space.s3)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(palette.bgCard)
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .strokeBorder(palette.borderFaint, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-
-            // Lanes
+            if let desc = rfp.description, !desc.isEmpty {
+                Text(desc)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            detailStatsGrid(rfp)
             laneListCard(rfp)
-
-            // Bids
             if !store.bids.isEmpty {
                 bidListCard(rfp)
             }
+            if !store.scorecards.isEmpty {
+                scoringSection(rfp)
+            }
         }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard.opacity(0.5))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(LinearGradient.diagonal.opacity(0.35), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
     private func detailStatsGrid(_ rfp: RFPManagerAPI.RFP) -> some View {
@@ -713,7 +1054,6 @@ struct ShipperRFP: View {
                 Spacer(minLength: 0)
                 bidMeta(bid)
             }
-            // Per-lane bid rates
             HStack(spacing: 4) {
                 ForEach(bid.laneBids.prefix(3)) { lb in
                     laneBidChip(lb)
@@ -783,79 +1123,28 @@ struct ShipperRFP: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
     }
 
-    // MARK: Scoring tab
-
-    private func scoringTab(rfps: [RFPManagerAPI.RFP]) -> some View {
-        VStack(alignment: .leading, spacing: Space.s4) {
-            // RFP selector chips for the scoring tab.
-            VStack(alignment: .leading, spacing: Space.s2) {
-                Text("SCORING FOR")
+    private func scoringSection(_ rfp: RFPManagerAPI.RFP) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack {
+                Image(systemName: "chart.bar.fill")
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("SCORING & AWARDS")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                     .foregroundStyle(palette.textTertiary)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(rfps) { rfp in
-                            scoringRfpChip(rfp)
-                        }
-                    }
-                }
-            }
-
-            if selectedRfpId == nil {
-                Text("Pick an RFP above to score its bids.")
-                    .font(EType.caption)
+                Spacer()
+                Text("\(store.scorecards.count)")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                     .foregroundStyle(palette.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(Space.s3)
-            } else if store.scorecards.isEmpty {
-                noBidsCard
-            } else {
-                VStack(spacing: Space.s2) {
-                    ForEach(Array(store.scorecards.enumerated()), id: \.element.id) { idx, sc in
-                        scorecardRow(rank: idx + 1, scorecard: sc)
-                    }
+            }
+            VStack(spacing: Space.s2) {
+                ForEach(Array(store.scorecards.enumerated()), id: \.element.id) { idx, sc in
+                    scorecardRow(rank: idx + 1, scorecard: sc, rfp: rfp)
                 }
             }
         }
-    }
-
-    private func scoringRfpChip(_ rfp: RFPManagerAPI.RFP) -> some View {
-        let active = (selectedRfpId == rfp.id)
-        return Button {
-            selectedRfpId = rfp.id
-        } label: {
-            Text(rfp.id)
-                .font(.system(size: 11, weight: .heavy, design: .monospaced))
-                .padding(.horizontal, Space.s3)
-                .padding(.vertical, Space.s2)
-                .foregroundStyle(active ? .white : palette.textSecondary)
-                .background(
-                    Capsule().fill(active
-                                   ? AnyShapeStyle(LinearGradient.diagonal)
-                                   : AnyShapeStyle(palette.bgCard))
-                )
-                .overlay(
-                    Capsule().strokeBorder(active ? Color.clear : palette.borderFaint, lineWidth: 1)
-                )
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var noBidsCard: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "chart.bar.xaxis")
-                .font(.system(size: 22, weight: .light))
-                .foregroundStyle(palette.textTertiary)
-            Text("No bids to score yet")
-                .font(EType.bodyStrong)
-                .foregroundStyle(palette.textPrimary)
-            Text("Once carriers respond to this RFP, their scorecards land here.")
-                .font(EType.caption)
-                .foregroundStyle(palette.textTertiary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(Space.s4)
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(palette.bgCard)
         .overlay(
             RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
@@ -864,7 +1153,7 @@ struct ShipperRFP: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    private func scorecardRow(rank: Int, scorecard sc: RFPManagerAPI.Scorecard) -> some View {
+    private func scorecardRow(rank: Int, scorecard sc: RFPManagerAPI.Scorecard, rfp: RFPManagerAPI.RFP) -> some View {
         let rec = recommendationStyle(sc.recommendation)
         let isWinner = (rank == 1)
         return VStack(alignment: .leading, spacing: 8) {
@@ -903,10 +1192,9 @@ struct ShipperRFP: View {
                         .foregroundStyle(palette.textTertiary)
                 }
                 if sc.recommendation.lowercased() == "award" {
-                    awardButton(scorecard: sc)
+                    awardButton(scorecard: sc, rfpId: rfp.id)
                 }
             }
-            // Score breakdown 5-dim row
             HStack(spacing: 4) {
                 scoreDim(label: "RATE",  value: sc.rateScore,         tint: Brand.success)
                 scoreDim(label: "SVC",   value: sc.serviceLevelScore, tint: Brand.info)
@@ -950,12 +1238,8 @@ struct ShipperRFP: View {
         .frame(width: 32, height: 32)
     }
 
-    private func awardButton(scorecard sc: RFPManagerAPI.Scorecard) -> some View {
+    private func awardButton(scorecard sc: RFPManagerAPI.Scorecard, rfpId: String) -> some View {
         Button {
-            guard let rfpId = selectedRfpId else { return }
-            // Award all lanes ("ALL" sentinel) — server interprets
-            // this as a sweep; per-lane awards land via the iOS lane
-            // detail flow once that's wired.
             Task {
                 #if canImport(UIKit)
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
@@ -997,6 +1281,118 @@ struct ShipperRFP: View {
         .frame(maxWidth: .infinity)
     }
 
+    // MARK: Empty + error states
+
+    private var emptyHero: some View {
+        VStack(spacing: Space.s2) {
+            Image(systemName: "doc.text.below.ecg")
+                .font(.system(size: 32, weight: .light))
+                .foregroundStyle(LinearGradient.diagonal)
+            Text("No active RFPs")
+                .font(EType.title)
+                .foregroundStyle(palette.textPrimary)
+            Text("Create your first lane RFP and distribute it to your carrier panel — bids land here for review and award.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Space.s4)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(action: tapNewRFP) {
+                Text("+ New RFP")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, Space.s4)
+                    .padding(.vertical, Space.s2)
+                    .background(Capsule().fill(LinearGradient.primary))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(Space.s5)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    private func errorBanner(_ msg: String) -> some View {
+        VStack(spacing: Space.s2) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(palette.textSecondary)
+            Text("RFP service offline")
+                .font(EType.title)
+                .foregroundStyle(palette.textPrimary)
+            Text(msg)
+                .font(EType.caption)
+                .foregroundStyle(palette.textTertiary)
+                .multilineTextAlignment(.center)
+            Button {
+                Task { await store.refresh() }
+            } label: {
+                Text("Retry")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, Space.s4)
+                    .padding(.vertical, Space.s2)
+                    .background(Capsule().fill(LinearGradient.diagonal))
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(Space.s4)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    // MARK: Notification posts (§20.4)
+
+    private func tapFilter(_ f: RFPFilter) {
+        withAnimation(.easeOut(duration: 0.18)) { filter = f }
+        NotificationCenter.default.post(
+            name: .eusoShipperRfpFilter,
+            object: nil,
+            userInfo: [
+                "source": "215_ShipperRFP",
+                "filter": f.rawValue,
+                "shipperCompanyId": 1
+            ]
+        )
+    }
+
+    private func tapRow(_ rfp: RFPManagerAPI.RFP) {
+        let isOpen = (selectedRfpId == rfp.id)
+        selectedRfpId = isOpen ? nil : rfp.id
+        NotificationCenter.default.post(
+            name: .eusoShipperRfpRow,
+            object: nil,
+            userInfo: [
+                "source": "215_ShipperRFP",
+                "rfpId": rfp.id,
+                "expanded": !isOpen,
+                "shipperCompanyId": 1
+            ]
+        )
+    }
+
+    private func tapNewRFP() {
+        NotificationCenter.default.post(
+            name: .eusoShipperRfpCreate,
+            object: nil,
+            userInfo: [
+                "source": "215_ShipperRFP",
+                "shipperCompanyId": 1
+            ]
+        )
+    }
+
     // MARK: Helpers
 
     private func shortDate(_ iso: String?) -> String {
@@ -1019,6 +1415,86 @@ struct ShipperRFP: View {
     }
 }
 
+// MARK: - 4-stage RFP lifecycle strip (§15.2 · file-scoped per §19.2)
+
+private struct LifecycleStrip4: View {
+    let activeStage: RFPStage
+    @Environment(\.palette) var palette
+
+    private let stages: [(key: RFPStage, label: String)] = [
+        (.posted,  "POSTED"),
+        (.bidding, "BIDDING"),
+        (.award,   "AWARD"),
+        (.closed,  "CLOSED"),
+    ]
+
+    private var activeIndex: Int {
+        stages.firstIndex(where: { $0.key == activeStage }) ?? 0
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let total = geo.size.width
+            let count = stages.count
+            let stride = total / CGFloat(count - 1)
+
+            ZStack(alignment: .leading) {
+                Rectangle()
+                    .fill(palette.borderFaint)
+                    .frame(width: total, height: 2)
+                Rectangle()
+                    .fill(LinearGradient.primary)
+                    .frame(width: stride * CGFloat(activeIndex), height: 2)
+                ForEach(0..<count, id: \.self) { i in
+                    let isActive = i == activeIndex
+                    let isCompleted = i < activeIndex
+                    Circle()
+                        .fill(isCompleted || isActive
+                              ? AnyShapeStyle(LinearGradient.diagonal)
+                              : AnyShapeStyle(palette.borderFaint))
+                        .frame(width: isActive ? 9 : 7, height: isActive ? 9 : 7)
+                        .offset(x: stride * CGFloat(i) - (isActive ? 4.5 : 3.5))
+                }
+                ForEach(0..<count, id: \.self) { i in
+                    let isActive = i == activeIndex
+                    let isCompleted = i < activeIndex
+                    let label = stages[i].label
+                    Text(label)
+                        .font(.system(size: 7, weight: .bold))
+                        .tracking(0.4)
+                        .foregroundStyle(
+                            isActive
+                                ? AnyShapeStyle(LinearGradient.primary)
+                                : (isCompleted
+                                    ? AnyShapeStyle(palette.textSecondary)
+                                    : AnyShapeStyle(palette.textTertiary))
+                        )
+                        .offset(x: anchoredOffset(for: i, count: count, stride: stride, label: label),
+                                y: -10)
+                }
+            }
+        }
+        .frame(height: 18)
+    }
+
+    private func anchoredOffset(for i: Int, count: Int, stride: CGFloat, label: String) -> CGFloat {
+        let approxWidth: CGFloat = CGFloat(label.count) * 4.2
+        let baseX = stride * CGFloat(i)
+        if i == 0 { return baseX }
+        if i == count - 1 { return baseX - approxWidth }
+        return baseX - approxWidth / 2
+    }
+}
+
+// MARK: - Warn gradient (§19.2 file-scoped)
+
+private extension LinearGradient {
+    static let warnGrad = LinearGradient(
+        colors: [Brand.hazmat, Color(hex: 0xFF7A00)],
+        startPoint: .topLeading, endPoint: .bottomTrailing
+    )
+}
+
 // MARK: - RFP row press feedback
 
 private struct RFPRowStyle: ButtonStyle {
@@ -1029,16 +1505,27 @@ private struct RFPRowStyle: ButtonStyle {
     }
 }
 
+// MARK: - NotificationCenter names (§20.4)
+
+extension Notification.Name {
+    /// Filter chip tap — All / Active / Awarded / Closed / Drafts.
+    static let eusoShipperRfpFilter = Notification.Name("eusoShipperRfpFilter")
+    /// RFP row tap — toggles inline detail expansion.
+    static let eusoShipperRfpRow    = Notification.Name("eusoShipperRfpRow")
+    /// "+ New RFP" gradient ribbon tap.
+    static let eusoShipperRfpCreate = Notification.Name("eusoShipperRfpCreate")
+}
+
 // MARK: - Previews
 
-#Preview("215 · Shipper RFP · Night") {
+#Preview("215 · Shipper RFP · Dark") {
     ShipperRFP()
         .environment(\.palette, Theme.dark)
         .preferredColorScheme(.dark)
         .background(Theme.dark.bgPage)
 }
 
-#Preview("215 · Shipper RFP · Afternoon") {
+#Preview("215 · Shipper RFP · Light") {
     ShipperRFP()
         .environment(\.palette, Theme.light)
         .preferredColorScheme(.light)
