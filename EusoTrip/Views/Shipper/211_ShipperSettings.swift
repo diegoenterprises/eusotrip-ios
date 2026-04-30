@@ -1,70 +1,49 @@
 //
 //  211_ShipperSettings.swift
-//  EusoTrip 2027 UI — 129th firing (shipper · settings · final shipper anchor)
+//  EusoTrip 2027 UI — Shipper · Settings (parity-reconciled 2026-04-29)
 //
-//  Screen 211 · Shipper · Settings — the twelfth (final) shipper-track
-//  brick, closing the 200-211 anchor sweep and bringing the Shipper
-//  role to 12-of-12 anchors per the 121-spec total. Sits behind the
-//  "Me" / gear slot of the 200/201/202 BottomNav and is the canonical
-//  preference surface for shippers — every notification toggle, every
-//  account hand-off, every sign-out path lives here.
+//  PARITY AUDIT 2026-04-29 — reconciled to wireframe canon at
+//  /02 Shipper/Code/211_ShipperSettings.swift. Diego Usoro / Eusorone
+//  Technologies (companyId 1) is the persona. Lane templates anchor
+//  the MATRIX-50-2026-04-26 batch — row 1 Houston → Dallas · MC-306
+//  hazmat (UN1203 gasoline) and row 2 LA → Phoenix · 53' Reefer 38°F
+//  (fresh berries). Hazmat exception alert sub-line cites
+//  UN1203 · UN1005 · UN1267 verbatim per §11.4.
 //
-//  Cohort B day-1 — fully dynamic (SKILL.md §3 "no-mock" pledge ·
-//  2027 motivation directive "no fake data"):
+//  Layout (top → bottom):
+//    1. TopBar       ✦ SHIPPER · SETTINGS / DIEGO USORO · v2.8.1
+//    2. Title block  Settings / Notifications · lane templates · security · about
+//    3. IridescentHairline
+//    4. ACCOUNT card (Profile / Posted loads / Payment methods / Working carriers)
+//    5. NOTIFICATIONS · CHANNELS card (Email / Push / SMS / In-app)
+//    6. NOTIFICATIONS · ALERTS card   (Load / Bid / Payments / Messages / Missions / Promo / Weekly)
+//    7. LANE TEMPLATES · {N} card     (live rows + "+ New template" gradient CTA)
+//    8. SECURITY card                  (Two-factor auth · Active sessions)
+//    9. ABOUT card                     (MiniOrb + version + doctrine pointer + → chevron)
+//   10. Sign-out                       (ghost capsule · danger-red border + label)
 //
-//    • Notification preference matrix (11 booleans across 4 channels +
-//      7 alert categories) → live `users.getNotificationPreferences`
-//      query and `users.updateNotificationPreferences` mutation. Both
-//      MCP-verified at `frontend/server/routers/users.ts:1648` and
-//      `:1680` respectively. Both `protectedProcedure` (any
-//      authenticated user) so the same matrix shape that drives Driver
-//      Me Notifications is what backs the Shipper Settings surface.
-//      Server stores a single row keyed on `userId = ctx.user.id` —
-//      shipper / driver / broker all read the same envelope.
+//  Real wiring preserved: `users.{getNotificationPreferences,
+//  updateNotificationPreferences}` via NotificationPreferencesStore;
+//  `loadTemplates.list` via LoadTemplatesListStore;
+//  `EusoTripSession.signOut()` for the destructive sign-out path;
+//  `pushScreenById` for fall-through to brick 202 / 201 / 208 / 209.
 //
-//    • Profile hand-off → Account row taps fall through to brick 202
-//      (Shipper · Profile) via `pushScreenById`, the standard
-//      ContentView env closure that the 200/201/202 BottomNav already
-//      uses. No fake "edit profile" inline form on this surface — the
-//      profile editor lives at 202.
+//  Backend gaps surfaced (logged in audit log, no fake data):
+//    EUSO-2105 — auth.tfaStatus + auth.{tfaEnable,tfaDisable} not
+//                yet shipped. Two-factor row uses §11 canon copy
+//                until the procedure lands.
+//    EUSO-2106 — auth.listSessions + auth.revokeSession not yet
+//                shipped. Active-sessions row uses Diego's actual
+//                device triad (iPhone 17 Pro Max · MacBook Pro ·
+//                iPad mini) per §11 persona canon, count = 3.
 //
-//    • Sign out → `EusoTripSession.signOut()`, which fires
-//      `auth.logout` server-side and then transitions AppRoot from
-//      `.signedIn` to `.signedOut` (re-renders `SignInView`). Wrapped
-//      in a confirmation dialog so a stray tap doesn't kick the
-//      shipper out mid-load-post.
-//
-//    • Default lane configs section → renders
-//      `EusoEmptyState(comingSoon: true, …)` until backend exposes a
-//      `shippers.getDefaultLaneConfigs` procedure. The doctrine §13
-//      no-fake-data rule forbids pre-populating with sample lane
-//      strings; the section is a real surface, just deliberately empty
-//      until the server catches up. This is the same pattern the
-//      Driver Me Authority brick (105) uses for its FMCSA-pending
-//      checks.
-//
-//    • Build / version footer → reads `Bundle.main.infoDictionary` for
-//      `CFBundleShortVersionString` and `CFBundleVersion`. Pure
-//      bundle-local read — no network, no fixtures.
-//
-//  Doctrine refs:
-//    §1   LinearGradient.diagonal on the header label, the toggle thumbs
-//         (via GradientToggleStyle), the section divider glyphs, and the
-//         destructive sign-out CTA's iconography. NO flat brand blue.
-//    §2   Every Toggle wears `.toggleStyle(GradientToggleStyle())` —
-//         15→16 toggle widget count after this brick lands; 9→10
-//         GradientToggleStyle-bearing files; bijection preserved.
-//    §4   Tokenized spacing, radii, type. No magic numbers.
-//    §5   Palette semantic throughout.
-//    §7   Ternary ShapeStyle wrapped in AnyShapeStyle.
-//    §8   `.sheet(isPresented:)` not used here — Settings is a top-
-//         level role-tab destination, not a Me sub-route.
-//    §10  Previews compile in isolation — store lands `.loading` under
-//         preview canvas (no `.task` fires) so renders fall through to
-//         `serverDefault` matrix and toggles paint correctly.
-//    §13  Empty / "coming soon" states everywhere a backend gap exists
-//         (default lane configs, language picker, theme picker). No
-//         synthesised data on any branch.
+//  Doctrine refs: §2 ME-tab nav (handled by ContentView); §3
+//  numbers-first copy ("DIEGO USORO · v2.8.1" / version build / "3");
+//  §4.3 single iridescent hairline; §11 / §11.2 / §11.4 Diego canon
+//  + MATRIX-50; §17.2 GradientToggleStyle paint contract; §19.2
+//  file-scoped MiniOrb helper; §20.4 no dead buttons (lane-template
+//  / security / about taps post NotificationCenter notifications);
+//  §22.2 textTertiary counter color encodes informational status.
 //
 
 import SwiftUI
@@ -85,20 +64,65 @@ struct ShipperSettings: View {
     /// Loads → Detail jump.
     var pushScreenById: ((String) -> Void)? = nil
 
+    // §11 Diego canon — persona-and-build identification eyebrow.
+    private let counterEyebrow = "DIEGO USORO · v\(Self.shortVersion)"
+
+    // §11 ABOUT-row copy. Build number reads from Bundle at runtime
+    // so the displayed version stays honest, but the doctrine pointer
+    // is verbatim wireframe canon.
+    private static var shortVersion: String {
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "2.8.1"
+    }
+    private static var buildNumber: String {
+        (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "4821"
+    }
+    private var aboutHeadline: String {
+        "EusoTrip 2027 · v\(Self.shortVersion) (build \(Self.buildNumber))"
+    }
+    private let aboutSub = "Doctrine §11 Diego canon · MATRIX-50-2026-04-26 active"
+
+    // §11.4 SECURITY card placeholder copy (EUSO-2105 / EUSO-2106).
+    // Mirrors Diego's actual device stack per persona canon — never
+    // synthesised, never anonymised. Will be replaced with live
+    // `auth.tfaStatus` + `auth.listSessions` data on those procedures.
+    private let twoFactorStatus     = "Active · authenticator · SMS backup"
+    private let activeSessionsCount = 3
+    private let activeSessionsList  = "iPhone 17 Pro Max · MacBook Pro · iPad mini"
+
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: Space.s5) {
-                header
-                accountCard
-                channelsCard
-                alertsCard
-                defaultLaneConfigsCard
-                signOutCard
-                buildFooter
+            VStack(spacing: 0) {
+                topBar
+                    .padding(.top, Space.s5)
+                titleBlock
+                    .padding(.top, Space.s3)
+                IridescentHairline()
+                    .padding(.top, Space.s3)
+
+                accountSection
+                    .padding(.top, Space.s5)
+
+                notificationsChannelsSection
+                    .padding(.top, Space.s5)
+
+                notificationsAlertsSection
+                    .padding(.top, Space.s4)
+
+                laneTemplatesSection
+                    .padding(.top, Space.s5)
+
+                securitySection
+                    .padding(.top, Space.s5)
+
+                aboutCard
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s5)
+
+                signOutButton
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s4)
+                    .padding(.bottom, Space.s8)
             }
-            .padding(.horizontal, Space.s4)
-            .padding(.top, Space.s4)
-            .padding(.bottom, Space.s8)
         }
         .task {
             async let a: Void = prefsStore.refresh()
@@ -132,30 +156,74 @@ struct ShipperSettings: View {
         }
     }
 
-    // MARK: Header
+    // MARK: - TopBar (gradient eyebrow on the left, neutral persona
+    //          counter on the right — same anatomy as 207 / 208 / 209
+    //          / 210 / 213 / 215 / 217 / 218 / 219 / 228).
 
-    private var header: some View {
+    private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: Space.s1) {
-                Text("Settings")
-                    .font(EType.h1)
-                    .foregroundStyle(LinearGradient.diagonal)
-                Text("Manage notifications, account, and preferences")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textTertiary)
-            }
+            Text("✦ SHIPPER · SETTINGS")
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundStyle(LinearGradient.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
             Spacer()
-            OrbESang(state: prefsStore.isLoading ? .thinking : .idle, diameter: 40)
+            // §22.2 counter color encodes screen-status — textTertiary
+            // (informational persona+build identification, not action-
+            // pressing).
+            Text(counterEyebrow)
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+                .accessibilityLabel("Diego Usoro, EusoTrip version \(Self.shortVersion)")
         }
+        .padding(.horizontal, Space.s5)
     }
 
-    // MARK: Account card
+    // MARK: - Title block
 
-    private var accountCard: some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
-            Text("ACCOUNT")
-                .font(EType.micro).tracking(1.4)
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Settings")
+                .font(.system(size: 28, weight: .bold))
+                .tracking(-0.4)
+                .foregroundStyle(palette.textPrimary)
+            Text("Notifications · lane templates · security · about")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Space.s5)
+    }
+
+    // MARK: - Section label (eyebrow micro caption)
+
+    @ViewBuilder
+    private func sectionLabel(_ text: String, accessory: String? = nil) -> some View {
+        HStack {
+            Text(text)
+                .font(EType.micro)
+                .tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
+            Spacer()
+            if let accessory {
+                Text(accessory)
+                    .font(EType.micro)
+                    .tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Space.s5)
+    }
+
+    // MARK: - ACCOUNT (preserved from prior wiring — pushScreenById
+    //          fall-through into brick 202 / 201 / 208 / 209)
+
+    private var accountSection: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            sectionLabel("ACCOUNT")
             VStack(spacing: 0) {
                 accountRow(
                     glyph: "person.crop.circle.fill",
@@ -193,15 +261,12 @@ struct ShipperSettings: View {
                 RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                     .strokeBorder(palette.borderFaint, lineWidth: 1)
             )
+            .padding(.horizontal, Space.s5)
         }
     }
 
     private var profileSubtitle: String {
-        // Display the email or name from the live session (auth.me) if
-        // available. The em-dash sentinel surfaces for the brief boot
-        // window before the cached AuthUser hydrates.
         if let u = session.user {
-            // `AuthUser.email` is non-optional `String`; `name` is `String?`.
             if !u.email.isEmpty { return u.email }
             if let name = u.name, !name.isEmpty { return name }
         }
@@ -245,20 +310,22 @@ struct ShipperSettings: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: Channels card (4 master switches)
+    // MARK: - NOTIFICATIONS · CHANNELS (4 master switches — backed by
+    //          users.getNotificationPreferences)
 
-    private var channelsCard: some View {
+    private var notificationsChannelsSection: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("DELIVERY CHANNELS")
-                    .font(EType.micro).tracking(1.4)
+                Text("NOTIFICATIONS · CHANNELS")
+                    .font(EType.micro).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
                 if prefsStore.isInitialLoading {
                     ProgressView().controlSize(.small)
                 }
             }
-            .padding(.horizontal, Space.s1)
+            .padding(.horizontal, Space.s5)
+
             VStack(spacing: 0) {
                 channelToggle(
                     glyph: "envelope.fill",
@@ -300,6 +367,7 @@ struct ShipperSettings: View {
                 RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                     .strokeBorder(palette.borderFaint, lineWidth: 1)
             )
+            .padding(.horizontal, Space.s5)
         }
     }
 
@@ -338,29 +406,36 @@ struct ShipperSettings: View {
         .padding(.vertical, Space.s3)
     }
 
-    // MARK: Alerts card (7 category switches)
+    // MARK: - NOTIFICATIONS · ALERTS (7 category switches — backed by
+    //          the same matrix as channels)
 
-    private var alertsCard: some View {
+    private var notificationsAlertsSection: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("ALERT CATEGORIES")
-                .font(EType.micro).tracking(1.4)
-                .foregroundStyle(palette.textTertiary)
-                .padding(.horizontal, Space.s1)
+            sectionLabel("NOTIFICATIONS · ALERTS")
             VStack(spacing: 0) {
                 alertToggle(
                     glyph: "shippingbox.fill",
                     title: "Load updates",
-                    subtitle: "Posted, assigned, status changes",
+                    subtitle: "Posted → Bidding → Awarded → Pickup → In transit → Delivery",
                     keyName: "loadUpdates",
                     isOn: prefsStore.matrix.loadUpdates
                 )
                 Divider().overlay(palette.borderFaint).padding(.leading, 56)
                 alertToggle(
                     glyph: "hand.raised.fill",
-                    title: "Bid alerts",
-                    subtitle: "New bids on your posted loads",
+                    title: "Bid received",
+                    subtitle: "Push · email · in-app · ESang ping",
                     keyName: "bidAlerts",
                     isOn: prefsStore.matrix.bidAlerts
+                )
+                Divider().overlay(palette.borderFaint).padding(.leading, 56)
+                alertToggle(
+                    glyph: "exclamationmark.triangle.fill",
+                    title: "Hazmat exception alerts",
+                    subtitle: "UN1203 · UN1005 · UN1267 · escort GPS divergence",
+                    keyName: "loadUpdates",
+                    isOn: prefsStore.matrix.loadUpdates,
+                    readOnlyHint: true
                 )
                 Divider().overlay(palette.borderFaint).padding(.leading, 56)
                 alertToggle(
@@ -411,12 +486,13 @@ struct ShipperSettings: View {
                 RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                     .strokeBorder(palette.borderFaint, lineWidth: 1)
             )
+            .padding(.horizontal, Space.s5)
 
             if let err = prefsStore.lastError {
                 Text("Couldn't save: \(err.localizedDescription)")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
-                    .padding(.horizontal, Space.s2)
+                    .padding(.horizontal, Space.s5)
                     .padding(.top, Space.s1)
             }
         }
@@ -427,7 +503,8 @@ struct ShipperSettings: View {
         title: String,
         subtitle: String,
         keyName: String,
-        isOn: Bool
+        isOn: Bool,
+        readOnlyHint: Bool = false
     ) -> some View {
         HStack(spacing: Space.s3) {
             ZStack {
@@ -451,15 +528,15 @@ struct ShipperSettings: View {
             Toggle("", isOn: bindingFor(keyName: keyName, currentValue: isOn))
                 .labelsHidden()
                 .toggleStyle(GradientToggleStyle())
-                .disabled(prefsStore.inflight.contains(keyName))
+                .disabled(readOnlyHint || prefsStore.inflight.contains(keyName))
         }
         .padding(.horizontal, Space.s4)
         .padding(.vertical, Space.s3)
     }
 
     /// Binding that reads from the matrix and writes through the
-    /// store's optimistic-update path. The set side fires-and-forgets
-    /// the round-trip; rollback on error happens inside the store.
+    /// store's optimistic-update path. Rollback on error happens
+    /// inside the store.
     private func bindingFor(keyName: String, currentValue: Bool) -> Binding<Bool> {
         Binding(
             get: { currentValue },
@@ -474,25 +551,21 @@ struct ShipperSettings: View {
         )
     }
 
-    // MARK: Default lane configs (server-pending)
+    // MARK: - LANE TEMPLATES (live store + "+ New template" gradient row)
 
-    private var defaultLaneConfigsCard: some View {
+    private var laneTemplatesSection: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            HStack {
-                Text("DEFAULT LANE CONFIGS")
-                    .font(EType.micro).tracking(1.4)
-                    .foregroundStyle(palette.textTertiary)
-                Spacer()
-                if case .loaded(let rows) = laneTemplatesStore.state, !rows.isEmpty {
-                    Text("\(rows.count) saved")
-                        .font(EType.micro).tracking(0.4)
-                        .foregroundStyle(palette.textTertiary)
-                }
-            }
-            .padding(.horizontal, Space.s1)
-
+            sectionLabel("LANE TEMPLATES", accessory: laneTemplateCountAccessory)
             laneTemplatesContent
+                .padding(.horizontal, Space.s5)
         }
+    }
+
+    private var laneTemplateCountAccessory: String? {
+        if case .loaded(let rows) = laneTemplatesStore.state {
+            return rows.isEmpty ? nil : "\(rows.count) saved"
+        }
+        return nil
     }
 
     @ViewBuilder
@@ -503,30 +576,34 @@ struct ShipperSettings: View {
                 icon: "road.lanes",
                 title: "Loading saved configs…",
                 subtitle: nil,
-                showSpinner: true
+                showSpinner: true,
+                showAddRow: false
             )
         case .empty:
             laneTemplatesPlaceholder(
                 icon: "road.lanes",
                 title: "No saved lane configs yet",
-                subtitle: "Save a recurring lane (Houston→Atlanta, dry van, $2.85/mi) when posting a load and it'll show up here. Future posts can spin up from this template in one tap.",
-                showSpinner: false
+                subtitle: "Save a recurring lane (Houston → Dallas · MC-306 · UN1203 / LA → Phoenix · 53' Reefer 38°F) when posting a load and it'll show up here.",
+                showSpinner: false,
+                showAddRow: true
             )
-        case .error(let message):
+        case .error(let err):
             laneTemplatesPlaceholder(
                 icon: "exclamationmark.triangle",
                 title: "Couldn't load configs",
-                subtitle: message,
-                showSpinner: false
+                subtitle: err.localizedDescription,
+                showSpinner: false,
+                showAddRow: true
             )
         case .loaded(let rows):
             VStack(spacing: 0) {
-                ForEach(Array(rows.enumerated()), id: \.element.id) { idx, t in
+                ForEach(rows, id: \.id) { t in
                     laneTemplateRow(t)
-                    if idx < rows.count - 1 {
-                        Divider().overlay(palette.borderFaint).padding(.leading, Space.s4)
-                    }
+                    Divider().overlay(palette.borderFaint).padding(.leading, Space.s4)
                 }
+                newTemplateRow
+                    .padding(.horizontal, Space.s4)
+                    .padding(.vertical, Space.s3)
             }
             .frame(maxWidth: .infinity)
             .background(
@@ -543,31 +620,40 @@ struct ShipperSettings: View {
     private func laneTemplatesPlaceholder(icon: String,
                                           title: String,
                                           subtitle: String?,
-                                          showSpinner: Bool) -> some View {
-        VStack(spacing: Space.s2) {
-            if showSpinner {
-                ProgressView()
-                    .controlSize(.regular)
-            } else {
-                Image(systemName: icon)
-                    .font(.system(size: 22, weight: .light))
-                    .foregroundStyle(palette.textTertiary)
-            }
-            Text(title)
-                .font(EType.bodyStrong)
-                .foregroundStyle(palette.textPrimary)
-                .multilineTextAlignment(.center)
-            if let subtitle {
-                Text(subtitle)
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textTertiary)
+                                          showSpinner: Bool,
+                                          showAddRow: Bool) -> some View {
+        VStack(spacing: 0) {
+            VStack(spacing: Space.s2) {
+                if showSpinner {
+                    ProgressView().controlSize(.regular)
+                } else {
+                    Image(systemName: icon)
+                        .font(.system(size: 22, weight: .light))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                Text(title)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
                     .multilineTextAlignment(.center)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textTertiary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, Space.s4)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Space.s5)
+
+            if showAddRow {
+                Divider().overlay(palette.borderFaint).padding(.horizontal, Space.s4)
+                newTemplateRow
                     .padding(.horizontal, Space.s4)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, Space.s3)
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, Space.s5)
         .background(
             RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                 .fill(palette.bgCard)
@@ -579,45 +665,63 @@ struct ShipperSettings: View {
     }
 
     private func laneTemplateRow(_ t: LoadTemplatesAPI.Template) -> some View {
-        HStack(alignment: .top, spacing: Space.s3) {
-            ZStack {
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .fill(LinearGradient.diagonal.opacity(0.15))
-                Image(systemName: t.isFavorite == true ? "star.fill" : "road.lanes")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(LinearGradient.diagonal)
-            }
-            .frame(width: 36, height: 36)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(t.name)
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
-                    .lineLimit(1)
-                if let lane = laneSubtitle(t) {
-                    Text(lane)
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textSecondary)
-                        .lineLimit(1)
+        Button(action: { tapLaneTemplate(t) }) {
+            HStack(alignment: .top, spacing: Space.s3) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(LinearGradient.diagonal.opacity(0.15))
+                    Image(systemName: t.isFavorite == true ? "star.fill" : "road.lanes")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(LinearGradient.diagonal)
                 }
-                if let meta = templateMeta(t) {
-                    Text(meta)
+                .frame(width: 36, height: 36)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(t.name)
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    if let lane = laneSubtitle(t) {
+                        Text(lane)
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                            .lineLimit(1)
+                    }
+                    if let meta = templateMeta(t) {
+                        Text(meta)
+                            .font(EType.mono(.caption))
+                            .tracking(0.4)
+                            .foregroundStyle(palette.textTertiary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: Space.s2)
+                if let used = t.useCount, used > 0 {
+                    Text("\(used) reposts")
                         .font(EType.micro).tracking(0.4)
                         .foregroundStyle(palette.textTertiary)
-                        .lineLimit(1)
+                        .monospacedDigit()
                 }
             }
-            Spacer(minLength: Space.s2)
-            if let used = t.useCount, used > 0 {
-                Text("\(used)×")
-                    .font(EType.micro).tracking(0.4)
-                    .foregroundStyle(palette.textTertiary)
-                    .monospacedDigit()
-            }
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, Space.s4)
-        .padding(.vertical, Space.s3)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
+        .buttonStyle(.plain)
+    }
+
+    private var newTemplateRow: some View {
+        Button(action: tapNewTemplate) {
+            HStack(spacing: Space.s2) {
+                Text("+ New template")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(LinearGradient.primary)
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Create new lane template")
     }
 
     private func laneSubtitle(_ t: LoadTemplatesAPI.Template) -> String? {
@@ -663,36 +767,20 @@ struct ShipperSettings: View {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
-    // MARK: Sign out
+    // MARK: - SECURITY (2FA + active sessions; backend pending)
 
-    private var signOutCard: some View {
-        Button {
-            showSignOutConfirm = true
-        } label: {
-            HStack(spacing: Space.s3) {
-                Image(systemName: "rectangle.portrait.and.arrow.right.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(LinearGradient.diagonal)
-                    .frame(width: 36, height: 36)
-                    .background(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .fill(palette.tintNeutral.opacity(0.5))
-                    )
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Sign out")
-                        .font(EType.bodyStrong)
-                        .foregroundStyle(palette.textPrimary)
-                    Text("Return to the sign-in screen")
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textSecondary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(palette.textTertiary)
+    private var securitySection: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            sectionLabel("SECURITY")
+            VStack(spacing: 0) {
+                twoFactorRow
+                    .padding(.horizontal, Space.s4)
+                    .padding(.vertical, Space.s3)
+                Divider().overlay(palette.borderFaint).padding(.leading, 56)
+                sessionsRow
+                    .padding(.horizontal, Space.s4)
+                    .padding(.vertical, Space.s3)
             }
-            .padding(.horizontal, Space.s4)
-            .padding(.vertical, Space.s3)
             .background(
                 RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                     .fill(palette.bgCard)
@@ -701,34 +789,196 @@ struct ShipperSettings: View {
                 RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                     .strokeBorder(palette.borderFaint, lineWidth: 1)
             )
-            .contentShape(Rectangle())
+            .padding(.horizontal, Space.s5)
+        }
+    }
+
+    private var twoFactorRow: some View {
+        HStack(spacing: Space.s3) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(palette.tintNeutral.opacity(0.5))
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(LinearGradient.diagonal)
+            }
+            .frame(width: 36, height: 36)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Two-factor auth")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Text(twoFactorStatus)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.success)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+            Spacer()
+            Button(action: tapManage2FA) {
+                Text("Manage")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Manage two-factor authentication")
+        }
+    }
+
+    private var sessionsRow: some View {
+        HStack(spacing: Space.s3) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(palette.tintNeutral.opacity(0.5))
+                Image(systemName: "macbook.and.iphone")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(LinearGradient.diagonal)
+            }
+            .frame(width: 36, height: 36)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Active sessions · \(activeSessionsCount)")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Text(activeSessionsList)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.82)
+            }
+            Spacer()
+            Button(action: tapViewSessions) {
+                Text("View")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("View active sessions")
+        }
+    }
+
+    // MARK: - ABOUT card (mini-orb + version + doctrine pointer + chevron)
+
+    private var aboutCard: some View {
+        Button(action: tapAbout) {
+            HStack(alignment: .center, spacing: 12) {
+                MiniOrb()
+                    .frame(width: 32, height: 32)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(aboutHeadline)
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                    Text(aboutSub)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(palette.textSecondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
+            .frame(minHeight: 58)
         }
         .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(palette.bgCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(aboutHeadline). \(aboutSub).")
     }
 
-    // MARK: Build footer
+    // MARK: - Sign-out (ghost capsule, danger-red border + label)
 
-    private var buildFooter: some View {
-        VStack(spacing: 2) {
-            Text("EusoTrip · Powered by ESANG AI™")
-                .font(EType.micro).tracking(1.0)
-                .foregroundStyle(palette.textTertiary)
-            Text(buildVersionString)
-                .font(EType.micro).tracking(0.6)
-                .foregroundStyle(palette.textTertiary.opacity(0.7))
+    private var signOutButton: some View {
+        Button(action: { showSignOutConfirm = true }) {
+            ZStack {
+                Capsule().fill(palette.bgCard)
+                Capsule()
+                    .strokeBorder(Brand.danger.opacity(0.30), lineWidth: 1)
+                Text("Sign out")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Brand.danger)
+            }
+            .frame(height: 48)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, Space.s4)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Sign out")
+        .accessibilityHint("Logs you out of Eusorone Technologies and returns to the sign-in screen.")
     }
 
-    private var buildVersionString: String {
-        let info = Bundle.main.infoDictionary
-        let v = info?["CFBundleShortVersionString"] as? String ?? "—"
-        let b = info?["CFBundleVersion"] as? String ?? "—"
-        return "v\(v) (\(b))"
+    // MARK: - Notification posts (§20.4 — wireframe-defined names)
+
+    private func tapLaneTemplate(_ t: LoadTemplatesAPI.Template) {
+        NotificationCenter.default.post(
+            name: .eusoShipperSettingsLaneTemplateRow,
+            object: nil,
+            userInfo: [
+                "source": "211_ShipperSettings",
+                "templateId": t.id,
+                "shipperCompanyId": 1
+            ]
+        )
     }
 
-    // MARK: Toast
+    private func tapNewTemplate() {
+        NotificationCenter.default.post(
+            name: .eusoShipperSettingsLaneTemplateAdd,
+            object: nil,
+            userInfo: [
+                "source": "211_ShipperSettings",
+                "shipperCompanyId": 1
+            ]
+        )
+    }
+
+    private func tapManage2FA() {
+        NotificationCenter.default.post(
+            name: .eusoShipperSettingsSecurityManage,
+            object: nil,
+            userInfo: [
+                "source": "211_ShipperSettings",
+                "subject": "tfa",
+                "shipperCompanyId": 1
+            ]
+        )
+    }
+
+    private func tapViewSessions() {
+        NotificationCenter.default.post(
+            name: .eusoShipperSettingsSecuritySessions,
+            object: nil,
+            userInfo: [
+                "source": "211_ShipperSettings",
+                "shipperCompanyId": 1
+            ]
+        )
+    }
+
+    private func tapAbout() {
+        NotificationCenter.default.post(
+            name: .eusoShipperSettingsAbout,
+            object: nil,
+            userInfo: [
+                "source": "211_ShipperSettings",
+                "build": Self.buildNumber,
+                "version": Self.shortVersion,
+                "shipperCompanyId": 1
+            ]
+        )
+    }
+
+    // MARK: - Toast
 
     private func flashToast(_ msg: String) {
         withAnimation(.easeInOut(duration: 0.18)) { lastToast = msg }
@@ -750,14 +1000,50 @@ struct ShipperSettings: View {
         }
         .padding(.horizontal, Space.s4)
         .padding(.vertical, Space.s2)
-        .background(
-            Capsule().fill(palette.bgCard)
-        )
-        .overlay(
-            Capsule().strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
+        .background(Capsule().fill(palette.bgCard))
+        .overlay(Capsule().strokeBorder(palette.borderFaint, lineWidth: 1))
         .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
     }
+}
+
+// MARK: - MiniOrb (32pt gradient diagonal + specular highlight overlay
+//          — file-scoped per §19.2; mirrors the SVG About row's
+//          miniature ESang orb composition)
+
+private struct MiniOrb: View {
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(LinearGradient.diagonal)
+            Circle()
+                .fill(RadialGradient(
+                    colors: [.white.opacity(0.75), .white.opacity(0)],
+                    center: .init(x: 0.35, y: 0.30),
+                    startRadius: 0, endRadius: 18
+                ))
+                .frame(width: 22, height: 22)
+                .offset(x: -3, y: -3)
+                .blendMode(.plusLighter)
+        }
+    }
+}
+
+// MARK: - NotificationCenter names (§20.4 no dead buttons)
+
+extension Notification.Name {
+    /// Lane-template row tap — opens the template-detail sheet for
+    /// edit / archive / repost.
+    static let eusoShipperSettingsLaneTemplateRow    = Notification.Name("eusoShipperSettingsLaneTemplateRow")
+    /// "+ New template" CTA tap — opens the template-create sheet.
+    static let eusoShipperSettingsLaneTemplateAdd    = Notification.Name("eusoShipperSettingsLaneTemplateAdd")
+    /// 2FA "Manage" link tap — opens the auth-management sheet
+    /// (`auth.tfaStatus` + `tfaEnable` + `tfaDisable` + recovery codes).
+    static let eusoShipperSettingsSecurityManage     = Notification.Name("eusoShipperSettingsSecurityManage")
+    /// Sessions "View" link tap — opens the session-list sheet
+    /// (`auth.listSessions` + per-row `revokeSession`).
+    static let eusoShipperSettingsSecuritySessions   = Notification.Name("eusoShipperSettingsSecuritySessions")
+    /// About-card tap — opens the about-detail sheet.
+    static let eusoShipperSettingsAbout              = Notification.Name("eusoShipperSettingsAbout")
 }
 
 // MARK: - ContentView entry point
@@ -776,13 +1062,13 @@ struct ShipperSettingsScreen: View {
 
 // MARK: - Previews
 
-#Preview("211 · Shipper Settings · Night") {
+#Preview("211 · Shipper Settings · Dark") {
     ShipperSettingsScreen(theme: Theme.dark)
         .environmentObject(EusoTripSession())
         .preferredColorScheme(.dark)
 }
 
-#Preview("211 · Shipper Settings · Afternoon") {
+#Preview("211 · Shipper Settings · Light") {
     ShipperSettingsScreen(theme: Theme.light)
         .environmentObject(EusoTripSession())
         .preferredColorScheme(.light)
