@@ -860,13 +860,19 @@ struct MeWalletScreen: View {
     }
 }
 
+// 069 ships the Haul-tab custom variant (Haul slot replacing Trips,
+// frozen per [feedback_bottom_nav_frozen]) with WALLET current —
+// Wallet ring per [Driver E2E map] (069 listed in Wallet · settlements
+// · payout · tax · IFTA · earnings cluster). iOS file `MeWallet` but
+// PNG slot rebranded to "Achievements Wall" — same iOS-vs-PNG
+// mismatch as 057-068, out of safe-mode scope. Only SF Symbol polish.
 private func driverNavLeading_069() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Haul",  systemImage: "trophy", isCurrent: false)]
+    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
+     NavSlot(label: "Haul",  systemImage: "trophy",     isCurrent: false)]
 }
 private func driverNavTrailing_069() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "wallet.pass", isCurrent: true),
-     NavSlot(label: "Me",     systemImage: "person",      isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: true),
+     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
 }
 
 // MARK: - Previews
