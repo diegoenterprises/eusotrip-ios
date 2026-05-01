@@ -528,13 +528,17 @@ struct RateconTenderScreen: View {
     }
 }
 
+// PNG canon at `01 Driver/{Light,Dark}/052 Ratecon Tender.png` pins
+// TRIPS current — accepted-in-flight ratecon for the current leg
+// with rate breakdown + HaulPay T+2 settlement note. Icon set +
+// trailing slot normalized to canonical 010-051 layout.
 private func driverNavLeading_052() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
 }
 private func driverNavTrailing_052() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
 }
 
 #Preview("052 · Ratecon Tender · Dark") {
