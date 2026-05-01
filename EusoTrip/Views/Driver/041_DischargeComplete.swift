@@ -352,13 +352,17 @@ struct DischargeCompleteScreen: View {
     }
 }
 
+// PNG canon at `01 Driver/{Light,Dark}/041 Discharge Complete.png`
+// pins TRIPS current — gasoline drop sealed + VRC purged + ESANG
+// custody BOL-sealed signature with audit hash. Icon set + trailing
+// slot normalized to canonical 010-040 layout.
 private func driverNavLeading_041() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
 }
 private func driverNavTrailing_041() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
 }
 
 #Preview("041 · Discharge Complete · Dark") {
