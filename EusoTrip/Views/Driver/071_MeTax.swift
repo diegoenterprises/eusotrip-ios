@@ -475,13 +475,17 @@ struct MeTaxScreen: View {
     }
 }
 
+// 071 ships the Haul-tab custom variant with ME current. iOS file
+// `MeTax` but PNG slot rebranded to "Daily Streak and Quest" — same
+// iOS-vs-PNG mismatch as 057-070, out of safe-mode scope. Frozen
+// layout per [feedback_bottom_nav_frozen]; only SF Symbol polish.
 private func driverNavLeading_071() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Haul",  systemImage: "trophy", isCurrent: false)]
+    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
+     NavSlot(label: "Haul",  systemImage: "trophy",     isCurrent: false)]
 }
 private func driverNavTrailing_071() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "wallet.pass", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",      isCurrent: true)]
+    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: true)]
 }
 
 // MARK: - Previews
