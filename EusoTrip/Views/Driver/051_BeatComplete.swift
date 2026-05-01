@@ -161,11 +161,12 @@ struct BeatComplete: View {
 
     // M2 doctrine — em-dash sentinel until LifecycleProductContext exposes
     // `pickupOriginLabel` / `dropoffDestinationLabel` from the live Load record.
-    // The previous fixture switch leaked customer brand identifiers (Walmart,
-    // Univar, Yara, Curtis Bay, etc.) into the production-path UI, which is a
-    // ledger-hygiene violation. We render "—" for the Walmart-specific cases
-    // (.reefer, .dryVan) per the 111th firing's deferred-low-risk recommendation;
-    // the remaining vertical fixtures stay until the broader LifecycleProductContext
+    // The previous fixture switch leaked third-party customer brand
+    // identifiers (a big-box DC, distributor, fertilizer plant, port basin,
+    // etc.) into the production-path UI, which is a ledger-hygiene
+    // violation. We render "—" for the cases on the deferred-low-risk path
+    // (.reefer, .dryVan) per the 111th firing's recommendation; the
+    // remaining vertical fixtures stay until the broader LifecycleProductContext
     // rewrite (pending; see 111th firing report Branch C / explicit non-recommendation).
     private var legLabel: String {
         switch ctx.product {
@@ -371,13 +372,17 @@ struct BeatCompleteScreen: View {
     }
 }
 
+// PNG canon at `01 Driver/{Light,Dark}/051 Beat Complete.png` pins
+// TRIPS current — closes the Ring 3 lifecycle range (013-051) with
+// the beat-complete summary. Icon set + trailing slot normalized to
+// canonical 010-050 layout.
 private func driverNavLeading_051() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
 }
 private func driverNavTrailing_051() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
 }
 
 #Preview("051 · Beat Complete · Dark") {
