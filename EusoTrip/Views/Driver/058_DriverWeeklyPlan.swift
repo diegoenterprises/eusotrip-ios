@@ -668,14 +668,22 @@ struct DriverWeeklyPlanScreen: View {
     }
 }
 
+// PNG canon at `01 Driver/{Light,Dark}/058 Credentials Detail.png`
+// pins ME current — Credentials Detail is a Me-ring surface (DQ
+// file / docs / permits per [Driver E2E map] Ring 1 Me). iOS file
+// is named `058_DriverWeeklyPlan.swift` (older slot name) but the
+// shipped UI is the credentials detail. Prior iOS shipped TRIPS
+// current — drifted from the Me-ring doctrine. Restored canonical:
+// Home / Trips · Wallet / Me with **ME current**. Trailing
+// `wallet.pass` -> canonical `creditcard` icon.
 private func driverNavLeading_058() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",     isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box", isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: false)]
 }
 
 private func driverNavTrailing_058() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "wallet.pass", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",      isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: true)]
 }
 
 // MARK: - Previews
