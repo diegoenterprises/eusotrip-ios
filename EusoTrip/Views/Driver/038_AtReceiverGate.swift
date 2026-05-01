@@ -472,13 +472,17 @@ struct AtReceiverGateFullScreen: View {
     }
 }
 
+// PNG canon at `01 Driver/{Light,Dark}/038 At Receiver Gate.png` pins
+// TRIPS current — at-perimeter QR-kiosk credential surface with
+// canonical Michael Eusorone CDL-N-PA + HAZMAT/TANK chips. Icon set +
+// trailing slot normalized to canonical 010-037 layout.
 private func driverNavLeading_038() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
 }
 private func driverNavTrailing_038() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
 }
 
 #Preview("038 · At Receiver Gate · Dark") {
