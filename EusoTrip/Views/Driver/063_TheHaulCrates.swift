@@ -465,13 +465,17 @@ struct TheHaulCratesScreen: View {
     }
 }
 
+// 063 ships the Haul-tab custom variant (Haul current, frozen per
+// [feedback_bottom_nav_frozen]). iOS file `TheHaulCrates` but PNG
+// slot rebranded to "Preferences" — same iOS-vs-PNG mismatch as
+// 057-062, out of safe-mode scope. Only SF Symbol naming polish.
 private func driverNavLeading_063() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Haul",  systemImage: "trophy", isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
+     NavSlot(label: "Haul",  systemImage: "trophy",     isCurrent: true)]
 }
 private func driverNavTrailing_063() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "wallet.pass", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",      isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
 }
 
 // MARK: - Previews
