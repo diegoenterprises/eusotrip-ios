@@ -373,17 +373,13 @@ struct PickupArrivalScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/029 Pickup Arrival.png` pins
-// TRIPS current — ESANG-led bond + vapor-recovery checklist for the
-// hazmat top-load. Icon set + trailing slot normalized to canonical
-// 010-028 layout.
 private func driverNavLeading_029() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
 }
 private func driverNavTrailing_029() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 #Preview("029 · Pickup Arrival · Dark") {

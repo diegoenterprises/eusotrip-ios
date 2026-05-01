@@ -391,18 +391,13 @@ struct BackingAssistReceiverScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/039 Backing Assist Receiver.png`
-// pins TRIPS current — 3-camera (rear/left/right) backing-assist
-// surface with spotter live-rec + cone-field target line + parking-
-// brake-at-4-in cue. Icon set + trailing slot normalized to canonical
-// 010-038 layout.
 private func driverNavLeading_039() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
 }
 private func driverNavTrailing_039() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 #Preview("039 · Backing Assist · Dark") {

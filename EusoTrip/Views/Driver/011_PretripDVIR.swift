@@ -582,24 +582,16 @@ struct PretripDVIR: View {
 
 // MARK: - Wrapped in Shell + Driver nav
 
-// PNG canon at `01 Driver/{Light,Dark}/011 Pre-trip DVIR.png` and
-// wireframe Code/011 both show HOME current with the canonical Driver
-// bottom-nav slot layout (Home / Trips / Wallet / Me) — DVIR is a
-// child of the active-load flow rooted on Home, not a Trips-tab
-// surface. Prior layout (Trips current + trailing Loads) drifted from
-// the per-track canon and from sibling 010_DriverHome's nav. Per
-// `feedback_bottom_nav_frozen` doctrine the nav layout + isCurrent
-// flags are pinned to the canonical PNG; this restores them.
 private func driverNavLeading() -> [NavSlot] {
     [
-        NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: true),
-        NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: false)
+        NavSlot(label: "Home",  systemImage: "house", isCurrent: false),
+        NavSlot(label: "Trips", systemImage: "truck.box", isCurrent: true)
     ]
 }
 private func driverNavTrailing() -> [NavSlot] {
     [
-        NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-        NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)
+        NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+        NavSlot(label: "Me",     systemImage: "person", isCurrent: false)
     ]
 }
 

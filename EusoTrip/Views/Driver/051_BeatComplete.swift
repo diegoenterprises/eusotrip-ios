@@ -372,17 +372,13 @@ struct BeatCompleteScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/051 Beat Complete.png` pins
-// TRIPS current — closes the Ring 3 lifecycle range (013-051) with
-// the beat-complete summary. Icon set + trailing slot normalized to
-// canonical 010-050 layout.
 private func driverNavLeading_051() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
 }
 private func driverNavTrailing_051() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 #Preview("051 · Beat Complete · Dark") {

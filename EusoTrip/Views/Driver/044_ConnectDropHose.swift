@@ -336,17 +336,13 @@ struct ConnectDropHoseScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/044 Connect Drop Hose.png`
-// pins TRIPS current — connect-ladder step 2 of 4 (seat dry-break
-// collar) with ESD bond live + VRC ready + spotter on deck. Icon
-// set + trailing slot normalized to canonical 010-043 layout.
 private func driverNavLeading_044() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
 }
 private func driverNavTrailing_044() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 #Preview("044 · Connect Drop Hose · Dark") {

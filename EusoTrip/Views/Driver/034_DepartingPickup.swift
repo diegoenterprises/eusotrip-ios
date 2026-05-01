@@ -371,17 +371,13 @@ struct DepartingPickupScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/034 Departing Pickup.png` pins
-// TRIPS current — released-en-route-to-receiver state with EusoShield
-// in-transit-binder live + ESANG first-leg coaching. Icon set +
-// trailing slot normalized to canonical 010-033 layout.
 private func driverNavLeading_034() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
 }
 private func driverNavTrailing_034() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 #Preview("034 · Departing Pickup · Dark") {

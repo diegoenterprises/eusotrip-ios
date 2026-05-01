@@ -349,18 +349,13 @@ struct DisconnectConfirmedScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/043 Disconnect Confirmed.png`
-// pins TRIPS current — disconnect ladder 4 of 4 confirmed + BOL
-// receipt acknowledged + ESANG AI co-signature + chain-of-custody
-// hash. Icon set + trailing slot normalized to canonical 010-042
-// layout.
 private func driverNavLeading_043() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
 }
 private func driverNavTrailing_043() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 #Preview("043 · Disconnect Confirmed · Dark") {

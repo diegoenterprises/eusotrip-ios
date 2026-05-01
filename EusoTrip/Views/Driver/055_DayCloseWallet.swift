@@ -385,19 +385,13 @@ struct DayCloseWalletScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/055 Day Close Wallet.png` +
-// [Driver E2E map] doctrine pin Wallet · settlements · payout · tax
-// · IFTA · earnings (054, 055, ...) inside the Wallet ring. Restored
-// canonical layout: Home / Trips · Wallet / Me with **WALLET
-// current**. Prior iOS shipped with all four `isCurrent` flags
-// `false` — same no-tab-current double-drift as 054.
 private func driverNavLeading_055() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: false)]
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: false)]
 }
 private func driverNavTrailing_055() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: true),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 #Preview("055 · Day Close Wallet · Dark") {

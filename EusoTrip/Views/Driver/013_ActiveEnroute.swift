@@ -639,21 +639,14 @@ struct ActiveEnrouteScreen: View {
             // session time-of-day can flip to `.night`.
             ActiveEnroute(register: .morning)
         } nav: {
-            // PNG canon at `01 Driver/{Light,Dark}/013 En Route to Pickup.png`
-            // pins TRIPS current on the lifecycle Ring 3 surfaces (active-
-            // trip context). Icon set normalized to the canonical
-            // .fill / creditcard variants used by 010/011/012 — keeps the
-            // bottom-nav glyphs consistent across the Driver track. Per
-            // [feedback_bottom_nav_frozen], the layout + isCurrent flags
-            // ship as-is; this only aligns the SF Symbol naming.
             BottomNav(
                 leading: [
-                    NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-                    NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true),
+                    NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
+                    NavSlot(label: "Trips", systemImage: "truck.box", isCurrent: true),
                 ],
                 trailing: [
-                    NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-                    NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false),
+                    NavSlot(label: "Wallet", systemImage: "wallet.pass", isCurrent: false),
+                    NavSlot(label: "Me",     systemImage: "person",      isCurrent: false),
                 ],
                 orbState: .idle
             )

@@ -884,18 +884,13 @@ struct TheHaulMissionsScreen: View {
     }
 }
 
-// 061 ships the Haul-tab custom variant (Haul current, frozen per
-// [feedback_bottom_nav_frozen]). iOS file is `061_TheHaulMissions.swift`
-// but PNG slot was rebranded to "Earnings and Pay" — same iOS-vs-PNG
-// mismatch as 057-060, out of safe-mode scope. Only SF Symbol
-// naming polish for cross-screen consistency with 010-060.
 private func driverNavLeading_061() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Haul",  systemImage: "trophy",     isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house",          isCurrent: false),
+     NavSlot(label: "Haul",  systemImage: "trophy",         isCurrent: true)]
 }
 private func driverNavTrailing_061() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "wallet.pass",   isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person",        isCurrent: false)]
 }
 
 // MARK: - Previews

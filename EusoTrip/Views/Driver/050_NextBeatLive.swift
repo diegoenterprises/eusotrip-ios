@@ -321,17 +321,13 @@ struct NextBeatLiveScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/050 Next Beat Live.png` pins
-// TRIPS current — bottom-load arm 3 active filling RB08 #2 with
-// terminal-ops 3-row + ESANG hold-at-cab. Icon set + trailing slot
-// normalized to canonical 010-049 layout.
 private func driverNavLeading_050() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
 }
 private func driverNavTrailing_050() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 // MARK: - Amenities sheet

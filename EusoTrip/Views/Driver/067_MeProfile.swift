@@ -471,19 +471,13 @@ struct MeProfileScreen: View {
     }
 }
 
-// 067 ships the Haul-tab custom variant (Haul slot replacing Trips,
-// frozen per [feedback_bottom_nav_frozen]) with ME current — Auth +
-// profile per [Driver E2E map] (001-006, 056, 067) Ring 1 Me. iOS
-// file `MeProfile` but PNG slot rebranded to "About and Legal" —
-// same iOS-vs-PNG mismatch as 057-066, out of safe-mode scope. Only
-// SF Symbol naming polish.
 private func driverNavLeading_067() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Haul",  systemImage: "trophy",     isCurrent: false)]
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
+     NavSlot(label: "Haul",  systemImage: "trophy", isCurrent: false)]
 }
 private func driverNavTrailing_067() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: true)]
+    [NavSlot(label: "Wallet", systemImage: "wallet.pass", isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person",      isCurrent: true)]
 }
 
 // MARK: - Previews

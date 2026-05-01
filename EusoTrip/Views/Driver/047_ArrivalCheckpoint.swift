@@ -346,17 +346,13 @@ struct ArrivalCheckpointScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/047 Arrival Checkpoint.png`
-// pins TRIPS current — rack-in confirmed at Buckeye Malvern with
-// Spectra pre-read 99.0% RB08 + 4-row pre-load gates handoff. Icon
-// set + trailing slot normalized to canonical 010-046 layout.
 private func driverNavLeading_047() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
 }
 private func driverNavTrailing_047() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 #Preview("047 · Arrival Checkpoint · Dark") {

@@ -373,12 +373,12 @@ struct MeRateIntelScreen: View {
 }
 
 private func driverNavLeading_095() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill",  isCurrent: false),
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
      NavSlot(label: "Haul",  systemImage: "trophy", isCurrent: false)]
 }
 private func driverNavTrailing_095() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill",      isCurrent: true)]
+    [NavSlot(label: "Wallet", systemImage: "wallet.pass", isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person",      isCurrent: true)]
 }
 
 // MARK: - Previews

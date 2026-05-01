@@ -734,18 +734,13 @@ struct EnRouteDriveScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/035 En Route Drive.png` pins
-// TRIPS current — turn-by-turn drive surface with HAZMAT viaduct
-// reroute + speed limit + EusoShield $2M Gas binder live. Trailing
-// slot already canonical (Wallet, not Loads); only `.fill` icon
-// polish for cross-screen consistency with 010-034.
 private func driverNavLeading_035() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house",     isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box", isCurrent: true)]
 }
 private func driverNavTrailing_035() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "creditcard", isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person",     isCurrent: false)]
 }
 
 // MARK: - Previews

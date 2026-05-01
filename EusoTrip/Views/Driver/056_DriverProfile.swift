@@ -449,17 +449,13 @@ struct DriverProfileScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/056 Driver Profile.png` +
-// [Driver E2E map] doctrine pin Auth + profile (001-006, 056, 067)
-// inside Ring 1 Me. ME current already correct in iOS; only the
-// trailing slot label (Loads -> Wallet) + icon-set polish.
 private func driverNavLeading_056() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: false)]
+    [NavSlot(label: "Home",  systemImage: "house",       isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: false)]
 }
 private func driverNavTrailing_056() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: true)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: true)]
 }
 
 #Preview("056 · Driver Profile · Dark") {

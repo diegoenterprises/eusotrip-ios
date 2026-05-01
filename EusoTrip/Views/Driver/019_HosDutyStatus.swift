@@ -805,21 +805,13 @@ struct HosDutyStatusScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/019 HOS Duty Status.png` +
-// [Driver E2E map] doctrine pin HOS / ELD (019, 074, 081) inside
-// Ring 1 Me. Restored canonical layout: Home / Trips · Wallet / Me
-// with **ME current**. Prior iOS shipped `Loads isCurrent: true`
-// which carried two drifts: (a) Loads is not a canonical trailing
-// slot (Wallet is), (b) HOS is a Me-ring compliance hub, not a
-// Wallet surface. Per [feedback_bottom_nav_frozen]: layout +
-// isCurrent flags ship as-is; this restores the canonical pin.
 private func driverNavLeading_019() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: false)]
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: false)]
 }
 private func driverNavTrailing_019() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: true)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: true),
+     NavSlot(label: "Me",     systemImage: "person", isCurrent: false)]
 }
 
 // MARK: - Previews

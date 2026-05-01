@@ -351,17 +351,13 @@ struct OffDutyScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/026 Off Duty.png` pins HOME
-// current — 026 is the "Off Duty · HOME" day-close surface returning
-// to Home root, distinct from the active-trip lifecycle context.
-// Icon set + trailing slot normalized to canonical 010-025 layout.
 private func driverNavLeading_026() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: true),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: false)]
+    [NavSlot(label: "Home",  systemImage: "house",       isCurrent: true),
+     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: false)]
 }
 private func driverNavTrailing_026() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 #Preview("026 · Off Duty · Dark") {

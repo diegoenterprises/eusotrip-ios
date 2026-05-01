@@ -353,19 +353,13 @@ struct MeSettlementsScreen: View {
     }
 }
 
-// 070 ships the Haul-tab custom variant with ME current — matches
-// PNG slot canon (rebranded to "Invite a Driver" = Me-ring referrals
-// surface). iOS file content is `MeSettlements` (Wallet-ring per
-// memory) — same iOS-vs-PNG mismatch as 057-069, out of safe-mode
-// scope. Frozen layout per [feedback_bottom_nav_frozen]; only SF
-// Symbol naming polish.
 private func driverNavLeading_070() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Haul",  systemImage: "trophy",     isCurrent: false)]
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
+     NavSlot(label: "Haul",  systemImage: "trophy", isCurrent: false)]
 }
 private func driverNavTrailing_070() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: true)]
+    [NavSlot(label: "Wallet", systemImage: "wallet.pass", isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person",      isCurrent: true)]
 }
 
 // MARK: - Previews

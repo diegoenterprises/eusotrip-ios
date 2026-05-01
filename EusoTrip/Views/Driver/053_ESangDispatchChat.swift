@@ -373,17 +373,13 @@ struct ESangDispatchChatScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/053 ESANG Dispatch Chat.png`
-// pins TRIPS current — ESANG-driver chat thread with dock-staging
-// card + quick replies. Icon set + trailing slot normalized to
-// canonical 010-052 layout.
 private func driverNavLeading_053() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
 }
 private func driverNavTrailing_053() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 #Preview("053 · ESANG Dispatch Chat · Dark") {

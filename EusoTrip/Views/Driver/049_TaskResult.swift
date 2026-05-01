@@ -361,18 +361,13 @@ struct TaskResultScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/049 Task Result.png` pins
-// TRIPS current — Spectra pre-read closed with MATCH at 99.94% RB08
-// + 4-row findings + Buckeye dispatcher e-approved + Michael
-// Eusorone tap-to-sign. Icon set + trailing slot normalized to
-// canonical 010-048 layout.
 private func driverNavLeading_049() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
 }
 private func driverNavTrailing_049() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 #Preview("049 · Task Result · Dark") {

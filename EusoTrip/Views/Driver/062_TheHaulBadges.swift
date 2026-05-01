@@ -540,17 +540,13 @@ struct TheHaulBadgesScreen: View {
     }
 }
 
-// 062 ships the Haul-tab custom variant (Haul current, frozen per
-// [feedback_bottom_nav_frozen]). iOS file `TheHaulBadges` but PNG
-// slot rebranded to "Training and Certs" — same iOS-vs-PNG mismatch
-// as 057-061, out of safe-mode scope. Only SF Symbol naming polish.
 private func driverNavLeading_062() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Haul",  systemImage: "trophy",     isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house",          isCurrent: false),
+     NavSlot(label: "Haul",  systemImage: "trophy",         isCurrent: true)]
 }
 private func driverNavTrailing_062() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "wallet.pass",   isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person",        isCurrent: false)]
 }
 
 // MARK: - Previews

@@ -343,17 +343,13 @@ struct DisconnectAndVerifyScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/042 Disconnect and Verify.png`
-// pins TRIPS current — dry-break uncouple step 2 of 4 with VRC sleeve
-// clear + ESD bond continuity LIVE + spotter watching. Icon set +
-// trailing slot normalized to canonical 010-041 layout.
 private func driverNavLeading_042() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
 }
 private func driverNavTrailing_042() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 #Preview("042 · Disconnect & Verify · Dark") {

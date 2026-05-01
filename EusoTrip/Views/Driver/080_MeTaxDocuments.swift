@@ -428,12 +428,12 @@ struct MeTaxDocumentsScreen: View {
 }
 
 private func driverNavLeading_080() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill",  isCurrent: false),
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
      NavSlot(label: "Haul",  systemImage: "trophy", isCurrent: false)]
 }
 private func driverNavTrailing_080() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard", isCurrent: true),
-     NavSlot(label: "Me",     systemImage: "person.fill",      isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "wallet.pass", isCurrent: true),
+     NavSlot(label: "Me",     systemImage: "person",      isCurrent: false)]
 }
 
 // MARK: - Previews

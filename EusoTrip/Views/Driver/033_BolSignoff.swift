@@ -444,18 +444,13 @@ struct BolSignoffScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/033 BOL Sign-off.png` pins
-// TRIPS current — final step 6/6 of the detach sequence: BOL +
-// Spectra-cert sign-off with 49 CFR 172 driver acknowledgment +
-// EusoShield in-transit-binder activation. Icon set + trailing
-// slot normalized to canonical 010-032 layout.
 private func driverNavLeading_033() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
 }
 private func driverNavTrailing_033() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 #Preview("033 · BOL Sign-off · Dark") {

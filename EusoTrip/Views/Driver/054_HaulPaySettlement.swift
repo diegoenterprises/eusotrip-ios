@@ -402,20 +402,13 @@ struct HaulPaySettlementScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/054 HaulPay Settlement.png` +
-// [Driver E2E map] doctrine pin Wallet · settlements · payout · tax
-// · IFTA · earnings (054, 055, 068, 069, 070, 077, 078, 079, 080, 090)
-// inside the Wallet ring. Restored canonical layout: Home / Trips ·
-// Wallet / Me with **WALLET current**. Prior iOS shipped with all
-// four `isCurrent` flags `false` — no tab marked current at all,
-// double-drift.
 private func driverNavLeading_054() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: false)]
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: false)]
 }
 private func driverNavTrailing_054() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: true),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 #Preview("054 · HaulPay Settlement · Dark") {

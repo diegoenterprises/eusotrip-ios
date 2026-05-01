@@ -456,17 +456,13 @@ struct ArrivalGateTaskActiveScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/048 Arrival-Gate Task Active.png`
-// pins TRIPS current — Spectra-Match OPTRX rolling ppm sweep on the
-// residual draw with 4-row pre-read gates checklist. Icon set +
-// trailing slot normalized to canonical 010-047 layout.
 private func driverNavLeading_048() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
 }
 private func driverNavTrailing_048() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 #Preview("048 · Arrival-Gate Task Active · Dark") {

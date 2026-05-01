@@ -364,18 +364,13 @@ struct TheHaulCosmeticsScreen: View {
     }
 }
 
-// 066 ships the Haul-tab custom variant (Haul current, frozen per
-// [feedback_bottom_nav_frozen]). iOS file `TheHaulCosmetics` but
-// PNG slot rebranded to "Feedback and Ratings" — same iOS-vs-PNG
-// mismatch as 057-065, out of safe-mode scope. Only SF Symbol
-// naming polish. **Closes The Haul cluster (060-066) audit pass.**
 private func driverNavLeading_066() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Haul",  systemImage: "trophy",     isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
+     NavSlot(label: "Haul",  systemImage: "trophy", isCurrent: true)]
 }
 private func driverNavTrailing_066() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "wallet.pass", isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person",      isCurrent: false)]
 }
 
 // MARK: - Previews

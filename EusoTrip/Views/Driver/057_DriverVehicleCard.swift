@@ -813,18 +813,13 @@ struct DriverVehicleCardScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/057 Performance Scorecard.png`
-// pins ME current — Performance Scorecard is a Me-ring surface
-// (reputation / dimension scores / streaks / ratings). Wallet-
-// trailing already canonical; only `wallet.pass` -> `creditcard`
-// icon-naming polish for cross-screen consistency with 010-056.
 private func driverNavLeading_057() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: false)]
+    [NavSlot(label: "Home",  systemImage: "house",     isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box", isCurrent: false)]
 }
 private func driverNavTrailing_057() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: true)]
+    [NavSlot(label: "Wallet", systemImage: "wallet.pass", isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person",      isCurrent: true)]
 }
 
 // MARK: - Previews

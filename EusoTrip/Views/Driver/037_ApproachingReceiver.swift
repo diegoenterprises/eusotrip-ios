@@ -392,17 +392,13 @@ struct ApproachingReceiverScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/037 Approaching Receiver.png`
-// pins TRIPS current — 4-row pre-arrival checklist (Hazmat PPE +
-// BOL packet + ESANG arrival-ping + spotter contact). Icon set +
-// trailing slot normalized to canonical 010-036 layout.
 private func driverNavLeading_037() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
 }
 private func driverNavTrailing_037() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 #Preview("037 · Approaching Receiver · Dark") {

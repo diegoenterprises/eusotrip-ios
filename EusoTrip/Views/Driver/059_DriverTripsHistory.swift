@@ -521,19 +521,13 @@ struct DriverTripsHistoryScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/059 Vehicle and Equipment.png`
-// pins TRIPS current on the vehicle/equipment surface (Unit 2041
-// gasoline tank · DOT pre-trip checklist · oil/DOT/tire counters).
-// iOS file is named `059_DriverTripsHistory.swift` (older slot
-// name) but the PNG slot is rebranded — same structural mismatch
-// noted on 057/058. Icon set normalized to canonical 010-058.
 private func driverNavLeading_059() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house",     isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box", isCurrent: true)]
 }
 private func driverNavTrailing_059() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "wallet.pass", isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person",      isCurrent: false)]
 }
 
 // MARK: - Previews

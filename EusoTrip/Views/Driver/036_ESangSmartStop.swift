@@ -529,18 +529,13 @@ struct ESangSmartStopScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/036 ESANG Smart Stop.png` pins
-// TRIPS current — ESANG-suggested smart stop with weather/forecast/
-// flammable-PG-II-availability data fusion. Wallet trailing already
-// canonical; only `.fill` icon polish for cross-screen consistency
-// with 010-035.
 private func driverNavLeading_036() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house",     isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box", isCurrent: true)]
 }
 private func driverNavTrailing_036() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "creditcard", isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person",     isCurrent: false)]
 }
 
 // MARK: - Previews

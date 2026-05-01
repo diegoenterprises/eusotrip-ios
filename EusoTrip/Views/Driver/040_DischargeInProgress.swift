@@ -386,18 +386,13 @@ struct DischargeInProgressScreen: View {
     }
 }
 
-// PNG canon at `01 Driver/{Light,Dark}/040 Discharge in Progress.png`
-// pins TRIPS current — gasoline discharge with EusoShield-Discharge-
-// LIVE binder + VRC vapor-recovery + ESANG WATCHDOG class 3 PG II
-// monitoring + Emergency-Stop danger gradient. Icon set + trailing
-// slot normalized to canonical 010-039 layout.
 private func driverNavLeading_040() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
 }
 private func driverNavTrailing_040() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 #Preview("040 · Discharge in Progress · Dark") {
