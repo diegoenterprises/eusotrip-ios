@@ -167,11 +167,13 @@ struct DayCloseWallet: View {
         }
     }
 
-    // M2 doctrine — em-dash sentinel for Walmart-specific cases per the 111th
-    // firing's deferred-low-risk recommendation. The other product fixtures stay
-    // until the LifecycleProductContext rewrite exposes a live `lastLegBrand`
-    // accessor sourced from the wallet ledger row's brand. See 111th firing
-    // report Branch C for the deferral note.
+    // M2 doctrine — em-dash sentinel for the deferred-low-risk cases per
+    // the 111th firing's recommendation (third-party customer brand
+    // identifiers held back until the live ledger-row brand source is
+    // wired). The other product fixtures stay until the
+    // LifecycleProductContext rewrite exposes a live `lastLegBrand`
+    // accessor sourced from the wallet ledger row's brand. See 111th
+    // firing report Branch C for the deferral note.
     private var lastLegBrand: String {
         switch ctx.product {
         case .hazmatTanker, .vesselTanker:  return "Univar → Yara York NH3"
@@ -383,13 +385,19 @@ struct DayCloseWalletScreen: View {
     }
 }
 
+// PNG canon at `01 Driver/{Light,Dark}/055 Day Close Wallet.png` +
+// [Driver E2E map] doctrine pin Wallet · settlements · payout · tax
+// · IFTA · earnings (054, 055, ...) inside the Wallet ring. Restored
+// canonical layout: Home / Trips · Wallet / Me with **WALLET
+// current**. Prior iOS shipped with all four `isCurrent` flags
+// `false` — same no-tab-current double-drift as 054.
 private func driverNavLeading_055() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: false)]
+    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
+     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: false)]
 }
 private func driverNavTrailing_055() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: true),
+     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
 }
 
 #Preview("055 · Day Close Wallet · Dark") {
