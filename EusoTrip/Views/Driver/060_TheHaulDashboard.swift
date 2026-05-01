@@ -911,13 +911,22 @@ struct TheHaulDashboardScreen: View {
     }
 }
 
+// 060 ships the **custom The-Haul leading-slot variant** (`Haul` /
+// `trophy` replacing the canonical `Trips` slot) — frozen as-is per
+// [feedback_bottom_nav_frozen] "do not rewrite when porting." Only
+// safe SF Symbol naming polish (`wallet.pass` → `creditcard`,
+// `house`/`person` → `.fill`) for cross-screen consistency with
+// 010-059. Slot labels + isCurrent flags PRESERVED. Note: iOS file
+// is `060_TheHaulDashboard.swift` but slot 060 PNG was rebranded to
+// "HazmatPool Tier" — same iOS-vs-PNG rebrand mismatch noted on
+// 057-059, out of safe-mode scope.
 private func driverNavLeading_060() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",          isCurrent: false),
-     NavSlot(label: "Haul",  systemImage: "trophy",         isCurrent: true)]
+    [NavSlot(label: "Home",  systemImage: "house.fill", isCurrent: false),
+     NavSlot(label: "Haul",  systemImage: "trophy",     isCurrent: true)]
 }
 private func driverNavTrailing_060() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "wallet.pass",   isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",        isCurrent: false)]
+    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: false),
+     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
 }
 
 // MARK: - Previews
