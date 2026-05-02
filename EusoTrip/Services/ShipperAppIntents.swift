@@ -1,187 +1,217 @@
 //
 //  ShipperAppIntents.swift
-//  EusoTrip — Real AppIntent conformers for the 7 Siri / Shortcuts
-//  surfaces previewed in `237_ShipperAppIntents.swift`.
+//  EusoTrip — `AppIntent` conformers that route Siri / Spotlight /
+//  Shortcuts triggers INTO ESANG AI rather than firing tRPC mutations
+//  directly.
 //
-//  These intents auto-register with iOS's AppIntents framework
-//  (iOS 16+; project deployment target is iOS 17). Each intent is a
-//  real shipping `AppIntent` — its `perform()` delegates to the
-//  existing tRPC client (`ShipperAPI` / `LoadsAPI`) that powers the
-//  in-app surfaces, so a Siri voice command runs the same code path
-//  as a manual tap.
+//  Doctrine ([feedback_esang_branding]): ESANG AI is the canonical
+//  voice + assistant surface for the app. Siri is a wake-word that
+//  hands off to ESANG — every voice request flows through
+//  `EusoTripAPI.shared.esang.chat(...)` so the user gets one
+//  consistent assistant identity regardless of whether they tapped
+//  the orb in-app, talked to their watch, or said "Hey Siri."
 //
-//  Coverage (from 237 doctrine):
-//    1. PostLoadIntent             → `shippers.create` mutation
-//    2. CheckLoadStatusIntent      → `loads.getById` query
-//    3. ListExceptionsIntent       → posts deep-link to control tower
-//    4. GetBidsForLoadIntent       → `shippers.getBidsForLoad` query
-//    5. ApproveSettlementIntent    → posts deep-link to 227 detail
-//    6. OpenLoadIntent             → posts deep-link to 205 load detail
-//    7. OpenExceptionsIntent       → posts deep-link to 218 dispatch ctrl
+//  Why route through ESANG instead of firing mutations directly:
+//    · ESANG can ask follow-up questions ("Which lane?" / "What
+//      rate?") via its server-side conversation state — a direct
+//      AppIntent.perform() that calls `shippers.create` would either
+//      fail on missing parameters or fabricate values.
+//    · ESANG returns natural-language confirmations the user
+//      recognizes ("Posted LD-260427-… to your shipper board.")
+//      instead of generic Siri dialog strings.
+//    · ESANG decides side-effects (notifications, escalations,
+//      Continuity advertisement, haptic playback) — keeping that
+//      logic server-side means voice commands behave the same
+//      whether they came from the in-app orb, the watch, Siri, or
+//      a future channel like CarPlay.
 //
-//  Donation: each intent calls `IntentDonationManager.shared.donate`
-//  on success so Siri's relevance ranking improves over time.
+//  Surfaces wired (mirrors the 237 doctrine, but every leaf is
+//  ESANG, not a direct mutation):
+//    1. AskEsangIntent              — generic "Ask ESANG ___"
+//    2. EsangPostLoadIntent         — "post a load" → ESANG
+//    3. EsangCheckLoadStatusIntent  — "load status" → ESANG
+//    4. EsangShowExceptionsIntent   — "show exceptions" → ESANG
+//    5. EsangGetBidsIntent          — "get bids" → ESANG
+//    6. OpenEsangIntent             — "Open ESANG" deep-link
+//    7. OpenLoadsIntent             — "Open Loads" deep-link
+//    8. OpenControlTowerIntent      — "Open Control Tower" deep-link
 //
-//  Deep-link routing: intents 3/5/6/7 don't perform a network mutation
-//  — they post a NotificationCenter event the app's `RoleSurfaceRouter`
-//  / `ShipperSurface` intercepts to navigate. The `eusoShipperNavSwap`
-//  notification carries `userInfo["screenId"]` and is already wired in
-//  `ShipperNavController.swift`.
+//  Deep-link intents (6/7/8) post the canonical
+//  `eusoShipperNavSwap` / `eusoShipperEsangTapped` notifications
+//  that `RoleSurfaceRouter.ShipperSurface` already listens for. ESANG
+//  intents (1-5) return ESANG's reply text in the Siri dialog so the
+//  user hears what ESANG said.
 //
 
 import Foundation
 import AppIntents
 
-// MARK: - 1. PostLoadIntent
+// MARK: - 1. AskEsangIntent (the canonical "Ask ESANG ___" entry)
 
-/// "Post a load on EusoTrip from Houston to Dallas at 1900 dollars."
-/// Real mutation against `shippers.create`. Surfaced in Siri /
-/// Shortcuts / Spotlight / suggested actions on the lock screen.
+/// "Ask ESANG to find me a return load out of Dallas."
+/// "Hey Siri, ask ESANG how many bids are on LD-...".
+/// The catch-all conduit — any phrase that starts with "ask ESANG"
+/// or "tell ESANG" routes here. ESANG's reply comes back as the
+/// Siri dialog so the user hears the same voice they hear in-app.
 @available(iOS 17.0, *)
-struct PostLoadIntent: AppIntent {
-    static var title: LocalizedStringResource = "Post a Load"
+struct AskEsangIntent: AppIntent {
+    static var title: LocalizedStringResource = "Ask ESANG"
     static var description = IntentDescription(
-        "Posts a new load to your EusoTrip shipper board.",
-        categoryName: "Loads"
+        "Sends a question or command to ESANG AI and reads its reply.",
+        categoryName: "ESANG"
+    )
+    static var openAppWhenRun: Bool = false
+
+    @Parameter(title: "What should I ask ESANG?") var prompt: String
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let resp = try await EusoTripAPI.shared.esang.chat(
+            message: prompt,
+            currentPage: "siri",
+            loadId: nil
+        )
+        return .result(dialog: IntentDialog(stringLiteral: resp.message))
+    }
+}
+
+// MARK: - 2. EsangPostLoadIntent
+
+/// "Hey Siri, post a load on EusoTrip from Houston to Dallas at 1900 dollars."
+/// Routes to ESANG with a structured prompt so the AI can fill in
+/// missing fields server-side (cargo type defaulting, weight estimate
+/// via lane history, pickup-window from the user's calendar) instead
+/// of forcing the user to recite every required parameter to Siri.
+@available(iOS 17.0, *)
+struct EsangPostLoadIntent: AppIntent {
+    static var title: LocalizedStringResource = "Post a Load with ESANG"
+    static var description = IntentDescription(
+        "Asks ESANG AI to post a load to your shipper board.",
+        categoryName: "ESANG"
     )
     static var openAppWhenRun: Bool = false
 
     @Parameter(title: "Origin (city, state)") var origin: String
     @Parameter(title: "Destination (city, state)") var destination: String
-    @Parameter(title: "Rate (USD)") var rate: Double?
-    @Parameter(title: "Weight (lb)") var weight: Double?
-    @Parameter(title: "Notes") var notes: String?
+    @Parameter(title: "Rate (USD, optional)") var rate: Double?
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let ack = try await EusoTripAPI.shared.shipper.create(
-            origin: origin,
-            destination: destination,
-            cargoType: .general,
-            rate: rate,
-            weight: weight,
-            notes: notes,
-            pickupDate: nil
+        var prompt = "Post a load from \(origin) to \(destination)"
+        if let r = rate {
+            prompt += " at $\(Int(r))"
+        }
+        prompt += "."
+        let resp = try await EusoTripAPI.shared.esang.chat(
+            message: prompt,
+            currentPage: "siri.post_load",
+            loadId: nil
         )
-        let number = ack.loadNumber ?? "the new load"
-        return .result(dialog: "Posted \(number) — \(origin) to \(destination).")
+        return .result(dialog: IntentDialog(stringLiteral: resp.message))
     }
 }
 
-// MARK: - 2. CheckLoadStatusIntent
+// MARK: - 3. EsangCheckLoadStatusIntent
 
-/// "What's the status of LD-260427-A38FB12C7E?" Real query against
-/// `loads.getById`. Speaks back the lifecycle stage + ETA.
 @available(iOS 17.0, *)
-struct CheckLoadStatusIntent: AppIntent {
-    static var title: LocalizedStringResource = "Check Load Status"
+struct EsangCheckLoadStatusIntent: AppIntent {
+    static var title: LocalizedStringResource = "Check Load Status with ESANG"
     static var description = IntentDescription(
-        "Reads the current lifecycle stage and ETA for a load.",
-        categoryName: "Loads"
+        "Asks ESANG AI for the current lifecycle stage and ETA of a load.",
+        categoryName: "ESANG"
     )
     static var openAppWhenRun: Bool = false
 
     @Parameter(title: "Load number") var loadNumber: String
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let detail = try await EusoTripAPI.shared.loads.getDetail(id: loadNumber)
-        guard let d = detail else {
-            return .result(dialog: "I couldn't find load \(loadNumber).")
-        }
-        let status = d.status ?? "unknown"
-        return .result(dialog: "Load \(loadNumber) is \(status).")
+        let resp = try await EusoTripAPI.shared.esang.chat(
+            message: "What's the status of \(loadNumber)?",
+            currentPage: "siri.load_status",
+            loadId: loadNumber
+        )
+        return .result(dialog: IntentDialog(stringLiteral: resp.message))
     }
 }
 
-// MARK: - 3. ListExceptionsIntent
+// MARK: - 4. EsangShowExceptionsIntent
 
-/// "Show me my exceptions on EusoTrip." Deep-links to 218 Dispatch
-/// Control surface where the live exception feed renders. Posts the
-/// nav-swap notification + flips `openAppWhenRun` so Siri brings the
-/// app forward.
+/// "Hey Siri, show me my exceptions on EusoTrip." ESANG narrates the
+/// top open exceptions instead of dumping the user into the control
+/// tower screen — they can ask follow-ups by speaking again.
 @available(iOS 17.0, *)
-struct ListExceptionsIntent: AppIntent {
-    static var title: LocalizedStringResource = "Show Exceptions"
+struct EsangShowExceptionsIntent: AppIntent {
+    static var title: LocalizedStringResource = "Show Exceptions with ESANG"
     static var description = IntentDescription(
-        "Opens your live exception feed.",
-        categoryName: "Operations"
+        "Asks ESANG AI to summarize your open platform exceptions.",
+        categoryName: "ESANG"
     )
-    static var openAppWhenRun: Bool = true
+    static var openAppWhenRun: Bool = false
 
-    func perform() async throws -> some IntentResult {
-        await MainActor.run {
-            NotificationCenter.default.post(
-                name: .eusoShipperNavSwap,
-                object: nil,
-                userInfo: ["screenId": "218"]
-            )
-        }
-        return .result()
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let resp = try await EusoTripAPI.shared.esang.chat(
+            message: "Summarize my open exceptions.",
+            currentPage: "siri.exceptions",
+            loadId: nil
+        )
+        return .result(dialog: IntentDialog(stringLiteral: resp.message))
     }
 }
 
-// MARK: - 4. GetBidsForLoadIntent
+// MARK: - 5. EsangGetBidsIntent
 
-/// "What bids are on load LD-...?" Real query against
-/// `shippers.getBidsForLoad`. Speaks back the count + highest amount.
 @available(iOS 17.0, *)
-struct GetBidsForLoadIntent: AppIntent {
-    static var title: LocalizedStringResource = "Get Bids For Load"
+struct EsangGetBidsIntent: AppIntent {
+    static var title: LocalizedStringResource = "Get Bids with ESANG"
     static var description = IntentDescription(
-        "Reads the bid count and best price for a posted load.",
-        categoryName: "Loads"
+        "Asks ESANG AI for the bid count and best price on a posted load.",
+        categoryName: "ESANG"
     )
     static var openAppWhenRun: Bool = false
 
     @Parameter(title: "Load number") var loadNumber: String
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let bids = try await EusoTripAPI.shared.shipper.getBidsForLoad(loadId: loadNumber)
-        if bids.isEmpty {
-            return .result(dialog: "No bids on \(loadNumber) yet.")
-        }
-        let count = bids.count
-        let best = bids.compactMap { $0.amount }.max() ?? 0
-        let bestStr = String(format: "$%.0f", best)
-        return .result(dialog: "\(count) bid\(count == 1 ? "" : "s") on \(loadNumber). Best: \(bestStr).")
+        let resp = try await EusoTripAPI.shared.esang.chat(
+            message: "What bids are on \(loadNumber)?",
+            currentPage: "siri.bids",
+            loadId: loadNumber
+        )
+        return .result(dialog: IntentDialog(stringLiteral: resp.message))
     }
 }
 
-// MARK: - 5. ApproveSettlementIntent
+// MARK: - 6. OpenEsangIntent
 
-/// Deep-links to 227 Settlement Detail. The actual approval requires
-/// signature + dispute review and ships with `eusoShipperSettlementApprove`
-/// when the user confirms in-app — a Siri tap is the launchpad, not
-/// the executor.
+/// "Hey Siri, open ESANG." Brings the app forward and presents the
+/// ESANG coach sheet immediately so the user can keep the
+/// conversation going by voice from inside the app.
 @available(iOS 17.0, *)
-struct ApproveSettlementIntent: AppIntent {
-    static var title: LocalizedStringResource = "Open Settlement to Approve"
+struct OpenEsangIntent: AppIntent {
+    static var title: LocalizedStringResource = "Open ESANG"
     static var description = IntentDescription(
-        "Opens the settlement detail screen so you can review and approve.",
-        categoryName: "Wallet"
+        "Opens ESANG AI inside the app.",
+        categoryName: "ESANG"
     )
     static var openAppWhenRun: Bool = true
 
     func perform() async throws -> some IntentResult {
         await MainActor.run {
             NotificationCenter.default.post(
-                name: .eusoShipperNavSwap,
-                object: nil,
-                userInfo: ["screenId": "227"]
+                name: .eusoShipperEsangTapped,
+                object: nil
             )
         }
         return .result()
     }
 }
 
-// MARK: - 6. OpenLoadIntent
+// MARK: - 7. OpenLoadsIntent (in-app deep-link, not an ESANG call)
 
-/// "Open EusoTrip on Loads." Deep-links to 201 Loads.
 @available(iOS 17.0, *)
-struct OpenLoadIntent: AppIntent {
+struct OpenLoadsIntent: AppIntent {
     static var title: LocalizedStringResource = "Open Loads"
     static var description = IntentDescription(
-        "Opens your loads board.",
-        categoryName: "Loads"
+        "Opens the loads board.",
+        categoryName: "Navigation"
     )
     static var openAppWhenRun: Bool = true
 
@@ -197,15 +227,14 @@ struct OpenLoadIntent: AppIntent {
     }
 }
 
-// MARK: - 7. OpenExceptionsIntent
+// MARK: - 8. OpenControlTowerIntent
 
-/// "Open EusoTrip on Control Tower." Deep-links to 212 Control Tower.
 @available(iOS 17.0, *)
-struct OpenExceptionsIntent: AppIntent {
+struct OpenControlTowerIntent: AppIntent {
     static var title: LocalizedStringResource = "Open Control Tower"
     static var description = IntentDescription(
         "Opens the platform control tower.",
-        categoryName: "Operations"
+        categoryName: "Navigation"
     )
     static var openAppWhenRun: Bool = true
 
@@ -223,73 +252,80 @@ struct OpenExceptionsIntent: AppIntent {
 
 // MARK: - AppShortcutsProvider
 
-/// Registers each intent's natural-language phrasing with Siri so
-/// "Hey Siri, post a load on EusoTrip" routes to `PostLoadIntent`.
-/// The phrase set is deliberately narrow — Apple guidelines warn
-/// against over-broad phrasing that collides with system actions.
+/// Siri phrases all start with "ask ESANG" / "tell ESANG" / "open
+/// ESANG" so the brand stays consistent when the user speaks. The
+/// system phrase
+/// `\(.applicationName)` resolves to "EusoTrip" — Siri reads
+/// "Ask ESANG on EusoTrip…" which puts ESANG's name first in the
+/// utterance, matching the in-app voice.
 @available(iOS 17.0, *)
 struct EusoTripAppShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
-            intent: PostLoadIntent(),
+            intent: AskEsangIntent(),
             phrases: [
-                "Post a load on \(.applicationName)",
-                "Create a load in \(.applicationName)",
+                "Ask ESANG on \(.applicationName)",
+                "Tell ESANG on \(.applicationName)",
             ],
-            shortTitle: "Post Load",
+            shortTitle: "Ask ESANG",
+            systemImageName: "sparkles"
+        )
+        AppShortcut(
+            intent: EsangPostLoadIntent(),
+            phrases: [
+                "Post a load with ESANG on \(.applicationName)",
+                "Have ESANG post a load on \(.applicationName)",
+            ],
+            shortTitle: "Post Load via ESANG",
             systemImageName: "plus.rectangle.on.rectangle"
         )
         AppShortcut(
-            intent: CheckLoadStatusIntent(),
+            intent: EsangCheckLoadStatusIntent(),
             phrases: [
-                "Check load status in \(.applicationName)",
-                "What's the status of my load on \(.applicationName)",
+                "Ask ESANG for load status on \(.applicationName)",
             ],
-            shortTitle: "Load Status",
+            shortTitle: "Load Status via ESANG",
             systemImageName: "shippingbox.fill"
         )
         AppShortcut(
-            intent: ListExceptionsIntent(),
+            intent: EsangShowExceptionsIntent(),
             phrases: [
-                "Show exceptions in \(.applicationName)",
-                "Open exception feed in \(.applicationName)",
+                "Ask ESANG for exceptions on \(.applicationName)",
             ],
-            shortTitle: "Exceptions",
+            shortTitle: "Exceptions via ESANG",
             systemImageName: "exclamationmark.triangle.fill"
         )
         AppShortcut(
-            intent: GetBidsForLoadIntent(),
+            intent: EsangGetBidsIntent(),
             phrases: [
-                "Get bids for my load in \(.applicationName)",
-                "Show bids on \(.applicationName)",
+                "Ask ESANG for bids on \(.applicationName)",
             ],
-            shortTitle: "Get Bids",
+            shortTitle: "Bids via ESANG",
             systemImageName: "hand.raised.fill"
         )
         AppShortcut(
-            intent: OpenLoadIntent(),
+            intent: OpenEsangIntent(),
             phrases: [
-                "Open loads in \(.applicationName)",
-                "Show my loads on \(.applicationName)",
+                "Open ESANG on \(.applicationName)",
+            ],
+            shortTitle: "Open ESANG",
+            systemImageName: "sparkles"
+        )
+        AppShortcut(
+            intent: OpenLoadsIntent(),
+            phrases: [
+                "Open loads on \(.applicationName)",
             ],
             shortTitle: "Loads",
             systemImageName: "shippingbox"
         )
         AppShortcut(
-            intent: OpenExceptionsIntent(),
+            intent: OpenControlTowerIntent(),
             phrases: [
-                "Open control tower in \(.applicationName)",
+                "Open control tower on \(.applicationName)",
             ],
             shortTitle: "Control Tower",
             systemImageName: "tower.broadcast"
-        )
-        AppShortcut(
-            intent: ApproveSettlementIntent(),
-            phrases: [
-                "Open settlement in \(.applicationName)",
-            ],
-            shortTitle: "Settlement",
-            systemImageName: "creditcard.fill"
         )
     }
 }
