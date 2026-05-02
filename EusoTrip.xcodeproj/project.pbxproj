@@ -459,6 +459,7 @@
 		D23900000000000000390B /* 239_ShipperApplePayWallet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23900000000000000390A /* 239_ShipperApplePayWallet.swift */; };
 		D24000000000000000400B /* 240_ShipperCarPlayDashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D24000000000000000400A /* 240_ShipperCarPlayDashboard.swift */; };
 		D22FNAV0000000000FFCB /* ShipperNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22FNAV0000000000FFCA /* ShipperNavController.swift */; };
+		D22FESCB0000000000FFCB /* ShipperESangCoachSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22FESCB0000000000FFCA /* ShipperESangCoachSheet.swift */; };
 		D1A11111111111111111SE01 /* 206_ShipperSettlements.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111SE02 /* 206_ShipperSettlements.swift */; };
 		D1A11111111111111111SF01 /* 207_ShipperReports.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111SF02 /* 207_ShipperReports.swift */; };
 		D1A11111111111111111SG01 /* 208_ShipperPaymentMethods.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111SG02 /* 208_ShipperPaymentMethods.swift */; };
@@ -1000,6 +1001,7 @@
 		D23900000000000000390A /* 239_ShipperApplePayWallet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 239_ShipperApplePayWallet.swift; path = EusoTrip/Views/Shipper/239_ShipperApplePayWallet.swift; sourceTree = SOURCE_ROOT; };
 		D24000000000000000400A /* 240_ShipperCarPlayDashboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 240_ShipperCarPlayDashboard.swift; path = EusoTrip/Views/Shipper/240_ShipperCarPlayDashboard.swift; sourceTree = SOURCE_ROOT; };
 		D22FNAV0000000000FFCA /* ShipperNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ShipperNavController.swift; path = EusoTrip/Views/Shipper/ShipperNavController.swift; sourceTree = SOURCE_ROOT; };
+		D22FESCB0000000000FFCA /* ShipperESangCoachSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ShipperESangCoachSheet.swift; path = EusoTrip/Views/Shipper/ShipperESangCoachSheet.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111SE02 /* 206_ShipperSettlements.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 206_ShipperSettlements.swift; path = EusoTrip/Views/Shipper/206_ShipperSettlements.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111SF02 /* 207_ShipperReports.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 207_ShipperReports.swift; path = EusoTrip/Views/Shipper/207_ShipperReports.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111SG02 /* 208_ShipperPaymentMethods.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 208_ShipperPaymentMethods.swift; path = EusoTrip/Views/Shipper/208_ShipperPaymentMethods.swift; sourceTree = SOURCE_ROOT; };
@@ -1506,6 +1508,7 @@
 				D23900000000000000390A /* 239_ShipperApplePayWallet.swift */,
 				D24000000000000000400A /* 240_ShipperCarPlayDashboard.swift */,
 				D22FNAV0000000000FFCA /* ShipperNavController.swift */,
+				D22FESCB0000000000FFCA /* ShipperESangCoachSheet.swift */,
 				D1A11111111111111111SE02 /* 206_ShipperSettlements.swift */,
 				D1A11111111111111111SF02 /* 207_ShipperReports.swift */,
 				D1A11111111111111111SG02 /* 208_ShipperPaymentMethods.swift */,
@@ -2348,6 +2351,7 @@
 				D23900000000000000390B /* 239_ShipperApplePayWallet.swift in Sources */,
 				D24000000000000000400B /* 240_ShipperCarPlayDashboard.swift in Sources */,
 				D22FNAV0000000000FFCB /* ShipperNavController.swift in Sources */,
+				D22FESCB0000000000FFCB /* ShipperESangCoachSheet.swift in Sources */,
 				D1A11111111111111111SE01 /* 206_ShipperSettlements.swift in Sources */,
 				D1A11111111111111111SF01 /* 207_ShipperReports.swift in Sources */,
 				D1A11111111111111111SG01 /* 208_ShipperPaymentMethods.swift in Sources */,

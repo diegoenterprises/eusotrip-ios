@@ -224,12 +224,18 @@ struct ShipperSurface: View {
                 showESang = true
             }
             .sheet(isPresented: $showESang) {
-                // Reuse the Driver ESANG coach surface — the coach
-                // is role-agnostic and reads the active session for
-                // its prompt context. Shipping a separate sheet for
-                // shipper would just be a parallel implementation.
-                DriverESangCoachSheet()
+                // Shipper-context ESANG sheet — driver sheet was a
+                // mistake (showed driver chips like "HOS buffer" /
+                // "Fuel stop" / "Detention log" to a shipper).
+                // ShipperESangCoachSheet uses shipper chips
+                // (Active bids / Carrier vet / Settlement / Spend
+                // YTD / Post a load / Best lane rate) and sends
+                // `currentPage = "shipper.coach"` so server-side
+                // ESANG tunes its system prompt to the shipper
+                // knowledge slice.
+                ShipperESangCoachSheet()
                     .environment(\.palette, palette)
+                    .environmentObject(session)
             }
     }
 }

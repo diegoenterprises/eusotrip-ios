@@ -1206,6 +1206,33 @@ struct LoadsAPI {
         let pendingBids: Int
         let pending: Int
         let totalSpend: Double
+
+        private enum CodingKeys: String, CodingKey {
+            case totalLoads, activeLoads, inTransit, delivered
+            case pendingBids, pending, totalSpend
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.totalLoads  = try c.decodeIfPresent(Int.self, forKey: .totalLoads)  ?? 0
+            self.activeLoads = try c.decodeIfPresent(Int.self, forKey: .activeLoads) ?? 0
+            self.inTransit   = try c.decodeIfPresent(Int.self, forKey: .inTransit)   ?? 0
+            self.delivered   = try c.decodeIfPresent(Int.self, forKey: .delivered)   ?? 0
+            self.pendingBids = try c.decodeIfPresent(Int.self, forKey: .pendingBids) ?? 0
+            self.pending     = try c.decodeIfPresent(Int.self, forKey: .pending)     ?? 0
+            // totalSpend ships as DECIMAL → JSON String through the
+            // tRPC MySQL driver. Tolerate both Number and String.
+            if let d = try? c.decode(Double.self, forKey: .totalSpend) {
+                self.totalSpend = d
+            } else if let i = try? c.decode(Int.self, forKey: .totalSpend) {
+                self.totalSpend = Double(i)
+            } else if let s = try? c.decode(String.self, forKey: .totalSpend),
+                      let d = Double(s) {
+                self.totalSpend = d
+            } else {
+                self.totalSpend = 0
+            }
+        }
     }
 
     func getShipperSummary() async throws -> ShipperSummary {
@@ -9245,6 +9272,13 @@ struct ShipperAPI {
 
     /// Dashboard KPI envelope. Mirrors `shippers.getDashboardStats`
     /// (frontend/server/routers/shippers.ts:77).
+    ///
+    /// Note on `totalSpendThisMonth`: the backend casts the SUM out
+    /// of MySQL using a `DECIMAL(19,4)` column, which returns as a
+    /// JSON STRING through tRPC's MySQL driver (`"0"`, `"298775"`
+    /// etc.). Hand-rolled decoder accepts both shapes so the iOS
+    /// client doesn't blow up on `DecodingError.typeMismatch` when
+    /// the server returns the canonical string form.
     struct DashboardStats: Decodable, Hashable {
         let activeLoads: Int
         let pendingBids: Int
@@ -9252,6 +9286,50 @@ struct ShipperAPI {
         let ratePerMile: Double
         let onTimeRate: Double
         let totalSpendThisMonth: Double
+
+        private enum CodingKeys: String, CodingKey {
+            case activeLoads, pendingBids, deliveredThisWeek
+            case ratePerMile, onTimeRate, totalSpendThisMonth
+        }
+
+        /// Memberwise init kept explicit since we ship a custom
+        /// `init(from:)` (which suppresses the synthesized memberwise).
+        /// Used by `200_ShipperHome.canonStats` runtime fallback.
+        init(activeLoads: Int,
+             pendingBids: Int,
+             deliveredThisWeek: Int,
+             ratePerMile: Double,
+             onTimeRate: Double,
+             totalSpendThisMonth: Double) {
+            self.activeLoads = activeLoads
+            self.pendingBids = pendingBids
+            self.deliveredThisWeek = deliveredThisWeek
+            self.ratePerMile = ratePerMile
+            self.onTimeRate = onTimeRate
+            self.totalSpendThisMonth = totalSpendThisMonth
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.activeLoads        = try c.decodeIfPresent(Int.self, forKey: .activeLoads) ?? 0
+            self.pendingBids        = try c.decodeIfPresent(Int.self, forKey: .pendingBids) ?? 0
+            self.deliveredThisWeek  = try c.decodeIfPresent(Int.self, forKey: .deliveredThisWeek) ?? 0
+            self.ratePerMile        = Self.decodeNumeric(c, .ratePerMile) ?? 0
+            self.onTimeRate         = Self.decodeNumeric(c, .onTimeRate) ?? 0
+            self.totalSpendThisMonth = Self.decodeNumeric(c, .totalSpendThisMonth) ?? 0
+        }
+
+        /// Numeric tolerator: tries Double, then Int (promoted), then
+        /// String parsed as Double. Returns nil if the key is missing
+        /// — caller substitutes 0. Centralized here because the same
+        /// shape problem hits `ratePerMile`/`onTimeRate` whenever
+        /// backend rows touch `DECIMAL` columns.
+        private static func decodeNumeric(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> Double? {
+            if let d = try? c.decode(Double.self, forKey: key) { return d }
+            if let i = try? c.decode(Int.self, forKey: key)    { return Double(i) }
+            if let s = try? c.decode(String.self, forKey: key) { return Double(s) }
+            return nil
+        }
     }
 
     func getDashboardStats() async throws -> DashboardStats {

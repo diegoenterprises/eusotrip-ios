@@ -106,11 +106,21 @@ struct ShipperHome: View {
         .padding(.bottom, Space.s3)
     }
 
-    /// Identity-aware. Falls back to canon when session is empty so
-    /// previews and cold-start render "Hey, Diego" instead of placeholder.
+    /// Identity-aware + time-of-day-aware greeting. "Good morning, Diego"
+    /// / "Good afternoon, Diego" / "Good evening, Diego" / "Hey, Diego"
+    /// per the local hour. Falls back to canon when session is empty so
+    /// previews and cold-start still render a meaningful greeting.
     private var headline: String {
         let first = (session.user?.firstName).flatMap { $0.isEmpty ? nil : $0 } ?? "Diego"
-        return "Hey, \(first)"
+        let hour = Calendar.current.component(.hour, from: Date())
+        let salutation: String
+        switch hour {
+        case 5..<12:  salutation = "Good morning"
+        case 12..<17: salutation = "Good afternoon"
+        case 17..<22: salutation = "Good evening"
+        default:      salutation = "Hey"   // late-night / early-morning — informal feels right
+        }
+        return "\(salutation), \(first)"
     }
 
     /// "Eusorone Technologies · 50 MATRIX loads · 2 need attention" when
@@ -283,16 +293,26 @@ struct ShipperHome: View {
             .frame(maxWidth: .infinity)
             .accessibilityLabel("Post a load, primary action")
 
+            // Secondary CTA shape mirrors CTAButton's
+            // `RoundedRectangle(cornerRadius: Radius.md)` so the two
+            // buttons are visually balanced. Outline + bgCard
+            // distinguishes secondary from the primary gradient pill.
             Button(action: {
                 NotificationCenter.default.post(name: .eusoShipperBrowseCarriers, object: nil)
             }) {
                 Text("Browse carriers")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(palette.bgCard)
-                    .overlay(Capsule().strokeBorder(palette.borderSoft))
-                    .clipShape(Capsule())
+                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .background(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .fill(palette.bgCard)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(palette.borderSoft, lineWidth: 1)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }
