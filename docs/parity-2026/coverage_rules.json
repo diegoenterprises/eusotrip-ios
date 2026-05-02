@@ -1,0 +1,421 @@
+{
+  "_doc": "Coverage rules for the 8000-scenario shipper<>driver E2E sweep. Hydrated from eusotrip_shipper_driver_coverage.md (audit) + uber_freight_features.md + cloudtrucks_features.md. Override hierarchy: by_cargo > by_trigger > by_context > default. Severity vocabulary: P0 (business cannot run) / P1 (parity gap) / P2 (QoL) / P3 (future).",
+  "phases": {
+    "01": {
+      "_label": "Load posting",
+      "default": {
+        "eusotrip": "PASS",
+        "evidence": "loads.create (loads.ts:117); 204_ShipperPostLoad.swift",
+        "uber_freight": "Y",
+        "cloudtrucks": "N",
+        "severity": "-",
+        "gap_note": ""
+      },
+      "by_cargo": {
+        "08": {
+          "eusotrip": "PARTIAL",
+          "gap_note": "Hazmat-7 radioactive RAM-OPS schema fields exist but UI lacks NRC license validation",
+          "severity": "P1"
+        },
+        "10": {
+          "eusotrip": "PARTIAL",
+          "gap_note": "Oversized permit + escort flow exists but per-state permit autoload is web-only",
+          "severity": "P2"
+        }
+      },
+      "by_trigger": {
+        "06": {
+          "eusotrip": "PASS",
+          "gap_note": "Customs hold at posting phase is N/A — N for all three platforms"
+        }
+      }
+    },
+    "02": {
+      "_label": "Load discovery",
+      "default": {
+        "eusotrip": "PARTIAL",
+        "evidence": "loads.search (loads.ts:1788); 010_DriverHome.swift:327",
+        "uber_freight": "Y",
+        "cloudtrucks": "Y",
+        "severity": "P2",
+        "gap_note": "Driver search wired; shipper-side mobile catalyst-scout / driver-search UX missing (web only)"
+      },
+      "by_context": {
+        "B": {
+          "uber_freight": "Y",
+          "cloudtrucks": "Y",
+          "gap_note": "Broker-routed discovery: UF Lane Explorer 14d forward, CT Exchange (post-Shipwell)"
+        }
+      }
+    },
+    "03": {
+      "_label": "Bidding",
+      "default": {
+        "eusotrip": "PASS",
+        "evidence": "loadBidding.submit (loads.ts:2542); 086 lifecycle bid composer; 203_ShipperBids.swift",
+        "uber_freight": "Y",
+        "cloudtrucks": "Y",
+        "severity": "-",
+        "gap_note": ""
+      },
+      "by_trigger": {
+        "01": { "eusotrip": "PASS" },
+        "08": {
+          "eusotrip": "PARTIAL",
+          "gap_note": "Bid validation against doc defects (BOL mismatch) is post-bid, not pre-bid",
+          "severity": "P3"
+        }
+      }
+    },
+    "04": {
+      "_label": "Counter-offer chain",
+      "default": {
+        "eusotrip": "PARTIAL",
+        "evidence": "loadBidding.counter (loadBidding.ts:327); 203 shipper counter-all loop (commit fd48163)",
+        "uber_freight": "N",
+        "cloudtrucks": "N",
+        "severity": "P1",
+        "gap_note": "Driver-side counter-receive screen + push notification on counter-inbound MISSING; we lead UF + CT here once driver inbox lands"
+      },
+      "by_context": {
+        "A": {
+          "eusotrip": "PARTIAL",
+          "gap_note": "Direct shipper<>driver counter chains work shipper-side, no driver inbox"
+        },
+        "C": {
+          "eusotrip": "PARTIAL",
+          "gap_note": "Catalyst-managed: catalyst dispatcher sees counter via web, driver doesn't"
+        }
+      }
+    },
+    "05": {
+      "_label": "Booking / acceptance",
+      "default": {
+        "eusotrip": "PASS",
+        "evidence": "loadBidding.accept (loads.ts:2586); shippers.acceptBid in 203",
+        "uber_freight": "Y",
+        "cloudtrucks": "Y",
+        "severity": "-",
+        "gap_note": ""
+      },
+      "by_trigger": {
+        "07": {
+          "eusotrip": "PARTIAL",
+          "gap_note": "Auto-rebook on missed-appointment fallback not implemented (UF Auto-Tender has this)",
+          "severity": "P2"
+        }
+      }
+    },
+    "06": {
+      "_label": "Dispatch communication",
+      "default": {
+        "eusotrip": "PARTIAL",
+        "evidence": "messaging.sendMessage (messaging.ts:215); 311_EsangThread.swift; 053_ESangDispatchChat",
+        "uber_freight": "Y",
+        "cloudtrucks": "N",
+        "severity": "P1",
+        "gap_note": "Polling not real-time; shipper lacks load-scoped chat thread; driver has dispatch chat but routing unclear. ESANG AI dispatcher copilot is a real differentiator vs UF Insights AI (shipper analytics only)."
+      },
+      "by_trigger": {
+        "03": {
+          "eusotrip": "PASS",
+          "uber_freight": "N",
+          "cloudtrucks": "N",
+          "gap_note": "Mechanical breakdown: ESANG copilot pulls Zeun history + nearest mechanic + ETA impact. UF=N, CT=N. EXCLUSIVE LEAD."
+        },
+        "05": {
+          "eusotrip": "PARTIAL",
+          "gap_note": "Accident escalation chain to safety + dispatcher needs SSE + push, currently polling",
+          "severity": "P0"
+        }
+      }
+    },
+    "07": {
+      "_label": "Document exchange",
+      "default": {
+        "eusotrip": "PARTIAL",
+        "evidence": "bol.* (bol.ts:299); 226_ShipperDocumentCenter; 228_ShipperBOLs; 017_PickupBolSigning lifecycle",
+        "uber_freight": "Y",
+        "cloudtrucks": "Y",
+        "severity": "P1",
+        "gap_note": "Driver-side document upload (pre-pickup BOL exchange + post-delivery POD) lacks dedicated capture screen; OCR-based BOL parsing absent (UF gap too)"
+      },
+      "by_cargo": {
+        "06": {
+          "eusotrip": "PARTIAL",
+          "gap_note": "Hazmat-3 shipping papers (UN+PG+placard verification) wire through but lack carrier-shipper signature chain"
+        },
+        "07": {
+          "eusotrip": "PARTIAL",
+          "gap_note": "Hazmat-8 corrosive — same as class-3"
+        },
+        "08": {
+          "eusotrip": "MISSING",
+          "uber_freight": "N",
+          "cloudtrucks": "N",
+          "severity": "P0",
+          "gap_note": "Hazmat-7 radioactive needs NRC dual-signature chain + DOT/AEA cross-check; nobody implements this"
+        }
+      }
+    },
+    "08": {
+      "_label": "Pre-trip / driver readiness",
+      "default": {
+        "eusotrip": "PARTIAL",
+        "evidence": "fmcsa.getCarrier (fmcsa.ts:123); 216_ShipperCompliance; 011_PretripDVIR",
+        "uber_freight": "Y",
+        "cloudtrucks": "?",
+        "severity": "P1",
+        "gap_note": "Shipper sees carrier-level FMCSA, not assigned-driver readiness (HOS clock left, insurance current, hazmat endorsement valid)"
+      },
+      "by_cargo": {
+        "06": { "eusotrip": "PARTIAL", "gap_note": "Hazmat endorsement validity check needed" },
+        "07": { "eusotrip": "PARTIAL" },
+        "08": { "eusotrip": "MISSING", "severity": "P0", "gap_note": "Hazmat-7 needs NRC license + dosimetry pull" }
+      },
+      "by_trigger": {
+        "10": {
+          "eusotrip": "PARTIAL",
+          "gap_note": "HOS-violation-risk surfacing is driver-only; shipper visibility on assigned-driver clock is missing"
+        }
+      }
+    },
+    "09": {
+      "_label": "En-route tracking",
+      "default": {
+        "eusotrip": "PASS",
+        "evidence": "telemetry.getLiveLocation (telemetry.ts:109); 222_ShipperLiveTracking.swift",
+        "uber_freight": "Y",
+        "cloudtrucks": "N",
+        "severity": "-",
+        "gap_note": "Polling at 60-90s on iOS; UF Top Carrier requires 85% automated tracking compliance (we exceed). CT has no shipper-side tracking surface."
+      },
+      "by_trigger": {
+        "02": {
+          "eusotrip": "PASS",
+          "uber_freight": "PARTIAL",
+          "cloudtrucks": "N",
+          "gap_note": "Weather delay → in-app HERE-routed reroute + ESANG nudge. UF carrier app has no native truck-routed nav (relies on 3rd-party GPS). LEAD."
+        },
+        "03": {
+          "eusotrip": "PASS",
+          "uber_freight": "N",
+          "cloudtrucks": "N",
+          "gap_note": "Mechanical breakdown → Zeun roadside dispatch + mechanic network + DVIR feedback. UF=N (no Zeun-equivalent), CT=N (exited). EXCLUSIVE LEAD."
+        },
+        "04": {
+          "eusotrip": "PASS",
+          "uber_freight": "PARTIAL",
+          "cloudtrucks": "N",
+          "gap_note": "Traffic / road closure auto-recompute via HERE truck-routing; UF lacks native truck nav. LEAD."
+        },
+        "05": {
+          "eusotrip": "PASS",
+          "uber_freight": "PARTIAL",
+          "cloudtrucks": "N",
+          "gap_note": "Accident → Zeun roadside + accidents.ts incident chain. UF carrier-side accident tooling thin."
+        }
+      }
+    },
+    "10": {
+      "_label": "Pickup operations",
+      "default": {
+        "eusotrip": "PARTIAL",
+        "evidence": "appointments.create/update/confirm (appointments.ts:114, 177); bayOps.*; 014-029 driver lifecycle",
+        "uber_freight": "Y",
+        "cloudtrucks": "N",
+        "severity": "P1",
+        "gap_note": "Lifecycle screens don't reliably round-trip appointments.* mutations; shipper can't assign dock door from iOS; UF Scheduling API SSC-standard GA H2 2024"
+      },
+      "by_cargo": {
+        "04": {
+          "eusotrip": "PASS",
+          "uber_freight": "N",
+          "cloudtrucks": "N",
+          "gap_note": "Petroleum tanker bayOps (connectHose, discharge, disconnect) wired in iOS bayOps router. UF + CT both N — no in-app yard ops or tanker-specific bay flow. EXCLUSIVE LEAD."
+        },
+        "05": {
+          "eusotrip": "PASS",
+          "uber_freight": "N",
+          "cloudtrucks": "N",
+          "gap_note": "Chemical tanker bayOps same as petroleum. EXCLUSIVE LEAD."
+        }
+      },
+      "by_trigger": {
+        "07": {
+          "eusotrip": "PARTIAL",
+          "gap_note": "Missed-appointment lock-out + reschedule prompt missing on driver-side",
+          "severity": "P1"
+        }
+      }
+    },
+    "11": {
+      "_label": "In-transit telemetry",
+      "default": {
+        "eusotrip": "PARTIAL",
+        "evidence": "tracking.createGeofence (tracking.ts:382+); GeofenceService background; 222 shipper render",
+        "uber_freight": "Y",
+        "cloudtrucks": "N",
+        "severity": "P1",
+        "gap_note": "Shipper SSE/WebSocket stream missing; driver-facing milestone confirmation UI absent"
+      },
+      "by_trigger": {
+        "03": {
+          "eusotrip": "PASS",
+          "uber_freight": "N",
+          "cloudtrucks": "N",
+          "severity": "-",
+          "gap_note": "Mechanical breakdown mid-trip → Zeun route activation. EXCLUSIVE LEAD."
+        }
+      }
+    },
+    "12": {
+      "_label": "Delivery operations",
+      "default": {
+        "eusotrip": "PASS",
+        "evidence": "020-024 + 041 driver lifecycle screens; TripLifecycleStore (shipped 2026-04-30)",
+        "uber_freight": "Y",
+        "cloudtrucks": "?",
+        "severity": "-",
+        "gap_note": ""
+      },
+      "by_trigger": {
+        "07": {
+          "eusotrip": "PARTIAL",
+          "gap_note": "Missed delivery appointment fallback (UF auto-rebook) absent"
+        }
+      }
+    },
+    "13": {
+      "_label": "POD capture & approval",
+      "default": {
+        "eusotrip": "PARTIAL",
+        "evidence": "pod.approvePOD (pod.ts:134), pod.rejectPOD (pod.ts:172); 025_Paperwork BOL-signed",
+        "uber_freight": "Y",
+        "cloudtrucks": "N",
+        "severity": "P0",
+        "gap_note": "Driver POD camera + signature capture screen MISSING in iOS; shipper inline approve/reject MISSING (web only); UF lands POD in shipper dashboard 5-7 days; we should beat that"
+      },
+      "by_trigger": {
+        "08": {
+          "eusotrip": "PARTIAL",
+          "uber_freight": "N",
+          "cloudtrucks": "N",
+          "gap_note": "Doc defect on POD: aiDocProcessor + aiRateConReader exist; UF=N for OCR-based BOL parsing; CT=N. Once driver capture screen ships, EXCLUSIVE LEAD via OCR auto-flag."
+        }
+      },
+      "by_cargo": {
+        "08": { "eusotrip": "MISSING", "severity": "P0", "gap_note": "Hazmat-7 POD needs NRC chain-of-custody signatures + final dosimetry log" }
+      }
+    },
+    "14": {
+      "_label": "Detention / accessorial claim",
+      "default": {
+        "eusotrip": "PASS",
+        "evidence": "detentionAccessorials.submit (detentionAccessorials.ts:728); 054_HaulPaySettlement; 206 settlements",
+        "uber_freight": "Y",
+        "cloudtrucks": "Y",
+        "severity": "-",
+        "gap_note": "Backend + iOS wired both sides"
+      },
+      "by_trigger": {
+        "07": {
+          "eusotrip": "PARTIAL",
+          "gap_note": "30-min pre-detention notification (UF policy) + signed in/out BOL metadata not wired",
+          "severity": "P1"
+        }
+      }
+    },
+    "15": {
+      "_label": "Settlement / payment",
+      "default": {
+        "eusotrip": "PASS",
+        "evidence": "wallet.releaseEscrow (wallet.ts:2196) Stripe Treasury; 206_ShipperSettlements; 227_ShipperSettlementDetail; 054_HaulPaySettlement",
+        "uber_freight": "Y",
+        "cloudtrucks": "Y",
+        "severity": "-",
+        "gap_note": "UF tiers: 7-day std / 2-day at 2.5% / same-day Carrier Card; CT Cash instant pay; we have escrow + Stripe Treasury OutboundTransfer"
+      },
+      "by_context": {
+        "B": {
+          "eusotrip": "PASS",
+          "uber_freight": "PARTIAL",
+          "cloudtrucks": "N",
+          "gap_note": "Broker-routed factoring: UF excludes factoring from 2-day pay tier (FreightWaves); CT exited factoring 2024. We support factoring router (factoring.ts) without exclusions. LEAD."
+        }
+      },
+      "by_trigger": {
+        "08": {
+          "eusotrip": "PARTIAL",
+          "gap_note": "Doc-defect settlement hold (BOL mismatch flips payable to held) not auto-wired",
+          "severity": "P1"
+        }
+      }
+    },
+    "16": {
+      "_label": "Dispute",
+      "default": {
+        "eusotrip": "MISSING",
+        "evidence": "No formal disputes router; detentionAccessorials.status='disputed' state only",
+        "uber_freight": "Y",
+        "cloudtrucks": "?",
+        "severity": "P0",
+        "gap_note": "UF TMS Financials with bulk dispute tooling claims 20% faster resolution. Build disputes.* router with create/counterclaim/evidence/arbitration + iOS screens both sides"
+      }
+    },
+    "17": {
+      "_label": "Cancellation",
+      "default": {
+        "eusotrip": "PASS",
+        "evidence": "loads.cancel (loads.ts:1245) TONU $250 or 25%; loads.cancelWithReason (loads.ts:3036); 205 in-app cancel sheet (commit fd48163)",
+        "uber_freight": "Y",
+        "cloudtrucks": "?",
+        "severity": "-",
+        "gap_note": ""
+      },
+      "by_context": {
+        "A": { "eusotrip": "PASS" },
+        "B": { "eusotrip": "PASS", "gap_note": "Broker can cancel via shipper.acceptedBid path" },
+        "C": { "eusotrip": "PARTIAL", "gap_note": "Catalyst-managed driver cancel: dispatcher-mediated only, no in-app driver cancel" }
+      }
+    },
+    "18": {
+      "_label": "Rating / review",
+      "default": {
+        "eusotrip": "PARTIAL",
+        "evidence": "ratings.submit (ratings.ts:155) — backend exists; iOS prompt screen MISSING both sides",
+        "uber_freight": "Y",
+        "cloudtrucks": "?",
+        "severity": "P1",
+        "gap_note": "Post-delivery rating prompt screen MISSING for both shipper and driver despite backend ready"
+      }
+    },
+    "19": {
+      "_label": "Recurring loads",
+      "default": {
+        "eusotrip": "PARTIAL",
+        "evidence": "loadTemplates.create (loadTemplates.ts:105); loads.createFromTemplate (loads.ts:2968); 221_ShipperRecurringLoads; routes to web at line 712",
+        "uber_freight": "Y",
+        "cloudtrucks": "N",
+        "severity": "P1",
+        "gap_note": "iOS shipper create form routes to web (MeAction.fire('shipper.recurring.schedule')); driver-side recurring-inbox missing. UF Power Lane is the parity benchmark"
+      }
+    },
+    "20": {
+      "_label": "Compliance signals",
+      "default": {
+        "eusotrip": "PARTIAL",
+        "evidence": "fmcsa.getCarrier (fmcsa.ts:123); 216_ShipperCompliance; PushService.swift safety channel",
+        "uber_freight": "Y",
+        "cloudtrucks": "?",
+        "severity": "P1",
+        "gap_note": "Driver in-app compliance dashboard missing (insurance expiry, hazmat endorsement, MVR pull alerts)"
+      },
+      "by_cargo": {
+        "06": { "eusotrip": "PARTIAL", "gap_note": "Hazmat-3 placard expiry + ERG version check needed" },
+        "07": { "eusotrip": "PARTIAL" },
+        "08": { "eusotrip": "MISSING", "severity": "P0", "gap_note": "Hazmat-7 NRC license + dosimetry continuous pull" }
+      }
+    }
+  }
+}

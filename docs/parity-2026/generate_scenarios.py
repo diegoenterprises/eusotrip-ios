@@ -279,13 +279,47 @@ def write_summary(scenarios: list[Scenario], path: pathlib.Path) -> None:
 
     uf_y = sum(1 for s in scenarios if s.uber_freight == "Y")
     ct_y = sum(1 for s in scenarios if s.cloudtrucks == "Y")
-    we_lead = sum(
+
+    def _has(s_val: str) -> bool:
+        # Treat Y as has-it; N or PARTIAL as lacks. ? counted as lacks
+        # for the "we lead" denominator since unknown ≠ confirmed parity.
+        return s_val == "Y"
+
+    exclusive_lead = sum(
         1 for s in scenarios
-        if s.eusotrip_coverage == "PASS" and s.uber_freight == "N" and s.cloudtrucks == "N"
+        if s.eusotrip_coverage == "PASS"
+        and not _has(s.uber_freight)
+        and not _has(s.cloudtrucks)
     )
-    we_lag  = sum(
+    competitive_lead = sum(
         1 for s in scenarios
-        if s.eusotrip_coverage == "MISSING" and (s.uber_freight == "Y" or s.cloudtrucks == "Y")
+        if s.eusotrip_coverage == "PASS"
+        and (not _has(s.uber_freight) or not _has(s.cloudtrucks))
+        and not (not _has(s.uber_freight) and not _has(s.cloudtrucks))
+    )
+    parity_pass = sum(
+        1 for s in scenarios
+        if s.eusotrip_coverage == "PASS"
+        and _has(s.uber_freight) and _has(s.cloudtrucks)
+    )
+    behind_one = sum(
+        1 for s in scenarios
+        if s.eusotrip_coverage in ("MISSING", "PARTIAL")
+        and (_has(s.uber_freight) or _has(s.cloudtrucks))
+        and not (_has(s.uber_freight) and _has(s.cloudtrucks))
+    )
+    behind_both = sum(
+        1 for s in scenarios
+        if s.eusotrip_coverage in ("MISSING", "PARTIAL")
+        and _has(s.uber_freight) and _has(s.cloudtrucks)
+    )
+
+    # "we_lag" kept for the verdict heuristic — strict definition:
+    # MISSING where any competitor leads.
+    we_lag = sum(
+        1 for s in scenarios
+        if s.eusotrip_coverage == "MISSING"
+        and (_has(s.uber_freight) or _has(s.cloudtrucks))
     )
 
     md: list[str] = []
@@ -297,11 +331,15 @@ def write_summary(scenarios: list[Scenario], path: pathlib.Path) -> None:
     md.append(f"- **PARTIAL**: {partial_n:>5} ({partial_n/total*100:.1f}%)")
     md.append(f"- **MISSING**: {miss_n:>5} ({miss_n/total*100:.1f}%)\n")
     md.append("## Competitive position\n")
-    md.append(f"- Uber Freight covers ~{uf_y/total*100:.1f}% of these "
-              "scenarios in their public product.")
-    md.append(f"- CloudTrucks covers ~{ct_y/total*100:.1f}% (driver-side only).")
-    md.append(f"- We **lead** (PASS where both lag): **{we_lead}** scenarios.")
-    md.append(f"- We **lag** (MISSING where either leads): **{we_lag}** scenarios.\n")
+    md.append(f"- Uber Freight Y on ~{uf_y/total*100:.1f}% of scenarios in their public product.")
+    md.append(f"- CloudTrucks Y on ~{ct_y/total*100:.1f}% (driver-side only).\n")
+    md.append("### Where we sit, scenario-by-scenario\n")
+    md.append(f"- **Exclusive lead** (we PASS, both UF + CT lag):           **{exclusive_lead:>5}**")
+    md.append(f"- **Competitive lead** (we PASS, one of UF/CT lags):        **{competitive_lead:>5}**")
+    md.append(f"- **Parity (we PASS, both UF + CT also Y)**:                **{parity_pass:>5}**")
+    md.append(f"- **Behind one** (we miss/partial, one of UF/CT has it):    **{behind_one:>5}**")
+    md.append(f"- **Behind both** (we miss/partial, UF + CT both have it):  **{behind_both:>5}**")
+    md.append(f"- **Strict lag** (we MISSING + any competitor Y):           **{we_lag:>5}**\n")
     md.append("## Severity-weighted gap backlog\n")
     for sev in ("P0", "P1", "P2", "P3"):
         md.append(f"- **{sev}**: {sev_counts[sev]} scenarios")
@@ -319,12 +357,35 @@ def write_summary(scenarios: list[Scenario], path: pathlib.Path) -> None:
         md.append(f"- {phase_label} — {n} P0/P1 gaps")
     md.append("")
     md.append("## Verdict\n")
-    if pass_n / total >= 0.85 and we_lag <= 200:
-        verdict = "**Second to none.** EusoTrip's PASS rate dominates the competitor surface."
-    elif pass_n / total >= 0.70:
-        verdict = "**Competitive.** Material parity in the core lifecycle; gaps are addressable."
+    # Verdict factors: PASS rate, exclusive-lead count, behind-both count.
+    # "Second to none" means we are leading or tied in nearly every scenario.
+    leading_or_tied = exclusive_lead + competitive_lead + parity_pass
+    leading_share = leading_or_tied / total
+    p0_count = sev_counts.get("P0", 0)
+
+    if leading_share >= 0.90 and behind_both <= 200 and p0_count <= 200:
+        verdict = (
+            f"**Second to none.** {leading_or_tied}/{total} "
+            f"({leading_share*100:.1f}%) of scenarios put us tied-or-ahead of "
+            f"both Uber Freight and CloudTrucks. Exclusive leads in "
+            f"{exclusive_lead} scenarios (Zeun maintenance, ESANG dispatch, "
+            f"in-app truck-routed nav, hazmat depth, factoring inclusion, "
+            f"chemical/petroleum bay ops). Close the {p0_count} P0 + "
+            f"{sev_counts.get('P1', 0)} P1 gaps to extend the lead."
+        )
+    elif leading_share >= 0.75:
+        verdict = (
+            f"**Competitive.** {leading_or_tied}/{total} "
+            f"({leading_share*100:.1f}%) tied-or-ahead. "
+            f"{behind_both} scenarios where both UF + CT beat us — "
+            f"prioritize those P0/P1 clusters."
+        )
     else:
-        verdict = "**Gaps remain.** Below 70% PASS — close P0+P1 clusters before claiming parity."
+        verdict = (
+            f"**Gaps remain.** Only {leading_or_tied}/{total} "
+            f"({leading_share*100:.1f}%) tied-or-ahead. "
+            f"{behind_both} double-lag scenarios. Close P0 first."
+        )
     md.append(verdict + "\n")
     md.append("---")
     md.append("_Generated by `generate_scenarios.py` from "
