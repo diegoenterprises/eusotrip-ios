@@ -16,11 +16,11 @@
 //  header below for easy copy-paste.
 //
 //  Activity types (must mirror Info.plist):
-//    com.eusorone.eusotrip.LoadDetailActivity
-//    com.eusorone.eusotrip.PostLoadActivity
-//    com.eusorone.eusotrip.SettlementActivity
-//    com.eusorone.eusotrip.BidsActivity
-//    com.eusorone.eusotrip.ControlTowerActivity
+//    com.app.eusotrip.LoadDetailActivity
+//    com.app.eusotrip.PostLoadActivity
+//    com.app.eusotrip.SettlementActivity
+//    com.app.eusotrip.BidsActivity
+//    com.app.eusotrip.ControlTowerActivity
 //
 
 import Foundation
@@ -32,16 +32,16 @@ import Foundation
 public enum ShipperHandoffActivityType: String, CaseIterable {
     /// User is viewing a specific load detail. Carries `loadId`
     /// in `userInfo` so the receiving device can deep-link.
-    case loadDetail     = "com.eusorone.eusotrip.LoadDetailActivity"
+    case loadDetail     = "com.app.eusotrip.LoadDetailActivity"
     /// User is in the post-load wizard. Carries the in-progress
     /// `PostLoadDraft` snapshot (origin/destination/cargoType/...).
-    case postLoad       = "com.eusorone.eusotrip.PostLoadActivity"
+    case postLoad       = "com.app.eusotrip.PostLoadActivity"
     /// User is reviewing a settlement detail.
-    case settlement     = "com.eusorone.eusotrip.SettlementActivity"
+    case settlement     = "com.app.eusotrip.SettlementActivity"
     /// User is reviewing bids on a load.
-    case bids           = "com.eusorone.eusotrip.BidsActivity"
+    case bids           = "com.app.eusotrip.BidsActivity"
     /// User is on the control tower / exception feed.
-    case controlTower   = "com.eusorone.eusotrip.ControlTowerActivity"
+    case controlTower   = "com.app.eusotrip.ControlTowerActivity"
 }
 
 /// Single entry point the app uses to advertise + resign the

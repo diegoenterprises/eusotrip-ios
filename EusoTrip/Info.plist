@@ -102,11 +102,11 @@
 	     `EusoTrip/Services/ShipperHandoffContinuity.swift`. -->
 	<key>NSUserActivityTypes</key>
 	<array>
-		<string>com.eusorone.eusotrip.LoadDetailActivity</string>
-		<string>com.eusorone.eusotrip.PostLoadActivity</string>
-		<string>com.eusorone.eusotrip.SettlementActivity</string>
-		<string>com.eusorone.eusotrip.BidsActivity</string>
-		<string>com.eusorone.eusotrip.ControlTowerActivity</string>
+		<string>com.app.eusotrip.LoadDetailActivity</string>
+		<string>com.app.eusotrip.PostLoadActivity</string>
+		<string>com.app.eusotrip.SettlementActivity</string>
+		<string>com.app.eusotrip.BidsActivity</string>
+		<string>com.app.eusotrip.ControlTowerActivity</string>
 	</array>
 	<!-- HERE Maps OAuth + JS credentials. Values flow from EusoTrip.xcconfig
 	     via Xcode's $(VAR) substitution at Info.plist preprocessing time. -->

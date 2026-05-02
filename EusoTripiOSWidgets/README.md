@@ -36,8 +36,8 @@ These can call into the widget extension as soon as it exists:
 2. **File → New → Target → Widget Extension.**
    - Product Name: `EusoTripiOSWidgets`
    - Bundle Identifier: `<main-app-bundle-id>.EusoTripiOSWidgets`
-     (e.g., if main is `com.eusorone.eusotrip`, use
-     `com.eusorone.eusotrip.EusoTripiOSWidgets`)
+     (e.g., if main is `com.app.eusotrip`, use
+     `com.app.eusotrip.EusoTripiOSWidgets`)
    - **Include Live Activity:** ✅ check the box.
    - Embed in Application: `EusoTrip`.
 3. **Xcode generates a stub** `EusoTripiOSWidgets/` group with placeholder
@@ -53,7 +53,7 @@ These can call into the widget extension as soon as it exists:
    `ActivityAttributes` type identity.)
 5. **Add an App Group capability** to BOTH targets (Project →
    Signing & Capabilities → + Capability → App Groups). Use the
-   same group identifier on both, e.g. `group.com.eusorone.eusotrip`.
+   same group identifier on both, e.g. `group.com.app.eusotrip`.
    This lets the iPhone app write the active-load snapshot to a
    shared `UserDefaults` / file URL that the widget's
    `TimelineProvider` can read. The main app provides the writer;
