@@ -1,9 +1,9 @@
 //
-//  230_ShipperAllocations.swift
+//  230_ShipperWeeklyAllocations.swift
 //  EusoTrip 2027 UI — Shipper · Allocations (parity-reconciled 2026-04-29)
 //
 //  PARITY AUDIT 2026-04-29 — new file at slot 230 to match wireframe
-//  canon at /02 Shipper/Code/230_ShipperAllocations.swift. Persona:
+//  canon at /02 Shipper/Code/230_ShipperWeeklyAllocations.swift. Persona:
 //  Diego Usoro / Eusorone Technologies (companyId 1) per §11.
 //  Allocation IDs reuse the §11.2 LD- audit-trail convention
 //  (`ALC-260427-{hex}`). The week-scope capacity-vs-load board.
@@ -110,7 +110,7 @@ private enum AllocFilter: String, CaseIterable, Identifiable {
 
 // MARK: - Screen root
 
-struct ShipperAllocations: View {
+struct ShipperWeeklyAllocations: View {
     @Environment(\.palette) private var palette
     @State private var filter: AllocFilter = .all
 
@@ -428,7 +428,7 @@ struct ShipperAllocations: View {
             name: .eusoShipperAllocFilter,
             object: nil,
             userInfo: [
-                "source": "230_ShipperAllocations",
+                "source": "230_ShipperWeeklyAllocations",
                 "filter": f.rawValue,
                 "shipperCompanyId": 1
             ]
@@ -713,7 +713,7 @@ struct ShipperAllocations: View {
             name: .eusoShipperAllocRow,
             object: nil,
             userInfo: [
-                "source": "230_ShipperAllocations",
+                "source": "230_ShipperWeeklyAllocations",
                 "alcId": row.alcId,
                 "shipperCompanyId": 1
             ]
@@ -725,7 +725,7 @@ struct ShipperAllocations: View {
             name: .eusoShipperAllocRow,
             object: nil,
             userInfo: [
-                "source": "230_ShipperAllocations",
+                "source": "230_ShipperWeeklyAllocations",
                 "alcId": row.alcId,
                 "shipperCompanyId": 1
             ]
@@ -737,7 +737,7 @@ struct ShipperAllocations: View {
             name: .eusoShipperAllocCreate,
             object: nil,
             userInfo: [
-                "source": "230_ShipperAllocations",
+                "source": "230_ShipperWeeklyAllocations",
                 "shipperCompanyId": 1
             ]
         )
@@ -797,14 +797,14 @@ extension Notification.Name {
 // MARK: - Previews
 
 #Preview("230 · Allocations · Dark") {
-    ShipperAllocations()
+    ShipperWeeklyAllocations()
         .environment(\.palette, Theme.dark)
         .preferredColorScheme(.dark)
         .background(Theme.dark.bgPage)
 }
 
 #Preview("230 · Allocations · Light") {
-    ShipperAllocations()
+    ShipperWeeklyAllocations()
         .environment(\.palette, Theme.light)
         .preferredColorScheme(.light)
         .background(Theme.light.bgPage)

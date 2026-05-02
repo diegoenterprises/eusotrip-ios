@@ -117,7 +117,7 @@ struct ShipperRFPDetail: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var store: ShipperRFPDetailStore
 
-    init(rfpId: String) {
+    init(rfpId: String = "0") {
         self.rfpId = rfpId
         _store = StateObject(wrappedValue: ShipperRFPDetailStore(rfpId: rfpId))
     }

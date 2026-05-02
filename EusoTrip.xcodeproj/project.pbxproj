@@ -437,8 +437,11 @@
 		D2260000000000000026CB /* 226_ShipperDocumentCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2260000000000000026CA /* 226_ShipperDocumentCenter.swift */; };
 		D2270000000000000027CB /* 227_ShipperSettlementDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2270000000000000027CA /* 227_ShipperSettlementDetail.swift */; };
 		D2280000000000000028CB /* 228_ShipperBOLs.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2280000000000000028CA /* 228_ShipperBOLs.swift */; };
+		D2280000000000000028DB /* 228_ShipperRFPDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2280000000000000028DA /* 228_ShipperRFPDetail.swift */; };
 		D2290000000000000029CB /* 229_ShipperAllocations.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2290000000000000029CA /* 229_ShipperAllocations.swift */; };
+		D2290000000000000029DB /* 229_ShipperBOLUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2290000000000000029DA /* 229_ShipperBOLUpload.swift */; };
 		D2300000000000000030CB /* 230_ShipperBidThread.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2300000000000000030CA /* 230_ShipperBidThread.swift */; };
+		D2300000000000000030DB /* 230_ShipperAllocations.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2300000000000000030DA /* 230_ShipperAllocations.swift */; };
 		D22FNAV0000000000FFCB /* ShipperNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22FNAV0000000000FFCA /* ShipperNavController.swift */; };
 		D1A11111111111111111SE01 /* 206_ShipperSettlements.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111SE02 /* 206_ShipperSettlements.swift */; };
 		D1A11111111111111111SF01 /* 207_ShipperReports.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111SF02 /* 207_ShipperReports.swift */; };
@@ -936,8 +939,11 @@
 		D2260000000000000026CA /* 226_ShipperDocumentCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 226_ShipperDocumentCenter.swift; path = EusoTrip/Views/Shipper/226_ShipperDocumentCenter.swift; sourceTree = SOURCE_ROOT; };
 		D2270000000000000027CA /* 227_ShipperSettlementDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 227_ShipperSettlementDetail.swift; path = EusoTrip/Views/Shipper/227_ShipperSettlementDetail.swift; sourceTree = SOURCE_ROOT; };
 		D2280000000000000028CA /* 228_ShipperBOLs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 228_ShipperBOLs.swift; path = EusoTrip/Views/Shipper/228_ShipperBOLs.swift; sourceTree = SOURCE_ROOT; };
+		D2280000000000000028DA /* 228_ShipperRFPDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 228_ShipperRFPDetail.swift; path = EusoTrip/Views/Shipper/228_ShipperRFPDetail.swift; sourceTree = SOURCE_ROOT; };
 		D2290000000000000029CA /* 229_ShipperAllocations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 229_ShipperAllocations.swift; path = EusoTrip/Views/Shipper/229_ShipperAllocations.swift; sourceTree = SOURCE_ROOT; };
+		D2290000000000000029DA /* 229_ShipperBOLUpload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 229_ShipperBOLUpload.swift; path = EusoTrip/Views/Shipper/229_ShipperBOLUpload.swift; sourceTree = SOURCE_ROOT; };
 		D2300000000000000030CA /* 230_ShipperBidThread.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 230_ShipperBidThread.swift; path = EusoTrip/Views/Shipper/230_ShipperBidThread.swift; sourceTree = SOURCE_ROOT; };
+		D2300000000000000030DA /* 230_ShipperAllocations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 230_ShipperAllocations.swift; path = EusoTrip/Views/Shipper/230_ShipperAllocations.swift; sourceTree = SOURCE_ROOT; };
 		D22FNAV0000000000FFCA /* ShipperNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ShipperNavController.swift; path = EusoTrip/Views/Shipper/ShipperNavController.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111SE02 /* 206_ShipperSettlements.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 206_ShipperSettlements.swift; path = EusoTrip/Views/Shipper/206_ShipperSettlements.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111SF02 /* 207_ShipperReports.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 207_ShipperReports.swift; path = EusoTrip/Views/Shipper/207_ShipperReports.swift; sourceTree = SOURCE_ROOT; };
@@ -1412,8 +1418,11 @@
 				D2260000000000000026CA /* 226_ShipperDocumentCenter.swift */,
 				D2270000000000000027CA /* 227_ShipperSettlementDetail.swift */,
 				D2280000000000000028CA /* 228_ShipperBOLs.swift */,
+				D2280000000000000028DA /* 228_ShipperRFPDetail.swift */,
 				D2290000000000000029CA /* 229_ShipperAllocations.swift */,
+				D2290000000000000029DA /* 229_ShipperBOLUpload.swift */,
 				D2300000000000000030CA /* 230_ShipperBidThread.swift */,
+				D2300000000000000030DA /* 230_ShipperAllocations.swift */,
 				D22FNAV0000000000FFCA /* ShipperNavController.swift */,
 				D1A11111111111111111SE02 /* 206_ShipperSettlements.swift */,
 				D1A11111111111111111SF02 /* 207_ShipperReports.swift */,
@@ -2191,8 +2200,11 @@
 				D2260000000000000026CB /* 226_ShipperDocumentCenter.swift in Sources */,
 				D2270000000000000027CB /* 227_ShipperSettlementDetail.swift in Sources */,
 				D2280000000000000028CB /* 228_ShipperBOLs.swift in Sources */,
+				D2280000000000000028DB /* 228_ShipperRFPDetail.swift in Sources */,
 				D2290000000000000029CB /* 229_ShipperAllocations.swift in Sources */,
+				D2290000000000000029DB /* 229_ShipperBOLUpload.swift in Sources */,
 				D2300000000000000030CB /* 230_ShipperBidThread.swift in Sources */,
+				D2300000000000000030DB /* 230_ShipperAllocations.swift in Sources */,
 				D22FNAV0000000000FFCB /* ShipperNavController.swift in Sources */,
 				D1A11111111111111111SE01 /* 206_ShipperSettlements.swift in Sources */,
 				D1A11111111111111111SF01 /* 207_ShipperReports.swift in Sources */,

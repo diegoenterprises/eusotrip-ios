@@ -595,6 +595,14 @@ enum ScreenRegistry {
         list.append(.init(id: "228", title: "Shipper · BOLs",            role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .me) { ShipperBOLs() }) })
         list.append(.init(id: "229", title: "Shipper · Allocations",     role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .loads) { ShipperAllocations() }) })
         list.append(.init(id: "230", title: "Shipper · Bid Thread",      role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperBidThread(loadId: 0) }) })
+        // 228b / 229b / 230b — sibling files at the same slot numbers.
+        // Now in the build target after the dual-file pbxproj add and
+        // the `ShipperWeeklyAllocations` rename in 230 (was previously
+        // a duplicate of 229's `ShipperAllocations`). Same `Nb`
+        // suffix convention Broker uses for its 401b/402b duals.
+        list.append(.init(id: "228b", title: "Shipper · RFP Detail",      role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperRFPDetail() }) })
+        list.append(.init(id: "229b", title: "Shipper · BOL Upload",      role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .me) { ShipperBOLUpload() }) })
+        list.append(.init(id: "230b", title: "Shipper · Weekly Allocations", role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .loads) { ShipperWeeklyAllocations() }) })
         // 250-259 PostLoad wizard. 250 owns its own `PostLoadDraft`
         // `@StateObject`; 251-259 take the draft as `@ObservedObject`.
         // The registry closure runs at view-mount time on the main
