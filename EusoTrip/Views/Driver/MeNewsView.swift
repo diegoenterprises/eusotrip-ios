@@ -749,7 +749,11 @@ struct NewsCarouselWidget: View {
             Image(systemName: "newspaper.fill")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(LinearGradient.diagonal)
-            Text("Driver Intel".uppercased())
+            // Role-aware eyebrow — "DRIVER INTEL" / "SHIPPER INTEL" /
+            // "BROKER INTEL" / etc. Same widget powers every role's
+            // home dashboard; the server prioritizes the morning brief
+            // by `store.role`, so the label matches the slice content.
+            Text("\(roleDisplay) Intel".uppercased())
                 .font(EType.micro).tracking(0.8)
                 .foregroundStyle(palette.textTertiary)
             Spacer(minLength: 0)
@@ -762,6 +766,27 @@ struct NewsCarouselWidget: View {
                     .underline()
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    /// "Driver" / "Shipper" / "Broker" / etc — derived from the store's
+    /// active role enum. Used to title the carousel header so the
+    /// widget reads correctly when reused across roles.
+    private var roleDisplay: String {
+        switch store.role {
+        case .driver:            return "Driver"
+        case .dispatcher:        return "Dispatch"
+        case .broker:            return "Broker"
+        case .shipper:           return "Shipper"
+        case .catalyst:          return "Catalyst"
+        case .terminalManager:   return "Terminal"
+        case .vesselShipper:     return "Vessel Shipper"
+        case .vesselOperator:    return "Vessel Ops"
+        case .railShipper:       return "Rail Shipper"
+        case .railCatalyst:      return "Rail Catalyst"
+        case .complianceOfficer: return "Compliance"
+        case .safetyManager:     return "Safety"
+        case .admin:             return "Admin"
         }
     }
 

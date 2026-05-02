@@ -32,6 +32,14 @@ private struct MeHomeBody: View {
     @State private var profile: ShipperAPI.Profile? = nil
     @State private var stats: ShipperAPI.Stats? = nil
     @State private var loading = true
+    /// MeDetailContainer route to surface as a bottom sheet. Used by
+    /// the new INTEL group ("Shipper Intel" → role-aware news feed,
+    /// "The Haul" → gamification surface). The route enum is the
+    /// canonical Driver-side surface; the views inside read
+    /// `session.user?.role` and key off the role enum, so a shipper
+    /// gets a shipper-prioritized feed (news.ts ROLE_CATEGORIES) and
+    /// a shipper-context Haul lobby out of the same machinery.
+    @State private var detailRoute: MeDetailRoute? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -39,44 +47,63 @@ private struct MeHomeBody: View {
                 if let p = profile { hero(p) }
                 if let s = stats { tierCard(s) }
                 cellGroup(title: "ACCOUNT", cells: [
-                    ("person.circle", "Profile", "202"),
-                    ("pencil.circle", "Edit profile", "322"),
-                    ("rosette",        "Tier detail", "323"),
+                    ("person.circle", "Profile", .screen("202")),
+                    ("pencil.circle", "Edit profile", .screen("322")),
+                    ("rosette",        "Tier detail", .screen("323")),
+                ])
+                cellGroup(title: "INTEL", cells: [
+                    ("newspaper.fill",   "Shipper Intel", .detail(.news)),
+                    ("trophy.fill",      "The Haul",      .detail(.haul)),
                 ])
                 cellGroup(title: "EUSOWALLET", cells: [
-                    ("wallet.pass.fill", "EusoWallet", "290"),
-                    ("creditcard",       "Settlements", "292"),
-                    ("creditcard.and.123", "Payment methods", "295"),
-                    ("doc.text",         "Statements", "297"),
-                    ("leaf",             "Sustainability", "298"),
-                    ("chart.bar",        "Reports", "299"),
+                    ("wallet.pass.fill", "EusoWallet", .screen("290")),
+                    ("creditcard",       "Settlements", .screen("292")),
+                    ("creditcard.and.123", "Payment methods", .screen("295")),
+                    ("doc.text",         "Statements", .screen("297")),
+                    ("leaf",             "Sustainability", .screen("298")),
+                    ("chart.bar",        "Reports", .screen("299")),
                 ])
                 cellGroup(title: "NETWORK", cells: [
-                    ("person.3.fill",   "Catalyst directory", "280"),
-                    ("star.fill",       "Catalyst scorecards", "213"),
-                    ("doc.text.image",  "RFPs", "380"),
-                    ("doc.append",      "Contracts", "382"),
-                    ("phone.fill",      "Contacts", "209"),
+                    ("person.3.fill",   "Catalyst directory", .screen("280")),
+                    ("star.fill",       "Catalyst scorecards", .screen("213")),
+                    ("doc.text.image",  "RFPs", .screen("380")),
+                    ("doc.append",      "Contracts", .screen("382")),
+                    ("phone.fill",      "Contacts", .screen("209")),
                 ])
                 cellGroup(title: "COMPLIANCE", cells: [
-                    ("shield.lefthalf.filled", "Compliance",      "324"),
-                    ("checkmark.shield",       "Insurance",        "325"),
-                    ("doc.text",                "FMCSA SAFER",     "326"),
-                    ("triangle.fill",          "Hazmat audit",     "327"),
-                    ("exclamationmark.bubble", "Freight claims",   "219"),
+                    ("shield.lefthalf.filled", "Compliance",      .screen("324")),
+                    ("checkmark.shield",       "Insurance",        .screen("325")),
+                    ("doc.text",                "FMCSA SAFER",     .screen("326")),
+                    ("triangle.fill",          "Hazmat audit",     .screen("327")),
+                    ("exclamationmark.bubble", "Freight claims",   .screen("219")),
                 ])
                 cellGroup(title: "SETTINGS", cells: [
-                    ("gear",            "Settings",         "211"),
-                    ("bell",            "ESang prefs",      "319"),
-                    ("questionmark.circle", "Help",         "347"),
-                    ("doc.plaintext",   "Legal",            "348"),
-                    ("rectangle.portrait.and.arrow.right", "Sign out", "_logout"),
+                    ("gear",            "Settings",         .screen("211")),
+                    ("bell",            "ESang prefs",      .screen("319")),
+                    ("questionmark.circle", "Help",         .screen("347")),
+                    ("doc.plaintext",   "Legal",            .screen("348")),
+                    ("rectangle.portrait.and.arrow.right", "Sign out", .screen("_logout")),
                 ])
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
+        .sheet(item: $detailRoute) { route in
+            MeDetailContainer(route: route)
+                .environment(\.palette, palette)
+                .eusoSheetX()
+        }
+    }
+
+    /// Cell action — either swap to an in-app shipper screen or
+    /// surface a Driver-side `MeDetailContainer` route (news, haul).
+    /// Keeps the cell-group caller flat ("Profile" → screen("202"),
+    /// "Shipper Intel" → detail(.news)) without branching at every
+    /// row.
+    private enum CellAction {
+        case screen(String)
+        case detail(MeDetailRoute)
     }
 
     private func hero(_ p: ShipperAPI.Profile) -> some View {
@@ -110,15 +137,19 @@ private struct MeHomeBody: View {
         }
     }
 
-    private func cellGroup(title: String, cells: [(String, String, String)]) -> some View {
+    private func cellGroup(title: String, cells: [(String, String, CellAction)]) -> some View {
         LifecycleCard {
             LifecycleSection(label: title, icon: "list.bullet")
-            ForEach(cells, id: \.1) { (icon, label, screenId) in
+            ForEach(cells, id: \.1) { (icon, label, action) in
                 Button {
-                    if screenId == "_logout" {
-                        NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "_logout"])
-                    } else {
-                        NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": screenId])
+                    switch action {
+                    case .screen(let screenId):
+                        NotificationCenter.default.post(
+                            name: .eusoShipperNavSwap, object: nil,
+                            userInfo: ["screenId": screenId]
+                        )
+                    case .detail(let route):
+                        detailRoute = route
                     }
                 } label: {
                     HStack {

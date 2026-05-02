@@ -62,6 +62,14 @@ struct ShipperHome: View {
                     activeLoadsSection
                     esangStrip
                     recentActivitySection
+                    // "Shipper Intel" rotating-headline carousel — same
+                    // NewsCarouselWidget the driver home uses, but with
+                    // a role-aware eyebrow ("SHIPPER INTEL") and the
+                    // server's role-prioritized morning brief slice.
+                    // Per home-widget doctrine the news carousel sits
+                    // last in the column so glanceable role-relevant
+                    // headlines close out the dashboard.
+                    NewsCarouselWidget()
                     Color.clear.frame(height: 96) // bottom-nav clearance
                 }
                 .padding(.horizontal, Space.s5)
