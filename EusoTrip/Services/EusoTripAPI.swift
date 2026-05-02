@@ -1318,6 +1318,70 @@ struct LoadsAPI {
             input: Input(loadId: loadId)
         )
     }
+
+    // MARK: - Cancel mutations
+
+    /// Acknowledge envelope from `loads.cancelWithReason` /
+    /// `loads.cancel`. Server hard-codes `success: true` on the
+    /// happy path and writes the reason into `specialInstructions`
+    /// (cancelWithReason) or into the audit envelope (cancel).
+    struct CancelAck: Decodable, Hashable {
+        let success: Bool?
+        let loadId: AnyLoadID?
+        let reason: String?
+        let tonuApplied: Bool?
+        let tonuFee: Double?
+
+        /// `loads.cancelWithReason` returns `loadId: number`;
+        /// `loads.cancel` returns `loadId: string`. Decode both.
+        struct AnyLoadID: Decodable, Hashable {
+            let stringValue: String
+            init(from decoder: Decoder) throws {
+                let c = try decoder.singleValueContainer()
+                if let i = try? c.decode(Int.self)    { self.stringValue = String(i) }
+                else if let s = try? c.decode(String.self) { self.stringValue = s }
+                else { self.stringValue = "" }
+            }
+        }
+    }
+
+    /// `loads.cancelWithReason` (loads.ts:3036). Mirrors the verbatim
+    /// shipper-canonical cancel-with-reason path: writes status =
+    /// "cancelled", appends `[CANCELLED: <reason>]` to
+    /// specialInstructions, emits `loadStatusChange` for the
+    /// activity feed. Server accepts numeric `loadId`.
+    @discardableResult
+    func cancelWithReason(loadId: Int, reason: String) async throws -> CancelAck {
+        struct Input: Encodable {
+            let loadId: Int
+            let reason: String
+        }
+        return try await api.mutation(
+            "loads.cancelWithReason",
+            input: Input(loadId: loadId, reason: reason)
+        )
+    }
+
+    /// `loads.cancel` (loads.ts:1245). Cancels with optional reason
+    /// + TONU fee logic for catalyst-assigned loads. Set
+    /// `waiveTonus: true` to skip the TONU when a load is being
+    /// cancelled by mutual agreement.
+    @discardableResult
+    func cancel(
+        loadId: String,
+        reason: String? = nil,
+        waiveTonus: Bool = false
+    ) async throws -> CancelAck {
+        struct Input: Encodable {
+            let loadId: String
+            let reason: String?
+            let waiveTonus: Bool
+        }
+        return try await api.mutation(
+            "loads.cancel",
+            input: Input(loadId: loadId, reason: reason, waiveTonus: waiveTonus)
+        )
+    }
 }
 
 // MARK: - hosRouter

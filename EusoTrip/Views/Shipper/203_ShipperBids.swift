@@ -62,6 +62,12 @@ struct ShipperBids: View {
     /// Counter offer amount (USD) typed in the Counter All sheet.
     /// Initialized from the current best bid - 5% on sheet open.
     @State private var counterAllAmount: String = ""
+    /// Per-bid in-flight markers used by the Counter All loop so the
+    /// sheet can render a progress meter ("3 of 7 sent"). Cleared on
+    /// completion success.
+    @State private var counterAllInFlightIds: Set<String> = []
+    @State private var counterAllSubmitted: Int = 0
+    @State private var counterAllErrors: [String: String] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -985,13 +991,11 @@ struct ShipperBids: View {
     // MARK: - Mutations (preserved)
 
     /// Sheet body presented when the user taps "Counter all". Lists
-    /// the visible bids and surfaces a single counter-amount input.
-    /// Submitting routes to `app.eusotrip.com/loads/{id}/bids?action=counter-all`
-    /// — the backend's `shippers.counterBid` mutation isn't shipped
-    /// yet, so the iOS sheet can't fire individual counter offers.
-    /// The web counter form is canonical until that lands; in the
-    /// meantime the button surfaces a real composer + a real
-    /// continuation rather than no-op'ing.
+    /// the visible bids, surfaces a single counter-amount input, and
+    /// submits a real `loadBidding.counter` per pending bid. Each
+    /// bid is sent in parallel; per-row errors render under the
+    /// failing bidder so the user can retry. No web continuation:
+    /// the iOS-only path is canonical now.
     private var counterAllSheet: some View {
         NavigationStack {
             Form {
@@ -1003,19 +1007,37 @@ struct ShipperBids: View {
                         TextField("0", text: $counterAllAmount)
                             .keyboardType(.numberPad)
                             .font(.system(size: 22, weight: .heavy, design: .monospaced))
+                            .disabled(isCounterAllRunning)
                     }
                 } header: {
                     Text("Counter amount (USD per load)")
                 } footer: {
-                    Text("Will counter \(rankedBids.count) bid\(rankedBids.count == 1 ? "" : "s") on the selected load.")
+                    Text(counterAllFooter)
                 }
                 Section {
                     ForEach(rankedBids, id: \.id) { b in
-                        HStack {
-                            Text(b.catalystName ?? "—")
-                                .font(EType.caption)
-                                .foregroundStyle(palette.textPrimary)
+                        HStack(alignment: .firstTextBaseline) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(b.catalystName ?? "—")
+                                    .font(EType.caption)
+                                    .foregroundStyle(palette.textPrimary)
+                                if let err = counterAllErrors[b.id] {
+                                    Text(err)
+                                        .font(EType.caption)
+                                        .foregroundStyle(Brand.danger)
+                                }
+                            }
                             Spacer()
+                            if counterAllInFlightIds.contains(b.id) {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                            } else if counterAllErrors[b.id] != nil {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(Brand.danger)
+                            } else if !isCounterAllRunning && counterAllSubmitted > 0 {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(Brand.success)
+                            }
                             Text(dollars(b.amount))
                                 .font(EType.caption)
                                 .foregroundStyle(palette.textSecondary)
@@ -1027,26 +1049,22 @@ struct ShipperBids: View {
                 }
                 Section {
                     Button {
-                        let id = selectedLoadId ?? ""
-                        let amt = counterAllAmount
-                        showCounterAllSheet = false
-                        NotificationCenter.default.post(
-                            name: .eusoShipperLoadOpenOnWeb,
-                            object: nil,
-                            userInfo: [
-                                "loadId": id,
-                                "action": "counter-all",
-                                "amount": amt
-                            ]
-                        )
+                        Task { await submitCounterAll() }
                     } label: {
-                        Text("Continue on web")
-                            .font(EType.bodyStrong)
-                            .frame(maxWidth: .infinity)
+                        HStack(spacing: 8) {
+                            if isCounterAllRunning {
+                                ProgressView()
+                            }
+                            Text(isCounterAllRunning
+                                 ? "Sending… \(counterAllSubmitted)/\(rankedBids.count)"
+                                 : "Send counter to \(rankedBids.count) bidder\(rankedBids.count == 1 ? "" : "s")")
+                                .font(EType.bodyStrong)
+                                .frame(maxWidth: .infinity)
+                        }
                     }
-                    .disabled(counterAllAmount.isEmpty || (Int(counterAllAmount) ?? 0) <= 0)
+                    .disabled(!canSubmitCounterAll)
                 } footer: {
-                    Text("Bulk counter-offer ships from the web shipper portal until the iOS mutation lands. You'll stay signed in.")
+                    Text("Each bidder receives an individual counter-offer round. They can accept, reject, or counter back.")
                         .font(EType.caption)
                 }
             }
@@ -1054,9 +1072,88 @@ struct ShipperBids: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { showCounterAllSheet = false }
+                    Button(isCounterAllRunning ? "Close" : "Cancel") {
+                        showCounterAllSheet = false
+                    }
+                    .disabled(isCounterAllRunning)
                 }
             }
+        }
+    }
+
+    private var isCounterAllRunning: Bool { !counterAllInFlightIds.isEmpty }
+
+    private var canSubmitCounterAll: Bool {
+        guard !isCounterAllRunning else { return false }
+        guard let amt = Int(counterAllAmount), amt > 0 else { return false }
+        return !rankedBids.isEmpty
+    }
+
+    private var counterAllFooter: String {
+        if let amt = Int(counterAllAmount), amt > 0 {
+            return "Will fire \(rankedBids.count) counter-offer\(rankedBids.count == 1 ? "" : "s") at $\(amt) each."
+        }
+        return "Enter the counter amount to fire on every pending bid."
+    }
+
+    /// Loop `loadBidding.counter` over every visible bid. Each call
+    /// is independent — server inserts a new row at parent.round + 1
+    /// and marks the parent as `countered`. We collect per-bid
+    /// errors so a partial failure surfaces on the failing rows
+    /// rather than rolling back the whole batch.
+    private func submitCounterAll() async {
+        guard let amt = Int(counterAllAmount), amt > 0 else { return }
+        guard let loadIdStr = selectedLoadId, let loadIdNum = Int(loadIdStr) else {
+            mutationError = "Could not resolve numeric load id."
+            return
+        }
+        let bids = rankedBids
+        counterAllErrors = [:]
+        counterAllSubmitted = 0
+        counterAllInFlightIds = Set(bids.map(\.id))
+
+        await withTaskGroup(of: (String, String?).self) { group in
+            for bid in bids {
+                guard let parentBidNum = Int(bid.id) else {
+                    counterAllInFlightIds.remove(bid.id)
+                    counterAllErrors[bid.id] = "Bid id not numeric."
+                    continue
+                }
+                group.addTask {
+                    do {
+                        _ = try await EusoTripAPI.shared.loadBidding.counter(
+                            parentBidId: parentBidNum,
+                            loadId: loadIdNum,
+                            counterAmount: Double(amt),
+                            rateType: "flat",
+                            conditions: nil,
+                            expiresInHours: 24
+                        )
+                        return (bid.id, nil)
+                    } catch {
+                        return (bid.id, (error as NSError).localizedDescription)
+                    }
+                }
+            }
+            for await (bidId, err) in group {
+                counterAllInFlightIds.remove(bidId)
+                if let err = err {
+                    counterAllErrors[bidId] = err
+                } else {
+                    counterAllSubmitted += 1
+                }
+            }
+        }
+
+        // Refresh the bid stack so countered rows reflect the new
+        // round + status badges.
+        await refreshAll()
+        if counterAllErrors.isEmpty {
+            mutationError = nil
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            showCounterAllSheet = false
+        } else {
+            mutationError = "\(counterAllErrors.count) counter\(counterAllErrors.count == 1 ? "" : "s") failed — see rows above."
         }
     }
 

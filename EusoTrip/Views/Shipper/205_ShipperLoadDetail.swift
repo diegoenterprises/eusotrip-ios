@@ -58,6 +58,15 @@ struct ShipperLoadDetail: View {
     /// silently posts a notification no one consumed.
     @State private var showActionMenu: Bool = false
 
+    /// In-app cancel-load sheet (no web fallback). Opened when the
+    /// user picks "Cancel load" in the kebab menu. The sheet collects
+    /// a cancel reason and submits via `loads.cancelWithReason`.
+    @State private var showCancelSheet: Bool = false
+    @State private var cancelReason: String = ""
+    @State private var cancelInFlight: Bool = false
+    @State private var cancelError: String? = nil
+    @State private var cancelToast: String? = nil
+
     private var lifecycleVertical: TripVertical {
         TripVertical(role: session.user?.role)
     }
@@ -109,11 +118,12 @@ struct ShipperLoadDetail: View {
                             isPresented: $showActionMenu,
                             titleVisibility: .visible) {
             Button("Cancel load", role: .destructive) {
-                NotificationCenter.default.post(
-                    name: .eusoShipperLoadCancelRequested,
-                    object: nil,
-                    userInfo: ["loadId": loadId]
-                )
+                // Real in-app cancel — surface the reason sheet,
+                // which submits via `loads.cancelWithReason`. No
+                // web continuation.
+                cancelReason = ""
+                cancelError = nil
+                showCancelSheet = true
             }
             Button("Edit load") {
                 // No backend mutation for in-place edit yet — open
@@ -134,6 +144,145 @@ struct ShipperLoadDetail: View {
                 )
             }
             Button("Cancel", role: .cancel) { }
+        }
+        .sheet(isPresented: $showCancelSheet) {
+            cancelSheet
+                .environment(\.palette, palette)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+        }
+        .overlay(alignment: .bottom) {
+            if let toast = cancelToast {
+                Text(toast)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textOnGradient)
+                    .padding(.horizontal, Space.s4)
+                    .padding(.vertical, Space.s2)
+                    .background(Brand.success.opacity(0.95),
+                                in: RoundedRectangle(cornerRadius: Radius.md))
+                    .padding(.bottom, 96)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .task {
+                        try? await Task.sleep(nanoseconds: 2_400_000_000)
+                        withAnimation { cancelToast = nil }
+                    }
+            }
+        }
+    }
+
+    // MARK: - Cancel-load sheet (real mutation)
+
+    /// Composer for `loads.cancelWithReason`. Required reason →
+    /// toast on success → notify the loads board to refresh + pop
+    /// back. Server enforces shipper ownership and "load is not
+    /// already delivered/cancelled" — the sheet surfaces whatever
+    /// readable error the server returns instead of swallowing it.
+    @ViewBuilder
+    private var cancelSheet: some View {
+        VStack(alignment: .leading, spacing: Space.s4) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("CANCEL LOAD")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                Text(displayLoadId)
+                    .font(EType.title)
+                    .foregroundStyle(palette.textPrimary)
+                Text("Cancelling notifies the assigned carrier and rejects all pending bids. A TONU fee may apply if a carrier was already assigned.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Reason")
+                    .font(EType.caption).tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+                TextField("e.g. shipper rescheduled pickup", text: $cancelReason, axis: .vertical)
+                    .lineLimit(3, reservesSpace: true)
+                    .padding(Space.s3)
+                    .background(palette.bgCardSoft,
+                                in: RoundedRectangle(cornerRadius: Radius.md))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md)
+                        .strokeBorder(palette.borderFaint))
+            }
+            if let err = cancelError {
+                Text(err)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+            }
+            HStack(spacing: Space.s3) {
+                Button {
+                    showCancelSheet = false
+                } label: {
+                    Text("Keep load")
+                        .font(EType.body).fontWeight(.semibold)
+                        .foregroundStyle(palette.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Space.s3)
+                        .background(palette.bgCardSoft,
+                                    in: RoundedRectangle(cornerRadius: Radius.md))
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md)
+                            .strokeBorder(palette.borderFaint))
+                }
+                .buttonStyle(.plain)
+                .disabled(cancelInFlight)
+
+                Button {
+                    Task { await submitCancel() }
+                } label: {
+                    HStack(spacing: 6) {
+                        if cancelInFlight {
+                            ProgressView().tint(palette.textOnGradient)
+                        }
+                        Text(cancelInFlight ? "Cancelling…" : "Confirm cancel")
+                            .font(EType.body).fontWeight(.semibold)
+                    }
+                    .foregroundStyle(palette.textOnGradient)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Space.s3)
+                    .background(Brand.danger,
+                                in: RoundedRectangle(cornerRadius: Radius.md))
+                    .opacity((cancelReason.trimmingCharacters(in: .whitespacesAndNewlines).count >= 3) && !cancelInFlight ? 1 : 0.6)
+                }
+                .buttonStyle(.plain)
+                .disabled(cancelReason.trimmingCharacters(in: .whitespacesAndNewlines).count < 3 || cancelInFlight)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s5)
+        .background(palette.bgPrimary)
+    }
+
+    /// Submit the cancel-load mutation. Server input is `loadId:
+    /// number` — the brick's `loadId: String` is the verbatim
+    /// loadNumber-or-numeric-id string that comes from the row
+    /// model, so coerce to Int. If parsing fails the LoadDetail's
+    /// `numericId` projection is used as fallback.
+    private func submitCancel() async {
+        let reason = cancelReason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard reason.count >= 3 else { return }
+        let numericId: Int = {
+            if let i = Int(loadId) { return i }
+            return liveDetail?.numericId ?? 0
+        }()
+        guard numericId > 0 else {
+            cancelError = "Could not resolve a numeric load id for this row."
+            return
+        }
+        cancelInFlight = true
+        cancelError = nil
+        do {
+            _ = try await EusoTripAPI.shared.loads
+                .cancelWithReason(loadId: numericId, reason: reason)
+            cancelInFlight = false
+            showCancelSheet = false
+            cancelToast = "Load cancelled"
+            // Pull fresh state + bounce the user back to the list so
+            // the cancelled row falls out of "in-flight".
+            await refreshAll()
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            NotificationCenter.default.post(name: .eusoShipperLoadListOpen, object: nil)
+        } catch {
+            cancelInFlight = false
+            cancelError = (error as NSError).localizedDescription
         }
     }
 
