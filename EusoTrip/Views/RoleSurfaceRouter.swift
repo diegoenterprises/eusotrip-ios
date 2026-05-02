@@ -181,13 +181,46 @@ struct ShipperSurface: View {
     @EnvironmentObject var session: EusoTripSession
     @State private var currentScreenId: String = "200"
     @State private var showESang: Bool = false
+    /// Captured from `.eusoShipperLoadOpen` / `.eusoShipperLoadOpenMap`
+    /// / `.eusoShipperSettlementOpenLoad` notification userInfo. When
+    /// non-nil and the current screen is 205 / 222, we construct that
+    /// screen with the real loadId instead of the registry's `"0"`
+    /// sentinel.
+    @State private var activeLoadId: String? = nil
 
     private var current: ProductionScreen {
+        // Detail screens with a captured loadId override the registry
+        // sentinel so the screen renders the real load. This is how
+        // load-row taps from 200/201/203 carry into 205.
+        if let id = activeLoadId {
+            switch currentScreenId {
+            case "205":
+                return ProductionScreen(id: "205",
+                                        title: "Shipper · Load Detail",
+                                        role: .shipper) { p in
+                    AnyView(ShipperLoadDetailScreen(
+                        theme: p,
+                        loadId: id,
+                        previewLoadNumber: nil,
+                        previewLane: nil
+                    ))
+                }
+            case "222":
+                return ProductionScreen(id: "222",
+                                        title: "Shipper · Live Tracking",
+                                        role: .shipper) { p in
+                    AnyView(ShipperScreenWrap(palette: p, currentSlot: .loads) {
+                        ShipperLiveTracking()
+                    })
+                }
+            default: break
+            }
+        }
         // 200 (Home) is the canonical fallback. RBAC is also enforced
         // here — if for any reason the registry is missing 200 (build
         // mistake), we fall through to a hard error surface rather
         // than silently rendering a Driver screen.
-        ScreenRegistry.forRole(.shipper).first { $0.id == currentScreenId }
+        return ScreenRegistry.forRole(.shipper).first { $0.id == currentScreenId }
             ?? ScreenRegistry.forRole(.shipper).first { $0.id == "200" }
             ?? ScreenRegistry.forRole(.shipper).first
             ?? ProductionScreen(id: "200",
@@ -242,9 +275,65 @@ struct ShipperSurface: View {
                 for: .eusoShipperBrowseCarriers)) { _ in
                 guard RoleAccess.canRender(role: .shipper, screenId: "224") else { return }
                 withAnimation(.easeInOut(duration: 0.22)) {
+                    activeLoadId = nil
                     currentScreenId = "224"
                 }
             }
+            // Open the canonical Loads board (201).
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoShipperLoadListOpen)) { _ in
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    activeLoadId = nil
+                    currentScreenId = "201"
+                }
+            }
+            // Drill into a specific load (205 Load Detail). The
+            // notification carries `userInfo["loadId"]`; we capture
+            // it into `activeLoadId` so the `current` resolver
+            // constructs ShipperLoadDetailScreen with the real id
+            // instead of the registry's "0" sentinel.
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoShipperLoadOpen)) { note in
+                guard let id = note.userInfo?["loadId"] as? String else { return }
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    activeLoadId = id
+                    currentScreenId = "205"
+                }
+            }
+            // Open the live-tracking map view (222) for a load.
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoShipperLoadOpenMap)) { note in
+                guard RoleAccess.canRender(role: .shipper, screenId: "222") else { return }
+                if let id = note.userInfo?["loadId"] as? String { activeLoadId = id }
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    currentScreenId = "222"
+                }
+            }
+            // Open the load detail from the settlement detail screen.
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoShipperSettlementOpenLoad)) { note in
+                guard let id = note.userInfo?["loadId"] as? String else { return }
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    activeLoadId = id
+                    currentScreenId = "205"
+                }
+            }
+            // PostLoad wizard's close gestures route back to home.
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoShipperPostLoadDismiss)) { _ in
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    activeLoadId = nil
+                    currentScreenId = "200"
+                }
+            }
+            // Two posted aliases for "open the ESANG sheet":
+            // `eusoShipperEsangOpen` (legacy) and
+            // `eusoShipperLoadMessageEsang` (load-context-aware) both
+            // toggle the same sheet as `eusoShipperEsangTapped`.
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoShipperEsangOpen)) { _ in showESang = true }
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoShipperLoadMessageEsang)) { _ in showESang = true }
             .sheet(isPresented: $showESang) {
                 // Shipper-context ESANG sheet — driver sheet was a
                 // mistake (showed driver chips like "HOS buffer" /
