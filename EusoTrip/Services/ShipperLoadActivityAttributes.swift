@@ -90,7 +90,9 @@ final class ShipperLoadLiveActivityController {
     /// Start a new Live Activity for a load. Returns true if the
     /// activity was successfully requested. Idempotent — if an
     /// activity already exists for `loadId`, the existing one is
-    /// updated instead.
+    /// updated instead. Uses the iOS 16.2+ `ActivityContent` wrapper
+    /// API (the older `contentState:` / `using:` parameters were
+    /// deprecated in 16.2).
     @discardableResult
     func start(
         loadId: String,
@@ -99,9 +101,10 @@ final class ShipperLoadLiveActivityController {
         state: ShipperLoadActivityAttributes.ContentState
     ) -> Bool {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return false }
+        let content = ActivityContent(state: state, staleDate: nil)
         if let existing = active[loadId] {
             // Already running — fold the call into an update.
-            Task { await existing.update(using: state) }
+            Task { await existing.update(content) }
             return true
         }
         let attrs = ShipperLoadActivityAttributes(
@@ -112,7 +115,7 @@ final class ShipperLoadLiveActivityController {
         do {
             let activity = try Activity<ShipperLoadActivityAttributes>.request(
                 attributes: attrs,
-                contentState: state,
+                content: content,
                 pushType: nil
             )
             active[loadId] = activity
@@ -126,7 +129,7 @@ final class ShipperLoadLiveActivityController {
     /// `loadId`. No-op if no activity exists for that id.
     func update(loadId: String, to state: ShipperLoadActivityAttributes.ContentState) async {
         guard let a = active[loadId] else { return }
-        await a.update(using: state)
+        await a.update(ActivityContent(state: state, staleDate: nil))
     }
 
     /// End the activity. The Lock Screen card sticks around for the
@@ -134,14 +137,15 @@ final class ShipperLoadLiveActivityController {
     /// then iOS drops it.
     func end(loadId: String, finalState: ShipperLoadActivityAttributes.ContentState? = nil) async {
         guard let a = active[loadId] else { return }
-        await a.end(using: finalState, dismissalPolicy: .default)
+        let finalContent = finalState.map { ActivityContent(state: $0, staleDate: nil) }
+        await a.end(finalContent, dismissalPolicy: .default)
         active.removeValue(forKey: loadId)
     }
 
     /// End every activity this app started. Useful on sign-out.
     func endAll() async {
         for (_, a) in active {
-            await a.end(using: nil, dismissalPolicy: .immediate)
+            await a.end(nil, dismissalPolicy: .immediate)
         }
         active.removeAll()
     }

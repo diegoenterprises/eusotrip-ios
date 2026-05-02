@@ -343,7 +343,6 @@ struct ShipperProfile: View {
         let s = statsStore.state.value ?? nil
         let target = next.threshold.loads
         let count = max(0, s?.totalLoads ?? 0)
-        let remaining = max(0, target - count)
         return "\(count) / \(target) to \(next.label.capitalized)"
     }
 

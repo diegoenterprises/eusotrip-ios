@@ -46,7 +46,15 @@ struct ProductionScreen: Identifiable {
     let id: String           // "010", "011", …
     let title: String        // "Driver Home"
     let role: Role
-    let view: (Theme.Palette) -> AnyView
+    /// `@MainActor`-isolated so the closure body runs in main-actor
+    /// context at invocation. Lets us safely instantiate
+    /// `@MainActor`-bound types (like `PostLoadDraft`) without
+    /// wrapping each constructor in `MainActor.assumeIsolated` —
+    /// also resolves the Swift 6 strict-concurrency warning that
+    /// fires on `(Theme.Palette) -> AnyView` because `AnyView`
+    /// isn't `Sendable` (an isolated closure doesn't cross actor
+    /// boundaries on return).
+    let view: @MainActor (Theme.Palette) -> AnyView
 
     enum Role: String, CaseIterable, Identifiable {
         case driver = "Driver"
@@ -630,24 +638,24 @@ enum ScreenRegistry {
         list.append(.init(id: "240", title: "Shipper · CarPlay Dashboard",         role: .shipper) { p in AnyView(ShipperCarPlayDashboardScreen(theme: p)) })
         // 250-259 PostLoad wizard. 250 owns its own `PostLoadDraft`
         // `@StateObject`; 251-259 take the draft as `@ObservedObject`.
-        // The registry closure runs at view-mount time on the main
-        // actor, so we use `MainActor.assumeIsolated` to construct a
-        // throwaway draft for the registry-walker entry (production
-        // navigation through the wizard always carries the wizard's
-        // single shared draft). The closures themselves are
-        // synchronous + non-isolated; the runtime check confirms
-        // we're on the main actor before instantiating
-        // `@MainActor`-bound `PostLoadDraft`.
+        // The registry closure is `@MainActor`-isolated (see
+        // `ProductionScreen.view` declaration), so the closure body
+        // runs in main-actor context — `PostLoadDraft()` (which is
+        // `@MainActor`-bound) constructs cleanly without an
+        // `assumeIsolated` wrap. Each registry-walker entry hands a
+        // throwaway draft; production navigation through the wizard
+        // always carries the wizard's single shared draft from
+        // 250's `@StateObject`.
         list.append(.init(id: "250", title: "Shipper · Post Load · Lane",      role: .shipper) { p in AnyView(PostLoadStep1LaneScreen(theme: p)) })
-        list.append(.init(id: "251", title: "Shipper · Post Load · Equipment", role: .shipper) { p in MainActor.assumeIsolated { AnyView(PostLoadStep2EquipmentScreen(theme: p, draft: PostLoadDraft())) } })
-        list.append(.init(id: "252", title: "Shipper · Post Load · Pricing",   role: .shipper) { p in MainActor.assumeIsolated { AnyView(PostLoadStep3PricingScreen(theme: p, draft: PostLoadDraft())) } })
-        list.append(.init(id: "253", title: "Shipper · Post Load · Review",    role: .shipper) { p in MainActor.assumeIsolated { AnyView(PostLoadStep4ReviewScreen(theme: p, draft: PostLoadDraft())) } })
-        list.append(.init(id: "254", title: "Shipper · Post Load · Success",   role: .shipper) { p in MainActor.assumeIsolated { AnyView(PostLoadSuccessScreen(theme: p, draft: PostLoadDraft())) } })
-        list.append(.init(id: "255", title: "Shipper · Post Load · Multi-Stop", role: .shipper) { p in MainActor.assumeIsolated { AnyView(PostLoadMultiStopScreen(theme: p, draft: PostLoadDraft())) } })
-        list.append(.init(id: "256", title: "Shipper · Post Load · Address",   role: .shipper) { p in MainActor.assumeIsolated { AnyView(PostLoadAddressPickerScreen(theme: p, draft: PostLoadDraft())) } })
-        list.append(.init(id: "257", title: "Shipper · Post Load · Hazmat",    role: .shipper) { p in MainActor.assumeIsolated { AnyView(PostLoadHazmatSubformScreen(theme: p, draft: PostLoadDraft())) } })
-        list.append(.init(id: "258", title: "Shipper · Post Load · Reefer",    role: .shipper) { p in MainActor.assumeIsolated { AnyView(PostLoadReeferSubformScreen(theme: p, draft: PostLoadDraft())) } })
-        list.append(.init(id: "259", title: "Shipper · Post Load · Templates", role: .shipper) { p in MainActor.assumeIsolated { AnyView(PostLoadTemplatesScreen(theme: p, draft: PostLoadDraft())) } })
+        list.append(.init(id: "251", title: "Shipper · Post Load · Equipment", role: .shipper) { p in AnyView(PostLoadStep2EquipmentScreen(theme: p, draft: PostLoadDraft())) })
+        list.append(.init(id: "252", title: "Shipper · Post Load · Pricing",   role: .shipper) { p in AnyView(PostLoadStep3PricingScreen(theme: p, draft: PostLoadDraft())) })
+        list.append(.init(id: "253", title: "Shipper · Post Load · Review",    role: .shipper) { p in AnyView(PostLoadStep4ReviewScreen(theme: p, draft: PostLoadDraft())) })
+        list.append(.init(id: "254", title: "Shipper · Post Load · Success",   role: .shipper) { p in AnyView(PostLoadSuccessScreen(theme: p, draft: PostLoadDraft())) })
+        list.append(.init(id: "255", title: "Shipper · Post Load · Multi-Stop", role: .shipper) { p in AnyView(PostLoadMultiStopScreen(theme: p, draft: PostLoadDraft())) })
+        list.append(.init(id: "256", title: "Shipper · Post Load · Address",   role: .shipper) { p in AnyView(PostLoadAddressPickerScreen(theme: p, draft: PostLoadDraft())) })
+        list.append(.init(id: "257", title: "Shipper · Post Load · Hazmat",    role: .shipper) { p in AnyView(PostLoadHazmatSubformScreen(theme: p, draft: PostLoadDraft())) })
+        list.append(.init(id: "258", title: "Shipper · Post Load · Reefer",    role: .shipper) { p in AnyView(PostLoadReeferSubformScreen(theme: p, draft: PostLoadDraft())) })
+        list.append(.init(id: "259", title: "Shipper · Post Load · Templates", role: .shipper) { p in AnyView(PostLoadTemplatesScreen(theme: p, draft: PostLoadDraft())) })
         // 260 (PostedAwaitingBids) is shelved (LoadsAPI.cancel missing)
         // and intentionally NOT registered — see the `#if false` wrap
         // in the file header.

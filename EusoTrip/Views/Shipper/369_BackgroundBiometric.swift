@@ -25,6 +25,7 @@ private struct BiometricBody: View {
         var err: NSError?
         guard ctx.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &err) else { return "Passcode" }
         switch ctx.biometryType {
+        case .none:      return "Passcode"
         case .faceID:    return "Face ID"
         case .touchID:   return "Touch ID"
         case .opticID:   return "Optic ID"
