@@ -81,7 +81,7 @@ private struct CSettlementsBody: View {
         else {
             ForEach(rows) { r in
                 Button {
-                    NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "321", "settlementId": r.id])
+                    NotificationCenter.default.post(name: .eusoCarrierNavSwap, object: nil, userInfo: ["screenId": "321", "settlementId": r.id])
                 } label: {
                     LifecycleCard(accentGradient: r.status == "paid") {
                         LifecycleSection(label: dashIfEmpty(r.loadNumber).uppercased(), icon: "doc.text")

@@ -71,7 +71,7 @@ private struct MarketplaceBody: View {
         else {
             ForEach(loads) { ld in
                 Button {
-                    NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "307", "loadId": ld.id])
+                    NotificationCenter.default.post(name: .eusoCarrierNavSwap, object: nil, userInfo: ["screenId": "307", "loadId": ld.id])
                 } label: {
                     LifecycleCard {
                         LifecycleSection(label: ld.loadNumber.uppercased(), icon: "doc.text")

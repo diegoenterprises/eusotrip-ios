@@ -105,7 +105,7 @@ private struct ComplianceHomeBody: View {
 
     private func expiringWidget(_ e: ExpiringDocPriority) -> some View {
         Button {
-            NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "901"])
+            NotificationCenter.default.post(name: .eusoComplianceNavSwap, object: nil, userInfo: ["screenId": "901"])
         } label: {
             LifecycleCard(accentDanger: (e.daysRemaining ?? 99) < 7) {
                 HStack(alignment: .top) {

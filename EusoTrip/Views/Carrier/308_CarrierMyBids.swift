@@ -98,7 +98,7 @@ private struct MyBidsBody: View {
                     LifecycleRow(label: "Submitted", value: humanISO(b.createdAt))
                     if b.status == "countered" {
                         Button {
-                            NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "305", "bidId": b.id])
+                            NotificationCenter.default.post(name: .eusoCarrierNavSwap, object: nil, userInfo: ["screenId": "305", "bidId": b.id])
                         } label: {
                             Text("View counter →").font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
                                 .padding(.horizontal, 14).padding(.vertical, 6)

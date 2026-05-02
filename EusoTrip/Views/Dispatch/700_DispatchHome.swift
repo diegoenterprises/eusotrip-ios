@@ -119,7 +119,7 @@ private struct DispatchHomeBody: View {
 
     private func priorityWidget(_ e: PriorityException) -> some View {
         Button {
-            NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "703"])
+            NotificationCenter.default.post(name: .eusoDispatchNavSwap, object: nil, userInfo: ["screenId": "703"])
         } label: {
             LifecycleCard(accentDanger: true) {
                 HStack(alignment: .top) {

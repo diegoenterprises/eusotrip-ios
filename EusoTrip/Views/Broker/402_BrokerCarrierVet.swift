@@ -73,7 +73,7 @@ private struct CarrierVetBody: View {
         else {
             ForEach(candidates) { c in
                 Button {
-                    NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "403", "loadId": loadId, "catalystId": c.catalystId])
+                    NotificationCenter.default.post(name: .eusoBrokerNavSwap, object: nil, userInfo: ["screenId": "403", "loadId": loadId, "catalystId": c.catalystId])
                 } label: {
                     LifecycleCard(accentGradient: (c.highwayScore ?? 0) > 0.85) {
                         LifecycleSection(label: c.name.uppercased(), icon: "person.2")

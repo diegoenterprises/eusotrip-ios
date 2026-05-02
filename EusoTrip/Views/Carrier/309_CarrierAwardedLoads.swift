@@ -72,7 +72,7 @@ private struct AwardedLoadsBody: View {
         else {
             ForEach(loads) { ld in
                 Button {
-                    NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "311", "loadId": ld.id])
+                    NotificationCenter.default.post(name: .eusoCarrierNavSwap, object: nil, userInfo: ["screenId": "311", "loadId": ld.id])
                 } label: {
                     LifecycleCard(accentGradient: ld.assignedDriverName == nil) {
                         LifecycleSection(label: ld.loadNumber.uppercased(), icon: "doc.text")

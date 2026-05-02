@@ -73,7 +73,7 @@ private struct LoadBoardBody: View {
         else {
             ForEach(loads) { ld in
                 Button {
-                    NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "402", "loadId": ld.id])
+                    NotificationCenter.default.post(name: .eusoBrokerNavSwap, object: nil, userInfo: ["screenId": "402", "loadId": ld.id])
                 } label: {
                     LifecycleCard(accentGradient: (ld.estimatedMargin ?? 0) > 200) {
                         LifecycleSection(label: ld.loadNumber.uppercased(), icon: "doc.text")

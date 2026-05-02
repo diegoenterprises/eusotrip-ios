@@ -90,7 +90,7 @@ private struct ComplianceBody: View {
 
     private func link(icon: String, label: String, screen: String) -> some View {
         Button {
-            NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": screen])
+            NotificationCenter.default.post(name: .eusoCarrierNavSwap, object: nil, userInfo: ["screenId": screen])
         } label: {
             LifecycleCard {
                 HStack {
