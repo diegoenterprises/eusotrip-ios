@@ -524,6 +524,7 @@ struct DockYardmapSheet: View {
     let caps: CapabilitiesAPI.TerminalCapabilities?
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
+    @StateObject private var uwb = EusoNISession()
 
     var body: some View {
         NavigationStack {
@@ -535,9 +536,14 @@ struct DockYardmapSheet: View {
                     } ?? []
                 )
                 .ignoresSafeArea(edges: .bottom)
-                capabilityStrip
-                    .padding(.horizontal, 14)
-                    .padding(.top, 8)
+                VStack(spacing: 8) {
+                    capabilityStrip
+                    if anchorForDoor != nil {
+                        uwbOverlay
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 8)
             }
             .navigationTitle("Yardmap · Door \(dockNumber)")
             .navigationBarTitleDisplayMode(.inline)
@@ -546,6 +552,8 @@ struct DockYardmapSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .onAppear { startUwbIfPaired() }
+            .onDisappear { uwb.stop() }
         }
     }
 
@@ -637,6 +645,99 @@ struct DockYardmapSheet: View {
         switch state {
         case .active:                  return Brand.success.opacity(0.5)
         case .pending, .unsupported:   return palette.borderFaint
+        }
+    }
+
+    // MARK: - UWB overlay
+
+    /// The registered anchor for the active dock door, if any.
+    private var anchorForDoor: CapabilitiesAPI.UwbAnchor? {
+        caps?.uwbAnchors.first { $0.doorNumber == dockNumber }
+    }
+
+    /// On appear, decode the anchor's accessoryConfigData blob (base64
+    /// from the manufacturer's pairing flow) and start an
+    /// `EusoNISession`. The session publishes distance + direction +
+    /// LOS state which the overlay reads.
+    private func startUwbIfPaired() {
+        guard let anchor = anchorForDoor else { return }
+        guard let data = Data(base64Encoded: anchor.accessoryConfigData) else { return }
+        let bt = anchor.bluetoothPeerIdentifier.flatMap { UUID(uuidString: $0) }
+        uwb.startAccessory(configData: data, btIdentifier: bt)
+    }
+
+    /// Cm-level guidance card: distance (m, one decimal) + a chevron
+    /// rotated by `uwb.direction` so the driver sees the bearing
+    /// vector relative to the phone's orientation. When line-of-sight
+    /// drops, the card switches to a "Lost line-of-sight" state and
+    /// the rear chevron dims — the driver knows to step into the
+    /// open or rotate the phone.
+    private var uwbOverlay: some View {
+        HStack(alignment: .center, spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(palette.bgCard.opacity(0.92))
+                    .frame(width: 44, height: 44)
+                Circle()
+                    .strokeBorder(
+                        uwb.lostLineOfSight ? palette.borderFaint
+                                            : Brand.success.opacity(0.7),
+                        lineWidth: 1.5
+                    )
+                    .frame(width: 44, height: 44)
+                Image(systemName: "location.north.fill")
+                    .font(.system(size: 16, weight: .heavy))
+                    .foregroundStyle(
+                        uwb.lostLineOfSight ? AnyShapeStyle(palette.textTertiary)
+                                            : AnyShapeStyle(LinearGradient.diagonal)
+                    )
+                    .rotationEffect(uwbHeadingRadians)
+                    .animation(.easeOut(duration: 0.18), value: uwb.direction)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(uwbDistanceText)
+                    .font(EType.body.weight(.heavy))
+                    .foregroundStyle(palette.textPrimary)
+                    .monospacedDigit()
+                Text(uwbStatusText)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(palette.textSecondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(palette.bgCard.opacity(0.92))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    /// Phone-frame heading vector → 2D rotation angle for the chevron
+    /// glyph. NI returns a `simd_float3`; we use the X/Z plane
+    /// (azimuth) for the on-screen rotation.
+    private var uwbHeadingRadians: Angle {
+        guard let dir = uwb.direction else { return .zero }
+        let azimuth = atan2(dir.x, -dir.z)
+        return .radians(Double(azimuth))
+    }
+
+    private var uwbDistanceText: String {
+        if uwb.lostLineOfSight { return "—" }
+        guard let d = uwb.distance else { return "Locating…" }
+        return String(format: "%.1f m", d)
+    }
+
+    private var uwbStatusText: String {
+        switch uwb.status {
+        case .ranging:
+            return uwb.lostLineOfSight ? "LINE-OF-SIGHT LOST · ROTATE PHONE"
+                                       : "UWB · DOOR \(dockNumber)"
+        case .idle:                 return "UWB · STARTING"
+        case .suspended:            return "UWB · BACKGROUND PAUSED"
+        case .unsupported(let m):   return m.uppercased()
+        case .failed(let m):        return "UWB · \(m.uppercased())"
         }
     }
 }

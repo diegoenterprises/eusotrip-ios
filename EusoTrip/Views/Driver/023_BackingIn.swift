@@ -21,9 +21,11 @@ struct BackingIn: View {
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var lifecycle = TripLifecycleStore()
+    @StateObject private var uwb = EusoNISession()
     @State private var activeLoad: Load?
     @State private var isConfirming: Bool = false
     @State private var liveFeedPaused: Bool = false
+    @State private var terminalCaps: CapabilitiesAPI.TerminalCapabilities? = nil
 
     enum Register { case night, afternoon }
     let register: Register
@@ -53,6 +55,7 @@ struct BackingIn: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
                 cameraCanvas
+                if uwbActive { uwbCenterlineCard }
                 distanceTiles
                 alignmentCard
                 advisoryCard
@@ -63,7 +66,80 @@ struct BackingIn: View {
             .padding(.top, 8)
         }
         .task { await hydrateLiveTrip() }
+        .onDisappear { uwb.stop() }
         .screenTileRoot()
+    }
+
+    // MARK: UWB centerline drift card
+    //
+    // Renders only when a UWB anchor is paired for this dock door —
+    // otherwise we trust the visual / static distance tiles below.
+    // The card converts the NI direction unit vector (phone-frame
+    // x/z plane) into a left/right drift number relative to the
+    // dock-anchor centerline. When LOS is lost the card flips into a
+    // muted "Lost line-of-sight · rotate phone" advisory.
+
+    private var uwbActive: Bool {
+        if case .ranging = uwb.status { return true }
+        return false
+    }
+
+    private var uwbCenterlineCard: some View {
+        HStack(alignment: .center, spacing: 12) {
+            ZStack {
+                Circle()
+                    .strokeBorder(
+                        uwb.lostLineOfSight ? palette.borderFaint
+                                            : Brand.success.opacity(0.7),
+                        lineWidth: 1.5
+                    )
+                    .frame(width: 44, height: 44)
+                Image(systemName: "scope")
+                    .font(.system(size: 16, weight: .heavy))
+                    .foregroundStyle(
+                        uwb.lostLineOfSight ? AnyShapeStyle(palette.textTertiary)
+                                            : AnyShapeStyle(LinearGradient.diagonal)
+                    )
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(uwbCenterlineText)
+                    .font(EType.body.weight(.heavy))
+                    .foregroundStyle(palette.textPrimary)
+                    .monospacedDigit()
+                Text(uwbCenterlineSub)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(palette.textSecondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 10)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    /// Distance + drift line. `direction.x` is the lateral component
+    /// in the phone's frame; positive == anchor is to the right of
+    /// the phone (driver drifting LEFT of the centerline). We render
+    /// a sign-flipped drift cm value so the message reads from the
+    /// driver's perspective.
+    private var uwbCenterlineText: String {
+        guard !uwb.lostLineOfSight else { return "—" }
+        guard let dist = uwb.distance else { return "Locating…" }
+        if let dir = uwb.direction {
+            let lateralCm = Int((dir.x * dist) * 100)
+            let side = lateralCm > 0 ? "RIGHT" : (lateralCm < 0 ? "LEFT" : "CENTER")
+            return String(format: "%.1f m · %d cm %@", dist, abs(lateralCm), side)
+        }
+        return String(format: "%.1f m", dist)
+    }
+
+    private var uwbCenterlineSub: String {
+        if uwb.lostLineOfSight { return "LOST LINE-OF-SIGHT · ROTATE PHONE" }
+        return "UWB CENTERLINE · DOOR \(fallbackDoor)"
     }
 
     // MARK: Header
@@ -342,6 +418,20 @@ struct BackingIn: View {
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
         activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        terminalCaps = try? await EusoTripAPI.shared.capabilities
+            .getTerminal(terminalId: 0)
+        startUwbIfPaired()
+    }
+
+    /// Start the UWB session against the registered anchor for the
+    /// active dock door. Caller is responsible for stopping the
+    /// session on screen disappear (handled below via `.onDisappear`).
+    private func startUwbIfPaired() {
+        guard let anchor = terminalCaps?.uwbAnchors
+            .first(where: { $0.doorNumber == fallbackDoor }) else { return }
+        guard let data = Data(base64Encoded: anchor.accessoryConfigData) else { return }
+        let bt = anchor.bluetoothPeerIdentifier.flatMap { UUID(uuidString: $0) }
+        uwb.startAccessory(configData: data, btIdentifier: bt)
     }
 
     private func setBrakes() async {

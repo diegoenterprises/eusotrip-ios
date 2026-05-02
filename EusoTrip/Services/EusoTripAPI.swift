@@ -16142,3 +16142,171 @@ struct CapabilitiesAPI {
         try await api.mutation("capabilities.setTrailer", input: caps)
     }
 }
+
+// MARK: - EusoNISession (NearbyInteraction UWB session)
+//
+// Cm-level distance + direction service powering yard navigation,
+// dock-door alignment, and escort proximity. Wraps `NISession` so
+// SwiftUI surfaces just observe published @Published state.
+//
+// Usage shapes:
+//   - Phone ↔ accessory  (UWB anchor at a dock door):
+//       startAccessory(configData: anchor.accessoryConfigData,
+//                      btIdentifier: anchor.bluetoothPeerIdentifier)
+//   - Phone ↔ phone      (driver ↔ escort):
+//       Exchange tokens out-of-band, then `startPeer(token:)`.
+//
+// Lifecycle: foreground only; sessions auto-pause when the app
+// backgrounds (NI framework constraint). The host SwiftUI view
+// should call `.task { uwb.startAccessory(...) }` on `.onAppear`
+// and `uwb.stop()` on `.onDisappear` to keep the radio off when
+// the screen isn't visible.
+//
+// Doctrine: `reference_nearby_interaction` memory holds the design
+// notes + EusoTrip use-case map. The class published here is the
+// "drop-in skeleton" referenced there.
+
+import NearbyInteraction
+import simd
+
+@MainActor
+final class EusoNISession: NSObject, ObservableObject, NISessionDelegate {
+    /// Published state surfaces drive the SwiftUI overlay. Distance
+    /// is meters (nil when out of range or LOS lost). Direction is
+    /// the phone-frame unit vector (nil when too close to resolve).
+    @Published var distance: Float? = nil
+    @Published var direction: simd_float3? = nil
+    @Published var lastUpdate: Date? = nil
+    @Published var status: Status = .idle
+    @Published var lostLineOfSight: Bool = false
+
+    enum Status: Equatable {
+        case idle
+        case unsupported(String)
+        case ranging
+        case suspended
+        case failed(String)
+    }
+
+    private let session = NISession()
+
+    /// Static availability check — is NearbyInteraction on this
+    /// device. iOS 16+ exposes `deviceCapabilities`; on iOS 14/15 we
+    /// inspect `NISession.isSupported` (deprecated but still
+    /// available). Returns false on simulator.
+    static var isSupported: Bool {
+        if #available(iOS 16.0, *) {
+            return NISession.deviceCapabilities.supportsPreciseDistanceMeasurement
+        } else {
+            return NISession.isSupported
+        }
+    }
+
+    override init() {
+        super.init()
+        session.delegate = self
+        session.delegateQueue = .main
+    }
+
+    // MARK: - Phone ↔ accessory (UWB anchor at dock door)
+
+    /// Start ranging to a fixed UWB anchor (a Qorvo / NXP / Apple
+    /// Find My Network accessory installed at a dock door). The
+    /// `configData` blob comes from the manufacturer's pairing
+    /// flow — EusoTrip stores it on
+    /// `terminalCapabilities.uwbAnchors[doorNumber].accessoryConfigData`.
+    func startAccessory(configData: Data, btIdentifier: UUID? = nil) {
+        guard Self.isSupported else {
+            status = .unsupported("NearbyInteraction not available on this device.")
+            return
+        }
+        do {
+            let cfg: NINearbyAccessoryConfiguration
+            if #available(iOS 16.0, *), let bt = btIdentifier {
+                cfg = try NINearbyAccessoryConfiguration(
+                    accessoryData: configData,
+                    bluetoothPeerIdentifier: bt
+                )
+            } else {
+                cfg = try NINearbyAccessoryConfiguration(data: configData)
+            }
+            session.run(cfg)
+            status = .ranging
+        } catch {
+            status = .failed("Couldn't start UWB anchor session: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Phone ↔ phone (driver ↔ escort, hand-off pairing, etc.)
+
+    /// Exchanged with the peer over BLE / Multipeer / your own
+    /// websocket so they can run a peer config against you.
+    var localToken: NIDiscoveryToken? { session.discoveryToken }
+
+    /// Start ranging to a paired phone. `peerToken` is the
+    /// `NIDiscoveryToken` the peer published over the chosen
+    /// out-of-band channel.
+    func startPeer(token peerToken: NIDiscoveryToken) {
+        guard Self.isSupported else {
+            status = .unsupported("NearbyInteraction not available on this device.")
+            return
+        }
+        let cfg = NINearbyPeerConfiguration(peerToken: peerToken)
+        session.run(cfg)
+        status = .ranging
+    }
+
+    func stop() {
+        session.invalidate()
+        distance = nil
+        direction = nil
+        lostLineOfSight = false
+        status = .idle
+    }
+
+    // MARK: - NISessionDelegate
+
+    func session(_ session: NISession, didUpdate nearbyObjects: [NINearbyObject]) {
+        // Single-peer model — yardmap + back-in alignment + escort
+        // pairing all bind to one ranging target at a time. Multi-
+        // peer use-cases (yard hostler tracking many trailers)
+        // would split state into a per-token dictionary.
+        guard let target = nearbyObjects.first else { return }
+        distance = target.distance
+        direction = target.direction
+        lastUpdate = Date()
+        lostLineOfSight = (target.distance == nil && target.direction == nil)
+    }
+
+    func session(
+        _ session: NISession,
+        didRemove nearbyObjects: [NINearbyObject],
+        reason: NINearbyObject.RemovalReason
+    ) {
+        switch reason {
+        case .timeout:
+            lostLineOfSight = true
+        case .peerEnded:
+            status = .idle
+            distance = nil
+            direction = nil
+        @unknown default:
+            break
+        }
+    }
+
+    func sessionWasSuspended(_ session: NISession) {
+        status = .suspended
+    }
+
+    func sessionSuspensionEnded(_ session: NISession) {
+        // The framework expects us to re-run the previous config
+        // after suspension — but we don't retain it here. Caller
+        // must restart via `start*(...)` after observing this state.
+        status = .idle
+    }
+
+    func session(_ session: NISession, didInvalidateWith error: Error) {
+        status = .failed(error.localizedDescription)
+    }
+}
