@@ -26,7 +26,10 @@ struct DockAssigned: View {
     @Environment(\.driverNavBack) private var navBack
     @Environment(\.driverDialPhone) private var dialPhone
     @Environment(\.driverOpenMessages) private var openMessages
+    @Environment(\.driverUploadPhoto) private var uploadPhoto
     @EnvironmentObject private var session: EusoTripSession
+
+    @State private var showYardmap: Bool = false
 
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: Load?
@@ -70,6 +73,10 @@ struct DockAssigned: View {
             .padding(.top, 8)
         }
         .task { await hydrateLiveTrip() }
+        .sheet(isPresented: $showYardmap) {
+            DockYardmapSheet(load: activeLoad, dockNumber: fallbackDoor)
+                .environment(\.palette, palette)
+        }
         .screenTileRoot()
     }
 
@@ -289,13 +296,29 @@ struct DockAssigned: View {
     // MARK: Action row
 
     private var actionRow: some View {
-        // Only the Message affordance ships in this build — the prior
-        // "Yardmap" + "Dock cam" cells had no backend service behind
-        // them (no terminal-yardmap endpoint, no per-door camera feed
-        // route) and the doctrine forbids rendering an affordance
-        // whose action doesn't exist. They'll return when the
-        // terminal-ops API ships.
+        // Yardmap, Dock cam, Message Lumper — all real today.
+        //   • Yardmap → HereMapView sheet pinned on the load's
+        //     deliveryLocation so the driver can orient inside the
+        //     terminal yard at GPS resolution. Upgrade path:
+        //     NearbyInteraction (cm-level UWB anchors at each dock
+        //     door) + websocket-pushed yard graph (forklift +
+        //     trailer positions) — pending founder pick.
+        //   • Dock cam → device camera via `\.driverUploadPhoto`
+        //     env, scoped to the dock door for safety/audit photo.
+        //     Upgrade path: WebRTC stream from the terminal's
+        //     Genetec / Avigilon NVR via a signaling websocket —
+        //     pending founder pick.
+        //   • Message Lumper → real `\.driverOpenMessages(nil)`
+        //     opening the messaging inbox.
         HStack(spacing: Space.s2) {
+            actionButton(symbol: "map.fill", label: "Yardmap", sub: "Full view") {
+                showYardmap = true
+            }
+            actionButton(symbol: "camera.fill",
+                         label: "Dock cam",
+                         sub: "Door \(fallbackDoor)") {
+                uploadPhoto?()
+            }
             actionButton(symbol: "message.fill", label: "Message", sub: "Lumper") {
                 openMessages?(nil)
             }
@@ -433,6 +456,46 @@ private func driverNavLeading_022() -> [NavSlot] {
 private func driverNavTrailing_022() -> [NavSlot] {
     [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
      NavSlot(label: "Me",     systemImage: "person", isCurrent: false)]
+}
+
+// MARK: - Yardmap sheet
+
+/// Driver-facing yardmap presented when the dock-assigned action row's
+/// "Yardmap" affordance fires. Uses the canonical `HereMapView` (the
+/// same component every other lifecycle / pulse map surface uses) so
+/// the driver sees a consistent palette + legend. Pinned on the load's
+/// deliveryLocation today (GPS resolution).
+///
+/// Upgrade path (pending founder pick from feedback_no_ceilings
+/// options menu): NearbyInteraction (`NISession` + UWB anchors at each
+/// dock door) overlays cm-level positioning + direction once the
+/// terminal-side anchors deploy; a websocket stream from the
+/// terminal-ops backend (`yardOps.streamPositions`) renders live
+/// trailer + forklift positions as additional `LoadMarker` rows.
+struct DockYardmapSheet: View {
+    let load: Load?
+    let dockNumber: String
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            HereMapView(
+                stops: load.flatMap { ld -> [LoadLocation] in
+                    if let drop = ld.deliveryLocation { return [drop] }
+                    return []
+                } ?? []
+            )
+            .ignoresSafeArea(edges: .bottom)
+            .navigationTitle("Yardmap · Door \(dockNumber)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
 }
 
 #Preview("022 · Dock Assigned · Dark") {
