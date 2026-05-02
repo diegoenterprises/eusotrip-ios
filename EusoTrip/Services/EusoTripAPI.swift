@@ -9255,6 +9255,88 @@ struct AppointmentsAPI {
             input: Input(id: id, reason: reason)
         )
     }
+
+    // MARK: - Phase 10 (Pickup operations) closure
+
+    /// Single appointment row used by the Phase 10 by-load lookup
+    /// path. Mirrors verbatim the `appointments.getByLoad` server
+    /// projection. Optionals everywhere — caller renders an honest
+    /// empty state when the load has no appointment yet.
+    struct ByLoadAppointment: Decodable, Hashable {
+        let id: String
+        let loadId: String?
+        let terminalId: String?
+        let driverId: String?
+        let type: String?
+        let status: String?
+        let dockNumber: String?
+        let scheduledAt: String?
+        let createdAt: String?
+    }
+
+    /// `appointments.getByLoad` — the most recent appointment for a
+    /// load id. Used by the iOS shipper 205 dock-assign sheet AND
+    /// by the driver lifecycle screens 014/015/016 to look up the
+    /// appointment they need to advance via updateStatus.
+    func getByLoad(loadId: String) async throws -> ByLoadAppointment? {
+        struct Input: Encodable { let loadId: String }
+        return try await api.query(
+            "appointments.getByLoad",
+            input: Input(loadId: loadId)
+        )
+    }
+
+    struct AssignDockAck: Decodable, Hashable {
+        let success: Bool?
+        let id: String?
+        let dockNumber: String?
+        let assignedAt: String?
+    }
+
+    /// `appointments.assignDock` — shipper-of-record (or terminal
+    /// manager / dispatch / admin) writes the assigned dock door
+    /// directly to the appointments.dockNumber column. Closes the
+    /// shipper-side half of Phase 10.
+    @discardableResult
+    func assignDock(id: String, dockNumber: String) async throws -> AssignDockAck {
+        struct Input: Encodable {
+            let id: String
+            let dockNumber: String
+        }
+        return try await api.mutation(
+            "appointments.assignDock",
+            input: Input(id: id, dockNumber: dockNumber)
+        )
+    }
+
+    /// `appointments.updateStatus` — driver lifecycle screens
+    /// 014/015/016 fire this at state transitions so the
+    /// appointment record stays in sync with the trip lifecycle
+    /// store. Status values: 'scheduled' / 'confirmed' /
+    /// 'checked_in' / 'loading' / 'unloading' / 'completed' /
+    /// 'cancelled' / 'no_show' (server enum).
+    @discardableResult
+    func updateStatus(
+        id: String,
+        status: String,
+        notes: String? = nil
+    ) async throws -> SimpleResult {
+        struct Input: Encodable {
+            let id: String
+            let status: String
+            let notes: String?
+            let timestamp: String
+        }
+        return try await api.mutation(
+            "appointments.updateStatus",
+            input: Input(
+                id: id,
+                status: status,
+                notes: notes,
+                timestamp: ISO8601DateFormatter().string(from: Date())
+            )
+        )
+    }
 }
 
 // MARK: - contactsRouter (102 Me · Contacts)

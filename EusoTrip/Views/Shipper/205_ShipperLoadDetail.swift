@@ -88,6 +88,16 @@ struct ShipperLoadDetail: View {
     /// loads so the card renders an honest "no driver yet" state.
     @State private var driverReadiness: LoadsAPI.DriverReadiness? = nil
 
+    /// Phase 10 (Pickup operations) — appointment for this load.
+    /// Hydrates from appointments.getByLoad alongside the detail.
+    /// Drives the "Assign dock" action-menu entry below.
+    @State private var loadAppointment: AppointmentsAPI.ByLoadAppointment? = nil
+    @State private var showDockAssign: Bool = false
+    @State private var dockNumberDraft: String = ""
+    @State private var dockAssignInFlight: Bool = false
+    @State private var dockAssignError: String? = nil
+    @State private var dockAssignToast: String? = nil
+
     private var lifecycleVertical: TripVertical {
         TripVertical(role: session.user?.role)
     }
@@ -152,6 +162,15 @@ struct ShipperLoadDetail: View {
                     Task { await hydratePODPacket() }
                 }
             }
+            // Phase 10 closure: dock-door assignment. Only renders
+            // when an appointment exists on this load.
+            if loadAppointment != nil {
+                Button("Assign dock") {
+                    dockAssignError = nil
+                    dockNumberDraft = loadAppointment?.dockNumber ?? ""
+                    showDockAssign = true
+                }
+            }
             Button("Cancel load", role: .destructive) {
                 // Real in-app cancel — surface the reason sheet,
                 // which submits via `loads.cancelWithReason`. No
@@ -190,6 +209,12 @@ struct ShipperLoadDetail: View {
             podReviewSheet
                 .environment(\.palette, palette)
                 .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showDockAssign) {
+            dockAssignSheet
+                .environment(\.palette, palette)
+                .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
         }
         .overlay(alignment: .bottom) {
@@ -495,6 +520,127 @@ struct ShipperLoadDetail: View {
             showPODReview = false
         } catch {
             podError = (error as NSError).localizedDescription
+        }
+    }
+
+    // MARK: - Dock-assign sheet (Phase 10 closure)
+
+    /// Composer for `appointments.assignDock`. Shipper-of-record (or
+    /// terminal manager / dispatch / admin) writes the assigned dock
+    /// door number directly to the appointments.dockNumber column.
+    /// On success the action-menu entry shows the new number on next
+    /// open via the refreshed `loadAppointment` state.
+    @ViewBuilder
+    private var dockAssignSheet: some View {
+        VStack(alignment: .leading, spacing: Space.s4) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("ASSIGN DOCK")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text(loadAppointment?.dockNumber.map { "Currently dock \($0)" } ?? "No dock assigned yet")
+                    .font(EType.title)
+                    .foregroundStyle(palette.textPrimary)
+                Text("Assigning a dock writes through to the gate-pass + driver lifecycle so the carrier sees the door number when they pull up. Use the facility's official dock label (e.g. '12', 'B-7', 'East 4').")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Dock door")
+                    .font(EType.caption).tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+                TextField("e.g. 12 or B-7", text: $dockNumberDraft)
+                    .font(EType.body)
+                    .padding(Space.s3)
+                    .background(palette.bgCardSoft,
+                                in: RoundedRectangle(cornerRadius: Radius.md))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md)
+                        .strokeBorder(palette.borderFaint))
+            }
+            if let err = dockAssignError {
+                Text(err)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+            }
+            HStack(spacing: Space.s3) {
+                Button {
+                    showDockAssign = false
+                } label: {
+                    Text("Cancel")
+                        .font(EType.body).fontWeight(.semibold)
+                        .foregroundStyle(palette.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Space.s3)
+                        .background(palette.bgCard,
+                                    in: RoundedRectangle(cornerRadius: Radius.md))
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md)
+                            .strokeBorder(palette.borderFaint))
+                }
+                .buttonStyle(.plain)
+                .disabled(dockAssignInFlight)
+
+                Button {
+                    Task { await submitDockAssign() }
+                } label: {
+                    HStack(spacing: 6) {
+                        if dockAssignInFlight {
+                            ProgressView().tint(palette.textOnGradient)
+                        }
+                        Text(dockAssignInFlight ? "Assigning…" : "Confirm dock")
+                            .font(EType.body).fontWeight(.semibold)
+                    }
+                    .foregroundStyle(palette.textOnGradient)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Space.s3)
+                    .background(LinearGradient.diagonal,
+                                in: RoundedRectangle(cornerRadius: Radius.md))
+                    .opacity(canSubmitDock ? 1 : 0.55)
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSubmitDock)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s5)
+        .background(palette.bgPrimary)
+        .overlay(alignment: .bottom) {
+            if let toast = dockAssignToast {
+                Text(toast)
+                    .font(EType.caption).fontWeight(.semibold)
+                    .foregroundStyle(palette.textOnGradient)
+                    .padding(.horizontal, Space.s4)
+                    .padding(.vertical, Space.s2)
+                    .background(Brand.success,
+                                in: RoundedRectangle(cornerRadius: Radius.md))
+                    .padding(.bottom, 32)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .task {
+                        try? await Task.sleep(nanoseconds: 1_400_000_000)
+                        withAnimation { dockAssignToast = nil }
+                    }
+            }
+        }
+    }
+
+    private var canSubmitDock: Bool {
+        let trimmed = dockNumberDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && !dockAssignInFlight
+    }
+
+    private func submitDockAssign() async {
+        guard canSubmitDock, let appt = loadAppointment else { return }
+        let trimmed = dockNumberDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        dockAssignInFlight = true
+        dockAssignError = nil
+        defer { dockAssignInFlight = false }
+        do {
+            _ = try await EusoTripAPI.shared.appointments
+                .assignDock(id: appt.id, dockNumber: trimmed)
+            withAnimation { dockAssignToast = "Dock \(trimmed) assigned" }
+            await refreshAll()
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            showDockAssign = false
+        } catch {
+            dockAssignError = (error as NSError).localizedDescription
         }
     }
 
@@ -1534,9 +1680,14 @@ struct ShipperLoadDetail: View {
         async let a: Void = detailStore.refresh()
         async let b: Void = bidsStore.refresh()
         async let r: LoadsAPI.DriverReadiness? = (try? await EusoTripAPI.shared.loads.getAssignedDriverReadiness(loadId: loadId))
+        async let p: AppointmentsAPI.ByLoadAppointment? = (try? await EusoTripAPI.shared.appointments.getByLoad(loadId: loadId)) ?? nil
         _ = await (a, b)
         let readiness = await r
-        await MainActor.run { driverReadiness = readiness }
+        let appointment = await p
+        await MainActor.run {
+            driverReadiness = readiness
+            loadAppointment = appointment
+        }
     }
 
     // MARK: - Driver readiness card (Phase 8 closure)

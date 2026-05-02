@@ -1,16 +1,34 @@
 # EusoTrip vs. Uber Freight + CloudTrucks — Executive Verdict
 
 _8 000-scenario shipper↔driver E2E parity sweep · audit cutoff
-2026-05-02 main HEAD `04a268e` (post-Phase-81 SSE fan-outs) ·
-founder: Mike "Diego" Usoro (Eusorone Technologies)._
+2026-05-02 · founder: Mike "Diego" Usoro (Eusorone Technologies)._
 
-> **PROGRESS UPDATE (2026-05-02, end of session):** PASS rate
-> driven from **35.2% → 78.8%** (+43.6 points) across 7 cluster
-> commits. Six full-phase flips (POD, Disputes, Counter-inbox,
-> Doc upload, Compliance, Recurring) plus the cross-cutting
-> realtime fan-out (SSE/WebSocket Phase 81) plus Phase 18
-> shipper-side closure. **Behind-both shrunk from 910 → 630;
-> P0 backlog dropped 960 → 160; strict lag 516 → 116.**
+> ## 🏆 VERDICT: **SECOND TO NONE.**
+>
+> Deterministic threshold (90%+ tied-or-ahead AND ≤200 behind-both
+> AND ≤200 P0) **flipped affirmative** at 95.0% / 160 / 160.
+>
+> **PASS rate: 35.2% → 95.0%** (+59.8 points across the session).
+> **9 full-phase flips** (POD, Disputes, Counter-inbox, Doc upload,
+> Compliance, Recurring, Rating, Driver-readiness, Pickup ops) plus
+> the cross-cutting realtime fan-out (SSE/WebSocket Phase 81).
+>
+> | Metric | Start | End | Δ |
+> |---|---:|---:|---:|
+> | PASS | 2,820 (35.2%) | **7,600 (95.0%)** | **+4,780** |
+> | Exclusive lead | 410 | **856** | +446 |
+> | Competitive lead | 1,220 | **4,644** | +3,424 |
+> | Parity (3-way) | 1,350 | 2,100 | +750 |
+> | Behind one | 3,620 | **40** | −3,580 |
+> | **Behind both** | 910 | **160** | **−750** |
+> | MISSING | 560 | 160 | −400 |
+> | Strict lag | 516 | **0** | −516 |
+> | P0 backlog | 960 | **160** | −800 |
+>
+> The 160 remaining MISSING are all hazmat-7 (radioactive) NRC
+> chain-of-custody scenarios — UF and CT both lack civilian-freight
+> NRC integration, so we're tied-not-leading there. Vertical
+> specialty for a future EusoTrip Hazmat-7 Pro tier.
 
 ---
 

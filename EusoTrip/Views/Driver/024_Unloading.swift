@@ -404,6 +404,14 @@ struct Unloading: View {
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
         activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        // Phase 10 closure: appointment status -> unloading.
+        // (Server marks completed when the lifecycle store
+        // transitions to 025 / Paperwork.) Best-effort.
+        if let appt = try? await EusoTripAPI.shared.appointments
+            .getByLoad(loadId: lifecycle.loadId) {
+            _ = try? await EusoTripAPI.shared.appointments
+                .updateStatus(id: appt.id, status: "unloading")
+        }
     }
 }
 

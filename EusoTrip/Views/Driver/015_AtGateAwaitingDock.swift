@@ -370,6 +370,32 @@ struct AtGateAwaitingDock: View {
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
         activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        // Phase 10 closure: round-trip the appointment status so
+        // the shipper / dispatcher web surfaces see the driver
+        // checked-in at the gate the moment 015 appears. Best-
+        // effort — server tolerates duplicate same-status updates;
+        // failure is non-blocking on the lifecycle screen.
+        await syncAppointmentStatus("checked_in")
+    }
+
+    /// Helper that looks up the appointment for the active load and
+    /// flips it to the supplied status. Driver lifecycle screens
+    /// 014 / 015 / 016 / 024 each call this with a different status
+    /// to keep `appointments.status` in sync with the trip phase
+    /// without a hard dependency on the lifecycle store knowing
+    /// about appointments. Phase 10 closure.
+    private func syncAppointmentStatus(_ status: String) async {
+        guard !lifecycle.loadId.isEmpty else { return }
+        do {
+            if let appt = try await EusoTripAPI.shared.appointments
+                .getByLoad(loadId: lifecycle.loadId) {
+                _ = try? await EusoTripAPI.shared.appointments
+                    .updateStatus(id: appt.id, status: status)
+            }
+        } catch {
+            // Non-blocking — lifecycle screen continues to render
+            // even when the appointment row isn't on file yet.
+        }
     }
 
     private func markReady() async {
