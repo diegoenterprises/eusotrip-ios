@@ -36,16 +36,24 @@ struct WeatherCard: View {
     @State private var flipped: Bool = false
 
     private var isNight: Bool {
-        // Prefer the SF symbol WeatherKit hands us — it already encodes night.
+        // Local clock is the *primary* night gate. The previous order
+        // ("symbol first, clock fallback") was wrong because the NWS +
+        // Open-Meteo fallback paths in WeatherService return day-only
+        // SF Symbols (sun.max, cloud.rain.fill, etc.) regardless of
+        // local hour — only WeatherKit emits a night-specific symbol
+        // (moon.stars, etc.). When WeatherKit fails, the card was
+        // painting a sun disk at 1 AM during a storm because the
+        // "sun" substring short-circuited the clock check.
+        let h = Calendar.current.component(.hour, from: Date())
+        let clockSaysNight = h >= 20 || h < 6
+        if clockSaysNight { return true }
+        // Day hours — let WeatherKit's explicit night symbol still win
+        // (e.g. early-evening dusk in winter when WeatherKit ships a
+        // moon symbol before 8 PM local).
         if snapshot.symbol.contains("moon") || snapshot.symbol.contains("night") {
             return true
         }
-        if snapshot.symbol.contains("sun") {
-            return false
-        }
-        // Fallback: local clock.
-        let h = Calendar.current.component(.hour, from: Date())
-        return h >= 20 || h < 6
+        return false
     }
 
     private var condition: SkyCondition {

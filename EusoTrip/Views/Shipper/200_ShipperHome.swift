@@ -42,6 +42,12 @@ struct ShipperHome: View {
     // unread count via the existing project-wide store.
     @ObservedObject private var unread = UnreadMessageStore.shared
 
+    // Real weather snapshot (CoreLocation + WeatherKit → NWS → Open-Meteo
+    // cascade in WeatherService). nil → render nothing — no fake "sunny"
+    // tile in its place. Per home-widget doctrine the weather card sits
+    // between the attention card and the CTA row across every role.
+    @State private var weather: WeatherSnapshot? = nil
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
@@ -50,6 +56,7 @@ struct ShipperHome: View {
                     .padding(.horizontal, Space.s5)
                 VStack(alignment: .leading, spacing: Space.s5) {
                     attentionCard
+                    weatherSection
                     ctaRow
                     statRow
                     activeLoadsSection
@@ -71,8 +78,24 @@ struct ShipperHome: View {
         async let b: Void = alerts.refresh()
         async let c: Void = active.refresh()
         async let d: Void = recent.refresh()
+        async let w: WeatherSnapshot? = WeatherService.shared.fetchCurrent()
+        let snap = await w
         _ = await (a, b, c, d)
+        weather = snap
         unread.refresh()  // EUSO-2057: kicks UnreadMessageStore -> messaging.getUnreadCount
+    }
+
+    /// Live weather card driven by `WeatherService.shared.fetchCurrent()`
+    /// (WeatherKit → NWS → Open-Meteo cascade, real CoreLocation fix).
+    /// Renders nothing when the snapshot is nil — empty state per
+    /// the no-mock-data doctrine. The shared `WeatherCard` view is
+    /// the same component the driver dashboard uses, so the
+    /// time-of-day fix in the card affects every role uniformly.
+    @ViewBuilder
+    private var weatherSection: some View {
+        if let w = weather {
+            WeatherCard(snapshot: w)
+        }
     }
 
     // MARK: - TopBar — eyebrow + counter + greeting + DU avatar
