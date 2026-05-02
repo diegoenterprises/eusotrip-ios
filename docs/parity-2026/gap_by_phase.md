@@ -256,11 +256,11 @@ _400 scenarios · 400 gaps_
 
 ### P1 — 400 scenarios
 
-- **S-18-01-01-A** · Dry van · Happy path · Direct shipper→driver — coverage PARTIAL; UF Y / CT ?. _Note:_ Post-delivery rating prompt screen MISSING for both shipper and driver despite backend ready
-- **S-18-01-01-B** · Dry van · Happy path · Broker-routed — coverage PARTIAL; UF Y / CT ?. _Note:_ Post-delivery rating prompt screen MISSING for both shipper and driver despite backend ready
-- **S-18-01-01-C** · Dry van · Happy path · Catalyst-managed — coverage PARTIAL; UF Y / CT ?. _Note:_ Post-delivery rating prompt screen MISSING for both shipper and driver despite backend ready
-- **S-18-01-01-D** · Dry van · Happy path · Multi-stop / chain — coverage PARTIAL; UF Y / CT ?. _Note:_ Post-delivery rating prompt screen MISSING for both shipper and driver despite backend ready
-- **S-18-01-02-A** · Dry van · Weather delay · Direct shipper→driver — coverage PARTIAL; UF Y / CT ?. _Note:_ Post-delivery rating prompt screen MISSING for both shipper and driver despite backend ready
+- **S-18-01-01-A** · Dry van · Happy path · Direct shipper→driver — coverage PARTIAL; UF Y / CT ?. _Note:_ Driver side ships in 025_Paperwork (counterparty rating with 5-star overall + 4 axis breakdown + comment + anonymous toggle). Shipper side fast-follow — pending settlement→loadId resolution wiring inside 227_ShipperSettlementDetail.
+- **S-18-01-01-B** · Dry van · Happy path · Broker-routed — coverage PARTIAL; UF Y / CT ?. _Note:_ Driver side ships in 025_Paperwork (counterparty rating with 5-star overall + 4 axis breakdown + comment + anonymous toggle). Shipper side fast-follow — pending settlement→loadId resolution wiring inside 227_ShipperSettlementDetail.
+- **S-18-01-01-C** · Dry van · Happy path · Catalyst-managed — coverage PARTIAL; UF Y / CT ?. _Note:_ Driver side ships in 025_Paperwork (counterparty rating with 5-star overall + 4 axis breakdown + comment + anonymous toggle). Shipper side fast-follow — pending settlement→loadId resolution wiring inside 227_ShipperSettlementDetail.
+- **S-18-01-01-D** · Dry van · Happy path · Multi-stop / chain — coverage PARTIAL; UF Y / CT ?. _Note:_ Driver side ships in 025_Paperwork (counterparty rating with 5-star overall + 4 axis breakdown + comment + anonymous toggle). Shipper side fast-follow — pending settlement→loadId resolution wiring inside 227_ShipperSettlementDetail.
+- **S-18-01-02-A** · Dry van · Weather delay · Direct shipper→driver — coverage PARTIAL; UF Y / CT ?. _Note:_ Driver side ships in 025_Paperwork (counterparty rating with 5-star overall + 4 axis breakdown + comment + anonymous toggle). Shipper side fast-follow — pending settlement→loadId resolution wiring inside 227_ShipperSettlementDetail.
 - _… and 395 more (see scenarios.csv)_
 
 

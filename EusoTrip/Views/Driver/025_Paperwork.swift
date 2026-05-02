@@ -27,6 +27,12 @@ struct Paperwork: View {
     @State private var activeLoad: Load?
     @State private var showBol: Bool = false
     @State private var isStartingBreak: Bool = false
+    /// Driver rates the shipper after delivery. Closes Phase 18
+    /// (Rating / review) of the 8000-scenario parity audit
+    /// (docs/parity-2026/EXECUTIVE_VERDICT.md §4.5). Backend
+    /// `ratings.submit` has shipped since the 90th firing — the
+    /// missing piece was the iOS prompt screen.
+    @State private var showRateShipper: Bool = false
 
     enum Register { case night, afternoon }
     let register: Register
@@ -293,30 +299,70 @@ struct Paperwork: View {
     // MARK: Footer CTAs
 
     private var footerActions: some View {
-        HStack(spacing: Space.s3) {
-            Button { showBol = true } label: {
-                Text("View BOL")
-                    .font(EType.body.weight(.semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(palette.bgCard)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(palette.borderSoft)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        VStack(spacing: Space.s3) {
+            // Counterparty rating CTA — only renders once. Skipping
+            // is fine; the prompt re-fires on the next delivered
+            // load. Server rejects duplicate ratings per
+            // (fromUserId × toUserId × loadId).
+            Button { showRateShipper = true } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text("Rate this shipper")
+                        .font(EType.body).fontWeight(.semibold)
+                        .foregroundStyle(palette.textPrimary)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .padding(.horizontal, Space.s4)
+                .padding(.vertical, 12)
+                .background(palette.bgCard)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(LinearGradient.diagonal.opacity(0.4))
+                )
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
-            .sheet(isPresented: $showBol) {
-                PickupBolSigning()
-                    .environment(\.palette, palette)
-                    .eusoSheetX()
+            .buttonStyle(.plain)
+            .sheet(isPresented: $showRateShipper) {
+                RatingPromptView(
+                    direction: .driverRatesShipper,
+                    counterpartyId: String(activeLoad?.shipperId ?? 0),
+                    counterpartyName: nil,
+                    loadId: lifecycle.loadId.isEmpty ? "0" : lifecycle.loadId,
+                    laneSummary: paperworkLaneSummary
+                )
+                .environment(\.palette, palette)
             }
 
-            CTAButton(
-                title: "Start 10-hour break",
-                action: { Task { await startBreak() } },
-                isLoading: isStartingBreak
-            )
+            HStack(spacing: Space.s3) {
+                Button { showBol = true } label: {
+                    Text("View BOL")
+                        .font(EType.body.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .background(palette.bgCard)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                .strokeBorder(palette.borderSoft)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                }
+                .sheet(isPresented: $showBol) {
+                    PickupBolSigning()
+                        .environment(\.palette, palette)
+                        .eusoSheetX()
+                }
+
+                CTAButton(
+                    title: "Start 10-hour break",
+                    action: { Task { await startBreak() } },
+                    isLoading: isStartingBreak
+                )
+            }
         }
     }
 
@@ -327,6 +373,24 @@ struct Paperwork: View {
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
         activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+    }
+
+    /// Origin → Destination shorthand for the rating prompt. Falls
+    /// through to nil so the prompt's header card collapses cleanly
+    /// when neither side of the lane is hydrated yet.
+    private var paperworkLaneSummary: String? {
+        guard let load = activeLoad else { return nil }
+        let parts: [String] = {
+            var out: [String] = []
+            if let p = load.pickupLocation, !p.city.isEmpty {
+                out.append("\(p.city), \(p.state)")
+            }
+            if let d = load.deliveryLocation, !d.city.isEmpty {
+                out.append("\(d.city), \(d.state)")
+            }
+            return out
+        }()
+        return parts.isEmpty ? nil : parts.joined(separator: " → ")
     }
 
     private func startBreak() async {

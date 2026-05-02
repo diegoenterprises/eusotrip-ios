@@ -383,11 +383,11 @@
       "_label": "Rating / review",
       "default": {
         "eusotrip": "PARTIAL",
-        "evidence": "ratings.submit (ratings.ts:155) — backend exists; iOS prompt screen MISSING both sides",
+        "evidence": "ratings.submit (ratings.ts:155); RatingPromptView.swift; RatingsAPI.submit wrapper; 025_Paperwork.swift driver-side prompt wired (driverRatesShipper direction)",
         "uber_freight": "Y",
         "cloudtrucks": "?",
         "severity": "P1",
-        "gap_note": "Post-delivery rating prompt screen MISSING for both shipper and driver despite backend ready"
+        "gap_note": "Driver side ships in 025_Paperwork (counterparty rating with 5-star overall + 4 axis breakdown + comment + anonymous toggle). Shipper side fast-follow — pending settlement→loadId resolution wiring inside 227_ShipperSettlementDetail."
       }
     },
     "19": {

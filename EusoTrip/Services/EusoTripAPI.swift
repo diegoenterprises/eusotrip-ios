@@ -8482,6 +8482,65 @@ struct RatingsAPI {
         )
     }
 
+    // MARK: - Submit (rate the counterparty)
+
+    /// Acknowledge envelope from `ratings.submit`. Server returns the
+    /// new row id + the timestamp it was persisted. Used by the
+    /// post-delivery rating-prompt sheets on both shipper and driver.
+    struct SubmitAck: Decodable, Hashable {
+        let id: String?
+        let success: Bool?
+        let submittedBy: Int?
+        let submittedAt: String?
+    }
+
+    /// Categories the server accepts in the per-axis ratings map.
+    /// Mirrors `ratingCategorySchema` on the backend (ratings.ts).
+    /// Bound here as a string set so callers can pass a
+    /// `[String: Int]` without a separate enum dependency.
+    static let categoryKeys: Set<String> = [
+        "communication", "professionalism", "delivery_quality",
+        "timeliness", "equipment_condition", "payment_promptness"
+    ]
+
+    /// `ratings.submit` — caller leaves a 1-5 overall (required) +
+    /// optional per-axis scores + optional 500-char comment +
+    /// optional anonymity. Server enforces no-self-rating + one
+    /// rating per (fromUserId × toUserId × loadId) tuple. Wired to
+    /// the post-delivery prompt sheets on both shipper and driver.
+    @discardableResult
+    func submit(
+        entityType: String,
+        entityId: String,
+        loadId: String,
+        overallRating: Int,
+        categories: [String: Int]? = nil,
+        comment: String? = nil,
+        anonymous: Bool = false
+    ) async throws -> SubmitAck {
+        struct Input: Encodable {
+            let entityType: String
+            let entityId: String
+            let loadId: String
+            let overallRating: Int
+            let categories: [String: Int]?
+            let comment: String?
+            let anonymous: Bool
+        }
+        return try await api.mutation(
+            "ratings.submit",
+            input: Input(
+                entityType: entityType,
+                entityId: entityId,
+                loadId: loadId,
+                overallRating: overallRating,
+                categories: categories,
+                comment: comment,
+                anonymous: anonymous
+            )
+        )
+    }
+
     // MARK: - Respond / report
 
     struct RespondResult: Decodable, Equatable {
