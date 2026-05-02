@@ -82,6 +82,12 @@ struct ShipperLoadDetail: View {
     @State private var podError: String? = nil
     @State private var podToast: String? = nil
 
+    /// Phase 8 (Pre-trip / driver readiness) — assigned-driver
+    /// eligibility envelope from loads.getAssignedDriverReadiness.
+    /// Hydrates alongside the load detail; stays nil for unassigned
+    /// loads so the card renders an honest "no driver yet" state.
+    @State private var driverReadiness: LoadsAPI.DriverReadiness? = nil
+
     private var lifecycleVertical: TripVertical {
         TripVertical(role: session.user?.role)
     }
@@ -106,6 +112,7 @@ struct ShipperLoadDetail: View {
                     lifecycleCard
                     moneyCard
                     carrierCard
+                    driverReadinessCard
                     documentsRow
                     contentExtras
                     ctaRow
@@ -1526,7 +1533,142 @@ struct ShipperLoadDetail: View {
         bidsStore.setLoadId(loadId)
         async let a: Void = detailStore.refresh()
         async let b: Void = bidsStore.refresh()
+        async let r: LoadsAPI.DriverReadiness? = (try? await EusoTripAPI.shared.loads.getAssignedDriverReadiness(loadId: loadId))
         _ = await (a, b)
+        let readiness = await r
+        await MainActor.run { driverReadiness = readiness }
+    }
+
+    // MARK: - Driver readiness card (Phase 8 closure)
+
+    /// Pre-pickup view of the assigned driver's eligibility. Renders
+    /// a top-line readiness score + the four cert tiles (HOS,
+    /// insurance, hazmat, TWIC). Severity coloring driven by the
+    /// server-evaluated *DaysRemaining fields so the card flashes
+    /// CLEAR / WATCH / WARN / EXPIRED without client-side parsing.
+    /// Renders an honest "no driver assigned yet" empty state when
+    /// the load hasn't been booked.
+    @ViewBuilder
+    private var driverReadinessCard: some View {
+        if let r = driverReadiness {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("DRIVER READINESS")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Spacer(minLength: 0)
+                    if let s = r.readinessScore {
+                        Text("\(s)/100")
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                            .foregroundStyle(scoreColor(s))
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(scoreColor(s).opacity(0.14),
+                                        in: Capsule())
+                    }
+                }
+                if r.driverId == nil {
+                    Text("No driver assigned yet")
+                        .font(EType.body)
+                        .foregroundStyle(palette.textSecondary)
+                } else {
+                    Text(r.driverName ?? "Driver")
+                        .font(EType.title)
+                        .foregroundStyle(palette.textPrimary)
+                    if let carrier = r.carrierName {
+                        Text("\(carrier) · USDOT \(r.carrierDot ?? "—") · MC \(r.carrierMc ?? "—")")
+                            .font(EType.mono(.micro)).tracking(0.3)
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                    HStack(spacing: 6) {
+                        readinessTile(label: "HOS",       primary: hosPrimary(r), severity: hosSeverity(r))
+                        readinessTile(label: "INSURANCE", primary: daysLabel(r.carrierInsuranceDaysRemaining), severity: daysSeverity(r.carrierInsuranceDaysRemaining))
+                        readinessTile(label: "HAZMAT",    primary: daysLabel(r.hazmatDaysRemaining),            severity: daysSeverity(r.hazmatDaysRemaining))
+                        readinessTile(label: "TWIC",      primary: daysLabel(r.twicDaysRemaining),              severity: daysSeverity(r.twicDaysRemaining))
+                    }
+                    if !r.readinessFlags.isEmpty {
+                        Text(r.readinessFlags
+                                .map { $0.uppercased() }
+                                .joined(separator: " · ")
+                                .replacingOccurrences(of: "_", with: " "))
+                            .font(EType.mono(.micro)).tracking(0.3)
+                            .foregroundStyle(Brand.warning)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Space.s4)
+            .background(palette.bgCard)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        }
+    }
+
+    private func hosPrimary(_ r: LoadsAPI.DriverReadiness) -> String {
+        guard let h = r.hosDrivingRemainingHours else { return "—" }
+        return String(format: "%.1fh", h)
+    }
+
+    private func hosSeverity(_ r: LoadsAPI.DriverReadiness) -> ReadinessSeverity {
+        if r.hosCanDrive == false { return .expired }
+        guard let h = r.hosDrivingRemainingHours else { return .neutral }
+        if h <= 0 { return .expired }
+        if h < 1 { return .warn }
+        if h < 2 { return .watch }
+        return .clear
+    }
+
+    private func daysLabel(_ days: Int?) -> String {
+        guard let d = days else { return "—" }
+        if d <= 0 { return "LAPSED" }
+        return "\(d)d"
+    }
+
+    private func daysSeverity(_ days: Int?) -> ReadinessSeverity {
+        guard let d = days else { return .neutral }
+        if d <= 0 { return .expired }
+        if d <= 7 { return .warn }
+        if d <= 30 { return .watch }
+        return .clear
+    }
+
+    private enum ReadinessSeverity {
+        case clear, watch, warn, expired, neutral
+    }
+
+    private func severityColor(_ sev: ReadinessSeverity) -> Color {
+        switch sev {
+        case .clear:   return Brand.success
+        case .watch:   return Brand.warning
+        case .warn:    return Brand.danger
+        case .expired: return Brand.danger
+        case .neutral: return palette.textSecondary
+        }
+    }
+
+    private func scoreColor(_ score: Int) -> Color {
+        if score >= 90 { return Brand.success }
+        if score >= 70 { return Brand.warning }
+        return Brand.danger
+    }
+
+    private func readinessTile(label: String, primary: String, severity: ReadinessSeverity) -> some View {
+        VStack(spacing: 2) {
+            Text(label)
+                .font(.system(size: 8, weight: .heavy)).tracking(0.8)
+                .foregroundStyle(palette.textTertiary)
+            Text(primary)
+                .font(.system(size: 13, weight: .heavy).monospacedDigit())
+                .foregroundStyle(severityColor(severity))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity)
+        .background(palette.bgCardSoft)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
     }
 }
 

@@ -150,12 +150,12 @@
     "08": {
       "_label": "Pre-trip / driver readiness",
       "default": {
-        "eusotrip": "PARTIAL",
-        "evidence": "fmcsa.getCarrier (fmcsa.ts:123); 216_ShipperCompliance; 011_PretripDVIR",
+        "eusotrip": "PASS",
+        "evidence": "fmcsa.getCarrier (fmcsa.ts:123); 216_ShipperCompliance; 011_PretripDVIR; loads.getAssignedDriverReadiness (loads.ts) RBAC-gated join procedure surfacing HOS + insurance + hazmat + TWIC days-remaining + readiness score 0-100; LoadsAPI.DriverReadiness iOS wrapper; driverReadinessCard rendered between carrierCard and documentsRow on 205_ShipperLoadDetail.",
         "uber_freight": "Y",
         "cloudtrucks": "?",
-        "severity": "P1",
-        "gap_note": "Shipper sees carrier-level FMCSA, not assigned-driver readiness (HOS clock left, insurance current, hazmat endorsement valid)"
+        "severity": "-",
+        "gap_note": "PARITY ACHIEVED. Shipper sees pre-pickup driver eligibility envelope server-evaluated: HOS clock + 3 cert expiries + carrier safety. Tile severity (CLEAR/WATCH/WARN/EXPIRED) keyed off *DaysRemaining and HOS canDrive. Empty-load envelope renders honest 'no driver yet' state. RBAC: shipper-of-record + ADMIN/SUPER_ADMIN/DISPATCH only — others rejected with 'Not authorized'."
       },
       "by_cargo": {
         "06": { "eusotrip": "PARTIAL", "gap_note": "Hazmat endorsement validity check needed" },

@@ -1321,6 +1321,55 @@ struct LoadsAPI {
         )
     }
 
+    // MARK: - Driver readiness (Phase 8 — pre-trip)
+
+    /// Mirrors the verbatim `loads.getAssignedDriverReadiness` server
+    /// projection. Closes Phase 8 of the 8000-scenario shipper↔driver
+    /// parity audit — pre-pickup view of the assigned driver's HOS
+    /// clock + insurance + hazmat + TWIC. RBAC-gated to the shipper
+    /// of record (or admin/dispatch privileged role) on the load.
+    /// Optionals everywhere — an unassigned load returns the empty
+    /// envelope so the iOS card renders an honest neutral state.
+    struct DriverReadiness: Decodable, Hashable {
+        let loadId: String
+        let driverId: Int?
+        let driverName: String?
+        let driverPhone: String?
+        let cdlNumber: String?
+        let cdlExpiry: String?
+        let cdlClass: String?
+        let hazmatEndorsed: Bool?
+        let hazmatExpiry: String?
+        let hazmatDaysRemaining: Int?
+        let twicNumber: String?
+        let twicExpiry: String?
+        let twicDaysRemaining: Int?
+        let carrierName: String?
+        let carrierDot: String?
+        let carrierMc: String?
+        let carrierInsuranceExpiry: String?
+        let carrierInsuranceDaysRemaining: Int?
+        let hosDrivingRemainingHours: Double?
+        let hosOnDutyRemainingHours: Double?
+        let hosCycleRemainingHours: Double?
+        let hosCanDrive: Bool?
+        let hosCurrentStatus: String?
+        let readinessScore: Int?
+        let readinessFlags: [String]
+    }
+
+    /// `loads.getAssignedDriverReadiness` — pre-pickup driver
+    /// eligibility envelope for the shipper-of-record. Pulls HOS
+    /// remaining + cert expiries server-side so the iOS card flashes
+    /// CLEAR / WATCH / WARN / EXPIRED without client-side parsing.
+    func getAssignedDriverReadiness(loadId: String) async throws -> DriverReadiness {
+        struct Input: Encodable { let loadId: String }
+        return try await api.query(
+            "loads.getAssignedDriverReadiness",
+            input: Input(loadId: loadId)
+        )
+    }
+
     // MARK: - Cancel mutations
 
     /// Acknowledge envelope from `loads.cancelWithReason` /

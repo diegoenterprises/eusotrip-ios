@@ -96,7 +96,7 @@ _400 scenarios · 120 gaps_
 
 ## Pre-trip / driver readiness
 
-_400 scenarios · 400 gaps_
+_400 scenarios · 148 gaps_
 
 ### P0 — 40 scenarios
 
@@ -106,15 +106,6 @@ _400 scenarios · 400 gaps_
 - **S-08-08-01-D** · Hazmat class-7 radioactive · Happy path · Multi-stop / chain — coverage MISSING; UF Y / CT ?. _Note:_ Hazmat-7 needs NRC license + dosimetry pull
 - **S-08-08-02-A** · Hazmat class-7 radioactive · Weather delay · Direct shipper→driver — coverage MISSING; UF Y / CT ?. _Note:_ Hazmat-7 needs NRC license + dosimetry pull
 - _… and 35 more (see scenarios.csv)_
-
-### P1 — 360 scenarios
-
-- **S-08-01-01-A** · Dry van · Happy path · Direct shipper→driver — coverage PARTIAL; UF Y / CT ?. _Note:_ Shipper sees carrier-level FMCSA, not assigned-driver readiness (HOS clock left, insurance current, hazmat endorsement valid)
-- **S-08-01-01-B** · Dry van · Happy path · Broker-routed — coverage PARTIAL; UF Y / CT ?. _Note:_ Shipper sees carrier-level FMCSA, not assigned-driver readiness (HOS clock left, insurance current, hazmat endorsement valid)
-- **S-08-01-01-C** · Dry van · Happy path · Catalyst-managed — coverage PARTIAL; UF Y / CT ?. _Note:_ Shipper sees carrier-level FMCSA, not assigned-driver readiness (HOS clock left, insurance current, hazmat endorsement valid)
-- **S-08-01-01-D** · Dry van · Happy path · Multi-stop / chain — coverage PARTIAL; UF Y / CT ?. _Note:_ Shipper sees carrier-level FMCSA, not assigned-driver readiness (HOS clock left, insurance current, hazmat endorsement valid)
-- **S-08-01-02-A** · Dry van · Weather delay · Direct shipper→driver — coverage PARTIAL; UF Y / CT ?. _Note:_ Shipper sees carrier-level FMCSA, not assigned-driver readiness (HOS clock left, insurance current, hazmat endorsement valid)
-- _… and 355 more (see scenarios.csv)_
 
 
 ## En-route tracking
