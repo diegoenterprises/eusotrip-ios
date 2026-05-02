@@ -302,6 +302,7 @@ final class EusoTripAPI: ObservableObject {
     lazy var messaging: MessagingAPI = MessagingAPI(api: self)
     lazy var hotZones: HotZonesAPI = HotZonesAPI(api: self)
     lazy var eld: ELDAPI = ELDAPI(api: self)
+    lazy var capabilities: CapabilitiesAPI = CapabilitiesAPI(api: self)
 
     // --- Driver-facing surfaces added to back the gamification / wallet /
     // fleet / availability screens. Each router mirrors a file under
@@ -15921,5 +15922,223 @@ extension EusoTicketAPI {
     func generateBOLFromLoad(loadId: Int) async throws -> GeneratedBOL {
         struct Input: Encodable { let loadId: Int }
         return try await api.mutation("bol.generateBOLFromLoad", input: Input(loadId: loadId))
+    }
+}
+
+// MARK: - capabilitiesRouter (hardware capability registry)
+//
+// Mirrors `frontend/server/routers/capabilities.ts` (built in the
+// follow-up backend commit). Per-tenant self-declaration of what
+// hardware each terminal / carrier / piece of equipment has, so the
+// iOS app can light up the matching feature path (NearbyInteraction
+// UWB anchors, partner camera NVR streams, dash-cam vendor passes,
+// trailer dome cams, ARKit door markers, geofence layouts) versus
+// rendering it disabled.
+//
+// Doctrine refs:
+// - `feedback_no_ceilings` — never remove a Figma affordance because
+//   backend isn't built; let the founder's tenant declare capability
+//   and the affordance lights up. Until declared, the affordance
+//   renders as "Pair hardware" (greyed) — never inert.
+// - `reference_nearby_interaction` — UWB anchor accessory data lives
+//   on `TerminalCapabilities.uwbAnchors[doorNumber]`.
+//
+// 102nd firing.
+
+struct CapabilitiesAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: - Terminal capabilities
+
+    /// One UWB anchor. `accessoryConfigData` is the manufacturer-
+    /// signed blob the iOS NI session passes to
+    /// `NINearbyAccessoryConfiguration(accessoryData:bluetoothPeerIdentifier:)`.
+    /// Servers store it base64-encoded.
+    struct UwbAnchor: Codable, Hashable {
+        let doorNumber: String
+        let vendor: String                 // "qorvo" | "nxp" | "applefindmy"
+        let accessoryConfigData: String    // base64 blob
+        let bluetoothPeerIdentifier: String?
+    }
+
+    /// One partner camera-feed source. iOS opens `streamUrl` via
+    /// WebRTC (the existing WebRTC.framework or Agora SDK once it
+    /// lands). `signalingToken` is a short-TTL JWT minted server-side
+    /// when iOS calls `media.startCamSession(doorNumber)`.
+    struct CameraFeed: Codable, Hashable {
+        let doorNumber: String
+        let vendor: String                 // "genetec" | "avigilon" | "milestone" | "rtsp"
+        let label: String?
+        let streamUrl: String?             // signaling URL or RTSP fallback
+        let signalingToken: String?
+    }
+
+    /// ARKit visual-fiducial marker per dock door. Driver phone scans
+    /// the printed QR / AprilTag, iOS resolves the marker GUID to
+    /// `doorNumber + offsetX + offsetY` so the AR overlay can place
+    /// the back-in centerline correctly.
+    struct DoorMarker: Codable, Hashable {
+        let doorNumber: String
+        let markerId: String
+        let offsetX: Double
+        let offsetY: Double
+    }
+
+    /// Capability envelope for a single terminal. Every list defaults
+    /// empty so the iOS UI's capability gating reads "nothing
+    /// declared yet" rather than crashing on missing fields.
+    struct TerminalCapabilities: Codable, Hashable {
+        let terminalId: Int
+        var uwbAnchors: [UwbAnchor]
+        var cameraFeeds: [CameraFeed]
+        var doorMarkers: [DoorMarker]
+        var yardLayoutGeoJson: String?     // GeoJSON polygon string
+
+        static var empty: TerminalCapabilities {
+            TerminalCapabilities(
+                terminalId: 0,
+                uwbAnchors: [],
+                cameraFeeds: [],
+                doorMarkers: [],
+                yardLayoutGeoJson: nil
+            )
+        }
+
+        /// Convenience: does any UWB anchor exist for `doorNumber`?
+        func hasUwbAnchor(doorNumber: String) -> Bool {
+            uwbAnchors.contains { $0.doorNumber == doorNumber }
+        }
+
+        /// Convenience: does a camera feed exist for `doorNumber`?
+        func hasCameraFeed(doorNumber: String) -> Bool {
+            cameraFeeds.contains { $0.doorNumber == doorNumber }
+        }
+
+        /// Convenience: does an ARKit marker exist for `doorNumber`?
+        func hasDoorMarker(doorNumber: String) -> Bool {
+            doorMarkers.contains { $0.doorNumber == doorNumber }
+        }
+
+        /// Convenience: does the terminal admin uploaded a yard layout
+        /// GeoJSON polygon (Option B in the yardmap options menu)?
+        var hasYardLayout: Bool {
+            (yardLayoutGeoJson?.isEmpty == false)
+        }
+    }
+
+    /// `capabilities.getTerminal` — fetch a single terminal's
+    /// capability envelope. Returns `.empty` (with the requested
+    /// terminalId) when no row exists yet so callers can render
+    /// "no hardware declared" UI uniformly.
+    func getTerminal(terminalId: Int) async throws -> TerminalCapabilities {
+        struct Input: Encodable { let terminalId: Int }
+        do {
+            return try await api.query(
+                "capabilities.getTerminal",
+                input: Input(terminalId: terminalId)
+            )
+        } catch {
+            // Backend not yet shipped → render-empty fallback so the
+            // capability-aware UI gates everything to "Pair hardware"
+            // without surfacing an error toast. Real production
+            // returns the row + an empty-shaped envelope when no
+            // declaration exists yet.
+            var empty = TerminalCapabilities.empty
+            empty = TerminalCapabilities(
+                terminalId: terminalId,
+                uwbAnchors: empty.uwbAnchors,
+                cameraFeeds: empty.cameraFeeds,
+                doorMarkers: empty.doorMarkers,
+                yardLayoutGeoJson: empty.yardLayoutGeoJson
+            )
+            return empty
+        }
+    }
+
+    /// `capabilities.setTerminal` — terminal manager / admin /
+    /// shipper-of-record persists the declared capabilities.
+    /// RBAC-gated server-side to those three roles.
+    @discardableResult
+    func setTerminal(_ caps: TerminalCapabilities) async throws -> TerminalCapabilities {
+        try await api.mutation("capabilities.setTerminal", input: caps)
+    }
+
+    // MARK: - Carrier capabilities
+
+    /// The carrier's fleet-wide dash-cam vendor (Samsara, Motive,
+    /// Garmin, Cipia, none). When set, the iOS dock-cam picker can
+    /// route the "Dash cam" source to the vendor's live-stream URL.
+    struct DashCamVendor: Codable, Hashable {
+        let vendor: String                 // "samsara" | "motive" | "garmin" | "cipia" | "none"
+        let credentialsToken: String?      // OAuth bearer token (server-only field; iOS reads boolean below)
+        let configured: Bool               // true once the vendor handshake completed
+    }
+
+    struct CarrierCapabilities: Codable, Hashable {
+        let carrierId: Int
+        var dashCam: DashCamVendor
+
+        static var empty: CarrierCapabilities {
+            CarrierCapabilities(
+                carrierId: 0,
+                dashCam: DashCamVendor(
+                    vendor: "none",
+                    credentialsToken: nil,
+                    configured: false
+                )
+            )
+        }
+    }
+
+    /// `capabilities.getMyCarrier` — driver / dispatcher /
+    /// admin-of-carrier reads their fleet's declared dash-cam
+    /// vendor. Empty envelope when no row exists.
+    func getMyCarrier() async throws -> CarrierCapabilities {
+        do {
+            return try await api.queryNoInput("capabilities.getMyCarrier")
+        } catch {
+            return CarrierCapabilities.empty
+        }
+    }
+
+    @discardableResult
+    func setMyCarrier(_ caps: CarrierCapabilities) async throws -> CarrierCapabilities {
+        try await api.mutation("capabilities.setMyCarrier", input: caps)
+    }
+
+    // MARK: - Trailer / equipment capabilities
+
+    /// Per-trailer dome cam + reefer monitoring vendor.
+    struct TrailerCapabilities: Codable, Hashable {
+        let trailerId: String
+        var domeCamVendor: String          // "sensata" | "orbcomm" | "spireon" | "none"
+        var domeCamStreamUrl: String?
+        var reeferMonitorVendor: String?
+
+        static func empty(trailerId: String) -> TrailerCapabilities {
+            TrailerCapabilities(
+                trailerId: trailerId,
+                domeCamVendor: "none",
+                domeCamStreamUrl: nil,
+                reeferMonitorVendor: nil
+            )
+        }
+    }
+
+    func getTrailer(trailerId: String) async throws -> TrailerCapabilities {
+        struct Input: Encodable { let trailerId: String }
+        do {
+            return try await api.query(
+                "capabilities.getTrailer",
+                input: Input(trailerId: trailerId)
+            )
+        } catch {
+            return TrailerCapabilities.empty(trailerId: trailerId)
+        }
+    }
+
+    @discardableResult
+    func setTrailer(_ caps: TrailerCapabilities) async throws -> TrailerCapabilities {
+        try await api.mutation("capabilities.setTrailer", input: caps)
     }
 }

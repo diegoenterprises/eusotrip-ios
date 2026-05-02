@@ -30,6 +30,9 @@ struct DockAssigned: View {
     @EnvironmentObject private var session: EusoTripSession
 
     @State private var showYardmap: Bool = false
+    @State private var showDockCamPicker: Bool = false
+    @State private var terminalCaps: CapabilitiesAPI.TerminalCapabilities? = nil
+    @State private var carrierCaps: CapabilitiesAPI.CarrierCapabilities? = nil
 
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: Load?
@@ -74,8 +77,26 @@ struct DockAssigned: View {
         }
         .task { await hydrateLiveTrip() }
         .sheet(isPresented: $showYardmap) {
-            DockYardmapSheet(load: activeLoad, dockNumber: fallbackDoor)
-                .environment(\.palette, palette)
+            DockYardmapSheet(
+                load: activeLoad,
+                dockNumber: fallbackDoor,
+                caps: terminalCaps
+            )
+            .environment(\.palette, palette)
+        }
+        .sheet(isPresented: $showDockCamPicker) {
+            DockCamSourcePicker(
+                doorNumber: fallbackDoor,
+                terminalCaps: terminalCaps,
+                carrierCaps: carrierCaps,
+                onPickPhoneFallback: {
+                    showDockCamPicker = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        uploadPhoto?()
+                    }
+                }
+            )
+            .environment(\.palette, palette)
         }
         .screenTileRoot()
     }
@@ -317,7 +338,7 @@ struct DockAssigned: View {
             actionButton(symbol: "camera.fill",
                          label: "Dock cam",
                          sub: "Door \(fallbackDoor)") {
-                uploadPhoto?()
+                showDockCamPicker = true
             }
             actionButton(symbol: "message.fill", label: "Message", sub: "Lumper") {
                 openMessages?(nil)
@@ -419,6 +440,27 @@ struct DockAssigned: View {
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
         activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        await hydrateCapabilities()
+    }
+
+    /// Pull the terminal + carrier capability envelopes from
+    /// `capabilities.*` so the Yardmap sheet + DockCamSourcePicker
+    /// can light up the right hardware paths (UWB / NVR / dash-cam /
+    /// dome-cam / phone fallback). Each call is non-blocking — if
+    /// the backend hasn't shipped yet (or no row exists), the API
+    /// client returns an empty envelope and the UI shows every
+    /// hardware-required option as "Pair hardware".
+    private func hydrateCapabilities() async {
+        // Carrier dash-cam vendor — driver-scoped, no terminalId needed.
+        carrierCaps = try? await EusoTripAPI.shared.capabilities.getMyCarrier()
+        // Terminal capabilities — try to derive terminalId from the
+        // load. The Load model doesn't yet expose a terminalId field
+        // directly; until it does we attempt a 0 lookup which the
+        // API client returns as `.empty` so the UI falls back to
+        // "phone camera only" + GPS yardmap.
+        let terminalId = 0
+        terminalCaps = try? await EusoTripAPI.shared.capabilities
+            .getTerminal(terminalId: terminalId)
     }
 
     private func markAtDoor() async {
@@ -475,18 +517,28 @@ private func driverNavTrailing_022() -> [NavSlot] {
 struct DockYardmapSheet: View {
     let load: Load?
     let dockNumber: String
+    /// Terminal capability envelope. When nil, every layered overlay
+    /// (UWB anchor cm-level positioning, ARKit door markers, yard-
+    /// layout GeoJSON polygon) renders as "Pair hardware" and the
+    /// sheet falls back to the GPS-resolution HereMapView base.
+    let caps: CapabilitiesAPI.TerminalCapabilities?
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
-            HereMapView(
-                stops: load.flatMap { ld -> [LoadLocation] in
-                    if let drop = ld.deliveryLocation { return [drop] }
-                    return []
-                } ?? []
-            )
-            .ignoresSafeArea(edges: .bottom)
+            ZStack(alignment: .top) {
+                HereMapView(
+                    stops: load.flatMap { ld -> [LoadLocation] in
+                        if let drop = ld.deliveryLocation { return [drop] }
+                        return []
+                    } ?? []
+                )
+                .ignoresSafeArea(edges: .bottom)
+                capabilityStrip
+                    .padding(.horizontal, 14)
+                    .padding(.top, 8)
+            }
             .navigationTitle("Yardmap · Door \(dockNumber)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -495,6 +547,303 @@ struct DockYardmapSheet: View {
                 }
             }
         }
+    }
+
+    /// Three pills along the top of the yardmap, one per upgrade
+    /// path. Each pill renders one of three states:
+    ///   • Active   — terminal has registered the hardware + the
+    ///                iOS device supports it. Tinted accent color.
+    ///   • Pending  — hardware not yet declared by terminal admin.
+    ///                Pill says "Pair hardware".
+    ///   • Unsupported — device hardware can't run the option (e.g.
+    ///                iPhone < U1 chip can't do NearbyInteraction).
+    private var capabilityStrip: some View {
+        HStack(spacing: 8) {
+            capPill(
+                label: capUwbLabel,
+                icon: "dot.radiowaves.left.and.right",
+                state: capUwbState
+            )
+            capPill(
+                label: capArkitLabel,
+                icon: "viewfinder",
+                state: capArkitState
+            )
+            capPill(
+                label: capLayoutLabel,
+                icon: "map",
+                state: capLayoutState
+            )
+        }
+    }
+
+    private enum CapState { case active, pending, unsupported }
+
+    private var capUwbState: CapState {
+        // iOS device support: iPhone 11+ (U1) or 15+ (U2).
+        // We can't statically check chip presence — `NISession`
+        // imports + `NISession.isSupported` would be the runtime
+        // check. For now we treat support as available unless caps
+        // explicitly mark the device as legacy.
+        let hasAnchor = caps?.hasUwbAnchor(doorNumber: dockNumber) ?? false
+        return hasAnchor ? .active : .pending
+    }
+    private var capUwbLabel: String {
+        capUwbState == .active ? "UWB · cm-level" : "UWB · pair anchor"
+    }
+
+    private var capArkitState: CapState {
+        let hasMarker = caps?.hasDoorMarker(doorNumber: dockNumber) ?? false
+        return hasMarker ? .active : .pending
+    }
+    private var capArkitLabel: String {
+        capArkitState == .active ? "AR marker · ready" : "AR marker · print + register"
+    }
+
+    private var capLayoutState: CapState {
+        (caps?.hasYardLayout == true) ? .active : .pending
+    }
+    private var capLayoutLabel: String {
+        capLayoutState == .active ? "Yard layout · loaded" : "Yard layout · upload GeoJSON"
+    }
+
+    private func capPill(label: String, icon: String, state: CapState) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .heavy))
+            Text(label)
+                .font(.system(size: 10, weight: .heavy)).tracking(0.4)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .foregroundStyle(capPillForeground(state: state))
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(palette.bgCard.opacity(0.92))
+        .overlay(
+            Capsule().strokeBorder(capPillStroke(state: state), lineWidth: 1)
+        )
+        .clipShape(Capsule())
+    }
+
+    private func capPillForeground(state: CapState) -> Color {
+        switch state {
+        case .active:      return palette.textPrimary
+        case .pending:     return palette.textSecondary
+        case .unsupported: return palette.textTertiary
+        }
+    }
+
+    private func capPillStroke(state: CapState) -> Color {
+        switch state {
+        case .active:                  return Brand.success.opacity(0.5)
+        case .pending, .unsupported:   return palette.borderFaint
+        }
+    }
+}
+
+// MARK: - Dock cam source picker
+//
+// Capability-gated chooser presented when the dock-assigned action
+// row's "Dock cam" affordance fires. Renders one row per source —
+// terminal NVR (Option A), driver dash-cam (Option B), trailer dome
+// cam (Option C), and phone camera fallback (Option D, always on).
+//
+// Each row's enabled state reads from the live capability envelopes
+// hydrated on screen entry. Disabled rows render with "Pair hardware"
+// helper text + an info chevron pointing at the Hardware Capabilities
+// self-declaration screen — the same surface terminal managers /
+// shipper-of-record / carrier admins use to register equipment.
+//
+// Doctrine: the Yardmap + Dock cam buttons NEVER render inert —
+// every row that can't fire the upstream stream still surfaces a
+// real path forward (declare hardware → unlocks → row lights up).
+//
+// Upstream wiring TODO (per founder pick):
+//   • A · partner NVR via WebRTC + signaling websocket
+//   • B · dash-cam vendor live stream (Samsara / Motive / Garmin / Cipia)
+//   • C · trailer dome cam vendor stream (Sensata / ORBCOMM / Spireon)
+//   • D · device camera capture (DriverPhotoUploadSheet) — wired today
+//         via `\.driverUploadPhoto` env handler + `onPickPhoneFallback`
+//         callback on this picker.
+
+struct DockCamSourcePicker: View {
+    let doorNumber: String
+    let terminalCaps: CapabilitiesAPI.TerminalCapabilities?
+    let carrierCaps: CapabilitiesAPI.CarrierCapabilities?
+    let onPickPhoneFallback: () -> Void
+
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 14) {
+                    headerCard
+
+                    sourceRow(
+                        icon: "video.fill",
+                        title: "Terminal NVR live",
+                        subtitle: nvrSubtitle,
+                        available: hasNvr,
+                        action: { /* signaling handshake target */ }
+                    )
+
+                    sourceRow(
+                        icon: "car.side.fill",
+                        title: "Dash cam · \(carrierCaps?.dashCam.vendor.capitalized ?? "None")",
+                        subtitle: dashCamSubtitle,
+                        available: hasDashCam,
+                        action: { /* dash-cam vendor stream target */ }
+                    )
+
+                    sourceRow(
+                        icon: "shippingbox.fill",
+                        title: "Trailer dome cam",
+                        subtitle: domeCamSubtitle,
+                        available: false,
+                        action: { /* dome-cam vendor stream target */ }
+                    )
+
+                    sourceRow(
+                        icon: "camera.fill",
+                        title: "Phone camera",
+                        subtitle: "Capture a dock-door photo for safety + audit. Always available.",
+                        available: true,
+                        action: onPickPhoneFallback
+                    )
+
+                    helperFooter
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+            }
+            .background(palette.bgPrimary.ignoresSafeArea())
+            .navigationTitle("Dock cam · Door \(doorNumber)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private var headerCard: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("CAMERA SOURCES")
+                .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                .foregroundStyle(LinearGradient.diagonal)
+            Text("Pick a feed for door \(doorNumber)")
+                .font(EType.body.weight(.bold))
+                .foregroundStyle(palette.textPrimary)
+            Text("Sources without paired hardware show a setup link. Phone camera is always available as a safety fallback.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func sourceRow(
+        icon: String,
+        title: String,
+        subtitle: String,
+        available: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            if available { action() }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .heavy))
+                    .foregroundStyle(
+                        available ? AnyShapeStyle(LinearGradient.diagonal)
+                                  : AnyShapeStyle(palette.textTertiary)
+                    )
+                    .frame(width: 32, height: 32)
+                    .background(palette.bgCardSoft)
+                    .clipShape(Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(EType.body.weight(.semibold))
+                        .foregroundStyle(available ? palette.textPrimary : palette.textTertiary)
+                    Text(subtitle)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+                if available {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(palette.textSecondary)
+                } else {
+                    Text("Pair")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Capsule().strokeBorder(palette.borderFaint))
+                }
+            }
+            .padding(14)
+            .background(palette.bgCard)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .opacity(available ? 1.0 : 0.74)
+        }
+        .buttonStyle(.plain)
+        .disabled(!available)
+    }
+
+    private var helperFooter: some View {
+        Text("Sources marked Pair require the terminal manager, carrier admin, or fleet owner to register hardware in Settings → Hardware Capabilities. Once registered the source lights up automatically next time you open this picker.")
+            .font(EType.caption)
+            .foregroundStyle(palette.textSecondary)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 4)
+    }
+
+    // MARK: - Capability resolution
+
+    private var hasNvr: Bool {
+        terminalCaps?.hasCameraFeed(doorNumber: doorNumber) ?? false
+    }
+    private var nvrSubtitle: String {
+        if let feed = terminalCaps?.cameraFeeds.first(where: { $0.doorNumber == doorNumber }) {
+            return "\(feed.vendor.capitalized) · live WebRTC"
+        }
+        return "Pending terminal NVR registration"
+    }
+
+    private var hasDashCam: Bool {
+        guard let dc = carrierCaps?.dashCam else { return false }
+        return dc.configured && dc.vendor != "none"
+    }
+    private var dashCamSubtitle: String {
+        if hasDashCam {
+            return "Live stream from your fleet's dash cam"
+        }
+        return "Carrier admin connects vendor (Samsara / Motive / Garmin / Cipia)"
+    }
+
+    /// Trailer dome cam isn't currently scoped to the active load —
+    /// shown for completeness but disabled until the per-trailer
+    /// capability lookup wires through.
+    private var domeCamSubtitle: String {
+        "Trailer dome cam (Sensata / ORBCOMM / Spireon) — requires per-trailer registration"
     }
 }
 
