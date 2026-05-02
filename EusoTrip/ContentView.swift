@@ -777,6 +777,20 @@ enum ScreenRegistry {
                 )
             }
         )
+        // 2026-05-01 — Broker surface knock-down: register the 5
+        // remaining broker screens. Slots 401 and 402 already hold a
+        // canonical screen each (Tenders board and Tender Detail), so
+        // sibling surfaces use the `Nb` suffix (`401b`, `402b`) the
+        // same way Shipper handles 228/229/230 dual-file slots. 402b
+        // and 403 take a `loadId` (and 403 a `catalystId`); we pass
+        // the `"0"` sentinel for registry-walker entry — production
+        // navigation always reaches them with real IDs via sheet /
+        // push handoff from 401 or 402.
+        list.append(.init(id: "401b", title: "Broker · Load Board",       role: .broker) { p in AnyView(BrokerLoadBoardScreen(theme: p)) })
+        list.append(.init(id: "402b", title: "Broker · Carrier Vet",      role: .broker) { p in AnyView(BrokerCarrierVetScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "403",  title: "Broker · Tender to Carrier", role: .broker) { p in AnyView(BrokerTenderToCarrierScreen(theme: p, loadId: "0", catalystId: "0")) })
+        list.append(.init(id: "404",  title: "Broker · Commission Queue", role: .broker) { p in AnyView(BrokerCommissionQueueScreen(theme: p)) })
+        list.append(.init(id: "405",  title: "Broker · Active Brokerages", role: .broker) { p in AnyView(BrokerActiveBrokeragesScreen(theme: p)) })
         // 2026-04-25 — eusotrip-killers 102nd firing
         // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
         // First real Catalyst-track brick lands in production. Lifts

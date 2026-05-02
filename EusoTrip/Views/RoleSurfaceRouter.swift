@@ -68,7 +68,7 @@ struct RoleSurfaceRouter: View {
             CarrierSurface(palette: palette)
 
         case .broker:
-            BrokerHomeScreen(theme: palette)
+            BrokerSurface(palette: palette)
 
         case .escort:
             EscortHomeScreen(theme: palette)
@@ -282,6 +282,61 @@ struct CarrierSurface: View {
             }
             .onReceive(NotificationCenter.default.publisher(
                 for: .eusoCarrierEsangTapped)) { _ in
+                showESang = true
+            }
+            .sheet(isPresented: $showESang) {
+                DriverESangCoachSheet()
+                    .environment(\.palette, palette)
+            }
+    }
+}
+
+// MARK: - Broker surface
+
+/// Top-level Broker container. Mirror of `ShipperSurface` /
+/// `CarrierSurface` for the BROKER role. Holds the currently-rendered
+/// broker screen ID, listens to `.eusoBrokerNavSwap` for slot taps,
+/// looks up the matching screen out of `ScreenRegistry`. RBAC: only
+/// screens where `role == .broker` are accepted; an out-of-role
+/// notification payload short-circuits to 400 home.
+struct BrokerSurface: View {
+    let palette: Theme.Palette
+
+    @EnvironmentObject var session: EusoTripSession
+    @State private var currentScreenId: String = "400"
+    @State private var showESang: Bool = false
+
+    private var current: ProductionScreen {
+        ScreenRegistry.forRole(.broker).first { $0.id == currentScreenId }
+            ?? ScreenRegistry.forRole(.broker).first { $0.id == "400" }
+            ?? ScreenRegistry.forRole(.broker).first
+            ?? ProductionScreen(id: "400",
+                                title: "Broker · Home",
+                                role: .broker) { p in
+                                    AnyView(BrokerHomeScreen(theme: p))
+                                }
+    }
+
+    var body: some View {
+        current.view(palette)
+            .id("broker-\(currentScreenId)")
+            .transition(.opacity)
+            .environment(\.brokerNavHandler) { label in
+                BrokerNavDispatcher.handle(label)
+            }
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoBrokerNavSwap)) { note in
+                guard let id = note.userInfo?["screenId"] as? String else { return }
+                guard RoleAccess.canRender(role: .broker, screenId: id) else {
+                    currentScreenId = "400"
+                    return
+                }
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    currentScreenId = id
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoBrokerEsangTapped)) { _ in
                 showESang = true
             }
             .sheet(isPresented: $showESang) {

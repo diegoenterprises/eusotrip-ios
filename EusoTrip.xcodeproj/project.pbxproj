@@ -203,6 +203,7 @@
 		D1A11111111111111111AT01 /* 802_AdminTenants.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111AT02 /* 802_AdminTenants.swift */; };
 		D1A11111111111111111BA01 /* DriverConversationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111BA02 /* DriverConversationView.swift */; };
 		D1A11111111111111111BH01 /* 400_BrokerHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111BH02 /* 400_BrokerHome.swift */; };
+		D1A11111111111111111BNC1 /* BrokerNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111BNC2 /* BrokerNavController.swift */; };
 		D1A11111111111111111BT01 /* 401_BrokerTenders.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111BT02 /* 401_BrokerTenders.swift */; };
 		D1A11111111111111111BD01 /* 402_BrokerTenderDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111BD02 /* 402_BrokerTenderDetail.swift */; };
 		D1A11111111111111111CD01 /* 302_CarrierLoadDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CD02 /* 302_CarrierLoadDetail.swift */; };
@@ -698,6 +699,7 @@
 		D1A11111111111111111AT02 /* 802_AdminTenants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 802_AdminTenants.swift; path = EusoTrip/Views/Admin/802_AdminTenants.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111BA02 /* DriverConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverConversationView.swift; sourceTree = "<group>"; };
 		D1A11111111111111111BH02 /* 400_BrokerHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 400_BrokerHome.swift; path = EusoTrip/Views/Broker/400_BrokerHome.swift; sourceTree = SOURCE_ROOT; };
+		D1A11111111111111111BNC2 /* BrokerNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BrokerNavController.swift; path = EusoTrip/Views/Broker/BrokerNavController.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111BT02 /* 401_BrokerTenders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 401_BrokerTenders.swift; path = EusoTrip/Views/Broker/401_BrokerTenders.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111BD02 /* 402_BrokerTenderDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 402_BrokerTenderDetail.swift; path = EusoTrip/Views/Broker/402_BrokerTenderDetail.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CD02 /* 302_CarrierLoadDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 302_CarrierLoadDetail.swift; path = EusoTrip/Views/Carrier/302_CarrierLoadDetail.swift; sourceTree = SOURCE_ROOT; };
@@ -1420,6 +1422,7 @@
 				D1A11111111111111111CDB2 /* 303_CarrierDispatchBoard.swift */,
 				D1A11111111111111111CDR2 /* 304_CarrierDrivers.swift */,
 				D1A11111111111111111BH02 /* 400_BrokerHome.swift */,
+				D1A11111111111111111BNC2 /* BrokerNavController.swift */,
 				D1A11111111111111111BT02 /* 401_BrokerTenders.swift */,
 				D1A11111111111111111BD02 /* 402_BrokerTenderDetail.swift */,
 				D1A11111111111111111KH02 /* 500_CatalystHome.swift */,
@@ -2195,6 +2198,7 @@
 				D1A11111111111111111CDB1 /* 303_CarrierDispatchBoard.swift in Sources */,
 				D1A11111111111111111CDR1 /* 304_CarrierDrivers.swift in Sources */,
 				D1A11111111111111111BH01 /* 400_BrokerHome.swift in Sources */,
+				D1A11111111111111111BNC1 /* BrokerNavController.swift in Sources */,
 				D1A11111111111111111BT01 /* 401_BrokerTenders.swift in Sources */,
 				D1A11111111111111111BD01 /* 402_BrokerTenderDetail.swift in Sources */,
 				D1A11111111111111111KH01 /* 500_CatalystHome.swift in Sources */,
