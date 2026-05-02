@@ -414,23 +414,71 @@ struct ShipperHome: View {
                 activeLoadsSkeleton
             case .loaded(let rows):
                 if rows.isEmpty {
-                    EusoEmptyState(
-                        systemImage: "shippingbox",
-                        title: "No active loads",
-                        subtitle: "Post a load to see it move here in real time."
-                    )
+                    activeLoadsEmptyState
                 } else {
                     activeLoadsList(rows)
                 }
             case .empty:
-                EusoEmptyState(
-                    systemImage: "shippingbox",
-                    title: "No active loads",
-                    subtitle: "Post a load to see it move here in real time."
-                )
+                activeLoadsEmptyState
             case .error(let e):
                 inlineError(e) { Task { await active.refresh() } }
             }
+        }
+    }
+
+    /// Smart empty state for the Active Loads card.
+    ///
+    /// `shippers.getActiveLoads` (line 9371 of EusoTripAPI.swift) only
+    /// returns loads in IN-FLIGHT statuses (accepted / in_transit /
+    /// dispatched / etc.) — NOT `posted`. But the dashboard counter
+    /// (`shippers.getDashboardStats.activeLoads`) DOES include posted.
+    /// So a shipper with 50 posted loads + 0 in-transit gets a "No
+    /// active loads" message even though the eyebrow says
+    /// "12 ACTIVE · 7 BIDS PENDING". That mismatch was confusing.
+    ///
+    /// New behavior: when dashboard.activeLoads > 0 but the in-flight
+    /// list is empty, render a real CTA pointing the user to 201
+    /// Loads where `shippers.getMyLoads` returns the full set
+    /// (posted + in-flight). When the dashboard is also 0, fall
+    /// through to the original "post a load" prompt.
+    @ViewBuilder
+    private var activeLoadsEmptyState: some View {
+        let dashStats: ShipperAPI.DashboardStats? = dashboard.state.value ?? nil
+        let dashActive = dashStats?.activeLoads ?? 0
+        if dashActive > 0 {
+            Button {
+                NotificationCenter.default.post(
+                    name: .eusoShipperLoadListOpen, object: nil
+                )
+            } label: {
+                VStack(spacing: Space.s2) {
+                    Image(systemName: "shippingbox.fill")
+                        .font(.system(size: 28, weight: .semibold))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text("\(dashActive) loads awaiting carriers")
+                        .font(EType.h2)
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Tap to see your full loads board.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Space.s5)
+                .background(palette.bgCard)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                        .strokeBorder(LinearGradient.diagonal, lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            }
+            .buttonStyle(.plain)
+        } else {
+            EusoEmptyState(
+                systemImage: "shippingbox",
+                title: "No active loads",
+                subtitle: "Post a load to see it move here in real time."
+            )
         }
     }
 
