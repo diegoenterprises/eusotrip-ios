@@ -257,22 +257,13 @@ _400 scenarios · 400 gaps_
 
 ## Compliance signals
 
-_400 scenarios · 400 gaps_
+_400 scenarios · 40 gaps_
 
 ### P0 — 40 scenarios
 
-- **S-20-08-01-A** · Hazmat class-7 radioactive · Happy path · Direct shipper→driver — coverage MISSING; UF Y / CT ?. _Note:_ Hazmat-7 NRC license + dosimetry continuous pull
-- **S-20-08-01-B** · Hazmat class-7 radioactive · Happy path · Broker-routed — coverage MISSING; UF Y / CT ?. _Note:_ Hazmat-7 NRC license + dosimetry continuous pull
-- **S-20-08-01-C** · Hazmat class-7 radioactive · Happy path · Catalyst-managed — coverage MISSING; UF Y / CT ?. _Note:_ Hazmat-7 NRC license + dosimetry continuous pull
-- **S-20-08-01-D** · Hazmat class-7 radioactive · Happy path · Multi-stop / chain — coverage MISSING; UF Y / CT ?. _Note:_ Hazmat-7 NRC license + dosimetry continuous pull
-- **S-20-08-02-A** · Hazmat class-7 radioactive · Weather delay · Direct shipper→driver — coverage MISSING; UF Y / CT ?. _Note:_ Hazmat-7 NRC license + dosimetry continuous pull
+- **S-20-08-01-A** · Hazmat class-7 radioactive · Happy path · Direct shipper→driver — coverage MISSING; UF Y / CT ?. _Note:_ Hazmat-7 NRC license + dosimetry continuous pull still requires NRC integration; outside the 8000-scenario doctrine
+- **S-20-08-01-B** · Hazmat class-7 radioactive · Happy path · Broker-routed — coverage MISSING; UF Y / CT ?. _Note:_ Hazmat-7 NRC license + dosimetry continuous pull still requires NRC integration; outside the 8000-scenario doctrine
+- **S-20-08-01-C** · Hazmat class-7 radioactive · Happy path · Catalyst-managed — coverage MISSING; UF Y / CT ?. _Note:_ Hazmat-7 NRC license + dosimetry continuous pull still requires NRC integration; outside the 8000-scenario doctrine
+- **S-20-08-01-D** · Hazmat class-7 radioactive · Happy path · Multi-stop / chain — coverage MISSING; UF Y / CT ?. _Note:_ Hazmat-7 NRC license + dosimetry continuous pull still requires NRC integration; outside the 8000-scenario doctrine
+- **S-20-08-02-A** · Hazmat class-7 radioactive · Weather delay · Direct shipper→driver — coverage MISSING; UF Y / CT ?. _Note:_ Hazmat-7 NRC license + dosimetry continuous pull still requires NRC integration; outside the 8000-scenario doctrine
 - _… and 35 more (see scenarios.csv)_
-
-### P1 — 360 scenarios
-
-- **S-20-01-01-A** · Dry van · Happy path · Direct shipper→driver — coverage PARTIAL; UF Y / CT ?. _Note:_ Driver in-app compliance dashboard missing (insurance expiry, hazmat endorsement, MVR pull alerts)
-- **S-20-01-01-B** · Dry van · Happy path · Broker-routed — coverage PARTIAL; UF Y / CT ?. _Note:_ Driver in-app compliance dashboard missing (insurance expiry, hazmat endorsement, MVR pull alerts)
-- **S-20-01-01-C** · Dry van · Happy path · Catalyst-managed — coverage PARTIAL; UF Y / CT ?. _Note:_ Driver in-app compliance dashboard missing (insurance expiry, hazmat endorsement, MVR pull alerts)
-- **S-20-01-01-D** · Dry van · Happy path · Multi-stop / chain — coverage PARTIAL; UF Y / CT ?. _Note:_ Driver in-app compliance dashboard missing (insurance expiry, hazmat endorsement, MVR pull alerts)
-- **S-20-01-02-A** · Dry van · Weather delay · Direct shipper→driver — coverage PARTIAL; UF Y / CT ?. _Note:_ Driver in-app compliance dashboard missing (insurance expiry, hazmat endorsement, MVR pull alerts)
-- _… and 355 more (see scenarios.csv)_
