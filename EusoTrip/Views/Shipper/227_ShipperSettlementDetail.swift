@@ -179,6 +179,11 @@ struct ShipperSettlementDetail: View {
     @State private var showDispute: Bool = false
     @State private var disputeReason: String = ""
     @State private var showAck: Bool = false
+    /// Phase 18 closure: shipper rates the driver after the settlement
+    /// clears. Sheet renders RatingPromptView in shipperRatesDriver
+    /// direction; loadId resolves from store.phase.value.loadId now
+    /// that the backend earnings.getSettlementById ships it scalar.
+    @State private var showRateDriver: Bool = false
 
     init(settlementId: String = "0") {
         self.settlementId = settlementId
@@ -203,6 +208,22 @@ struct ShipperSettlementDetail: View {
         .task { await store.load() }
         .refreshable { await store.load() }
         .sheet(isPresented: $showDispute) { disputeSheet }
+        .sheet(isPresented: $showRateDriver) {
+            // Resolve everything the prompt needs from store.phase.
+            // loadId now ships scalar on the SettlementDetail envelope
+            // (see Phase 18 backend amendment in earnings.ts:269).
+            let detail: ShipperSettlementsAPI.SettlementDetail? = {
+                if case .loaded(let s) = store.phase { return s } else { return nil }
+            }()
+            RatingPromptView(
+                direction: .shipperRatesDriver,
+                counterpartyId: detail?.driverId ?? "0",
+                counterpartyName: detail?.driverName,
+                loadId: detail?.loadId.map(String.init) ?? "0",
+                laneSummary: nil
+            )
+            .environment(\.palette, palette)
+        }
         .onChange(of: store.lastAction ?? "") { _, v in if !v.isEmpty { showAck = true } }
         .alert("Done", isPresented: $showAck, actions: {
             Button("OK") { store.lastAction = nil }
@@ -797,6 +818,27 @@ struct ShipperSettlementDetail: View {
                     .frame(maxWidth: .infinity).padding(.vertical, 11)
                     .foregroundStyle(Brand.danger).background(palette.bgCard)
                     .overlay(Capsule().strokeBorder(Brand.danger.opacity(0.6)))
+                    .clipShape(Capsule())
+                }.buttonStyle(.plain)
+            }
+            // Phase 18 closure: shipper rates the driver after the
+            // settlement clears. Renders only when payment is in a
+            // paid / completed state — rating before the funds clear
+            // would skew the 'payment promptness' axis incorrectly.
+            if ["paid", "completed"].contains((s.status ?? "").lowercased()) {
+                Button {
+                    showRateDriver = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 12, weight: .heavy))
+                            .foregroundStyle(LinearGradient.diagonal)
+                        Text("Rate this driver").font(.system(size: 12, weight: .heavy))
+                            .foregroundStyle(palette.textPrimary)
+                    }
+                    .frame(maxWidth: .infinity).padding(.vertical, 11)
+                    .background(palette.bgCard)
+                    .overlay(Capsule().strokeBorder(LinearGradient.diagonal.opacity(0.5)))
                     .clipShape(Capsule())
                 }.buttonStyle(.plain)
             }

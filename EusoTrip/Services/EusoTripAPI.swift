@@ -15238,6 +15238,12 @@ struct ShipperSettlementsAPI {
         let status: String?
         let paidDate: String?
         let breakdown: Breakdown?
+        /// Phase 18 closure: backend earnings.getSettlementById now
+        /// returns the underlying `loadId` so the iOS shipper-side
+        /// rating prompt can derive the load anchor required by
+        /// ratings.submit (one-rating-per-from/to/load constraint).
+        /// Optional — older server builds may still omit the field.
+        let loadId: Int?
 
         struct Breakdown: Decodable, Hashable {
             let lineHaul: Double?

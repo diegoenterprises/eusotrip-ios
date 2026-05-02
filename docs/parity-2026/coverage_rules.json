@@ -372,12 +372,12 @@
     "18": {
       "_label": "Rating / review",
       "default": {
-        "eusotrip": "PARTIAL",
-        "evidence": "ratings.submit (ratings.ts:155); RatingPromptView.swift; RatingsAPI.submit wrapper; 025_Paperwork.swift driver-side prompt wired (driverRatesShipper direction)",
+        "eusotrip": "PASS",
+        "evidence": "ratings.submit (ratings.ts:155); RatingPromptView.swift one-sheet bidirectional; 025_Paperwork.swift driver-rates-shipper after delivery; 227_ShipperSettlementDetail.swift shipper-rates-driver after settlement clears. Backend amendment to earnings.getSettlementById ships loadId scalar so the shipper-side prompt can derive the load anchor required by the server's one-rating-per-from/to/load constraint.",
         "uber_freight": "Y",
         "cloudtrucks": "?",
-        "severity": "P1",
-        "gap_note": "Driver side ships in 025_Paperwork (counterparty rating with 5-star overall + 4 axis breakdown + comment + anonymous toggle). Shipper side fast-follow — pending settlement→loadId resolution wiring inside 227_ShipperSettlementDetail."
+        "severity": "-",
+        "gap_note": "PARITY ACHIEVED both sides. Driver rates shipper from 025 paperwork. Shipper rates driver from 227 settlement detail (gated on paid/completed status to avoid skewing payment-promptness axis). 5-tap stars + 4-axis breakdown + 500-char comment + anonymous toggle. Server rejects duplicate (fromUser × toUser × loadId) tuples."
       }
     },
     "19": {
