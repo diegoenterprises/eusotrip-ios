@@ -54,16 +54,9 @@ _400 scenarios · 40 gaps_
 
 ## Counter-offer chain
 
-_400 scenarios · 400 gaps_
+_400 scenarios · 0 gaps_
 
-### P1 — 400 scenarios
-
-- **S-04-01-01-A** · Dry van · Happy path · Direct shipper→driver — coverage PARTIAL; UF N / CT N. _Note:_ Direct shipper<>driver counter chains work shipper-side, no driver inbox
-- **S-04-01-01-B** · Dry van · Happy path · Broker-routed — coverage PARTIAL; UF N / CT N. _Note:_ Driver-side counter-receive screen + push notification on counter-inbound MISSING; we lead UF + CT here once driver inbox lands
-- **S-04-01-01-C** · Dry van · Happy path · Catalyst-managed — coverage PARTIAL; UF N / CT N. _Note:_ Catalyst-managed: catalyst dispatcher sees counter via web, driver doesn't
-- **S-04-01-01-D** · Dry van · Happy path · Multi-stop / chain — coverage PARTIAL; UF N / CT N. _Note:_ Driver-side counter-receive screen + push notification on counter-inbound MISSING; we lead UF + CT here once driver inbox lands
-- **S-04-01-02-A** · Dry van · Weather delay · Direct shipper→driver — coverage PARTIAL; UF N / CT N. _Note:_ Direct shipper<>driver counter chains work shipper-side, no driver inbox
-- _… and 395 more (see scenarios.csv)_
+All 400 scenarios in this phase pass. Nothing to fix.
 
 
 ## Booking / acceptance

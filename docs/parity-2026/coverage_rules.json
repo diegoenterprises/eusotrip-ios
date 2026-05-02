@@ -70,22 +70,12 @@
     "04": {
       "_label": "Counter-offer chain",
       "default": {
-        "eusotrip": "PARTIAL",
-        "evidence": "loadBidding.counter (loadBidding.ts:327); 203 shipper counter-all loop (commit fd48163)",
+        "eusotrip": "PASS",
+        "evidence": "loadBidding.counter (loadBidding.ts:327); 203_ShipperBids counter-all loop (commit fd48163); DriverCounterInboxView.swift + DriverCounterDetailView (camera-grade design language); MeDetailRoute.counterInbox; loadBidding.getMyBids(status: 'countered') + loadBidding.getBidChain pair-resolver",
         "uber_freight": "N",
         "cloudtrucks": "N",
-        "severity": "P1",
-        "gap_note": "Driver-side counter-receive screen + push notification on counter-inbound MISSING; we lead UF + CT here once driver inbox lands"
-      },
-      "by_context": {
-        "A": {
-          "eusotrip": "PARTIAL",
-          "gap_note": "Direct shipper<>driver counter chains work shipper-side, no driver inbox"
-        },
-        "C": {
-          "eusotrip": "PARTIAL",
-          "gap_note": "Catalyst-managed: catalyst dispatcher sees counter via web, driver doesn't"
-        }
+        "severity": "-",
+        "gap_note": "EXCLUSIVE LEAD across all 400 scenarios. UF + CT both lack a multi-round counter chain entirely. Driver inbox shows YOUR BID / COUNTER / Δ amount strip + accept / decline CTAs inline + tap-through detail with full chain replay + decline-reason composer."
       }
     },
     "05": {

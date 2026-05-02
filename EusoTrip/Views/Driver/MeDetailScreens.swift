@@ -64,7 +64,7 @@ enum MeAction {
 // MARK: - Route
 
 enum MeDetailRoute: String, Identifiable, CaseIterable {
-    case carrier, authority, earnings, rateSheet, documents, eusoTicket, tax, dvir, availability, missions, rewards, badges, referrals, zeun, eld, fleet, haul, news, pulse, notifications, settings, disputes
+    case carrier, authority, earnings, rateSheet, documents, eusoTicket, tax, dvir, availability, missions, rewards, badges, referrals, zeun, eld, fleet, haul, news, pulse, notifications, settings, disputes, counterInbox
 
     var id: String { rawValue }
 
@@ -92,6 +92,7 @@ enum MeDetailRoute: String, Identifiable, CaseIterable {
         case .notifications: return "Notifications"
         case .settings:      return "Settings"
         case .disputes:      return "Disputes"
+        case .counterInbox:  return "Counter Inbox"
         }
     }
 
@@ -119,6 +120,7 @@ enum MeDetailRoute: String, Identifiable, CaseIterable {
         case .notifications: return "Inbox · categories · delivery"
         case .settings:      return "Account · notifications · device"
         case .disputes:      return "Detention · accessorial · settlement disputes you're named in"
+        case .counterInbox:  return "Shipper counters waiting · accept / decline / re-counter"
         }
     }
 }
@@ -242,6 +244,7 @@ struct MeDetailContainer: View {
         case .notifications: MeNotificationsView()
         case .settings:      MeSettingsView()
         case .disputes:      DisputeListView()
+        case .counterInbox:  DriverCounterInboxView()
         }
     }
 }

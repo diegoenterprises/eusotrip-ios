@@ -8245,6 +8245,35 @@ struct LoadBiddingAPI {
         )
     }
 
+    /// MyBids envelope returned by the server when filtering — the
+    /// raw projection wraps the rows in `{ bids, total }`. The
+    /// flat-array variant above remains for legacy call sites that
+    /// expect the un-enveloped shape.
+    struct MyBidsEnvelope: Decodable {
+        let bids: [MyBid]
+        let total: Int
+    }
+
+    /// Filter my bids by status. Used by the driver counter-receive
+    /// inbox (Phase 4 of the 8000-scenario parity audit) — pulls
+    /// status='countered' rows so the driver sees every active
+    /// counter-from-shipper awaiting their action.
+    func getMyBids(
+        status: String,
+        limit: Int = 50,
+        offset: Int = 0
+    ) async throws -> MyBidsEnvelope {
+        struct Input: Encodable {
+            let status: String
+            let limit: Int
+            let offset: Int
+        }
+        return try await api.query(
+            "loadBidding.getMyBids",
+            input: Input(status: status, limit: limit, offset: offset)
+        )
+    }
+
     /// One row in the multi-round counter chain. Mirrors the verbatim
     /// `loadBids` row projection at `loadBidding.ts:604` (raw table
     /// select). Driver-side bid detail (109 MeBidDetail) walks rounds
