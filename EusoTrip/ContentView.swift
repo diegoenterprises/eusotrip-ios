@@ -622,6 +622,92 @@ enum ScreenRegistry {
         list.append(.init(id: "267", title: "Shipper · In-Transit · Live",    role: .shipper) { p in AnyView(InTransitLiveScreen(theme: p, loadId: "0")) })
         list.append(.init(id: "268", title: "Shipper · In-Transit · HOS Pause", role: .shipper) { p in AnyView(InTransitHosPauseScreen(theme: p, loadId: "0")) })
         list.append(.init(id: "269", title: "Shipper · In-Transit · Exception", role: .shipper) { p in AnyView(InTransitExceptionScreen(theme: p, loadId: "0")) })
+        // Phase 3.2 (sweep 270-399): rest of the in-build Shipper
+        // surface. 270-279 lifecycle (Delivery / Paperwork / Closed /
+        // Cancelled / Reefer Excursion) take a `loadId`. 280-289
+        // catalyst directory + detail surfaces (catalyst here = the
+        // shipper's view of carriers; some take `catalystId`).
+        // 290-299 wallet / settlements / payment / sustainability /
+        // reports surfaces. 360-369 platform-permission + error
+        // states (most are param-less or have all-default args).
+        // 380-387 RFP / contract / claims composer (take rfpId /
+        // contractId / loadId where required). 390-399 notifications
+        // + search + quotes + role-pick + KYB / email-verify states.
+        // Every loadId/catalystId/settlementId/etc gets the `"0"`
+        // sentinel for registry-walker entry; production reaches
+        // these with real IDs via deep-link or push.
+        list.append(.init(id: "270", title: "Shipper · Delivery · Approaching",  role: .shipper) { p in AnyView(DeliveryApproachingScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "271", title: "Shipper · Delivery · At Receiver",  role: .shipper) { p in AnyView(DeliveryAtReceiverScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "272", title: "Shipper · Delivery · POD Signed",   role: .shipper) { p in AnyView(DeliveryPodSignedScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "273", title: "Shipper · Paperwork · BOL Final",   role: .shipper) { p in AnyView(PaperworkBolFinalScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "274", title: "Shipper · Paperwork · Accessorials", role: .shipper) { p in AnyView(PaperworkAccessorialsScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "275", title: "Shipper · Closed · Settlement Preview", role: .shipper) { p in AnyView(ClosedSettlementPreviewScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "276", title: "Shipper · Closed · Paid",           role: .shipper) { p in AnyView(ClosedPaidScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "277", title: "Shipper · Cancelled · Pre-Pickup",  role: .shipper) { p in AnyView(CancelledPrePickupScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "278", title: "Shipper · Cancelled · In-Transit",  role: .shipper) { p in AnyView(CancelledInTransitScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "279", title: "Shipper · Reefer Temp Excursion",   role: .shipper) { p in AnyView(ReeferTempExcursionScreen(theme: p, loadId: "0")) })
+
+        // 280-289 — Catalyst (carrier-from-shipper-view) directory
+        list.append(.init(id: "280", title: "Shipper · Catalyst Directory",      role: .shipper) { p in AnyView(CatalystDirectoryScreen(theme: p)) })
+        list.append(.init(id: "281", title: "Shipper · Catalyst Detail",         role: .shipper) { p in AnyView(CatalystDetailSummaryScreen(theme: p, catalystId: "0")) })
+        list.append(.init(id: "282", title: "Shipper · Catalyst Loads History",  role: .shipper) { p in AnyView(CatalystLoadsHistoryScreen(theme: p, catalystId: "0")) })
+        list.append(.init(id: "283", title: "Shipper · Catalyst Ratings",        role: .shipper) { p in AnyView(CatalystRatingsScreen(theme: p, catalystId: "0")) })
+        list.append(.init(id: "284", title: "Shipper · Catalyst Compliance",     role: .shipper) { p in AnyView(CatalystCompliancePeekScreen(theme: p, catalystId: "0")) })
+        list.append(.init(id: "285", title: "Shipper · Catalyst Sparkline Trend", role: .shipper) { p in AnyView(CatalystSparklineTrendScreen(theme: p, catalystId: "0")) })
+        list.append(.init(id: "286", title: "Shipper · Add Favorite Catalyst",   role: .shipper) { p in AnyView(AddFavoriteCatalystScreen(theme: p)) })
+        list.append(.init(id: "287", title: "Shipper · Catalyst Risk Flag",      role: .shipper) { p in AnyView(CatalystRiskFlagScreen(theme: p, catalystId: "0")) })
+        list.append(.init(id: "288", title: "Shipper · Catalyst Contact",        role: .shipper) { p in AnyView(CatalystContactScreen(theme: p, catalystId: "0")) })
+        list.append(.init(id: "289", title: "Shipper · Invite Catalyst",         role: .shipper) { p in AnyView(InviteCatalystScreen(theme: p)) })
+
+        // 290-299 — Wallet / Settlements / Reports
+        list.append(.init(id: "290", title: "Shipper · Wallet Home",             role: .shipper) { p in AnyView(WalletHomeScreen(theme: p)) })
+        list.append(.init(id: "291", title: "Shipper · EusoWallet Detail",       role: .shipper) { p in AnyView(EusoWalletDetailScreen(theme: p)) })
+        list.append(.init(id: "292", title: "Shipper · Settlements List",        role: .shipper) { p in AnyView(SettlementsListScreen(theme: p)) })
+        list.append(.init(id: "293", title: "Shipper · Settlement Detail",       role: .shipper) { p in AnyView(SettlementDetailScreen(theme: p, settlementId: "0")) })
+        list.append(.init(id: "294", title: "Shipper · Dispute Settlement",      role: .shipper) { p in AnyView(DisputeSettlementScreen(theme: p, settlementId: "0")) })
+        list.append(.init(id: "295", title: "Shipper · Payment Methods",         role: .shipper) { p in AnyView(PaymentMethodsScreen(theme: p)) })
+        list.append(.init(id: "296", title: "Shipper · Add Payment Method",      role: .shipper) { p in AnyView(AddPaymentMethodScreen(theme: p)) })
+        list.append(.init(id: "297", title: "Shipper · Monthly Statement",       role: .shipper) { p in AnyView(MonthlyStatementScreen(theme: p)) })
+        list.append(.init(id: "298", title: "Shipper · Sustainability",          role: .shipper) { p in AnyView(SustainabilityScreen(theme: p)) })
+        list.append(.init(id: "299", title: "Shipper · Reports",                 role: .shipper) { p in AnyView(ReportsScreen(theme: p)) })
+
+        // 360-369 — Platform / permissions / error states. These are
+        // mostly transient surfaces presented over the role surface
+        // (push permission ask, biometric unlock, force-update) —
+        // registered so deep-links (notification re-presentation,
+        // network failure recovery) can still target them.
+        list.append(.init(id: "360", title: "Shipper · Push Permission",         role: .shipper) { p in AnyView(PushPermissionScreen(theme: p)) })
+        list.append(.init(id: "361", title: "Shipper · Location Permission",     role: .shipper) { p in AnyView(LocationPermissionScreen(theme: p)) })
+        list.append(.init(id: "362", title: "Shipper · Camera Permission",       role: .shipper) { p in AnyView(CameraPermissionScreen(theme: p)) })
+        list.append(.init(id: "363", title: "Shipper · Mic Permission",          role: .shipper) { p in AnyView(MicPermissionScreen(theme: p)) })
+        list.append(.init(id: "364", title: "Shipper · Offline Banner",          role: .shipper) { p in AnyView(OfflineBannerScreen(theme: p)) })
+        list.append(.init(id: "365", title: "Shipper · Network Error Retry",     role: .shipper) { p in AnyView(NetworkErrorRetryScreen(theme: p)) })
+        list.append(.init(id: "366", title: "Shipper · Force Update",            role: .shipper) { p in AnyView(ForceUpdateScreen(theme: p)) })
+        list.append(.init(id: "367", title: "Shipper · Account Suspended",       role: .shipper) { p in AnyView(AccountSuspendedScreen(theme: p)) })
+        list.append(.init(id: "368", title: "Shipper · KYB Rejected",            role: .shipper) { p in AnyView(KybRejectedScreen(theme: p)) })
+        list.append(.init(id: "369", title: "Shipper · Background Biometric",    role: .shipper) { p in AnyView(BackgroundBiometricScreen(theme: p)) })
+
+        // 380-387 — RFP / Contracts / Claims / Reconciliation
+        list.append(.init(id: "380", title: "Shipper · RFP Inbox",               role: .shipper) { p in AnyView(RfpInboxScreen(theme: p)) })
+        list.append(.init(id: "381", title: "Shipper · RFP Detail",              role: .shipper) { p in AnyView(RfpDetailScreen(theme: p, rfpId: "0")) })
+        list.append(.init(id: "382", title: "Shipper · Contract List",           role: .shipper) { p in AnyView(ContractListScreen(theme: p)) })
+        list.append(.init(id: "383", title: "Shipper · Contract Detail",         role: .shipper) { p in AnyView(ContractDetailScreen(theme: p, contractId: "0")) })
+        list.append(.init(id: "384", title: "Shipper · Bulk Retender",           role: .shipper) { p in AnyView(BulkRetenderScreen(theme: p)) })
+        list.append(.init(id: "385", title: "Shipper · Batch Tender",            role: .shipper) { p in AnyView(BatchTenderScreen(theme: p)) })
+        list.append(.init(id: "386", title: "Shipper · Freight Claim Composer",  role: .shipper) { p in AnyView(FreightClaimComposerScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "387", title: "Shipper · Finance Reconciliation",  role: .shipper) { p in AnyView(FinanceReconciliationScreen(theme: p)) })
+
+        // 390-399 — Notifications / search / quotes / role-pick / KYB / email-verify
+        list.append(.init(id: "390", title: "Shipper · Notifications Inbox",     role: .shipper) { p in AnyView(NotificationsInboxScreen(theme: p)) })
+        list.append(.init(id: "391", title: "Shipper · Notification Detail",     role: .shipper) { p in AnyView(NotificationDetailScreen(theme: p, notificationId: "0")) })
+        list.append(.init(id: "392", title: "Shipper · Search Everything",       role: .shipper) { p in AnyView(SearchEverythingScreen(theme: p)) })
+        list.append(.init(id: "393", title: "Shipper · Search Results",          role: .shipper) { p in AnyView(SearchResultsScreen(theme: p, query: "")) })
+        list.append(.init(id: "394", title: "Shipper · Quote · Instant",         role: .shipper) { p in AnyView(QuoteInstantScreen(theme: p)) })
+        list.append(.init(id: "395", title: "Shipper · Quote · Saved",           role: .shipper) { p in AnyView(QuoteSavedScreen(theme: p)) })
+        list.append(.init(id: "396", title: "Shipper · Home · Empty State",      role: .shipper) { p in AnyView(HomeEmptyStateScreen(theme: p)) })
+        list.append(.init(id: "397", title: "Shipper · Role Pick",               role: .shipper) { p in AnyView(RolePickScreen(theme: p)) })
+        list.append(.init(id: "398", title: "Shipper · KYB Legal Entity",        role: .shipper) { p in AnyView(KybLegalEntityScreen(theme: p)) })
+        list.append(.init(id: "399", title: "Shipper · Email Verify Pending",    role: .shipper) { p in AnyView(EmailVerifyPendingScreen(theme: p)) })
         // 2026-04-25 — eusotrip-killers 100th firing
         // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
         // First real Carrier-track brick lands in production. Lifts
