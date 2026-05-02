@@ -238,6 +238,16 @@ struct ShipperSurface: View {
         current.view(palette)
             .id("shipper-\(currentScreenId)")
             .transition(.opacity)
+            // Mask the inherited driver-mode env handler — ContentView
+            // injects `driverNavHandler` on the outer container so the
+            // driver tab routes work app-wide. Without this mask the
+            // shipper user's BottomNav slots resolved to the driver
+            // closure (BottomNav.activeNavHandler picks
+            // driverNavHandler first in its priority chain) → taps
+            // fired into a no-op for shipper screens. Mask = nil
+            // forces the activeNavHandler chain to fall through to
+            // shipperNavHandler.
+            .environment(\.driverNavHandler, nil)
             .environment(\.shipperNavHandler) { label in
                 // Direct in-process dispatch — no NotificationCenter
                 // round-trip needed when this surface owns the state.
@@ -510,6 +520,8 @@ struct CarrierSurface: View {
         current.view(palette)
             .id("carrier-\(currentScreenId)")
             .transition(.opacity)
+            .environment(\.driverNavHandler, nil)
+            .environment(\.shipperNavHandler, nil)  // mask outer driver + shipper handlers
             .environment(\.carrierNavHandler) { label in
                 // In-process dispatch — same pattern as the
                 // Driver / Shipper handlers. The dispatcher posts
@@ -571,6 +583,8 @@ struct BrokerSurface: View {
         current.view(palette)
             .id("broker-\(currentScreenId)")
             .transition(.opacity)
+            .environment(\.driverNavHandler, nil)
+            .environment(\.shipperNavHandler, nil)  // mask outer driver + shipper handlers
             .environment(\.brokerNavHandler) { label in
                 BrokerNavDispatcher.handle(label)
             }
@@ -622,6 +636,8 @@ struct EscortSurface: View {
         current.view(palette)
             .id("escort-\(currentScreenId)")
             .transition(.opacity)
+            .environment(\.driverNavHandler, nil)
+            .environment(\.shipperNavHandler, nil)  // mask outer driver + shipper handlers
             .environment(\.escortNavHandler) { label in
                 EscortNavDispatcher.handle(label)
             }
@@ -672,6 +688,8 @@ struct TerminalSurface: View {
         current.view(palette)
             .id("terminal-\(currentScreenId)")
             .transition(.opacity)
+            .environment(\.driverNavHandler, nil)
+            .environment(\.shipperNavHandler, nil)  // mask outer driver + shipper handlers
             .environment(\.terminalNavHandler) { label in
                 TerminalNavDispatcher.handle(label)
             }
@@ -725,6 +743,8 @@ struct AdminSurface: View {
         current.view(palette)
             .id("admin-\(currentScreenId)")
             .transition(.opacity)
+            .environment(\.driverNavHandler, nil)
+            .environment(\.shipperNavHandler, nil)  // mask outer driver + shipper handlers
             .environment(\.adminNavHandler) { label in
                 AdminNavDispatcher.handle(label)
             }
@@ -776,6 +796,8 @@ struct DispatchSurface: View {
         current.view(palette)
             .id("dispatch-\(currentScreenId)")
             .transition(.opacity)
+            .environment(\.driverNavHandler, nil)
+            .environment(\.shipperNavHandler, nil)  // mask outer driver + shipper handlers
             .environment(\.dispatchNavHandler) { label in
                 DispatchNavDispatcher.handle(label)
             }
@@ -827,6 +849,8 @@ struct ComplianceSurface: View {
         current.view(palette)
             .id("compliance-\(currentScreenId)")
             .transition(.opacity)
+            .environment(\.driverNavHandler, nil)
+            .environment(\.shipperNavHandler, nil)  // mask outer driver + shipper handlers
             .environment(\.complianceNavHandler) { label in
                 ComplianceNavDispatcher.handle(label)
             }
