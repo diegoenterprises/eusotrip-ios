@@ -180,7 +180,7 @@ struct ShipperSettlementDetail: View {
     @State private var disputeReason: String = ""
     @State private var showAck: Bool = false
 
-    init(settlementId: String) {
+    init(settlementId: String = "0") {
         self.settlementId = settlementId
         _store = StateObject(wrappedValue: ShipperSettlementDetailStore(settlementId: settlementId))
     }

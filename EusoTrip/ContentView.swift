@@ -568,6 +568,60 @@ enum ScreenRegistry {
                 )
             }
         )
+        // 2026-05-01 — Shipper Phase 3.1 (sweep 219-269): register
+        // every in-build Shipper screen so the Shipper surface in
+        // `RoleSurfaceRouter` can navigate to all of them. Files
+        // 219-230 (Freight Claims / Rate Board / Recurring Loads /
+        // Live Tracking / Agreements / Partner Directory / Hot Zones /
+        // Document Center / Settlement Detail / BOLs / Allocations /
+        // Bid Thread) are bare `Shipper___()` Views without a Screen
+        // wrapper struct. Each is wrapped in the canonical Shell +
+        // BottomNav via `wrapShipperScreen(palette:currentSlot:)` so
+        // the bottom-nav matches the rest of the role and slot taps
+        // route through `shipperNavHandler`. The `currentSlot` arg
+        // tells the chrome which slot pill to highlight — Loads-ring
+        // surfaces (Live Tracking, Rate Board, Recurring) light Loads;
+        // compliance / partner / settings / docs surfaces light Me;
+        // detail surfaces (227, 230) leave nothing current ("off-ring").
+        list.append(.init(id: "219", title: "Shipper · Freight Claims",  role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .me) { ShipperFreightClaims() }) })
+        list.append(.init(id: "220", title: "Shipper · Rate Board",      role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .loads) { ShipperRateBoard() }) })
+        list.append(.init(id: "221", title: "Shipper · Recurring Loads", role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .loads) { ShipperRecurringLoads() }) })
+        list.append(.init(id: "222", title: "Shipper · Live Tracking",   role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .loads) { ShipperLiveTracking() }) })
+        list.append(.init(id: "223", title: "Shipper · Agreements",      role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .me)    { ShipperAgreements() }) })
+        list.append(.init(id: "224", title: "Shipper · Partner Directory", role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .me) { ShipperPartnerDirectory() }) })
+        list.append(.init(id: "225", title: "Shipper · Hot Zones",       role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .loads) { ShipperHotZones() }) })
+        list.append(.init(id: "226", title: "Shipper · Document Center", role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .me) { ShipperDocumentCenter() }) })
+        list.append(.init(id: "227", title: "Shipper · Settlement Detail", role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperSettlementDetail() }) })
+        list.append(.init(id: "228", title: "Shipper · BOLs",            role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .me) { ShipperBOLs() }) })
+        list.append(.init(id: "229", title: "Shipper · Allocations",     role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .loads) { ShipperAllocations() }) })
+        list.append(.init(id: "230", title: "Shipper · Bid Thread",      role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperBidThread(loadId: 0) }) })
+        // 250 owns its own `PostLoadDraft` `@StateObject` and is the
+        // wizard entry point. Steps 251-259 take the draft as
+        // `@ObservedObject` and are reachable only via internal
+        // wizard navigation from 250 — they're not registered in the
+        // registry because handing each a fresh draft from a non-
+        // isolated `static let` initializer would conflict with
+        // `PostLoadDraft`'s `@MainActor` isolation. The wizard owns
+        // the single draft and walks the steps in order; deep-link
+        // entry (e.g. a push notification dropping the user mid-
+        // wizard) re-enters at 250 and replays state from server.
+        list.append(.init(id: "250", title: "Shipper · Post Load · Lane",      role: .shipper) { p in AnyView(PostLoadStep1LaneScreen(theme: p)) })
+        // 260 (PostedAwaitingBids) is shelved (LoadsAPI.cancel missing)
+        // and intentionally NOT registered — see the `#if false` wrap
+        // in the file header.
+        // 261-269 lifecycle surfaces (load-context detail screens).
+        // Each takes a `loadId`; we hand `"0"` for registry-walker
+        // entry. Production reaches these via load detail or push
+        // notification deep-links with the real load ID.
+        list.append(.init(id: "261", title: "Shipper · Bidding Live Feed",  role: .shipper) { p in AnyView(BiddingLiveFeedScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "262", title: "Shipper · Awarded · Pre-Pickup", role: .shipper) { p in AnyView(AwardedPrePickupScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "263", title: "Shipper · Pickup · Approaching", role: .shipper) { p in AnyView(PickupApproachingScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "264", title: "Shipper · Pickup · At Gate",     role: .shipper) { p in AnyView(PickupAtGateScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "265", title: "Shipper · Pickup · At Dock",     role: .shipper) { p in AnyView(PickupAtDockScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "266", title: "Shipper · Pickup · BOL Signing", role: .shipper) { p in AnyView(ShipperPickupBolSigningScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "267", title: "Shipper · In-Transit · Live",    role: .shipper) { p in AnyView(InTransitLiveScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "268", title: "Shipper · In-Transit · HOS Pause", role: .shipper) { p in AnyView(InTransitHosPauseScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "269", title: "Shipper · In-Transit · Exception", role: .shipper) { p in AnyView(InTransitExceptionScreen(theme: p, loadId: "0")) })
         // 2026-04-25 — eusotrip-killers 100th firing
         // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
         // First real Carrier-track brick lands in production. Lifts

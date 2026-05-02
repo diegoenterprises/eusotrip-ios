@@ -99,3 +99,80 @@ extension Notification.Name {
     /// `nav.showESang` on the driver side.
     static let eusoShipperEsangTapped = Notification.Name("eusoShipperEsangTapped")
 }
+
+// MARK: - Slot identity (for canonical Shell+BottomNav wrapping)
+
+/// Which canonical Shipper bottom-nav slot the wrapped screen "lives
+/// in." Drives the `isCurrent` flag in the wrapped `BottomNav` so the
+/// pill highlight matches the user's mental model. See `wrapShipperScreen`.
+enum ShipperBottomNavSlot {
+    case home
+    case createLoad
+    case loads
+    case me
+    /// Detail surfaces drilled from a list — none of the four slots
+    /// is current; the user is "off-ring" and can tap back into any
+    /// slot to leave the detail.
+    case none
+}
+
+/// Wrap any bare Shipper view body in the canonical Shell + BottomNav
+/// chrome. Used by the `ScreenRegistry` registration site to register
+/// 219+ screens uniformly without one Screen wrapper struct per file.
+/// The slot-tap handler is wired through `BottomNav`'s default tap
+/// closure → env-injected `shipperNavHandler` (see `ShipperSurface`),
+/// so taps land on the right notification path automatically.
+///
+/// Implemented as a `struct` (rather than a free function) so the
+/// `@ViewBuilder content` closure is stored as a property — `Shell`
+/// retains its body builder, which requires the closure to be
+/// `@escaping`. SwiftUI's view-tree machinery handles the storage
+/// automatically when the builder lives on a `View`-conforming type.
+struct ShipperScreenWrap<Content: View>: View {
+    let palette: Theme.Palette
+    let currentSlot: ShipperBottomNavSlot
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        Shell(theme: palette) {
+            content()
+        } nav: {
+            BottomNav(
+                leading: [
+                    NavSlot(label: "Home",
+                            systemImage: "house.fill",
+                            isCurrent: currentSlot == .home),
+                    NavSlot(label: "Create Load",
+                            systemImage: "plus.rectangle.on.rectangle",
+                            isCurrent: currentSlot == .createLoad),
+                ],
+                trailing: [
+                    NavSlot(label: "Loads",
+                            systemImage: "shippingbox.fill",
+                            isCurrent: currentSlot == .loads),
+                    NavSlot(label: "Me",
+                            systemImage: "person.fill",
+                            isCurrent: currentSlot == .me),
+                ],
+                orbState: .idle
+            )
+        }
+    }
+}
+
+/// Convenience constructor used by the `ScreenRegistry` closures so
+/// the call sites read the same as before (`wrapShipperScreen(palette:
+/// currentSlot:) { Body() }`). Returns `some View` rather than the
+/// generic `ShipperScreenWrap` because the call sites immediately
+/// type-erase via `AnyView(...)`. Not main-actor-isolated because
+/// `ScreenRegistry.all` is a `static let` initializer with no actor
+/// context — the inner view body still runs on the main actor at
+/// render time (SwiftUI handles that), but the constructor itself
+/// has to be callable from the non-isolated registry initializer.
+func wrapShipperScreen<Content: View>(
+    palette: Theme.Palette,
+    currentSlot: ShipperBottomNavSlot,
+    @ViewBuilder _ content: @escaping () -> Content
+) -> some View {
+    ShipperScreenWrap(palette: palette, currentSlot: currentSlot, content: content)
+}
