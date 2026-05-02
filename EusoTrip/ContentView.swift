@@ -682,6 +682,36 @@ enum ScreenRegistry {
                 AnyView(CarrierDriversScreen(theme: p))
             }
         )
+        // 2026-05-01 — Carrier surface knock-down: register the
+        // remaining 16 carrier screens (305-320) so the carrier role
+        // surface in `RoleSurfaceRouter` can navigate to every screen
+        // the file tree already ships. Each screen wrapper is real
+        // (live store under it, no stubs) and ships with the
+        // `theme: Theme.Palette` signature the registry calls through.
+        // RBAC (`RoleAccess.canRender`) gates every cross-role swap.
+        list.append(.init(id: "305", title: "Carrier · Counter Response",  role: .carrier) { p in AnyView(CarrierCounterResponseScreen(theme: p)) })
+        list.append(.init(id: "306", title: "Carrier · Marketplace",       role: .carrier) { p in AnyView(CarrierMarketplaceScreen(theme: p)) })
+        // 307/310/311 take a `loadId` because they're context-dependent
+        // surfaces (bid against this load, assign a driver to this
+        // load, drill into this active load). When the registry walker
+        // mounts them with no upstream load, the `"0"` sentinel
+        // surfaces an honest empty state — matches 302's pattern.
+        // Production navigation always reaches these screens with a
+        // real loadId via sheet/push handoff from 301 or 306.
+        list.append(.init(id: "307", title: "Carrier · Bid Compose",       role: .carrier) { p in AnyView(CarrierBidComposeScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "308", title: "Carrier · My Bids",           role: .carrier) { p in AnyView(CarrierMyBidsScreen(theme: p)) })
+        list.append(.init(id: "309", title: "Carrier · Awarded Loads",     role: .carrier) { p in AnyView(CarrierAwardedLoadsScreen(theme: p)) })
+        list.append(.init(id: "310", title: "Carrier · Assign Driver",     role: .carrier) { p in AnyView(CarrierAssignDriverScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "311", title: "Carrier · Active Load",       role: .carrier) { p in AnyView(CarrierActiveLoadScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "312", title: "Carrier · Earnings",          role: .carrier) { p in AnyView(CarrierEarningsHomeScreen(theme: p)) })
+        list.append(.init(id: "313", title: "Carrier · Settlements",       role: .carrier) { p in AnyView(CarrierSettlementsListScreen(theme: p)) })
+        list.append(.init(id: "314", title: "Carrier · Fuel Card",         role: .carrier) { p in AnyView(CarrierFuelCardScreen(theme: p)) })
+        list.append(.init(id: "315", title: "Carrier · Maintenance",       role: .carrier) { p in AnyView(CarrierMaintenanceScreen(theme: p)) })
+        list.append(.init(id: "316", title: "Carrier · Compliance Dash",   role: .carrier) { p in AnyView(CarrierComplianceDashScreen(theme: p)) })
+        list.append(.init(id: "317", title: "Carrier · Authority",         role: .carrier) { p in AnyView(CarrierAuthorityScreen(theme: p)) })
+        list.append(.init(id: "318", title: "Carrier · ELD",               role: .carrier) { p in AnyView(CarrierELDScreen(theme: p)) })
+        list.append(.init(id: "319", title: "Carrier · Drivers List",      role: .carrier) { p in AnyView(CarrierDriversListScreen(theme: p)) })
+        list.append(.init(id: "320", title: "Carrier · Vehicles List",     role: .carrier) { p in AnyView(CarrierVehiclesListScreen(theme: p)) })
         // 2026-04-25 — eusotrip-killers 99th firing
         // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
         // First real Broker-track brick lands in production. Lifts id

@@ -209,6 +209,7 @@
 		D1A11111111111111111CDB1 /* 303_CarrierDispatchBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CDB2 /* 303_CarrierDispatchBoard.swift */; };
 		D1A11111111111111111CDR1 /* 304_CarrierDrivers.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CDR2 /* 304_CarrierDrivers.swift */; };
 		D1A11111111111111111CH01 /* 300_CarrierHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CH02 /* 300_CarrierHome.swift */; };
+		D1A11111111111111111CNC1 /* CarrierNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CNC2 /* CarrierNavController.swift */; };
 		D1A11111111111111111CL01 /* HereCurrentLocationChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CL02 /* HereCurrentLocationChip.swift */; };
 		D1A11111111111111111CR01 /* 301_CarrierLoads.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CR02 /* 301_CarrierLoads.swift */; };
 		D1A11111111111111111EH01 /* 600_EscortHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111EH02 /* 600_EscortHome.swift */; };
@@ -703,6 +704,7 @@
 		D1A11111111111111111CDB2 /* 303_CarrierDispatchBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 303_CarrierDispatchBoard.swift; path = EusoTrip/Views/Carrier/303_CarrierDispatchBoard.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CDR2 /* 304_CarrierDrivers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 304_CarrierDrivers.swift; path = EusoTrip/Views/Carrier/304_CarrierDrivers.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CH02 /* 300_CarrierHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 300_CarrierHome.swift; path = EusoTrip/Views/Carrier/300_CarrierHome.swift; sourceTree = SOURCE_ROOT; };
+		D1A11111111111111111CNC2 /* CarrierNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CarrierNavController.swift; path = EusoTrip/Views/Carrier/CarrierNavController.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CL02 /* HereCurrentLocationChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereCurrentLocationChip.swift; sourceTree = "<group>"; };
 		D1A11111111111111111CR02 /* 301_CarrierLoads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 301_CarrierLoads.swift; path = EusoTrip/Views/Carrier/301_CarrierLoads.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111EH02 /* 600_EscortHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 600_EscortHome.swift; path = EusoTrip/Views/Escort/600_EscortHome.swift; sourceTree = SOURCE_ROOT; };
@@ -1412,6 +1414,7 @@
 				D1A11111111111111111SJ02 /* 210_ShipperAnalyticsDeepDive.swift */,
 				D1A11111111111111111SK02 /* 211_ShipperSettings.swift */,
 				D1A11111111111111111CH02 /* 300_CarrierHome.swift */,
+				D1A11111111111111111CNC2 /* CarrierNavController.swift */,
 				D1A11111111111111111CR02 /* 301_CarrierLoads.swift */,
 				D1A11111111111111111CD02 /* 302_CarrierLoadDetail.swift */,
 				D1A11111111111111111CDB2 /* 303_CarrierDispatchBoard.swift */,
@@ -2186,6 +2189,7 @@
 				D1A11111111111111111SJ01 /* 210_ShipperAnalyticsDeepDive.swift in Sources */,
 				D1A11111111111111111SK01 /* 211_ShipperSettings.swift in Sources */,
 				D1A11111111111111111CH01 /* 300_CarrierHome.swift in Sources */,
+				D1A11111111111111111CNC1 /* CarrierNavController.swift in Sources */,
 				D1A11111111111111111CR01 /* 301_CarrierLoads.swift in Sources */,
 				D1A11111111111111111CD01 /* 302_CarrierLoadDetail.swift in Sources */,
 				D1A11111111111111111CDB1 /* 303_CarrierDispatchBoard.swift in Sources */,

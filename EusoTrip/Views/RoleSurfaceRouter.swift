@@ -65,7 +65,7 @@ struct RoleSurfaceRouter: View {
             ShipperSurface(palette: palette)
 
         case .catalyst:
-            CarrierHomeScreen(theme: palette)
+            CarrierSurface(palette: palette)
 
         case .broker:
             BrokerHomeScreen(theme: palette)
@@ -224,6 +224,67 @@ struct ShipperSurface: View {
                 // is role-agnostic and reads the active session for
                 // its prompt context. Shipping a separate sheet for
                 // shipper would just be a parallel implementation.
+                DriverESangCoachSheet()
+                    .environment(\.palette, palette)
+            }
+    }
+}
+
+// MARK: - Carrier surface
+
+/// Top-level Carrier (CATALYST) container. Mirror of `ShipperSurface`
+/// for the carrier role. Holds the currently-rendered carrier screen
+/// ID, listens to `.eusoCarrierNavSwap` for slot taps, and looks up
+/// the matching screen out of `ScreenRegistry`. RBAC: only screens
+/// where `role == .carrier` are accepted; an out-of-role notification
+/// payload short-circuits to 300 home.
+struct CarrierSurface: View {
+    let palette: Theme.Palette
+
+    @EnvironmentObject var session: EusoTripSession
+    @State private var currentScreenId: String = "300"
+    @State private var showESang: Bool = false
+
+    private var current: ProductionScreen {
+        ScreenRegistry.forRole(.carrier).first { $0.id == currentScreenId }
+            ?? ScreenRegistry.forRole(.carrier).first { $0.id == "300" }
+            ?? ScreenRegistry.forRole(.carrier).first
+            ?? ProductionScreen(id: "300",
+                                title: "Carrier · Home",
+                                role: .carrier) { p in
+                                    AnyView(CarrierHomeScreen(theme: p))
+                                }
+    }
+
+    var body: some View {
+        current.view(palette)
+            .id("carrier-\(currentScreenId)")
+            .transition(.opacity)
+            .environment(\.carrierNavHandler) { label in
+                // In-process dispatch — same pattern as the
+                // Driver / Shipper handlers. The dispatcher posts
+                // through NotificationCenter so per-screen helpers
+                // (e.g. row taps, deep-links from sheet bodies)
+                // can also post the same notification without
+                // needing a handle to this surface.
+                CarrierNavDispatcher.handle(label)
+            }
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoCarrierNavSwap)) { note in
+                guard let id = note.userInfo?["screenId"] as? String else { return }
+                guard RoleAccess.canRender(role: .catalyst, screenId: id) else {
+                    currentScreenId = "300"
+                    return
+                }
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    currentScreenId = id
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoCarrierEsangTapped)) { _ in
+                showESang = true
+            }
+            .sheet(isPresented: $showESang) {
                 DriverESangCoachSheet()
                     .environment(\.palette, palette)
             }
