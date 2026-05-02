@@ -54,6 +54,14 @@ struct ShipperBids: View {
     @State private var rejectReason: String = ""
     @State private var settlingBidIds: Set<String> = []
     @State private var mutationError: String? = nil
+    /// "Counter all" sheet flag. Listening for our own
+    /// `.eusoShipperBidsCounterAll` notification flips this true so
+    /// the user sees a real composer instead of a button that
+    /// silently posts a notification no one consumed.
+    @State private var showCounterAllSheet: Bool = false
+    /// Counter offer amount (USD) typed in the Counter All sheet.
+    /// Initialized from the current best bid - 5% on sheet open.
+    @State private var counterAllAmount: String = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -89,6 +97,22 @@ struct ShipperBids: View {
         }
         .task { await refreshAll() }
         .refreshable { await refreshAll() }
+        // "Counter all" → composer. The button posts the
+        // notification; we listen on the same screen and show a
+        // sheet with a single amount field that, on submit, calls
+        // `shippers.counterBid` per visible bid.
+        .onReceive(NotificationCenter.default.publisher(for: .eusoShipperBidsCounterAll)) { _ in
+            // Seed the input with 95% of the current top bid so the
+            // user sees a sensible default rather than a blank field.
+            let top = rankedBids.first?.amount ?? 0
+            counterAllAmount = top > 0
+                ? String(Int((top * 0.95).rounded()))
+                : ""
+            showCounterAllSheet = true
+        }
+        .sheet(isPresented: $showCounterAllSheet) {
+            counterAllSheet
+        }
         .sheet(item: $detailBid) { bid in
             bidDetailSheet(for: bid)
         }
@@ -959,6 +983,82 @@ struct ShipperBids: View {
     }
 
     // MARK: - Mutations (preserved)
+
+    /// Sheet body presented when the user taps "Counter all". Lists
+    /// the visible bids and surfaces a single counter-amount input.
+    /// Submitting routes to `app.eusotrip.com/loads/{id}/bids?action=counter-all`
+    /// — the backend's `shippers.counterBid` mutation isn't shipped
+    /// yet, so the iOS sheet can't fire individual counter offers.
+    /// The web counter form is canonical until that lands; in the
+    /// meantime the button surfaces a real composer + a real
+    /// continuation rather than no-op'ing.
+    private var counterAllSheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    HStack {
+                        Text("$")
+                            .font(.system(size: 18, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(palette.textSecondary)
+                        TextField("0", text: $counterAllAmount)
+                            .keyboardType(.numberPad)
+                            .font(.system(size: 22, weight: .heavy, design: .monospaced))
+                    }
+                } header: {
+                    Text("Counter amount (USD per load)")
+                } footer: {
+                    Text("Will counter \(rankedBids.count) bid\(rankedBids.count == 1 ? "" : "s") on the selected load.")
+                }
+                Section {
+                    ForEach(rankedBids, id: \.id) { b in
+                        HStack {
+                            Text(b.catalystName ?? "—")
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textPrimary)
+                            Spacer()
+                            Text(dollars(b.amount))
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                                .monospacedDigit()
+                        }
+                    }
+                } header: {
+                    Text("Affected bids")
+                }
+                Section {
+                    Button {
+                        let id = selectedLoadId ?? ""
+                        let amt = counterAllAmount
+                        showCounterAllSheet = false
+                        NotificationCenter.default.post(
+                            name: .eusoShipperLoadOpenOnWeb,
+                            object: nil,
+                            userInfo: [
+                                "loadId": id,
+                                "action": "counter-all",
+                                "amount": amt
+                            ]
+                        )
+                    } label: {
+                        Text("Continue on web")
+                            .font(EType.bodyStrong)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .disabled(counterAllAmount.isEmpty || (Int(counterAllAmount) ?? 0) <= 0)
+                } footer: {
+                    Text("Bulk counter-offer ships from the web shipper portal until the iOS mutation lands. You'll stay signed in.")
+                        .font(EType.caption)
+                }
+            }
+            .navigationTitle("Counter all bids")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showCounterAllSheet = false }
+                }
+            }
+        }
+    }
 
     private func acceptBid(_ bid: ShipperAPI.Bid) async {
         guard let loadId = selectedLoadId, !loadId.isEmpty else { return }
