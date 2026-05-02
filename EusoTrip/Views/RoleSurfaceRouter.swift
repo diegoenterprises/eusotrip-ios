@@ -84,8 +84,11 @@ struct RoleSurfaceRouter: View {
             WebContinuationSurface(role: role, palette: palette,
                                    pathSlug: "dispatch")
         case .compliance:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "compliance")
+            // Compliance has 3 native iOS files (900-902) — surfaces
+            // landed natively 2026-05-01 with the resurrection of the
+            // previously-shelved 901/902 + addition of `.compliance`
+            // to the chrome registry.
+            ComplianceSurface(palette: palette)
         case .safety:
             WebContinuationSurface(role: role, palette: palette,
                                    pathSlug: "safety")
@@ -507,6 +510,57 @@ struct AdminSurface: View {
     }
 }
 
+// MARK: - Compliance surface
+
+/// Top-level Compliance Officer container. Mirror of Shipper /
+/// Carrier / Broker / Escort / Terminal / Admin surfaces. RBAC-gated
+/// through `RoleAccess.canRender(role:.compliance)`.
+struct ComplianceSurface: View {
+    let palette: Theme.Palette
+
+    @EnvironmentObject var session: EusoTripSession
+    @State private var currentScreenId: String = "900"
+    @State private var showESang: Bool = false
+
+    private var current: ProductionScreen {
+        ScreenRegistry.forRole(.compliance).first { $0.id == currentScreenId }
+            ?? ScreenRegistry.forRole(.compliance).first { $0.id == "900" }
+            ?? ScreenRegistry.forRole(.compliance).first
+            ?? ProductionScreen(id: "900",
+                                title: "Compliance · Home",
+                                role: .compliance) { p in
+                                    AnyView(ComplianceOfficerHomeScreen(theme: p))
+                                }
+    }
+
+    var body: some View {
+        current.view(palette)
+            .id("compliance-\(currentScreenId)")
+            .transition(.opacity)
+            .environment(\.complianceNavHandler) { label in
+                ComplianceNavDispatcher.handle(label)
+            }
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoComplianceNavSwap)) { note in
+                guard let id = note.userInfo?["screenId"] as? String else { return }
+                guard RoleAccess.canRender(role: .compliance, screenId: id) else {
+                    currentScreenId = "900"
+                    return
+                }
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    currentScreenId = id
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoComplianceEsangTapped)) { _ in
+                showESang = true
+            }
+            .sheet(isPresented: $showESang) {
+                DriverESangCoachSheet().environment(\.palette, palette)
+            }
+    }
+}
+
 // MARK: - Web continuation surface (roles without an iOS surface yet)
 
 /// Real production landing for the 14 backend roles that don't ship a
@@ -665,12 +719,13 @@ enum RoleAccess {
         case .escort:                                   return [.escort]
         case .terminal, .portMaster:                    return [.terminal]
         case .admin, .superAdmin:                       return [.admin]
+        case .compliance:                               return [.compliance]
         // Roles below have no native chrome — they route to web
         // continuation in `RoleSurfaceRouter`. Empty list means
         // every cross-role swap is denied for them, which is the
         // correct outcome since their surface lives outside the
         // app entirely.
-        case .dispatch, .compliance, .safety, .factoring,
+        case .dispatch, .safety, .factoring,
              .railDispatch, .railEngineer, .railConductor,
              .shipCaptain:                              return []
         }

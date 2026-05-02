@@ -57,6 +57,7 @@ struct ProductionScreen: Identifiable {
         case escort = "Escort"
         case terminal = "Terminal"
         case admin = "Admin"
+        case compliance = "Compliance"
         var id: String { rawValue }
     }
 }
@@ -1102,39 +1103,17 @@ enum ScreenRegistry {
             }
         )
 
-#if DEBUG
-        // Phase 1 audit (eusotrip-killers §6, 2026-04-23):
-        // Role placeholders now route through the canonical `EusoEmptyState`
-        // primitive (Theme/Components/EusoEmptyState.swift) with
-        // `comingSoon: true`, per the doctrine's non-driver role stub spec.
-        // The bespoke `RolePlaceholderScreen` view is kept behind this
-        // block for any future dev-chrome demo that wants the richer
-        // gradient-orb layout, but the default role-tab activation now
-        // uses the empty-state pattern the rest of the app renders in
-        // place of mock data.
-        //
-        // 2026-04-24 hygiene: the Shipper id "200" placeholder is
-        // removed from this DEBUG block — the production Shipper
-        // Home above replaces it. Other roles still placeholder
-        // until their first real brick ships.
-        // 2026-04-25 100th firing: the Carrier id "300" placeholder
-        // is removed from this DEBUG block — the production Carrier
-        // Home above replaces it. Broker / Catalyst / Escort /
-        // Terminal / Admin still placeholder until their first real
-        // brick ships.
-        // 2026-04-25 99th firing: the Broker id "400" placeholder
-        // is removed from this DEBUG block — the production Broker
-        // Home above replaces it. Catalyst / Escort / Terminal /
-        // Admin still placeholder until their first real brick
-        // ships.
-        // 2026-04-25 102nd firing: the Catalyst id "500" placeholder
-        // is removed from this DEBUG block — the production Catalyst
-        // Home above replaces it. Escort / Terminal / Admin still
-        // placeholder until their first real brick ships.
-        // 2026-04-25 103rd firing: the Escort id "600" placeholder
-        // is removed from this DEBUG block — the production Escort
-        // Home above replaces it. Terminal / Admin still placeholder
-        // until their first real brick ships.
+        // 2026-05-01 — lifted Terminal 700-702 + Admin 800-803 OUT
+        // of the previous `#if DEBUG` block. Both role tracks have
+        // shipped real bricks against real backend procedures
+        // (`terminals.*` / `admin.*`); leaving the registry entries
+        // DEBUG-only meant signed-in Terminal Manager + Admin users
+        // saw an empty `ScreenRegistry.forRole(.terminal/.admin)` in
+        // Release builds, so `RoleSurfaceRouter`'s
+        // TerminalSurface / AdminSurface fell back to mounting just
+        // the home screen with no navigability. They now always
+        // register so the surfaces can navigate the full set in
+        // Release. Same fix landed for Compliance below (900-902).
         list.append(contentsOf: [
             // 700 Terminal Home — first real brick on the Terminal Manager
             // role track (107th eusotrip-killers firing). Replaced the
@@ -1219,8 +1198,17 @@ enum ScreenRegistry {
             // production path is 802 → sheet → AdminTenantDetail
             // (which carries the row's tenant id + preview hint).
             .init(id: "803", title: "Admin · Tenant Detail",          role: .admin)    { p in AnyView(AdminTenantDetailScreen(theme: p)) },
+
+            // Compliance Officer surface (900-902). Was previously
+            // shelved behind `#if false` in the source files due to
+            // an `OrbESang.State.alert` reference (the canonical enum
+            // ships `.idle / .listening / .thinking`). Resurrected
+            // 2026-05-01; orb cue mapped to `.idle` with the violation
+            // severity carried by per-row chips.
+            .init(id: "900", title: "Compliance · Home",             role: .compliance) { p in AnyView(ComplianceOfficerHomeScreen(theme: p)) },
+            .init(id: "901", title: "Compliance · Expiring Docs",    role: .compliance) { p in AnyView(ComplianceExpiringDocsScreen(theme: p)) },
+            .init(id: "902", title: "Compliance · Violations",       role: .compliance) { p in AnyView(ComplianceViolationsScreen(theme: p)) },
         ])
-#endif
 
         return list
     }()

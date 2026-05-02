@@ -1,14 +1,12 @@
-// SHELVED 2026-05-01 — pre-existing references to APIs that don't
-// exist on the current iOS client (e.g. LoadsAPI.cancel,
-// OrbESang.State.alert). Not registered in ScreenRegistry, so the
-// file is dead-coded today. Wrapped in `#if false` so the file
-// reference stays in the Xcode target but the body skips
-// compilation. Resurrect when the role-by-role audit reaches this
-// surface and the missing API endpoints are added.
-#if false
 //
 //  902_ComplianceViolations.swift
 //  EusoTrip — Compliance Officer · Recent violations + resolve mutation.
+//
+//  RESURRECTED 2026-05-01 — was previously shelved behind `#if false`
+//  due to a reference to `OrbESang.State.alert`, which doesn't exist
+//  in the canonical 3-case `OrbESang.State` enum. Mapped to `.idle`;
+//  the violation severity chips inside `ViolationsBody` carry the
+//  visual urgency.
 //
 
 import SwiftUI
@@ -22,7 +20,7 @@ struct ComplianceViolationsScreen: View {
                           NavSlot(label: "Drivers", systemImage: "person.3.fill", isCurrent: false)],
                 trailing: [NavSlot(label: "Audits", systemImage: "doc.text.magnifyingglass", isCurrent: true),
                            NavSlot(label: "Me", systemImage: "person", isCurrent: false)],
-                orbState: .alert
+                orbState: .idle
             )
         }
     }
@@ -133,5 +131,3 @@ private struct ViolationsBody: View {
 
 #Preview("902 · Violations · Night") { ComplianceViolationsScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
 #Preview("902 · Violations · Afternoon") { ComplianceViolationsScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
-
-#endif
