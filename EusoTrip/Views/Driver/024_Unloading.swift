@@ -392,6 +392,7 @@ struct Unloading: View {
                         ? nil : ctx.facets.deliveryFacility
                 )
                 .environment(\.palette, palette)
+                .environment(\.lifecycleAdvance, advance)
                 .environmentObject(session)
             }
         }

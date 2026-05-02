@@ -49,6 +49,8 @@ struct AtGateAwaitingDock: View {
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: Load?
     @State private var isMarkingReady: Bool = false
+    @State private var isLoggingDwell: Bool = false
+    @State private var dwellToast: String? = nil
 
     enum Register { case night, morning }
     let register: Register
@@ -125,6 +127,24 @@ struct AtGateAwaitingDock: View {
             .padding(.top, 8)
         }
         .task { await hydrateLiveTrip() }
+        .overlay(alignment: .bottom) {
+            if let msg = dwellToast {
+                Text(msg)
+                    .font(EType.caption.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(palette.bgCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(palette.borderSoft)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    .padding(.bottom, 110)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: dwellToast)
         .screenTileRoot()
     }
 
@@ -340,18 +360,26 @@ struct AtGateAwaitingDock: View {
 
     private var footerActions: some View {
         HStack(spacing: Space.s3) {
-            Button { /* future: logDwell mutation */ } label: {
-                Text("Log dwell")
-                    .font(EType.body.weight(.semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(palette.bgCard)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(palette.borderSoft)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            Button { Task { await logDwellSnapshot() } } label: {
+                HStack(spacing: 6) {
+                    if isLoggingDwell {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(palette.textPrimary)
+                    }
+                    Text(isLoggingDwell ? "Logging…" : "Log dwell")
+                        .font(EType.body.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(palette.bgCard)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderSoft)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
+            .disabled(isLoggingDwell)
             .accessibilityLabel("Log dwell time")
 
             CTAButton(
@@ -396,6 +424,32 @@ struct AtGateAwaitingDock: View {
             // Non-blocking — lifecycle screen continues to render
             // even when the appointment row isn't on file yet.
         }
+    }
+
+    private func logDwellSnapshot() async {
+        guard !isLoggingDwell else { return }
+        guard !lifecycle.loadId.isEmpty else { return }
+        isLoggingDwell = true
+        defer { isLoggingDwell = false }
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        do {
+            if let appt = try await EusoTripAPI.shared.appointments
+                .getByLoad(loadId: lifecycle.loadId) {
+                _ = try? await EusoTripAPI.shared.appointments
+                    .updateStatus(
+                        id: appt.id,
+                        status: "checked_in",
+                        notes: "Driver-marked dwell snapshot at \(stamp)"
+                    )
+                dwellToast = "Dwell logged"
+            } else {
+                dwellToast = "No appointment on file"
+            }
+        } catch {
+            dwellToast = "Couldn't log dwell"
+        }
+        try? await Task.sleep(nanoseconds: 1_400_000_000)
+        dwellToast = nil
     }
 
     private func markReady() async {

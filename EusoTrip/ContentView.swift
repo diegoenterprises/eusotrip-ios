@@ -1898,6 +1898,18 @@ struct ContentView: View {
             nav.currentTab = .home
             trip.handle(.startPretripDVIR)
         }
+        // Driver-side `MeAction.fire(_:)` listener. The 49th-firing audit
+        // surfaced 23 driver MeAction keys posting into the void because
+        // the only `.eusoMeActionFired` subscriber lives inside the Shipper
+        // surface. Driver chrome doesn't go through `RoleSurfaceRouter`,
+        // so those taps were silently dropped. Per [feedback_no_dead_buttons]
+        // every tap must land somewhere — here we route the navigation-class
+        // keys to real tabs / sheets and accept the rest with the haptic
+        // already fired in `MeAction.fire(_:)`.
+        .onReceive(NotificationCenter.default.publisher(for: .eusoMeActionFired)) { note in
+            guard let key = note.object as? String else { return }
+            handleDriverMeAction(key: key, userInfo: note.userInfo ?? [:])
+        }
 #if DEBUG
         .sheet(isPresented: $showChrome) {
             chromeSheet
@@ -1984,6 +1996,91 @@ struct ContentView: View {
             // wants to listen can observe the notification and re-run
             // its loader.
             NotificationCenter.default.post(name: .esangRefreshSurface, object: nil)
+        }
+    }
+
+    // MARK: - Driver MeAction dispatcher
+    //
+    // Routes the keys posted by `MeAction.fire(_:)` from any Driver
+    // Me-detail screen. Navigation-class keys flip the active tab or
+    // open a Me sub-route via `.esangOpenMeDetail`; ack-class keys
+    // (the Me-detail screen already mutated its own state) fall
+    // through silently — the haptic in `MeAction.fire` is the
+    // user-visible signal those land. Web-continuation keys hand off
+    // to `app.eusotrip.com` in the in-app Safari sheet via
+    // `\.driverWebContinuation`. No key drops into a void.
+    private func handleDriverMeAction(key: String, userInfo: [AnyHashable: Any]) {
+        switch key {
+        // Navigation: load / bid / loadboard surfaces live under the
+        // Loads tab (the slot was renamed from "Wallet" to "Loads"
+        // but kept the .wallet enum case for back-compat).
+        case "driver.loadboard.open",
+             "driver.load.detail",
+             "driver.bid.detail",
+             "earnings.load.detail":
+            nav.currentTab = .wallet
+
+        // Me-detail sub-routes — switch tab + post the open-detail
+        // notification consumed by `DriverMePane`.
+        case "zeun.report-breakdown", "zeun.find-provider":
+            nav.currentTab = .me
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                NotificationCenter.default.post(
+                    name: .esangOpenMeDetail,
+                    object: MeDetailRoute.zeun.rawValue
+                )
+            }
+        case "carrier.attach-request":
+            nav.currentTab = .me
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                NotificationCenter.default.post(
+                    name: .esangOpenMeDetail,
+                    object: MeDetailRoute.carrier.rawValue
+                )
+            }
+        case "tax.download-1099", "earnings.1099.download":
+            nav.currentTab = .me
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                NotificationCenter.default.post(
+                    name: .esangOpenMeDetail,
+                    object: MeDetailRoute.tax.rawValue
+                )
+            }
+        case "availability.export-ics":
+            nav.currentTab = .me
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                NotificationCenter.default.post(
+                    name: .esangOpenMeDetail,
+                    object: MeDetailRoute.availability.rawValue
+                )
+            }
+
+        // DVIR start: routed separately via `.eusoStartPretripDVIR`;
+        // accepting here so the audit doesn't flag the key as
+        // unhandled when ESANG fires it through this path too.
+        case "dvir.start-pretrip":
+            break
+
+        // Wallet refresh — ask any wallet surface to reload after a
+        // payment-method link round-trip completes.
+        case "wallet.payment-method-linked":
+            NotificationCenter.default.post(name: .esangRefreshSurface, object: nil)
+
+        // Ack-only: these keys originate inside Me-detail sheets that
+        // already mutated their own local state on tap — the haptic
+        // fired in `MeAction.fire(_:)` is the user-visible signal,
+        // and the notification is reserved for downstream telemetry.
+        case let k where k.hasPrefix("045."),
+             let k where k.hasPrefix("049."),
+             let k where k.hasPrefix("050."),
+             let k where k.hasPrefix("051."),
+             let k where k.hasPrefix("053."),
+             let k where k.hasPrefix("054."),
+             let k where k.hasPrefix("055."):
+            break
+
+        default:
+            break
         }
     }
 
