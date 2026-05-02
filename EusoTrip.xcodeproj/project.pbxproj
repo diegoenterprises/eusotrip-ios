@@ -199,6 +199,9 @@
 		D1A11111111111111111AE01 /* TileReveal.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111AE02 /* TileReveal.swift */; };
 		D1A11111111111111111AF01 /* AddPaymentAccountSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111AF02 /* AddPaymentAccountSheet.swift */; };
 		D1A11111111111111111AH01 /* 800_AdminHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111AH02 /* 800_AdminHome.swift */; };
+		D1A11111111111111111ANC1 /* AdminNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111ANC2 /* AdminNavController.swift */; };
+		D1A11111111111111111ENC1 /* EscortNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111ENC2 /* EscortNavController.swift */; };
+		D1A11111111111111111TNC1 /* TerminalNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111TNC2 /* TerminalNavController.swift */; };
 		D1A11111111111111111CT01 /* 801_AdminControlTower.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CT02 /* 801_AdminControlTower.swift */; };
 		D1A11111111111111111AT01 /* 802_AdminTenants.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111AT02 /* 802_AdminTenants.swift */; };
 		D1A11111111111111111BA01 /* DriverConversationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111BA02 /* DriverConversationView.swift */; };
@@ -695,6 +698,9 @@
 		D1A11111111111111111AE02 /* TileReveal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TileReveal.swift; sourceTree = "<group>"; };
 		D1A11111111111111111AF02 /* AddPaymentAccountSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddPaymentAccountSheet.swift; sourceTree = "<group>"; };
 		D1A11111111111111111AH02 /* 800_AdminHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 800_AdminHome.swift; path = EusoTrip/Views/Admin/800_AdminHome.swift; sourceTree = SOURCE_ROOT; };
+		D1A11111111111111111ANC2 /* AdminNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AdminNavController.swift; path = EusoTrip/Views/Admin/AdminNavController.swift; sourceTree = SOURCE_ROOT; };
+		D1A11111111111111111ENC2 /* EscortNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EscortNavController.swift; path = EusoTrip/Views/Escort/EscortNavController.swift; sourceTree = SOURCE_ROOT; };
+		D1A11111111111111111TNC2 /* TerminalNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TerminalNavController.swift; path = EusoTrip/Views/Terminal/TerminalNavController.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CT02 /* 801_AdminControlTower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 801_AdminControlTower.swift; path = EusoTrip/Views/Admin/801_AdminControlTower.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111AT02 /* 802_AdminTenants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 802_AdminTenants.swift; path = EusoTrip/Views/Admin/802_AdminTenants.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111BA02 /* DriverConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverConversationView.swift; sourceTree = "<group>"; };
@@ -1429,12 +1435,15 @@
 				D1A11111111111111111CM02 /* 501_CatalystMatches.swift */,
 				D1A11111111111111111KMD2 /* 502_CatalystMatchDetail.swift */,
 				D1A11111111111111111EH02 /* 600_EscortHome.swift */,
+				D1A11111111111111111ENC2 /* EscortNavController.swift */,
 				D1A11111111111111111EAD2 /* 601_EscortAssignmentDetail.swift */,
 				D1A11111111111111111ECM2 /* 602_EscortCorridorMap.swift */,
 				D1A11111111111111111TH02 /* 700_TerminalHome.swift */,
+				D1A11111111111111111TNC2 /* TerminalNavController.swift */,
 				D1A11111111111111111TQ02 /* 701_TerminalGateQueue.swift */,
 				D1A11111111111111111YM02 /* 702_TerminalYardMap.swift */,
 				D1A11111111111111111AH02 /* 800_AdminHome.swift */,
+				D1A11111111111111111ANC2 /* AdminNavController.swift */,
 				D1A11111111111111111CT02 /* 801_AdminControlTower.swift */,
 				D1A11111111111111111AT02 /* 802_AdminTenants.swift */,
 				D1A11111111111111111ATD2 /* 803_AdminTenantDetail.swift */,
@@ -2205,12 +2214,15 @@
 				D1A11111111111111111CM01 /* 501_CatalystMatches.swift in Sources */,
 				D1A11111111111111111KMD1 /* 502_CatalystMatchDetail.swift in Sources */,
 				D1A11111111111111111EH01 /* 600_EscortHome.swift in Sources */,
+				D1A11111111111111111ENC1 /* EscortNavController.swift in Sources */,
 				D1A11111111111111111EAD1 /* 601_EscortAssignmentDetail.swift in Sources */,
 				D1A11111111111111111ECM1 /* 602_EscortCorridorMap.swift in Sources */,
 				D1A11111111111111111TH01 /* 700_TerminalHome.swift in Sources */,
+				D1A11111111111111111TNC1 /* TerminalNavController.swift in Sources */,
 				D1A11111111111111111TQ01 /* 701_TerminalGateQueue.swift in Sources */,
 				D1A11111111111111111YM01 /* 702_TerminalYardMap.swift in Sources */,
 				D1A11111111111111111AH01 /* 800_AdminHome.swift in Sources */,
+				D1A11111111111111111ANC1 /* AdminNavController.swift in Sources */,
 				D1A11111111111111111CT01 /* 801_AdminControlTower.swift in Sources */,
 				D1A11111111111111111AT01 /* 802_AdminTenants.swift in Sources */,
 				D1A11111111111111111ATD1 /* 803_AdminTenantDetail.swift in Sources */,

@@ -71,13 +71,13 @@ struct RoleSurfaceRouter: View {
             BrokerSurface(palette: palette)
 
         case .escort:
-            EscortHomeScreen(theme: palette)
+            EscortSurface(palette: palette)
 
         case .terminal:
-            TerminalHomeScreen(theme: palette)
+            TerminalSurface(palette: palette)
 
         case .admin, .superAdmin:
-            AdminHomeScreen(theme: palette)
+            AdminSurface(palette: palette)
 
         // Roles whose iOS surface lands in a later session.
         case .dispatch:
@@ -342,6 +342,159 @@ struct BrokerSurface: View {
             .sheet(isPresented: $showESang) {
                 DriverESangCoachSheet()
                     .environment(\.palette, palette)
+            }
+    }
+}
+
+// MARK: - Escort surface
+
+/// Top-level Escort container. Pattern matches Shipper / Carrier /
+/// Broker. RBAC-gated through `RoleAccess.canRender(role:.escort)`.
+struct EscortSurface: View {
+    let palette: Theme.Palette
+
+    @EnvironmentObject var session: EusoTripSession
+    @State private var currentScreenId: String = "600"
+    @State private var showESang: Bool = false
+
+    private var current: ProductionScreen {
+        ScreenRegistry.forRole(.escort).first { $0.id == currentScreenId }
+            ?? ScreenRegistry.forRole(.escort).first { $0.id == "600" }
+            ?? ScreenRegistry.forRole(.escort).first
+            ?? ProductionScreen(id: "600",
+                                title: "Escort · Home",
+                                role: .escort) { p in
+                                    AnyView(EscortHomeScreen(theme: p))
+                                }
+    }
+
+    var body: some View {
+        current.view(palette)
+            .id("escort-\(currentScreenId)")
+            .transition(.opacity)
+            .environment(\.escortNavHandler) { label in
+                EscortNavDispatcher.handle(label)
+            }
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoEscortNavSwap)) { note in
+                guard let id = note.userInfo?["screenId"] as? String else { return }
+                guard RoleAccess.canRender(role: .escort, screenId: id) else {
+                    currentScreenId = "600"
+                    return
+                }
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    currentScreenId = id
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoEscortEsangTapped)) { _ in
+                showESang = true
+            }
+            .sheet(isPresented: $showESang) {
+                DriverESangCoachSheet().environment(\.palette, palette)
+            }
+    }
+}
+
+// MARK: - Terminal surface
+
+/// Top-level Terminal container. Pattern matches Shipper / Carrier /
+/// Broker / Escort. RBAC-gated through `RoleAccess.canRender(role:.terminal)`.
+struct TerminalSurface: View {
+    let palette: Theme.Palette
+
+    @EnvironmentObject var session: EusoTripSession
+    @State private var currentScreenId: String = "700"
+    @State private var showESang: Bool = false
+
+    private var current: ProductionScreen {
+        ScreenRegistry.forRole(.terminal).first { $0.id == currentScreenId }
+            ?? ScreenRegistry.forRole(.terminal).first { $0.id == "700" }
+            ?? ScreenRegistry.forRole(.terminal).first
+            ?? ProductionScreen(id: "700",
+                                title: "Terminal · Home",
+                                role: .terminal) { p in
+                                    AnyView(TerminalHomeScreen(theme: p))
+                                }
+    }
+
+    var body: some View {
+        current.view(palette)
+            .id("terminal-\(currentScreenId)")
+            .transition(.opacity)
+            .environment(\.terminalNavHandler) { label in
+                TerminalNavDispatcher.handle(label)
+            }
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoTerminalNavSwap)) { note in
+                guard let id = note.userInfo?["screenId"] as? String else { return }
+                guard RoleAccess.canRender(role: .terminal, screenId: id) else {
+                    currentScreenId = "700"
+                    return
+                }
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    currentScreenId = id
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoTerminalEsangTapped)) { _ in
+                showESang = true
+            }
+            .sheet(isPresented: $showESang) {
+                DriverESangCoachSheet().environment(\.palette, palette)
+            }
+    }
+}
+
+// MARK: - Admin surface
+
+/// Top-level Admin container. Serves both `.admin` and `.superAdmin`
+/// roles — the registered Admin screens (800-803) gate their own
+/// sensitive features (tenant impersonation, etc.) at the screen
+/// level via session-role checks. RBAC at the surface level is the
+/// outer guard via `RoleAccess.canRender(role:.admin)`.
+struct AdminSurface: View {
+    let palette: Theme.Palette
+
+    @EnvironmentObject var session: EusoTripSession
+    @State private var currentScreenId: String = "800"
+    @State private var showESang: Bool = false
+
+    private var current: ProductionScreen {
+        ScreenRegistry.forRole(.admin).first { $0.id == currentScreenId }
+            ?? ScreenRegistry.forRole(.admin).first { $0.id == "800" }
+            ?? ScreenRegistry.forRole(.admin).first
+            ?? ProductionScreen(id: "800",
+                                title: "Admin · Home",
+                                role: .admin) { p in
+                                    AnyView(AdminHomeScreen(theme: p))
+                                }
+    }
+
+    var body: some View {
+        current.view(palette)
+            .id("admin-\(currentScreenId)")
+            .transition(.opacity)
+            .environment(\.adminNavHandler) { label in
+                AdminNavDispatcher.handle(label)
+            }
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoAdminNavSwap)) { note in
+                guard let id = note.userInfo?["screenId"] as? String else { return }
+                guard RoleAccess.canRender(role: .admin, screenId: id) else {
+                    currentScreenId = "800"
+                    return
+                }
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    currentScreenId = id
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoAdminEsangTapped)) { _ in
+                showESang = true
+            }
+            .sheet(isPresented: $showESang) {
+                DriverESangCoachSheet().environment(\.palette, palette)
             }
     }
 }
