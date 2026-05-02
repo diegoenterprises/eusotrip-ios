@@ -47,6 +47,14 @@ struct PickupBolSigning: View {
     @State private var activeLoad: Load?
     @State private var isSigning: Bool = false
     @State private var showPdf: Bool = false
+    /// Per-load document upload sheet (Phase 7 driver-side closure).
+    /// Opened from a small "Upload extra doc" affordance under the
+    /// signature row so the driver can attach a customs paper, a
+    /// rate-con re-scan, or a corrected BOL when the printed copy
+    /// doesn't match. Lands in documentManagement.uploadDocument
+    /// with entityType="load" + entityId=lifecycle.loadId so the
+    /// shipper sees it on the same load envelope.
+    @State private var showDocUpload: Bool = false
 
     enum Register { case night, morning }
     let register: Register
@@ -425,28 +433,58 @@ struct PickupBolSigning: View {
     // MARK: Footer CTAs
 
     private var footerActions: some View {
-        HStack(spacing: Space.s3) {
-            Button { showPdf = true } label: {
-                Text("View PDF")
-                    .font(EType.body.weight(.semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(palette.bgCard)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(palette.borderSoft)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        VStack(spacing: Space.s2) {
+            Button { showDocUpload = true } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "paperclip.circle.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text("Attach extra doc")
+                        .font(EType.caption).fontWeight(.semibold)
+                        .foregroundStyle(palette.textPrimary)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .padding(.horizontal, Space.s4)
+                .padding(.vertical, 10)
+                .background(palette.bgCardSoft)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
-            .accessibilityLabel("View full BOL as PDF")
+            .buttonStyle(.plain)
+            .sheet(isPresented: $showDocUpload) {
+                DriverLoadDocUploadView(
+                    loadId: lifecycle.loadId.isEmpty ? "0" : lifecycle.loadId,
+                    loadNumber: activeLoad?.loadNumber,
+                    initialKind: .bol
+                )
+                .environment(\.palette, palette)
+            }
 
-            CTAButton(
-                title: "Sign + submit BOL",
-                action: { Task { await signAndSubmit() } },
-                subtitle: "BIOMETRIC TAP-TO-SIGN",
-                isLoading: isSigning
-            )
-            .accessibilityLabel("Sign BOL with Face ID and submit to shipper")
+            HStack(spacing: Space.s3) {
+                Button { showPdf = true } label: {
+                    Text("View PDF")
+                        .font(EType.body.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .background(palette.bgCard)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                .strokeBorder(palette.borderSoft)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                }
+                .accessibilityLabel("View full BOL as PDF")
+
+                CTAButton(
+                    title: "Sign + submit BOL",
+                    action: { Task { await signAndSubmit() } },
+                    subtitle: "BIOMETRIC TAP-TO-SIGN",
+                    isLoading: isSigning
+                )
+                .accessibilityLabel("Sign BOL with Face ID and submit to shipper")
+            }
         }
     }
 

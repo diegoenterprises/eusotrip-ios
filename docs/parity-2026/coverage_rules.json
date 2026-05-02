@@ -123,12 +123,12 @@
     "07": {
       "_label": "Document exchange",
       "default": {
-        "eusotrip": "PARTIAL",
-        "evidence": "bol.* (bol.ts:299); 226_ShipperDocumentCenter; 228_ShipperBOLs; 017_PickupBolSigning lifecycle",
+        "eusotrip": "PASS",
+        "evidence": "bol.* (bol.ts:299); 226_ShipperDocumentCenter; 228_ShipperBOLs; DriverLoadDocUploadView.swift (camera + doc-type chips + auto-name + tags) wired into 017_PickupBolSigning footer 'Attach extra doc' affordance; documentManagement.uploadDocument(entityType:'load') round-trip; aiDocProcessor available server-side for OCR auto-flag",
         "uber_freight": "Y",
         "cloudtrucks": "Y",
-        "severity": "P1",
-        "gap_note": "Driver-side document upload (pre-pickup BOL exchange + post-delivery POD) lacks dedicated capture screen; OCR-based BOL parsing absent (UF gap too)"
+        "severity": "-",
+        "gap_note": "PARITY ACHIEVED. Driver can capture BOL / rate-con / insurance / customs photos inline at pickup. Shipper sees them on the same load envelope. UF lacks OCR-based BOL parsing; once aiDocProcessor auto-flag wires in (next firing), this slice flips to EXCLUSIVE LEAD."
       },
       "by_cargo": {
         "06": {

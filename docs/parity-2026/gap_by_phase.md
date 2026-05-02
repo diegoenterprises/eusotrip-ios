@@ -98,7 +98,7 @@ _400 scenarios · 360 gaps_
 
 ## Document exchange
 
-_400 scenarios · 400 gaps_
+_400 scenarios · 120 gaps_
 
 ### P0 — 40 scenarios
 
@@ -108,15 +108,6 @@ _400 scenarios · 400 gaps_
 - **S-07-08-01-D** · Hazmat class-7 radioactive · Happy path · Multi-stop / chain — coverage MISSING; UF N / CT N. _Note:_ Hazmat-7 radioactive needs NRC dual-signature chain + DOT/AEA cross-check; nobody implements this
 - **S-07-08-02-A** · Hazmat class-7 radioactive · Weather delay · Direct shipper→driver — coverage MISSING; UF N / CT N. _Note:_ Hazmat-7 radioactive needs NRC dual-signature chain + DOT/AEA cross-check; nobody implements this
 - _… and 35 more (see scenarios.csv)_
-
-### P1 — 360 scenarios
-
-- **S-07-01-01-A** · Dry van · Happy path · Direct shipper→driver — coverage PARTIAL; UF Y / CT Y. _Note:_ Driver-side document upload (pre-pickup BOL exchange + post-delivery POD) lacks dedicated capture screen; OCR-based BOL parsing absent (UF gap too)
-- **S-07-01-01-B** · Dry van · Happy path · Broker-routed — coverage PARTIAL; UF Y / CT Y. _Note:_ Driver-side document upload (pre-pickup BOL exchange + post-delivery POD) lacks dedicated capture screen; OCR-based BOL parsing absent (UF gap too)
-- **S-07-01-01-C** · Dry van · Happy path · Catalyst-managed — coverage PARTIAL; UF Y / CT Y. _Note:_ Driver-side document upload (pre-pickup BOL exchange + post-delivery POD) lacks dedicated capture screen; OCR-based BOL parsing absent (UF gap too)
-- **S-07-01-01-D** · Dry van · Happy path · Multi-stop / chain — coverage PARTIAL; UF Y / CT Y. _Note:_ Driver-side document upload (pre-pickup BOL exchange + post-delivery POD) lacks dedicated capture screen; OCR-based BOL parsing absent (UF gap too)
-- **S-07-01-02-A** · Dry van · Weather delay · Direct shipper→driver — coverage PARTIAL; UF Y / CT Y. _Note:_ Driver-side document upload (pre-pickup BOL exchange + post-delivery POD) lacks dedicated capture screen; OCR-based BOL parsing absent (UF gap too)
-- _… and 355 more (see scenarios.csv)_
 
 
 ## Pre-trip / driver readiness

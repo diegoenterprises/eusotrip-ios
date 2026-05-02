@@ -213,6 +213,7 @@
 		D2RATPV0000000000001 /* RatingPromptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RATPV0000000000002 /* RatingPromptView.swift */; };
 		D2DISPV0000000000001 /* DisputeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DISPV0000000000002 /* DisputeViews.swift */; };
 		D2DCIBX0000000000001 /* DriverCounterInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DCIBX0000000000002 /* DriverCounterInboxView.swift */; };
+		D2DLDOC0000000000001 /* DriverLoadDocUploadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DLDOC0000000000002 /* DriverLoadDocUploadView.swift */; };
 		D1A11111111111111111BH01 /* 400_BrokerHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111BH02 /* 400_BrokerHome.swift */; };
 		D1A11111111111111111BNC1 /* BrokerNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111BNC2 /* BrokerNavController.swift */; };
 		D1A11111111111111111BT01 /* 401_BrokerTenders.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111BT02 /* 401_BrokerTenders.swift */; };
@@ -759,6 +760,7 @@
 		D2RATPV0000000000002 /* RatingPromptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RatingPromptView.swift; path = EusoTrip/Views/Components/RatingPromptView.swift; sourceTree = SOURCE_ROOT; };
 		D2DISPV0000000000002 /* DisputeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DisputeViews.swift; path = EusoTrip/Views/Components/DisputeViews.swift; sourceTree = SOURCE_ROOT; };
 		D2DCIBX0000000000002 /* DriverCounterInboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DriverCounterInboxView.swift; path = EusoTrip/Views/Driver/DriverCounterInboxView.swift; sourceTree = SOURCE_ROOT; };
+		D2DLDOC0000000000002 /* DriverLoadDocUploadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DriverLoadDocUploadView.swift; path = EusoTrip/Views/Driver/DriverLoadDocUploadView.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111BH02 /* 400_BrokerHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 400_BrokerHome.swift; path = EusoTrip/Views/Broker/400_BrokerHome.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111BNC2 /* BrokerNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BrokerNavController.swift; path = EusoTrip/Views/Broker/BrokerNavController.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111BT02 /* 401_BrokerTenders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 401_BrokerTenders.swift; path = EusoTrip/Views/Broker/401_BrokerTenders.swift; sourceTree = SOURCE_ROOT; };
@@ -1282,6 +1284,7 @@
 				D1A11111111111111111BA02 /* DriverConversationView.swift */,
 				D2DLPOD0000000000002 /* DeliveryPODCaptureView.swift */,
 				D2DCIBX0000000000002 /* DriverCounterInboxView.swift */,
+				D2DLDOC0000000000002 /* DriverLoadDocUploadView.swift */,
 				D1A11111111111111111HZ02 /* HotZonesWidget.swift */,
 				D1A11111111111111111HG02 /* DriverHomeGlances.swift */,
 				D1A11111111111111111RI02 /* EnRouteRoadIntelStrip.swift */,
@@ -2131,6 +2134,7 @@
 				D2RATPV0000000000001 /* RatingPromptView.swift in Sources */,
 				D2DISPV0000000000001 /* DisputeViews.swift in Sources */,
 				D2DCIBX0000000000001 /* DriverCounterInboxView.swift in Sources */,
+				D2DLDOC0000000000001 /* DriverLoadDocUploadView.swift in Sources */,
 				D1A11111111111111111HZ01 /* HotZonesWidget.swift in Sources */,
 				D1A11111111111111111HG01 /* DriverHomeGlances.swift in Sources */,
 				D1A11111111111111111RI01 /* EnRouteRoadIntelStrip.swift in Sources */,
