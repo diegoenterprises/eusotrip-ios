@@ -246,9 +246,17 @@ struct CarrierSurface: View {
     @State private var showESang: Bool = false
 
     private var current: ProductionScreen {
-        ScreenRegistry.forRole(.carrier).first { $0.id == currentScreenId }
-            ?? ScreenRegistry.forRole(.carrier).first { $0.id == "300" }
-            ?? ScreenRegistry.forRole(.carrier).first
+        // Look across both `.carrier` (300-320) and `.catalyst`
+        // (500-502) registries so the carrier user can navigate
+        // into the SpectraMatch sub-surface without re-registering
+        // those screens under `.carrier`. RBAC has already approved
+        // the swap before the surface gets here (see
+        // `RoleAccess.allowedScreenRoles(for:.catalyst)`).
+        let pool = ScreenRegistry.forRole(.carrier)
+                 + ScreenRegistry.forRole(.catalyst)
+        return pool.first { $0.id == currentScreenId }
+            ?? pool.first { $0.id == "300" }
+            ?? pool.first
             ?? ProductionScreen(id: "300",
                                 title: "Carrier · Home",
                                 role: .carrier) { p in
@@ -623,13 +631,49 @@ private struct SafariContinuationView: UIViewControllerRepresentable {
 /// caller-role's registry slice are denied — the caller falls back to
 /// the role's home or shows an empty surface.
 enum RoleAccess {
-    /// True when the screen with `screenId` is registered as belonging
-    /// to `role`. Defaults to `false` — an unregistered ID is denied
-    /// rather than silently allowed.
+    /// True when the screen with `screenId` is registered under any
+    /// of the chrome roles `role` is allowed to see. Defaults to
+    /// `false` — an unregistered ID is denied rather than silently
+    /// allowed. A backend role can map to multiple chrome roles
+    /// (e.g. `EusoRole.catalyst` → `.carrier` for the canonical
+    /// carrier screens AND `.catalyst` for the SpectraMatch sub-
+    /// surface 500-502); the inclusive check makes those screens
+    /// reachable without re-registering them under both roles.
     static func canRender(role: EusoRole, screenId: String) -> Bool {
-        let productionRole = productionRole(for: role)
-        return ScreenRegistry.forRole(productionRole)
-            .contains { $0.id == screenId }
+        for chrome in allowedScreenRoles(for: role) {
+            if ScreenRegistry.forRole(chrome).contains(where: { $0.id == screenId }) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Every chrome-role bucket the backend role can navigate within.
+    /// Used by `canRender` and by Surfaces that render across multiple
+    /// chrome buckets (e.g. CarrierSurface drilling into Catalyst
+    /// 500-502).
+    static func allowedScreenRoles(for role: EusoRole) -> [ProductionScreen.Role] {
+        switch role {
+        case .driver:                                   return [.driver]
+        case .shipper, .railShipper, .vesselShipper:    return [.shipper]
+        // Carrier-track backend roles can navigate into both the
+        // canonical Carrier registry (300-320) AND the Catalyst
+        // SpectraMatch sub-surface (500-502).
+        case .catalyst, .railCatalyst, .vesselOperator: return [.carrier, .catalyst]
+        case .broker, .railBroker, .vesselBroker,
+             .customsBroker:                            return [.broker]
+        case .escort:                                   return [.escort]
+        case .terminal, .portMaster:                    return [.terminal]
+        case .admin, .superAdmin:                       return [.admin]
+        // Roles below have no native chrome — they route to web
+        // continuation in `RoleSurfaceRouter`. Empty list means
+        // every cross-role swap is denied for them, which is the
+        // correct outcome since their surface lives outside the
+        // app entirely.
+        case .dispatch, .compliance, .safety, .factoring,
+             .railDispatch, .railEngineer, .railConductor,
+             .shipCaptain:                              return []
+        }
     }
 
     /// Map the 24-role backend enum to the 8-role chrome enum used by

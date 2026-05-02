@@ -60,6 +60,18 @@ enum CarrierNavRoute {
         "loads":   "301",
         "drivers": "304",
         "me":      "300",
+        // Catalyst SpectraMatch sub-surface deep-links — not in the
+        // bottom-nav slots (the canonical Carrier nav is Home /
+        // Loads / Drivers / Me) but addressable from in-screen CTAs
+        // and notification deep-links. Carrier users can navigate
+        // here because `RoleAccess.allowedScreenRoles(for:.catalyst)`
+        // includes `.catalyst`. Surface lookup spans both
+        // `.carrier` and `.catalyst` registries (see
+        // `CarrierSurface.current`).
+        "matches":         "501",
+        "catalyst":        "500",
+        "catalyst home":   "500",
+        "match detail":    "502",
     ]
 
     /// `BottomNav` emits the orb tap as `"esang"`.

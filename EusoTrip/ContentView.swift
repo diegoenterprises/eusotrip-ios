@@ -595,17 +595,26 @@ enum ScreenRegistry {
         list.append(.init(id: "228", title: "Shipper · BOLs",            role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .me) { ShipperBOLs() }) })
         list.append(.init(id: "229", title: "Shipper · Allocations",     role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .loads) { ShipperAllocations() }) })
         list.append(.init(id: "230", title: "Shipper · Bid Thread",      role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperBidThread(loadId: 0) }) })
-        // 250 owns its own `PostLoadDraft` `@StateObject` and is the
-        // wizard entry point. Steps 251-259 take the draft as
-        // `@ObservedObject` and are reachable only via internal
-        // wizard navigation from 250 — they're not registered in the
-        // registry because handing each a fresh draft from a non-
-        // isolated `static let` initializer would conflict with
-        // `PostLoadDraft`'s `@MainActor` isolation. The wizard owns
-        // the single draft and walks the steps in order; deep-link
-        // entry (e.g. a push notification dropping the user mid-
-        // wizard) re-enters at 250 and replays state from server.
+        // 250-259 PostLoad wizard. 250 owns its own `PostLoadDraft`
+        // `@StateObject`; 251-259 take the draft as `@ObservedObject`.
+        // The registry closure runs at view-mount time on the main
+        // actor, so we use `MainActor.assumeIsolated` to construct a
+        // throwaway draft for the registry-walker entry (production
+        // navigation through the wizard always carries the wizard's
+        // single shared draft). The closures themselves are
+        // synchronous + non-isolated; the runtime check confirms
+        // we're on the main actor before instantiating
+        // `@MainActor`-bound `PostLoadDraft`.
         list.append(.init(id: "250", title: "Shipper · Post Load · Lane",      role: .shipper) { p in AnyView(PostLoadStep1LaneScreen(theme: p)) })
+        list.append(.init(id: "251", title: "Shipper · Post Load · Equipment", role: .shipper) { p in MainActor.assumeIsolated { AnyView(PostLoadStep2EquipmentScreen(theme: p, draft: PostLoadDraft())) } })
+        list.append(.init(id: "252", title: "Shipper · Post Load · Pricing",   role: .shipper) { p in MainActor.assumeIsolated { AnyView(PostLoadStep3PricingScreen(theme: p, draft: PostLoadDraft())) } })
+        list.append(.init(id: "253", title: "Shipper · Post Load · Review",    role: .shipper) { p in MainActor.assumeIsolated { AnyView(PostLoadStep4ReviewScreen(theme: p, draft: PostLoadDraft())) } })
+        list.append(.init(id: "254", title: "Shipper · Post Load · Success",   role: .shipper) { p in MainActor.assumeIsolated { AnyView(PostLoadSuccessScreen(theme: p, draft: PostLoadDraft())) } })
+        list.append(.init(id: "255", title: "Shipper · Post Load · Multi-Stop", role: .shipper) { p in MainActor.assumeIsolated { AnyView(PostLoadMultiStopScreen(theme: p, draft: PostLoadDraft())) } })
+        list.append(.init(id: "256", title: "Shipper · Post Load · Address",   role: .shipper) { p in MainActor.assumeIsolated { AnyView(PostLoadAddressPickerScreen(theme: p, draft: PostLoadDraft())) } })
+        list.append(.init(id: "257", title: "Shipper · Post Load · Hazmat",    role: .shipper) { p in MainActor.assumeIsolated { AnyView(PostLoadHazmatSubformScreen(theme: p, draft: PostLoadDraft())) } })
+        list.append(.init(id: "258", title: "Shipper · Post Load · Reefer",    role: .shipper) { p in MainActor.assumeIsolated { AnyView(PostLoadReeferSubformScreen(theme: p, draft: PostLoadDraft())) } })
+        list.append(.init(id: "259", title: "Shipper · Post Load · Templates", role: .shipper) { p in MainActor.assumeIsolated { AnyView(PostLoadTemplatesScreen(theme: p, draft: PostLoadDraft())) } })
         // 260 (PostedAwaitingBids) is shelved (LoadsAPI.cancel missing)
         // and intentionally NOT registered — see the `#if false` wrap
         // in the file header.
