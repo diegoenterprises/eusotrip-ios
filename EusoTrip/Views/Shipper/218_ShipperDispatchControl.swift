@@ -110,7 +110,7 @@ final class ShipperDispatchControlStore: ObservableObject {
     }
 
     @Published private(set) var state: LoadState = .loading
-    @Published var filter: DispatchStatusFilter = .all
+    @Published fileprivate var filter: DispatchStatusFilter = .all
     @Published var searchTerm: String = ""
 
     private let api: EusoTripAPI

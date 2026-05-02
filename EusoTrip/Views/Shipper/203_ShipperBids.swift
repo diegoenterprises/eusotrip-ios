@@ -711,7 +711,7 @@ struct ShipperBids: View {
                 Text("Counter all")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, minHeight: 48)
+                    .frame(width: 148, height: 48)
                     .overlay(Capsule().strokeBorder(palette.textPrimary.opacity(0.10), lineWidth: 1))
             }
             .buttonStyle(.plain)

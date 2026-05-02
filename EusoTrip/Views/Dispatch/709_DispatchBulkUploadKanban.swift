@@ -1,3 +1,12 @@
+// SHELVED 2026-05-01 — pre-existing build errors against an older
+// design-system version (Theme.Palette.background, EType.h3,
+// OrbESang.State.alert, etc.). Dispatch role currently routes to
+// SFSafariViewController(app.eusotrip.com/dispatch) via
+// RoleSurfaceRouter; this file ships the next time we knock down
+// the Dispatch role per the founder's role-by-role cadence. Wrapped
+// in `#if false` so the file references stay in the Xcode target
+// (project.pbxproj) but the body doesn't enter compilation.
+#if false
 //
 //  709_DispatchBulkUploadKanban.swift
 //  EusoTrip — Dispatch · Bulk-upload kanban (jobs by lifecycle).
@@ -268,3 +277,5 @@ private struct BulkBody: View {
 
 #Preview("709 · Bulk kanban · Night") { DispatchBulkUploadKanbanScreen(theme: Theme.dark, entityType: "loads").environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
 #Preview("709 · Bulk kanban · Afternoon") { DispatchBulkUploadKanbanScreen(theme: Theme.light, entityType: "loads").environmentObject(EusoTripSession()).preferredColorScheme(.light) }
+
+#endif

@@ -85,7 +85,7 @@ final class ShipperRecurringLoadsStore: ObservableObject {
 
     @Published private(set) var state: LoadState = .idle
     @Published var search: String = ""
-    @Published var filter: TemplateFilter = .all
+    @Published fileprivate var filter: TemplateFilter = .all
     @Published var posting: Set<Int> = []
     @Published var lastAck: ShipperAPI.PostLoadAck? = nil
     @Published var lastError: String? = nil
@@ -114,8 +114,8 @@ final class ShipperRecurringLoadsStore: ObservableObject {
     /// Public so the chip-count helper can recompute against the
     /// unfiltered list when chip counts need to render for filters
     /// other than the active one.
-    func applyClientFilter(rows: [LoadTemplatesAPI.Template],
-                           filter: TemplateFilter) -> [LoadTemplatesAPI.Template] {
+    fileprivate func applyClientFilter(rows: [LoadTemplatesAPI.Template],
+                                       filter: TemplateFilter) -> [LoadTemplatesAPI.Template] {
         switch filter {
         case .all:
             return rows
@@ -709,7 +709,7 @@ struct ShipperRecurringLoads: View {
     }
 
     private func tapNewSchedule() {
-        MeAction.fire("shipper.recurring.schedule", userInfo: nil)
+        MeAction.fire("shipper.recurring.schedule")
         NotificationCenter.default.post(
             name: .eusoShipperRecurringSchedule,
             object: nil,

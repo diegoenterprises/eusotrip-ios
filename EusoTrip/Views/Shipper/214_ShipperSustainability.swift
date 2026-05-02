@@ -131,7 +131,7 @@ final class ShipperSustainabilityStore: ObservableObject {
         self.api = api
     }
 
-    func calculate(distanceMiles: Double, weightTons: Double, equipment: Co2Equipment) async {
+    fileprivate func calculate(distanceMiles: Double, weightTons: Double, equipment: Co2Equipment) async {
         state = .calculating
         do {
             let res = try await api.co2.calculateTruckShipment(

@@ -740,7 +740,11 @@ private struct SettlementSheetTarget: Identifiable, Hashable {
 // MARK: - Notification names
 
 extension Notification.Name {
-    static let eusoShipperSettlementApprove   = Notification.Name("eusoShipperSettlementApprove")
+    // `eusoShipperSettlementApprove` is the canonical approve-tap signal
+    // for both 206 (Settlements list) and 227 (Settlement Detail). It
+    // lives in 227's notification block alongside the rest of the
+    // settlement-action set (Back / Approve / Dispute / Doc); duplicating
+    // it here would re-declare a stored static and break the build.
     static let eusoShipperSettlementOpenLoad  = Notification.Name("eusoShipperSettlementOpenLoad")
 }
 

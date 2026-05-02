@@ -95,7 +95,7 @@ final class ShipperAgreementsStore: ObservableObject {
 
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var unfiltered: [ShipperAgreementsAPI.Agreement] = []
-    @Published var filter: AgreementFilter = .all {
+    @Published fileprivate var filter: AgreementFilter = .all {
         didSet {
             if oldValue != filter { Task { await load() } }
         }
@@ -119,8 +119,8 @@ final class ShipperAgreementsStore: ObservableObject {
         }
     }
 
-    func applyClientFilter(rows: [ShipperAgreementsAPI.Agreement],
-                           filter: AgreementFilter) -> [ShipperAgreementsAPI.Agreement] {
+    fileprivate func applyClientFilter(rows: [ShipperAgreementsAPI.Agreement],
+                                       filter: AgreementFilter) -> [ShipperAgreementsAPI.Agreement] {
         switch filter {
         case .all:
             return rows
@@ -806,7 +806,7 @@ struct ShipperAgreements: View {
     }
 
     private func tapNewAgreement() {
-        MeAction.fire("shipper.agreement.create", userInfo: nil)
+        MeAction.fire("shipper.agreement.create")
         NotificationCenter.default.post(
             name: .eusoShipperAgreementCreate,
             object: nil,

@@ -98,7 +98,7 @@ private enum AgrStatus {
 
 private enum AvatarTone { case gradient, hazmat, info, escort, rail }
 
-private enum BadgeTier { case gradientHero, gradientHollow, goldHero, goldHollow }
+private enum PartnerDirectoryBadgeTier { case gradientHero, gradientHollow, goldHero, goldHollow }
 
 // MARK: - Store (preserved)
 
@@ -114,7 +114,7 @@ final class ShipperPartnerDirectoryStore: ObservableObject {
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var unfiltered: [SupplyChainAPI.Partner] = []
     @Published var search: String = ""
-    @Published var filter: PartnerFilter = .all {
+    @Published fileprivate var filter: PartnerFilter = .all {
         didSet {
             if oldValue != filter { Task { await load() } }
         }
@@ -150,8 +150,8 @@ final class ShipperPartnerDirectoryStore: ObservableObject {
         return applyClientFilter(rows: searched, filter: filter)
     }
 
-    func applyClientFilter(rows: [SupplyChainAPI.Partner],
-                           filter: PartnerFilter) -> [SupplyChainAPI.Partner] {
+    fileprivate func applyClientFilter(rows: [SupplyChainAPI.Partner],
+                                       filter: PartnerFilter) -> [SupplyChainAPI.Partner] {
         switch filter {
         case .all:
             return pinnedHouseFirst(rows)
@@ -672,7 +672,7 @@ struct ShipperPartnerDirectory: View {
     private func indexBadge(_ p: SupplyChainAPI.Partner) -> some View {
         // EUSO-2136 — composite/index not on envelope; paint placeholder
         // badge with neutral tier styling.
-        let tier: BadgeTier = (p.companyName ?? "").lowercased().contains("eusotrans")
+        let tier: PartnerDirectoryBadgeTier = (p.companyName ?? "").lowercased().contains("eusotrans")
             ? .gradientHero : .goldHollow
         let letter = tier == .gradientHero ? "P1" : "P—"
         let badgeShape = RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -832,7 +832,7 @@ struct ShipperPartnerDirectory: View {
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
             Button {
-                MeAction.fire("shipper.partner.invite", userInfo: nil)
+                MeAction.fire("shipper.partner.invite")
                 NotificationCenter.default.post(
                     name: .eusoShipperPartnerInvite,
                     object: nil,

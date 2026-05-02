@@ -146,10 +146,10 @@ struct AdminTenants: View {
             // hands off the tenant id (+ optional preview hint) and
             // gets out of the way.
             AdminTenantDetailScreen(
+                theme: palette,
                 tenantId: ident.id,
                 previewHint: detailPreviewHint
             )
-            .environment(\.palette, palette)
             .environmentObject(session)
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)

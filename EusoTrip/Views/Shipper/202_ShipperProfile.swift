@@ -499,7 +499,12 @@ struct ShipperProfile: View {
     }
 
     private var currentTier: ShipperTier {
-        guard let s = statsStore.state.value else { return .bronze }
+        // `statsStore.state.value` is `Stats??` because the store's
+        // generic value type is itself optional (server can legitimately
+        // return null for a brand-new shipper with no aggregates).
+        // Flatten to a single optional and bail to bronze when the
+        // server hasn't produced stats yet.
+        guard let s = (statsStore.state.value ?? nil) else { return .bronze }
         for tier in ShipperTier.allCases.reversed() {
             let t = tier.threshold
             if s.totalLoads     >= t.loads
@@ -516,7 +521,11 @@ struct ShipperProfile: View {
     }
 
     private var tierProgress: Double {
-        guard let next = nextTier, let s = statsStore.state.value else { return 1.0 }
+        // Same `Stats??` flatten as `currentTier` above — fall through
+        // to a fully-completed bar (1.0) when the next-tier struct or
+        // the stats payload haven't resolved yet.
+        guard let next = nextTier,
+              let s = (statsStore.state.value ?? nil) else { return 1.0 }
         let t = next.threshold
         let loadsP  = t.loads  > 0 ? min(1.0, Double(s.totalLoads)  / Double(t.loads))  : 1.0
         let onTimeP = t.onTime > 0 ? min(1.0, Double(s.onTimeRate)  / Double(t.onTime)) : 1.0

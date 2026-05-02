@@ -252,8 +252,8 @@ struct ShipperLoadCycleView: View {
                 .strokeBorder(
                     LinearGradient(
                         colors: [
-                            Brand.gradientStart.opacity(isCancelled ? 0.0 : 0.8),
-                            Brand.gradientEnd.opacity(isCancelled ? 0.0 : 0.8),
+                            Brand.blue.opacity(isCancelled ? 0.0 : 0.8),
+                            Brand.magenta.opacity(isCancelled ? 0.0 : 0.8),
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
@@ -361,7 +361,7 @@ struct ShipperLoadCycleView: View {
                             )
                     )
                     .shadow(
-                        color: isActive ? Brand.gradientEnd.opacity(0.45) : .clear,
+                        color: isActive ? Brand.magenta.opacity(0.45) : .clear,
                         radius: isActive ? 6 : 0
                     )
                 Image(systemName: stage.symbol)

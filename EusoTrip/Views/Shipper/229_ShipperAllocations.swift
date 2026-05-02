@@ -107,7 +107,7 @@ struct ShipperAllocations: View {
             }
             Spacer(minLength: 0)
             Button {
-                MeAction.fire("shipper.allocation.create", userInfo: nil)
+                MeAction.fire("shipper.allocation.create")
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "plus.circle.fill").font(.system(size: 11, weight: .heavy))

@@ -1,3 +1,12 @@
+// SHELVED 2026-05-01 — pre-existing build errors against an older
+// design-system version (Theme.Palette.background, EType.h3,
+// OrbESang.State.alert, etc.). Dispatch role currently routes to
+// SFSafariViewController(app.eusotrip.com/dispatch) via
+// RoleSurfaceRouter; this file ships the next time we knock down
+// the Dispatch role per the founder's role-by-role cadence. Wrapped
+// in `#if false` so the file references stay in the Xcode target
+// (project.pbxproj) but the body doesn't enter compilation.
+#if false
 //
 //  705_DispatchRouteOptimization.swift
 //  EusoTrip — Dispatch · Route optimization (fleet positions + ETAs).
@@ -128,3 +137,5 @@ private struct RouteBody: View {
 
 #Preview("705 · Routing · Night") { DispatchRouteOptimizationScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
 #Preview("705 · Routing · Afternoon") { DispatchRouteOptimizationScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
+
+#endif

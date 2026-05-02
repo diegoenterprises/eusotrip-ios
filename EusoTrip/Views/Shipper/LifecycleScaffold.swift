@@ -78,7 +78,13 @@ func relativeETA(from iso: String?) -> String {
     return "\(h)h \(mm)m"
 }
 
-@inlinable
+// `@inlinable` removed — body references `internal` types
+// (`ShipperAPI.LifecycleSnapshot` and the `pickup`/`delivery`/`city`/
+// `state` properties on it), and `@inlinable` requires every referenced
+// symbol to be `@usableFromInline` or public. Marking the API-mirror
+// surface public would force every other call site to track it; the
+// hot path here is one-off lifecycle header rendering, so dropping the
+// inline hint is the right trade.
 func laneDisplay(_ snap: ShipperAPI.LifecycleSnapshot) -> String {
     let p = snap.pickup
     let d = snap.delivery
@@ -90,7 +96,6 @@ func laneDisplay(_ snap: ShipperAPI.LifecycleSnapshot) -> String {
     return "\(from) → \(to)"
 }
 
-@inlinable
 func resolveProduct(_ snap: ShipperAPI.LifecycleSnapshot, role: String?) -> TripProduct {
     TripProduct.resolveDirect(
         cargoType: snap.load.cargoType,
@@ -101,7 +106,6 @@ func resolveProduct(_ snap: ShipperAPI.LifecycleSnapshot, role: String?) -> Trip
 
 // MARK: - Shipper bottom nav (Round 4 doctrine)
 
-@inlinable
 func shipperLifecycleNav() -> BottomNav {
     BottomNav(
         leading: [
@@ -184,7 +188,7 @@ struct LifecycleCard<Content: View>: View {
             if accentDanger { return AnyShapeStyle(Brand.danger.opacity(0.55)) }
             if accentWarning { return AnyShapeStyle(Brand.warning.opacity(0.55)) }
             if accentGradient {
-                return AnyShapeStyle(LinearGradient(colors: [Brand.gradientStart.opacity(0.7), Brand.gradientEnd.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                return AnyShapeStyle(LinearGradient(colors: [Brand.blue.opacity(0.7), Brand.magenta.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing))
             }
             return AnyShapeStyle(palette.borderFaint)
         }()

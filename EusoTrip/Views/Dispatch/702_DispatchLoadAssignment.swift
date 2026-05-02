@@ -1,3 +1,12 @@
+// SHELVED 2026-05-01 — pre-existing build errors against an older
+// design-system version (Theme.Palette.background, EType.h3,
+// OrbESang.State.alert, etc.). Dispatch role currently routes to
+// SFSafariViewController(app.eusotrip.com/dispatch) via
+// RoleSurfaceRouter; this file ships the next time we knock down
+// the Dispatch role per the founder's role-by-role cadence. Wrapped
+// in `#if false` so the file references stay in the Xcode target
+// (project.pbxproj) but the body doesn't enter compilation.
+#if false
 //
 //  702_DispatchLoadAssignment.swift
 //  EusoTrip — Dispatch · Unassigned loads → assign driver mutation.
@@ -152,3 +161,5 @@ private struct LoadAssignBody: View {
 
 #Preview("702 · Load assign · Night") { DispatchLoadAssignmentScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
 #Preview("702 · Load assign · Afternoon") { DispatchLoadAssignmentScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
+
+#endif

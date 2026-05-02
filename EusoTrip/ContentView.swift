@@ -1119,6 +1119,14 @@ struct ContentView: View {
     @Environment(\.colorScheme) private var systemColorScheme
     @State private var register: ThemeRegister = .dark
     @State private var userOverrodeRegister: Bool = false
+
+    /// The signed-in user's role drives every dispatch decision in this
+    /// view. Read once per render, then routed through
+    /// `RoleSurfaceRouter` for non-driver roles. Defaults to .driver
+    /// only as a transient fallback during sign-out — `AppRoot` blocks
+    /// `phase != .signedIn` from reaching ContentView, so by the time
+    /// this evaluates the user is non-nil in the steady state.
+    @EnvironmentObject private var session: EusoTripSession
 #if DEBUG
     // Dev-chrome-only state. In Release builds these have no representation
     // because the chrome surface (role tabs, prev/next walker, register
@@ -1231,37 +1239,25 @@ struct ContentView: View {
             // Non-driver roles still render the ScreenRegistry placeholder
             // untouched, preserving the existing chrome-walk behavior.
             Group {
-#if DEBUG
-                // Dev-chrome role walker: flips between Driver and the
-                // placeholder roles (Shipper/Carrier/…) via the chrome
-                // role-tab bar. In Release the chrome is absent and the
-                // app is always in Driver mode, so the branch collapses
-                // to `driverSurface`.
-                if selectedRole == .driver {
+                // Production role-aware dispatch (replaces the previous
+                // Driver-only hardcode + DEBUG-chrome role walker).
+                // `session.user.roleEnum` decides which surface
+                // mounts. The Driver branch stays inline because it
+                // owns this view's `nav` / `trip` `@StateObject`s,
+                // sheet presenters, and orb state machine — moving
+                // it to a separate type would unwire all of that.
+                // Every other role goes through `RoleSurfaceRouter`,
+                // which also handles RBAC + the web-continuation
+                // landing for roles whose native iOS surface ships
+                // in a later release.
+                let role = session.user?.roleEnum ?? .driver
+                if role == .driver {
                     driverSurface
-                } else if let s = current {
-                    s.view(register.palette)
-                        // Key on screen id ONLY. Previously this read
-                        // "\(register.rawValue)-\(s.id)" — that remounted
-                        // the whole subtree whenever the user flipped
-                        // their device into dark mode (which rebuilds
-                        // `register` → rawValue changes → `.id` changes
-                        // → SwiftUI destroys all descendant @State,
-                        // including the trip-phase state machine, and
-                        // the app fell back to Dashboard mid-trip).
-                        // The palette is a rendering concern, not a
-                        // structural identity — it's already piped down
-                        // via `.environment(\.palette, register.palette)`
-                        // below, so the tree will restyle without a
-                        // rebuild.
-                        .id(s.id)
-                        .transition(.opacity)
                 } else {
-                    driverSurface
+                    RoleSurfaceRouter(palette: register.palette)
+                        .id("role-\(role.rawValue)")
+                        .transition(.opacity)
                 }
-#else
-                driverSurface
-#endif
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             // Propagate the active register's palette to every descendant

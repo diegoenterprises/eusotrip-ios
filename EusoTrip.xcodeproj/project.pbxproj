@@ -10,6 +10,7 @@
 		A1000000000000000000AABA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000AAB9 /* Assets.xcassets */; };
 		A1000000000000000000AABD /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000AABC /* Preview Assets.xcassets */; };
 		A104A92790FBBAD8E412C5F3 /* AppRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F5325921E558CD8ED37DBF /* AppRoot.swift */; };
+		A1B7C9E000000000B7C9E001 /* RoleSurfaceRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B7C9E000000000B7C9E002 /* RoleSurfaceRouter.swift */; };
 		A10AAEEEAC9C0054F8B34905 /* 019_HosDutyStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10C7CD83E4BB6CA038192D0 /* 019_HosDutyStatus.swift */; };
 		A11E8603E79595216A3607DB /* 004_ResetPassword.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F6E6E09C5EB9568612F3E1 /* 004_ResetPassword.swift */; };
 		A12E1A1C0010CE0FF1000001 /* HereMapsConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000002 /* HereMapsConfig.swift */; };
@@ -227,7 +228,7 @@
 		D1A11111111111111111SB01 /* 203_ShipperBids.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111SB02 /* 203_ShipperBids.swift */; };
 		D1A11111111111111111SC01 /* 204_ShipperPostLoad.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111SC02 /* 204_ShipperPostLoad.swift */; };
 		D1A11111111111111111SD01 /* 205_ShipperLoadDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111SD02 /* 205_ShipperLoadDetail.swift */; };
-		D1A11111111111111111SC01 /* ShipperLoadCycleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111SC02 /* ShipperLoadCycleView.swift */; };
+		D1A11111111111111111CCC1 /* ShipperLoadCycleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CCC2 /* ShipperLoadCycleView.swift */; };
 		D2120000000000000021CT /* 212_ShipperControlTower.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2120000000000000021CU /* 212_ShipperControlTower.swift */; };
 		D2130000000000000021CS /* 213_ShipperCatalystScorecard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2130000000000000021CR /* 213_ShipperCatalystScorecard.swift */; };
 		D2280000000000000000ABFF /* LifecycleScaffold.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2280000000000000000ACFF /* LifecycleScaffold.swift */; };
@@ -570,6 +571,7 @@
 		A1F3A1F3A1F3A1F3A1F30002 /* Inspection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Inspection.swift; sourceTree = "<group>"; };
 		A1F3A1F3A1F3A1F3A1F30004 /* PretripDVIRViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PretripDVIRViewModel.swift; sourceTree = "<group>"; };
 		A1F5325921E558CD8ED37DBF /* AppRoot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRoot.swift; sourceTree = "<group>"; };
+		A1B7C9E000000000B7C9E002 /* RoleSurfaceRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoleSurfaceRouter.swift; sourceTree = "<group>"; };
 		A1F6E6E09C5EB9568612F3E1 /* 004_ResetPassword.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 004_ResetPassword.swift; sourceTree = "<group>"; };
 		A1FA70836FB725922F39A4E9 /* 015_AtGateAwaitingDock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 015_AtGateAwaitingDock.swift; sourceTree = "<group>"; };
 		A1FC32344EC014D3FAF0ED78 /* 006_PrivacyPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 006_PrivacyPolicy.swift; sourceTree = "<group>"; };
@@ -720,7 +722,7 @@
 		D1A11111111111111111SB02 /* 203_ShipperBids.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 203_ShipperBids.swift; path = EusoTrip/Views/Shipper/203_ShipperBids.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111SC02 /* 204_ShipperPostLoad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 204_ShipperPostLoad.swift; path = EusoTrip/Views/Shipper/204_ShipperPostLoad.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111SD02 /* 205_ShipperLoadDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 205_ShipperLoadDetail.swift; path = EusoTrip/Views/Shipper/205_ShipperLoadDetail.swift; sourceTree = SOURCE_ROOT; };
-		D1A11111111111111111SC02 /* ShipperLoadCycleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ShipperLoadCycleView.swift; path = EusoTrip/Views/Shipper/ShipperLoadCycleView.swift; sourceTree = SOURCE_ROOT; };
+		D1A11111111111111111CCC2 /* ShipperLoadCycleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ShipperLoadCycleView.swift; path = EusoTrip/Views/Shipper/ShipperLoadCycleView.swift; sourceTree = SOURCE_ROOT; };
 		D2120000000000000021CU /* 212_ShipperControlTower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 212_ShipperControlTower.swift; path = EusoTrip/Views/Shipper/212_ShipperControlTower.swift; sourceTree = SOURCE_ROOT; };
 		D2130000000000000021CR /* 213_ShipperCatalystScorecard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 213_ShipperCatalystScorecard.swift; path = EusoTrip/Views/Shipper/213_ShipperCatalystScorecard.swift; sourceTree = SOURCE_ROOT; };
 		D2280000000000000000ACFF /* LifecycleScaffold.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LifecycleScaffold.swift; path = EusoTrip/Views/Shipper/LifecycleScaffold.swift; sourceTree = SOURCE_ROOT; };
@@ -1058,6 +1060,7 @@
 			isa = PBXGroup;
 			children = (
 				A1F5325921E558CD8ED37DBF /* AppRoot.swift */,
+				A1B7C9E000000000B7C9E002 /* RoleSurfaceRouter.swift */,
 				A1000000000000000000AAD5 /* Auth */,
 				A12E1A1C0010CE0FF1000014 /* Components */,
 				A1000000000000000000AAC0 /* Driver */,
@@ -1195,7 +1198,7 @@
 				D1A11111111111111111SB02 /* 203_ShipperBids.swift */,
 				D1A11111111111111111SC02 /* 204_ShipperPostLoad.swift */,
 				D1A11111111111111111SD02 /* 205_ShipperLoadDetail.swift */,
-				D1A11111111111111111SC02 /* ShipperLoadCycleView.swift */,
+				D1A11111111111111111CCC2 /* ShipperLoadCycleView.swift */,
 				D2120000000000000021CU /* 212_ShipperControlTower.swift */,
 				D2130000000000000021CR /* 213_ShipperCatalystScorecard.swift */,
 				D2280000000000000000ACFF /* LifecycleScaffold.swift */,
@@ -1780,6 +1783,7 @@
 				A189C8A4865293C026FBA23C /* DesignSystem.swift in Sources */,
 				A1978D143BA29D29AC175E7B /* Glass.swift in Sources */,
 				A104A92790FBBAD8E412C5F3 /* AppRoot.swift in Sources */,
+				A1B7C9E000000000B7C9E001 /* RoleSurfaceRouter.swift in Sources */,
 				A156FBFA78FAD20569A81A61 /* 001_SignIn.swift in Sources */,
 				A1D4E2D6D079F0A6924FACD1 /* 002_CreateAccount.swift in Sources */,
 				A1E5DB630C4394232DF0D06F /* 003_ForgotPassword.swift in Sources */,
@@ -1968,7 +1972,7 @@
 				D1A11111111111111111SB01 /* 203_ShipperBids.swift in Sources */,
 				D1A11111111111111111SC01 /* 204_ShipperPostLoad.swift in Sources */,
 				D1A11111111111111111SD01 /* 205_ShipperLoadDetail.swift in Sources */,
-				D1A11111111111111111SC01 /* ShipperLoadCycleView.swift in Sources */,
+				D1A11111111111111111CCC1 /* ShipperLoadCycleView.swift in Sources */,
 				D2120000000000000021CT /* 212_ShipperControlTower.swift in Sources */,
 				D2130000000000000021CS /* 213_ShipperCatalystScorecard.swift in Sources */,
 				D2280000000000000000ABFF /* LifecycleScaffold.swift in Sources */,

@@ -96,8 +96,8 @@ final class ShipperContractsStore: ObservableObject {
         case loaded(stats: ContractsAPI.Stats, rows: [ContractsAPI.ContractRow])
     }
 
-    @Published private(set) var state: LoadState = .loading
-    @Published var filter: ContractFilter = .all {
+    @Published fileprivate(set) var state: LoadState = .loading
+    @Published fileprivate var filter: ContractFilter = .all {
         didSet {
             if oldValue != filter { Task { await refresh() } }
         }
@@ -914,7 +914,7 @@ struct ShipperContracts: View {
 // MARK: - Public client-side filter helper (so the chip count can recompute)
 
 extension ShipperContractsStore {
-    func applyClientFilterPublic(rows: [ContractsAPI.ContractRow], filter: ContractFilter) -> [ContractsAPI.ContractRow] {
+    fileprivate func applyClientFilterPublic(rows: [ContractsAPI.ContractRow], filter: ContractFilter) -> [ContractsAPI.ContractRow] {
         let now = Date()
         let cutoff30d = now.addingTimeInterval(30 * 86400)
         switch filter {

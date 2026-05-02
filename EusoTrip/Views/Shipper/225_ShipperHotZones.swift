@@ -99,7 +99,7 @@ final class ShipperHotZonesStore: ObservableObject {
     }
 
     @Published private(set) var phase: Phase = .idle
-    @Published var equipment: HotEquipFilter = .all {
+    @Published fileprivate var equipment: HotEquipFilter = .all {
         didSet {
             if oldValue != equipment { Task { await load() } }
         }

@@ -126,7 +126,7 @@ private struct BiddingBody: View {
         .overlay(
             RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                 .strokeBorder(bid.recommended
-                    ? AnyShapeStyle(LinearGradient(colors: [Brand.gradientStart.opacity(0.7), Brand.gradientEnd.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    ? AnyShapeStyle(LinearGradient(colors: [Brand.blue.opacity(0.7), Brand.magenta.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing))
                     : AnyShapeStyle(palette.borderFaint),
                     lineWidth: bid.recommended ? 1.5 : 1)
         )

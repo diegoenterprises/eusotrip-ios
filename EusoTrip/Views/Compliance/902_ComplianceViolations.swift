@@ -1,3 +1,11 @@
+// SHELVED 2026-05-01 — pre-existing references to APIs that don't
+// exist on the current iOS client (e.g. LoadsAPI.cancel,
+// OrbESang.State.alert). Not registered in ScreenRegistry, so the
+// file is dead-coded today. Wrapped in `#if false` so the file
+// reference stays in the Xcode target but the body skips
+// compilation. Resurrect when the role-by-role audit reaches this
+// surface and the missing API endpoints are added.
+#if false
 //
 //  902_ComplianceViolations.swift
 //  EusoTrip — Compliance Officer · Recent violations + resolve mutation.
@@ -125,3 +133,5 @@ private struct ViolationsBody: View {
 
 #Preview("902 · Violations · Night") { ComplianceViolationsScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
 #Preview("902 · Violations · Afternoon") { ComplianceViolationsScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
+
+#endif

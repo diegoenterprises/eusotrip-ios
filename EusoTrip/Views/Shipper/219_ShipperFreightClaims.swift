@@ -111,7 +111,7 @@ final class ShipperFreightClaimsStore: ObservableObject {
     }
 
     @Published private(set) var state: LoadState = .loading
-    @Published var filter: ClaimStatusFilter = .all {
+    @Published fileprivate var filter: ClaimStatusFilter = .all {
         didSet {
             if oldValue != filter { Task { await refresh() } }
         }

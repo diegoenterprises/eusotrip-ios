@@ -116,7 +116,7 @@ final class ShipperDocumentCenterStore: ObservableObject {
 
     @Published private(set) var phase: Phase = .idle
     @Published var search: String = ""
-    @Published var filter: DocFilter = .all {
+    @Published fileprivate var filter: DocFilter = .all {
         didSet {
             if oldValue != filter { Task { await load() } }
         }
@@ -165,7 +165,7 @@ final class ShipperDocumentCenterStore: ObservableObject {
         }
     }
 
-    func count(for filter: DocFilter) -> Int {
+    fileprivate func count(for filter: DocFilter) -> Int {
         if filter == .all { return documents.count }
         return documents.filter { d in
             let cat = d.category.lowercased()
@@ -447,7 +447,7 @@ struct ShipperDocumentCenter: View {
     }
 
     private func tapUpload() {
-        MeAction.fire("shipper.document.upload", userInfo: nil)
+        MeAction.fire("shipper.document.upload")
         NotificationCenter.default.post(
             name: .eusoShipperDocumentUpload,
             object: nil,

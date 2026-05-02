@@ -1,3 +1,11 @@
+// SHELVED 2026-05-01 — pre-existing references to APIs that don't
+// exist on the current iOS client (e.g. LoadsAPI.cancel,
+// OrbESang.State.alert). Not registered in ScreenRegistry, so the
+// file is dead-coded today. Wrapped in `#if false` so the file
+// reference stays in the Xcode target but the body skips
+// compilation. Resurrect when the role-by-role audit reaches this
+// surface and the missing API endpoints are added.
+#if false
 //
 //  260_PostedAwaitingBids.swift
 //  EusoTrip — Shipper · Lifecycle Stage 1 · POSTED · awaiting bids.
@@ -176,3 +184,5 @@ private struct PostedBody: View {
         .environmentObject(EusoTripSession())
         .preferredColorScheme(.light)
 }
+
+#endif

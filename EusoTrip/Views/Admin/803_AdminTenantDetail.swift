@@ -830,14 +830,18 @@ private extension AdminTenantDetailStore {
 struct AdminTenantDetailScreen: View {
     let theme: Theme.Palette
     let tenantId: String
+    let previewHint: AdminAPI.Tenant?
 
-    init(theme: Theme.Palette, tenantId: String = "") {
+    init(theme: Theme.Palette,
+         tenantId: String = "",
+         previewHint: AdminAPI.Tenant? = nil) {
         self.theme = theme
         self.tenantId = tenantId
+        self.previewHint = previewHint
     }
 
     var body: some View {
-        AdminTenantDetail(tenantId: tenantId, previewHint: nil)
+        AdminTenantDetail(tenantId: tenantId, previewHint: previewHint)
             .environment(\.palette, theme)
     }
 }
