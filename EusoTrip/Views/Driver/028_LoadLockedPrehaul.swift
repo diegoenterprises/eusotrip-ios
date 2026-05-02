@@ -14,16 +14,19 @@
 //
 
 import SwiftUI
+import UserNotifications
 
 struct LoadLockedPrehaul: View {
     @Environment(\.palette) private var palette
     @Environment(\.lifecycleAdvance) private var advance
+    @Environment(\.driverNavBack) private var navBack
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: Load?
     @State private var completed: Set<String> = []
     @State private var isRolling: Bool = false
+    @State private var reminderToast: String? = nil
 
     enum Register { case night, afternoon }
     let register: Register
@@ -235,6 +238,24 @@ struct LoadLockedPrehaul: View {
             await hydrateLiveTrip()
             seedDefaults()
         }
+        .overlay(alignment: .bottom) {
+            if let msg = reminderToast {
+                Text(msg)
+                    .font(EType.caption.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(palette.bgCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(palette.borderSoft)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    .padding(.bottom, 110)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: reminderToast)
         .screenTileRoot()
     }
 
@@ -242,7 +263,7 @@ struct LoadLockedPrehaul: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 10) {
-            Button { /* upstream back */ } label: {
+            Button { navBack?() } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
@@ -397,7 +418,7 @@ struct LoadLockedPrehaul: View {
 
     private var footerActions: some View {
         HStack(spacing: Space.s3) {
-            Button { /* upstream remind-in-5 */ } label: {
+            Button { scheduleRemindIn5() } label: {
                 Text("Remind in 5")
                     .font(EType.body.weight(.semibold))
                     .foregroundStyle(palette.textPrimary)
@@ -439,6 +460,42 @@ struct LoadLockedPrehaul: View {
             _ = await lifecycle.execute(transition)
         }
         advance?()
+    }
+
+    private func scheduleRemindIn5() {
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else {
+                Task { @MainActor in
+                    reminderToast = "Enable notifications to get reminders"
+                    try? await Task.sleep(nanoseconds: 1_400_000_000)
+                    reminderToast = nil
+                }
+                return
+            }
+            let content = UNMutableNotificationContent()
+            content.title = "Pre-haul gate waiting"
+            let loadNum = activeLoad.map { "Load \($0.loadNumber)" } ?? "Load locked"
+            content.body = "\(loadNum) — clear your remaining checks and roll."
+            content.sound = .default
+            let trigger = UNTimeIntervalNotificationTrigger(
+                timeInterval: 5 * 60,
+                repeats: false
+            )
+            let id = "prehaul-remind-\(lifecycle.loadId)-\(Int(Date().timeIntervalSince1970))"
+            let request = UNNotificationRequest(
+                identifier: id,
+                content: content,
+                trigger: trigger
+            )
+            center.add(request) { _ in
+                Task { @MainActor in
+                    reminderToast = "Reminder set for 5 min"
+                    try? await Task.sleep(nanoseconds: 1_400_000_000)
+                    reminderToast = nil
+                }
+            }
+        }
     }
 
     private struct PrehaulCheck: Identifiable, Hashable {

@@ -17,11 +17,13 @@ import SwiftUI
 struct BackingIn: View {
     @Environment(\.palette) private var palette
     @Environment(\.lifecycleAdvance) private var advance
+    @Environment(\.driverNavBack) private var navBack
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: Load?
     @State private var isConfirming: Bool = false
+    @State private var liveFeedPaused: Bool = false
 
     enum Register { case night, afternoon }
     let register: Register
@@ -68,7 +70,7 @@ struct BackingIn: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 10) {
-            Button { /* upstream back */ } label: {
+            Button { navBack?() } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
@@ -100,8 +102,8 @@ struct BackingIn: View {
 
             Spacer(minLength: 0)
 
-            Button { /* pause live feed */ } label: {
-                Image(systemName: "pause.fill")
+            Button { liveFeedPaused.toggle() } label: {
+                Image(systemName: liveFeedPaused ? "play.fill" : "pause.fill")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 38, height: 38)
@@ -109,6 +111,7 @@ struct BackingIn: View {
                     .overlay(Circle().strokeBorder(palette.borderFaint))
                     .clipShape(Circle())
             }
+            .accessibilityLabel(liveFeedPaused ? "Resume live feed" : "Pause live feed")
         }
         .padding(.top, 4)
     }
@@ -149,10 +152,12 @@ struct BackingIn: View {
             // Top overlay — LIVE + DOOR 12 + cam id
             HStack {
                 HStack(spacing: 4) {
-                    Circle().fill(Brand.danger).frame(width: 6, height: 6)
-                    Text("LIVE")
+                    Circle()
+                        .fill(liveFeedPaused ? Color.white.opacity(0.7) : Brand.danger)
+                        .frame(width: 6, height: 6)
+                    Text(liveFeedPaused ? "PAUSED" : "LIVE")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                        .foregroundStyle(Brand.danger)
+                        .foregroundStyle(liveFeedPaused ? .white.opacity(0.7) : Brand.danger)
                 }
                 .padding(.horizontal, 6).padding(.vertical, 3)
                 .background(Capsule().fill(Color.black.opacity(0.55)))
@@ -309,7 +314,7 @@ struct BackingIn: View {
 
     private var footerActions: some View {
         HStack(spacing: Space.s3) {
-            Button { /* upstream pull-up handler */ } label: {
+            Button { navBack?() } label: {
                 Text("Pull up & redo")
                     .font(EType.body.weight(.semibold))
                     .foregroundStyle(palette.textPrimary)

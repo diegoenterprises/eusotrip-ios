@@ -60,7 +60,12 @@ struct AddPaymentAccountSheet: View {
         ZStack {
             AuroraBackground()
                 .contentShape(Rectangle())
-                .onTapGesture { /* dismiss focus */ }
+                .onTapGesture {
+                    UIApplication.shared.sendAction(
+                        #selector(UIResponder.resignFirstResponder),
+                        to: nil, from: nil, for: nil
+                    )
+                }
             ScrollView {
                 TileStack(spacing: Space.s6) {
                     header

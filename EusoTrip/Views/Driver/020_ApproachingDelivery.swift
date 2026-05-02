@@ -37,6 +37,8 @@ struct ApproachingDelivery: View {
     @Environment(\.palette) private var palette
     @Environment(\.lifecycleAdvance) private var advance
     @Environment(\.driverNavBack) private var navBack
+    @Environment(\.driverDialPhone) private var dialPhone
+    @Environment(\.driverOpenMessages) private var openMessages
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var lifecycle = TripLifecycleStore()
@@ -321,7 +323,17 @@ struct ApproachingDelivery: View {
                 isLoading: isConfirming
             )
 
-            Button { /* upstream call-receiver handler */ } label: {
+            Button {
+                Task {
+                    let rows = (try? await EusoTripAPI.shared.contacts
+                        .list(type: "shipper", limit: 1)) ?? []
+                    if let phone = rows.first?.phone, !phone.isEmpty {
+                        dialPhone?(phone)
+                    } else {
+                        openMessages?(nil)
+                    }
+                }
+            } label: {
                 Text("Call receiver")
                     .font(EType.body.weight(.semibold))
                     .foregroundStyle(palette.textPrimary)

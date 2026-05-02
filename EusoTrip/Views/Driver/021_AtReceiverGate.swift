@@ -34,6 +34,10 @@ import SwiftUI
 struct AtReceiverGate: View {
     @Environment(\.palette) private var palette
     @Environment(\.lifecycleAdvance) private var advance
+    @Environment(\.driverNavBack) private var navBack
+    @Environment(\.driverDialPhone) private var dialPhone
+    @Environment(\.driverOpenMessages) private var openMessages
+    @Environment(\.driverOpenDocDrawer) private var openDocDrawer
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var lifecycle = TripLifecycleStore()
@@ -82,7 +86,7 @@ struct AtReceiverGate: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 10) {
-            Button { /* upstream back */ } label: {
+            Button { navBack?() } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
@@ -212,14 +216,33 @@ struct AtReceiverGate: View {
 
     private var actionRow: some View {
         HStack(spacing: Space.s2) {
-            actionButton(symbol: "phone.fill",    label: "Call", sub: "Guard")
-            actionButton(symbol: "doc.fill",      label: "Open BOL", sub: "PDF · 3p")
-            actionButton(symbol: "message.fill",  label: "Message", sub: "Receiver")
+            actionButton(symbol: "phone.fill", label: "Call", sub: "Guard") {
+                Task {
+                    let rows = (try? await EusoTripAPI.shared.contacts
+                        .list(type: "shipper", limit: 1)) ?? []
+                    if let phone = rows.first?.phone, !phone.isEmpty {
+                        dialPhone?(phone)
+                    } else {
+                        openMessages?(nil)
+                    }
+                }
+            }
+            actionButton(symbol: "doc.fill", label: "Open BOL", sub: "PDF · 3p") {
+                openDocDrawer?()
+            }
+            actionButton(symbol: "message.fill", label: "Message", sub: "Receiver") {
+                openMessages?(nil)
+            }
         }
     }
 
-    private func actionButton(symbol: String, label: String, sub: String) -> some View {
-        Button { /* upstream handlers */ } label: {
+    private func actionButton(
+        symbol: String,
+        label: String,
+        sub: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
             VStack(spacing: 4) {
                 Image(systemName: symbol)
                     .font(.system(size: 15, weight: .bold))
@@ -275,7 +298,17 @@ struct AtReceiverGate: View {
                 isLoading: isCheckingIn
             )
 
-            Button { /* upstream call-dispatch handler */ } label: {
+            Button {
+                Task {
+                    let rows = (try? await EusoTripAPI.shared.contacts
+                        .list(type: "dispatcher", limit: 1)) ?? []
+                    if let phone = rows.first?.phone, !phone.isEmpty {
+                        dialPhone?(phone)
+                    } else {
+                        openMessages?(nil)
+                    }
+                }
+            } label: {
                 Text("Call dispatch")
                     .font(EType.body.weight(.semibold))
                     .foregroundStyle(palette.textPrimary)

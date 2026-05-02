@@ -222,23 +222,26 @@ struct AdminTenantDetail: View {
     }
 
     private func disabledActionPill(label: String, icon: String) -> some View {
-        Button(action: {}) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 10, weight: .heavy))
-                Text(label)
-                    .font(.system(size: 10, weight: .heavy)).tracking(0.6)
-            }
-            .foregroundStyle(palette.textTertiary)
-            .padding(.horizontal, 12).padding(.vertical, 7)
-            .background(palette.tintNeutral.opacity(0.4))
-            .overlay(
-                Capsule().strokeBorder(palette.borderFaint, lineWidth: 1)
-            )
-            .clipShape(Capsule())
+        // Visual-only "disabled" pill — no Button wrapper because the
+        // affordance is intentionally inert (the corresponding tenant-
+        // mutation endpoints aren't exposed to admin yet). When the
+        // mutations ship the pill becomes a real Button with a real
+        // action; until then it's a marker, not an empty closure.
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .heavy))
+            Text(label)
+                .font(.system(size: 10, weight: .heavy)).tracking(0.6)
         }
-        .buttonStyle(.plain)
-        .disabled(true)
+        .foregroundStyle(palette.textTertiary)
+        .padding(.horizontal, 12).padding(.vertical, 7)
+        .background(palette.tintNeutral.opacity(0.4))
+        .overlay(
+            Capsule().strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(Capsule())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label) (not available)")
     }
 
     // MARK: - Status / kind / plan chips

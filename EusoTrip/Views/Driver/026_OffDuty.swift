@@ -22,10 +22,12 @@ import SwiftUI
 struct OffDuty: View {
     @Environment(\.palette) private var palette
     @Environment(\.lifecycleAdvance) private var advance
+    @Environment(\.driverNavBack) private var navBack
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: Load?
+    @State private var showPaySlip: Bool = false
 
     enum Register { case night, afternoon }
     let register: Register
@@ -95,6 +97,11 @@ struct OffDuty: View {
             .padding(.top, 8)
         }
         .task { await hydrateLiveTrip() }
+        .sheet(isPresented: $showPaySlip) {
+            MeEarnings068(theme: palette)
+                .environment(\.palette, palette)
+                .environmentObject(session)
+        }
         .screenTileRoot()
     }
 
@@ -102,7 +109,7 @@ struct OffDuty: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 10) {
-            Button { /* upstream back */ } label: {
+            Button { navBack?() } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
@@ -307,7 +314,7 @@ struct OffDuty: View {
 
     private var footerActions: some View {
         HStack(spacing: Space.s3) {
-            Button { /* upstream pay-slip sheet */ } label: {
+            Button { showPaySlip = true } label: {
                 Text("View pay slip")
                     .font(EType.body.weight(.semibold))
                     .foregroundStyle(palette.textPrimary)

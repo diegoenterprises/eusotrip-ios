@@ -30,6 +30,7 @@ import SwiftUI
 struct NextLoadBrief: View {
     @Environment(\.palette) private var palette
     @Environment(\.lifecycleAdvance) private var advance
+    @Environment(\.driverNavBack) private var navBack
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var lifecycle = TripLifecycleStore()
@@ -106,7 +107,7 @@ struct NextLoadBrief: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 10) {
-                Button { /* upstream back */ } label: {
+                Button { navBack?() } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(palette.textPrimary)

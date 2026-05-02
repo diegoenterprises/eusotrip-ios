@@ -23,6 +23,9 @@ import SwiftUI
 struct DockAssigned: View {
     @Environment(\.palette) private var palette
     @Environment(\.lifecycleAdvance) private var advance
+    @Environment(\.driverNavBack) private var navBack
+    @Environment(\.driverDialPhone) private var dialPhone
+    @Environment(\.driverOpenMessages) private var openMessages
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var lifecycle = TripLifecycleStore()
@@ -74,7 +77,7 @@ struct DockAssigned: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 10) {
-            Button { /* upstream back */ } label: {
+            Button { navBack?() } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
@@ -286,15 +289,26 @@ struct DockAssigned: View {
     // MARK: Action row
 
     private var actionRow: some View {
+        // Only the Message affordance ships in this build — the prior
+        // "Yardmap" + "Dock cam" cells had no backend service behind
+        // them (no terminal-yardmap endpoint, no per-door camera feed
+        // route) and the doctrine forbids rendering an affordance
+        // whose action doesn't exist. They'll return when the
+        // terminal-ops API ships.
         HStack(spacing: Space.s2) {
-            actionButton(symbol: "map.fill",     label: "Yardmap",   sub: "Full view")
-            actionButton(symbol: "camera.fill",  label: "Dock cam",  sub: "Door \(fallbackDoor)")
-            actionButton(symbol: "message.fill", label: "Message",   sub: "Lumper")
+            actionButton(symbol: "message.fill", label: "Message", sub: "Lumper") {
+                openMessages?(nil)
+            }
         }
     }
 
-    private func actionButton(symbol: String, label: String, sub: String) -> some View {
-        Button { /* upstream handlers */ } label: {
+    private func actionButton(
+        symbol: String,
+        label: String,
+        sub: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
             VStack(spacing: 4) {
                 Image(systemName: symbol)
                     .font(.system(size: 15, weight: .bold))
@@ -350,7 +364,17 @@ struct DockAssigned: View {
                 isLoading: isConfirming
             )
 
-            Button { /* upstream call-dispatch handler */ } label: {
+            Button {
+                Task {
+                    let rows = (try? await EusoTripAPI.shared.contacts
+                        .list(type: "dispatcher", limit: 1)) ?? []
+                    if let phone = rows.first?.phone, !phone.isEmpty {
+                        dialPhone?(phone)
+                    } else {
+                        openMessages?(nil)
+                    }
+                }
+            } label: {
                 Text("Call dispatch")
                     .font(EType.body.weight(.semibold))
                     .foregroundStyle(palette.textPrimary)
