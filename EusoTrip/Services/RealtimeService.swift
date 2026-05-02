@@ -327,6 +327,37 @@ final class RealtimeService: ObservableObject {
              "load:exception_raised":
             nc.post(name: .esangRefreshSurface, object: event, userInfo: info)
 
+        // ─── POD lifecycle ───
+        // Shipper just approved or rejected a POD on web / iOS.
+        // The driver app needs to refresh 024 / 025 + surface a
+        // toast or notification immediately. Backend emits these
+        // from `pod.approvePOD` / `pod.rejectPOD` (Phase 81
+        // cross-cutting closure of the 8000-scenario parity audit).
+        case "pod:approved",
+             "POD_APPROVED":
+            nc.post(name: .eusoNotificationReceived, object: nil, userInfo: info)
+            nc.post(name: .esangRefreshSurface, object: event, userInfo: info)
+            UnreadMessageStore.shared.refresh()
+        case "pod:rejected",
+             "POD_REJECTED":
+            nc.post(name: .eusoNotificationReceived, object: nil, userInfo: info)
+            nc.post(name: .esangRefreshSurface, object: event, userInfo: info)
+            UnreadMessageStore.shared.refresh()
+            forwardToWatch(event: event, info: info)
+
+        // ─── Dispute lifecycle ───
+        // Either party responded to or escalated a dispute. The
+        // counterparty's DisputeListView / DisputeDetailView reloads
+        // via the generic refresh notification. Fired by
+        // `disputes.respond` / `disputes.escalate` server-side.
+        case "dispute:responded",
+             "DISPUTE_RESPONDED",
+             "dispute:escalated",
+             "DISPUTE_ESCALATED":
+            nc.post(name: .eusoNotificationReceived, object: nil, userInfo: info)
+            nc.post(name: .esangRefreshSurface, object: event, userInfo: info)
+            UnreadMessageStore.shared.refresh()
+
         // ─── ETA + safety + financial fan-outs ───
         case "eta:update":
             // Active-load ETA recomputed (HERE Routing or the dispatcher

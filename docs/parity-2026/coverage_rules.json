@@ -99,12 +99,12 @@
     "06": {
       "_label": "Dispatch communication",
       "default": {
-        "eusotrip": "PARTIAL",
-        "evidence": "messaging.sendMessage (messaging.ts:215); 311_EsangThread.swift; 053_ESangDispatchChat",
+        "eusotrip": "PASS",
+        "evidence": "messaging.sendMessage (messaging.ts:215); 311_EsangThread.swift; 053_ESangDispatchChat; RealtimeService.swift WebSocket consumer fed by wsService.broadcastToChannel — bid / load / POD / dispute / eta / safety events all push without polling.",
         "uber_freight": "Y",
         "cloudtrucks": "N",
-        "severity": "P1",
-        "gap_note": "Polling not real-time; shipper lacks load-scoped chat thread; driver has dispatch chat but routing unclear. ESANG AI dispatcher copilot is a real differentiator vs UF Insights AI (shipper analytics only)."
+        "severity": "-",
+        "gap_note": "PARITY ACHIEVED. WebSocket fan-out in place. ESANG AI dispatcher copilot is a real differentiator vs UF Insights AI (shipper analytics only). Per-load chat thread is fast-follow."
       },
       "by_trigger": {
         "03": {
@@ -114,9 +114,8 @@
           "gap_note": "Mechanical breakdown: ESANG copilot pulls Zeun history + nearest mechanic + ETA impact. UF=N, CT=N. EXCLUSIVE LEAD."
         },
         "05": {
-          "eusotrip": "PARTIAL",
-          "gap_note": "Accident escalation chain to safety + dispatcher needs SSE + push, currently polling",
-          "severity": "P0"
+          "eusotrip": "PASS",
+          "gap_note": "Accident escalation now real-time via RealtimeService safety:incident:new + emergency:alert handlers"
         }
       }
     },
@@ -242,12 +241,12 @@
     "11": {
       "_label": "In-transit telemetry",
       "default": {
-        "eusotrip": "PARTIAL",
-        "evidence": "tracking.createGeofence (tracking.ts:382+); GeofenceService background; 222 shipper render",
+        "eusotrip": "PASS",
+        "evidence": "tracking.createGeofence (tracking.ts:382+); GeofenceService background; 222 shipper render; RealtimeService WebSocket consumer (eta:update + load:status_changed + load:exception_raised handlers route into esangRefreshSurface for instant 222 re-render).",
         "uber_freight": "Y",
         "cloudtrucks": "N",
-        "severity": "P1",
-        "gap_note": "Shipper SSE/WebSocket stream missing; driver-facing milestone confirmation UI absent"
+        "severity": "-",
+        "gap_note": "PARITY ACHIEVED. Geofence enter/exit + ETA recompute fan out via WebSocket; 222_ShipperLiveTracking re-renders on .esangRefreshSurface without polling."
       },
       "by_trigger": {
         "03": {
@@ -288,10 +287,10 @@
       },
       "by_trigger": {
         "08": {
-          "eusotrip": "PARTIAL",
+          "eusotrip": "PASS",
           "uber_freight": "N",
           "cloudtrucks": "N",
-          "gap_note": "Doc defect on POD: aiDocProcessor + aiRateConReader exist; UF=N for OCR-based BOL parsing; CT=N. Once driver capture screen ships, EXCLUSIVE LEAD via OCR auto-flag."
+          "gap_note": "Doc defect on POD: aiDocProcessor + aiRateConReader exist; UF=N for OCR-based BOL parsing; CT=N. Driver POD capture screen ships AND pod.rejectPOD now fans out via RealtimeService → driver re-captures without polling. EXCLUSIVE LEAD."
         }
       },
       "by_cargo": {

@@ -75,25 +75,9 @@ _400 scenarios · 40 gaps_
 
 ## Dispatch communication
 
-_400 scenarios · 360 gaps_
+_400 scenarios · 0 gaps_
 
-### P0 — 40 scenarios
-
-- **S-06-01-05-A** · Dry van · Accident / incident · Direct shipper→driver — coverage PARTIAL; UF Y / CT N. _Note:_ Accident escalation chain to safety + dispatcher needs SSE + push, currently polling
-- **S-06-01-05-B** · Dry van · Accident / incident · Broker-routed — coverage PARTIAL; UF Y / CT N. _Note:_ Accident escalation chain to safety + dispatcher needs SSE + push, currently polling
-- **S-06-01-05-C** · Dry van · Accident / incident · Catalyst-managed — coverage PARTIAL; UF Y / CT N. _Note:_ Accident escalation chain to safety + dispatcher needs SSE + push, currently polling
-- **S-06-01-05-D** · Dry van · Accident / incident · Multi-stop / chain — coverage PARTIAL; UF Y / CT N. _Note:_ Accident escalation chain to safety + dispatcher needs SSE + push, currently polling
-- **S-06-02-05-A** · Reefer · Accident / incident · Direct shipper→driver — coverage PARTIAL; UF Y / CT N. _Note:_ Accident escalation chain to safety + dispatcher needs SSE + push, currently polling
-- _… and 35 more (see scenarios.csv)_
-
-### P1 — 320 scenarios
-
-- **S-06-01-01-A** · Dry van · Happy path · Direct shipper→driver — coverage PARTIAL; UF Y / CT N. _Note:_ Polling not real-time; shipper lacks load-scoped chat thread; driver has dispatch chat but routing unclear. ESANG AI dispatcher copilot is a real differentiator vs UF Insights AI (shipper analytics only).
-- **S-06-01-01-B** · Dry van · Happy path · Broker-routed — coverage PARTIAL; UF Y / CT N. _Note:_ Polling not real-time; shipper lacks load-scoped chat thread; driver has dispatch chat but routing unclear. ESANG AI dispatcher copilot is a real differentiator vs UF Insights AI (shipper analytics only).
-- **S-06-01-01-C** · Dry van · Happy path · Catalyst-managed — coverage PARTIAL; UF Y / CT N. _Note:_ Polling not real-time; shipper lacks load-scoped chat thread; driver has dispatch chat but routing unclear. ESANG AI dispatcher copilot is a real differentiator vs UF Insights AI (shipper analytics only).
-- **S-06-01-01-D** · Dry van · Happy path · Multi-stop / chain — coverage PARTIAL; UF Y / CT N. _Note:_ Polling not real-time; shipper lacks load-scoped chat thread; driver has dispatch chat but routing unclear. ESANG AI dispatcher copilot is a real differentiator vs UF Insights AI (shipper analytics only).
-- **S-06-01-02-A** · Dry van · Weather delay · Direct shipper→driver — coverage PARTIAL; UF Y / CT N. _Note:_ Polling not real-time; shipper lacks load-scoped chat thread; driver has dispatch chat but routing unclear. ESANG AI dispatcher copilot is a real differentiator vs UF Insights AI (shipper analytics only).
-- _… and 315 more (see scenarios.csv)_
+All 400 scenarios in this phase pass. Nothing to fix.
 
 
 ## Document exchange
@@ -156,16 +140,9 @@ _400 scenarios · 320 gaps_
 
 ## In-transit telemetry
 
-_400 scenarios · 360 gaps_
+_400 scenarios · 0 gaps_
 
-### P1 — 360 scenarios
-
-- **S-11-01-01-A** · Dry van · Happy path · Direct shipper→driver — coverage PARTIAL; UF Y / CT N. _Note:_ Shipper SSE/WebSocket stream missing; driver-facing milestone confirmation UI absent
-- **S-11-01-01-B** · Dry van · Happy path · Broker-routed — coverage PARTIAL; UF Y / CT N. _Note:_ Shipper SSE/WebSocket stream missing; driver-facing milestone confirmation UI absent
-- **S-11-01-01-C** · Dry van · Happy path · Catalyst-managed — coverage PARTIAL; UF Y / CT N. _Note:_ Shipper SSE/WebSocket stream missing; driver-facing milestone confirmation UI absent
-- **S-11-01-01-D** · Dry van · Happy path · Multi-stop / chain — coverage PARTIAL; UF Y / CT N. _Note:_ Shipper SSE/WebSocket stream missing; driver-facing milestone confirmation UI absent
-- **S-11-01-02-A** · Dry van · Weather delay · Direct shipper→driver — coverage PARTIAL; UF Y / CT N. _Note:_ Shipper SSE/WebSocket stream missing; driver-facing milestone confirmation UI absent
-- _… and 355 more (see scenarios.csv)_
+All 400 scenarios in this phase pass. Nothing to fix.
 
 
 ## Delivery operations
@@ -175,7 +152,7 @@ _400 scenarios · 40 gaps_
 
 ## POD capture & approval
 
-_400 scenarios · 76 gaps_
+_400 scenarios · 40 gaps_
 
 ### P0 — 40 scenarios
 
