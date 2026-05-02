@@ -719,8 +719,6 @@ struct ShipperBids: View {
             Button {
                 if let top = rankedBids.first {
                     Task { await acceptBid(top) }
-                    NotificationCenter.default.post(name: .eusoShipperBidAccept, object: nil,
-                                                    userInfo: ["bidId": top.id])
                 }
             } label: {
                 let topAmount = rankedBids.first?.amount ?? 0
@@ -1338,7 +1336,6 @@ private struct PennantShape: Shape {
 // MARK: - Notification names
 
 extension Notification.Name {
-    static let eusoShipperBidAccept       = Notification.Name("eusoShipperBidAccept")
     static let eusoShipperBidsCounterAll  = Notification.Name("eusoShipperBidsCounterAll")
 }
 

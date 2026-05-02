@@ -126,7 +126,6 @@ struct ShipperProfile: View {
 
     private var editPill: some View {
         Button(action: {
-            NotificationCenter.default.post(name: .eusoShipperProfileEdit, object: nil)
             showEditProfile = true
         }) {
             HStack(spacing: 6) {
@@ -976,12 +975,6 @@ struct ShipperProfile: View {
         f.currencyCode = "USD"
         return f.string(from: NSNumber(value: v)) ?? "$\(Int(v))"
     }
-}
-
-// MARK: - Notification names
-
-extension Notification.Name {
-    static let eusoShipperProfileEdit = Notification.Name("eusoShipperProfileEdit")
 }
 
 // MARK: - Screen wrapper
