@@ -775,6 +775,20 @@ struct DockCamSourcePicker: View {
 
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
+    @State private var streamPick: StreamPick? = nil
+
+    /// Identifiable wrapper used as the .sheet(item:) binding for
+    /// `MediaStreamSheet`. Holds the source + ids to start the
+    /// session against.
+    struct StreamPick: Identifiable, Hashable {
+        let id: String
+        let source: MediaAPI.Source
+        let label: String
+        let terminalId: Int?
+        let doorNumber: String?
+        let carrierId: Int?
+        let trailerId: String?
+    }
 
     var body: some View {
         NavigationStack {
@@ -787,7 +801,17 @@ struct DockCamSourcePicker: View {
                         title: "Terminal NVR live",
                         subtitle: nvrSubtitle,
                         available: hasNvr,
-                        action: { /* signaling handshake target */ }
+                        action: {
+                            streamPick = StreamPick(
+                                id: "nvr-\(doorNumber)",
+                                source: .terminalNvr,
+                                label: "Terminal NVR · Door \(doorNumber)",
+                                terminalId: terminalCaps?.terminalId,
+                                doorNumber: doorNumber,
+                                carrierId: nil,
+                                trailerId: nil
+                            )
+                        }
                     )
 
                     sourceRow(
@@ -795,7 +819,17 @@ struct DockCamSourcePicker: View {
                         title: "Dash cam · \(carrierCaps?.dashCam.vendor.capitalized ?? "None")",
                         subtitle: dashCamSubtitle,
                         available: hasDashCam,
-                        action: { /* dash-cam vendor stream target */ }
+                        action: {
+                            streamPick = StreamPick(
+                                id: "dash-\(carrierCaps?.carrierId ?? 0)",
+                                source: .dashCam,
+                                label: "Dash cam · \(carrierCaps?.dashCam.vendor.capitalized ?? "Fleet")",
+                                terminalId: nil,
+                                doorNumber: nil,
+                                carrierId: carrierCaps?.carrierId,
+                                trailerId: nil
+                            )
+                        }
                     )
 
                     sourceRow(
@@ -820,6 +854,17 @@ struct DockCamSourcePicker: View {
                 .padding(.vertical, 12)
             }
             .background(palette.bgPrimary.ignoresSafeArea())
+            .sheet(item: $streamPick) { pick in
+                MediaStreamSheet(
+                    source: pick.source,
+                    label: pick.label,
+                    terminalId: pick.terminalId,
+                    doorNumber: pick.doorNumber,
+                    carrierId: pick.carrierId,
+                    trailerId: pick.trailerId
+                )
+                .environment(\.palette, palette)
+            }
             .navigationTitle("Dock cam · Door \(doorNumber)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -956,4 +1001,182 @@ struct DockCamSourcePicker: View {
 #Preview("022 · Dock Assigned · Light") {
     DockAssignedScreen(theme: Theme.light)
         .preferredColorScheme(.light)
+}
+
+// MARK: - MediaStreamSheet (WebRTC + HLS)
+//
+// Capability-aware live-camera renderer. Presented when any of the
+// three streamed sources in `DockCamSourcePicker` (terminal NVR, dash
+// cam, trailer dome cam) is picked. Calls `media.startCamSession`,
+// dispatches the response onto either:
+//   • WKWebView pointed at the signed signaling page (WebRTC, ~500ms
+//     latency, vendor-agnostic — Genetec / Avigilon / Milestone /
+//     Samsara / Motive / Cipia all serve their viewer here).
+//   • AVPlayer for the HLS .m3u8 fallback (Sensata / ORBCOMM and the
+//     Garmin dashcams that haven't shipped WebRTC yet).
+//
+// Lifecycle: starts the session on appear, calls `media.endCamSession`
+// on dismiss so the partner stream + EusoTrip media-gateway quota
+// drop within ms.
+
+import WebKit
+import AVKit
+
+struct MediaStreamSheet: View {
+    let source: MediaAPI.Source
+    let label: String
+    /// Identity of the camera the user picked. Different sources need
+    /// different ids — terminal NVR uses (terminalId, doorNumber);
+    /// dash cam uses carrierId; dome cam uses trailerId.
+    let terminalId: Int?
+    let doorNumber: String?
+    let carrierId: Int?
+    let trailerId: String?
+
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var envelope: MediaAPI.CamSessionEnvelope? = nil
+    @State private var loading: Bool = true
+    @State private var errorText: String? = nil
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                palette.bgPrimary.ignoresSafeArea()
+                if loading {
+                    VStack(spacing: 12) {
+                        ProgressView().controlSize(.large)
+                        Text("Connecting to \(label.lowercased())…")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                } else if let env = envelope {
+                    streamRenderer(env)
+                } else if let err = errorText {
+                    errorPanel(err)
+                }
+            }
+            .navigationTitle(label)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .task { await startSession() }
+            .onDisappear { Task { await endSession() } }
+        }
+    }
+
+    @ViewBuilder
+    private func streamRenderer(_ env: MediaAPI.CamSessionEnvelope) -> some View {
+        switch env.transport {
+        case .webrtc:
+            if let urlStr = env.signalingUrl, let url = URL(string: urlStr) {
+                WebRTCViewerBridge(url: url)
+                    .ignoresSafeArea(edges: .bottom)
+            } else {
+                errorPanel("No signaling URL on session")
+            }
+        case .hls:
+            if let urlStr = env.streamUrl, let url = URL(string: urlStr) {
+                HLSPlayerView(url: url)
+                    .ignoresSafeArea(edges: .bottom)
+            } else {
+                errorPanel("No HLS URL on session")
+            }
+        }
+    }
+
+    private func errorPanel(_ msg: String) -> some View {
+        VStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 24, weight: .heavy))
+                .foregroundStyle(Brand.danger)
+            Text("Couldn't open the camera feed")
+                .font(EType.body.weight(.bold))
+                .foregroundStyle(palette.textPrimary)
+            Text(msg)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(28)
+    }
+
+    private func startSession() async {
+        loading = true
+        defer { loading = false }
+        do {
+            envelope = try await EusoTripAPI.shared.media.startCamSession(
+                source: source,
+                terminalId: terminalId,
+                doorNumber: doorNumber,
+                carrierId: carrierId,
+                trailerId: trailerId
+            )
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    private func endSession() async {
+        guard let id = envelope?.sessionId else { return }
+        _ = try? await EusoTripAPI.shared.media.endCamSession(sessionId: id)
+    }
+}
+
+/// Embeds the EusoTrip media-gateway's WebRTC viewer page in a
+/// WKWebView. The page does the WebRTC handshake against the
+/// partner's signaling server using the JWT in the URL (the
+/// `signalingToken` field of the envelope is folded into a query
+/// param server-side so the URL self-authenticates).
+///
+/// Permissions: `mediaPlaybackRequiresUserAction = false` so the
+/// audio + video start without an extra tap. `inlineMediaPlayback`
+/// keeps the feed inside the sheet rather than going fullscreen.
+private struct WebRTCViewerBridge: UIViewRepresentable {
+    let url: URL
+
+    func makeUIView(context: Context) -> WKWebView {
+        let cfg = WKWebViewConfiguration()
+        cfg.allowsInlineMediaPlayback = true
+        cfg.mediaTypesRequiringUserActionForPlayback = []
+        let wv = WKWebView(frame: .zero, configuration: cfg)
+        wv.scrollView.isScrollEnabled = false
+        wv.backgroundColor = .black
+        wv.isOpaque = false
+        wv.load(URLRequest(url: url))
+        return wv
+    }
+
+    func updateUIView(_ wv: WKWebView, context: Context) {
+        if wv.url != url { wv.load(URLRequest(url: url)) }
+    }
+}
+
+/// HLS fallback for partners that don't yet expose a WebRTC viewer
+/// page. Apple's AVPlayer handles .m3u8 natively. Latency is
+/// 5-10s — clearly worse than WebRTC but still production-safe for
+/// audit photo / loose monitoring use cases.
+private struct HLSPlayerView: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeUIViewController(context: Context) -> AVPlayerViewController {
+        let player = AVPlayer(url: url)
+        let vc = AVPlayerViewController()
+        vc.player = player
+        vc.allowsPictureInPicturePlayback = false
+        vc.showsPlaybackControls = true
+        player.play()
+        return vc
+    }
+
+    func updateUIViewController(_ vc: AVPlayerViewController, context: Context) {
+        if (vc.player?.currentItem?.asset as? AVURLAsset)?.url != url {
+            vc.player = AVPlayer(url: url)
+            vc.player?.play()
+        }
+    }
 }

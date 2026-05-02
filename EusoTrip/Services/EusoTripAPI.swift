@@ -303,6 +303,7 @@ final class EusoTripAPI: ObservableObject {
     lazy var hotZones: HotZonesAPI = HotZonesAPI(api: self)
     lazy var eld: ELDAPI = ELDAPI(api: self)
     lazy var capabilities: CapabilitiesAPI = CapabilitiesAPI(api: self)
+    lazy var media: MediaAPI = MediaAPI(api: self)
 
     // --- Driver-facing surfaces added to back the gamification / wallet /
     // fleet / availability screens. Each router mirrors a file under
@@ -16308,5 +16309,108 @@ final class EusoNISession: NSObject, ObservableObject, NISessionDelegate {
 
     func session(_ session: NISession, didInvalidateWith error: Error) {
         status = .failed(error.localizedDescription)
+    }
+}
+
+// MARK: - mediaRouter (live camera streams)
+//
+// Mirrors `frontend/server/routers/media.ts`. The router doesn't store
+// stream URLs directly — it mints short-TTL signed signaling URLs on
+// demand so the iOS client can render a partner NVR or dash-cam feed
+// without ever holding the credentials. iOS embeds the signaling URL
+// inside a WKWebView; the host page does the WebRTC handshake against
+// the partner's stream API and exchanges the SDP/ICE.
+//
+// Three sources today (all behind the same `startCamSession` shape so
+// the iOS picker dispatches them uniformly):
+//   • Terminal NVR    — partner publisher (Genetec / Avigilon /
+//                        Milestone / RTSP). Source = "terminal-nvr".
+//   • Driver dash-cam — fleet vendor (Samsara / Motive / Garmin /
+//                        Cipia). Source = "dash-cam".
+//   • Trailer dome cam — equipment vendor (Sensata / ORBCOMM /
+//                        Spireon). Source = "trailer-dome-cam".
+//
+// HLS fallback: `streamUrl` field surfaces an .m3u8 URL when the
+// partner doesn't speak WebRTC; iOS renders that via AVPlayer
+// instead of the WKWebView signaling page. AVPlayer adds ~5-10s of
+// latency so WebRTC is the preferred path.
+
+struct MediaAPI {
+    unowned let api: EusoTripAPI
+
+    enum Source: String, Codable {
+        case terminalNvr     = "terminal-nvr"
+        case dashCam         = "dash-cam"
+        case trailerDomeCam  = "trailer-dome-cam"
+    }
+
+    enum Transport: String, Codable {
+        case webrtc
+        case hls
+    }
+
+    /// Server response for `media.startCamSession`. Either
+    /// `signalingUrl` (WebRTC handshake page hosted by EusoTrip's
+    /// media gateway) or `streamUrl` (HLS .m3u8 fallback) will be
+    /// non-nil — never both, never neither. `transport` mirrors
+    /// which one the partner chose.
+    struct CamSessionEnvelope: Decodable, Hashable {
+        let sessionId: String
+        let transport: Transport
+        let signalingUrl: String?
+        let streamUrl: String?
+        let signalingToken: String?    // JWT, embedded in iframe URL
+        let expiresAt: String          // ISO8601, ~5min TTL
+        let label: String?
+    }
+
+    /// Request a fresh stream session. iOS calls this on dock-cam
+    /// picker tap. Backend RBAC-gates the call:
+    ///   • terminal-nvr   → driver must be assigned to a load
+    ///                       bound for that terminal
+    ///   • dash-cam       → driver must own/be assigned to the
+    ///                       carrier the dash-cam belongs to
+    ///   • trailer-dome-cam → driver must be assigned to a load
+    ///                       carrying that trailer
+    func startCamSession(
+        source: Source,
+        terminalId: Int? = nil,
+        doorNumber: String? = nil,
+        carrierId: Int? = nil,
+        trailerId: String? = nil
+    ) async throws -> CamSessionEnvelope {
+        struct Input: Encodable {
+            let source: String
+            let terminalId: Int?
+            let doorNumber: String?
+            let carrierId: Int?
+            let trailerId: String?
+        }
+        return try await api.mutation(
+            "media.startCamSession",
+            input: Input(
+                source: source.rawValue,
+                terminalId: terminalId,
+                doorNumber: doorNumber,
+                carrierId: carrierId,
+                trailerId: trailerId
+            )
+        )
+    }
+
+    /// Tear down a session early (on sheet dismiss / picker cancel).
+    /// Server invalidates the JWT immediately so the partner stream
+    /// drops within a few hundred ms — saves quota / billing.
+    @discardableResult
+    func endCamSession(sessionId: String) async throws -> SimpleResult {
+        struct Input: Encodable { let sessionId: String }
+        return try await api.mutation(
+            "media.endCamSession",
+            input: Input(sessionId: sessionId)
+        )
+    }
+
+    struct SimpleResult: Decodable {
+        let success: Bool
     }
 }
