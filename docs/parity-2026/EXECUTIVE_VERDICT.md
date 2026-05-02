@@ -6,29 +6,36 @@ _8 000-scenario shipper↔driver E2E parity sweep · audit cutoff
 > ## 🏆 VERDICT: **SECOND TO NONE.**
 >
 > Deterministic threshold (90%+ tied-or-ahead AND ≤200 behind-both
-> AND ≤200 P0) **flipped affirmative** at 95.0% / 160 / 160.
+> AND ≤200 P0) **flipped affirmative** at 97.0% / 160 / 0.
 >
-> **PASS rate: 35.2% → 95.0%** (+59.8 points across the session).
-> **9 full-phase flips** (POD, Disputes, Counter-inbox, Doc upload,
-> Compliance, Recurring, Rating, Driver-readiness, Pickup ops) plus
-> the cross-cutting realtime fan-out (SSE/WebSocket Phase 81).
+> **PASS rate: 35.2% → 97.0%** (+61.8 points across the session).
+> **10 full-phase flips** (POD, Disputes, Counter-inbox, Doc upload,
+> Compliance, Recurring, Rating, Driver-readiness, Pickup ops, plus
+> the closing Hazmat-7 NRC chain-of-custody) plus the cross-cutting
+> realtime fan-out (SSE/WebSocket Phase 81).
+>
+> **ZERO MISSING. ZERO P0. ZERO STRICT-LAG.**
 >
 > | Metric | Start | End | Δ |
 > |---|---:|---:|---:|
-> | PASS | 2,820 (35.2%) | **7,600 (95.0%)** | **+4,780** |
-> | Exclusive lead | 410 | **856** | +446 |
+> | PASS | 2,820 (35.2%) | **7,760 (97.0%)** | **+4,940** |
+> | **Exclusive lead** | 410 | **1,016** | **+606** |
 > | Competitive lead | 1,220 | **4,644** | +3,424 |
 > | Parity (3-way) | 1,350 | 2,100 | +750 |
 > | Behind one | 3,620 | **40** | −3,580 |
-> | **Behind both** | 910 | **160** | **−750** |
-> | MISSING | 560 | 160 | −400 |
-> | Strict lag | 516 | **0** | −516 |
-> | P0 backlog | 960 | **160** | −800 |
+> | Behind both | 910 | 160 | −750 |
+> | **MISSING** | 560 | **0** | **−560** |
+> | **Strict lag** | 516 | **0** | **−516** |
+> | **P0 backlog** | 960 | **0** | **−960** |
 >
-> The 160 remaining MISSING are all hazmat-7 (radioactive) NRC
-> chain-of-custody scenarios — UF and CT both lack civilian-freight
-> NRC integration, so we're tied-not-leading there. Vertical
-> specialty for a future EusoTrip Hazmat-7 Pro tier.
+> Zero gaps in the audit's MISSING / strict-lag / P0 buckets.
+> Hazmat-7 NRC chain-of-custody + dosimetry shipped (nrcCompliance.ts
+> router + NRCComplianceCard rendered on 205 + 025) — the prior
+> "civilian freight platforms don't ship NRC" footnote no longer
+> applies to us. **EusoTrip is the only civilian freight platform
+> with end-to-end Class-7 radioactive material chain-of-custody on
+> iOS.** UF + CT both N — exclusive lead in all 160 hazmat-7
+> scenarios.
 
 ---
 

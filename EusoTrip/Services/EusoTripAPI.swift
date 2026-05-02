@@ -295,6 +295,7 @@ final class EusoTripAPI: ObservableObject {
     lazy var bayOps: BayOpsAPI = BayOpsAPI(api: self)
     lazy var pod: PODAPI = PODAPI(api: self)
     lazy var disputes: DisputesAPI = DisputesAPI(api: self)
+    lazy var nrc: NRCAPI = NRCAPI(api: self)
     lazy var notifications: NotificationsAPI = NotificationsAPI(api: self)
     lazy var drivers: DriversAPI = DriversAPI(api: self)
     lazy var news: NewsAPI = NewsAPI(api: self)
@@ -2925,6 +2926,266 @@ struct DisputesAPI {
         return try await api.mutation(
             "disputes.escalate",
             input: Input(id: id, reason: reason)
+        )
+    }
+}
+
+// MARK: - nrcComplianceRouter (hazmat-7 chain-of-custody + dosimetry)
+//
+// Mirrors `frontend/server/routers/nrcCompliance.ts`. Closes the
+// final 160 MISSING scenarios in the 8000-scenario shipper↔driver
+// parity audit (cargo type 08 hazmat-7 radioactive). UF + CT both
+// lack civilian-freight NRC integration; this router + the iOS
+// surfaces shipping alongside it turn those 160 scenarios from
+// MISSING into EXCLUSIVE LEAD.
+
+struct NRCAPI {
+    unowned let api: EusoTripAPI
+
+    enum LicenseCategory: String, Codable, CaseIterable, Identifiable, Hashable {
+        case general, specific
+        case typeBCertificate = "type_b_certificate"
+        case fissileClass     = "fissile_class"
+        case exempt
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .general:           return "General license"
+            case .specific:          return "Specific license"
+            case .typeBCertificate:  return "Type B certificate"
+            case .fissileClass:      return "Fissile class"
+            case .exempt:            return "Exempt"
+            }
+        }
+    }
+
+    enum DosimetryKind: String, Codable, CaseIterable, Identifiable, Hashable {
+        case tldMonthly      = "tld_monthly"
+        case epdContinuous   = "epd_continuous"
+        case shipmentLog     = "shipment_log"
+        case ambient
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .tldMonthly:    return "TLD · monthly"
+            case .epdContinuous: return "EPD · continuous"
+            case .shipmentLog:   return "Shipment log"
+            case .ambient:       return "Ambient"
+            }
+        }
+    }
+
+    enum TransferKind: String, Codable, CaseIterable, Identifiable, Hashable {
+        case shipperToDriver   = "shipper_to_driver"
+        case driverToConsignee = "driver_to_consignee"
+        case driverToDriver    = "driver_to_driver"
+        case driverToTerminal  = "driver_to_terminal"
+        case terminalToDriver  = "terminal_to_driver"
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .shipperToDriver:   return "Shipper → Driver"
+            case .driverToConsignee: return "Driver → Consignee"
+            case .driverToDriver:    return "Driver → Driver"
+            case .driverToTerminal:  return "Driver → Terminal"
+            case .terminalToDriver:  return "Terminal → Driver"
+            }
+        }
+    }
+
+    // MARK: - License
+
+    struct LicenseStatus: Decodable, Hashable {
+        let loadId: String
+        let category: String?
+        let licenseNumber: String?
+        let issuedBy: String?
+        let issuedAt: String?
+        let expiresAt: String?
+        let daysRemaining: Int?
+        let authorizedForms: [String]
+        let verifiedAt: String?
+        let verifiedBy: Int?
+        let status: String?  // "active" | "expired" | "missing"
+    }
+
+    func getLicenseStatus(loadId: String) async throws -> LicenseStatus {
+        struct Input: Encodable { let loadId: String }
+        return try await api.query(
+            "nrc.getLicenseStatus",
+            input: Input(loadId: loadId)
+        )
+    }
+
+    struct RecordLicenseAck: Decodable, Hashable {
+        let success: Bool?
+        let documentId: Int?
+    }
+
+    @discardableResult
+    func recordLicense(
+        loadId: String,
+        category: LicenseCategory,
+        licenseNumber: String,
+        issuedBy: String,
+        issuedAt: String,
+        expiresAt: String,
+        authorizedForms: [String]
+    ) async throws -> RecordLicenseAck {
+        struct Input: Encodable {
+            let loadId: String
+            let category: String
+            let licenseNumber: String
+            let issuedBy: String
+            let issuedAt: String
+            let expiresAt: String
+            let authorizedForms: [String]
+        }
+        return try await api.mutation(
+            "nrc.recordLicense",
+            input: Input(
+                loadId: loadId, category: category.rawValue,
+                licenseNumber: licenseNumber, issuedBy: issuedBy,
+                issuedAt: issuedAt, expiresAt: expiresAt,
+                authorizedForms: authorizedForms
+            )
+        )
+    }
+
+    // MARK: - Chain of custody
+
+    struct CustodyTransfer: Decodable, Hashable, Identifiable {
+        let kind: String
+        let fromUserId: Int
+        let fromUserName: String?
+        let fromSignature: String?
+        let toUserId: Int
+        let toUserName: String?
+        let toSignature: String?
+        let dosimeterReadingMrem: Double?
+        let dosimeterKind: String?
+        let location: String?
+        let timestamp: String
+        let notes: String?
+
+        var id: String { "\(timestamp)-\(fromUserId)-\(toUserId)" }
+    }
+
+    struct ChainOfCustody: Decodable, Hashable {
+        let loadId: String
+        let transfers: [CustodyTransfer]
+    }
+
+    func getChainOfCustody(loadId: String) async throws -> ChainOfCustody {
+        struct Input: Encodable { let loadId: String }
+        return try await api.query(
+            "nrc.getChainOfCustody",
+            input: Input(loadId: loadId)
+        )
+    }
+
+    struct RecordTransferAck: Decodable, Hashable {
+        let success: Bool?
+        let transferIndex: Int?
+        let documentId: Int?
+    }
+
+    @discardableResult
+    func recordTransfer(
+        loadId: String,
+        kind: TransferKind,
+        fromUserId: Int,
+        toUserId: Int,
+        fromSignatureBase64: String,
+        toSignatureBase64: String,
+        dosimeterReadingMrem: Double? = nil,
+        dosimeterKind: DosimetryKind? = nil,
+        location: String? = nil,
+        notes: String? = nil
+    ) async throws -> RecordTransferAck {
+        struct Input: Encodable {
+            let loadId: String
+            let kind: String
+            let fromUserId: Int
+            let toUserId: Int
+            let fromSignatureBase64: String
+            let toSignatureBase64: String
+            let dosimeterReadingMrem: Double?
+            let dosimeterKind: String?
+            let location: String?
+            let notes: String?
+        }
+        return try await api.mutation(
+            "nrc.recordTransfer",
+            input: Input(
+                loadId: loadId, kind: kind.rawValue,
+                fromUserId: fromUserId, toUserId: toUserId,
+                fromSignatureBase64: fromSignatureBase64,
+                toSignatureBase64: toSignatureBase64,
+                dosimeterReadingMrem: dosimeterReadingMrem,
+                dosimeterKind: dosimeterKind?.rawValue,
+                location: location, notes: notes
+            )
+        )
+    }
+
+    // MARK: - Dosimetry
+
+    struct DosimetryReading: Decodable, Hashable, Identifiable {
+        let readingMrem: Double
+        let kind: String
+        let readingTime: String
+        let loggedByUserId: Int?
+        let notes: String?
+
+        var id: String { "\(readingTime)-\(readingMrem)" }
+    }
+
+    struct DosimetryLog: Decodable, Hashable {
+        let loadId: String
+        let readings: [DosimetryReading]
+        let cumulativeMrem: Double
+        /// "clear" | "watch" | "warn" | "expired"
+        let severity: String
+    }
+
+    func getDosimetryLog(loadId: String) async throws -> DosimetryLog {
+        struct Input: Encodable { let loadId: String }
+        return try await api.query(
+            "nrc.getDosimetryLog",
+            input: Input(loadId: loadId)
+        )
+    }
+
+    struct SubmitDosimetryAck: Decodable, Hashable {
+        let success: Bool?
+        let readingIndex: Int?
+        let documentId: Int?
+    }
+
+    @discardableResult
+    func submitDosimetryReading(
+        loadId: String,
+        readingMrem: Double,
+        kind: DosimetryKind,
+        notes: String? = nil
+    ) async throws -> SubmitDosimetryAck {
+        struct Input: Encodable {
+            let loadId: String
+            let readingMrem: Double
+            let kind: String
+            let readingTime: String
+            let notes: String?
+        }
+        return try await api.mutation(
+            "nrc.submitDosimetryReading",
+            input: Input(
+                loadId: loadId,
+                readingMrem: readingMrem,
+                kind: kind.rawValue,
+                readingTime: ISO8601DateFormatter().string(from: Date()),
+                notes: notes
+            )
         )
     }
 }

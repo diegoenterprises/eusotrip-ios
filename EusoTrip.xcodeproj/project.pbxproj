@@ -212,6 +212,7 @@
 		D2DLPOD0000000000001 /* DeliveryPODCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DLPOD0000000000002 /* DeliveryPODCaptureView.swift */; };
 		D2RATPV0000000000001 /* RatingPromptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RATPV0000000000002 /* RatingPromptView.swift */; };
 		D2DISPV0000000000001 /* DisputeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DISPV0000000000002 /* DisputeViews.swift */; };
+		D2NRCCC0000000000001 /* NRCComplianceCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2NRCCC0000000000002 /* NRCComplianceCard.swift */; };
 		D2DCIBX0000000000001 /* DriverCounterInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DCIBX0000000000002 /* DriverCounterInboxView.swift */; };
 		D2DLDOC0000000000001 /* DriverLoadDocUploadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DLDOC0000000000002 /* DriverLoadDocUploadView.swift */; };
 		D2DCMPL0000000000001 /* DriverComplianceDashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DCMPL0000000000002 /* DriverComplianceDashboard.swift */; };
@@ -761,6 +762,7 @@
 		D2DLPOD0000000000002 /* DeliveryPODCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DeliveryPODCaptureView.swift; path = EusoTrip/Views/Driver/DeliveryPODCaptureView.swift; sourceTree = SOURCE_ROOT; };
 		D2RATPV0000000000002 /* RatingPromptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RatingPromptView.swift; path = EusoTrip/Views/Components/RatingPromptView.swift; sourceTree = SOURCE_ROOT; };
 		D2DISPV0000000000002 /* DisputeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DisputeViews.swift; path = EusoTrip/Views/Components/DisputeViews.swift; sourceTree = SOURCE_ROOT; };
+		D2NRCCC0000000000002 /* NRCComplianceCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NRCComplianceCard.swift; path = EusoTrip/Views/Components/NRCComplianceCard.swift; sourceTree = SOURCE_ROOT; };
 		D2DCIBX0000000000002 /* DriverCounterInboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DriverCounterInboxView.swift; path = EusoTrip/Views/Driver/DriverCounterInboxView.swift; sourceTree = SOURCE_ROOT; };
 		D2DLDOC0000000000002 /* DriverLoadDocUploadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DriverLoadDocUploadView.swift; path = EusoTrip/Views/Driver/DriverLoadDocUploadView.swift; sourceTree = SOURCE_ROOT; };
 		D2DCMPL0000000000002 /* DriverComplianceDashboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DriverComplianceDashboard.swift; path = EusoTrip/Views/Driver/DriverComplianceDashboard.swift; sourceTree = SOURCE_ROOT; };
@@ -1679,6 +1681,7 @@
 				D1A11111111111111111AE02 /* TileReveal.swift */,
 				D2RATPV0000000000002 /* RatingPromptView.swift */,
 				D2DISPV0000000000002 /* DisputeViews.swift */,
+				D2NRCCC0000000000002 /* NRCComplianceCard.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -2139,6 +2142,7 @@
 				D2DLPOD0000000000001 /* DeliveryPODCaptureView.swift in Sources */,
 				D2RATPV0000000000001 /* RatingPromptView.swift in Sources */,
 				D2DISPV0000000000001 /* DisputeViews.swift in Sources */,
+				D2NRCCC0000000000001 /* NRCComplianceCard.swift in Sources */,
 				D2DCIBX0000000000001 /* DriverCounterInboxView.swift in Sources */,
 				D2DLDOC0000000000001 /* DriverLoadDocUploadView.swift in Sources */,
 				D2DCMPL0000000000001 /* DriverComplianceDashboard.swift in Sources */,

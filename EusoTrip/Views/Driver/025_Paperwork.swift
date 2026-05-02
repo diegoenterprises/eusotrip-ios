@@ -81,6 +81,7 @@ struct Paperwork: View {
                 bolCard
                 metricStrip
                 breakCard
+                nrcCardIfHazmat7
                 footerActions
                 Color.clear.frame(height: 96)
             }
@@ -89,6 +90,28 @@ struct Paperwork: View {
         }
         .task { await hydrateLiveTrip() }
         .screenTileRoot()
+    }
+
+    // MARK: - NRC compliance card (Hazmat-7 closure)
+
+    /// Driver-side NRC card. Renders only on hazmat-7 loads. Driver
+    /// gets the "Log reading" CTA — this is the natural moment to
+    /// log a final dosimetry reading at the consignee before the
+    /// load closes. Server captures the entire chain alongside POD.
+    @ViewBuilder
+    private var nrcCardIfHazmat7: some View {
+        if isHazmat7Load {
+            NRCComplianceCard(loadId: lifecycle.loadId, driverSide: true)
+                .environmentObject(session)
+        }
+    }
+
+    private var isHazmat7Load: Bool {
+        let h = (activeLoad?.hazmatClass ?? "").lowercased()
+        let c = (activeLoad?.cargoType ?? "").lowercased()
+        if h.contains("7") || h == "class_7" || h == "class 7" { return true }
+        if c.contains("radioactive") || c.contains("hazmat-7") || c.contains("class-7") { return true }
+        return false
     }
 
     // MARK: Header

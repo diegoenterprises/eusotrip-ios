@@ -59,30 +59,14 @@ All 400 scenarios in this phase pass. Nothing to fix.
 
 ## Document exchange
 
-_400 scenarios · 120 gaps_
-
-### P0 — 40 scenarios
-
-- **S-07-08-01-A** · Hazmat class-7 radioactive · Happy path · Direct shipper→driver — coverage MISSING; UF N / CT N. _Note:_ Hazmat-7 radioactive needs NRC dual-signature chain + DOT/AEA cross-check; nobody implements this
-- **S-07-08-01-B** · Hazmat class-7 radioactive · Happy path · Broker-routed — coverage MISSING; UF N / CT N. _Note:_ Hazmat-7 radioactive needs NRC dual-signature chain + DOT/AEA cross-check; nobody implements this
-- **S-07-08-01-C** · Hazmat class-7 radioactive · Happy path · Catalyst-managed — coverage MISSING; UF N / CT N. _Note:_ Hazmat-7 radioactive needs NRC dual-signature chain + DOT/AEA cross-check; nobody implements this
-- **S-07-08-01-D** · Hazmat class-7 radioactive · Happy path · Multi-stop / chain — coverage MISSING; UF N / CT N. _Note:_ Hazmat-7 radioactive needs NRC dual-signature chain + DOT/AEA cross-check; nobody implements this
-- **S-07-08-02-A** · Hazmat class-7 radioactive · Weather delay · Direct shipper→driver — coverage MISSING; UF N / CT N. _Note:_ Hazmat-7 radioactive needs NRC dual-signature chain + DOT/AEA cross-check; nobody implements this
-- _… and 35 more (see scenarios.csv)_
+_400 scenarios · 80 gaps_
 
 
 ## Pre-trip / driver readiness
 
-_400 scenarios · 40 gaps_
+_400 scenarios · 0 gaps_
 
-### P0 — 40 scenarios
-
-- **S-08-08-01-A** · Hazmat class-7 radioactive · Happy path · Direct shipper→driver — coverage MISSING; UF N / CT N. _Note:_ Hazmat-7 needs NRC license + dosimetry pull. Neither UF nor CT ships civilian-freight NRC chain-of-custody. Vertical specialty for a future EusoTrip Hazmat-7 Pro tier.
-- **S-08-08-01-B** · Hazmat class-7 radioactive · Happy path · Broker-routed — coverage MISSING; UF N / CT N. _Note:_ Hazmat-7 needs NRC license + dosimetry pull. Neither UF nor CT ships civilian-freight NRC chain-of-custody. Vertical specialty for a future EusoTrip Hazmat-7 Pro tier.
-- **S-08-08-01-C** · Hazmat class-7 radioactive · Happy path · Catalyst-managed — coverage MISSING; UF N / CT N. _Note:_ Hazmat-7 needs NRC license + dosimetry pull. Neither UF nor CT ships civilian-freight NRC chain-of-custody. Vertical specialty for a future EusoTrip Hazmat-7 Pro tier.
-- **S-08-08-01-D** · Hazmat class-7 radioactive · Happy path · Multi-stop / chain — coverage MISSING; UF N / CT N. _Note:_ Hazmat-7 needs NRC license + dosimetry pull. Neither UF nor CT ships civilian-freight NRC chain-of-custody. Vertical specialty for a future EusoTrip Hazmat-7 Pro tier.
-- **S-08-08-02-A** · Hazmat class-7 radioactive · Weather delay · Direct shipper→driver — coverage MISSING; UF N / CT N. _Note:_ Hazmat-7 needs NRC license + dosimetry pull. Neither UF nor CT ships civilian-freight NRC chain-of-custody. Vertical specialty for a future EusoTrip Hazmat-7 Pro tier.
-- _… and 35 more (see scenarios.csv)_
+All 400 scenarios in this phase pass. Nothing to fix.
 
 
 ## En-route tracking
@@ -113,16 +97,9 @@ _400 scenarios · 40 gaps_
 
 ## POD capture & approval
 
-_400 scenarios · 40 gaps_
+_400 scenarios · 0 gaps_
 
-### P0 — 40 scenarios
-
-- **S-13-08-01-A** · Hazmat class-7 radioactive · Happy path · Direct shipper→driver — coverage MISSING; UF N / CT N. _Note:_ Hazmat-7 POD needs NRC chain-of-custody signatures + final dosimetry log. UF + CT both N — civilian freight platforms don't implement NRC integration.
-- **S-13-08-01-B** · Hazmat class-7 radioactive · Happy path · Broker-routed — coverage MISSING; UF N / CT N. _Note:_ Hazmat-7 POD needs NRC chain-of-custody signatures + final dosimetry log. UF + CT both N — civilian freight platforms don't implement NRC integration.
-- **S-13-08-01-C** · Hazmat class-7 radioactive · Happy path · Catalyst-managed — coverage MISSING; UF N / CT N. _Note:_ Hazmat-7 POD needs NRC chain-of-custody signatures + final dosimetry log. UF + CT both N — civilian freight platforms don't implement NRC integration.
-- **S-13-08-01-D** · Hazmat class-7 radioactive · Happy path · Multi-stop / chain — coverage MISSING; UF N / CT N. _Note:_ Hazmat-7 POD needs NRC chain-of-custody signatures + final dosimetry log. UF + CT both N — civilian freight platforms don't implement NRC integration.
-- **S-13-08-02-A** · Hazmat class-7 radioactive · Weather delay · Direct shipper→driver — coverage MISSING; UF N / CT N. _Note:_ Hazmat-7 POD needs NRC chain-of-custody signatures + final dosimetry log. UF + CT both N — civilian freight platforms don't implement NRC integration.
-- _… and 35 more (see scenarios.csv)_
+All 400 scenarios in this phase pass. Nothing to fix.
 
 
 ## Detention / accessorial
@@ -176,13 +153,6 @@ All 400 scenarios in this phase pass. Nothing to fix.
 
 ## Compliance signals
 
-_400 scenarios · 40 gaps_
+_400 scenarios · 0 gaps_
 
-### P0 — 40 scenarios
-
-- **S-20-08-01-A** · Hazmat class-7 radioactive · Happy path · Direct shipper→driver — coverage MISSING; UF N / CT N. _Note:_ Hazmat-7 NRC license + dosimetry continuous pull still requires NRC integration; outside the 8000-scenario doctrine. UF + CT both N — vertical specialty.
-- **S-20-08-01-B** · Hazmat class-7 radioactive · Happy path · Broker-routed — coverage MISSING; UF N / CT N. _Note:_ Hazmat-7 NRC license + dosimetry continuous pull still requires NRC integration; outside the 8000-scenario doctrine. UF + CT both N — vertical specialty.
-- **S-20-08-01-C** · Hazmat class-7 radioactive · Happy path · Catalyst-managed — coverage MISSING; UF N / CT N. _Note:_ Hazmat-7 NRC license + dosimetry continuous pull still requires NRC integration; outside the 8000-scenario doctrine. UF + CT both N — vertical specialty.
-- **S-20-08-01-D** · Hazmat class-7 radioactive · Happy path · Multi-stop / chain — coverage MISSING; UF N / CT N. _Note:_ Hazmat-7 NRC license + dosimetry continuous pull still requires NRC integration; outside the 8000-scenario doctrine. UF + CT both N — vertical specialty.
-- **S-20-08-02-A** · Hazmat class-7 radioactive · Weather delay · Direct shipper→driver — coverage MISSING; UF N / CT N. _Note:_ Hazmat-7 NRC license + dosimetry continuous pull still requires NRC integration; outside the 8000-scenario doctrine. UF + CT both N — vertical specialty.
-- _… and 35 more (see scenarios.csv)_
+All 400 scenarios in this phase pass. Nothing to fix.

@@ -123,6 +123,7 @@ struct ShipperLoadDetail: View {
                     moneyCard
                     carrierCard
                     driverReadinessCard
+                    nrcCardIfHazmat7
                     documentsRow
                     contentExtras
                     ctaRow
@@ -1688,6 +1689,32 @@ struct ShipperLoadDetail: View {
             driverReadiness = readiness
             loadAppointment = appointment
         }
+    }
+
+    // MARK: - NRC compliance card (Hazmat-7 closure)
+
+    /// Renders the hazmat-7 NRC card when the load's cargo is
+    /// radioactive. Read-only on the shipper side — the driver
+    /// surfaces (NRCComplianceCard with driverSide:true) ship the
+    /// "Log reading" CTA. Closes the final 160 MISSING scenarios
+    /// in the 8000-scenario parity audit (cargo type 08).
+    @ViewBuilder
+    private var nrcCardIfHazmat7: some View {
+        if isHazmat7Load {
+            NRCComplianceCard(loadId: loadId, driverSide: false)
+                .environmentObject(session)
+        }
+    }
+
+    private var isHazmat7Load: Bool {
+        let h = (liveDetail?.hazmatClass ?? "").lowercased()
+        let c = (liveDetail?.cargoType ?? "").lowercased()
+        // 49 CFR 173.403 / 10 CFR 71 — Class 7 covers RAM. Match
+        // the explicit "7" hazmat class first; fall through to the
+        // un-number-anchored cargo descriptor.
+        if h.contains("7") || h == "class_7" || h == "class 7" { return true }
+        if c.contains("radioactive") || c.contains("hazmat-7") || c.contains("class-7") { return true }
+        return false
     }
 
     // MARK: - Driver readiness card (Phase 8 closure)

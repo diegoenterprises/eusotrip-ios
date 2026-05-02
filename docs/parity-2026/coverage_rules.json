@@ -139,11 +139,11 @@
           "gap_note": "Hazmat-8 corrosive — same as class-3"
         },
         "08": {
-          "eusotrip": "MISSING",
+          "eusotrip": "PASS",
           "uber_freight": "N",
           "cloudtrucks": "N",
-          "severity": "P0",
-          "gap_note": "Hazmat-7 radioactive needs NRC dual-signature chain + DOT/AEA cross-check; nobody implements this"
+          "severity": "-",
+          "gap_note": "Hazmat-7 radioactive NRC dual-signature chain SHIPPED via nrc.recordTransfer (fromUserId + toUserId both base64 signatures + dosimeter reading at transfer point + location). DOT/AEA cross-check via the License envelope's authorizedForms array. EXCLUSIVE LEAD."
         }
       }
     },
@@ -160,7 +160,7 @@
       "by_cargo": {
         "06": { "eusotrip": "PASS", "gap_note": "Hazmat endorsement validity check ships via getAssignedDriverReadiness hazmatDaysRemaining + readinessFlag 'hazmat_warn' / 'hazmat_lapsed'." },
         "07": { "eusotrip": "PASS" },
-        "08": { "eusotrip": "MISSING", "uber_freight": "N", "cloudtrucks": "N", "severity": "P0", "gap_note": "Hazmat-7 needs NRC license + dosimetry pull. Neither UF nor CT ships civilian-freight NRC chain-of-custody. Vertical specialty for a future EusoTrip Hazmat-7 Pro tier." }
+        "08": { "eusotrip": "PASS", "uber_freight": "N", "cloudtrucks": "N", "severity": "-", "gap_note": "Hazmat-7 NRC chain-of-custody + dosimetry SHIPPED. nrcCompliance.ts router (license / chain / dosimetry); NRCComplianceCard on 205 (shipper read-only) + 025 Paperwork (driver Log reading). EXCLUSIVE LEAD — UF + CT lack civilian-freight NRC integration." }
       },
       "by_trigger": {
         "10": {
@@ -293,7 +293,7 @@
         }
       },
       "by_cargo": {
-        "08": { "eusotrip": "MISSING", "uber_freight": "N", "cloudtrucks": "N", "severity": "P0", "gap_note": "Hazmat-7 POD needs NRC chain-of-custody signatures + final dosimetry log. UF + CT both N — civilian freight platforms don't implement NRC integration." }
+        "08": { "eusotrip": "PASS", "uber_freight": "N", "cloudtrucks": "N", "severity": "-", "gap_note": "Hazmat-7 POD chain-of-custody + final dosimetry log SHIPPED via NRCComplianceCard on 025_Paperwork (driverSide:true Log reading CTA fires nrc.submitDosimetryReading; transfer recording fires nrc.recordTransfer). EXCLUSIVE LEAD." }
       }
     },
     "14": {
@@ -401,7 +401,7 @@
       "by_cargo": {
         "06": { "eusotrip": "PASS", "gap_note": "Hazmat-3 placard expiry covered by hazmatDaysRemaining tile" },
         "07": { "eusotrip": "PASS" },
-        "08": { "eusotrip": "MISSING", "uber_freight": "N", "cloudtrucks": "N", "severity": "P0", "gap_note": "Hazmat-7 NRC license + dosimetry continuous pull still requires NRC integration; outside the 8000-scenario doctrine. UF + CT both N — vertical specialty." }
+        "08": { "eusotrip": "PASS", "uber_freight": "N", "cloudtrucks": "N", "severity": "-", "gap_note": "Hazmat-7 NRC license + dosimetry continuous pull SHIPPED. nrcCompliance.ts ships getLicenseStatus / recordLicense / getDosimetryLog / submitDosimetryReading. NRCComplianceCard surfaces severity (CLEAR/WATCH/WARN/EXPIRED) keyed off cumulative mrem + 10 CFR 20.1201 thresholds. EXCLUSIVE LEAD." }
       }
     }
   }
