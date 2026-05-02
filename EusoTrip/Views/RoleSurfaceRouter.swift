@@ -347,9 +347,27 @@ struct ShipperSurface: View {
             .onReceive(NotificationCenter.default.publisher(
                 for: .eusoShipperLoadOpenOnWeb)) { note in
                 let id = (note.userInfo?["loadId"] as? String) ?? ""
-                webContinuationURL = URL(string:
-                    "https://app.eusotrip.com/loads/\(id)"
-                )
+                let action = (note.userInfo?["action"] as? String) ?? ""
+                // Branch by action so the same notification can route
+                // load-edits / counter-all / settlement-approve-all
+                // through the right web path. Loads pre-pop the
+                // counter amount via query string so the user lands
+                // on the right form pre-filled.
+                let path: String
+                switch action {
+                case "counter-all":
+                    let amt = (note.userInfo?["amount"] as? String) ?? ""
+                    path = "loads/\(id)/bids?action=counter-all&amount=\(amt)"
+                case "settlement-approve-all":
+                    path = "settlements?action=approve-all"
+                case "settlement.openOnWeb":
+                    path = "settlements"
+                case "agreement.openOnWeb":
+                    path = "agreements"
+                default:
+                    path = id.isEmpty ? "loads" : "loads/\(id)"
+                }
+                webContinuationURL = URL(string: "https://app.eusotrip.com/\(path)")
             }
             .onReceive(NotificationCenter.default.publisher(
                 for: .eusoShipperLoadCancelRequested)) { note in
@@ -357,6 +375,21 @@ struct ShipperSurface: View {
                 webContinuationURL = URL(string:
                     "https://app.eusotrip.com/loads/\(id)?action=cancel"
                 )
+            }
+            // Global subscriber for `MeAction.fire("shipper.*")` keys
+            // posted by Shipper screens. Each key maps to either an
+            // in-app deep-link, a sheet open, or a web continuation
+            // — every key resolves to a real action, no more dead
+            // taps. Per [feedback_no_dead_buttons] doctrine: if a
+            // CTA's full backend wave hasn't shipped yet, it still
+            // fires through here and lands the user somewhere
+            // useful (web portal w/ shared session) instead of
+            // dropping the tap.
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoMeActionFired)) { note in
+                guard let key = note.object as? String else { return }
+                let info = note.userInfo ?? [:]
+                handleShipperMeAction(key: key, userInfo: info)
             }
             .sheet(item: Binding<ShipperWebContinuationItem?>(
                 get: { webContinuationURL.map(ShipperWebContinuationItem.init) },
@@ -379,6 +412,63 @@ struct ShipperSurface: View {
                     .environment(\.palette, palette)
                     .environmentObject(session)
             }
+    }
+
+    /// Routes a `MeAction.fire(key)` from any Shipper screen to its
+    /// real action. The audit identified 11 keys that posted with
+    /// no subscriber — every one of them now resolves either to an
+    /// in-app deep-link, a sheet open, or a web continuation. Per
+    /// [feedback_no_dead_buttons]: if a CTA's full backend wave
+    /// hasn't shipped yet, it still fires through here and lands
+    /// the user somewhere useful instead of dropping the tap.
+    private func handleShipperMeAction(key: String, userInfo: [AnyHashable: Any]) {
+        switch key {
+        // In-app deep-links
+        case "shipper.partner.detail":
+            if let id = userInfo["partnerId"] as? String
+                ?? userInfo["catalystId"] as? String {
+                activeLoadId = id
+            }
+            withAnimation(.easeInOut(duration: 0.22)) {
+                currentScreenId = "281"
+            }
+        case "shipper.allocation.detail":
+            withAnimation(.easeInOut(duration: 0.22)) {
+                currentScreenId = "230b"
+            }
+        case "shipper.bol.preview", "shipper.document.preview":
+            if let urlStr = userInfo["url"] as? String,
+               let url = URL(string: urlStr) {
+                webContinuationURL = url
+            } else {
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    currentScreenId = "226"
+                }
+            }
+
+        // Compose / upload paths route to the web canonical form
+        // until each in-app mutation ships.
+        case "shipper.agreement.create":
+            webContinuationURL = URL(string: "https://app.eusotrip.com/agreements/new")
+        case "shipper.agreement.openOnWeb":
+            webContinuationURL = URL(string: "https://app.eusotrip.com/agreements")
+        case "shipper.allocation.create":
+            webContinuationURL = URL(string: "https://app.eusotrip.com/allocations/new")
+        case "shipper.partner.invite":
+            webContinuationURL = URL(string: "https://app.eusotrip.com/partners/invite")
+        case "shipper.recurring.schedule":
+            webContinuationURL = URL(string: "https://app.eusotrip.com/recurring-loads/new")
+        case "shipper.document.upload":
+            webContinuationURL = URL(string: "https://app.eusotrip.com/documents/upload")
+        case "shipper.settlement.openOnWeb":
+            webContinuationURL = URL(string: "https://app.eusotrip.com/settlements")
+
+        default:
+            // Non-shipper.* keys (e.g., driver.*) belong to other
+            // surfaces — silent default; the post is still valid
+            // for any other listener subscribed in parallel.
+            break
+        }
     }
 }
 

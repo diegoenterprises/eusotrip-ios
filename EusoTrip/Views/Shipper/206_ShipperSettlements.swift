@@ -55,6 +55,11 @@ struct ShipperSettlements: View {
 
     @State private var selectedStatus: ShipperAPI.DeliveryConfirmationStatus? = nil
     @State private var openLoadDetail: SettlementSheetTarget? = nil
+    /// "Approve N payables" bottom-ribbon CTA flag. Listening for
+    /// our own `.eusoShipperSettlementApprove` flips this true so the
+    /// user sees a real confirmation dialog instead of a button that
+    /// silently posts a notification no one consumed.
+    @State private var showApproveAllDialog: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -81,6 +86,35 @@ struct ShipperSettlements: View {
         }
         .task { await store.refresh() }
         .refreshable { await store.refresh() }
+        // "Approve N payables" bottom ribbon → real confirmation
+        // dialog. The iOS `earnings.approveSettlement` mutation
+        // isn't on the WalletAPI surface yet; the web portal is
+        // canonical for bulk approvals. Confirmation dialog
+        // surfaces what would be approved, then routes to web.
+        .onReceive(NotificationCenter.default.publisher(for: .eusoShipperSettlementApprove)) { _ in
+            showApproveAllDialog = true
+        }
+        .confirmationDialog(
+            "Approve \(approvableCount) payable\(approvableCount == 1 ? "" : "s")?",
+            isPresented: $showApproveAllDialog,
+            titleVisibility: .visible
+        ) {
+            Button("Continue on web · \(currency(approvableSum))") {
+                NotificationCenter.default.post(
+                    name: .eusoShipperLoadOpenOnWeb,
+                    object: nil,
+                    userInfo: [
+                        "loadId": "",
+                        "action": "settlement-approve-all",
+                        "count": approvableCount,
+                        "total": approvableSum
+                    ]
+                )
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Bulk-approve fires from app.eusotrip.com/settlements until the iOS mutation lands. You'll stay signed in.")
+        }
         .sheet(item: $openLoadDetail) { target in
             ShipperLoadDetailScreen(
                 theme: palette,
