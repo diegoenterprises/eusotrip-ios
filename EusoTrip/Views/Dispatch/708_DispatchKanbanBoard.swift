@@ -1,12 +1,3 @@
-// SHELVED 2026-05-01 — pre-existing build errors against an older
-// design-system version (Theme.Palette.background, EType.h3,
-// OrbESang.State.alert, etc.). Dispatch role currently routes to
-// SFSafariViewController(app.eusotrip.com/dispatch) via
-// RoleSurfaceRouter; this file ships the next time we knock down
-// the Dispatch role per the founder's role-by-role cadence. Wrapped
-// in `#if false` so the file references stay in the Xcode target
-// (project.pbxproj) but the body doesn't enter compilation.
-#if false
 //
 //  708_DispatchKanbanBoard.swift
 //  EusoTrip — Dispatch · Lifecycle kanban (paged columns, tap-to-advance).
@@ -33,7 +24,7 @@ struct DispatchKanbanBoardScreen: View {
                           NavSlot(label: "Drivers", systemImage: "person.3.fill", isCurrent: false)],
                 trailing: [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: true),
                            NavSlot(label: "Me", systemImage: "person", isCurrent: false)],
-                orbState: .working
+                orbState: .thinking
             )
         }
     }
@@ -121,12 +112,11 @@ private struct KanbanBody: View {
                 Image(systemName: "rectangle.split.3x1.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("DISPATCH · KANBAN").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
                 Spacer(minLength: 0)
-                if let s = totals {
+                if totals != nil {
                     Text("\(totalAll) LOADS").font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(palette.textSecondary)
                         .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(palette.surface).clipShape(Capsule())
-                    _ = s
+                        .background(palette.bgCard).clipShape(Capsule())
                 }
             }
             Text("Lifecycle board").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
@@ -147,7 +137,7 @@ private struct KanbanBody: View {
                         }
                         .foregroundStyle(selected == col.id ? .white : palette.textSecondary)
                         .padding(.horizontal, 10).padding(.vertical, 6)
-                        .background(selected == col.id ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.surface))
+                        .background(selected == col.id ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCard))
                         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                     }.buttonStyle(.plain)
                 }
@@ -191,7 +181,7 @@ private struct KanbanBody: View {
     }
 
     private func cardView(_ l: KanbanLoad, col: KanbanColumn) -> some View {
-        LifecycleCard(accentGradient: col.id == "transit", accentDanger: false) {
+        LifecycleCard(accentDanger: false, accentGradient: col.id == "transit") {
             HStack {
                 LifecycleSection(label: l.loadNumber.uppercased(), icon: hazmatIcon(l))
                 Spacer(minLength: 0)
@@ -242,7 +232,7 @@ private struct KanbanBody: View {
                 Spacer()
             }
             .padding(14)
-        }.background(palette.background)
+        }.background(palette.bgPage)
     }
 
     private func currentColumn(for status: String) -> KanbanColumn? {
@@ -302,4 +292,3 @@ private struct KanbanBody: View {
 #Preview("708 · Kanban · Night") { DispatchKanbanBoardScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
 #Preview("708 · Kanban · Afternoon") { DispatchKanbanBoardScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
 
-#endif

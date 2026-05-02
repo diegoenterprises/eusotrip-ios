@@ -1,12 +1,3 @@
-// SHELVED 2026-05-01 — pre-existing build errors against an older
-// design-system version (Theme.Palette.background, EType.h3,
-// OrbESang.State.alert, etc.). Dispatch role currently routes to
-// SFSafariViewController(app.eusotrip.com/dispatch) via
-// RoleSurfaceRouter; this file ships the next time we knock down
-// the Dispatch role per the founder's role-by-role cadence. Wrapped
-// in `#if false` so the file references stay in the Xcode target
-// (project.pbxproj) but the body doesn't enter compilation.
-#if false
 //
 //  706_DispatchDriverChat.swift
 //  EusoTrip — Dispatch · Driver chat (conversations + send message).
@@ -139,13 +130,13 @@ private struct ChatBody: View {
 
     private func composeSheet(for d: DriverPick) -> some View {
         VStack(alignment: .leading, spacing: Space.s3) {
-            Text("Message \(d.name)").font(EType.h3).foregroundStyle(palette.textPrimary)
+            Text("Message \(d.name)").font(EType.h2).foregroundStyle(palette.textPrimary)
             Text("Goes through dispatch.sendDriverMessage. Driver gets a push + in-app banner.").font(EType.caption).foregroundStyle(palette.textSecondary)
             TextEditor(text: $composeText)
                 .font(EType.body)
                 .frame(minHeight: 120)
                 .padding(8)
-                .background(palette.surface)
+                .background(palette.bgCard)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             HStack {
                 Button { composeFor = nil } label: {
@@ -166,7 +157,7 @@ private struct ChatBody: View {
             Spacer()
         }
         .padding(14)
-        .background(palette.background)
+        .background(palette.bgPage)
     }
 
     private func loadAll() async {
@@ -203,4 +194,3 @@ private struct ChatBody: View {
 #Preview("706 · Chat · Night") { DispatchDriverChatScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
 #Preview("706 · Chat · Afternoon") { DispatchDriverChatScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
 
-#endif

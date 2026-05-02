@@ -1,12 +1,3 @@
-// SHELVED 2026-05-01 — pre-existing build errors against an older
-// design-system version (Theme.Palette.background, EType.h3,
-// OrbESang.State.alert, etc.). Dispatch role currently routes to
-// SFSafariViewController(app.eusotrip.com/dispatch) via
-// RoleSurfaceRouter; this file ships the next time we knock down
-// the Dispatch role per the founder's role-by-role cadence. Wrapped
-// in `#if false` so the file references stay in the Xcode target
-// (project.pbxproj) but the body doesn't enter compilation.
-#if false
 //
 //  712_DispatchReportsHub.swift
 //  EusoTrip — Dispatch · Reports hub (custom · scheduled · 600+ data points).
@@ -86,7 +77,7 @@ private struct ReportsBody: View {
                         Text(code.uppercased()).font(.system(size: 9, weight: .heavy)).tracking(0.8)
                             .padding(.horizontal, 10).padding(.vertical, 6)
                             .foregroundStyle(category == code ? .white : palette.textSecondary)
-                            .background(category == code ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.surface))
+                            .background(category == code ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCard))
                             .clipShape(Capsule())
                     }.buttonStyle(.plain)
                 }
@@ -118,7 +109,7 @@ private struct ReportsBody: View {
                         }.buttonStyle(.plain).disabled(generating != nil)
                         Text(t.category.uppercased()).font(.system(size: 9, weight: .heavy)).foregroundStyle(palette.textTertiary)
                             .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(palette.surface).clipShape(Capsule())
+                            .background(palette.bgCard).clipShape(Capsule())
                         Spacer(minLength: 0)
                     }
                     .padding(.top, 6)
@@ -170,4 +161,3 @@ private struct ReportsBody: View {
 #Preview("712 · Reports hub · Night") { DispatchReportsHubScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
 #Preview("712 · Reports hub · Afternoon") { DispatchReportsHubScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
 
-#endif

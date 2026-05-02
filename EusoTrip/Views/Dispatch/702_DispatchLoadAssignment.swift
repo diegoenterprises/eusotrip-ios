@@ -1,12 +1,3 @@
-// SHELVED 2026-05-01 — pre-existing build errors against an older
-// design-system version (Theme.Palette.background, EType.h3,
-// OrbESang.State.alert, etc.). Dispatch role currently routes to
-// SFSafariViewController(app.eusotrip.com/dispatch) via
-// RoleSurfaceRouter; this file ships the next time we knock down
-// the Dispatch role per the founder's role-by-role cadence. Wrapped
-// in `#if false` so the file references stay in the Xcode target
-// (project.pbxproj) but the body doesn't enter compilation.
-#if false
 //
 //  702_DispatchLoadAssignment.swift
 //  EusoTrip — Dispatch · Unassigned loads → assign driver mutation.
@@ -109,7 +100,7 @@ private struct LoadAssignBody: View {
     private func driverPickerSheet(for l: UnassignedLoad) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.s3) {
-                Text("Pick driver for \(l.loadNumber)").font(EType.h3).foregroundStyle(palette.textPrimary).padding(.bottom, 6)
+                Text("Pick driver for \(l.loadNumber)").font(EType.h2).foregroundStyle(palette.textPrimary).padding(.bottom, 6)
                 if drivers.isEmpty {
                     EusoEmptyState(systemImage: "person.3", title: "No available drivers", subtitle: "All drivers are on a load or off-duty.")
                 } else {
@@ -126,7 +117,7 @@ private struct LoadAssignBody: View {
                 }
             }
             .padding(14)
-        }.background(palette.background)
+        }.background(palette.bgPage)
     }
 
     private func loadAll() async {
@@ -162,4 +153,3 @@ private struct LoadAssignBody: View {
 #Preview("702 · Load assign · Night") { DispatchLoadAssignmentScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
 #Preview("702 · Load assign · Afternoon") { DispatchLoadAssignmentScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
 
-#endif

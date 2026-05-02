@@ -1,12 +1,3 @@
-// SHELVED 2026-05-01 — pre-existing build errors against an older
-// design-system version (Theme.Palette.background, EType.h3,
-// OrbESang.State.alert, etc.). Dispatch role currently routes to
-// SFSafariViewController(app.eusotrip.com/dispatch) via
-// RoleSurfaceRouter; this file ships the next time we knock down
-// the Dispatch role per the founder's role-by-role cadence. Wrapped
-// in `#if false` so the file references stay in the Xcode target
-// (project.pbxproj) but the body doesn't enter compilation.
-#if false
 //
 //  703_DispatchExceptionTriage.swift
 //  EusoTrip — Dispatch · Exception triage (incidents queue + resolve).
@@ -23,7 +14,7 @@ struct DispatchExceptionTriageScreen: View {
                           NavSlot(label: "Drivers", systemImage: "person.3.fill", isCurrent: false)],
                 trailing: [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
                            NavSlot(label: "Me", systemImage: "person", isCurrent: true)],
-                orbState: .alert
+                orbState: .idle
             )
         }
     }
@@ -85,7 +76,7 @@ private struct ExceptionBody: View {
                     Text(label).font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .padding(.horizontal, 10).padding(.vertical, 6)
                         .foregroundStyle(filter == code ? .white : palette.textSecondary)
-                        .background(filter == code ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.surface))
+                        .background(filter == code ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCard))
                         .clipShape(Capsule())
                 }.buttonStyle(.plain)
             }
@@ -156,4 +147,3 @@ private struct ExceptionBody: View {
 #Preview("703 · Triage · Night") { DispatchExceptionTriageScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
 #Preview("703 · Triage · Afternoon") { DispatchExceptionTriageScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
 
-#endif

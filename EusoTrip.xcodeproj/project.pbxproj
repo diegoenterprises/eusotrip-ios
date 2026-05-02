@@ -387,6 +387,7 @@
 		D2V0300000000000000ABFE /* 404_BrokerCommissionQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2V0300000000000000ACFE /* 404_BrokerCommissionQueue.swift */; };
 		D2V0400000000000000ABFE /* 405_BrokerActiveBrokerages.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2V0400000000000000ACFE /* 405_BrokerActiveBrokerages.swift */; };
 		D2DSPDSP0000000000000ABDS /* 700_DispatchHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSPDSP0000000000000ACDS /* 700_DispatchHome.swift */; };
+		D2DSPNAV0000000000000ABDS /* DispatchNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSPNAV0000000000000ACDS /* DispatchNavController.swift */; };
 		D2DSPDSP0100000000000ABDS /* 701_DispatchDriverBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSPDSP0100000000000ACDS /* 701_DispatchDriverBoard.swift */; };
 		D2DSPDSP0200000000000ABDS /* 702_DispatchLoadAssignment.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSPDSP0200000000000ACDS /* 702_DispatchLoadAssignment.swift */; };
 		D2DSPDSP0300000000000ABDS /* 703_DispatchExceptionTriage.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSPDSP0300000000000ACDS /* 703_DispatchExceptionTriage.swift */; };
@@ -890,6 +891,7 @@
 		D2V0300000000000000ACFE /* 404_BrokerCommissionQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 404_BrokerCommissionQueue.swift; path = EusoTrip/Views/Broker/404_BrokerCommissionQueue.swift; sourceTree = SOURCE_ROOT; };
 		D2V0400000000000000ACFE /* 405_BrokerActiveBrokerages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 405_BrokerActiveBrokerages.swift; path = EusoTrip/Views/Broker/405_BrokerActiveBrokerages.swift; sourceTree = SOURCE_ROOT; };
 		D2DSPDSP0000000000000ACDS /* 700_DispatchHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 700_DispatchHome.swift; path = EusoTrip/Views/Dispatch/700_DispatchHome.swift; sourceTree = SOURCE_ROOT; };
+		D2DSPNAV0000000000000ACDS /* DispatchNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DispatchNavController.swift; path = EusoTrip/Views/Dispatch/DispatchNavController.swift; sourceTree = SOURCE_ROOT; };
 		D2DSPDSP0100000000000ACDS /* 701_DispatchDriverBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 701_DispatchDriverBoard.swift; path = EusoTrip/Views/Dispatch/701_DispatchDriverBoard.swift; sourceTree = SOURCE_ROOT; };
 		D2DSPDSP0200000000000ACDS /* 702_DispatchLoadAssignment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 702_DispatchLoadAssignment.swift; path = EusoTrip/Views/Dispatch/702_DispatchLoadAssignment.swift; sourceTree = SOURCE_ROOT; };
 		D2DSPDSP0300000000000ACDS /* 703_DispatchExceptionTriage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 703_DispatchExceptionTriage.swift; path = EusoTrip/Views/Dispatch/703_DispatchExceptionTriage.swift; sourceTree = SOURCE_ROOT; };
@@ -1370,6 +1372,7 @@
 				D2V0300000000000000ACFE /* 404_BrokerCommissionQueue.swift */,
 				D2V0400000000000000ACFE /* 405_BrokerActiveBrokerages.swift */,
 				D2DSPDSP0000000000000ACDS /* 700_DispatchHome.swift */,
+				D2DSPNAV0000000000000ACDS /* DispatchNavController.swift */,
 				D2DSPDSP0100000000000ACDS /* 701_DispatchDriverBoard.swift */,
 				D2DSPDSP0200000000000ACDS /* 702_DispatchLoadAssignment.swift */,
 				D2DSPDSP0300000000000ACDS /* 703_DispatchExceptionTriage.swift */,
@@ -2153,6 +2156,7 @@
 				D2V0300000000000000ABFE /* 404_BrokerCommissionQueue.swift in Sources */,
 				D2V0400000000000000ABFE /* 405_BrokerActiveBrokerages.swift in Sources */,
 				D2DSPDSP0000000000000ABDS /* 700_DispatchHome.swift in Sources */,
+				D2DSPNAV0000000000000ABDS /* DispatchNavController.swift in Sources */,
 				D2DSPDSP0100000000000ABDS /* 701_DispatchDriverBoard.swift in Sources */,
 				D2DSPDSP0200000000000ABDS /* 702_DispatchLoadAssignment.swift in Sources */,
 				D2DSPDSP0300000000000ABDS /* 703_DispatchExceptionTriage.swift in Sources */,

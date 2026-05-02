@@ -1,12 +1,3 @@
-// SHELVED 2026-05-01 — pre-existing build errors against an older
-// design-system version (Theme.Palette.background, EType.h3,
-// OrbESang.State.alert, etc.). Dispatch role currently routes to
-// SFSafariViewController(app.eusotrip.com/dispatch) via
-// RoleSurfaceRouter; this file ships the next time we knock down
-// the Dispatch role per the founder's role-by-role cadence. Wrapped
-// in `#if false` so the file references stay in the Xcode target
-// (project.pbxproj) but the body doesn't enter compilation.
-#if false
 //
 //  704_DispatchHOSAlerts.swift
 //  EusoTrip — Dispatch · HOS alerts (drivers approaching the wall).
@@ -23,7 +14,7 @@ struct DispatchHOSAlertsScreen: View {
                           NavSlot(label: "Drivers", systemImage: "person.3.fill", isCurrent: true)],
                 trailing: [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
                            NavSlot(label: "Me", systemImage: "person", isCurrent: false)],
-                orbState: .alert
+                orbState: .idle
             )
         }
     }
@@ -125,4 +116,3 @@ private struct HOSBody: View {
 #Preview("704 · HOS · Night") { DispatchHOSAlertsScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
 #Preview("704 · HOS · Afternoon") { DispatchHOSAlertsScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
 
-#endif

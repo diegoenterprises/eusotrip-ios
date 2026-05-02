@@ -79,10 +79,11 @@ struct RoleSurfaceRouter: View {
         case .admin, .superAdmin:
             AdminSurface(palette: palette)
 
-        // Roles whose iOS surface lands in a later session.
         case .dispatch:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "dispatch")
+            // Dispatch has 13 native iOS files (Dpch700-Dpch712) —
+            // surface landed natively 2026-05-01 with the design-
+            // token normalization + unshelf of 702-712.
+            DispatchSurface(palette: palette)
         case .compliance:
             // Compliance has 3 native iOS files (900-902) — surfaces
             // landed natively 2026-05-01 with the resurrection of the
@@ -510,6 +511,57 @@ struct AdminSurface: View {
     }
 }
 
+// MARK: - Dispatch surface
+
+/// Top-level Dispatch container. Mirror of Shipper / Carrier / Broker /
+/// Escort / Terminal / Admin / Compliance surfaces. RBAC-gated through
+/// `RoleAccess.canRender(role:.dispatch)`.
+struct DispatchSurface: View {
+    let palette: Theme.Palette
+
+    @EnvironmentObject var session: EusoTripSession
+    @State private var currentScreenId: String = "Dpch700"
+    @State private var showESang: Bool = false
+
+    private var current: ProductionScreen {
+        ScreenRegistry.forRole(.dispatch).first { $0.id == currentScreenId }
+            ?? ScreenRegistry.forRole(.dispatch).first { $0.id == "Dpch700" }
+            ?? ScreenRegistry.forRole(.dispatch).first
+            ?? ProductionScreen(id: "Dpch700",
+                                title: "Dispatch · Home",
+                                role: .dispatch) { p in
+                                    AnyView(DispatchHomeScreen(theme: p))
+                                }
+    }
+
+    var body: some View {
+        current.view(palette)
+            .id("dispatch-\(currentScreenId)")
+            .transition(.opacity)
+            .environment(\.dispatchNavHandler) { label in
+                DispatchNavDispatcher.handle(label)
+            }
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoDispatchNavSwap)) { note in
+                guard let id = note.userInfo?["screenId"] as? String else { return }
+                guard RoleAccess.canRender(role: .dispatch, screenId: id) else {
+                    currentScreenId = "Dpch700"
+                    return
+                }
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    currentScreenId = id
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoDispatchEsangTapped)) { _ in
+                showESang = true
+            }
+            .sheet(isPresented: $showESang) {
+                DriverESangCoachSheet().environment(\.palette, palette)
+            }
+    }
+}
+
 // MARK: - Compliance surface
 
 /// Top-level Compliance Officer container. Mirror of Shipper /
@@ -720,12 +772,13 @@ enum RoleAccess {
         case .terminal, .portMaster:                    return [.terminal]
         case .admin, .superAdmin:                       return [.admin]
         case .compliance:                               return [.compliance]
+        case .dispatch:                                 return [.dispatch]
         // Roles below have no native chrome — they route to web
         // continuation in `RoleSurfaceRouter`. Empty list means
         // every cross-role swap is denied for them, which is the
         // correct outcome since their surface lives outside the
         // app entirely.
-        case .dispatch, .safety, .factoring,
+        case .safety, .factoring,
              .railDispatch, .railEngineer, .railConductor,
              .shipCaptain:                              return []
         }

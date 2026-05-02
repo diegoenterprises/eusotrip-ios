@@ -1,12 +1,3 @@
-// SHELVED 2026-05-01 — pre-existing build errors against an older
-// design-system version (Theme.Palette.background, EType.h3,
-// OrbESang.State.alert, etc.). Dispatch role currently routes to
-// SFSafariViewController(app.eusotrip.com/dispatch) via
-// RoleSurfaceRouter; this file ships the next time we knock down
-// the Dispatch role per the founder's role-by-role cadence. Wrapped
-// in `#if false` so the file references stay in the Xcode target
-// (project.pbxproj) but the body doesn't enter compilation.
-#if false
 //
 //  711_DispatchPriceBook.swift
 //  EusoTrip — Dispatch · Price book (rate sheet + FSC + min charge).
@@ -96,11 +87,11 @@ private struct PriceBookBody: View {
             HStack(spacing: 8) {
                 TextField("Cargo type", text: $cargoFilter)
                     .textFieldStyle(.plain).font(EType.body)
-                    .padding(8).background(palette.surface).clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                    .padding(8).background(palette.bgCard).clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
                     .onSubmit { Task { await load() } }
                 TextField("Hazmat class", text: $hazmatFilter)
                     .textFieldStyle(.plain).font(EType.body)
-                    .padding(8).background(palette.surface).clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                    .padding(8).background(palette.bgCard).clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
                     .onSubmit { Task { await load() } }
                 Button { Task { await load() } } label: {
                     Text("Apply").font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
@@ -189,4 +180,3 @@ private struct PriceBookBody: View {
 #Preview("711 · Price book · Night") { DispatchPriceBookScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
 #Preview("711 · Price book · Afternoon") { DispatchPriceBookScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
 
-#endif

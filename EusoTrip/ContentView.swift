@@ -58,6 +58,7 @@ struct ProductionScreen: Identifiable {
         case terminal = "Terminal"
         case admin = "Admin"
         case compliance = "Compliance"
+        case dispatch = "Dispatch"
         var id: String { rawValue }
     }
 }
@@ -1208,6 +1209,33 @@ enum ScreenRegistry {
             .init(id: "900", title: "Compliance · Home",             role: .compliance) { p in AnyView(ComplianceOfficerHomeScreen(theme: p)) },
             .init(id: "901", title: "Compliance · Expiring Docs",    role: .compliance) { p in AnyView(ComplianceExpiringDocsScreen(theme: p)) },
             .init(id: "902", title: "Compliance · Violations",       role: .compliance) { p in AnyView(ComplianceViolationsScreen(theme: p)) },
+
+            // Dispatch surface (Dpch700-Dpch712). The 13 Dispatch
+            // files were previously 10 shelved (#if false wrap due to
+            // design-token drift against an older `Theme.Palette` /
+            // `EType` / `OrbESang.State`) + 3 in-build but
+            // unregistered. Tokens normalized 2026-05-01 and all 13
+            // landed in the registry with role: .dispatch. The slot
+            // numbers (700-712) collide with Terminal 700-702 in the
+            // Dispatch source files — the registry IDs prefix with
+            // `Dpch` to disambiguate (since `ScreenRegistry.forRole`
+            // filters by role, the IDs only need to be unique
+            // within their own role bucket; the prefix makes the
+            // disambiguation visible to anyone reading the registry
+            // directly). Each takes `theme: Theme.Palette` only.
+            .init(id: "Dpch700", title: "Dispatch · Home",             role: .dispatch) { p in AnyView(DispatchHomeScreen(theme: p)) },
+            .init(id: "Dpch701", title: "Dispatch · Driver Board",     role: .dispatch) { p in AnyView(DispatchDriverBoardScreen(theme: p)) },
+            .init(id: "Dpch702", title: "Dispatch · Load Assignment",  role: .dispatch) { p in AnyView(DispatchLoadAssignmentScreen(theme: p)) },
+            .init(id: "Dpch703", title: "Dispatch · Exception Triage", role: .dispatch) { p in AnyView(DispatchExceptionTriageScreen(theme: p)) },
+            .init(id: "Dpch704", title: "Dispatch · HOS Alerts",       role: .dispatch) { p in AnyView(DispatchHOSAlertsScreen(theme: p)) },
+            .init(id: "Dpch705", title: "Dispatch · Route Optimization", role: .dispatch) { p in AnyView(DispatchRouteOptimizationScreen(theme: p)) },
+            .init(id: "Dpch706", title: "Dispatch · Driver Chat",      role: .dispatch) { p in AnyView(DispatchDriverChatScreen(theme: p)) },
+            .init(id: "Dpch707", title: "Dispatch · Daily KPI",        role: .dispatch) { p in AnyView(DispatchDailyKPIScreen(theme: p)) },
+            .init(id: "Dpch708", title: "Dispatch · Kanban Board",     role: .dispatch) { p in AnyView(DispatchKanbanBoardScreen(theme: p)) },
+            .init(id: "Dpch709", title: "Dispatch · Bulk Upload Kanban", role: .dispatch) { p in AnyView(DispatchBulkUploadKanbanScreen(theme: p)) },
+            .init(id: "Dpch710", title: "Dispatch · Run Ticket Capture", role: .dispatch) { p in AnyView(DispatchRunTicketCaptureScreen(theme: p)) },
+            .init(id: "Dpch711", title: "Dispatch · Price Book",       role: .dispatch) { p in AnyView(DispatchPriceBookScreen(theme: p)) },
+            .init(id: "Dpch712", title: "Dispatch · Reports Hub",      role: .dispatch) { p in AnyView(DispatchReportsHubScreen(theme: p)) },
         ])
 
         return list
