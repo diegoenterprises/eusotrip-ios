@@ -1016,7 +1016,11 @@ struct ShipperBids: View {
                     ForEach(rankedBids, id: \.id) { b in
                         HStack(alignment: .firstTextBaseline) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(b.catalystName ?? "—")
+                                // ShipperAPI.Bid.catalystName is `String`
+                                // (non-optional) — server emits empty string
+                                // when catalyst is unknown. Em-dash for empty
+                                // so the row doesn't render a blank cell.
+                                Text(b.catalystName.isEmpty ? "—" : b.catalystName)
                                     .font(EType.caption)
                                     .foregroundStyle(palette.textPrimary)
                                 if let err = counterAllErrors[b.id] {
