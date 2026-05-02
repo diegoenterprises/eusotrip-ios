@@ -605,6 +605,29 @@ enum ScreenRegistry {
         list.append(.init(id: "228b", title: "Shipper · RFP Detail",      role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperRFPDetail() }) })
         list.append(.init(id: "229b", title: "Shipper · BOL Upload",      role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .me) { ShipperBOLUpload() }) })
         list.append(.init(id: "230b", title: "Shipper · Weekly Allocations", role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .loads) { ShipperWeeklyAllocations() }) })
+        // 231-240 — Arc L iOS-platform integration preview surfaces.
+        // These ARE NOT extension targets — they're in-app reference
+        // screens that paint what the eventual Widget Extension /
+        // ActivityKit Live Activity / WatchKit complication / CarPlay
+        // scene / App Intents / etc. would render. The actual
+        // extension targets (Widget Extension target, CarPlay scene
+        // declaration in Info.plist + entitlement, App Intents
+        // metadata bundle) are separate Xcode-target work that ships
+        // alongside production launch — see the file-header
+        // doctrines in each. Registry entry mounts the preview
+        // surface so designers can review the look from inside the
+        // app. 231/232 use `wrapShipperScreen` (bare Views without
+        // a Screen struct); 233-240 ship `XxxScreen: View` wrappers.
+        list.append(.init(id: "231", title: "Shipper · Push Notification Landing", role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .me) { ShipperPushNotificationLanding() }) })
+        list.append(.init(id: "232", title: "Shipper · Lock Screen Live Activity", role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .loads) { ShipperLockScreenLiveActivity() }) })
+        list.append(.init(id: "233", title: "Shipper · Watch Complication",        role: .shipper) { p in AnyView(ShipperWatchComplicationScreen(theme: p)) })
+        list.append(.init(id: "234", title: "Shipper · Haptic Escalation",         role: .shipper) { p in AnyView(ShipperHapticEscalationScreen(theme: p)) })
+        list.append(.init(id: "235", title: "Shipper · Focus Mode Widget",         role: .shipper) { p in AnyView(ShipperFocusModeWidgetScreen(theme: p)) })
+        list.append(.init(id: "236", title: "Shipper · Widget Gallery",            role: .shipper) { p in AnyView(ShipperWidgetGalleryScreen(theme: p)) })
+        list.append(.init(id: "237", title: "Shipper · App Intents",               role: .shipper) { p in AnyView(ShipperAppIntentsScreen(theme: p)) })
+        list.append(.init(id: "238", title: "Shipper · Handoff Continuity",        role: .shipper) { p in AnyView(ShipperHandoffContinuityScreen(theme: p)) })
+        list.append(.init(id: "239", title: "Shipper · Apple Pay Wallet",          role: .shipper) { p in AnyView(ShipperApplePayWalletScreen(theme: p)) })
+        list.append(.init(id: "240", title: "Shipper · CarPlay Dashboard",         role: .shipper) { p in AnyView(ShipperCarPlayDashboardScreen(theme: p)) })
         // 250-259 PostLoad wizard. 250 owns its own `PostLoadDraft`
         // `@StateObject`; 251-259 take the draft as `@ObservedObject`.
         // The registry closure runs at view-mount time on the main

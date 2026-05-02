@@ -20,7 +20,7 @@
 //  Doctrine: §2 nav, §3 numbers-first, §4.3 single hairline, §7 breathe
 //  density, §17.2 width-locked status grammar, §19.2 file-scoped helpers
 //  (GradientPassHeader, GradientCapsuleCTA, DecorativeQRGrid,
-//  TierLetterBadge, LDTile, StatusPill, PassRow, PaymentCardRow), §20.4
+//  TierLetterBadge, LDTile, WalletStatusPill, PassRow, PaymentCardRow), §20.4
 //  no dead buttons, §22.2 counter eyebrow color encodes screen-status,
 //  §35.3 Arc L iOS-platform integration surfaces.
 //
@@ -726,9 +726,9 @@ private struct LDTile: View {
     }
 }
 
-// MARK: - StatusPill (60×18 gradient or 78×18 outlined — per-pass status)
+// MARK: - WalletStatusPill (60×18 gradient or 78×18 outlined — per-pass status)
 
-private struct StatusPill: View {
+private struct WalletStatusPill: View {
     @Environment(\.palette) var palette
     let status: WalletPassStatus
 
@@ -807,7 +807,7 @@ private struct PassRow: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                    StatusPill(status: pass.status)
+                    WalletStatusPill(status: pass.status)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
