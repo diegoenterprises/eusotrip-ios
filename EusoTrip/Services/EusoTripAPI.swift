@@ -1384,6 +1384,45 @@ struct LoadsAPI {
             input: Input(loadId: loadId, reason: reason, waiveTonus: waiveTonus)
         )
     }
+
+    // MARK: - Create from template (Phase 19 — recurring materialization)
+
+    /// Acknowledge envelope from `loads.createFromTemplate`.
+    /// Server returns `{ success, loadId, loadNumber }` after
+    /// inserting a fresh `loads` row keyed off the template's
+    /// origin / destination / cargo and the caller-supplied
+    /// pickup / delivery dates.
+    struct CreateFromTemplateAck: Decodable, Hashable {
+        let success: Bool?
+        let loadId: Int?
+        let loadNumber: String?
+    }
+
+    /// `loads.createFromTemplate` (loads.ts:2968). Materialize a
+    /// real load from a saved template. Drives the shipper-side
+    /// recurring composer's "Schedule next pickup" path — saves
+    /// a template via `loadTemplates.create`, then immediately
+    /// fires this to put the first occurrence on the schedule.
+    @discardableResult
+    func createFromTemplate(
+        templateId: Int,
+        pickupDate: String? = nil,
+        deliveryDate: String? = nil
+    ) async throws -> CreateFromTemplateAck {
+        struct Input: Encodable {
+            let templateId: Int
+            let pickupDate: String?
+            let deliveryDate: String?
+        }
+        return try await api.mutation(
+            "loads.createFromTemplate",
+            input: Input(
+                templateId: templateId,
+                pickupDate: pickupDate,
+                deliveryDate: deliveryDate
+            )
+        )
+    }
 }
 
 // MARK: - hosRouter
@@ -14051,6 +14090,55 @@ struct LoadTemplatesAPI {
                 includeArchived: includeArchived
             )
         )
+    }
+
+    // MARK: - Create + materialize (Phase 19 — recurring loads)
+
+    /// Wire shape for `loadTemplates.create`. Mirrors the server
+    /// schema exactly (loadTemplates.ts:105) — every field besides
+    /// `name` is optional so a shipper can save a lane-only
+    /// template and fill the rest at materialization time.
+    struct CreateInput: Encodable {
+        let name: String
+        let description: String?
+        let origin: TemplateLocation
+        let destination: TemplateLocation
+        let distance: Double?
+        let commodity: String?
+        let cargoType: String?
+        let equipmentType: String?
+        let weight: String?
+        let weightUnit: String?
+        let rate: Double?
+        let rateType: String?
+        let preferredDays: [String]?
+        let preferredPickupTime: String?
+        let specialInstructions: String?
+    }
+
+    /// Encodable Location used at create time. Server stores under
+    /// the same JSON column used by Template.Location. Caller
+    /// passes city + state at minimum; richer columns (street,
+    /// zip, facility) optional.
+    struct TemplateLocation: Encodable {
+        let city: String
+        let state: String
+        let zipCode: String?
+        let address: String?
+        let facilityName: String?
+    }
+
+    struct CreateAck: Decodable, Hashable {
+        let id: Int?
+        let name: String?
+    }
+
+    /// `loadTemplates.create` — save a recurring lane template.
+    /// Once saved, `loads.createFromTemplate(templateId, pickupDate,
+    /// deliveryDate)` materializes a real load on the schedule.
+    @discardableResult
+    func create(_ input: CreateInput) async throws -> CreateAck {
+        try await api.mutation("loadTemplates.create", input: input)
     }
 }
 

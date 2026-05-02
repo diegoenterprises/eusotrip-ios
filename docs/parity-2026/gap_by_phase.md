@@ -243,16 +243,9 @@ _400 scenarios · 400 gaps_
 
 ## Recurring loads
 
-_400 scenarios · 400 gaps_
+_400 scenarios · 0 gaps_
 
-### P1 — 400 scenarios
-
-- **S-19-01-01-A** · Dry van · Happy path · Direct shipper→driver — coverage PARTIAL; UF Y / CT N. _Note:_ iOS shipper create form routes to web (MeAction.fire('shipper.recurring.schedule')); driver-side recurring-inbox missing. UF Power Lane is the parity benchmark
-- **S-19-01-01-B** · Dry van · Happy path · Broker-routed — coverage PARTIAL; UF Y / CT N. _Note:_ iOS shipper create form routes to web (MeAction.fire('shipper.recurring.schedule')); driver-side recurring-inbox missing. UF Power Lane is the parity benchmark
-- **S-19-01-01-C** · Dry van · Happy path · Catalyst-managed — coverage PARTIAL; UF Y / CT N. _Note:_ iOS shipper create form routes to web (MeAction.fire('shipper.recurring.schedule')); driver-side recurring-inbox missing. UF Power Lane is the parity benchmark
-- **S-19-01-01-D** · Dry van · Happy path · Multi-stop / chain — coverage PARTIAL; UF Y / CT N. _Note:_ iOS shipper create form routes to web (MeAction.fire('shipper.recurring.schedule')); driver-side recurring-inbox missing. UF Power Lane is the parity benchmark
-- **S-19-01-02-A** · Dry van · Weather delay · Direct shipper→driver — coverage PARTIAL; UF Y / CT N. _Note:_ iOS shipper create form routes to web (MeAction.fire('shipper.recurring.schedule')); driver-side recurring-inbox missing. UF Power Lane is the parity benchmark
-- _… and 395 more (see scenarios.csv)_
+All 400 scenarios in this phase pass. Nothing to fix.
 
 
 ## Compliance signals

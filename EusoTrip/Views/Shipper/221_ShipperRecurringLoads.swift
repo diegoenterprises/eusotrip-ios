@@ -179,6 +179,22 @@ struct ShipperRecurringLoads: View {
     @State private var detail: LoadTemplatesAPI.Template? = nil
     @State private var showAck: Bool = false
     @State private var unfiltered: [LoadTemplatesAPI.Template] = []
+    /// Inline recurring composer (Phase 19 driver-shipper closure).
+    /// `composerSeed == .new` opens a blank composer that creates a
+    /// template + materializes the first occurrence; passing a
+    /// template seeds the composer for "Schedule next pickup" mode.
+    @State private var composerSeed: ComposerSeed? = nil
+
+    enum ComposerSeed: Identifiable {
+        case new
+        case prefilled(LoadTemplatesAPI.Template)
+        var id: String {
+            switch self {
+            case .new: return "new"
+            case .prefilled(let t): return "prefilled-\(t.id)"
+            }
+        }
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -203,6 +219,31 @@ struct ShipperRecurringLoads: View {
         .onChange(of: storeStateKey) { _, _ in updateUnfiltered() }
         .sheet(item: $detail) {
             ShipperRecurringLoadDetail(template: $0).environmentObject(store)
+        }
+        .sheet(item: $composerSeed) { seed in
+            switch seed {
+            case .new:
+                ShipperRecurringComposer()
+                    .environment(\.palette, palette)
+            case .prefilled(let t):
+                ShipperRecurringComposer(prefilledTemplate: t)
+                    .environment(\.palette, palette)
+            }
+        }
+        .onChange(of: composerSeed?.id ?? "") { _, v in
+            // Once the composer dismisses (composerSeed -> nil),
+            // refresh the list so the new template + first-
+            // occurrence load show up.
+            if v.isEmpty { Task { await store.load() } }
+        }
+        // Detail-sheet "Schedule next pickup" CTA posts here.
+        // We seed the composer in prefilled mode so the user only
+        // picks dates — lane / cargo / pricing carry through.
+        .onReceive(NotificationCenter.default.publisher(
+            for: .eusoShipperRecurringScheduleInline)) { note in
+            if let t = note.object as? LoadTemplatesAPI.Template {
+                composerSeed = .prefilled(t)
+            }
         }
         .alert("Posted", isPresented: $showAck, actions: {
             Button("OK") { store.lastAck = nil }
@@ -709,15 +750,10 @@ struct ShipperRecurringLoads: View {
     }
 
     private func tapNewSchedule() {
-        MeAction.fire("shipper.recurring.schedule")
-        NotificationCenter.default.post(
-            name: .eusoShipperRecurringSchedule,
-            object: nil,
-            userInfo: [
-                "source": "221_ShipperRecurringLoads",
-                "shipperCompanyId": 1
-            ]
-        )
+        // Phase 19 closure: drop the web-continuation hand-off in
+        // favor of the inline recurring composer. Save + first-
+        // occurrence materialization happen in-app now.
+        composerSeed = .new
     }
 
     // MARK: Empty / error
@@ -796,6 +832,10 @@ extension Notification.Name {
     static let eusoShipperRecurringFilter   = Notification.Name("eusoShipperRecurringFilter")
     /// "+ New recurring schedule" gradient pill tap (hands off via MeAction).
     static let eusoShipperRecurringSchedule = Notification.Name("eusoShipperRecurringSchedule")
+    /// Detail-sheet "Schedule next pickup" CTA posts here. Object is
+    /// the source `LoadTemplatesAPI.Template` so the parent 221 list
+    /// can re-open the inline composer in prefilled mode.
+    static let eusoShipperRecurringScheduleInline = Notification.Name("eusoShipperRecurringScheduleInline")
 }
 
 // MARK: - Detail sheet (preserved)
@@ -916,11 +956,20 @@ struct ShipperRecurringLoadDetail: View {
             .disabled(store.posting.contains(template.id))
 
             Button {
-                MeAction.fire("shipper.recurring.schedule", userInfo: ["templateId": template.id])
+                // Phase 19 closure: post a notification the parent
+                // 221 listens for, then dismiss this detail sheet so
+                // the inline composer surfaces seeded with this
+                // template. No web continuation.
+                NotificationCenter.default.post(
+                    name: .eusoShipperRecurringScheduleInline,
+                    object: template,
+                    userInfo: ["templateId": template.id]
+                )
+                dismiss()
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "calendar.badge.plus").font(.system(size: 12, weight: .heavy))
-                    Text("Schedule recurring on web").font(.system(size: 12, weight: .heavy))
+                    Text("Schedule next pickup").font(.system(size: 12, weight: .heavy))
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 11)
                 .foregroundStyle(palette.textPrimary).background(palette.bgCard)
