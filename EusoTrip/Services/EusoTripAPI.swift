@@ -293,6 +293,7 @@ final class EusoTripAPI: ObservableObject {
     // the same lazy var on `EusoTripAPI` and two `struct LoadLifecycleAPI`
     // bodies were a hard Swift compile error ("invalid redeclaration").
     lazy var bayOps: BayOpsAPI = BayOpsAPI(api: self)
+    lazy var pod: PODAPI = PODAPI(api: self)
     lazy var notifications: NotificationsAPI = NotificationsAPI(api: self)
     lazy var drivers: DriversAPI = DriversAPI(api: self)
     lazy var news: NewsAPI = NewsAPI(api: self)
@@ -2577,6 +2578,115 @@ struct WalletAPI {
 // for `targetLocation:`, `LoadLifecycleAPI.LatLng`,
 // `LoadLifecycleAPI.ComplianceChecks`, `ExecuteTransitionResponse` —
 // only this struct itself referenced them).
+
+// MARK: - podRouter
+//
+// Mirrors `frontend/server/routers/pod.ts`. POD (Proof of Delivery)
+// is the driver's hand-off after the consignee unloads — the driver
+// captures a photo of the signed BOL, a fingertip / stylus signature
+// from the receiver, and any over/short/damage notes. Server stores
+// the bundle as a `documents.pod` row + flips the load to
+// `pod_pending`. Shipper / dispatch / admin can then `approvePOD`
+// (status → `delivered`) or `rejectPOD` (status → `pod_rejected`,
+// driver re-captures).
+//
+// Closes phase 13 (POD capture & approval) of the shipper↔driver
+// 8000-scenario gap analysis from PARTIAL → PASS.
+
+struct PODAPI {
+    unowned let api: EusoTripAPI
+
+    /// Server ack envelope shared by `submitPOD` / `approvePOD` /
+    /// `rejectPOD`. The minimal `success` flag is the only field
+    /// every variant guarantees; the rest are optional projections.
+    struct PODAck: Decodable, Hashable {
+        let success: Bool?
+        let message: String?
+    }
+
+    /// One row from `pod.getPODForLoad` — the POD packet attached
+    /// to a delivered or pod_pending load. Used by the shipper-side
+    /// approve / reject screen.
+    struct PODPacket: Decodable, Hashable {
+        let id: Int?
+        let loadId: Int?
+        let userId: Int?
+        let receiverName: String?
+        let photoBase64: String?
+        let signatureBase64: String?
+        let notes: String?
+        let submittedAt: String?
+        let status: String?
+    }
+
+    /// `pod.submitPOD` — driver-side submit. Server validates the
+    /// caller is the assigned driver and the load is in
+    /// `unloaded` or `pod_rejected` state, then stores the packet
+    /// in `documents` and transitions the load to `pod_pending`.
+    @discardableResult
+    func submitPOD(
+        loadId: Int,
+        receiverName: String,
+        photoBase64: String? = nil,
+        signatureBase64: String? = nil,
+        notes: String? = nil
+    ) async throws -> PODAck {
+        struct Input: Encodable {
+            let loadId: Int
+            let receiverName: String
+            let photoBase64: String?
+            let signatureBase64: String?
+            let notes: String?
+        }
+        return try await api.mutation(
+            "pod.submitPOD",
+            input: Input(
+                loadId: loadId,
+                receiverName: receiverName,
+                photoBase64: photoBase64,
+                signatureBase64: signatureBase64,
+                notes: notes
+            )
+        )
+    }
+
+    /// `pod.approvePOD` — shipper / dispatch / admin flips the load
+    /// from `pod_pending` to `delivered`. Server enforces ownership
+    /// (shipper of record) or privileged role.
+    @discardableResult
+    func approvePOD(loadId: Int) async throws -> PODAck {
+        struct Input: Encodable { let loadId: Int }
+        return try await api.mutation(
+            "pod.approvePOD",
+            input: Input(loadId: loadId)
+        )
+    }
+
+    /// `pod.rejectPOD` — shipper / dispatch / admin sends the load
+    /// back to `pod_rejected` so the driver can re-capture. Reason
+    /// stored on the load `holdReason` column.
+    @discardableResult
+    func rejectPOD(loadId: Int, reason: String) async throws -> PODAck {
+        struct Input: Encodable {
+            let loadId: Int
+            let reason: String
+        }
+        return try await api.mutation(
+            "pod.rejectPOD",
+            input: Input(loadId: loadId, reason: reason)
+        )
+    }
+
+    /// `pod.getPODForLoad` — fetch the packet for a single load.
+    /// Returns `nil` when no POD has been submitted yet.
+    func getPODForLoad(loadId: Int) async throws -> PODPacket? {
+        struct Input: Encodable { let loadId: Int }
+        return try await api.query(
+            "pod.getPODForLoad",
+            input: Input(loadId: loadId)
+        )
+    }
+}
 
 // MARK: - bayOpsRouter
 //

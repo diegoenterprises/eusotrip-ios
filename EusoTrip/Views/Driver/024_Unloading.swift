@@ -377,11 +377,22 @@ struct Unloading: View {
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
 
-            CTAButton(title: "View BOL") { showBol = true }
-            .sheet(isPresented: $showBol) {
-                PickupBolSigning()
-                    .environment(\.palette, palette)
-                    .eusoSheetX()
+            CTAButton(title: "Capture POD") { showBol = true }
+            .fullScreenCover(isPresented: $showBol) {
+                // Production-grade POD capture (camera + signature
+                // pad + receiver + notes) firing pod.submitPOD.
+                // Replaces the prior PickupBolSigning sheet — wrong
+                // sheet for delivery context. After submit the load
+                // server-side flips to pod_pending; lifecycle store
+                // advances to 025 Paperwork.
+                DeliveryPODCaptureView(
+                    loadId: lifecycle.loadId,
+                    loadNumber: activeLoad?.loadNumber,
+                    receiverHint: ctx.facets.deliveryFacility == LiveLoadFacets.dash
+                        ? nil : ctx.facets.deliveryFacility
+                )
+                .environment(\.palette, palette)
+                .environmentObject(session)
             }
         }
     }

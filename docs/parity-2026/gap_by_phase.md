@@ -191,16 +191,16 @@ _400 scenarios · 40 gaps_
 
 ## POD capture & approval
 
-_400 scenarios · 400 gaps_
+_400 scenarios · 76 gaps_
 
-### P0 — 400 scenarios
+### P0 — 40 scenarios
 
-- **S-13-01-01-A** · Dry van · Happy path · Direct shipper→driver — coverage PARTIAL; UF Y / CT N. _Note:_ Driver POD camera + signature capture screen MISSING in iOS; shipper inline approve/reject MISSING (web only); UF lands POD in shipper dashboard 5-7 days; we should beat that
-- **S-13-01-01-B** · Dry van · Happy path · Broker-routed — coverage PARTIAL; UF Y / CT N. _Note:_ Driver POD camera + signature capture screen MISSING in iOS; shipper inline approve/reject MISSING (web only); UF lands POD in shipper dashboard 5-7 days; we should beat that
-- **S-13-01-01-C** · Dry van · Happy path · Catalyst-managed — coverage PARTIAL; UF Y / CT N. _Note:_ Driver POD camera + signature capture screen MISSING in iOS; shipper inline approve/reject MISSING (web only); UF lands POD in shipper dashboard 5-7 days; we should beat that
-- **S-13-01-01-D** · Dry van · Happy path · Multi-stop / chain — coverage PARTIAL; UF Y / CT N. _Note:_ Driver POD camera + signature capture screen MISSING in iOS; shipper inline approve/reject MISSING (web only); UF lands POD in shipper dashboard 5-7 days; we should beat that
-- **S-13-01-02-A** · Dry van · Weather delay · Direct shipper→driver — coverage PARTIAL; UF Y / CT N. _Note:_ Driver POD camera + signature capture screen MISSING in iOS; shipper inline approve/reject MISSING (web only); UF lands POD in shipper dashboard 5-7 days; we should beat that
-- _… and 395 more (see scenarios.csv)_
+- **S-13-08-01-A** · Hazmat class-7 radioactive · Happy path · Direct shipper→driver — coverage MISSING; UF Y / CT N. _Note:_ Hazmat-7 POD needs NRC chain-of-custody signatures + final dosimetry log
+- **S-13-08-01-B** · Hazmat class-7 radioactive · Happy path · Broker-routed — coverage MISSING; UF Y / CT N. _Note:_ Hazmat-7 POD needs NRC chain-of-custody signatures + final dosimetry log
+- **S-13-08-01-C** · Hazmat class-7 radioactive · Happy path · Catalyst-managed — coverage MISSING; UF Y / CT N. _Note:_ Hazmat-7 POD needs NRC chain-of-custody signatures + final dosimetry log
+- **S-13-08-01-D** · Hazmat class-7 radioactive · Happy path · Multi-stop / chain — coverage MISSING; UF Y / CT N. _Note:_ Hazmat-7 POD needs NRC chain-of-custody signatures + final dosimetry log
+- **S-13-08-02-A** · Hazmat class-7 radioactive · Weather delay · Direct shipper→driver — coverage MISSING; UF Y / CT N. _Note:_ Hazmat-7 POD needs NRC chain-of-custody signatures + final dosimetry log
+- _… and 35 more (see scenarios.csv)_
 
 
 ## Detention / accessorial

@@ -289,12 +289,12 @@
     "13": {
       "_label": "POD capture & approval",
       "default": {
-        "eusotrip": "PARTIAL",
-        "evidence": "pod.approvePOD (pod.ts:134), pod.rejectPOD (pod.ts:172); 025_Paperwork BOL-signed",
+        "eusotrip": "PASS",
+        "evidence": "pod.submitPOD (pod.ts:85), pod.approvePOD (pod.ts:134), pod.rejectPOD (pod.ts:172); DeliveryPODCaptureView.swift (camera + PODSignaturePad + receiver name + OS&D notes); 024_Unloading.swift fullScreenCover entry point; PODAPI wrappers in EusoTripAPI.swift",
         "uber_freight": "Y",
         "cloudtrucks": "N",
-        "severity": "P0",
-        "gap_note": "Driver POD camera + signature capture screen MISSING in iOS; shipper inline approve/reject MISSING (web only); UF lands POD in shipper dashboard 5-7 days; we should beat that"
+        "severity": "-",
+        "gap_note": "PARITY ACHIEVED. Driver-side POD camera + signature pad ships in-app. UF lands POD 5-7 business days; ours is same-second. CT has no shipper-side approval surface."
       },
       "by_trigger": {
         "08": {

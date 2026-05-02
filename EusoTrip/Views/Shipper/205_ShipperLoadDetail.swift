@@ -67,6 +67,21 @@ struct ShipperLoadDetail: View {
     @State private var cancelError: String? = nil
     @State private var cancelToast: String? = nil
 
+    /// In-app POD review sheet (no web fallback). Opened from the
+    /// kebab menu when the load status is `pod_pending`. The sheet
+    /// renders the driver-submitted photo + signature + receiver
+    /// + OS&D notes, with Approve / Reject CTAs that fire
+    /// `pod.approvePOD` / `pod.rejectPOD` directly. Closes the
+    /// shipper-side half of Phase 13 (POD capture & approval) per
+    /// docs/parity-2026/EXECUTIVE_VERDICT.md §4.2.
+    @State private var showPODReview: Bool = false
+    @State private var podPacket: PODAPI.PODPacket? = nil
+    @State private var podLoading: Bool = false
+    @State private var podDecisionInFlight: Bool = false
+    @State private var podRejectReason: String = ""
+    @State private var podError: String? = nil
+    @State private var podToast: String? = nil
+
     private var lifecycleVertical: TripVertical {
         TripVertical(role: session.user?.role)
     }
@@ -117,6 +132,19 @@ struct ShipperLoadDetail: View {
         .confirmationDialog("Load actions",
                             isPresented: $showActionMenu,
                             titleVisibility: .visible) {
+            // POD review entry: only render when the load is
+            // pod_pending. The driver submitted POD via
+            // DeliveryPODCaptureView; the shipper now has an
+            // inline iOS surface to approve / reject without web
+            // continuation.
+            if isLoadPODPending {
+                Button("Review POD") {
+                    podError = nil
+                    podRejectReason = ""
+                    showPODReview = true
+                    Task { await hydratePODPacket() }
+                }
+            }
             Button("Cancel load", role: .destructive) {
                 // Real in-app cancel — surface the reason sheet,
                 // which submits via `loads.cancelWithReason`. No
@@ -151,6 +179,12 @@ struct ShipperLoadDetail: View {
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $showPODReview) {
+            podReviewSheet
+                .environment(\.palette, palette)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
         .overlay(alignment: .bottom) {
             if let toast = cancelToast {
                 Text(toast)
@@ -167,6 +201,293 @@ struct ShipperLoadDetail: View {
                         withAnimation { cancelToast = nil }
                     }
             }
+        }
+    }
+
+    // MARK: - POD review (shipper-side approve / reject)
+
+    /// True when the live load's status surfaces as `pod_pending` —
+    /// the only state where POD approval is meaningful. We tolerate
+    /// case + slight wire variations ('pod_pending' / 'PODPending').
+    private var isLoadPODPending: Bool {
+        let s = (liveDetail?.status ?? "").lowercased()
+        return s == "pod_pending" || s == "podpending"
+    }
+
+    /// Hydrate the POD packet for the current load. Fired when the
+    /// shipper opens the review sheet. Shows skeleton until the
+    /// packet lands; renders an empty-state if the server has no
+    /// POD on file (which would be a server-side anomaly given the
+    /// load is in `pod_pending`).
+    private func hydratePODPacket() async {
+        guard let n = Int(loadId) ?? liveDetail?.numericId else { return }
+        podLoading = true
+        defer { podLoading = false }
+        do {
+            podPacket = try await EusoTripAPI.shared.pod
+                .getPODForLoad(loadId: n)
+        } catch {
+            podError = (error as NSError).localizedDescription
+        }
+    }
+
+    /// Reusable image renderer for the base64 photo / signature
+    /// payloads the driver submitted. Returns nil cleanly when the
+    /// payload is missing so the view can render an empty-state row.
+    private func decodeBase64Image(_ b64: String?) -> UIImage? {
+        guard let b64, let data = Data(base64Encoded: b64) else { return nil }
+        return UIImage(data: data)
+    }
+
+    @ViewBuilder
+    private var podReviewSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    podHeaderCard
+                    podPhotoCard
+                    podSignatureCard
+                    podNotesCard
+                    if let err = podError {
+                        Text(err)
+                            .font(EType.caption)
+                            .foregroundStyle(Brand.danger)
+                            .padding(.horizontal, Space.s2)
+                    }
+                    Color.clear.frame(height: 96)
+                }
+                .padding(.horizontal, Space.s4)
+                .padding(.top, Space.s3)
+            }
+            .background(palette.bgPrimary.ignoresSafeArea())
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Close") { showPODReview = false }
+                        .disabled(podDecisionInFlight)
+                }
+                ToolbarItem(placement: .principal) {
+                    VStack(spacing: 1) {
+                        Text("REVIEW POD")
+                            .font(EType.micro).tracking(1.0)
+                            .foregroundStyle(LinearGradient.diagonal)
+                        Text(displayLoadId)
+                            .font(EType.mono(.micro)).tracking(0.3)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                podDecisionBar
+                    .background(palette.bgPrimary)
+            }
+            .overlay(alignment: .bottom) {
+                if let toast = podToast {
+                    Text(toast)
+                        .font(EType.caption).fontWeight(.semibold)
+                        .foregroundStyle(palette.textOnGradient)
+                        .padding(.horizontal, Space.s4)
+                        .padding(.vertical, Space.s2)
+                        .background(Brand.success,
+                                    in: RoundedRectangle(cornerRadius: Radius.md))
+                        .padding(.bottom, 96)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .task {
+                            try? await Task.sleep(nanoseconds: 1_400_000_000)
+                            withAnimation { podToast = nil }
+                        }
+                }
+            }
+        }
+    }
+
+    private var podHeaderCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(podPacket?.receiverName ?? "—")
+                .font(EType.title)
+                .foregroundStyle(palette.textPrimary)
+            Text("Submitted \(podPacket?.submittedAt ?? "—")")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+            if podLoading {
+                ProgressView().padding(.top, 4)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Space.s4)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(LinearGradient.diagonal.opacity(0.5), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    private var podPhotoCard: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("BOL PHOTO")
+                .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                .foregroundStyle(LinearGradient.diagonal)
+            if let img = decodeBase64Image(podPacket?.photoBase64) {
+                Image(uiImage: img)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            } else {
+                Text("No photo on file")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, minHeight: 120)
+                    .background(palette.bgCardSoft,
+                                in: RoundedRectangle(cornerRadius: Radius.md))
+            }
+        }
+        .padding(Space.s4)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+            .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    private var podSignatureCard: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("RECEIVER SIGNATURE")
+                .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                .foregroundStyle(LinearGradient.diagonal)
+            if let img = decodeBase64Image(podPacket?.signatureBase64) {
+                Image(uiImage: img)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, minHeight: 80)
+                    .background(palette.bgCardSoft,
+                                in: RoundedRectangle(cornerRadius: Radius.md))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            } else {
+                Text("No signature on file")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, minHeight: 60)
+                    .background(palette.bgCardSoft,
+                                in: RoundedRectangle(cornerRadius: Radius.md))
+            }
+        }
+        .padding(Space.s4)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+            .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    private var podNotesCard: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("OS&D NOTES")
+                .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                .foregroundStyle(LinearGradient.diagonal)
+            Text(podPacket?.notes?.isEmpty == false
+                 ? podPacket!.notes!
+                 : "No over / short / damage reported")
+                .font(EType.body)
+                .foregroundStyle(palette.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            if isLoadPODPending {
+                Divider().overlay(palette.borderFaint).padding(.vertical, 4)
+                Text("REJECTION REASON (required for reject)")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                    .foregroundStyle(palette.textTertiary)
+                TextField("e.g. BOL pieces don't match",
+                          text: $podRejectReason,
+                          axis: .vertical)
+                    .lineLimit(2, reservesSpace: true)
+                    .font(EType.body)
+                    .padding(Space.s3)
+                    .background(palette.bgCardSoft,
+                                in: RoundedRectangle(cornerRadius: Radius.sm))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.sm)
+                        .strokeBorder(palette.borderFaint))
+            }
+        }
+        .padding(Space.s4)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+            .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    private var podDecisionBar: some View {
+        VStack(spacing: 0) {
+            IridescentHairline()
+            HStack(spacing: Space.s3) {
+                Button {
+                    Task { await rejectPOD() }
+                } label: {
+                    HStack(spacing: 6) {
+                        if podDecisionInFlight {
+                            ProgressView().tint(palette.textOnGradient)
+                        }
+                        Text("Reject")
+                            .font(EType.body).fontWeight(.semibold)
+                            .foregroundStyle(palette.textOnGradient)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .background(Brand.danger,
+                                in: RoundedRectangle(cornerRadius: Radius.md))
+                    .opacity(canRejectPOD ? 1.0 : 0.55)
+                }
+                .buttonStyle(.plain)
+                .disabled(!canRejectPOD)
+
+                CTAButton(
+                    title: podDecisionInFlight ? "Approving…" : "Approve POD",
+                    action: { Task { await approvePOD() } },
+                    isLoading: podDecisionInFlight
+                )
+                .opacity(canApprovePOD ? 1.0 : 0.55)
+                .disabled(!canApprovePOD)
+            }
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, Space.s3)
+        }
+    }
+
+    private var canApprovePOD: Bool {
+        !podDecisionInFlight && podPacket != nil && isLoadPODPending
+    }
+
+    private var canRejectPOD: Bool {
+        let r = podRejectReason.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !podDecisionInFlight && r.count >= 3 && isLoadPODPending
+    }
+
+    private func approvePOD() async {
+        guard let n = Int(loadId) ?? liveDetail?.numericId else { return }
+        podDecisionInFlight = true
+        defer { podDecisionInFlight = false }
+        do {
+            _ = try await EusoTripAPI.shared.pod.approvePOD(loadId: n)
+            withAnimation { podToast = "POD approved · payment released" }
+            await refreshAll()
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            showPODReview = false
+        } catch {
+            podError = (error as NSError).localizedDescription
+        }
+    }
+
+    private func rejectPOD() async {
+        guard let n = Int(loadId) ?? liveDetail?.numericId else { return }
+        let reason = podRejectReason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard reason.count >= 3 else { return }
+        podDecisionInFlight = true
+        defer { podDecisionInFlight = false }
+        do {
+            _ = try await EusoTripAPI.shared.pod
+                .rejectPOD(loadId: n, reason: reason)
+            withAnimation { podToast = "POD rejected · driver will re-capture" }
+            await refreshAll()
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            showPODReview = false
+        } catch {
+            podError = (error as NSError).localizedDescription
         }
     }
 
