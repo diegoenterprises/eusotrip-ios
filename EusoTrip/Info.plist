@@ -85,6 +85,10 @@
 	<string>EusoTrip uses Ultra-Wideband to help you dock your truck precisely at loading bays and to coordinate hazmat escort handoffs with nearby drivers.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>EusoTrip transcribes what you say to ESANG on-device so your copilot can answer and navigate the app for you.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>EusoTrip uses your camera to scan dock-door markers for AR-guided back-in alignment, capture proof-of-delivery photos, and read BOL barcodes.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>EusoTrip lets you attach photos from your library to load documents (BOL, rate con, damage reports).</string>
 	<!-- ActivityKit Live Activities — required for ShipperLoadActivityAttributes.
 	     When YES, `Activity<…>.request(...)` succeeds; when NO/missing, every
 	     request throws and the lock-screen card never appears. -->

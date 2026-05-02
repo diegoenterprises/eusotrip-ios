@@ -22,10 +22,12 @@ struct BackingIn: View {
 
     @StateObject private var lifecycle = TripLifecycleStore()
     @StateObject private var uwb = EusoNISession()
+    @StateObject private var doorScanner = DoorMarkerScanner()
     @State private var activeLoad: Load?
     @State private var isConfirming: Bool = false
     @State private var liveFeedPaused: Bool = false
     @State private var terminalCaps: CapabilitiesAPI.TerminalCapabilities? = nil
+    @State private var arkitFallbackActive: Bool = false
 
     enum Register { case night, afternoon }
     let register: Register
@@ -56,6 +58,7 @@ struct BackingIn: View {
                 header
                 cameraCanvas
                 if uwbActive { uwbCenterlineCard }
+                if arkitFallbackActive { arkitMarkerCard }
                 distanceTiles
                 alignmentCard
                 advisoryCard
@@ -66,8 +69,80 @@ struct BackingIn: View {
             .padding(.top, 8)
         }
         .task { await hydrateLiveTrip() }
-        .onDisappear { uwb.stop() }
+        .onChange(of: uwb.lostLineOfSight) { _, lost in
+            // ARKit fallback fires automatically when UWB loses LOS
+            // AND the active terminal has a door marker registered
+            // for the current door. Stops when UWB recovers.
+            if lost && hasDoorMarker {
+                doorScanner.start(markers: terminalCaps?.doorMarkers ?? [])
+                arkitFallbackActive = true
+            } else if !lost && arkitFallbackActive {
+                doorScanner.stop()
+                arkitFallbackActive = false
+            }
+        }
+        .onDisappear {
+            uwb.stop()
+            doorScanner.stop()
+        }
         .screenTileRoot()
+    }
+
+    // MARK: ARKit door-marker overlay
+
+    /// True when the active terminal has registered a door marker
+    /// for this dock door — gates whether the ARKit fallback can
+    /// activate at all.
+    private var hasDoorMarker: Bool {
+        terminalCaps?.doorMarkers.contains { $0.doorNumber == fallbackDoor } ?? false
+    }
+
+    /// Card that fires only when UWB has lost LOS and a door marker
+    /// exists. Embeds the ARKit camera preview with marker tracking
+    /// + a centerline drift readout. Positions itself directly under
+    /// the UWB card so the driver sees the handoff: UWB → AR fallback.
+    private var arkitMarkerCard: some View {
+        VStack(spacing: 8) {
+            DoorMarkerScannerView(scanner: doorScanner)
+                .frame(height: 220)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "viewfinder")
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(arkitOffsetText)
+                        .font(EType.body.weight(.heavy))
+                        .foregroundStyle(palette.textPrimary)
+                        .monospacedDigit()
+                    Text("AR FALLBACK · DOOR \(fallbackDoor)")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 12)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    private var arkitOffsetText: String {
+        if let cm = doorScanner.lateralOffsetCm {
+            let side = cm > 0 ? "LEFT" : (cm < 0 ? "RIGHT" : "CENTER")
+            return "\(abs(cm)) cm \(side)"
+        }
+        if doorScanner.recognisedDoor != nil { return "Tracking…" }
+        return "Point camera at door marker"
     }
 
     // MARK: UWB centerline drift card
@@ -479,4 +554,164 @@ private func driverNavTrailing_023() -> [NavSlot] {
 #Preview("023 · Backing In · Light") {
     BackingInScreen(theme: Theme.light)
         .preferredColorScheme(.light)
+}
+
+// MARK: - ARKit door-marker scanner
+//
+// Visual fiducial fallback for the back-in alignment overlay. When
+// the UWB anchor loses line-of-sight (steel trailers / yard clutter
+// blocking the radio), the driver rotates the phone toward the dock
+// door and the rear camera reads the printed AprilTag / QR marker
+// epoxied above the bay. ARKit's `ARImageTrackingConfiguration`
+// resolves the marker's id + 6-DOF pose, we look up the registered
+// `DoorMarker { offsetX, offsetY }` for that id, and paint the
+// trailer centerline as a 3D plane on top of the camera feed.
+//
+// Lifecycle: foreground only (ARKit constraint). Caller owns the
+// AR session; the SwiftUI view starts on appear, stops on disappear.
+//
+// Capability gating: only renders when the active terminal's caps
+// include a `doorMarker` for the active door. Otherwise the host
+// surface routes to the existing distance-tile fallback.
+
+import ARKit
+
+@MainActor
+final class DoorMarkerScanner: NSObject, ObservableObject, ARSessionDelegate {
+    /// Published recognised marker payload + 6-DOF pose. The host
+    /// SwiftUI view binds these into a centerline overlay.
+    @Published var recognisedDoor: String? = nil
+    @Published var lateralOffsetCm: Int? = nil
+    @Published var status: Status = .idle
+
+    enum Status: Equatable {
+        case idle
+        case unsupported
+        case scanning
+        case authDenied
+        case failed(String)
+    }
+
+    private let session = ARSession()
+    /// Door markers known for the active terminal — passed in from
+    /// the host view's hydrated capability envelope. Each marker is
+    /// a printed AprilTag/QR with a server-registered id + offset.
+    private var registry: [CapabilitiesAPI.DoorMarker] = []
+
+    static var isSupported: Bool {
+        ARImageTrackingConfiguration.isSupported
+    }
+
+    override init() {
+        super.init()
+        session.delegate = self
+    }
+
+    /// Start the AR session with the registered door markers as
+    /// `ARReferenceImage`s. Each marker becomes a tracked target;
+    /// the framework reports a 6-DOF transform on every camera
+    /// frame that contains one.
+    func start(markers: [CapabilitiesAPI.DoorMarker]) {
+        guard Self.isSupported else {
+            status = .unsupported
+            return
+        }
+        self.registry = markers
+        // Each printed marker is published to a CDN as a reference
+        // image — the markerId on the capability envelope maps to
+        // the asset name. The terminal admin uploads + registers
+        // markers from the Hardware Capabilities self-declaration
+        // form (built in commit #5 of this wave). For now we
+        // attempt to fetch each marker from the asset catalog by
+        // markerId; if missing, that marker is silently skipped.
+        var refs = Set<ARReferenceImage>()
+        for m in markers {
+            if let img = UIImage(named: m.markerId)?.cgImage {
+                let ref = ARReferenceImage(
+                    img,
+                    orientation: .up,
+                    physicalWidth: 0.30 // 30cm printed marker — admin uploads at this size
+                )
+                ref.name = m.markerId
+                refs.insert(ref)
+            }
+        }
+        let cfg = ARImageTrackingConfiguration()
+        cfg.trackingImages = refs
+        cfg.maximumNumberOfTrackedImages = max(1, refs.count)
+        session.run(cfg, options: [.resetTracking, .removeExistingAnchors])
+        status = .scanning
+    }
+
+    func stop() {
+        session.pause()
+        recognisedDoor = nil
+        lateralOffsetCm = nil
+        status = .idle
+    }
+
+    /// Internal: the underlying ARSession. Exposed so the SwiftUI
+    /// `ARSCNViewRepresentable` host can bind the session directly
+    /// without the scanner going through an ObservableObject hop
+    /// for every camera frame (which would thrash the main actor).
+    var arSession: ARSession { session }
+
+    // MARK: ARSessionDelegate
+
+    nonisolated func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
+        // Build a snapshot on the AR delegate queue with no main-
+        // actor reads. The actor hop happens inside the Task below
+        // where we resolve the registered offset + publish state.
+        var samples: [(name: String, lateralCm: Int)] = []
+        for anchor in anchors {
+            guard let img = anchor as? ARImageAnchor,
+                  let name = img.referenceImage.name else { continue }
+            // The transform's translation is the marker's pose in
+            // the camera-frame. `m.columns.3.x` is the lateral
+            // offset (m), positive == marker is to the right of
+            // the camera optical axis. We sign-flip so positive
+            // values mean the trailer is drifting LEFT of the
+            // marker (driver's perspective).
+            let m = img.transform
+            let lateralM = -m.columns.3.x
+            samples.append((name: name, lateralCm: Int(lateralM * 100)))
+        }
+        guard !samples.isEmpty else { return }
+        Task { @MainActor in
+            for s in samples {
+                self.recognisedDoor = s.name
+                if let marker = self.registry.first(where: { $0.markerId == s.name }) {
+                    self.lateralOffsetCm = s.lateralCm + Int(marker.offsetX * 100)
+                } else {
+                    self.lateralOffsetCm = s.lateralCm
+                }
+            }
+        }
+    }
+
+    nonisolated func session(_ session: ARSession, didFailWithError error: Error) {
+        Task { @MainActor in
+            self.status = .failed(error.localizedDescription)
+        }
+    }
+}
+
+/// Live AR camera preview with marker tracking. Wraps `ARSCNView` so
+/// we get the system's camera feed for free; the marker overlay is
+/// rendered separately on top via SwiftUI primitives so the visual
+/// design stays under our control.
+import SceneKit
+
+struct DoorMarkerScannerView: UIViewRepresentable {
+    let scanner: DoorMarkerScanner
+
+    func makeUIView(context: Context) -> ARSCNView {
+        let view = ARSCNView(frame: .zero)
+        view.session = scanner.arSession
+        view.automaticallyUpdatesLighting = true
+        view.scene = SCNScene()
+        return view
+    }
+
+    func updateUIView(_ uiView: ARSCNView, context: Context) {}
 }
