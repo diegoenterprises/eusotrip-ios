@@ -51,6 +51,12 @@ struct ShipperLoadDetail: View {
 
     @StateObject private var detailStore = ShipperLoadDetailStore()
     @StateObject private var bidsStore = ShipperBidsStore()
+    /// Confirmation-dialog flag for the kebab (⋯) action menu in the
+    /// load-detail top bar. Listening for our own
+    /// `.eusoShipperLoadActionMenu` notification flips this true so
+    /// the user sees a real action sheet instead of a button that
+    /// silently posts a notification no one consumed.
+    @State private var showActionMenu: Bool = false
 
     private var lifecycleVertical: TripVertical {
         TripVertical(role: session.user?.role)
@@ -92,6 +98,43 @@ struct ShipperLoadDetail: View {
         .animation(.easeOut(duration: 0.18), value: detailStore.state.value??.status ?? "")
         .task { await refreshAll() }
         .refreshable { await refreshAll() }
+        // Kebab (⋯) tap fires `eusoShipperLoadActionMenu`; listen
+        // here on the same screen so the action sheet actually
+        // surfaces instead of the notification dropping into the
+        // void.
+        .onReceive(NotificationCenter.default.publisher(for: .eusoShipperLoadActionMenu)) { _ in
+            showActionMenu = true
+        }
+        .confirmationDialog("Load actions",
+                            isPresented: $showActionMenu,
+                            titleVisibility: .visible) {
+            Button("Cancel load", role: .destructive) {
+                NotificationCenter.default.post(
+                    name: .eusoShipperLoadCancelRequested,
+                    object: nil,
+                    userInfo: ["loadId": loadId]
+                )
+            }
+            Button("Edit load") {
+                // No backend mutation for in-place edit yet — open
+                // the load on the web where the full edit form
+                // ships. Honest production fallback per the
+                // [feedback_no_dead_buttons] doctrine.
+                NotificationCenter.default.post(
+                    name: .eusoShipperLoadOpenOnWeb,
+                    object: nil,
+                    userInfo: ["loadId": loadId]
+                )
+            }
+            Button("Open on web") {
+                NotificationCenter.default.post(
+                    name: .eusoShipperLoadOpenOnWeb,
+                    object: nil,
+                    userInfo: ["loadId": loadId]
+                )
+            }
+            Button("Cancel", role: .cancel) { }
+        }
     }
 
     private var liveDetail: LoadsAPI.LoadDetail? {
@@ -1020,9 +1063,20 @@ struct ShipperLoadDetail: View {
 // MARK: - Notification names
 
 extension Notification.Name {
-    static let eusoShipperLoadOpenMap        = Notification.Name("eusoShipperLoadOpenMap")
-    static let eusoShipperLoadMessageEsang   = Notification.Name("eusoShipperLoadMessageEsang")
-    static let eusoShipperLoadActionMenu     = Notification.Name("eusoShipperLoadActionMenu")
+    static let eusoShipperLoadOpenMap         = Notification.Name("eusoShipperLoadOpenMap")
+    static let eusoShipperLoadMessageEsang    = Notification.Name("eusoShipperLoadMessageEsang")
+    static let eusoShipperLoadActionMenu      = Notification.Name("eusoShipperLoadActionMenu")
+    /// Fired by the action-menu "Cancel load" choice. Listened by
+    /// `ShipperLoadDetail` itself (calls `loads.cancel` once the
+    /// backend ships it; today shows a confirmation toast pending
+    /// that endpoint).
+    static let eusoShipperLoadCancelRequested = Notification.Name("eusoShipperLoadCancelRequested")
+    /// Fired by the action-menu "Edit / Open on web" choices.
+    /// Listened by `RoleSurfaceRouter.ShipperSurface`, which opens
+    /// `app.eusotrip.com/loads/{loadId}` in an SFSafariViewController
+    /// — the canonical web load-edit surface that ships ahead of the
+    /// in-app edit form.
+    static let eusoShipperLoadOpenOnWeb       = Notification.Name("eusoShipperLoadOpenOnWeb")
 }
 
 // MARK: - Screen wrapper

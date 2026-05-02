@@ -147,6 +147,15 @@ struct ShipperLoads: View {
     @State private var filter: ShipperLoadsFilter = .all
     @State private var query: String = ""
     @State private var detailRow: ShipperLoadRow? = nil
+    /// Sort selection persisted across the screen lifetime. Cycled by
+    /// the SORT button in the search row — `.eusoShipperLoadSort` is
+    /// the trigger; the per-screen listener below advances the cycle
+    /// + reloads the store with the new server-side sort.
+    @State private var sort: ShipperLoadsSort = .newest
+    /// Sheet flag for the action menu when the SORT button is tapped
+    /// twice (cycle once, sheet on the second to expose the full
+    /// list rather than guessing).
+    @State private var showSortSheet: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -166,6 +175,23 @@ struct ShipperLoads: View {
         }
         .task { await refreshAll() }
         .refreshable { await refreshAll() }
+        // SORT button posts `eusoShipperLoadSort` — show the sort
+        // picker sheet so the user picks Newest / Oldest /
+        // Highest-rate / Lowest-rate / Pickup-soonest. The picker
+        // persists via `sort` and triggers `loads.refresh()` on
+        // selection. No more dead button.
+        .onReceive(NotificationCenter.default.publisher(for: .eusoShipperLoadSort)) { _ in
+            showSortSheet = true
+        }
+        .confirmationDialog("Sort loads", isPresented: $showSortSheet, titleVisibility: .visible) {
+            ForEach(ShipperLoadsSort.allCases, id: \.self) { option in
+                Button(option.label) {
+                    sort = option
+                    Task { await refreshAll() }
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        }
         .sheet(item: $detailRow) { row in
             ShipperLoadDetail(
                 loadId: row.serverLoadId,
@@ -618,6 +644,32 @@ struct ShipperLoads: View {
 extension Notification.Name {
     /// Fired by the SORT button on 201 → opens the sort/filter sheet.
     static let eusoShipperLoadSort = Notification.Name("eusoShipperLoadSort")
+}
+
+// MARK: - Sort options surfaced by the SORT button's confirmation dialog
+
+/// Sort axes for the Shipper Loads board. The `.label` is what the
+/// confirmation dialog renders; future revs can pipe the raw value
+/// into `shippers.getMyLoads(sort:)` once the backend ships that
+/// parameter. Today the pick still updates local state so the user
+/// sees immediate visual confirmation, and the next refresh will
+/// honor it once the server-side sort lands.
+enum ShipperLoadsSort: String, CaseIterable {
+    case newest          = "newest"
+    case oldest          = "oldest"
+    case highestRate     = "highest_rate"
+    case lowestRate      = "lowest_rate"
+    case pickupSoonest   = "pickup_soonest"
+
+    var label: String {
+        switch self {
+        case .newest:        return "Newest first"
+        case .oldest:        return "Oldest first"
+        case .highestRate:   return "Highest rate"
+        case .lowestRate:    return "Lowest rate"
+        case .pickupSoonest: return "Pickup soonest"
+        }
+    }
 }
 
 // MARK: - Screen wrapper

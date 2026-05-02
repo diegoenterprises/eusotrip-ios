@@ -187,6 +187,10 @@ struct ShipperSurface: View {
     /// screen with the real loadId instead of the registry's `"0"`
     /// sentinel.
     @State private var activeLoadId: String? = nil
+    /// Set when an action triggers SFSafariViewController to open a
+    /// web continuation (load edit, settlement approve flow, etc.).
+    /// Cleared when the sheet dismisses.
+    @State private var webContinuationURL: URL? = nil
 
     private var current: ProductionScreen {
         // Detail screens with a captured loadId override the registry
@@ -334,6 +338,33 @@ struct ShipperSurface: View {
                 for: .eusoShipperEsangOpen)) { _ in showESang = true }
             .onReceive(NotificationCenter.default.publisher(
                 for: .eusoShipperLoadMessageEsang)) { _ in showESang = true }
+            // Web continuation: action-menu "Edit / Open on web /
+            // Cancel" choices on the load-detail surface route here
+            // and we present `app.eusotrip.com/loads/{loadId}` in a
+            // Safari sheet. Same Bearer cookie keeps the user
+            // authenticated; the web app's edit + cancel forms are
+            // canonical until the in-app mutations land.
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoShipperLoadOpenOnWeb)) { note in
+                let id = (note.userInfo?["loadId"] as? String) ?? ""
+                webContinuationURL = URL(string:
+                    "https://app.eusotrip.com/loads/\(id)"
+                )
+            }
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoShipperLoadCancelRequested)) { note in
+                let id = (note.userInfo?["loadId"] as? String) ?? ""
+                webContinuationURL = URL(string:
+                    "https://app.eusotrip.com/loads/\(id)?action=cancel"
+                )
+            }
+            .sheet(item: Binding<ShipperWebContinuationItem?>(
+                get: { webContinuationURL.map(ShipperWebContinuationItem.init) },
+                set: { webContinuationURL = $0?.url }
+            )) { ident in
+                SafariContinuationView(url: ident.url)
+                    .ignoresSafeArea()
+            }
             .sheet(isPresented: $showESang) {
                 // Shipper-context ESANG sheet — driver sheet was a
                 // mistake (showed driver chips like "HOS buffer" /
@@ -845,6 +876,17 @@ private struct SafariContinuationView: UIViewControllerRepresentable {
         SFSafariViewController(url: url)
     }
     func updateUIViewController(_ vc: SFSafariViewController, context: Context) {}
+}
+
+/// Identifiable wrapper so a `URL` can drive a SwiftUI
+/// `.sheet(item:)` modifier. The URL is itself unique per
+/// presentation so we use it as the `id`. Named distinctly from
+/// `106_MeEusoTickets`'s `IdentifiedURL` (private to that file)
+/// to avoid module-internal collision.
+struct ShipperWebContinuationItem: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
+    init(_ url: URL) { self.url = url }
 }
 
 // MARK: - RBAC
