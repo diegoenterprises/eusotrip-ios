@@ -674,6 +674,37 @@ struct BottomNav: View {
     /// Load / Loads / Me) instead of being cosmetic. Defined in
     /// `Views/Shipper/ShipperNavController.swift`.
     @Environment(\.shipperNavHandler) var shipperNavHandler
+    /// Per-role tap routers for the other native chrome buckets the
+    /// app ships (Carrier / Broker / Escort / Terminal / Admin /
+    /// Compliance / Dispatch). Each one is injected by the matching
+    /// surface in `RoleSurfaceRouter` so its bottom-nav slot taps
+    /// fire through the role's `XxxNavDispatcher.handle(_:)` →
+    /// `eusoXxxNavSwap` notification chain. Without these, a Carrier
+    /// (or any non-driver/shipper) user tapped slots and nothing
+    /// fired — the slot's local `s.onTap` defaulted to a no-op.
+    @Environment(\.carrierNavHandler)    var carrierNavHandler
+    @Environment(\.brokerNavHandler)     var brokerNavHandler
+    @Environment(\.escortNavHandler)     var escortNavHandler
+    @Environment(\.terminalNavHandler)   var terminalNavHandler
+    @Environment(\.adminNavHandler)      var adminNavHandler
+    @Environment(\.complianceNavHandler) var complianceNavHandler
+    @Environment(\.dispatchNavHandler)   var dispatchNavHandler
+
+    /// Resolves the first injected handler in priority order. Only
+    /// one role's handler is ever in the env at a time (each surface
+    /// injects exactly one), so this just returns the active one
+    /// without ambiguity.
+    private var activeNavHandler: ((String) -> Void)? {
+        driverNavHandler
+        ?? shipperNavHandler
+        ?? carrierNavHandler
+        ?? brokerNavHandler
+        ?? escortNavHandler
+        ?? terminalNavHandler
+        ?? adminNavHandler
+        ?? complianceNavHandler
+        ?? dispatchNavHandler
+    }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -740,9 +771,7 @@ struct BottomNav: View {
             // fall back to the call-site-provided `onTapOrb` closure so
             // isolated previews keep working.
             Button(action: {
-                if let h = driverNavHandler {
-                    h("esang")
-                } else if let h = shipperNavHandler {
+                if let h = activeNavHandler {
                     h("esang")
                 } else {
                     onTapOrb()
@@ -837,9 +866,7 @@ struct BottomNav: View {
         // through to the slot's local `onTap` — this keeps per-slot
         // closures (and the default no-op) working in isolation.
         Button(action: {
-            if let h = driverNavHandler {
-                h(s.label)
-            } else if let h = shipperNavHandler {
+            if let h = activeNavHandler {
                 h(s.label)
             } else {
                 s.onTap()

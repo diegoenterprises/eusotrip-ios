@@ -223,6 +223,28 @@ struct ShipperSurface: View {
                 for: .eusoShipperEsangTapped)) { _ in
                 showESang = true
             }
+            // 200_ShipperHome's "Post a load" button posts
+            // `eusoShipperLoadCreate`; "Browse carriers" posts
+            // `eusoShipperBrowseCarriers`. Without these listeners
+            // both buttons fired into the void. Now they navigate
+            // to 204 (Post Load wizard) and 224 (Partner Directory
+            // — the carrier-vetting board) respectively. Same RBAC
+            // guard as the canonical `eusoShipperNavSwap` so a
+            // foreign payload can't sneak through.
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoShipperLoadCreate)) { _ in
+                guard RoleAccess.canRender(role: .shipper, screenId: "204") else { return }
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    currentScreenId = "204"
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoShipperBrowseCarriers)) { _ in
+                guard RoleAccess.canRender(role: .shipper, screenId: "224") else { return }
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    currentScreenId = "224"
+                }
+            }
             .sheet(isPresented: $showESang) {
                 // Shipper-context ESANG sheet — driver sheet was a
                 // mistake (showed driver chips like "HOS buffer" /
