@@ -294,6 +294,7 @@ final class EusoTripAPI: ObservableObject {
     // bodies were a hard Swift compile error ("invalid redeclaration").
     lazy var bayOps: BayOpsAPI = BayOpsAPI(api: self)
     lazy var pod: PODAPI = PODAPI(api: self)
+    lazy var disputes: DisputesAPI = DisputesAPI(api: self)
     lazy var notifications: NotificationsAPI = NotificationsAPI(api: self)
     lazy var drivers: DriversAPI = DriversAPI(api: self)
     lazy var news: NewsAPI = NewsAPI(api: self)
@@ -2684,6 +2685,158 @@ struct PODAPI {
         return try await api.query(
             "pod.getPODForLoad",
             input: Input(loadId: loadId)
+        )
+    }
+}
+
+// MARK: - disputesRouter
+//
+// Mirrors `frontend/server/routers/disputes.ts`. Unified dispute
+// lifecycle covering settlement / detention / accessorial / POD
+// / damage / rate / fraud / other. Phase 16 of the 8000-scenario
+// parity audit lands MISSING -> PASS once both shipper-side
+// `294_DisputeSettlement.swift` and the driver-side dispute view
+// inside `MeDetailRoute` consume this surface.
+
+struct DisputesAPI {
+    unowned let api: EusoTripAPI
+
+    enum Category: String, Codable, CaseIterable, Identifiable, Hashable {
+        case detention, accessorial, demurrage, settlement
+        case rate, damage, pod, fraud, other
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .detention:   return "Detention"
+            case .accessorial: return "Accessorial"
+            case .demurrage:   return "Demurrage"
+            case .settlement:  return "Settlement"
+            case .rate:        return "Rate"
+            case .damage:      return "Damage"
+            case .pod:         return "POD"
+            case .fraud:       return "Fraud"
+            case .other:       return "Other"
+            }
+        }
+        var icon: String {
+            switch self {
+            case .detention:   return "clock.badge.exclamationmark"
+            case .accessorial: return "doc.text.magnifyingglass"
+            case .demurrage:   return "shippingbox.and.arrow.backward"
+            case .settlement:  return "creditcard.trianglebadge.exclamationmark"
+            case .rate:        return "dollarsign.arrow.circlepath"
+            case .damage:      return "exclamationmark.triangle"
+            case .pod:         return "doc.text.image"
+            case .fraud:       return "exclamationmark.shield"
+            case .other:       return "exclamationmark.bubble"
+            }
+        }
+    }
+
+    /// Composite dispute id — `dc_<n>` for detention strand,
+    /// `pay_<n>` for settlement strand. Stable across calls so
+    /// per-row navigation works.
+    struct Dispute: Decodable, Hashable, Identifiable {
+        let id: String
+        let category: String
+        let status: String
+        let loadId: Int?
+        let filedByUserId: Int?
+        let filedAgainstUserId: Int?
+        let amount: Double?
+        let reason: String?
+        let evidence: [EvidenceItem]
+        let createdAt: String?
+        let updatedAt: String?
+
+        struct EvidenceItem: Codable, Hashable {
+            let type: String
+            let url: String?
+            let description: String?
+            let message: String?
+            let byUserId: Int?
+            let byRole: String?
+            let timestamp: String?
+        }
+
+        /// Strongly-typed category — falls through to `.other` when
+        /// the server emits a category the client doesn't yet know.
+        var categoryKind: Category {
+            Category(rawValue: category) ?? .other
+        }
+    }
+
+    struct ListResponse: Decodable, Hashable {
+        let rows: [Dispute]
+        let total: Int
+    }
+
+    /// `disputes.list` — every dispute the caller filed or is named
+    /// in. Cross-strand union sorted newest-first by createdAt.
+    func list(
+        category: Category? = nil,
+        limit: Int = 40
+    ) async throws -> ListResponse {
+        struct Input: Encodable {
+            let category: String?
+            let limit: Int
+        }
+        return try await api.query(
+            "disputes.list",
+            input: Input(category: category?.rawValue, limit: limit)
+        )
+    }
+
+    /// `disputes.getById` — full detail with evidence/message thread.
+    func getById(id: String) async throws -> Dispute {
+        struct Input: Encodable { let id: String }
+        return try await api.query(
+            "disputes.getById",
+            input: Input(id: id)
+        )
+    }
+
+    struct ActionAck: Decodable, Hashable {
+        let success: Bool?
+        let id: String?
+        let status: String?
+    }
+
+    /// `disputes.respond` — counterparty replies to a dispute.
+    /// Server appends a message entry to the evidence thread +
+    /// writes a DISPUTE_RESPONDED audit log row.
+    @discardableResult
+    func respond(
+        id: String,
+        message: String,
+        evidence: [Dispute.EvidenceItem]? = nil
+    ) async throws -> ActionAck {
+        struct Input: Encodable {
+            let id: String
+            let message: String
+            let evidence: [Dispute.EvidenceItem]?
+        }
+        return try await api.mutation(
+            "disputes.respond",
+            input: Input(id: id, message: message, evidence: evidence)
+        )
+    }
+
+    /// `disputes.escalate` — bump to admin / arbitration. Sets
+    /// detention strand to `pending_review`; settlement strand
+    /// stays `disputed` but an audit log marks the escalation.
+    @discardableResult
+    func escalate(
+        id: String,
+        reason: String
+    ) async throws -> ActionAck {
+        struct Input: Encodable {
+            let id: String
+            let reason: String
+        }
+        return try await api.mutation(
+            "disputes.escalate",
+            input: Input(id: id, reason: reason)
         )
     }
 }

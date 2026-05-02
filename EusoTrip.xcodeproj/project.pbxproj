@@ -211,6 +211,7 @@
 		D1A11111111111111111BA01 /* DriverConversationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111BA02 /* DriverConversationView.swift */; };
 		D2DLPOD0000000000001 /* DeliveryPODCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DLPOD0000000000002 /* DeliveryPODCaptureView.swift */; };
 		D2RATPV0000000000001 /* RatingPromptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RATPV0000000000002 /* RatingPromptView.swift */; };
+		D2DISPV0000000000001 /* DisputeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DISPV0000000000002 /* DisputeViews.swift */; };
 		D1A11111111111111111BH01 /* 400_BrokerHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111BH02 /* 400_BrokerHome.swift */; };
 		D1A11111111111111111BNC1 /* BrokerNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111BNC2 /* BrokerNavController.swift */; };
 		D1A11111111111111111BT01 /* 401_BrokerTenders.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111BT02 /* 401_BrokerTenders.swift */; };
@@ -755,6 +756,7 @@
 		D1A11111111111111111BA02 /* DriverConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverConversationView.swift; sourceTree = "<group>"; };
 		D2DLPOD0000000000002 /* DeliveryPODCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DeliveryPODCaptureView.swift; path = EusoTrip/Views/Driver/DeliveryPODCaptureView.swift; sourceTree = SOURCE_ROOT; };
 		D2RATPV0000000000002 /* RatingPromptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RatingPromptView.swift; path = EusoTrip/Views/Components/RatingPromptView.swift; sourceTree = SOURCE_ROOT; };
+		D2DISPV0000000000002 /* DisputeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DisputeViews.swift; path = EusoTrip/Views/Components/DisputeViews.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111BH02 /* 400_BrokerHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 400_BrokerHome.swift; path = EusoTrip/Views/Broker/400_BrokerHome.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111BNC2 /* BrokerNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BrokerNavController.swift; path = EusoTrip/Views/Broker/BrokerNavController.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111BT02 /* 401_BrokerTenders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 401_BrokerTenders.swift; path = EusoTrip/Views/Broker/401_BrokerTenders.swift; sourceTree = SOURCE_ROOT; };
@@ -1664,6 +1666,7 @@
 				D1A11111111111111111AD02 /* LoadDetailSheet+Adapters.swift */,
 				D1A11111111111111111AE02 /* TileReveal.swift */,
 				D2RATPV0000000000002 /* RatingPromptView.swift */,
+				D2DISPV0000000000002 /* DisputeViews.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -2123,6 +2126,7 @@
 				D1A11111111111111111BA01 /* DriverConversationView.swift in Sources */,
 				D2DLPOD0000000000001 /* DeliveryPODCaptureView.swift in Sources */,
 				D2RATPV0000000000001 /* RatingPromptView.swift in Sources */,
+				D2DISPV0000000000001 /* DisputeViews.swift in Sources */,
 				D1A11111111111111111HZ01 /* HotZonesWidget.swift in Sources */,
 				D1A11111111111111111HG01 /* DriverHomeGlances.swift in Sources */,
 				D1A11111111111111111RI01 /* EnRouteRoadIntelStrip.swift in Sources */,

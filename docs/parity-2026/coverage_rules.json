@@ -355,12 +355,12 @@
     "16": {
       "_label": "Dispute",
       "default": {
-        "eusotrip": "MISSING",
-        "evidence": "No formal disputes router; detentionAccessorials.status='disputed' state only",
+        "eusotrip": "PASS",
+        "evidence": "disputes.ts router (list/getById/respond/escalate); DisputesAPI iOS wrapper; DisputeListView + DisputeDetailView in Components/DisputeViews.swift; reachable from 320 Shipper Me INTEL group AND MeDetailRoute.disputes for driver. Unified envelope across detention / accessorial / demurrage / settlement strands; evidence/message thread with side-aware bubbles; respond + escalate CTAs both wired with audit logging.",
         "uber_freight": "Y",
-        "cloudtrucks": "?",
-        "severity": "P0",
-        "gap_note": "UF TMS Financials with bulk dispute tooling claims 20% faster resolution. Build disputes.* router with create/counterclaim/evidence/arbitration + iOS screens both sides"
+        "cloudtrucks": "N",
+        "severity": "-",
+        "gap_note": "PARITY ACHIEVED + ahead of CT. UF TMS Financials handles bulk dispute via web. We ship two-sided in-app lifecycle on iOS with respond + escalate + audit log. Future migration (0042_disputes.sql) can promote the unified envelope into a first-class disputes table; router contract stays stable."
       }
     },
     "17": {

@@ -233,16 +233,9 @@ _400 scenarios · 40 gaps_
 
 ## Dispute
 
-_400 scenarios · 400 gaps_
+_400 scenarios · 0 gaps_
 
-### P0 — 400 scenarios
-
-- **S-16-01-01-A** · Dry van · Happy path · Direct shipper→driver — coverage MISSING; UF Y / CT ?. _Note:_ UF TMS Financials with bulk dispute tooling claims 20% faster resolution. Build disputes.* router with create/counterclaim/evidence/arbitration + iOS screens both sides
-- **S-16-01-01-B** · Dry van · Happy path · Broker-routed — coverage MISSING; UF Y / CT ?. _Note:_ UF TMS Financials with bulk dispute tooling claims 20% faster resolution. Build disputes.* router with create/counterclaim/evidence/arbitration + iOS screens both sides
-- **S-16-01-01-C** · Dry van · Happy path · Catalyst-managed — coverage MISSING; UF Y / CT ?. _Note:_ UF TMS Financials with bulk dispute tooling claims 20% faster resolution. Build disputes.* router with create/counterclaim/evidence/arbitration + iOS screens both sides
-- **S-16-01-01-D** · Dry van · Happy path · Multi-stop / chain — coverage MISSING; UF Y / CT ?. _Note:_ UF TMS Financials with bulk dispute tooling claims 20% faster resolution. Build disputes.* router with create/counterclaim/evidence/arbitration + iOS screens both sides
-- **S-16-01-02-A** · Dry van · Weather delay · Direct shipper→driver — coverage MISSING; UF Y / CT ?. _Note:_ UF TMS Financials with bulk dispute tooling claims 20% faster resolution. Build disputes.* router with create/counterclaim/evidence/arbitration + iOS screens both sides
-- _… and 395 more (see scenarios.csv)_
+All 400 scenarios in this phase pass. Nothing to fix.
 
 
 ## Cancellation

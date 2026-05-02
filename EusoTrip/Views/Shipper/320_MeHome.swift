@@ -54,6 +54,7 @@ private struct MeHomeBody: View {
                 cellGroup(title: "INTEL", cells: [
                     ("newspaper.fill",   "Shipper Intel", .detail(.news)),
                     ("trophy.fill",      "The Haul",      .detail(.haul)),
+                    ("exclamationmark.bubble", "Disputes", .detail(.disputes)),
                 ])
                 cellGroup(title: "EUSOWALLET", cells: [
                     ("wallet.pass.fill", "EusoWallet", .screen("290")),

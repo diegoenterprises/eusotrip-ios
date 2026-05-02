@@ -64,7 +64,7 @@ enum MeAction {
 // MARK: - Route
 
 enum MeDetailRoute: String, Identifiable, CaseIterable {
-    case carrier, authority, earnings, rateSheet, documents, eusoTicket, tax, dvir, availability, missions, rewards, badges, referrals, zeun, eld, fleet, haul, news, pulse, notifications, settings
+    case carrier, authority, earnings, rateSheet, documents, eusoTicket, tax, dvir, availability, missions, rewards, badges, referrals, zeun, eld, fleet, haul, news, pulse, notifications, settings, disputes
 
     var id: String { rawValue }
 
@@ -91,6 +91,7 @@ enum MeDetailRoute: String, Identifiable, CaseIterable {
         case .pulse:         return "EusoTrip Pulse"
         case .notifications: return "Notifications"
         case .settings:      return "Settings"
+        case .disputes:      return "Disputes"
         }
     }
 
@@ -117,6 +118,7 @@ enum MeDetailRoute: String, Identifiable, CaseIterable {
         case .pulse:         return "Apple Watch pairing · last sync"
         case .notifications: return "Inbox · categories · delivery"
         case .settings:      return "Account · notifications · device"
+        case .disputes:      return "Detention · accessorial · settlement disputes you're named in"
         }
     }
 }
@@ -239,6 +241,7 @@ struct MeDetailContainer: View {
         case .pulse:         MePulseView()
         case .notifications: MeNotificationsView()
         case .settings:      MeSettingsView()
+        case .disputes:      DisputeListView()
         }
     }
 }
