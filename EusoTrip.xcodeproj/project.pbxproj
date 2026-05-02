@@ -54,6 +54,10 @@
 		A19525BD8DF8599C5B5535AD /* 018_ActiveEnrouteLoaded.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1576D12AB9BE49E47C64A8E /* 018_ActiveEnrouteLoaded.swift */; };
 		A1978D143BA29D29AC175E7B /* Glass.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E7D7E296A5602D08D57F92 /* Glass.swift */; };
 		A1A11111111111111111F001 /* PushService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F005 /* PushService.swift */; };
+		A1A11111111111111111API1 /* ShipperAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111API2 /* ShipperAppIntents.swift */; };
+		A1A11111111111111111LAA1 /* ShipperLoadActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111LAA2 /* ShipperLoadActivityAttributes.swift */; };
+		A1A11111111111111111SHC1 /* ShipperHandoffContinuity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111SHC2 /* ShipperHandoffContinuity.swift */; };
+		A1A11111111111111111SHE1 /* ShipperHapticEscalation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111SHE2 /* ShipperHapticEscalation.swift */; };
 		A1A11111111111111111F002 /* RealtimeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F006 /* RealtimeService.swift */; };
 		A1A11111111111111111F003 /* GeofenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F007 /* GeofenceService.swift */; };
 		A1A11111111111111111F004 /* HOSClockService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F008 /* HOSClockService.swift */; };
@@ -557,6 +561,10 @@
 		A16B82B4BAD14ED9D95C9A26 /* EusoTripAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoTripAPI.swift; sourceTree = "<group>"; };
 		A192A329AC526EED829942B1 /* 012_DvirSubmitted.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 012_DvirSubmitted.swift; sourceTree = "<group>"; };
 		A1A11111111111111111F005 /* PushService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushService.swift; sourceTree = "<group>"; };
+		A1A11111111111111111API2 /* ShipperAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShipperAppIntents.swift; sourceTree = "<group>"; };
+		A1A11111111111111111LAA2 /* ShipperLoadActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShipperLoadActivityAttributes.swift; sourceTree = "<group>"; };
+		A1A11111111111111111SHC2 /* ShipperHandoffContinuity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShipperHandoffContinuity.swift; sourceTree = "<group>"; };
+		A1A11111111111111111SHE2 /* ShipperHapticEscalation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShipperHapticEscalation.swift; sourceTree = "<group>"; };
 		A1A11111111111111111F006 /* RealtimeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeService.swift; sourceTree = "<group>"; };
 		A1A11111111111111111F007 /* GeofenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeofenceService.swift; sourceTree = "<group>"; };
 		A1A11111111111111111F008 /* HOSClockService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HOSClockService.swift; sourceTree = "<group>"; };
@@ -1521,6 +1529,10 @@
 				B1A11111111111111111AA04 /* WeatherService.swift */,
 				A1DMC0001000000000000021 /* DriverLocationResolver.swift */,
 				A1A11111111111111111F005 /* PushService.swift */,
+				A1A11111111111111111API2 /* ShipperAppIntents.swift */,
+				A1A11111111111111111LAA2 /* ShipperLoadActivityAttributes.swift */,
+				A1A11111111111111111SHC2 /* ShipperHandoffContinuity.swift */,
+				A1A11111111111111111SHE2 /* ShipperHapticEscalation.swift */,
 				A1A11111111111111111F006 /* RealtimeService.swift */,
 				A1A11111111111111111F007 /* GeofenceService.swift */,
 				A1A11111111111111111F008 /* HOSClockService.swift */,
@@ -2288,6 +2300,10 @@
 				D1A11111111111111111ATD1 /* 803_AdminTenantDetail.swift in Sources */,
 				D1A11111111111111111LP01 /* LifecycleProductContext.swift in Sources */,
 				A1A11111111111111111F001 /* PushService.swift in Sources */,
+				A1A11111111111111111API1 /* ShipperAppIntents.swift in Sources */,
+				A1A11111111111111111LAA1 /* ShipperLoadActivityAttributes.swift in Sources */,
+				A1A11111111111111111SHC1 /* ShipperHandoffContinuity.swift in Sources */,
+				A1A11111111111111111SHE1 /* ShipperHapticEscalation.swift in Sources */,
 				A1A11111111111111111F002 /* RealtimeService.swift in Sources */,
 				A1A11111111111111111F003 /* GeofenceService.swift in Sources */,
 				A1A11111111111111111F004 /* HOSClockService.swift in Sources */,
