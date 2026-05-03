@@ -38,9 +38,11 @@ private struct Commission: Decodable, Identifiable, Hashable {
 
 private struct CommissionQueueBody: View {
     @Environment(\.palette) private var palette
+    @EnvironmentObject private var session: EusoTripSession
     @State private var rows: [Commission] = []
     @State private var loading = true
     @State private var loadError: String? = nil
+    @State private var showSignOutConfirm: Bool = false
 
     private var totalPending: Double {
         rows.filter { $0.status != "paid" }.compactMap { $0.margin }.reduce(0, +)
@@ -57,11 +59,61 @@ private struct CommissionQueueBody: View {
                     }
                 }
                 content
+                meSection
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
+        .alert("Sign out?", isPresented: $showSignOutConfirm) {
+            Button("Sign out", role: .destructive) {
+                Task { await session.signOut() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You'll need to sign back in to see broker tenders + commissions.")
+        }
+    }
+
+    /// "Me" section — bottom-nav `Me` slot routes here (per
+    /// `BrokerNavRoute.map`'s `me → 404` mapping). Until a dedicated
+    /// 420_BrokerMe screen ships, this section gives the broker a
+    /// real way out: sign out + (in follow-up bricks) profile,
+    /// settings, contracts, contacts. Mirrors the shipper 320_MeHome
+    /// `SETTINGS` cell-group pattern.
+    private var meSection: some View {
+        LifecycleCard {
+            LifecycleSection(label: "ME · ACCOUNT", icon: "person.crop.circle")
+            VStack(spacing: 8) {
+                if let name = session.user?.firstName, !name.isEmpty {
+                    HStack {
+                        Text("Signed in as")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                        Spacer(minLength: 0)
+                        Text(name)
+                            .font(EType.body.weight(.semibold))
+                            .foregroundStyle(palette.textPrimary)
+                    }
+                }
+                Button { showSignOutConfirm = true } label: {
+                    HStack {
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                            .foregroundStyle(Brand.danger)
+                        Text("Sign out")
+                            .font(EType.body.weight(.semibold))
+                            .foregroundStyle(Brand.danger)
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .heavy))
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Sign out of broker account")
+            }
+        }
     }
 
     private var header: some View {
