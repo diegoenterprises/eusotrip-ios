@@ -18,6 +18,19 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!-- Custom URL scheme for password reset deep links + vendor OAuth callbacks
+	     (eusotrip://reset?token=… , eusotrip://oauth/callback/<vendor>?code=…&state=…). -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.app.eusotrip</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>eusotrip</string>
+			</array>
+		</dict>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

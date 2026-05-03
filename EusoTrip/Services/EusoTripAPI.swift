@@ -16142,6 +16142,56 @@ struct CapabilitiesAPI {
     func setTrailer(_ caps: TrailerCapabilities) async throws -> TrailerCapabilities {
         try await api.mutation("capabilities.setTrailer", input: caps)
     }
+
+    // MARK: - Vendor OAuth flows
+
+    /// Per-vendor authorize URL + opaque CSRF state. iOS opens
+    /// `authorizeUrl` in `SFSafariViewController`; the vendor
+    /// redirects back to `eusotrip://oauth/callback/<vendor>?code=…&state=…`
+    /// which AppRoot's URL handler captures and forwards to
+    /// `exchangeOAuthCode`. Backend mints the state token + caches
+    /// it under the user id so the callback verifies as same-user.
+    struct OAuthAuthorize: Decodable, Hashable {
+        let authorizeUrl: String
+        let state: String
+        let vendor: String
+    }
+
+    /// `capabilities.startVendorOAuth` — request the authorize URL.
+    /// Vendors today: "samsara" | "motive" | "garmin" | "cipia"
+    /// (dash cam) | "sensata" | "orbcomm" | "spireon" (dome cam).
+    func startVendorOAuth(vendor: String) async throws -> OAuthAuthorize {
+        struct Input: Encodable { let vendor: String }
+        return try await api.mutation(
+            "capabilities.startVendorOAuth",
+            input: Input(vendor: vendor)
+        )
+    }
+
+    struct OAuthExchangeAck: Decodable, Hashable {
+        let success: Bool
+        let vendor: String
+        let configured: Bool
+    }
+
+    /// `capabilities.exchangeOAuthCode` — backend trades the
+    /// authorization code for the vendor's long-lived token, stores
+    /// the ciphertext on `carrierCapabilities` / `trailerCapabilities`,
+    /// flips the matching `configured` boolean, returns the iOS-side
+    /// truth value (no token leakage). On success the iOS UI reloads
+    /// the capability envelope and the matching dock-cam picker row
+    /// flips from "Pair" to enabled.
+    func exchangeOAuthCode(vendor: String, code: String, state: String) async throws -> OAuthExchangeAck {
+        struct Input: Encodable {
+            let vendor: String
+            let code: String
+            let state: String
+        }
+        return try await api.mutation(
+            "capabilities.exchangeOAuthCode",
+            input: Input(vendor: vendor, code: code, state: state)
+        )
+    }
 }
 
 // MARK: - EusoNISession (NearbyInteraction UWB session)

@@ -1128,6 +1128,14 @@ struct HardwareCapabilitiesView: View {
     @State private var carrier: CapabilitiesAPI.CarrierCapabilities?
     @State private var trailerId: String = ""
     @State private var trailer: CapabilitiesAPI.TrailerCapabilities?
+    @State private var oauthSheetUrl: IdentifiableURL? = nil
+
+    /// Identifiable wrapper so .sheet(item:) re-presents per-tap when
+    /// the URL changes.
+    struct IdentifiableURL: Identifiable, Hashable {
+        let id: String
+        let url: URL
+    }
 
     enum Tab: String, CaseIterable, Identifiable {
         case terminal, carrier, trailer
@@ -1211,6 +1219,19 @@ struct HardwareCapabilitiesView: View {
                    let first = visibleTabs.first {
                     selectedTab = first
                 }
+            }
+            .sheet(item: $oauthSheetUrl) { wrapped in
+                OAuthSafariSheet(url: wrapped.url)
+                    .ignoresSafeArea()
+            }
+            .onReceive(NotificationCenter.default.publisher(
+                for: .eusoVendorOAuthCallback)) { note in
+                guard let info = note.userInfo,
+                      let vendor = info["vendor"] as? String,
+                      let code = info["code"] as? String else { return }
+                let state = info["state"] as? String ?? ""
+                Task { await completeVendorOAuth(vendor: vendor, code: code, state: state) }
+                oauthSheetUrl = nil
             }
         }
     }
@@ -1402,29 +1423,34 @@ struct HardwareCapabilitiesView: View {
                         carrier = updated
                     }
                 }
-                Toggle("Vendor connected", isOn: Binding(
-                    get: { carrier?.dashCam.configured ?? false },
-                    set: { newVal in
-                        if let c = carrier {
-                            carrier = CapabilitiesAPI.CarrierCapabilities(
-                                carrierId: c.carrierId,
-                                dashCam: CapabilitiesAPI.DashCamVendor(
-                                    vendor: c.dashCam.vendor,
-                                    credentialsToken: nil,
-                                    configured: newVal
-                                )
-                            )
+                if cap.dashCam.configured {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .foregroundStyle(Brand.success)
+                        Text("Connected to \(cap.dashCam.vendor.capitalized)")
+                            .font(EType.caption.weight(.semibold))
+                            .foregroundStyle(palette.textPrimary)
+                    }
+                } else if cap.dashCam.vendor != "none" {
+                    Button {
+                        Task { await launchVendorOAuth(vendor: cap.dashCam.vendor) }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.up.right.square.fill")
+                            Text("Connect \(cap.dashCam.vendor.capitalized)")
+                                .font(EType.body.weight(.semibold))
                         }
                     }
-                ))
-                .disabled(carrier?.dashCam.vendor == "none")
-                Text("Connect the vendor via the OAuth flow on the admin web console (coming inline soon). Until connected, drivers see the dash-cam row as 'Pair' on the dock-cam picker.")
+                    .buttonStyle(.borderedProminent)
+                    .disabled(loading)
+                }
+                Text("Connect opens the vendor's secure OAuth login. After you grant access, drivers see the dash-cam row light up on the dock-cam picker.")
                     .font(.system(size: 10))
                     .foregroundStyle(palette.textTertiary)
-                Button("Save carrier capabilities") {
+                Button("Save vendor selection") {
                     Task { await saveCarrier() }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
                 .disabled(loading)
             }
         }
@@ -1575,4 +1601,124 @@ struct HardwareCapabilitiesView: View {
         try? await Task.sleep(nanoseconds: 1_400_000_000)
         saveToast = nil
     }
+
+    // MARK: Vendor OAuth
+
+    /// Step 1: ask the backend for the vendor's authorize URL +
+    /// CSRF state, then present SFSafariViewController with that
+    /// URL. The user grants permission, vendor redirects back via
+    /// `eusotrip://oauth/callback/<vendor>?code=…&state=…`,
+    /// AppRoot's URL handler captures it, posts
+    /// `.eusoVendorOAuthCallback`, and the observer above calls
+    /// `completeVendorOAuth`.
+    private func launchVendorOAuth(vendor: String) async {
+        loading = true; defer { loading = false }
+        do {
+            let resp = try await EusoTripAPI.shared.capabilities
+                .startVendorOAuth(vendor: vendor)
+            guard let url = URL(string: resp.authorizeUrl) else {
+                saveToast = "Vendor returned an invalid authorize URL"
+                return
+            }
+            oauthSheetUrl = IdentifiableURL(id: "\(vendor)-\(resp.state)", url: url)
+        } catch {
+            saveToast = "Couldn't start \(vendor.capitalized) OAuth: \(error.localizedDescription)"
+        }
+    }
+
+    /// Step 2: trade the authorization code for the vendor's
+    /// long-lived token. Backend stores ciphertext, flips
+    /// `configured = true`, returns the iOS-side truth value. We
+    /// reload the capability envelope so the form state matches
+    /// the backend immediately.
+    private func completeVendorOAuth(vendor: String, code: String, state: String) async {
+        loading = true; defer { loading = false }
+        do {
+            _ = try await EusoTripAPI.shared.capabilities
+                .exchangeOAuthCode(vendor: vendor, code: code, state: state)
+            saveToast = "\(vendor.capitalized) connected"
+            await loadCarrier()
+        } catch {
+            saveToast = "Connect failed: \(error.localizedDescription)"
+        }
+        try? await Task.sleep(nanoseconds: 1_400_000_000)
+        saveToast = nil
+    }
+}
+
+// MARK: - Vendor OAuth launcher + callback notification
+//
+// Per-vendor OAuth handshake for dash-cam (Samsara / Motive / Garmin
+// / Cipia) and trailer dome-cam (Sensata / ORBCOMM / Spireon)
+// integrations. Pattern is uniform per vendor:
+//
+//   1. User taps "Connect <vendor>" in the carrier or trailer tab
+//      of the Hardware Capabilities form.
+//   2. iOS calls `capabilities.startVendorOAuth(vendor)`; backend
+//      mints the authorize URL + opaque CSRF state token.
+//   3. iOS opens the URL in SFSafariViewController. User logs in
+//      to the vendor + grants permission.
+//   4. Vendor redirects to `eusotrip://oauth/callback/<vendor>?code=…&state=…`.
+//   5. AppRoot's `.onOpenURL` handler captures the redirect, posts
+//      `.eusoVendorOAuthCallback` with the parsed query items.
+//   6. The HardwareCapabilitiesView observes that notification +
+//      calls `capabilities.exchangeOAuthCode`. Backend trades the
+//      code for the vendor's long-lived refresh token, stores
+//      ciphertext on the matching capability envelope, flips
+//      `configured = true`. iOS reloads + the matching dock-cam
+//      picker row lights up.
+//
+// Custom URL scheme: `eusotrip://` is registered in Info.plist
+// (CFBundleURLSchemes). Add an entry for `eusotrip` if missing.
+
+import SafariServices
+
+extension Notification.Name {
+    /// Fired by AppRoot's `.onOpenURL` handler when the user finishes
+    /// a vendor OAuth flow and Safari redirects to
+    /// `eusotrip://oauth/callback/<vendor>?code=…&state=…`. userInfo:
+    ///   - "vendor": String
+    ///   - "code":   String
+    ///   - "state":  String?
+    static let eusoVendorOAuthCallback = Notification.Name("eusoVendorOAuthCallback")
+}
+
+/// Helper that parses an incoming `eusotrip://oauth/callback/...` URL
+/// and posts the matching `.eusoVendorOAuthCallback` notification.
+/// Called from `AppRoot` / `ContentView` `.onOpenURL` so the URL
+/// scheme handler stays a single line at the call site.
+enum VendorOAuthCallback {
+    static func handle(url: URL) -> Bool {
+        guard url.scheme == "eusotrip",
+              url.host == "oauth",
+              url.pathComponents.count >= 3,
+              url.pathComponents[1] == "callback" else { return false }
+        let vendor = url.pathComponents[2]
+        let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let code = comps?.queryItems?.first(where: { $0.name == "code" })?.value
+        let state = comps?.queryItems?.first(where: { $0.name == "state" })?.value
+        guard let code else { return true } // we recognized the URL but couldn't parse — swallow
+        var info: [String: Any] = ["vendor": vendor, "code": code]
+        if let state { info["state"] = state }
+        NotificationCenter.default.post(
+            name: .eusoVendorOAuthCallback,
+            object: nil, userInfo: info
+        )
+        return true
+    }
+}
+
+/// SwiftUI wrapper around SFSafariViewController for OAuth flows.
+/// Pinned to a fresh instance per `present()` because SFSafariVC
+/// won't load a new URL once it's been displayed.
+struct OAuthSafariSheet: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        let vc = SFSafariViewController(url: url)
+        vc.dismissButtonStyle = .close
+        return vc
+    }
+
+    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
 }

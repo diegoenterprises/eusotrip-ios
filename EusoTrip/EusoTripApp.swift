@@ -155,6 +155,11 @@ struct EusoTripApp: App {
     }
 
     private func handleDeepLink(_ url: URL) {
+        // Vendor OAuth callback — `eusotrip://oauth/callback/<vendor>?code=…&state=…`
+        // Forwarded to the HardwareCapabilitiesView observer so the
+        // form can call `capabilities.exchangeOAuthCode` immediately.
+        if VendorOAuthCallback.handle(url: url) { return }
+
         guard url.scheme == "eusotrip",
               url.host == "reset",
               let token = URLComponents(url: url, resolvingAgainstBaseURL: false)?
