@@ -163,14 +163,27 @@ enum HereMapsError: Error, LocalizedError {
 
 /// HERE map tile styles matching EusoTrip's dark / light registers.
 ///
-/// `explore.night` is HERE's dark vector style — roads glow, ocean is near-black.
-/// `explore.day`   is the light counterpart.
+/// IMPORTANT — both registers use `explore.day` because every
+/// `*.night` YAML returns HTTP 403 on our HERE plan tier
+/// (verified against `api.here.com` 2026-04-29 — see web commit
+/// `3fc9d77e` for the full probe table). When the HERE plan
+/// upgrades to a night-licensed tier, swap `dark.rawValue` back
+/// to `explore.night`.
 ///
-/// Both are "explore" family (general-purpose) — see HERE docs for the full list
-/// (lite.day, lite.night, topo.day, logistics.day, satellite.day, etc.).
-enum HereTileStyle: String {
-    case dark = "explore.night"
-    case light = "explore.day"
+/// Dark-register feel comes from a SwiftUI tint overlay on the
+/// MKMapView host (see `HereMapView.applyDarkOverlay(...)`) —
+/// matches the web platform's brand-tint CSS overlay strategy.
+///
+/// "explore" family is general-purpose — HERE also offers
+/// lite.day, topo.day, logistics.day, satellite.day, etc.
+enum HereTileStyle {
+    case dark
+    case light
+
+    /// HERE `style=` query param. Both cases resolve to `explore.day`
+    /// per the 2026-04-29 fix; swap `dark` back to `"explore.night"`
+    /// when the HERE plan upgrades to a night-licensed tier.
+    var rawValue: String { "explore.day" }
 
     /// Higher DPI for retina displays. HERE accepts 100 / 200 / 250 / 320 / 400 / 500 ppi.
     var ppi: Int { 400 }
