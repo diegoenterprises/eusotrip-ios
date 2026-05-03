@@ -83,6 +83,7 @@ private enum ContactsFilter: String, CaseIterable, Identifiable {
 
 struct ShipperContacts: View {
     @Environment(\.palette) var palette
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var store = ShipperFavoriteCatalystsStore()
@@ -221,6 +222,11 @@ struct ShipperContacts: View {
             .accessibilityLabel("Search contacts. Dispatchers and facilities.")
 
             Button {
+                // Add-contact form hasn't shipped in-app yet; route
+                // to the canonical web form via openURL so the tap
+                // lands on a real surface (same Bearer cookie auth
+                // — no re-login). Telemetry post retained for
+                // observability.
                 NotificationCenter.default.post(
                     name: .eusoShipperContactAdd, object: nil,
                     userInfo: [
@@ -228,6 +234,9 @@ struct ShipperContacts: View {
                         "shipperCompanyId": session.user?.companyId ?? "1",
                     ]
                 )
+                if let url = URL(string: "https://app.eusotrip.com/shipper/contacts/new") {
+                    openURL(url)
+                }
             } label: {
                 ZStack {
                     Capsule().fill(LinearGradient.primary)
@@ -551,6 +560,10 @@ struct ShipperContacts: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(row.name). \(row.sub ?? ""). Phone \(row.phone). \(row.extra).")
         .onTapGesture {
+            // Facility row tap → dial the facility's phone (the
+            // primary user intent on the contacts list). Telemetry
+            // post retained for observability — analytics keys off
+            // the same notification.
             NotificationCenter.default.post(
                 name: .eusoShipperContactFacility, object: nil,
                 userInfo: [
@@ -560,6 +573,10 @@ struct ShipperContacts: View {
                     "shipperCompanyId": session.user?.companyId ?? "1",
                 ]
             )
+            let digits = row.phone.filter { $0.isNumber || $0 == "+" }
+            if !digits.isEmpty, let url = URL(string: "tel://\(digits)") {
+                openURL(url)
+            }
         }
     }
 
@@ -611,6 +628,9 @@ struct ShipperContacts: View {
     // MARK: - Tap handlers
 
     private func tapContactRow(_ contactId: String) {
+        // Contact-detail surface hasn't shipped in-app yet; route to
+        // the web detail page so the tap lands on a real surface.
+        // Telemetry post retained for observability.
         NotificationCenter.default.post(
             name: .eusoShipperContactRow, object: nil,
             userInfo: [
@@ -619,6 +639,9 @@ struct ShipperContacts: View {
                 "shipperCompanyId": session.user?.companyId ?? "1",
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/contacts/\(contactId)") {
+            openURL(url)
+        }
     }
 
     private func tapFavorite(_ contactId: String, currentlyFavorited: Bool) {
