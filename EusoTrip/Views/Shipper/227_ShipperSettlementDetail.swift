@@ -175,6 +175,7 @@ struct ShipperSettlementDetail: View {
     let settlementId: String
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @StateObject private var store: ShipperSettlementDetailStore
     @State private var showDispute: Bool = false
     @State private var disputeReason: String = ""
@@ -283,6 +284,7 @@ struct ShipperSettlementDetail: View {
 
     private func tapBack() {
         dismiss()
+        // observability post — telemetry only; real effect is `dismiss()` above
         NotificationCenter.default.post(
             name: .eusoShipperSettlementBack,
             object: nil,
@@ -718,6 +720,10 @@ struct ShipperSettlementDetail: View {
     }
 
     private func tapDocChip(_ kind: String) {
+        // Real downstream: web continuation to the per-settlement document
+        // surface (POD / rate-conf / invoice / lumper / detention / receipt).
+        // Same Bearer cookie auth, no re-login. Telemetry post retained for
+        // observability.
         NotificationCenter.default.post(
             name: .eusoShipperSettlementDoc,
             object: nil,
@@ -727,6 +733,10 @@ struct ShipperSettlementDetail: View {
                 "documentKind": kind
             ]
         )
+        let encoded = kind.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? kind
+        if let url = URL(string: "https://app.eusotrip.com/shipper/settlements/\(settlementId)/documents/\(encoded)") {
+            openURL(url)
+        }
     }
 
     // MARK: Activity placeholder (EUSO-2144)
@@ -770,6 +780,7 @@ struct ShipperSettlementDetail: View {
                 Button {
                     Task {
                         await store.approve()
+                        // observability post — telemetry only; real effect is `store.approve()` mutation above
                         NotificationCenter.default.post(
                             name: .eusoShipperSettlementApprove,
                             object: nil,
@@ -801,6 +812,7 @@ struct ShipperSettlementDetail: View {
             if canDispute {
                 Button {
                     showDispute = true
+                    // observability post — telemetry only; real effect is `showDispute = true` sheet binding above
                     NotificationCenter.default.post(
                         name: .eusoShipperSettlementDispute,
                         object: nil,
