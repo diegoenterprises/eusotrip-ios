@@ -22,6 +22,9 @@ struct DetachSequence: View {
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: Load?
     @State private var isConfirming: Bool = false
+    @State private var isPaused: Bool = false
+    @State private var pauseInflight: Bool = false
+    @State private var pauseToast: String? = nil
 
     enum Register { case night, afternoon }
     let register: Register
@@ -55,6 +58,23 @@ struct DetachSequence: View {
             .padding(.top, 8)
         }
         .task { await hydrateLiveTrip() }
+        .overlay(alignment: .bottom) {
+            if let msg = pauseToast {
+                Text(msg)
+                    .font(EType.caption.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(palette.bgCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(palette.borderSoft)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    .padding(.bottom, 110)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: pauseToast)
         .screenTileRoot()
     }
 
@@ -293,18 +313,29 @@ struct DetachSequence: View {
 
     private var footerActions: some View {
         HStack(spacing: Space.s3) {
-            Button { navBack?() } label: {
-                Text("Pause")
-                    .font(EType.body.weight(.semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(palette.bgCard)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(palette.borderSoft)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            Button { Task { await togglePauseDetach() } } label: {
+                HStack(spacing: 6) {
+                    if pauseInflight {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(palette.textPrimary)
+                    }
+                    Text(isPaused ? "Resume" : "Pause")
+                        .font(EType.body.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(palette.bgCard)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(
+                            isPaused ? Brand.success.opacity(0.5) : palette.borderSoft
+                        )
+                )
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
+            .disabled(pauseInflight)
+            .accessibilityLabel(isPaused ? "Resume detach sequence" : "Pause detach sequence")
             CTAButton(
                 title: "Confirm purge complete",
                 action: { Task { await confirmPurge() } },
@@ -330,6 +361,45 @@ struct DetachSequence: View {
             _ = await lifecycle.execute(t)
         }
         advance?()
+    }
+
+    /// Pause / resume the detach sequence — same pattern as
+    /// `030_LoadingInProgress.togglePauseLoading`. Records a
+    /// timestamped note on the appointment record so the dispatcher
+    /// + shipper see why the rig is sitting on the dock past the
+    /// usual purge window.
+    private func togglePauseDetach() async {
+        guard !pauseInflight else { return }
+        pauseInflight = true
+        defer { pauseInflight = false }
+        let willPause = !isPaused
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        let note = willPause
+            ? "Driver paused detach at \(stamp)"
+            : "Driver resumed detach at \(stamp)"
+        guard !lifecycle.loadId.isEmpty else {
+            pauseToast = "No active load"
+            try? await Task.sleep(nanoseconds: 1_400_000_000)
+            pauseToast = nil
+            return
+        }
+        do {
+            if let appt = try await EusoTripAPI.shared.appointments
+                .getByLoad(loadId: lifecycle.loadId) {
+                _ = try? await EusoTripAPI.shared.appointments
+                    .updateStatus(
+                        id: appt.id,
+                        status: "loading",
+                        notes: note
+                    )
+            }
+            isPaused.toggle()
+            pauseToast = willPause ? "Detach paused" : "Detach resumed"
+        } catch {
+            pauseToast = "Couldn't update appointment"
+        }
+        try? await Task.sleep(nanoseconds: 1_400_000_000)
+        pauseToast = nil
     }
 }
 

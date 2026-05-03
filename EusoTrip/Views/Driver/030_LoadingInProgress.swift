@@ -23,6 +23,9 @@ struct LoadingInProgress: View {
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: Load?
     @State private var showEStopConfirm: Bool = false
+    @State private var isPaused: Bool = false
+    @State private var pauseInflight: Bool = false
+    @State private var pauseToast: String? = nil
 
     enum Register { case night, afternoon }
     let register: Register
@@ -83,6 +86,23 @@ struct LoadingInProgress: View {
             .padding(.top, 8)
         }
         .task { await hydrateLiveTrip() }
+        .overlay(alignment: .bottom) {
+            if let msg = pauseToast {
+                Text(msg)
+                    .font(EType.caption.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(palette.bgCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(palette.borderSoft)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    .padding(.bottom, 110)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: pauseToast)
         .screenTileRoot()
         .alert("Stop fill?", isPresented: $showEStopConfirm) {
             Button("E-STOP now", role: .destructive) {}
@@ -306,18 +326,29 @@ struct LoadingInProgress: View {
 
     private var footerActions: some View {
         HStack(spacing: Space.s3) {
-            Button { navBack?() } label: {
-                Text("Pause")
-                    .font(EType.body.weight(.semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(palette.bgCard)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(palette.borderSoft)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            Button { Task { await togglePauseLoading() } } label: {
+                HStack(spacing: 6) {
+                    if pauseInflight {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(palette.textPrimary)
+                    }
+                    Text(isPaused ? "Resume" : "Pause")
+                        .font(EType.body.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(palette.bgCard)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(
+                            isPaused ? Brand.success.opacity(0.5) : palette.borderSoft
+                        )
+                )
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
+            .disabled(pauseInflight)
+            .accessibilityLabel(isPaused ? "Resume loading" : "Pause loading")
             Button { showEStopConfirm = true } label: {
                 Text("E-STOP")
                     .font(EType.body.weight(.semibold))
@@ -334,6 +365,46 @@ struct LoadingInProgress: View {
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
         activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+    }
+
+    /// Pause / resume the loading operation. Records a timestamped
+    /// note on the appointment record (real `appointments.updateStatus`
+    /// mutation) so the shipper / dispatcher web surfaces see the
+    /// pause + reason. Server tolerates same-status updates with a
+    /// fresh `notes` field — that's how dwell snapshots already work
+    /// on 015. No backend change required.
+    private func togglePauseLoading() async {
+        guard !pauseInflight else { return }
+        pauseInflight = true
+        defer { pauseInflight = false }
+        let willPause = !isPaused
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        let note = willPause
+            ? "Driver paused loading at \(stamp)"
+            : "Driver resumed loading at \(stamp)"
+        guard !lifecycle.loadId.isEmpty else {
+            pauseToast = "No active load"
+            try? await Task.sleep(nanoseconds: 1_400_000_000)
+            pauseToast = nil
+            return
+        }
+        do {
+            if let appt = try await EusoTripAPI.shared.appointments
+                .getByLoad(loadId: lifecycle.loadId) {
+                _ = try? await EusoTripAPI.shared.appointments
+                    .updateStatus(
+                        id: appt.id,
+                        status: "loading",
+                        notes: note
+                    )
+            }
+            isPaused.toggle()
+            pauseToast = willPause ? "Loading paused" : "Loading resumed"
+        } catch {
+            pauseToast = "Couldn't update appointment"
+        }
+        try? await Task.sleep(nanoseconds: 1_400_000_000)
+        pauseToast = nil
     }
 }
 
