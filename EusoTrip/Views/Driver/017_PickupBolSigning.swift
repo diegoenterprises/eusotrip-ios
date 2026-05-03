@@ -48,6 +48,9 @@ struct PickupBolSigning: View {
     @State private var activeLoad: Load?
     @State private var isSigning: Bool = false
     @State private var showPdf: Bool = false
+    @State private var bolPdfUrl: URL? = nil
+    @State private var pdfLoading: Bool = false
+    @State private var pdfError: String? = nil
     /// Per-load document upload sheet (Phase 7 driver-side closure).
     /// Opened from a small "Upload extra doc" affordance under the
     /// signature row so the driver can attach a customs paper, a
@@ -138,7 +141,68 @@ struct PickupBolSigning: View {
             .padding(.top, 8)
         }
         .task { await hydrateLiveTrip() }
+        .sheet(item: Binding<BolPdfWrapper?>(
+            get: { bolPdfUrl.map { BolPdfWrapper(url: $0) } },
+            set: { bolPdfUrl = $0?.url }
+        )) { wrapped in
+            OAuthSafariSheet(url: wrapped.url)
+                .ignoresSafeArea()
+        }
+        .alert(
+            "Couldn't open BOL",
+            isPresented: Binding(
+                get: { pdfError != nil },
+                set: { if !$0 { pdfError = nil } }
+            ),
+            actions: { Button("OK", role: .cancel) { pdfError = nil } },
+            message: { Text(pdfError ?? "") }
+        )
         .screenTileRoot()
+    }
+
+    /// Identifiable wrapper so .sheet(item:) works against the
+    /// optional URL state.
+    private struct BolPdfWrapper: Identifiable, Hashable {
+        var id: String { url.absoluteString }
+        let url: URL
+    }
+
+    /// Fetch the BOL PDF for the active load, then present it in
+    /// a Safari sheet. The `eusoTicket.generateBOLPDF` mutation
+    /// returns a signed `documentUrl` that's pre-authorized to
+    /// the driver's session — same Bearer cookie. If no real BOL
+    /// number is on the load yet (load.bolNumber is nil during
+    /// pickup), we fall back to load.loadNumber as the bolNumber
+    /// since the backend treats them interchangeably during the
+    /// pickup phase.
+    private func loadAndShowBolPdf() async {
+        guard !pdfLoading else { return }
+        pdfLoading = true
+        defer { pdfLoading = false }
+        // Prefer the active load's loadNumber as the BOL identifier
+        // — the backend's eusoTicket router accepts either form.
+        // When the load isn't hydrated yet, fall back to the
+        // lifecycle store's loadId.
+        let bolNumber: String
+        if let n = activeLoad?.loadNumber, !n.isEmpty {
+            bolNumber = n
+        } else if !lifecycle.loadId.isEmpty {
+            bolNumber = lifecycle.loadId
+        } else {
+            pdfError = "No load is hydrated yet — try again in a moment."
+            return
+        }
+        do {
+            let result = try await EusoTripAPI.shared.eusoTicket
+                .generateBOLPDF(bolNumber: bolNumber)
+            guard let url = URL(string: result.documentUrl) else {
+                pdfError = "Backend returned an invalid PDF URL."
+                return
+            }
+            bolPdfUrl = url
+        } catch {
+            pdfError = error.localizedDescription
+        }
     }
 
     // MARK: Header
@@ -464,18 +528,25 @@ struct PickupBolSigning: View {
             }
 
             HStack(spacing: Space.s3) {
-                Button { showPdf = true } label: {
-                    Text("View PDF")
-                        .font(EType.body.weight(.semibold))
-                        .foregroundStyle(palette.textPrimary)
-                        .frame(maxWidth: .infinity, minHeight: 52)
-                        .background(palette.bgCard)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                                .strokeBorder(palette.borderSoft)
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                Button { Task { await loadAndShowBolPdf() } } label: {
+                    HStack(spacing: 6) {
+                        if pdfLoading {
+                            ProgressView().controlSize(.small)
+                                .tint(palette.textPrimary)
+                        }
+                        Text(pdfLoading ? "Loading PDF…" : "View PDF")
+                            .font(EType.body.weight(.semibold))
+                            .foregroundStyle(palette.textPrimary)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .background(palette.bgCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(palette.borderSoft)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
+                .disabled(pdfLoading)
                 .accessibilityLabel("View full BOL as PDF")
 
                 CTAButton(
