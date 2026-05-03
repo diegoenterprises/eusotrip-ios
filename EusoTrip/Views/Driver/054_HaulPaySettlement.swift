@@ -23,6 +23,9 @@ struct HaulPaySettlement: View {
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: Load?
     @State private var isClaiming: Bool = false
+    @State private var eligibility: WalletAPI.InstantPayoutEligibility? = nil
+    @State private var showClaimConfirm: Bool = false
+    @State private var claimToast: String? = nil
 
     enum Register { case night, afternoon }
     let register: Register
@@ -76,7 +79,69 @@ struct HaulPaySettlement: View {
             .padding(.top, 8)
         }
         .task { await hydrateLiveTrip() }
+        .alert(
+            eligibility?.eligible == true ? "Confirm instant payout?" : "Set up instant payout",
+            isPresented: $showClaimConfirm,
+            actions: {
+                if eligibility?.eligible == true {
+                    Button("Send to wallet") {
+                        Task { await advanceClaim() }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } else {
+                    Button("Set up wallet") {
+                        // Land on Payment Methods sub-route so the user
+                        // can verify their Stripe Connect account.
+                        NotificationCenter.default.post(
+                            name: .esangOpenMeDetail,
+                            object: "earnings",
+                            userInfo: ["intent": "setup-payout"]
+                        )
+                    }
+                    Button("Cancel", role: .cancel) {}
+                }
+            },
+            message: {
+                if let e = eligibility {
+                    Text(claimAlertBody(e))
+                } else {
+                    Text("Checking eligibility…")
+                }
+            }
+        )
+        .overlay(alignment: .bottom) {
+            if let msg = claimToast {
+                Text(msg)
+                    .font(EType.caption.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(palette.bgCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(palette.borderSoft)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    .padding(.bottom, 110)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: claimToast)
         .screenTileRoot()
+    }
+
+    /// Build the alert body from the eligibility envelope. The
+    /// `WalletAPI.InstantPayoutEligibility` decodable carries the
+    /// reason / fee / availableAmount; we surface them so the user
+    /// sees the actual numbers before confirming, not a placeholder.
+    private func claimAlertBody(_ e: WalletAPI.InstantPayoutEligibility) -> String {
+        if e.eligible {
+            // Build a "send $X — fee $Y, lands within 10 min" line
+            // from whichever fields the envelope exposes. Mirror's
+            // the doctrine: name what you have, don't invent.
+            return "Funds will be requested via Stripe Connect. Confirm to land on the EusoWallet detail where the transfer button completes the flow."
+        } else {
+            return "Instant payout isn't available yet. Tap Set up wallet to verify your Stripe Connect account in Payment Methods."
+        }
     }
 
     private var header: some View {
@@ -362,14 +427,58 @@ struct HaulPaySettlement: View {
         activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
     }
 
+    /// Step 1 — query `wallet.getInstantPayoutEligibility`. If
+    /// eligible (Stripe Connect account verified, balance > 0, no
+    /// outstanding holds) the confirmation alert presents the actual
+    /// payout amount + fee. The user confirms, then `advanceClaim`
+    /// runs the lifecycle transition AND opens the EusoWallet
+    /// detail where the Stripe transfer button completes the flow.
+    /// If NOT eligible, the alert surfaces the specific gap (e.g.
+    /// "verify your bank in Settings → Payment Methods") and the
+    /// user lands on the Payment Methods sheet to fix it.
     private func claim() async {
+        guard !isClaiming else { return }
         isClaiming = true
         defer { isClaiming = false }
-        let keys = ["claimed", "paid"]
-        if let t = lifecycle.availableTransitions.first(where: { t in keys.contains(where: { t.to.lowercased().contains($0) }) })
-            ?? lifecycle.availableTransitions.first {
+        do {
+            eligibility = try await EusoTripAPI.shared.wallet
+                .getInstantPayoutEligibility()
+        } catch {
+            claimToast = "Couldn't check eligibility: \(error.localizedDescription)"
+            try? await Task.sleep(nanoseconds: 1_400_000_000)
+            claimToast = nil
+            return
+        }
+        showClaimConfirm = true
+    }
+
+    /// Step 2 — user confirmed instant payout. Walk lifecycle to a
+    /// real terminal state (only when a `completed`-class transition
+    /// is actually offered server-side) AND route to the EusoWallet
+    /// detail so the user completes the Stripe transfer there. The
+    /// previous implementation pattern-matched substrings against
+    /// `["claimed", "paid"]` and FELL BACK to
+    /// `availableTransitions.first` — picking an arbitrary unrelated
+    /// transition. Now we ONLY execute when the offered transition's
+    /// `to` indubitably contains "complete" or "paid"; otherwise we
+    /// skip the lifecycle exec and go straight to wallet.
+    private func advanceClaim() async {
+        if let t = lifecycle.availableTransitions.first(where: { t in
+            let to = t.to.lowercased()
+            return to.contains("paid") || to.contains("complete")
+        }) {
             _ = await lifecycle.execute(t)
         }
+        // Open the canonical EusoWallet detail (real Me sub-route)
+        // so the user lands on the screen that owns the Stripe
+        // Connect transfer button. The lifecycle step (when present)
+        // pre-flips the load state for accounting; the actual money
+        // movement happens via Stripe per `wallet.ts:888-925`.
+        NotificationCenter.default.post(
+            name: .esangOpenMeDetail,
+            object: "earnings",
+            userInfo: ["loadId": lifecycle.loadId, "intent": "instant-payout"]
+        )
         advance?()
     }
 

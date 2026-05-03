@@ -343,14 +343,37 @@ struct DayCloseWallet: View {
         activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
     }
 
+    /// Close-day fires three indubitable actions in sequence:
+    ///   1. `availability.exportICS()` — server mints a signed ICS
+    ///      URL for the driver's day. The shipper / dispatcher web
+    ///      surfaces consume this for next-day scheduling.
+    ///   2. Lifecycle transition — ONLY when the active load offers
+    ///      a transition whose `to` indubitably contains
+    ///      "completed" or "off_duty" or "day_closed". Previously
+    ///      pattern-matched + fell back to `availableTransitions.first`
+    ///      (arbitrary unrelated transition).
+    ///   3. `advance?()` env handler — walks the trip phase forward
+    ///      to .idle so the driver lands back on Home.
     private func closeDay() async {
+        guard !isClosing else { return }
         isClosing = true
         defer { isClosing = false }
-        let keys = ["day_closed", "completed", "off_duty"]
-        if let t = lifecycle.availableTransitions.first(where: { t in keys.contains(where: { t.to.lowercased().contains($0) }) })
-            ?? lifecycle.availableTransitions.first {
+        // Step 1 — fire the real ICS export so the day's trip log
+        // is materialized server-side. Non-blocking on failure.
+        _ = try? await EusoTripAPI.shared.availability.exportICS()
+        // Step 2 — execute the lifecycle transition ONLY when a
+        // close-class transition is offered. No fallback to an
+        // arbitrary `availableTransitions.first` — that's the
+        // `feedback_indubitably` doctrine.
+        if let t = lifecycle.availableTransitions.first(where: { t in
+            let to = t.to.lowercased()
+            return to.contains("completed") || to.contains("off_duty") || to.contains("day_closed")
+        }) {
             _ = await lifecycle.execute(t)
         }
+        // Step 3 — advance the trip-phase state machine to .idle
+        // (loops back to Home per the lifecycleAdvance closure
+        // injected at ContentView.swift line 1597).
         advance?()
     }
 
