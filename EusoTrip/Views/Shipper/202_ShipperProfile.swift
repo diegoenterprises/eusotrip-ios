@@ -126,7 +126,15 @@ struct ShipperProfile: View {
 
     private var editPill: some View {
         Button(action: {
-            showEditProfile = true
+            // Navigate to the canonical 322 ProfileEdit screen (the
+            // `Views/Shipper/322_ProfileEdit.swift` form that calls
+            // `shippers.updateProfile` directly). Was an alert that
+            // said "lands in a follow-up brick" — but the brick is
+            // already shipped.
+            NotificationCenter.default.post(
+                name: .eusoShipperNavSwap, object: nil,
+                userInfo: ["screenId": "322"]
+            )
         }) {
             HStack(spacing: 6) {
                 Image(systemName: "pencil")
@@ -142,12 +150,6 @@ struct ShipperProfile: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Edit profile")
-        .alert("Edit profile",
-               isPresented: $showEditProfile,
-               actions: { Button("OK", role: .cancel) {} },
-               message: {
-                   Text("Profile editing lands in a follow-up brick alongside the `shippers.updateProfile` mutation.")
-               })
     }
 
     // MARK: - Identity hero — gradient-rim card with 88pt DU avatar
