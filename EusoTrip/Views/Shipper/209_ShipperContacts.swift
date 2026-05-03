@@ -602,6 +602,11 @@ struct ShipperContacts: View {
 
     private var addContactRibbon: some View {
         Button {
+            // Add-contact form not yet shipped in-app — route to the
+            // canonical web form so the tap lands on a real surface
+            // (same Bearer cookie auth, no re-login). Telemetry post
+            // retained for observability. Mirror of the L223 ribbon
+            // wiring committed in 56ecae7.
             NotificationCenter.default.post(
                 name: .eusoShipperContactAdd, object: nil,
                 userInfo: [
@@ -609,6 +614,9 @@ struct ShipperContacts: View {
                     "shipperCompanyId": session.user?.companyId ?? "1",
                 ]
             )
+            if let url = URL(string: "https://app.eusotrip.com/shipper/contacts/new") {
+                openURL(url)
+            }
         } label: {
             ZStack {
                 Capsule().fill(LinearGradient.primary)

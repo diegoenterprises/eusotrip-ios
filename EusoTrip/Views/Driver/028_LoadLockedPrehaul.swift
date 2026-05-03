@@ -463,6 +463,12 @@ struct LoadLockedPrehaul: View {
     }
 
     private func scheduleRemindIn5() {
+        // Snapshot main-actor-isolated state on the main actor BEFORE
+        // entering the Sendable closure (Swift 6 strict concurrency:
+        // `requestAuthorization`'s callback is @Sendable so it can't
+        // touch `lifecycle.loadId` / `activeLoad` directly).
+        let snapshotLoadId = lifecycle.loadId
+        let snapshotLoadNum = activeLoad.map { "Load \($0.loadNumber)" } ?? "Load locked"
         let center = UNUserNotificationCenter.current()
         center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
             guard granted else {
@@ -475,14 +481,13 @@ struct LoadLockedPrehaul: View {
             }
             let content = UNMutableNotificationContent()
             content.title = "Pre-haul gate waiting"
-            let loadNum = activeLoad.map { "Load \($0.loadNumber)" } ?? "Load locked"
-            content.body = "\(loadNum) — clear your remaining checks and roll."
+            content.body = "\(snapshotLoadNum) — clear your remaining checks and roll."
             content.sound = .default
             let trigger = UNTimeIntervalNotificationTrigger(
                 timeInterval: 5 * 60,
                 repeats: false
             )
-            let id = "prehaul-remind-\(lifecycle.loadId)-\(Int(Date().timeIntervalSince1970))"
+            let id = "prehaul-remind-\(snapshotLoadId)-\(Int(Date().timeIntervalSince1970))"
             let request = UNNotificationRequest(
                 identifier: id,
                 content: content,

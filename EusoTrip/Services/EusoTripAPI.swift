@@ -16316,49 +16316,70 @@ final class EusoNISession: NSObject, ObservableObject, NISessionDelegate {
     }
 
     // MARK: - NISessionDelegate
+    //
+    // Each method is `nonisolated` so Swift 6 strict-concurrency
+    // accepts the protocol conformance crossing the @MainActor
+    // boundary. Per-method we snapshot the inputs on the framework's
+    // delegate queue, then hop to the main actor via
+    // `Task { @MainActor in self.<state> = ... }` so the
+    // `@Published` property updates fire on the right context.
 
-    func session(_ session: NISession, didUpdate nearbyObjects: [NINearbyObject]) {
+    nonisolated func session(_ session: NISession, didUpdate nearbyObjects: [NINearbyObject]) {
         // Single-peer model — yardmap + back-in alignment + escort
         // pairing all bind to one ranging target at a time. Multi-
         // peer use-cases (yard hostler tracking many trailers)
         // would split state into a per-token dictionary.
         guard let target = nearbyObjects.first else { return }
-        distance = target.distance
-        direction = target.direction
-        lastUpdate = Date()
-        lostLineOfSight = (target.distance == nil && target.direction == nil)
+        let dist = target.distance
+        let dir = target.direction
+        let lost = (target.distance == nil && target.direction == nil)
+        Task { @MainActor in
+            self.distance = dist
+            self.direction = dir
+            self.lastUpdate = Date()
+            self.lostLineOfSight = lost
+        }
     }
 
-    func session(
+    nonisolated func session(
         _ session: NISession,
         didRemove nearbyObjects: [NINearbyObject],
         reason: NINearbyObject.RemovalReason
     ) {
-        switch reason {
-        case .timeout:
-            lostLineOfSight = true
-        case .peerEnded:
-            status = .idle
-            distance = nil
-            direction = nil
-        @unknown default:
-            break
+        Task { @MainActor in
+            switch reason {
+            case .timeout:
+                self.lostLineOfSight = true
+            case .peerEnded:
+                self.status = .idle
+                self.distance = nil
+                self.direction = nil
+            @unknown default:
+                break
+            }
         }
     }
 
-    func sessionWasSuspended(_ session: NISession) {
-        status = .suspended
+    nonisolated func sessionWasSuspended(_ session: NISession) {
+        Task { @MainActor in
+            self.status = .suspended
+        }
     }
 
-    func sessionSuspensionEnded(_ session: NISession) {
+    nonisolated func sessionSuspensionEnded(_ session: NISession) {
         // The framework expects us to re-run the previous config
         // after suspension — but we don't retain it here. Caller
         // must restart via `start*(...)` after observing this state.
-        status = .idle
+        Task { @MainActor in
+            self.status = .idle
+        }
     }
 
-    func session(_ session: NISession, didInvalidateWith error: Error) {
-        status = .failed(error.localizedDescription)
+    nonisolated func session(_ session: NISession, didInvalidateWith error: Error) {
+        let msg = error.localizedDescription
+        Task { @MainActor in
+            self.status = .failed(msg)
+        }
     }
 }
 
