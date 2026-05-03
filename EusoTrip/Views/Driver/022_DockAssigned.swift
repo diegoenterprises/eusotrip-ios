@@ -533,7 +533,10 @@ struct DockYardmapSheet: View {
                     stops: load.flatMap { ld -> [LoadLocation] in
                         if let drop = ld.deliveryLocation { return [drop] }
                         return []
-                    } ?? []
+                    } ?? [],
+                    yardLayoutPolygons: YardLayoutGeoJSON.polygons(
+                        from: caps?.yardLayoutGeoJson
+                    )
                 )
                 .ignoresSafeArea(edges: .bottom)
                 VStack(spacing: 8) {
@@ -1178,5 +1181,83 @@ private struct HLSPlayerView: UIViewControllerRepresentable {
             vc.player = AVPlayer(url: url)
             vc.player?.play()
         }
+    }
+}
+
+// MARK: - GeoJSON yard-layout decoder
+//
+// Decodes the terminal admin's uploaded GeoJSON (from
+// `terminalCapabilities.yardLayoutGeoJson`) into MKPolygon overlays
+// HereMapView paints on top of the basemap. We accept the canonical
+// GeoJSON shapes the admin form is allowed to upload — Polygon and
+// MultiPolygon — wrapped in either a bare geometry, a Feature, or a
+// FeatureCollection. Anything else is skipped silently rather than
+// failing the whole render.
+//
+// Coordinate order in GeoJSON is [lng, lat] (RFC 7946 §3.1.1).
+// MapKit's MKPolygon takes (lat, lng) — we swap on parse.
+
+import MapKit
+
+enum YardLayoutGeoJSON {
+    static func polygons(from raw: String?) -> [MKPolygon] {
+        guard let raw, !raw.isEmpty,
+              let data = raw.data(using: .utf8) else { return [] }
+        let json: Any?
+        do { json = try JSONSerialization.jsonObject(with: data) }
+        catch { return [] }
+        return polygonsFromAny(json)
+    }
+
+    private static func polygonsFromAny(_ value: Any?) -> [MKPolygon] {
+        guard let dict = value as? [String: Any],
+              let type = dict["type"] as? String else { return [] }
+        switch type {
+        case "Polygon":
+            return polygonsFromCoords(dict["coordinates"]).map { [$0] } ?? []
+        case "MultiPolygon":
+            guard let groups = dict["coordinates"] as? [[Any]] else { return [] }
+            return groups.compactMap { polygonsFromCoords($0) }
+        case "Feature":
+            return polygonsFromAny(dict["geometry"])
+        case "FeatureCollection":
+            guard let features = dict["features"] as? [Any] else { return [] }
+            return features.flatMap { polygonsFromAny($0) }
+        default:
+            return []
+        }
+    }
+
+    /// `coords` is the GeoJSON Polygon coordinates array — outer ring
+    /// first, optional inner-rings (holes) follow. `polygonsFromAny`
+    /// passes either the Polygon's coordinates directly OR a
+    /// MultiPolygon's per-polygon coordinates entry.
+    private static func polygonsFromCoords(_ coords: Any?) -> MKPolygon? {
+        guard let rings = coords as? [[Any]],
+              let outer = rings.first as? [[Double]] else { return nil }
+        let outerCoords = outer.compactMap { pair -> CLLocationCoordinate2D? in
+            guard pair.count >= 2 else { return nil }
+            return CLLocationCoordinate2D(latitude: pair[1], longitude: pair[0])
+        }
+        guard outerCoords.count >= 3 else { return nil }
+
+        // Holes (interior rings) — optional.
+        var holes: [MKPolygon] = []
+        for ring in rings.dropFirst() {
+            guard let pts = ring as? [[Double]] else { continue }
+            let holeCoords = pts.compactMap { pair -> CLLocationCoordinate2D? in
+                guard pair.count >= 2 else { return nil }
+                return CLLocationCoordinate2D(latitude: pair[1], longitude: pair[0])
+            }
+            if holeCoords.count >= 3 {
+                holes.append(MKPolygon(coordinates: holeCoords, count: holeCoords.count))
+            }
+        }
+
+        return MKPolygon(
+            coordinates: outerCoords,
+            count: outerCoords.count,
+            interiorPolygons: holes.isEmpty ? nil : holes
+        )
     }
 }

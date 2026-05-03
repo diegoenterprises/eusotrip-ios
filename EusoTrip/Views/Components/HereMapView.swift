@@ -79,6 +79,15 @@ struct HereMapView: UIViewRepresentable {
     /// Optional extra annotations (e.g. truck position, dispatch markers).
     var extraAnnotations: [MKPointAnnotation] = []
 
+    /// Optional GeoJSON polygon overlay rendered on top of the basemap.
+    /// Used by the terminal yardmap surface (022_DockAssigned.swift)
+    /// when the active terminal's `TerminalCapabilities.yardLayoutGeoJson`
+    /// is populated. Caller pre-parses the GeoJSON into MKPolygon
+    /// instances; HereMapView paints them with a Brand.blue stroke +
+    /// translucent fill so dock lanes / staging zones / hazmat
+    /// segregation areas read clearly over the HERE tiles.
+    var yardLayoutPolygons: [MKPolygon] = []
+
     /// Initial map camera. If nil, the view auto-fits to `stops`/`lanes`/route.
     var initialRegion: MKCoordinateRegion? = nil
 
@@ -174,6 +183,18 @@ struct HereMapView: UIViewRepresentable {
                 renderer.lineWidth = 5
                 renderer.lineCap   = .round
                 renderer.lineJoin  = .round
+                return renderer
+            }
+            if let polygon = overlay as? MKPolygon {
+                // Yard-layout polygon: terminal admin uploads a
+                // GeoJSON describing dock lanes / staging / hazmat
+                // segregation. Translucent fill + Brand.blue stroke
+                // so the polygons read on top of HERE tiles without
+                // burying the underlying basemap.
+                let renderer = MKPolygonRenderer(polygon: polygon)
+                renderer.fillColor   = Coordinator.blue.withAlphaComponent(0.18)
+                renderer.strokeColor = Coordinator.blue.withAlphaComponent(0.85)
+                renderer.lineWidth   = 1.5
                 return renderer
             }
             return MKOverlayRenderer(overlay: overlay)
@@ -322,6 +343,14 @@ struct HereMapView: UIViewRepresentable {
         // Remove old polylines + annotations (but keep the tile overlay).
         map.removeOverlays(map.overlays.filter { !($0 is MKTileOverlay) })
         map.removeAnnotations(map.annotations)
+
+        // Yard-layout polygon overlays — caller pre-parses the
+        // terminal's GeoJSON (DockYardmapSheet does so when caps
+        // are populated). Painted under polylines + pins so dock
+        // lanes / staging zones render as background context.
+        for poly in yardLayoutPolygons {
+            map.addOverlay(poly, level: .aboveRoads)
+        }
 
         // Full HERE route polyline (detail view).
         if let route {
