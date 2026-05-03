@@ -147,6 +147,7 @@ final class ShipperLiveTrackingStore: ObservableObject {
 
 struct ShipperLiveTracking: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @StateObject private var store = ShipperLiveTrackingStore()
     @State private var detail: ShipperAPI.ActiveLoad? = nil
     @State private var modeFilter: LiveModeFilter = .all
@@ -719,6 +720,10 @@ struct ShipperLiveTracking: View {
     // MARK: View-all tap
 
     private func tapViewAll() {
+        // Full 50-load live tracking surface lives on the web until
+        // the paged tracking endpoint ships in-app. openURL routes
+        // the tap to a real surface; telemetry post retained for
+        // observability.
         NotificationCenter.default.post(
             name: .eusoShipperLiveViewAll,
             object: nil,
@@ -727,6 +732,9 @@ struct ShipperLiveTracking: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/live-tracking") {
+            openURL(url)
+        }
     }
 
     // MARK: Empty + error

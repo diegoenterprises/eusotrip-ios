@@ -196,6 +196,7 @@ private func prettifyType(_ raw: String) -> String {
 struct ShipperFreightClaims: View {
     @Environment(\.palette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.openURL) private var openURL
     @StateObject private var store = ShipperFreightClaimsStore()
     @State private var selected: ShipperFreightClaimsAPI.ClaimRow?
 
@@ -887,6 +888,10 @@ struct ShipperFreightClaims: View {
     // MARK: Notification posts (§20.4)
 
     private func tapFileClaim() {
+        // EUSO-2124 — `freightClaims.fileClaim` not yet on iOS API
+        // surface. Route to canonical web wizard so the tap lands
+        // on a real intake form (same Bearer cookie auth — no
+        // re-login). Telemetry post retained for observability.
         NotificationCenter.default.post(
             name: .eusoShipperClaimFile,
             object: nil,
@@ -895,9 +900,16 @@ struct ShipperFreightClaims: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/freight-claims/new") {
+            openURL(url)
+        }
     }
 
     private func tapSeeFullHistory() {
+        // Full resolved-history surface lives on the web until the
+        // paged history endpoint ships in-app. openURL routes the
+        // tap to a real surface; telemetry post retained for
+        // observability.
         NotificationCenter.default.post(
             name: .eusoShipperClaimHistory,
             object: nil,
@@ -906,6 +918,9 @@ struct ShipperFreightClaims: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/freight-claims") {
+            openURL(url)
+        }
     }
 
     // MARK: Error banner
