@@ -29,6 +29,7 @@ struct MeHomeScreen: View {
 
 private struct MeHomeBody: View {
     @Environment(\.palette) private var palette
+    @EnvironmentObject private var session: EusoTripSession
     @State private var profile: ShipperAPI.Profile? = nil
     @State private var stats: ShipperAPI.Stats? = nil
     @State private var loading = true
@@ -40,6 +41,7 @@ private struct MeHomeBody: View {
     /// gets a shipper-prioritized feed (news.ts ROLE_CATEGORIES) and
     /// a shipper-context Haul lobby out of the same machinery.
     @State private var detailRoute: MeDetailRoute? = nil
+    @State private var showHardwareCaps: Bool = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -78,6 +80,9 @@ private struct MeHomeBody: View {
                     ("triangle.fill",          "Hazmat audit",     .screen("327")),
                     ("exclamationmark.bubble", "Freight claims",   .screen("219")),
                 ])
+                cellGroup(title: "TERMINAL OPS", cells: [
+                    ("dot.radiowaves.left.and.right", "Hardware Capabilities", .hardwareCapabilities),
+                ])
                 cellGroup(title: "SETTINGS", cells: [
                     ("gear",            "Settings",         .screen("211")),
                     ("bell",            "ESang prefs",      .screen("319")),
@@ -95,6 +100,11 @@ private struct MeHomeBody: View {
                 .environment(\.palette, palette)
                 .eusoSheetX()
         }
+        .sheet(isPresented: $showHardwareCaps) {
+            HardwareCapabilitiesView()
+                .environment(\.palette, palette)
+                .environmentObject(session)
+        }
     }
 
     /// Cell action — either swap to an in-app shipper screen or
@@ -105,6 +115,7 @@ private struct MeHomeBody: View {
     private enum CellAction {
         case screen(String)
         case detail(MeDetailRoute)
+        case hardwareCapabilities
     }
 
     private func hero(_ p: ShipperAPI.Profile) -> some View {
@@ -151,6 +162,8 @@ private struct MeHomeBody: View {
                         )
                     case .detail(let route):
                         detailRoute = route
+                    case .hardwareCapabilities:
+                        showHardwareCaps = true
                     }
                 } label: {
                     HStack {

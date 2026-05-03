@@ -1086,3 +1086,493 @@ enum RoleAccess {
         }
     }
 }
+
+// MARK: - HardwareCapabilitiesView
+//
+// Tenant self-declaration form. Owners (TERMINAL_MANAGER, SHIPPER,
+// ADMIN, CATALYST, DISPATCH) declare what hardware they have so the
+// driver iOS app can light up the matching feature path:
+//
+//   - TERMINAL scope (terminal manager / shipper / admin) — UWB
+//     anchors per door, partner camera-feed registrations, ARKit
+//     door markers, yard-layout GeoJSON polygon.
+//   - CARRIER scope (catalyst / dispatch / admin) — fleet-wide
+//     dash-cam vendor.
+//   - TRAILER scope (catalyst / dispatch / admin) — per-trailer
+//     dome cam + reefer monitor.
+//
+// The form auto-tabs the visible scopes based on the caller's role.
+// A SHIPPER who also runs their own carrier company sees both
+// TERMINAL + CARRIER tabs.
+//
+// Each tab loads the live envelope on appear, presents editable
+// rows, and persists via the matching `capabilities.set*` mutation.
+
+struct HardwareCapabilitiesView: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var session: EusoTripSession
+
+    /// Optional terminal id. When the form is presented from a
+    /// SHIPPER context, the shipper picks which of their terminals
+    /// to edit; the picker writes to this binding. ADMINs editing
+    /// any terminal inject the id directly.
+    @State private var activeTerminalId: Int
+
+    @State private var selectedTab: Tab = .terminal
+    @State private var loading: Bool = false
+    @State private var saveToast: String? = nil
+
+    // Live envelopes pulled from the backend.
+    @State private var terminal: CapabilitiesAPI.TerminalCapabilities?
+    @State private var carrier: CapabilitiesAPI.CarrierCapabilities?
+    @State private var trailerId: String = ""
+    @State private var trailer: CapabilitiesAPI.TrailerCapabilities?
+
+    enum Tab: String, CaseIterable, Identifiable {
+        case terminal, carrier, trailer
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .terminal: return "Terminal"
+            case .carrier:  return "Carrier"
+            case .trailer:  return "Trailer"
+            }
+        }
+    }
+
+    init(initialTerminalId: Int = 0) {
+        self._activeTerminalId = State(initialValue: initialTerminalId)
+    }
+
+    /// Tabs the caller's role is allowed to write. Reads pass through
+    /// regardless — the backend RBAC re-checks on mutation, so the
+    /// UI gate is for clarity, not security.
+    private var visibleTabs: [Tab] {
+        let role = (session.user?.role ?? "").uppercased()
+        var tabs: [Tab] = []
+        if ["TERMINAL_MANAGER", "SHIPPER", "ADMIN", "SUPER_ADMIN"].contains(role) {
+            tabs.append(.terminal)
+        }
+        if ["CATALYST", "DISPATCH", "ADMIN", "SUPER_ADMIN"].contains(role) {
+            tabs.append(.carrier)
+            tabs.append(.trailer)
+        }
+        return tabs.isEmpty ? [.terminal] : tabs
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 14) {
+                    headerCard
+                    if visibleTabs.count > 1 {
+                        tabBar
+                    }
+                    Group {
+                        switch selectedTab {
+                        case .terminal: terminalSection
+                        case .carrier:  carrierSection
+                        case .trailer:  trailerSection
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+            }
+            .background(palette.bgPrimary.ignoresSafeArea())
+            .navigationTitle("Hardware Capabilities")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if let msg = saveToast {
+                    Text(msg)
+                        .font(EType.caption.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .background(palette.bgCard)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                .strokeBorder(palette.borderSoft)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                        .padding(.bottom, 24)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.easeOut(duration: 0.18), value: saveToast)
+            .task { await hydrate() }
+            .onAppear {
+                if !visibleTabs.contains(selectedTab),
+                   let first = visibleTabs.first {
+                    selectedTab = first
+                }
+            }
+        }
+    }
+
+    private var headerCard: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("HARDWARE CAPABILITIES")
+                .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                .foregroundStyle(LinearGradient.diagonal)
+            Text("Tell EusoTrip what hardware you have")
+                .font(EType.body.weight(.bold))
+                .foregroundStyle(palette.textPrimary)
+            Text("Drivers see the matching dock-cam, yardmap, and AR fallback paths light up automatically. Anything left blank stays as 'Pair hardware' on the driver side — the affordance never disappears.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    private var tabBar: some View {
+        HStack(spacing: 6) {
+            ForEach(visibleTabs) { tab in
+                Button {
+                    withAnimation(.easeOut(duration: 0.18)) { selectedTab = tab }
+                } label: {
+                    Text(tab.label.uppercased())
+                        .font(.system(size: 10, weight: .heavy)).tracking(0.7)
+                        .foregroundStyle(
+                            selectedTab == tab
+                              ? AnyShapeStyle(LinearGradient.diagonal)
+                              : AnyShapeStyle(palette.textSecondary)
+                        )
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .background(
+                            Capsule().strokeBorder(
+                                selectedTab == tab ? Brand.success.opacity(0.5)
+                                                   : palette.borderFaint,
+                                lineWidth: 1
+                            )
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    // MARK: Terminal section
+
+    @ViewBuilder
+    private var terminalSection: some View {
+        sectionCard(title: "TERMINAL ID") {
+            HStack {
+                TextField("Terminal id", value: $activeTerminalId, format: .number)
+                    .textFieldStyle(.roundedBorder)
+                    .keyboardType(.numberPad)
+                Button("Load") {
+                    Task { await loadTerminal() }
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+
+        let caps = terminal ?? CapabilitiesAPI.TerminalCapabilities.empty
+        sectionCard(title: "UWB ANCHORS · \(caps.uwbAnchors.count)") {
+            VStack(alignment: .leading, spacing: 6) {
+                if caps.uwbAnchors.isEmpty {
+                    Text("No anchors registered. Print a Qorvo SR150 / NXP Trimension tag, scan its accessory-config data, paste below.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                ForEach(caps.uwbAnchors, id: \.self) { a in
+                    Text("· Door \(a.doorNumber) — \(a.vendor) (\(a.accessoryConfigData.prefix(8))…)")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Text("Add new anchor via the admin web console — paste config blob, set door number. Coming inline soon.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(palette.textTertiary)
+            }
+        }
+
+        sectionCard(title: "PARTNER CAMERA FEEDS · \(caps.cameraFeeds.count)") {
+            VStack(alignment: .leading, spacing: 6) {
+                if caps.cameraFeeds.isEmpty {
+                    Text("Genetec / Avigilon / Milestone NVR? Register one feed per dock door so drivers can see live as they back in.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                ForEach(caps.cameraFeeds, id: \.self) { f in
+                    Text("· Door \(f.doorNumber) — \(f.vendor)\(f.label.map { " · \($0)" } ?? "")")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+        }
+
+        sectionCard(title: "ARKIT DOOR MARKERS · \(caps.doorMarkers.count)") {
+            VStack(alignment: .leading, spacing: 6) {
+                if caps.doorMarkers.isEmpty {
+                    Text("Print + epoxy 30cm AprilTag / QR markers above each dock door. Register the marker id (asset name) so drivers' phone cameras can read alignment when UWB drops LOS.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                ForEach(caps.doorMarkers, id: \.self) { m in
+                    Text("· Door \(m.doorNumber) — marker \(m.markerId) (offset \(m.offsetX, specifier: "%.2f")m, \(m.offsetY, specifier: "%.2f")m)")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+        }
+
+        sectionCard(title: "YARD LAYOUT (GeoJSON)") {
+            VStack(alignment: .leading, spacing: 8) {
+                let geoBinding = Binding<String>(
+                    get: { terminal?.yardLayoutGeoJson ?? "" },
+                    set: { newVal in
+                        var updated = terminal ?? CapabilitiesAPI.TerminalCapabilities(
+                            terminalId: activeTerminalId,
+                            uwbAnchors: [],
+                            cameraFeeds: [],
+                            doorMarkers: [],
+                            yardLayoutGeoJson: nil
+                        )
+                        updated = CapabilitiesAPI.TerminalCapabilities(
+                            terminalId: updated.terminalId,
+                            uwbAnchors: updated.uwbAnchors,
+                            cameraFeeds: updated.cameraFeeds,
+                            doorMarkers: updated.doorMarkers,
+                            yardLayoutGeoJson: newVal.isEmpty ? nil : newVal
+                        )
+                        terminal = updated
+                    }
+                )
+                TextEditor(text: geoBinding)
+                    .font(EType.mono(.caption))
+                    .frame(minHeight: 100)
+                    .padding(8)
+                    .background(palette.bgCardSoft)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                Text("Paste a Polygon, MultiPolygon, Feature, or FeatureCollection. Drivers see translucent dock-lane / staging-zone overlays on top of the HereMapView basemap.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(palette.textTertiary)
+                Button("Save terminal capabilities") {
+                    Task { await saveTerminal() }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(loading)
+            }
+        }
+    }
+
+    // MARK: Carrier section
+
+    @ViewBuilder
+    private var carrierSection: some View {
+        let cap = carrier ?? CapabilitiesAPI.CarrierCapabilities.empty
+        sectionCard(title: "DASH CAM VENDOR") {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(["samsara", "motive", "garmin", "cipia", "none"], id: \.self) { vendor in
+                    HStack {
+                        Image(systemName: cap.dashCam.vendor == vendor
+                              ? "largecircle.fill.circle"
+                              : "circle")
+                            .foregroundStyle(LinearGradient.diagonal)
+                        Text(vendor.capitalized)
+                            .font(EType.body)
+                            .foregroundStyle(palette.textPrimary)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        var updated = cap
+                        updated = CapabilitiesAPI.CarrierCapabilities(
+                            carrierId: updated.carrierId,
+                            dashCam: CapabilitiesAPI.DashCamVendor(
+                                vendor: vendor,
+                                credentialsToken: nil,
+                                configured: vendor != "none" ? updated.dashCam.configured : false
+                            )
+                        )
+                        carrier = updated
+                    }
+                }
+                Toggle("Vendor connected", isOn: Binding(
+                    get: { carrier?.dashCam.configured ?? false },
+                    set: { newVal in
+                        if let c = carrier {
+                            carrier = CapabilitiesAPI.CarrierCapabilities(
+                                carrierId: c.carrierId,
+                                dashCam: CapabilitiesAPI.DashCamVendor(
+                                    vendor: c.dashCam.vendor,
+                                    credentialsToken: nil,
+                                    configured: newVal
+                                )
+                            )
+                        }
+                    }
+                ))
+                .disabled(carrier?.dashCam.vendor == "none")
+                Text("Connect the vendor via the OAuth flow on the admin web console (coming inline soon). Until connected, drivers see the dash-cam row as 'Pair' on the dock-cam picker.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(palette.textTertiary)
+                Button("Save carrier capabilities") {
+                    Task { await saveCarrier() }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(loading)
+            }
+        }
+    }
+
+    // MARK: Trailer section
+
+    @ViewBuilder
+    private var trailerSection: some View {
+        sectionCard(title: "TRAILER ID") {
+            HStack {
+                TextField("Trailer id (VIN / asset tag)", text: $trailerId)
+                    .textFieldStyle(.roundedBorder)
+                Button("Load") {
+                    Task { await loadTrailer() }
+                }
+                .buttonStyle(.bordered)
+                .disabled(trailerId.isEmpty)
+            }
+        }
+
+        if let t = trailer {
+            sectionCard(title: "DOME CAM VENDOR") {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(["sensata", "orbcomm", "spireon", "none"], id: \.self) { vendor in
+                        HStack {
+                            Image(systemName: t.domeCamVendor == vendor
+                                  ? "largecircle.fill.circle"
+                                  : "circle")
+                                .foregroundStyle(LinearGradient.diagonal)
+                            Text(vendor.capitalized)
+                                .font(EType.body)
+                                .foregroundStyle(palette.textPrimary)
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            trailer = CapabilitiesAPI.TrailerCapabilities(
+                                trailerId: t.trailerId,
+                                domeCamVendor: vendor,
+                                domeCamStreamUrl: vendor == "none" ? nil : t.domeCamStreamUrl,
+                                reeferMonitorVendor: t.reeferMonitorVendor
+                            )
+                        }
+                    }
+                    TextField("Stream URL (HLS .m3u8 or vendor-specific)",
+                              text: Binding(
+                                  get: { trailer?.domeCamStreamUrl ?? "" },
+                                  set: { v in
+                                      if let cur = trailer {
+                                          trailer = CapabilitiesAPI.TrailerCapabilities(
+                                              trailerId: cur.trailerId,
+                                              domeCamVendor: cur.domeCamVendor,
+                                              domeCamStreamUrl: v.isEmpty ? nil : v,
+                                              reeferMonitorVendor: cur.reeferMonitorVendor
+                                          )
+                                      }
+                                  }
+                              ))
+                    .textFieldStyle(.roundedBorder)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                    Button("Save trailer capabilities") {
+                        Task { await saveTrailer() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(loading)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func sectionCard<Inner: View>(
+        title: String,
+        @ViewBuilder content: () -> Inner
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                .foregroundStyle(LinearGradient.diagonal)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    // MARK: Hydrate + save
+
+    private func hydrate() async {
+        await loadTerminal()
+        await loadCarrier()
+    }
+
+    private func loadTerminal() async {
+        guard activeTerminalId > 0 else { return }
+        terminal = try? await EusoTripAPI.shared.capabilities
+            .getTerminal(terminalId: activeTerminalId)
+    }
+    private func loadCarrier() async {
+        carrier = try? await EusoTripAPI.shared.capabilities.getMyCarrier()
+    }
+    private func loadTrailer() async {
+        guard !trailerId.isEmpty else { return }
+        trailer = try? await EusoTripAPI.shared.capabilities
+            .getTrailer(trailerId: trailerId)
+    }
+
+    private func saveTerminal() async {
+        guard let t = terminal else { return }
+        loading = true; defer { loading = false }
+        do {
+            _ = try await EusoTripAPI.shared.capabilities.setTerminal(t)
+            saveToast = "Terminal capabilities saved"
+        } catch {
+            saveToast = "Save failed: \(error.localizedDescription)"
+        }
+        try? await Task.sleep(nanoseconds: 1_400_000_000)
+        saveToast = nil
+    }
+    private func saveCarrier() async {
+        guard let c = carrier else { return }
+        loading = true; defer { loading = false }
+        do {
+            _ = try await EusoTripAPI.shared.capabilities.setMyCarrier(c)
+            saveToast = "Carrier capabilities saved"
+        } catch {
+            saveToast = "Save failed: \(error.localizedDescription)"
+        }
+        try? await Task.sleep(nanoseconds: 1_400_000_000)
+        saveToast = nil
+    }
+    private func saveTrailer() async {
+        guard let t = trailer else { return }
+        loading = true; defer { loading = false }
+        do {
+            _ = try await EusoTripAPI.shared.capabilities.setTrailer(t)
+            saveToast = "Trailer capabilities saved"
+        } catch {
+            saveToast = "Save failed: \(error.localizedDescription)"
+        }
+        try? await Task.sleep(nanoseconds: 1_400_000_000)
+        saveToast = nil
+    }
+}
