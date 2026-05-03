@@ -52,6 +52,7 @@ import SwiftUI
 
 struct ShipperSettings: View {
     @Environment(\.palette) var palette
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject var session: EusoTripSession
     @StateObject private var prefsStore = NotificationPreferencesStore()
     @StateObject private var laneTemplatesStore = LoadTemplatesListStore()
@@ -920,6 +921,9 @@ struct ShipperSettings: View {
     // MARK: - Notification posts (§20.4 — wireframe-defined names)
 
     private func tapLaneTemplate(_ t: LoadTemplatesAPI.Template) {
+        // Lane-template detail editor hasn't shipped in-app yet; route
+        // to the canonical web template editor (same Bearer cookie auth
+        // — no re-login). Telemetry post retained for observability.
         NotificationCenter.default.post(
             name: .eusoShipperSettingsLaneTemplateRow,
             object: nil,
@@ -929,9 +933,15 @@ struct ShipperSettings: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/templates/\(t.id)") {
+            openURL(url)
+        }
     }
 
     private func tapNewTemplate() {
+        // "+ New template" — in-app template-creation flow not yet
+        // shipped; route to the canonical web new-template form.
+        // Telemetry post retained for observability.
         NotificationCenter.default.post(
             name: .eusoShipperSettingsLaneTemplateAdd,
             object: nil,
@@ -940,9 +950,15 @@ struct ShipperSettings: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/templates/new") {
+            openURL(url)
+        }
     }
 
     private func tapManage2FA() {
+        // EUSO-2105 — auth.tfaStatus + auth.{tfaEnable,tfaDisable} not
+        // yet shipped on iOS; route to web 2FA management page (same
+        // Bearer cookie auth). Telemetry post retained for observability.
         NotificationCenter.default.post(
             name: .eusoShipperSettingsSecurityManage,
             object: nil,
@@ -952,9 +968,15 @@ struct ShipperSettings: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/settings/security/2fa") {
+            openURL(url)
+        }
     }
 
     private func tapViewSessions() {
+        // EUSO-2106 — auth.listSessions + auth.revokeSession not yet
+        // shipped on iOS; route to web active-sessions page (same
+        // Bearer cookie auth). Telemetry post retained for observability.
         NotificationCenter.default.post(
             name: .eusoShipperSettingsSecuritySessions,
             object: nil,
@@ -963,9 +985,14 @@ struct ShipperSettings: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/settings/security/sessions") {
+            openURL(url)
+        }
     }
 
     private func tapAbout() {
+        // About → canonical doctrine + release-notes page on web.
+        // Telemetry post retained for observability.
         NotificationCenter.default.post(
             name: .eusoShipperSettingsAbout,
             object: nil,
@@ -976,6 +1003,9 @@ struct ShipperSettings: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/about") {
+            openURL(url)
+        }
     }
 
     // MARK: - Toast

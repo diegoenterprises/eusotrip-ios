@@ -879,6 +879,8 @@ struct ShipperCatalystScorecard: View {
 
     private func tapFilterChip(_ kind: ScorecardFilter) {
         withAnimation(.easeOut(duration: 0.18)) { filter = kind }
+        // observability post — telemetry only; real local effect is the
+        // filter mutation above which drives the row predicate.
         NotificationCenter.default.post(
             name: .eusoShipperScorecardFilter,
             object: nil,
@@ -892,6 +894,8 @@ struct ShipperCatalystScorecard: View {
 
     private func tapPeriod(_ p: ShipperAPI.SpendingPeriod) {
         store.period = p
+        // observability post — telemetry only; real local effect is the
+        // store.period mutation above which triggers re-fetch.
         NotificationCenter.default.post(
             name: .eusoShipperScorecardPeriod,
             object: nil,

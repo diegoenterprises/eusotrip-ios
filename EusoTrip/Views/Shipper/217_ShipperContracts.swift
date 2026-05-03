@@ -187,6 +187,7 @@ private enum ContractStatusPill {
 
 struct ShipperContracts: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var store = ShipperContractsStore()
     @State private var selectedId: String?
@@ -496,6 +497,8 @@ struct ShipperContracts: View {
         #if canImport(UIKit)
         UISelectionFeedbackGenerator().selectionChanged()
         #endif
+        // observability post — telemetry only; real local effects are
+        // store.filter mutation + haptic feedback above.
         NotificationCenter.default.post(
             name: .eusoShipperContractsFilter,
             object: nil,
@@ -794,6 +797,8 @@ struct ShipperContracts: View {
             detail = try? await EusoTripAPI.shared.contracts.getContract(id: row.id)
             detailLoading = false
         }
+        // observability post — telemetry only; real local effects are
+        // selectedId mutation + the contracts.getContract fetch above.
         NotificationCenter.default.post(
             name: .eusoShipperContractsRow,
             object: nil,
@@ -806,6 +811,9 @@ struct ShipperContracts: View {
     }
 
     private func tapNewContract() {
+        // In-app new-contract flow hasn't shipped yet; route to the
+        // canonical web contract-builder (same Bearer cookie auth — no
+        // re-login). Telemetry post retained for observability.
         NotificationCenter.default.post(
             name: .eusoShipperContractsCreate,
             object: nil,
@@ -814,6 +822,9 @@ struct ShipperContracts: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/contracts/new") {
+            openURL(url)
+        }
     }
 
     // MARK: Empty + error states

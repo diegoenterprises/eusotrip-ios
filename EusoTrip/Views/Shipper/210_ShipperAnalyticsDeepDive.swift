@@ -63,6 +63,7 @@ private struct DonutSegment: Identifiable {
 
 struct ShipperAnalyticsDeepDive: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var spendStore = ShipperSpendingAnalyticsStore()
@@ -209,6 +210,8 @@ struct ShipperAnalyticsDeepDive: View {
                     selectedWindow = chip.id
                     spendStore.setPeriod(chip.period)
                     catalystStore.setPeriod(chip.period)
+                    // observability post — telemetry only; real local
+                    // effect is the selectedWindow + setPeriod above.
                     NotificationCenter.default.post(
                         name: .eusoShipperAnalyticsWindow, object: nil,
                         userInfo: [
@@ -379,6 +382,10 @@ struct ShipperAnalyticsDeepDive: View {
 
     private func laneRowView(_ row: LaneRow) -> some View {
         Button {
+            // Lane drill-down — in-app analytics-by-lane surface hasn't
+            // shipped yet; route to the canonical web analytics page
+            // filtered to this lane (same Bearer cookie auth — no
+            // re-login). Telemetry post retained for observability.
             NotificationCenter.default.post(
                 name: .eusoShipperAnalyticsLane, object: nil,
                 userInfo: [
@@ -388,6 +395,9 @@ struct ShipperAnalyticsDeepDive: View {
                     "amount": row.amount,
                 ]
             )
+            if let url = URL(string: "https://app.eusotrip.com/shipper/analytics/lanes/\(row.id)") {
+                openURL(url)
+            }
         } label: {
             HStack(alignment: .center, spacing: 12) {
                 Text(row.lane)
@@ -531,6 +541,7 @@ struct ShipperAnalyticsDeepDive: View {
             Spacer(minLength: 6)
 
             Button {
+                // Telemetry post for observability.
                 NotificationCenter.default.post(
                     name: .eusoShipperAnalyticsScorecard, object: nil,
                     userInfo: [
@@ -538,6 +549,13 @@ struct ShipperAnalyticsDeepDive: View {
                         "shipperCompanyId": session.user?.companyId ?? "1",
                         "destination": "213_ShipperCatalystScorecard",
                     ]
+                )
+                // Real in-app nav-swap to the catalyst scorecard
+                // (screen 213) — RoleSurfaceRouter listens for
+                // .eusoShipperNavSwap and renders the target screen.
+                NotificationCenter.default.post(
+                    name: .eusoShipperNavSwap, object: nil,
+                    userInfo: ["screenId": "213"]
                 )
             } label: {
                 Text(catalystTailLink)

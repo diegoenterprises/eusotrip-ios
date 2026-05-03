@@ -108,6 +108,7 @@ private enum ModeFilter: String, CaseIterable, Identifiable {
 
 struct ShipperControlTower: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var store = ControlTowerStore()
     @State private var modeFilter: ModeFilter = .all
@@ -790,6 +791,8 @@ struct ShipperControlTower: View {
         withAnimation(.easeOut(duration: 0.18)) {
             modeFilter = mode
         }
+        // observability post — telemetry only; real local effect is the
+        // modeFilter mutation above which drives the BY MODE breakdown.
         NotificationCenter.default.post(
             name: .eusoShipperControlTowerMode,
             object: nil,
@@ -802,6 +805,9 @@ struct ShipperControlTower: View {
     }
 
     private func tapViewAllExceptions() {
+        // "View all" exceptions — full exception sheet hasn't shipped
+        // in-app yet; route to the canonical web exceptions page (same
+        // Bearer cookie auth). Telemetry post retained for observability.
         NotificationCenter.default.post(
             name: .eusoShipperControlTowerViewAllExceptions,
             object: nil,
@@ -810,9 +816,15 @@ struct ShipperControlTower: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/control-tower/exceptions") {
+            openURL(url)
+        }
     }
 
     private func tapException(_ ex: ControlTowerAPI.ExceptionRow) {
+        // Exception detail sheet hasn't shipped in-app yet; route to
+        // the canonical web exception page filtered by row + mode.
+        // Telemetry post retained for observability.
         NotificationCenter.default.post(
             name: .eusoShipperControlTowerException,
             object: nil,
@@ -824,6 +836,9 @@ struct ShipperControlTower: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/control-tower/exceptions/\(ex.rowId)") {
+            openURL(url)
+        }
     }
 }
 

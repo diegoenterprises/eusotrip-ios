@@ -150,6 +150,7 @@ final class ShipperSustainabilityStore: ObservableObject {
 
 struct ShipperSustainability: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var store = ShipperSustainabilityStore()
 
@@ -734,6 +735,8 @@ struct ShipperSustainability: View {
 
     private func tapModeTab(_ mode: CalcMode) {
         withAnimation(.easeOut(duration: 0.18)) { calcMode = mode }
+        // observability post — telemetry only; real local effect is the
+        // calcMode mutation above which switches the calculator pane.
         NotificationCenter.default.post(
             name: .eusoShipperSustainabilityMode,
             object: nil,
@@ -746,6 +749,9 @@ struct ShipperSustainability: View {
     }
 
     private func tapGreenMiles() {
+        // Green-miles audit + lane breakdown hasn't shipped in-app yet;
+        // route to the canonical web sustainability page (same Bearer
+        // cookie auth). Telemetry post retained for observability.
         NotificationCenter.default.post(
             name: .eusoShipperSustainabilityGreenMiles,
             object: nil,
@@ -754,6 +760,9 @@ struct ShipperSustainability: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/sustainability/green-miles") {
+            openURL(url)
+        }
     }
 
     private func tapBuyOffsets() {
@@ -765,14 +774,23 @@ struct ShipperSustainability: View {
             info["co2Kg"] = r.co2Kg
             info["co2Tonnes"] = r.co2Tonnes
         }
+        // Buy-offsets checkout flow hasn't shipped in-app yet; route to
+        // the canonical web offsets purchase page (same Bearer cookie
+        // auth). Telemetry post retained for observability.
         NotificationCenter.default.post(
             name: .eusoShipperSustainabilityBuyOffsets,
             object: nil,
             userInfo: info
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/sustainability/offsets") {
+            openURL(url)
+        }
     }
 
     private func tapExportReport() {
+        // Export sustainability report — PDF generation is server-side;
+        // route to the canonical web report download (same Bearer cookie
+        // auth, browser handles the download). Telemetry post retained.
         NotificationCenter.default.post(
             name: .eusoShipperSustainabilityExport,
             object: nil,
@@ -781,6 +799,9 @@ struct ShipperSustainability: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/sustainability/report.pdf") {
+            openURL(url)
+        }
     }
 
     // MARK: Helpers
