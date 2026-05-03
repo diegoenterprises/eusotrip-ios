@@ -201,6 +201,7 @@ final class ShipperRFPStore: ObservableObject {
 
 struct ShipperRFP: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var store = ShipperRFPStore()
 
@@ -1383,6 +1384,10 @@ struct ShipperRFP: View {
     }
 
     private func tapNewRFP() {
+        // RFP creation form hasn't shipped in-app yet; route to the
+        // canonical web RFP-builder so the tap lands on a real
+        // surface (same Bearer cookie auth — no re-login).
+        // Telemetry post retained for observability.
         NotificationCenter.default.post(
             name: .eusoShipperRfpCreate,
             object: nil,
@@ -1391,6 +1396,9 @@ struct ShipperRFP: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/rfp/new") {
+            openURL(url)
+        }
     }
 
     // MARK: Helpers

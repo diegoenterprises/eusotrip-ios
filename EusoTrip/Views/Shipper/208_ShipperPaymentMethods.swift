@@ -46,6 +46,7 @@ private enum PaymentRowStatus {
 
 struct ShipperPaymentMethods: View {
     @Environment(\.palette) var palette
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var store = PaymentMethodsStore()
@@ -201,14 +202,23 @@ struct ShipperPaymentMethods: View {
 
     private var heroCardView: some View {
         Button {
+            // Card-detail sheet hasn't shipped in-app yet; route to
+            // the canonical web payment-method detail page so the
+            // tap lands on a real surface (same Bearer cookie auth
+            // — no re-login). Telemetry post retained for
+            // observability.
+            let methodId = defaultCardRow?.id ?? "card_4821"
             NotificationCenter.default.post(
                 name: .eusoShipperPaymentDefaultCard, object: nil,
                 userInfo: [
                     "source": "208_ShipperPaymentMethods",
                     "shipperCompanyId": session.user?.companyId ?? "1",
-                    "methodId": defaultCardRow?.id ?? "card_4821",
+                    "methodId": methodId,
                 ]
             )
+            if let url = URL(string: "https://app.eusotrip.com/shipper/payment-methods/\(methodId)") {
+                openURL(url)
+            }
         } label: {
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -335,6 +345,11 @@ struct ShipperPaymentMethods: View {
         let isMutating = store.mutatingId == row.id
         let status: PaymentRowStatus = row.isDefault ? .defaultMethod : .verified
         return Button {
+            // Method-row detail surface hasn't shipped in-app yet;
+            // route to the canonical web payment-method detail page
+            // so the tap lands on a real surface (same Bearer cookie
+            // auth — no re-login). Telemetry post retained for
+            // observability.
             NotificationCenter.default.post(
                 name: .eusoShipperPaymentMethodTap, object: nil,
                 userInfo: [
@@ -345,6 +360,9 @@ struct ShipperPaymentMethods: View {
                     "isDefault": row.isDefault,
                 ]
             )
+            if let url = URL(string: "https://app.eusotrip.com/shipper/payment-methods/\(row.id)") {
+                openURL(url)
+            }
         } label: {
             HStack(alignment: .center, spacing: 16) {
                 methodIcon(for: row)

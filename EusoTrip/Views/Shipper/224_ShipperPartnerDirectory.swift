@@ -184,6 +184,7 @@ final class ShipperPartnerDirectoryStore: ObservableObject {
 
 struct ShipperPartnerDirectory: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @StateObject private var store = ShipperPartnerDirectoryStore()
 
     var body: some View {
@@ -487,6 +488,7 @@ struct ShipperPartnerDirectory: View {
 
     private func tapFilter(_ f: PartnerFilter) {
         store.filter = f
+        // observability post — telemetry only; real effect is `store.filter = f` above
         NotificationCenter.default.post(
             name: .eusoShipperPartnerFilter,
             object: nil,
@@ -800,10 +802,9 @@ struct ShipperPartnerDirectory: View {
     // MARK: Notification posts (§20.4)
 
     private func tapRow(_ p: SupplyChainAPI.Partner) {
-        MeAction.fire("shipper.partner.detail", userInfo: [
-            "partnershipId": p.id,
-            "companyId": p.partnerCompanyId ?? -1,
-        ])
+        // Real downstream: web continuation to the partner detail surface
+        // (contracts + lane history). Same Bearer cookie auth, no re-login.
+        // Telemetry post retained for observability.
         NotificationCenter.default.post(
             name: .eusoShipperPartnerRow,
             object: nil,
@@ -813,6 +814,9 @@ struct ShipperPartnerDirectory: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/partners/\(p.id)") {
+            openURL(url)
+        }
     }
 
     // MARK: Empty / error
@@ -832,7 +836,8 @@ struct ShipperPartnerDirectory: View {
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
             Button {
-                MeAction.fire("shipper.partner.invite")
+                // Real downstream: web continuation to the partner invite form.
+                // Same Bearer cookie auth. Telemetry post retained for observability.
                 NotificationCenter.default.post(
                     name: .eusoShipperPartnerInvite,
                     object: nil,
@@ -841,6 +846,9 @@ struct ShipperPartnerDirectory: View {
                         "shipperCompanyId": 1
                     ]
                 )
+                if let url = URL(string: "https://app.eusotrip.com/shipper/partners/new") {
+                    openURL(url)
+                }
             } label: {
                 Text("Invite a partner")
                     .font(.system(size: 13, weight: .heavy))

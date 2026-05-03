@@ -188,6 +188,7 @@ final class ShipperDocumentCenterStore: ObservableObject {
 
 struct ShipperDocumentCenter: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @StateObject private var store = ShipperDocumentCenterStore()
 
     var body: some View {
@@ -447,7 +448,9 @@ struct ShipperDocumentCenter: View {
     }
 
     private func tapUpload() {
-        MeAction.fire("shipper.document.upload")
+        // Real downstream: web continuation to the document-upload form. Same
+        // Bearer cookie auth, no re-login. Telemetry post retained for
+        // observability.
         NotificationCenter.default.post(
             name: .eusoShipperDocumentUpload,
             object: nil,
@@ -456,6 +459,9 @@ struct ShipperDocumentCenter: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/documents/new") {
+            openURL(url)
+        }
     }
 
     // MARK: Chip row
@@ -508,6 +514,7 @@ struct ShipperDocumentCenter: View {
 
     private func tapFilter(_ f: DocFilter) {
         store.filter = f
+        // observability post — telemetry only; real effect is `store.filter = f` above
         NotificationCenter.default.post(
             name: .eusoShipperDocumentFilter,
             object: nil,
@@ -772,7 +779,9 @@ struct ShipperDocumentCenter: View {
     // MARK: Notification posts (§20.4)
 
     private func tapRow(_ d: DocumentsAPI.Document) {
-        MeAction.fire("shipper.document.preview", userInfo: ["documentId": d.id])
+        // Real downstream: web continuation to the document preview surface
+        // (PDF / image / OCR view). Same Bearer cookie auth, no re-login.
+        // Telemetry post retained for observability.
         NotificationCenter.default.post(
             name: .eusoShipperDocumentRow,
             object: nil,
@@ -782,9 +791,15 @@ struct ShipperDocumentCenter: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/documents/\(d.id)") {
+            openURL(url)
+        }
     }
 
     private func tapDownload(_ d: DocumentsAPI.Document) {
+        // Real downstream: web continuation to the signed-URL document
+        // download endpoint. Same Bearer cookie auth, no re-login.
+        // Telemetry post retained for observability.
         NotificationCenter.default.post(
             name: .eusoShipperDocumentDownload,
             object: nil,
@@ -794,9 +809,15 @@ struct ShipperDocumentCenter: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/documents/\(d.id)/download") {
+            openURL(url)
+        }
     }
 
     private func tapCategory(_ c: DocumentsAPI.Category) {
+        // Real downstream: web continuation to the per-category document list.
+        // Same Bearer cookie auth, no re-login. Telemetry post retained for
+        // observability.
         NotificationCenter.default.post(
             name: .eusoShipperDocumentCategoryTile,
             object: nil,
@@ -806,6 +827,9 @@ struct ShipperDocumentCenter: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/documents/category/\(c.id)") {
+            openURL(url)
+        }
     }
 
     // MARK: Empty / error

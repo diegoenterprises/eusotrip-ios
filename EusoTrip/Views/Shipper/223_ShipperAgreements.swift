@@ -164,6 +164,7 @@ final class ShipperAgreementsStore: ObservableObject {
 
 struct ShipperAgreements: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @StateObject private var store = ShipperAgreementsStore()
     @State private var detail: ShipperAgreementsAPI.Agreement? = nil
     @State private var showSignedToast: Bool = false
@@ -461,6 +462,7 @@ struct ShipperAgreements: View {
 
     private func tapFilter(_ f: AgreementFilter) {
         store.filter = f
+        // observability post — telemetry only; real effect is `store.filter = f` above
         NotificationCenter.default.post(
             name: .eusoShipperAgreementFilter,
             object: nil,
@@ -794,6 +796,7 @@ struct ShipperAgreements: View {
 
     private func tapRow(_ row: ShipperAgreementsAPI.Agreement) {
         detail = row
+        // observability post — telemetry only; real effect is `detail = row` sheet binding above
         NotificationCenter.default.post(
             name: .eusoShipperAgreementRow,
             object: nil,
@@ -806,7 +809,9 @@ struct ShipperAgreements: View {
     }
 
     private func tapNewAgreement() {
-        MeAction.fire("shipper.agreement.create")
+        // Real downstream: web continuation to the New Agreement form. Same
+        // Bearer cookie auth, no re-login. Telemetry post retained for
+        // observability so the audit log still captures the intent.
         NotificationCenter.default.post(
             name: .eusoShipperAgreementCreate,
             object: nil,
@@ -815,6 +820,9 @@ struct ShipperAgreements: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/agreements/new") {
+            openURL(url)
+        }
     }
 
     // MARK: Empty / error

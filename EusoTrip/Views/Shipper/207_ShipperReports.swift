@@ -70,6 +70,7 @@ private struct BuilderChip: Identifiable, Hashable {
 
 struct ShipperReports: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var spendStore = ShipperSpendingAnalyticsStore()
@@ -221,6 +222,11 @@ struct ShipperReports: View {
 
     private func quickExportTile(kind: QuickExportKind, title: String, sub: String, cta: String) -> some View {
         Button {
+            // Quick-export run+download surface hasn't shipped in-app
+            // yet; route to the canonical web export endpoint so the
+            // tap lands on a real surface that actually generates +
+            // downloads the file (same Bearer cookie auth — no
+            // re-login). Telemetry post retained for observability.
             NotificationCenter.default.post(
                 name: .eusoShipperReportQuickExport, object: nil,
                 userInfo: [
@@ -230,6 +236,9 @@ struct ShipperReports: View {
                     "format": kind.format,
                 ]
             )
+            if let url = URL(string: "https://app.eusotrip.com/shipper/reports/export/\(kind.rawValue)?format=\(kind.format)") {
+                openURL(url)
+            }
         } label: {
             HStack(alignment: .top, spacing: 12) {
                 ZStack {
@@ -351,6 +360,11 @@ struct ShipperReports: View {
     @ViewBuilder
     private func statusPill(_ status: ReportStatus, verb: String, title: String) -> some View {
         Button {
+            // Saved-report run / open-schedule surface hasn't shipped
+            // in-app yet; route to the canonical web saved-reports
+            // page so the tap lands on a real surface (same Bearer
+            // cookie auth — no re-login). Telemetry post retained
+            // for observability.
             NotificationCenter.default.post(
                 name: .eusoShipperReportRow, object: nil,
                 userInfo: [
@@ -360,6 +374,10 @@ struct ShipperReports: View {
                     "title": title,
                 ]
             )
+            let encodedTitle = title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? title
+            if let url = URL(string: "https://app.eusotrip.com/shipper/reports/saved/\(verb)?title=\(encodedTitle)") {
+                openURL(url)
+            }
         } label: {
             ZStack {
                 switch status {
@@ -476,6 +494,12 @@ struct ShipperReports: View {
 
     private var composeChip: some View {
         Button {
+            // Custom-report compose surface hasn't shipped in-app
+            // yet; route to the canonical web report-builder with
+            // the selected metric + group-by set pre-applied so
+            // the tap lands on a real surface (same Bearer cookie
+            // auth — no re-login). Telemetry post retained for
+            // observability.
             NotificationCenter.default.post(
                 name: .eusoShipperReportCompose, object: nil,
                 userInfo: [
@@ -485,6 +509,13 @@ struct ShipperReports: View {
                     "groupBy": Array(activeGroupByChips),
                 ]
             )
+            let metrics = activeMetricChips.sorted().joined(separator: ",")
+            let groupBy = activeGroupByChips.sorted().joined(separator: ",")
+            let encMetrics = metrics.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? metrics
+            let encGroupBy = groupBy.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? groupBy
+            if let url = URL(string: "https://app.eusotrip.com/shipper/reports/compose?metrics=\(encMetrics)&groupBy=\(encGroupBy)") {
+                openURL(url)
+            }
         } label: {
             ZStack {
                 Capsule().fill(LinearGradient.primary)

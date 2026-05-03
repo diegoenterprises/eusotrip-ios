@@ -123,6 +123,7 @@ final class ShipperHotZonesStore: ObservableObject {
 
 struct ShipperHotZones: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @StateObject private var store = ShipperHotZonesStore()
 
     var body: some View {
@@ -415,6 +416,7 @@ struct ShipperHotZones: View {
 
     private func tapEquip(_ f: HotEquipFilter) {
         store.equipment = f
+        // observability post — telemetry only; real effect is `store.equipment = f` above
         NotificationCenter.default.post(
             name: .eusoShipperHotZonesEquip,
             object: nil,
@@ -630,16 +632,25 @@ struct ShipperHotZones: View {
     }
 
     private func tapPostRecommendation(_ cold: ColdZoneEntry) {
+        // Real downstream: web continuation to the load-create form pre-seeded
+        // with the cold-zone metro + recommended live rate. Same Bearer cookie
+        // auth, no re-login. Telemetry post retained for observability.
+        let metro = cold.name ?? cold.state ?? ""
+        let rate = cold.liveRate ?? 0
         NotificationCenter.default.post(
             name: .eusoShipperHotZonesPostRecommendation,
             object: nil,
             userInfo: [
                 "source": "225_ShipperHotZones",
-                "metro": cold.name ?? cold.state ?? "",
-                "rate": cold.liveRate ?? 0,
+                "metro": metro,
+                "rate": rate,
                 "shipperCompanyId": 1
             ]
         )
+        let encoded = metro.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let url = URL(string: "https://app.eusotrip.com/shipper/loads/new?origin=\(encoded)&rate=\(rate)") {
+            openURL(url)
+        }
     }
 
     // MARK: Formula explainer

@@ -167,6 +167,7 @@ final class ShipperComplianceStore: ObservableObject {
 
 struct ShipperCompliance: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var store = ShipperComplianceStore()
     @State private var category: ComplianceCategory = .all
@@ -827,6 +828,12 @@ struct ShipperCompliance: View {
     // MARK: Notify post (§20.4)
 
     private func tapNotify(_ doc: ShipperComplianceAPI.Document) {
+        // Document-renewal notify-counterparty surface hasn't shipped
+        // in-app yet; route to the canonical web compliance document
+        // detail so the tap lands on a real surface where the user
+        // can dispatch the renewal reminder + re-upload (same Bearer
+        // cookie auth — no re-login). Telemetry post retained for
+        // observability.
         NotificationCenter.default.post(
             name: .eusoShipperComplianceNotify,
             object: nil,
@@ -838,6 +845,9 @@ struct ShipperCompliance: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/compliance/documents/\(doc.id)/notify") {
+            openURL(url)
+        }
     }
 
     // MARK: Error banner
