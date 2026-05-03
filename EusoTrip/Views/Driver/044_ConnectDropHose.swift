@@ -17,6 +17,7 @@ struct ConnectDropHose: View {
     @Environment(\.palette) private var palette
     @Environment(\.lifecycleAdvance) private var advance
     @Environment(\.driverNavBack) private var navBack
+    @Environment(\.driverShowHelp) private var showHelp
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var lifecycle = TripLifecycleStore()
@@ -279,7 +280,7 @@ struct ConnectDropHose: View {
 
     private var footerActions: some View {
         HStack(spacing: Space.s3) {
-            Button { navBack?() } label: {
+            Button { showHelp?("connect-drop-hose") } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "questionmark.circle.fill")
                         .font(.system(size: 13, weight: .bold))
@@ -295,6 +296,7 @@ struct ConnectDropHose: View {
                 )
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
+            .accessibilityLabel("Open ESANG help for connecting drop hose")
             CTAButton(
                 title: "Confirm mated",
                 action: { Task { await confirmMated() } },

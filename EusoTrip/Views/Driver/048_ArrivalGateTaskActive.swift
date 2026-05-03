@@ -18,6 +18,7 @@ struct ArrivalGateTaskActive: View {
     @Environment(\.palette) private var palette
     @Environment(\.lifecycleAdvance) private var advance
     @Environment(\.driverNavBack) private var navBack
+    @Environment(\.driverShowHelp) private var showHelp
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var lifecycle = TripLifecycleStore()
@@ -391,7 +392,7 @@ struct ArrivalGateTaskActive: View {
 
     private var actions: some View {
         HStack(spacing: Space.s3) {
-            Button { navBack?() } label: {
+            Button { showHelp?("arrival-gate-task") } label: {
                 Text("Need help?")
                     .font(EType.body.weight(.semibold))
                     .foregroundStyle(palette.textPrimary)
@@ -403,6 +404,7 @@ struct ArrivalGateTaskActive: View {
                     )
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
+            .accessibilityLabel("Open ESANG help for arrival-gate task")
             CTAButton(
                 title: confirmCta,
                 action: { Task { await confirmStep() } },

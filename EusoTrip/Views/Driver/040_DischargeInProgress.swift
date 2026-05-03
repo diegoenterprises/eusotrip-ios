@@ -24,6 +24,9 @@ struct DischargeInProgress: View {
     @State private var activeLoad: Load?
     @State private var showEStop: Bool = false
     @State private var isPaused: Bool = false
+    @State private var pauseInflight: Bool = false
+    @State private var pauseToast: String? = nil
+    @State private var eStopInflight: Bool = false
 
     enum Register { case night, afternoon }
     let register: Register
@@ -68,11 +71,30 @@ struct DischargeInProgress: View {
         .task { await hydrateLiveTrip() }
         .screenTileRoot()
         .alert("Emergency stop?", isPresented: $showEStop) {
-            Button("E-STOP now", role: .destructive) {}
+            Button("E-STOP now", role: .destructive) {
+                Task { await triggerEStop() }
+            }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Closes the discharge valve and arms scrubber dump. Use only in a safety event.")
         }
+        .overlay(alignment: .bottom) {
+            if let msg = pauseToast {
+                Text(msg)
+                    .font(EType.caption.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(palette.bgCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(palette.borderSoft)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    .padding(.bottom, 110)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: pauseToast)
     }
 
     private var header: some View {
@@ -321,35 +343,39 @@ struct DischargeInProgress: View {
 
     private var footerActions: some View {
         HStack(spacing: Space.s3) {
-            // PAUSE / RESUME — flips a local @State so the watchdog
-            // strip + flow rate freeze visually. Was a no-op closure
-            // (audit hit). Backend pause/resume mutation lands once
-            // the dischargeRouter exposes it; until then this stops
-            // the flow indicator from animating so the driver can
-            // confirm a real-world pause is registered locally.
-            Button {
-                isPaused.toggle()
-                #if canImport(UIKit)
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                #endif
-            } label: {
-                Text(isPaused ? "RESUME" : "PAUSE")
-                    .font(EType.body.weight(.semibold))
-                    .foregroundStyle(isPaused
-                                     ? AnyShapeStyle(LinearGradient.diagonal)
-                                     : AnyShapeStyle(palette.textPrimary))
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(palette.bgCard)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(
-                                isPaused
-                                    ? AnyShapeStyle(LinearGradient.diagonal.opacity(0.6))
-                                    : AnyShapeStyle(palette.borderSoft)
-                            )
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            // PAUSE / RESUME — same pattern as 030 + 032: records a
+            // timestamped note on the load's appointment via the
+            // real `appointments.updateStatus` mutation so the
+            // shipper / dispatcher web surfaces see why the rig is
+            // halted on the dock past the usual purge window.
+            // Local visual state still flips for instant UI feedback.
+            Button { Task { await togglePauseDischarge() } } label: {
+                HStack(spacing: 6) {
+                    if pauseInflight {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(palette.textPrimary)
+                    }
+                    Text(isPaused ? "RESUME" : "PAUSE")
+                        .font(EType.body.weight(.semibold))
+                        .foregroundStyle(isPaused
+                                         ? AnyShapeStyle(LinearGradient.diagonal)
+                                         : AnyShapeStyle(palette.textPrimary))
+                }
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(palette.bgCard)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(
+                            isPaused
+                                ? AnyShapeStyle(LinearGradient.diagonal.opacity(0.6))
+                                : AnyShapeStyle(palette.borderSoft)
+                        )
+                )
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
+            .disabled(pauseInflight)
+            .accessibilityLabel(isPaused ? "Resume discharge" : "Pause discharge")
             Button { showEStop = true } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "stop.circle.fill")
@@ -370,6 +396,81 @@ struct DischargeInProgress: View {
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
         activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+    }
+
+    /// Pause / resume the discharge — same pattern as 030 + 032.
+    /// Server tolerates same-status updates with a fresh `notes`
+    /// field so the timestamped pause shows up in the appointment's
+    /// history without needing a separate `paused` enum value.
+    private func togglePauseDischarge() async {
+        guard !pauseInflight else { return }
+        pauseInflight = true
+        defer { pauseInflight = false }
+        let willPause = !isPaused
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        let note = willPause
+            ? "Driver paused discharge at \(stamp)"
+            : "Driver resumed discharge at \(stamp)"
+        guard !lifecycle.loadId.isEmpty else {
+            pauseToast = "No active load"
+            try? await Task.sleep(nanoseconds: 1_400_000_000)
+            pauseToast = nil
+            return
+        }
+        do {
+            if let appt = try await EusoTripAPI.shared.appointments
+                .getByLoad(loadId: lifecycle.loadId) {
+                _ = try? await EusoTripAPI.shared.appointments
+                    .updateStatus(
+                        id: appt.id,
+                        status: "unloading",
+                        notes: note
+                    )
+            }
+            isPaused.toggle()
+            #if canImport(UIKit)
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            #endif
+            pauseToast = willPause ? "Discharge paused" : "Discharge resumed"
+        } catch {
+            pauseToast = "Couldn't update appointment"
+        }
+        try? await Task.sleep(nanoseconds: 1_400_000_000)
+        pauseToast = nil
+    }
+
+    /// Trigger the emergency-stop transition. Same pattern as 016
+    /// `triggerEStop` — picks the first available transition whose
+    /// destination phase contains "abort", "emergency", or
+    /// "stopped" and executes it via the lifecycle store. Server
+    /// fans the safety event to dispatch + CHEMTREC + the load's
+    /// shipper. Notes the timestamp on the appointment so the
+    /// audit trail records the exact moment the driver triggered.
+    private func triggerEStop() async {
+        guard !eStopInflight else { return }
+        eStopInflight = true
+        defer { eStopInflight = false }
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        let forwardKeys = ["abort", "emergency", "stopped"]
+        if let transition = lifecycle.availableTransitions.first(where: { t in
+            let to = t.to.lowercased()
+            return forwardKeys.contains(where: { to.contains($0) })
+        }) {
+            _ = await lifecycle.execute(transition)
+        }
+        if !lifecycle.loadId.isEmpty,
+           let appt = try? await EusoTripAPI.shared.appointments
+               .getByLoad(loadId: lifecycle.loadId) {
+            _ = try? await EusoTripAPI.shared.appointments
+                .updateStatus(
+                    id: appt.id,
+                    status: "unloading",
+                    notes: "Driver triggered EMERGENCY STOP at \(stamp)"
+                )
+        }
+        #if canImport(UIKit)
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        #endif
     }
 }
 
