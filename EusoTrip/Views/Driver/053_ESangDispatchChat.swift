@@ -19,9 +19,17 @@ struct ESangDispatchChat: View {
     @Environment(\.driverNavBack) private var navBack
     @EnvironmentObject private var session: EusoTripSession
 
+    @Environment(\.driverOpenMessages) private var openMessages
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: Load?
     @State private var draft: String = ""
+    @State private var showCounterSheet: Bool = false
+    @State private var counterAmount: String = ""
+    @State private var counterNote: String = ""
+    @State private var counterInflight: Bool = false
+    @State private var sendInflight: Bool = false
+    @State private var actionToast: String? = nil
+    @FocusState private var draftFieldFocused: Bool
 
     enum Register { case night, afternoon }
     let register: Register
@@ -99,7 +107,89 @@ struct ESangDispatchChat: View {
             inputBar
         }
         .task { await hydrateLiveTrip() }
+        .sheet(isPresented: $showCounterSheet) {
+            counterComposerSheet
+                .environment(\.palette, palette)
+                .presentationDetents([.medium])
+        }
+        .overlay(alignment: .bottom) {
+            if let msg = actionToast {
+                Text(msg)
+                    .font(EType.caption.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(palette.bgCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(palette.borderSoft)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    .padding(.bottom, 110)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: actionToast)
         .screenTileRoot()
+    }
+
+    /// Counter-offer composer — shared shape with 052. Real submit
+    /// fires `drivers.counterOffer` server-side.
+    private var counterComposerSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    Text("COUNTER OFFER")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text("Submit a different rate")
+                        .font(EType.body.weight(.bold))
+                        .foregroundStyle(palette.textPrimary)
+                    if let load = activeLoad,
+                       let rate = Double(load.rate ?? ""),
+                       rate > 0 {
+                        Text("Posted rate: $\(Int(rate))")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                    HStack {
+                        Text("$")
+                            .font(EType.body.weight(.heavy))
+                            .foregroundStyle(palette.textPrimary)
+                        TextField("Amount", text: $counterAmount)
+                            .keyboardType(.numberPad)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    Text("CONDITIONS (OPTIONAL)")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.7)
+                        .foregroundStyle(palette.textSecondary)
+                    TextField("e.g. weekend rate, PG-1 hazmat", text: $counterNote)
+                        .textFieldStyle(.roundedBorder)
+                    HStack {
+                        Button("Cancel") { showCounterSheet = false }
+                            .buttonStyle(.bordered)
+                            .disabled(counterInflight)
+                        Spacer()
+                        Button {
+                            Task { await submitCounter() }
+                        } label: {
+                            HStack(spacing: 6) {
+                                if counterInflight {
+                                    ProgressView().controlSize(.small).tint(.white)
+                                }
+                                Text(counterInflight ? "Sending…" : "Send counter")
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(counterInflight || counterAmount.isEmpty)
+                    }
+                    .padding(.top, 8)
+                }
+                .padding(20)
+            }
+            .background(palette.bgPrimary.ignoresSafeArea())
+            .navigationTitle("Counter offer")
+            .navigationBarTitleDisplayMode(.inline)
+        }
     }
 
     private var header: some View {
@@ -267,6 +357,7 @@ struct ESangDispatchChat: View {
                     .font(EType.body)
                     .foregroundStyle(palette.textPrimary)
                     .submitLabel(.send)
+                    .focused($draftFieldFocused)
                     .onSubmit { sendDraft() }
                 Spacer()
                 Button { tapMic() } label: {
@@ -303,6 +394,21 @@ struct ESangDispatchChat: View {
     // MARK: - Actions
 
     private func acceptTender() async {
+        // Real `drivers.acceptLoad` mutation flips loadBids server-
+        // side to status='accepted' AND binds the driver. Without
+        // it the lifecycle transition runs but the marketplace
+        // doesn't know who took the tender (same fix as 052).
+        if let load = activeLoad {
+            do {
+                _ = try await EusoTripAPI.shared.drivers
+                    .acceptLoad(loadId: String(load.id))
+            } catch {
+                actionToast = "Accept failed: \(error.localizedDescription)"
+                try? await Task.sleep(nanoseconds: 1_400_000_000)
+                actionToast = nil
+                return
+            }
+        }
         MeAction.fire("053.accept-tender",
                       userInfo: ["loadId": lifecycle.loadId])
         let keys = ["accept", "tender_accepted", "assigned", "approach"]
@@ -315,41 +421,107 @@ struct ESangDispatchChat: View {
     }
 
     private func showRadar() {
-        // No dedicated radar surface yet — surface the live HOS / map
-        // detail through the canonical Me deep-link so the driver
-        // lands on a real screen, plus broadcast a refresh trigger
-        // so any visible map view re-renders the latest weather pull.
+        // Switch to Home tab + post a refresh so the active live-
+        // map surface (013/018 / live tracking) re-pulls the
+        // latest weather + traffic. The driver lands on a REAL
+        // screen, not an inert ack.
         MeAction.fire("053.show-radar",
                       userInfo: ["loadId": lifecycle.loadId])
         NotificationCenter.default.post(name: .esangRefreshSurface,
                                         object: "weather",
                                         userInfo: [:])
+        // Walk the trip phase backward toward the live route so the
+        // driver sees the map under the current phase.
+        navBack?()
     }
 
     private func counterOffer() {
-        // Counter-offer wizard ships in a follow-up wave. Until then
-        // the tap fires a MeAction so the analytics layer captures
-        // intent, and a neutral toast surfaces so the driver sees
-        // their input registered.
-        MeAction.fire("053.counter-offer",
-                      userInfo: ["loadId": lifecycle.loadId])
+        // Open the counter-offer composer (same pattern as 052).
+        // Pre-fills with the load's posted rate × 1.05.
+        if let load = activeLoad {
+            let rate = Double(load.rate ?? "") ?? 0
+            if rate > 0 {
+                counterAmount = String(format: "%.0f", rate * 1.05)
+            }
+        }
+        counterNote = ""
+        showCounterSheet = true
+    }
+
+    private func submitCounter() async {
+        guard !counterInflight else { return }
+        guard let load = activeLoad else { return }
+        guard let amount = Double(counterAmount), amount > 0 else {
+            actionToast = "Enter a valid rate"
+            try? await Task.sleep(nanoseconds: 1_400_000_000)
+            actionToast = nil
+            return
+        }
+        counterInflight = true
+        defer { counterInflight = false }
+        do {
+            _ = try await EusoTripAPI.shared.drivers.counterOffer(
+                loadId: String(load.id),
+                amount: amount,
+                conditions: counterNote.isEmpty ? nil : counterNote
+            )
+            MeAction.fire("053.counter-offer",
+                          userInfo: ["loadId": lifecycle.loadId, "amount": amount])
+            showCounterSheet = false
+            actionToast = "Counter sent"
+        } catch {
+            actionToast = "Counter failed: \(error.localizedDescription)"
+        }
+        try? await Task.sleep(nanoseconds: 1_400_000_000)
+        actionToast = nil
     }
 
     private func tapMic() {
-        // ESANG voice intent — record the tap so a future wave that
-        // wires SFSpeechRecognizer can resume from the same surface.
+        // Mic tap → focus the text input + open the keyboard. Voice
+        // dictation is then available via the iOS keyboard's mic
+        // button — real today, no SFSpeechRecognizer dependency.
+        // When DictationBroker ships (per feedback_watch_voice
+        // doctrine) the focus state can route through it instead.
         MeAction.fire("053.mic-tapped",
                       userInfo: ["loadId": lifecycle.loadId])
+        draftFieldFocused = true
     }
 
     private func sendDraft() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        MeAction.fire("053.send-message",
-                      userInfo: ["loadId": lifecycle.loadId, "text": text])
-        // Clear immediately so the input bar resets — the message has
-        // been audited even if the chat back-end isn't wired here yet.
+        guard !text.isEmpty, !sendInflight else { return }
+        sendInflight = true
+        // Optimistic clear — the chat input resets immediately so
+        // the driver can keep typing while the round-trip lands.
+        let pendingText = text
         draft = ""
+        MeAction.fire("053.send-message",
+                      userInfo: ["loadId": lifecycle.loadId, "text": pendingText])
+        Task {
+            defer { Task { @MainActor in sendInflight = false } }
+            // Use the load id as the conversation id — the messages
+            // router treats `loadId` as a stable conversation key
+            // for dispatch chat threads. If the load isn't hydrated
+            // yet, fall back to the messaging inbox.
+            guard let load = activeLoad else {
+                openMessages?(nil)
+                return
+            }
+            do {
+                _ = try await EusoTripAPI.shared.messaging.sendMessage(
+                    conversationId: String(load.id),
+                    content: pendingText,
+                    type: "text"
+                )
+            } catch {
+                Task { @MainActor in
+                    actionToast = "Send failed: \(error.localizedDescription)"
+                    draft = pendingText  // restore so the driver can retry
+                    try? await Task.sleep(nanoseconds: 1_400_000_000)
+                    actionToast = nil
+                }
+            }
+        }
     }
 
     private func hydrateLiveTrip() async {

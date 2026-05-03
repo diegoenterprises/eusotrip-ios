@@ -26,6 +26,11 @@ struct RateconTender: View {
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: Load?
     @State private var isAccepting: Bool = false
+    @State private var showCounterSheet: Bool = false
+    @State private var counterAmount: String = ""
+    @State private var counterNote: String = ""
+    @State private var counterInflight: Bool = false
+    @State private var actionToast: String? = nil
 
     enum Register { case night, afternoon }
     let register: Register
@@ -100,7 +105,94 @@ struct RateconTender: View {
             .padding(.top, 8)
         }
         .task { await hydrateLiveTrip() }
+        .sheet(isPresented: $showCounterSheet) {
+            counterSheet
+                .environment(\.palette, palette)
+                .presentationDetents([.medium])
+        }
+        .overlay(alignment: .bottom) {
+            if let msg = actionToast {
+                Text(msg)
+                    .font(EType.caption.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(palette.bgCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(palette.borderSoft)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    .padding(.bottom, 110)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: actionToast)
         .screenTileRoot()
+    }
+
+    /// Counter-offer composer sheet. Pre-fills the amount with the
+    /// load's existing rate × 1.05 (a conventional "ask for 5% more"
+    /// nudge). Optional condition note ferries through to the
+    /// shipper's bids board so the broker sees why the driver
+    /// pushed back (e.g. "weekend delivery surcharge", "PG-1
+    /// hazmat overpay").
+    private var counterSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    Text("COUNTER OFFER")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text("Submit a different rate")
+                        .font(EType.body.weight(.bold))
+                        .foregroundStyle(palette.textPrimary)
+                    if let load = activeLoad,
+                       let rate = Double(load.rate ?? ""),
+                       rate > 0 {
+                        Text("Posted rate: $\(Int(rate))")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                    HStack {
+                        Text("$")
+                            .font(EType.body.weight(.heavy))
+                            .foregroundStyle(palette.textPrimary)
+                        TextField("Amount", text: $counterAmount)
+                            .keyboardType(.numberPad)
+                            .textFieldStyle(.roundedBorder)
+                            .accessibilityLabel("Counter rate in dollars")
+                    }
+                    Text("CONDITIONS (OPTIONAL)")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.7)
+                        .foregroundStyle(palette.textSecondary)
+                    TextField("e.g. weekend rate, PG-1 hazmat", text: $counterNote)
+                        .textFieldStyle(.roundedBorder)
+                    HStack {
+                        Button("Cancel") { showCounterSheet = false }
+                            .buttonStyle(.bordered)
+                            .disabled(counterInflight)
+                        Spacer()
+                        Button {
+                            Task { await submitCounter() }
+                        } label: {
+                            HStack(spacing: 6) {
+                                if counterInflight {
+                                    ProgressView().controlSize(.small).tint(.white)
+                                }
+                                Text(counterInflight ? "Sending…" : "Send counter")
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(counterInflight || counterAmount.isEmpty)
+                    }
+                    .padding(.top, 8)
+                }
+                .padding(20)
+            }
+            .background(palette.bgPrimary.ignoresSafeArea())
+            .navigationTitle("Counter offer")
+            .navigationBarTitleDisplayMode(.inline)
+        }
     }
 
     private var header: some View {
@@ -462,13 +554,57 @@ struct RateconTender: View {
     }
 
     private func counterTapped() {
-        // Root cause + fix: `Load.id` is `Int`, `driverOpenMessages`
-        // expects `String?`. Explicit conversion stops the
-        // Swift inferencer from looping — see 029_PickupArrival
-        // notifyShackTapped for the full diagnosis.
-        guard let handler = openMessages else { return }
-        let threadId: String? = activeLoad.map { String($0.id) }
-        handler(threadId)
+        // Open the counter-offer composer sheet — pre-populates
+        // the amount field with the load's existing rate (or +5%
+        // suggestion when present) so the driver only has to
+        // confirm rather than re-type. The sheet's submit button
+        // fires `drivers.counterOffer(loadId, amount, conditions)`
+        // — server creates a row in `loadBids` with
+        // bidderRole='driver' and status='countered' so the shipper
+        // sees the counter on their bids board.
+        if let load = activeLoad {
+            let rate = Double(load.rate ?? "") ?? 0
+            if rate > 0 {
+                counterAmount = String(format: "%.0f", rate * 1.05)
+            }
+        }
+        counterNote = ""
+        showCounterSheet = true
+    }
+
+    /// Submit the counter offer to the backend. Real
+    /// `drivers.counterOffer` mutation — creates the loadBids row
+    /// server-side. On success: dismiss sheet, surface toast,
+    /// open the messaging thread for follow-up so the shipper /
+    /// driver can negotiate beyond the single-rate counter.
+    private func submitCounter() async {
+        guard !counterInflight else { return }
+        guard let load = activeLoad else { return }
+        guard let amount = Double(counterAmount), amount > 0 else {
+            actionToast = "Enter a valid rate"
+            try? await Task.sleep(nanoseconds: 1_400_000_000)
+            actionToast = nil
+            return
+        }
+        counterInflight = true
+        defer { counterInflight = false }
+        do {
+            _ = try await EusoTripAPI.shared.drivers.counterOffer(
+                loadId: String(load.id),
+                amount: amount,
+                conditions: counterNote.isEmpty ? nil : counterNote
+            )
+            showCounterSheet = false
+            actionToast = "Counter sent"
+            // Open the messaging thread for follow-up negotiation.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                openMessages?(String(load.id))
+            }
+        } catch {
+            actionToast = "Counter failed: \(error.localizedDescription)"
+        }
+        try? await Task.sleep(nanoseconds: 1_400_000_000)
+        actionToast = nil
     }
 
     private var counterButtonLabel: some View {
@@ -506,6 +642,25 @@ struct RateconTender: View {
     private func accept() async {
         isAccepting = true
         defer { isAccepting = false }
+        // Step 1 — fire the real `drivers.acceptLoad` mutation so
+        // server-side loadBids flips to status='accepted' AND the
+        // load is bound to this driver. Without this the lifecycle
+        // transition below ran but the marketplace didn't know the
+        // driver had taken the tender.
+        if let load = activeLoad {
+            do {
+                _ = try await EusoTripAPI.shared.drivers
+                    .acceptLoad(loadId: String(load.id))
+            } catch {
+                actionToast = "Accept failed: \(error.localizedDescription)"
+                try? await Task.sleep(nanoseconds: 1_400_000_000)
+                actionToast = nil
+                return
+            }
+        }
+        // Step 2 — execute the lifecycle transition so the trip
+        // state machine walks forward (accepted → assigned →
+        // pretrip DVIR ladder).
         let keys = ["accepted", "assigned"]
         if let t = lifecycle.availableTransitions.first(where: { t in keys.contains(where: { t.to.lowercased().contains($0) }) })
             ?? lifecycle.availableTransitions.first {
