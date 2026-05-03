@@ -59,6 +59,7 @@ import SwiftUI
 
 struct ShipperWatchComplication: View {
     @Environment(\.palette) var palette
+    @Environment(\.openURL) private var openURL
 
     // §22.2 counter eyebrow — slot count + opt-in count.
     private let counterEyebrow = "3 SLOTS · 1 OF 7 OPT-IN"
@@ -439,6 +440,9 @@ struct ShipperWatchComplication: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/watch/\(watch.id)/open") {
+            openURL(url)
+        }
     }
 
     private func tapManageWatchSurfaces() {
@@ -451,6 +455,9 @@ struct ShipperWatchComplication: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/settings/watch") {
+            openURL(url)
+        }
     }
 }
 

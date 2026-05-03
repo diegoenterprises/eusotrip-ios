@@ -64,6 +64,7 @@ import SwiftUI
 
 struct ShipperHandoffContinuity: View {
     @Environment(\.palette) var palette
+    @Environment(\.openURL) private var openURL
 
     private let counterEyebrow = "3 DEVICES · 2 ACTIVE"
 
@@ -356,6 +357,9 @@ struct ShipperHandoffContinuity: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/handoff/run/\(activeHandoff.id)") {
+            openURL(url)
+        }
     }
 
     private func tapDeviceToggle(_ device: PairedDevice) {
@@ -369,6 +373,9 @@ struct ShipperHandoffContinuity: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/handoff/device/\(device.id)/toggle") {
+            openURL(url)
+        }
     }
 
     private func tapDeviceRow(_ device: PairedDevice) {
@@ -383,6 +390,9 @@ struct ShipperHandoffContinuity: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/handoff/device/\(device.id)") {
+            openURL(url)
+        }
     }
 
     private func tapPasteClipboard() {
@@ -396,6 +406,9 @@ struct ShipperHandoffContinuity: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/handoff/clipboard/\(clipboardItem.id)/paste") {
+            openURL(url)
+        }
     }
 
     private func tapManageContinuity() {
@@ -408,6 +421,9 @@ struct ShipperHandoffContinuity: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/settings/handoff") {
+            openURL(url)
+        }
     }
 }
 

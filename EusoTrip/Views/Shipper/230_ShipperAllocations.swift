@@ -112,6 +112,7 @@ private enum AllocFilter: String, CaseIterable, Identifiable {
 
 struct ShipperWeeklyAllocations: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @State private var filter: AllocFilter = .all
 
     // §11.4 anchor canon — 3 active rows + 1 compact closed row.
@@ -423,6 +424,7 @@ struct ShipperWeeklyAllocations: View {
     }
 
     private func tapFilter(_ f: AllocFilter) {
+        // observability post — real effect: filter @State mutation
         filter = f
         NotificationCenter.default.post(
             name: .eusoShipperAllocFilter,
@@ -718,6 +720,9 @@ struct ShipperWeeklyAllocations: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/allocations/\(row.alcId)") {
+            openURL(url)
+        }
     }
 
     private func tapCompact(_ row: CompactAllocRow) {
@@ -730,6 +735,9 @@ struct ShipperWeeklyAllocations: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/allocations/\(row.alcId)") {
+            openURL(url)
+        }
     }
 
     private func tapAllocate() {
@@ -741,6 +749,9 @@ struct ShipperWeeklyAllocations: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/allocations/new") {
+            openURL(url)
+        }
     }
 
     // MARK: No-match card

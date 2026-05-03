@@ -56,6 +56,7 @@ import SwiftUI
 
 struct ShipperWidgetGallery: View {
     @Environment(\.palette) var palette
+    @Environment(\.openURL) private var openURL
 
     private let counterEyebrow = "3 SIZES · MEDIUM INSTALLED"
 
@@ -335,6 +336,9 @@ struct ShipperWidgetGallery: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/widgets/reinstall/\(activeWidget.id)") {
+            openURL(url)
+        }
     }
 
     private func tapSizeToggle(_ size: WidgetSize) {
@@ -348,6 +352,9 @@ struct ShipperWidgetGallery: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/widgets/size/\(size.id)/toggle") {
+            openURL(url)
+        }
     }
 
     private func tapSizeRow(_ size: WidgetSize) {
@@ -362,6 +369,9 @@ struct ShipperWidgetGallery: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/widgets/size/\(size.id)") {
+            openURL(url)
+        }
     }
 
     private func tapManageWidgets() {
@@ -374,6 +384,9 @@ struct ShipperWidgetGallery: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/settings/widgets") {
+            openURL(url)
+        }
     }
 }
 

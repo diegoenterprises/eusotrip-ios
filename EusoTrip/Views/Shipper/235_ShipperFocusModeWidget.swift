@@ -53,6 +53,7 @@ import SwiftUI
 
 struct ShipperFocusModeWidget: View {
     @Environment(\.palette) var palette
+    @Environment(\.openURL) private var openURL
 
     private let counterEyebrow = "3 PROFILES · DRIVING ACTIVE"
 
@@ -335,6 +336,9 @@ struct ShipperFocusModeWidget: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/focus/test/\(activeProfile.id)") {
+            openURL(url)
+        }
     }
 
     private func tapProfileToggle(_ profile: FocusProfile) {
@@ -348,6 +352,9 @@ struct ShipperFocusModeWidget: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/focus/profile/\(profile.id)/toggle") {
+            openURL(url)
+        }
     }
 
     private func tapProfileRow(_ profile: FocusProfile) {
@@ -362,6 +369,9 @@ struct ShipperFocusModeWidget: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/focus/profile/\(profile.id)") {
+            openURL(url)
+        }
     }
 
     private func tapManageFocusProfiles() {
@@ -374,6 +384,9 @@ struct ShipperFocusModeWidget: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/settings/focus") {
+            openURL(url)
+        }
     }
 }
 

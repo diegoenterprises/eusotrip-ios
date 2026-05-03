@@ -58,6 +58,7 @@ import SwiftUI
 
 struct ShipperAppIntents: View {
     @Environment(\.palette) var palette
+    @Environment(\.openURL) private var openURL
 
     private let counterEyebrow = "7 INTENTS · 4 ENABLED"
 
@@ -367,6 +368,9 @@ struct ShipperAppIntents: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/intents/run/\(activeIntent.id)") {
+            openURL(url)
+        }
     }
 
     private func tapIntentToggle(_ intent: Intent) {
@@ -380,6 +384,9 @@ struct ShipperAppIntents: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/intents/\(intent.id)/toggle") {
+            openURL(url)
+        }
     }
 
     private func tapIntentRow(_ intent: Intent) {
@@ -394,6 +401,9 @@ struct ShipperAppIntents: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/intents/\(intent.id)") {
+            openURL(url)
+        }
     }
 
     private func tapManageIntents() {
@@ -406,6 +416,9 @@ struct ShipperAppIntents: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/settings/siri") {
+            openURL(url)
+        }
     }
 }
 

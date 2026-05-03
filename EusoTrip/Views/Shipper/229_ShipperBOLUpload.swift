@@ -101,6 +101,7 @@ struct ShipperBOLUpload: View {
     let loadId: String
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     init(loadId: String = "LD-260427-A38FB12C7E") {
         self.loadId = loadId
@@ -252,6 +253,7 @@ struct ShipperBOLUpload: View {
     }
 
     private func tapBack() {
+        // observability post — real effect: dismiss() env handler
         dismiss()
         NotificationCenter.default.post(
             name: .eusoShipperBolUploadBack,
@@ -632,6 +634,9 @@ struct ShipperBOLUpload: View {
                 "bolId": bolId
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/bol/\(bolId)/audit-trail") {
+            openURL(url)
+        }
     }
 }
 

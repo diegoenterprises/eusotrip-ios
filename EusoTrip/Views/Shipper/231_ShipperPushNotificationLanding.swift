@@ -69,6 +69,7 @@ private struct PushCategory: Identifiable {
 
 struct ShipperPushNotificationLanding: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
 
     // §11 Diego canon — push position + timestamp identification eyebrow.
     private let counterEyebrow = "1 OF 7 · 09:42 EDT"
@@ -340,6 +341,9 @@ struct ShipperPushNotificationLanding: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/push/\(activePush.id)/open") {
+            openURL(url)
+        }
     }
 
     private func tapRouteRow(_ category: PushCategory) {
@@ -354,6 +358,9 @@ struct ShipperPushNotificationLanding: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/push/category/\(category.id)") {
+            openURL(url)
+        }
     }
 
     private func tapManagePrefs() {
@@ -366,6 +373,9 @@ struct ShipperPushNotificationLanding: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/settings/push") {
+            openURL(url)
+        }
     }
 }
 

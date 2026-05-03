@@ -63,6 +63,7 @@ import SwiftUI
 
 struct ShipperCarPlayDashboard: View {
     @Environment(\.palette) var palette
+    @Environment(\.openURL) private var openURL
 
     private let counterEyebrow = "6 TILES · 4 ENABLED"
 
@@ -478,6 +479,9 @@ struct ShipperCarPlayDashboard: View {
                 "zone":             "driver_cluster"
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/carplay/tile/\(activeTile.id)/add") {
+            openURL(url)
+        }
     }
 
     private func tapWidgetRow(_ widget: CarPlayWidget) {
@@ -493,6 +497,9 @@ struct ShipperCarPlayDashboard: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/carplay/widget/\(widget.id)") {
+            openURL(url)
+        }
     }
 
     private func tapZoneRow(_ zone: CarPlayZone) {
@@ -508,6 +515,9 @@ struct ShipperCarPlayDashboard: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/carplay/zone/\(zone.id)") {
+            openURL(url)
+        }
     }
 
     private func tapManageCarPlay() {
@@ -520,6 +530,9 @@ struct ShipperCarPlayDashboard: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/settings/carplay") {
+            openURL(url)
+        }
     }
 }
 

@@ -54,6 +54,7 @@ import SwiftUI
 
 struct ShipperHapticEscalation: View {
     @Environment(\.palette) var palette
+    @Environment(\.openURL) private var openURL
 
     private let counterEyebrow = "7 CATEGORIES · 4 ENABLED"
 
@@ -382,6 +383,9 @@ struct ShipperHapticEscalation: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/haptic/test/\(activePattern.id)") {
+            openURL(url)
+        }
     }
 
     private func tapCategoryToggle(_ category: HapticCategory) {
@@ -395,6 +399,9 @@ struct ShipperHapticEscalation: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/haptic/category/\(category.id)/toggle") {
+            openURL(url)
+        }
     }
 
     private func tapCategoryRow(_ category: HapticCategory) {
@@ -410,6 +417,9 @@ struct ShipperHapticEscalation: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/haptic/category/\(category.id)") {
+            openURL(url)
+        }
     }
 
     private func tapManageHapticPrefs() {
@@ -422,6 +432,9 @@ struct ShipperHapticEscalation: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/settings/haptics") {
+            openURL(url)
+        }
     }
 }
 

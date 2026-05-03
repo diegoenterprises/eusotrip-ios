@@ -115,6 +115,7 @@ struct ShipperRFPDetail: View {
     let rfpId: String
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @StateObject private var store: ShipperRFPDetailStore
 
     init(rfpId: String = "0") {
@@ -212,6 +213,7 @@ struct ShipperRFPDetail: View {
     }
 
     private func tapBack() {
+        // observability post — real effect: dismiss() env handler
         dismiss()
         NotificationCenter.default.post(
             name: .eusoShipperRfpDetailBack,
@@ -803,6 +805,9 @@ struct ShipperRFPDetail: View {
                 "rfpId": rfpId
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/rfp/\(rfpId)/bids") {
+            openURL(url)
+        }
     }
 
     // MARK: Error

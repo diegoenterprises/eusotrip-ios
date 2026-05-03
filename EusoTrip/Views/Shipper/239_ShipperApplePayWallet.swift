@@ -55,6 +55,7 @@ import SwiftUI
 
 struct ShipperApplePayWallet: View {
     @Environment(\.palette) var palette
+    @Environment(\.openURL) private var openURL
 
     private let counterEyebrow = "3 PASSES · 1 ACTIVE"
 
@@ -426,6 +427,9 @@ struct ShipperApplePayWallet: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/wallet/pass/\(activePass.id)/add") {
+            openURL(url)
+        }
     }
 
     private func tapPassRow(_ pass: WalletPass) {
@@ -440,6 +444,9 @@ struct ShipperApplePayWallet: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/wallet/pass/\(pass.id)") {
+            openURL(url)
+        }
     }
 
     private func tapPaymentMethod(_ method: PaymentMethod) {
@@ -454,6 +461,9 @@ struct ShipperApplePayWallet: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/wallet/method/\(method.id)") {
+            openURL(url)
+        }
     }
 
     private func tapManageApplePay() {
@@ -466,6 +476,9 @@ struct ShipperApplePayWallet: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/settings/wallet") {
+            openURL(url)
+        }
     }
 }
 

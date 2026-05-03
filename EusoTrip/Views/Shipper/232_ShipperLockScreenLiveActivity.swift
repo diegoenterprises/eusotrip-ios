@@ -91,6 +91,7 @@ private struct LockScreenActivity {
 
 struct ShipperLockScreenLiveActivity: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
 
     private let counterEyebrow = "STAGE 5 OF 8 · 38m AGO"
 
@@ -378,6 +379,9 @@ struct ShipperLockScreenLiveActivity: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/live-activity/\(activity.id)/open") {
+            openURL(url)
+        }
     }
 
     private func tapManageSurfaces() {
@@ -390,6 +394,9 @@ struct ShipperLockScreenLiveActivity: View {
                 "shipperCompanyId": 1
             ]
         )
+        if let url = URL(string: "https://app.eusotrip.com/shipper/settings/live-activity") {
+            openURL(url)
+        }
     }
 }
 
