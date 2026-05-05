@@ -170,10 +170,12 @@ struct CatalystMatches: View {
                     Text("CATALYST · MATCHES")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(LinearGradient.diagonal)
+                        .lineLimit(1).minimumScaleFactor(0.7)
                 }
                 Text(headline)
                     .font(.system(size: 22, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
+                    .lineLimit(2).minimumScaleFactor(0.75)
                 Text(subhead)
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)

@@ -828,12 +828,11 @@ struct ShipperCompliance: View {
     // MARK: Notify post (§20.4)
 
     private func tapNotify(_ doc: ShipperComplianceAPI.Document) {
-        // Document-renewal notify-counterparty surface hasn't shipped
-        // in-app yet; route to the canonical web compliance document
-        // detail so the tap lands on a real surface where the user
-        // can dispatch the renewal reminder + re-upload (same Bearer
-        // cookie auth — no re-login). Telemetry post retained for
-        // observability.
+        // Real action: open the compliance team's mail composer
+        // pre-filled with the document name + expiry so the renewal
+        // request is one tap away. Replaces the prior openURL stub
+        // to a 404 `/compliance/documents/{id}/notify` web route.
+        // Telemetry post retained for observability.
         NotificationCenter.default.post(
             name: .eusoShipperComplianceNotify,
             object: nil,
@@ -845,7 +844,11 @@ struct ShipperCompliance: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/compliance/documents/\(doc.id)/notify") {
+        let subject = "Compliance renewal: \(doc.name)"
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "Compliance%20renewal"
+        let body = "Document: \(doc.name)\nID: \(doc.id)\nExpires: \(doc.expiresAt)\n\nPlease coordinate the renewal + re-upload."
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let url = URL(string: "mailto:compliance@eusotrip.com?subject=\(subject)&body=\(body)") {
             openURL(url)
         }
     }

@@ -239,6 +239,16 @@ final class RealtimeService: ObservableObject {
             nc.post(name: .eusoNotificationReceived, object: nil, userInfo: info)
             UnreadMessageStore.shared.refresh()
 
+        // ─── Inbound profile updates (USER channel) ────────────────
+        // Backend `profile.updateProfile` and `profile.updateAvatar`
+        // broadcast on `user:<id>` after every write so any other
+        // device (web, iPad, Watch) refreshes without a manual reload.
+        // Listeners (DriverProfileStore, shipper Me hero) re-fetch
+        // via `profile.getMyProfile`.
+        case "profile:updated",
+             "PROFILE_UPDATED":
+            nc.post(name: .eusoProfileUpdated, object: nil, userInfo: info)
+
         // ─── Dispatcher assignment events (DISPATCH channel) ───
         // The cross-role audit gap #4: a dispatcher hand-assigning a
         // load to me used to land only via push (which can be silenced).

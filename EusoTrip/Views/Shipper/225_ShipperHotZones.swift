@@ -121,10 +121,26 @@ final class ShipperHotZonesStore: ObservableObject {
 
 // MARK: - Screen root
 
+/// Identifier wrapper so `pendingDetailCity` can drive a SwiftUI
+/// `.sheet(item:)`. Uses the human-readable `"City, ST"` label as
+/// both the id and the payload — `HotZoneCityDetailScreen` accepts
+/// the same string format.
+struct HotZoneCityRef: Identifiable, Hashable {
+    let city: String
+    var id: String { city }
+}
+
 struct ShipperHotZones: View {
     @Environment(\.palette) private var palette
     @Environment(\.openURL) private var openURL
     @StateObject private var store = ShipperHotZonesStore()
+
+    /// Identifier-wrapped city string so `.sheet(item:)` knows when
+    /// to present the detail. Tapping a hot/cold metro tile sets this
+    /// so `HotZoneCityDetailScreen` renders the in-app drill-down
+    /// (rates, demand index, top commodities, top lanes, carriers
+    /// available). Replaces the previous "no expansion" dead tap.
+    @State private var pendingDetailCity: HotZoneCityRef? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -145,6 +161,11 @@ struct ShipperHotZones: View {
         }
         .task { await store.load() }
         .refreshable { await store.load() }
+        .sheet(item: $pendingDetailCity) { ref in
+            HotZoneCityDetailScreen(theme: palette, city: ref.city)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
     }
 
     // MARK: TopBar
@@ -457,7 +478,21 @@ struct ShipperHotZones: View {
             guard let p = z.rateChangePercent else { return palette.textPrimary }
             return p >= 0 ? Brand.danger : Brand.success
         }()
-        return VStack(alignment: .leading, spacing: 0) {
+        return Button {
+            pendingDetailCity = HotZoneCityRef(
+                city: "\(z.zoneName), \(z.state)"
+            )
+        } label: {
+            hotTileBody(z, demandColor: demandColor, pulse: pulse, pulseColor: pulseColor)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func hotTileBody(_ z: HotZoneEntry,
+                             demandColor: Color,
+                             pulse: String,
+                             pulseColor: Color) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 6) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(z.zoneName)
@@ -536,7 +571,18 @@ struct ShipperHotZones: View {
 
     private func coldTile(_ c: ColdZoneEntry) -> some View {
         let pulse = c.liveSurge.map { String(format: "%+.1f", ($0 - 1.0) * 100.0) + "%" } ?? "—"
-        return HStack(spacing: Space.s3) {
+        return Button {
+            let metro = c.name ?? c.state ?? ""
+            let label = c.state.map { "\(metro), \($0)" } ?? metro
+            pendingDetailCity = HotZoneCityRef(city: label)
+        } label: {
+            coldTileBody(c, pulse: pulse)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func coldTileBody(_ c: ColdZoneEntry, pulse: String) -> some View {
+        HStack(spacing: Space.s3) {
             ZStack {
                 Circle().fill(Brand.info.opacity(0.18)).frame(width: 36, height: 36)
                 Image(systemName: "snowflake")

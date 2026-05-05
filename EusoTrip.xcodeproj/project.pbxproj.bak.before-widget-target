@@ -22,8 +22,6 @@
 		A12E1A1C0010CE0FF100000D /* HereMatrixClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100000E /* HereMatrixClient.swift */; };
 		A12E1A1C0010CE0FF100000F /* HereTileOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000010 /* HereTileOverlay.swift */; };
 		A12E1A1C0010CE0FF1000011 /* HereMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000012 /* HereMapView.swift */; };
-		HAFD00010CE0FF10000011A1 /* HereAddressField.swift in Sources */ = {isa = PBXBuildFile; fileRef = HAFD00010CE0FF10000012A1 /* HereAddressField.swift */; };
-		LTBD00010CE0FF10000011A1 /* ListingTrustBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */; };
 		A12E1A1C0010CE0FF1000017 /* EusoAddressField.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000018 /* EusoAddressField.swift */; };
 		A12E1A1C0010CE0FF1000019 /* EusoHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100001A /* EusoHeader.swift */; };
 		A12E1A1C0010CE0FF100001B /* EusoBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100001C /* EusoBadge.swift */; };
@@ -136,7 +134,6 @@
 		A65D0FA2CE1A4B7E0000D017 /* 065_TheHaulStreaks.swift in Sources */ = {isa = PBXBuildFile; fileRef = A65D0FA2CE1A4B7E0000D018 /* 065_TheHaulStreaks.swift */; };
 		A66D0FA2CE1A4B7E0000D019 /* 066_TheHaulCosmetics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A66D0FA2CE1A4B7E0000D01A /* 066_TheHaulCosmetics.swift */; };
 		A67D0FA2CE1A4B7E0000D01B /* 067_MeProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = A67D0FA2CE1A4B7E0000D01C /* 067_MeProfile.swift */; };
-		A67D0FA2CE1A4B7E0000D11B /* 067A_DriverMeHubs.swift in Sources */ = {isa = PBXBuildFile; fileRef = A67D0FA2CE1A4B7E0000D11C /* 067A_DriverMeHubs.swift */; };
 		A68D0FA0CE1A4B7E0000D029 /* 068_MeEarnings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A68D0FA0CE1A4B7E0000D02A /* 068_MeEarnings.swift */; };
 		A69D0FA2CE1A4B7E0000D02B /* 069_MeWallet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A69D0FA2CE1A4B7E0000D02C /* 069_MeWallet.swift */; };
 		A70D0FA2CE1A4B7E0000D01D /* 070_MeSettlements.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70D0FA2CE1A4B7E0000D01E /* 070_MeSettlements.swift */; };
@@ -212,14 +209,6 @@
 		D1A11111111111111111CT01 /* 801_AdminControlTower.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CT02 /* 801_AdminControlTower.swift */; };
 		D1A11111111111111111AT01 /* 802_AdminTenants.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111AT02 /* 802_AdminTenants.swift */; };
 		D1A11111111111111111BA01 /* DriverConversationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111BA02 /* DriverConversationView.swift */; };
-		D2DLPOD0000000000001 /* DeliveryPODCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DLPOD0000000000002 /* DeliveryPODCaptureView.swift */; };
-		D2RATPV0000000000001 /* RatingPromptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RATPV0000000000002 /* RatingPromptView.swift */; };
-		D2DISPV0000000000001 /* DisputeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DISPV0000000000002 /* DisputeViews.swift */; };
-		D2NRCCC0000000000001 /* NRCComplianceCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2NRCCC0000000000002 /* NRCComplianceCard.swift */; };
-		D2DCIBX0000000000001 /* DriverCounterInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DCIBX0000000000002 /* DriverCounterInboxView.swift */; };
-		D2DLDOC0000000000001 /* DriverLoadDocUploadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DLDOC0000000000002 /* DriverLoadDocUploadView.swift */; };
-		D2DCMPL0000000000001 /* DriverComplianceDashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DCMPL0000000000002 /* DriverComplianceDashboard.swift */; };
-		D2SRECC0000000000001 /* ShipperRecurringComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2SRECC0000000000002 /* ShipperRecurringComposer.swift */; };
 		D1A11111111111111111BH01 /* 400_BrokerHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111BH02 /* 400_BrokerHome.swift */; };
 		D1A11111111111111111BNC1 /* BrokerNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111BNC2 /* BrokerNavController.swift */; };
 		D1A11111111111111111BT01 /* 401_BrokerTenders.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111BT02 /* 401_BrokerTenders.swift */; };
@@ -470,7 +459,6 @@
 		D23900000000000000390B /* 239_ShipperApplePayWallet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23900000000000000390A /* 239_ShipperApplePayWallet.swift */; };
 		D24000000000000000400B /* 240_ShipperCarPlayDashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D24000000000000000400A /* 240_ShipperCarPlayDashboard.swift */; };
 		D22FNAV0000000000FFCB /* ShipperNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22FNAV0000000000FFCA /* ShipperNavController.swift */; };
-		D22FESCB0000000000FFCB /* ShipperESangCoachSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22FESCB0000000000FFCA /* ShipperESangCoachSheet.swift */; };
 		D1A11111111111111111SE01 /* 206_ShipperSettlements.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111SE02 /* 206_ShipperSettlements.swift */; };
 		D1A11111111111111111SF01 /* 207_ShipperReports.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111SF02 /* 207_ShipperReports.swift */; };
 		D1A11111111111111111SG01 /* 208_ShipperPaymentMethods.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111SG02 /* 208_ShipperPaymentMethods.swift */; };
@@ -494,11 +482,6 @@
 		E1E1F6F100000001AA000001 /* NewsOGImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E1F6F200000001AA000001 /* NewsOGImageCache.swift */; };
 		E1E1FA1100000001AA000001 /* MeNotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E1FA1200000001AA000001 /* MeNotificationsView.swift */; };
 		FDCA0D262F96F83F0057AC19 /* EusoTrip Pulse Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = FDCA0D062F96F83E0057AC19 /* EusoTrip Pulse Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		EE0000000000000000000B01 /* EusoTripiOSWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0000000000000000000F01 /* EusoTripiOSWidgetsBundle.swift */; };
-		EE0000000000000000000B02 /* ShipperLoadLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0000000000000000000F02 /* ShipperLoadLiveActivityWidget.swift */; };
-		EE0000000000000000000B03 /* ShipperLoadHomeScreenWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0000000000000000000F03 /* ShipperLoadHomeScreenWidget.swift */; };
-		EE0000000000000000000B04 /* ShipperLoadActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111LAA2 /* ShipperLoadActivityAttributes.swift */; };
-		EE0000000000000000000B05 /* EusoTripiOSWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = EE0000000000000000000F06 /* EusoTripiOSWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -523,13 +506,6 @@
 			remoteGlobalIDString = FDCA0D052F96F83E0057AC19;
 			remoteInfo = "EusoTrip Pulse Watch App";
 		};
-		EE000000000000000000A0E1 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = A1000000000000000000AAAA /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = EE000000000000000000A0E0;
-			remoteInfo = EusoTripiOSWidgets;
-		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -542,17 +518,6 @@
 				FDCA0D262F96F83F0057AC19 /* EusoTrip Pulse Watch App.app in Embed Watch Content */,
 			);
 			name = "Embed Watch Content";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		EE000000000000000000A005 /* Embed App Extensions */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 13;
-			files = (
-				EE0000000000000000000B05 /* EusoTripiOSWidgets.appex in Embed App Extensions */,
-			);
-			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -575,8 +540,6 @@
 		A12E1A1C0010CE0FF100000E /* HereMatrixClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereMatrixClient.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000010 /* HereTileOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereTileOverlay.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000012 /* HereMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereMapView.swift; sourceTree = "<group>"; };
-		HAFD00010CE0FF10000012A1 /* HereAddressField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereAddressField.swift; sourceTree = "<group>"; };
-		LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListingTrustBadge.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000015 /* EusoTrip.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = EusoTrip.xcconfig; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000016 /* HEREAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HEREAuthService.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000018 /* EusoAddressField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoAddressField.swift; sourceTree = "<group>"; };
@@ -688,7 +651,6 @@
 		A65D0FA2CE1A4B7E0000D018 /* 065_TheHaulStreaks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 065_TheHaulStreaks.swift; sourceTree = "<group>"; };
 		A66D0FA2CE1A4B7E0000D01A /* 066_TheHaulCosmetics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 066_TheHaulCosmetics.swift; sourceTree = "<group>"; };
 		A67D0FA2CE1A4B7E0000D01C /* 067_MeProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 067_MeProfile.swift; sourceTree = "<group>"; };
-		A67D0FA2CE1A4B7E0000D11C /* 067A_DriverMeHubs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 067A_DriverMeHubs.swift; sourceTree = "<group>"; };
 		A68D0FA0CE1A4B7E0000D02A /* 068_MeEarnings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 068_MeEarnings.swift; sourceTree = "<group>"; };
 		A69D0FA2CE1A4B7E0000D02C /* 069_MeWallet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 069_MeWallet.swift; sourceTree = "<group>"; };
 		A70D0FA2CE1A4B7E0000D01E /* 070_MeSettlements.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 070_MeSettlements.swift; sourceTree = "<group>"; };
@@ -765,14 +727,6 @@
 		D1A11111111111111111CT02 /* 801_AdminControlTower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 801_AdminControlTower.swift; path = EusoTrip/Views/Admin/801_AdminControlTower.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111AT02 /* 802_AdminTenants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 802_AdminTenants.swift; path = EusoTrip/Views/Admin/802_AdminTenants.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111BA02 /* DriverConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverConversationView.swift; sourceTree = "<group>"; };
-		D2DLPOD0000000000002 /* DeliveryPODCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DeliveryPODCaptureView.swift; path = EusoTrip/Views/Driver/DeliveryPODCaptureView.swift; sourceTree = SOURCE_ROOT; };
-		D2RATPV0000000000002 /* RatingPromptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RatingPromptView.swift; path = EusoTrip/Views/Components/RatingPromptView.swift; sourceTree = SOURCE_ROOT; };
-		D2DISPV0000000000002 /* DisputeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DisputeViews.swift; path = EusoTrip/Views/Components/DisputeViews.swift; sourceTree = SOURCE_ROOT; };
-		D2NRCCC0000000000002 /* NRCComplianceCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NRCComplianceCard.swift; path = EusoTrip/Views/Components/NRCComplianceCard.swift; sourceTree = SOURCE_ROOT; };
-		D2DCIBX0000000000002 /* DriverCounterInboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DriverCounterInboxView.swift; path = EusoTrip/Views/Driver/DriverCounterInboxView.swift; sourceTree = SOURCE_ROOT; };
-		D2DLDOC0000000000002 /* DriverLoadDocUploadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DriverLoadDocUploadView.swift; path = EusoTrip/Views/Driver/DriverLoadDocUploadView.swift; sourceTree = SOURCE_ROOT; };
-		D2DCMPL0000000000002 /* DriverComplianceDashboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DriverComplianceDashboard.swift; path = EusoTrip/Views/Driver/DriverComplianceDashboard.swift; sourceTree = SOURCE_ROOT; };
-		D2SRECC0000000000002 /* ShipperRecurringComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ShipperRecurringComposer.swift; path = EusoTrip/Views/Shipper/ShipperRecurringComposer.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111BH02 /* 400_BrokerHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 400_BrokerHome.swift; path = EusoTrip/Views/Broker/400_BrokerHome.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111BNC2 /* BrokerNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BrokerNavController.swift; path = EusoTrip/Views/Broker/BrokerNavController.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111BT02 /* 401_BrokerTenders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 401_BrokerTenders.swift; path = EusoTrip/Views/Broker/401_BrokerTenders.swift; sourceTree = SOURCE_ROOT; };
@@ -1023,7 +977,6 @@
 		D23900000000000000390A /* 239_ShipperApplePayWallet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 239_ShipperApplePayWallet.swift; path = EusoTrip/Views/Shipper/239_ShipperApplePayWallet.swift; sourceTree = SOURCE_ROOT; };
 		D24000000000000000400A /* 240_ShipperCarPlayDashboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 240_ShipperCarPlayDashboard.swift; path = EusoTrip/Views/Shipper/240_ShipperCarPlayDashboard.swift; sourceTree = SOURCE_ROOT; };
 		D22FNAV0000000000FFCA /* ShipperNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ShipperNavController.swift; path = EusoTrip/Views/Shipper/ShipperNavController.swift; sourceTree = SOURCE_ROOT; };
-		D22FESCB0000000000FFCA /* ShipperESangCoachSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ShipperESangCoachSheet.swift; path = EusoTrip/Views/Shipper/ShipperESangCoachSheet.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111SE02 /* 206_ShipperSettlements.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 206_ShipperSettlements.swift; path = EusoTrip/Views/Shipper/206_ShipperSettlements.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111SF02 /* 207_ShipperReports.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 207_ShipperReports.swift; path = EusoTrip/Views/Shipper/207_ShipperReports.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111SG02 /* 208_ShipperPaymentMethods.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 208_ShipperPaymentMethods.swift; path = EusoTrip/Views/Shipper/208_ShipperPaymentMethods.swift; sourceTree = SOURCE_ROOT; };
@@ -1049,12 +1002,6 @@
 		FDCA0D062F96F83E0057AC19 /* EusoTrip Pulse Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "EusoTrip Pulse Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		FDCA0D122F96F83F0057AC19 /* EusoTrip Pulse Watch AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "EusoTrip Pulse Watch AppTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		FDCA0D1C2F96F83F0057AC19 /* EusoTrip Pulse Watch AppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "EusoTrip Pulse Watch AppUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		EE0000000000000000000F01 /* EusoTripiOSWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoTripiOSWidgetsBundle.swift; sourceTree = "<group>"; };
-		EE0000000000000000000F02 /* ShipperLoadLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShipperLoadLiveActivityWidget.swift; sourceTree = "<group>"; };
-		EE0000000000000000000F03 /* ShipperLoadHomeScreenWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShipperLoadHomeScreenWidget.swift; sourceTree = "<group>"; };
-		EE0000000000000000000F04 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		EE0000000000000000000F05 /* EusoTripiOSWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = EusoTripiOSWidgets.entitlements; sourceTree = "<group>"; };
-		EE0000000000000000000F06 /* EusoTripiOSWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = EusoTripiOSWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -1094,13 +1041,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		EE000000000000000000A003 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -1113,7 +1053,6 @@
 				FDCA0D152F96F83F0057AC19 /* EusoTrip Pulse Watch AppTests */,
 				FDCA0D1F2F96F83F0057AC19 /* EusoTrip Pulse Watch AppUITests */,
 				A1000000000000000000AAAC /* Products */,
-				EE000000000000000000A001 /* EusoTripiOSWidgets */,
 			);
 			sourceTree = "<group>";
 		};
@@ -1124,7 +1063,6 @@
 				FDCA0D062F96F83E0057AC19 /* EusoTrip Pulse Watch App.app */,
 				FDCA0D122F96F83F0057AC19 /* EusoTrip Pulse Watch AppTests.xctest */,
 				FDCA0D1C2F96F83F0057AC19 /* EusoTrip Pulse Watch AppUITests.xctest */,
-				EE0000000000000000000F06 /* EusoTripiOSWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -1240,7 +1178,6 @@
 				A65D0FA2CE1A4B7E0000D018 /* 065_TheHaulStreaks.swift */,
 				A66D0FA2CE1A4B7E0000D01A /* 066_TheHaulCosmetics.swift */,
 				A67D0FA2CE1A4B7E0000D01C /* 067_MeProfile.swift */,
-				A67D0FA2CE1A4B7E0000D11C /* 067A_DriverMeHubs.swift */,
 				A68D0FA0CE1A4B7E0000D02A /* 068_MeEarnings.swift */,
 				A69D0FA2CE1A4B7E0000D02C /* 069_MeWallet.swift */,
 				A70D0FA2CE1A4B7E0000D01E /* 070_MeSettlements.swift */,
@@ -1295,10 +1232,6 @@
 				C1A11111111111111111BB02 /* ProfileEditView.swift */,
 				D1A11111111111111111AF02 /* AddPaymentAccountSheet.swift */,
 				D1A11111111111111111BA02 /* DriverConversationView.swift */,
-				D2DLPOD0000000000002 /* DeliveryPODCaptureView.swift */,
-				D2DCIBX0000000000002 /* DriverCounterInboxView.swift */,
-				D2DLDOC0000000000002 /* DriverLoadDocUploadView.swift */,
-				D2DCMPL0000000000002 /* DriverComplianceDashboard.swift */,
 				D1A11111111111111111HZ02 /* HotZonesWidget.swift */,
 				D1A11111111111111111HG02 /* DriverHomeGlances.swift */,
 				D1A11111111111111111RI02 /* EnRouteRoadIntelStrip.swift */,
@@ -1308,7 +1241,6 @@
 				D1A11111111111111111MX02 /* HereMatrixCandidatesStrip.swift */,
 				D1A11111111111111111TA02 /* HereTypicalSpeedChip.swift */,
 				D1A11111111111111111SH02 /* 200_ShipperHome.swift */,
-				D2SRECC0000000000002 /* ShipperRecurringComposer.swift */,
 				D1A11111111111111111SL02 /* 201_ShipperLoads.swift */,
 				D1A11111111111111111SP02 /* 202_ShipperProfile.swift */,
 				D1A11111111111111111SB02 /* 203_ShipperBids.swift */,
@@ -1536,7 +1468,6 @@
 				D23900000000000000390A /* 239_ShipperApplePayWallet.swift */,
 				D24000000000000000400A /* 240_ShipperCarPlayDashboard.swift */,
 				D22FNAV0000000000FFCA /* ShipperNavController.swift */,
-				D22FESCB0000000000FFCA /* ShipperESangCoachSheet.swift */,
 				D1A11111111111111111SE02 /* 206_ShipperSettlements.swift */,
 				D1A11111111111111111SF02 /* 207_ShipperReports.swift */,
 				D1A11111111111111111SG02 /* 208_ShipperPaymentMethods.swift */,
@@ -1676,8 +1607,6 @@
 			isa = PBXGroup;
 			children = (
 				A12E1A1C0010CE0FF1000012 /* HereMapView.swift */,
-				HAFD00010CE0FF10000012A1 /* HereAddressField.swift */,
-				LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */,
 				B1A11111111111111111AA06 /* WeatherCard.swift */,
 				D2RHIN000000000000ACDS /* RoleHomeIntro.swift */,
 				B1A11111111111111111AB02 /* ESangParticleBurst.swift */,
@@ -1688,9 +1617,6 @@
 				D1A11111111111111111AC02 /* ESangVoiceInput.swift */,
 				D1A11111111111111111AD02 /* LoadDetailSheet+Adapters.swift */,
 				D1A11111111111111111AE02 /* TileReveal.swift */,
-				D2RATPV0000000000002 /* RatingPromptView.swift */,
-				D2DISPV0000000000002 /* DisputeViews.swift */,
-				D2NRCCC0000000000002 /* NRCComplianceCard.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -1741,18 +1667,6 @@
 			path = Intro;
 			sourceTree = "<group>";
 		};
-		EE000000000000000000A001 /* EusoTripiOSWidgets */ = {
-			isa = PBXGroup;
-			children = (
-				EE0000000000000000000F01 /* EusoTripiOSWidgetsBundle.swift */,
-				EE0000000000000000000F02 /* ShipperLoadLiveActivityWidget.swift */,
-				EE0000000000000000000F03 /* ShipperLoadHomeScreenWidget.swift */,
-				EE0000000000000000000F04 /* Info.plist */,
-				EE0000000000000000000F05 /* EusoTripiOSWidgets.entitlements */,
-			);
-			path = EusoTripiOSWidgets;
-			sourceTree = "<group>";
-		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -1764,14 +1678,11 @@
 				A1000000000000000000AAAD /* Frameworks */,
 				A1000000000000000000AAAE /* Resources */,
 				FDCA0D272F96F83F0057AC19 /* Embed Watch Content */,
-				EE000000000000000000A005 /* Embed App Extensions */,
-				BUMP00001000000000000001 /* Auto-bump CFBundleVersion */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				FDCA0D252F96F83F0057AC19 /* PBXTargetDependency */,
-				EE000000000000000000A0E2 /* PBXTargetDependency */,
 			);
 			name = EusoTrip;
 			packageProductDependencies = (
@@ -1849,23 +1760,6 @@
 			productReference = FDCA0D1C2F96F83F0057AC19 /* EusoTrip Pulse Watch AppUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
-		EE000000000000000000A0E0 /* EusoTripiOSWidgets */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = EE000000000000000000C003 /* Build configuration list for PBXNativeTarget "EusoTripiOSWidgets" */;
-			buildPhases = (
-				EE000000000000000000A002 /* Sources */,
-				EE000000000000000000A003 /* Frameworks */,
-				EE000000000000000000A004 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = EusoTripiOSWidgets;
-			productName = EusoTripiOSWidgets;
-			productReference = EE0000000000000000000F06 /* EusoTripiOSWidgets.appex */;
-			productType = "com.apple.product-type.app-extension";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -1890,11 +1784,6 @@
 						CreatedOnToolsVersion = 26.4.1;
 						TestTargetID = FDCA0D052F96F83E0057AC19;
 					};
-					EE000000000000000000A0E0 = {
-						CreatedOnToolsVersion = 15.0;
-						DevelopmentTeam = 665Z3ZBZS2;
-						ProvisioningStyle = Automatic;
-					};
 				};
 			};
 			buildConfigurationList = A1000000000000000000AAB2 /* Build configuration list for PBXProject "EusoTrip" */;
@@ -1917,32 +1806,9 @@
 				FDCA0D052F96F83E0057AC19 /* EusoTrip Pulse Watch App */,
 				FDCA0D112F96F83F0057AC19 /* EusoTrip Pulse Watch AppTests */,
 				FDCA0D1B2F96F83F0057AC19 /* EusoTrip Pulse Watch AppUITests */,
-				EE000000000000000000A0E0 /* EusoTripiOSWidgets */,
 			);
 		};
 /* End PBXProject section */
-
-/* Begin PBXShellScriptBuildPhase section */
-		BUMP00001000000000000001 /* Auto-bump CFBundleVersion */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Auto-bump CFBundleVersion";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# Auto-bump CFBundleVersion to git commit count.\n# Modifies the BUILT bundle's Info.plist (not the source) so each\n# `xcodebuild archive` ships with a fresh, monotonically increasing\n# build number without manual editing. Founder fix 2026-05-04 after\n# 5 archives uploaded as 1.0 (88) in a row.\nset -e\nINFO_PLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\nif [ ! -f \"$INFO_PLIST\" ]; then\n  echo \"[auto-bump] Info.plist not found at $INFO_PLIST — skipping\"\n  exit 0\nfi\ncd \"$SRCROOT\" || exit 0\nif ! command -v git >/dev/null 2>&1; then\n  echo \"[auto-bump] git not on PATH — skipping\"\n  exit 0\nfi\nBUILD=$(git rev-list HEAD --count 2>/dev/null || echo \"\")\nif [ -z \"$BUILD\" ] || [ \"$BUILD\" -le 0 ]; then\n  echo \"[auto-bump] git rev-list returned no count — skipping\"\n  exit 0\nfi\n/usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $BUILD\" \"$INFO_PLIST\"\necho \"[auto-bump] CFBundleVersion → $BUILD\"\n";
-		};
-/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXResourcesBuildPhase section */
 		A1000000000000000000AAAE /* Resources */ = {
@@ -1971,13 +1837,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		FDCA0D1A2F96F83F0057AC19 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		EE000000000000000000A004 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -2061,7 +1920,6 @@
 				A65D0FA2CE1A4B7E0000D017 /* 065_TheHaulStreaks.swift in Sources */,
 				A66D0FA2CE1A4B7E0000D019 /* 066_TheHaulCosmetics.swift in Sources */,
 				A67D0FA2CE1A4B7E0000D01B /* 067_MeProfile.swift in Sources */,
-				A67D0FA2CE1A4B7E0000D11B /* 067A_DriverMeHubs.swift in Sources */,
 				A68D0FA0CE1A4B7E0000D029 /* 068_MeEarnings.swift in Sources */,
 				A69D0FA2CE1A4B7E0000D02B /* 069_MeWallet.swift in Sources */,
 				A70D0FA2CE1A4B7E0000D01D /* 070_MeSettlements.swift in Sources */,
@@ -2138,8 +1996,6 @@
 				A12E1A1C0010CE0FF100000D /* HereMatrixClient.swift in Sources */,
 				A12E1A1C0010CE0FF100000F /* HereTileOverlay.swift in Sources */,
 				A12E1A1C0010CE0FF1000011 /* HereMapView.swift in Sources */,
-				HAFD00010CE0FF10000011A1 /* HereAddressField.swift in Sources */,
-				LTBD00010CE0FF10000011A1 /* ListingTrustBadge.swift in Sources */,
 				A12E1A1C0010CE0FF1000021 /* HEREAuthService.swift in Sources */,
 				A1DMC0001000000000000001 /* HereBearerFetch.swift in Sources */,
 				A1DMC0001000000000000003 /* HereFuelPricesClient.swift in Sources */,
@@ -2174,14 +2030,6 @@
 				D1A11111111111111111AE01 /* TileReveal.swift in Sources */,
 				D1A11111111111111111AF01 /* AddPaymentAccountSheet.swift in Sources */,
 				D1A11111111111111111BA01 /* DriverConversationView.swift in Sources */,
-				D2DLPOD0000000000001 /* DeliveryPODCaptureView.swift in Sources */,
-				D2RATPV0000000000001 /* RatingPromptView.swift in Sources */,
-				D2DISPV0000000000001 /* DisputeViews.swift in Sources */,
-				D2NRCCC0000000000001 /* NRCComplianceCard.swift in Sources */,
-				D2DCIBX0000000000001 /* DriverCounterInboxView.swift in Sources */,
-				D2DLDOC0000000000001 /* DriverLoadDocUploadView.swift in Sources */,
-				D2DCMPL0000000000001 /* DriverComplianceDashboard.swift in Sources */,
-				D2SRECC0000000000001 /* ShipperRecurringComposer.swift in Sources */,
 				D1A11111111111111111HZ01 /* HotZonesWidget.swift in Sources */,
 				D1A11111111111111111HG01 /* DriverHomeGlances.swift in Sources */,
 				D1A11111111111111111RI01 /* EnRouteRoadIntelStrip.swift in Sources */,
@@ -2418,7 +2266,6 @@
 				D23900000000000000390B /* 239_ShipperApplePayWallet.swift in Sources */,
 				D24000000000000000400B /* 240_ShipperCarPlayDashboard.swift in Sources */,
 				D22FNAV0000000000FFCB /* ShipperNavController.swift in Sources */,
-				D22FESCB0000000000FFCB /* ShipperESangCoachSheet.swift in Sources */,
 				D1A11111111111111111SE01 /* 206_ShipperSettlements.swift in Sources */,
 				D1A11111111111111111SF01 /* 207_ShipperReports.swift in Sources */,
 				D1A11111111111111111SG01 /* 208_ShipperPaymentMethods.swift in Sources */,
@@ -2495,17 +2342,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		EE000000000000000000A002 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				EE0000000000000000000B01 /* EusoTripiOSWidgetsBundle.swift in Sources */,
-				EE0000000000000000000B02 /* ShipperLoadLiveActivityWidget.swift in Sources */,
-				EE0000000000000000000B03 /* ShipperLoadHomeScreenWidget.swift in Sources */,
-				EE0000000000000000000B04 /* ShipperLoadActivityAttributes.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -2523,11 +2359,6 @@
 			isa = PBXTargetDependency;
 			target = FDCA0D052F96F83E0057AC19 /* EusoTrip Pulse Watch App */;
 			targetProxy = FDCA0D242F96F83F0057AC19 /* PBXContainerItemProxy */;
-		};
-		EE000000000000000000A0E2 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = EE000000000000000000A0E0 /* EusoTripiOSWidgets */;
-			targetProxy = EE000000000000000000A0E1 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -2666,7 +2497,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = EusoTrip/EusoTrip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 115;
+				CURRENT_PROJECT_VERSION = 61;
 				DEVELOPMENT_ASSET_PATHS = "\"EusoTrip/Preview Content\"";
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				ENABLE_PREVIEWS = YES;
@@ -2707,7 +2538,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = EusoTrip/EusoTrip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 115;
+				CURRENT_PROJECT_VERSION = 61;
 				DEVELOPMENT_ASSET_PATHS = "\"EusoTrip/Preview Content\"";
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				ENABLE_PREVIEWS = YES;
@@ -2747,7 +2578,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = EusoTripPulseWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 115;
+				CURRENT_PROJECT_VERSION = 61;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -2780,7 +2611,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = EusoTripPulseWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 115;
+				CURRENT_PROJECT_VERSION = 61;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -2810,7 +2641,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 115;
+				CURRENT_PROJECT_VERSION = 61;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -2834,7 +2665,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 115;
+				CURRENT_PROJECT_VERSION = 61;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -2856,7 +2687,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 115;
+				CURRENT_PROJECT_VERSION = 61;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -2879,7 +2710,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 115;
+				CURRENT_PROJECT_VERSION = 61;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -2894,73 +2725,6 @@
 				TARGETED_DEVICE_FAMILY = 4;
 				TEST_TARGET_NAME = "EusoTrip Pulse Watch App";
 				WATCHOS_DEPLOYMENT_TARGET = 26.4;
-			};
-			name = Release;
-		};
-		EE000000000000000000C001 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
-				CODE_SIGN_ENTITLEMENTS = EusoTripiOSWidgets/EusoTripiOSWidgets.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				DEBUG_INFORMATION_FORMAT = dwarf;
-				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
-				ONLY_ACTIVE_ARCH = YES;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				CURRENT_PROJECT_VERSION = 115;
-				DEVELOPMENT_TEAM = 665Z3ZBZS2;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = EusoTripiOSWidgets/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "EusoTrip Widgets";
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				MTL_FAST_MATH = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = com.app.eusotrip.EusoTripiOSWidgets;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SKIP_INSTALL = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
-		EE000000000000000000C002 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
-				CODE_SIGN_ENTITLEMENTS = EusoTripiOSWidgets/EusoTripiOSWidgets.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				COPY_PHASE_STRIP = NO;
-				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				SWIFT_COMPILATION_MODE = wholemodule;
-				VALIDATE_PRODUCT = YES;
-				CURRENT_PROJECT_VERSION = 115;
-				DEVELOPMENT_TEAM = 665Z3ZBZS2;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = EusoTripiOSWidgets/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "EusoTrip Widgets";
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				MTL_FAST_MATH = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = com.app.eusotrip.EusoTripiOSWidgets;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SKIP_INSTALL = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -3008,15 +2772,6 @@
 			buildConfigurations = (
 				FDCA0D2C2F96F83F0057AC19 /* Debug */,
 				FDCA0D2D2F96F83F0057AC19 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		EE000000000000000000C003 /* Build configuration list for PBXNativeTarget "EusoTripiOSWidgets" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				EE000000000000000000C001 /* Debug */,
-				EE000000000000000000C002 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

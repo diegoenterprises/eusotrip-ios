@@ -56,14 +56,25 @@ final class HereTileOverlay: MKTileOverlay {
     /// Build the tile URL (no auth in the query string — Bearer token
     /// rides on the request header in `loadTile`). Still overridden so
     /// the parent class has a sensible URL for logging / debugging.
+    ///
+    /// Verified URL grammar (live-probed against `maps.hereapi.com`
+    /// 2026-05-04):
+    ///   `/v3/base/mc/{z}/{x}/{y}/png?style=explore.day&size=512&ppi=400`
+    /// `size` and `ppi` are query parameters — putting `size` in the path
+    /// (the previous shape) returns HTTP 404 with code `E622000`
+    /// "requested path is not supported", which is why the HERE basemap
+    /// never rendered on iOS until this build. The `style` value
+    /// `explore.day` is the only style our HERE plan tier serves over
+    /// raster — every `*.night` style 403s on the same tier.
     override func url(forTilePath path: MKTileOverlayPath) -> URL {
         var comps = URLComponents()
         comps.scheme = "https"
         comps.host   = HereMapsConfig.tileBaseHost
-        comps.path   = "\(HereMapsConfig.tileBasePath)/\(path.z)/\(path.x)/\(path.y)/\(style.sizePx)/png"
+        comps.path   = "\(HereMapsConfig.tileBasePath)/\(path.z)/\(path.x)/\(path.y)/png"
         comps.queryItems = [
-            URLQueryItem(name: "style",  value: style.rawValue),
-            URLQueryItem(name: "ppi",    value: String(style.ppi)),
+            URLQueryItem(name: "style", value: style.rawValue),
+            URLQueryItem(name: "size",  value: String(style.sizePx)),
+            URLQueryItem(name: "ppi",   value: String(style.ppi)),
         ]
         // Force-unwrap is safe: every component above is literal or an integer.
         return comps.url!

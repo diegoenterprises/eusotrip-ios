@@ -46,6 +46,23 @@ struct ProfileEditView: View {
     @State private var draftPhone: String = ""
     @State private var draftAvatarData: Data? = nil
 
+    // Driver-specific compliance fields — written via
+    // `DriverProfileStore.commitDriver(...)` which fires the
+    // `profile.updateDriverProfile` mutation. Server persists into
+    // `users.metadata.driver` JSON; web /profile and any other
+    // logged-in device repaint via the realtime `profile:updated`
+    // broadcast.
+    @State private var draftCdlNumber: String = ""
+    @State private var draftCdlState: String = ""
+    @State private var draftCdlExpDate: String = ""
+    @State private var draftMedExpDate: String = ""
+    @State private var draftMedExaminer: String = ""
+    @State private var draftTwicNumber: String = ""
+    @State private var draftTwicExpDate: String = ""
+    @State private var draftHazmat: Bool = false
+    @State private var draftTanker: Bool = false
+    @State private var draftHomeTerminal: String = ""
+
     @State private var pickerItem: PhotosPickerItem? = nil
     @State private var isSaving: Bool = false
 
@@ -62,6 +79,8 @@ struct ProfileEditView: View {
                     identityCard
                     contactCard
                     licenseCard
+                    complianceCard
+                    endorsementsCard
                     saveButton
 
                     // Reserve bottom inset so the Save button isn't hidden
@@ -253,6 +272,94 @@ struct ProfileEditView: View {
         }
     }
 
+    // MARK: - Compliance card (CDL number / state / expiry, medical, TWIC)
+
+    private var complianceCard: some View {
+        sectionCard(title: "CDL & medical") {
+            fieldRow(label: "CDL #",
+                     placeholder: "T-12345678",
+                     text: $draftCdlNumber,
+                     keyboard: .default,
+                     capitalization: .characters)
+            Divider().overlay(palette.borderFaint)
+            fieldRow(label: "State",
+                     placeholder: "TX",
+                     text: $draftCdlState,
+                     keyboard: .default,
+                     capitalization: .characters)
+            Divider().overlay(palette.borderFaint)
+            fieldRow(label: "CDL expires",
+                     placeholder: "YYYY-MM-DD",
+                     text: $draftCdlExpDate,
+                     keyboard: .numbersAndPunctuation,
+                     capitalization: .never)
+            Divider().overlay(palette.borderFaint)
+            fieldRow(label: "Medical exp",
+                     placeholder: "YYYY-MM-DD",
+                     text: $draftMedExpDate,
+                     keyboard: .numbersAndPunctuation,
+                     capitalization: .never)
+            Divider().overlay(palette.borderFaint)
+            fieldRow(label: "Examiner",
+                     placeholder: "Dr. Smith",
+                     text: $draftMedExaminer,
+                     keyboard: .default,
+                     capitalization: .words)
+            Divider().overlay(palette.borderFaint)
+            fieldRow(label: "TWIC #",
+                     placeholder: "Optional",
+                     text: $draftTwicNumber,
+                     keyboard: .default,
+                     capitalization: .characters)
+            Divider().overlay(palette.borderFaint)
+            fieldRow(label: "TWIC exp",
+                     placeholder: "YYYY-MM-DD",
+                     text: $draftTwicExpDate,
+                     keyboard: .numbersAndPunctuation,
+                     capitalization: .never)
+            Divider().overlay(palette.borderFaint)
+            fieldRow(label: "Home terminal",
+                     placeholder: "Houston, TX",
+                     text: $draftHomeTerminal,
+                     keyboard: .default,
+                     capitalization: .words)
+        }
+    }
+
+    // MARK: - Endorsements card (hazmat / tanker toggles)
+
+    private var endorsementsCard: some View {
+        sectionCard(title: "Endorsements") {
+            HStack(alignment: .center) {
+                Text("Hazmat")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textTertiary)
+                    .frame(width: 110, alignment: .leading)
+                Text(draftHazmat ? "H endorsed" : "Not endorsed")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                Toggle("", isOn: $draftHazmat).labelsHidden()
+            }
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, Space.s3)
+            Divider().overlay(palette.borderFaint)
+            HStack(alignment: .center) {
+                Text("Tanker")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textTertiary)
+                    .frame(width: 110, alignment: .leading)
+                Text(draftTanker ? "N endorsed" : "Not endorsed")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                Toggle("", isOn: $draftTanker).labelsHidden()
+            }
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, Space.s3)
+        }
+    }
+
     // MARK: - Save CTA
 
     private var saveButton: some View {
@@ -267,9 +374,29 @@ struct ProfileEditView: View {
                 phone: draftPhone,
                 avatarData: draftAvatarData
             )
+            // Compliance fields ride the same Save CTA — fired through
+            // `commitDriver(...)` which posts `profile.updateDriverProfile`
+            // and the server broadcasts `profile:updated` so other
+            // devices repaint these fields too.
+            profile.commitDriver(
+                cdlNumber:             draftCdlNumber,
+                cdlClass:              draftLicenseClass,
+                cdlState:              draftCdlState,
+                cdlEndorsements:       (draftHazmat ? ["H"] : []) + (draftTanker ? ["N"] : []),
+                cdlExpirationDate:     draftCdlExpDate,
+                medicalExpirationDate: draftMedExpDate,
+                medicalExaminerName:   draftMedExaminer,
+                twicNumber:            draftTwicNumber,
+                twicExpirationDate:    draftTwicExpDate,
+                hazmatEndorsement:     draftHazmat,
+                tankerEndorsement:     draftTanker,
+                homeTerminal:          draftHomeTerminal,
+                hireDate:              profile.hireDate,
+                yearsExperience:       profile.yearsExperience
+            )
             // Short delay so the CTA's "Saving…" flash is visible for
-            // at least 120 ms. Purely cosmetic — the commit above is
-            // synchronous (UserDefaults write) and returns immediately.
+            // at least 120 ms. Purely cosmetic — the commits above are
+            // fire-and-forget at the network layer.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                 isSaving = false
                 dismiss()
@@ -331,6 +458,20 @@ struct ProfileEditView: View {
         draftLicenseClass = profile.licenseClass
         draftPhone        = profile.phone
         draftAvatarData   = profile.avatarData
+
+        // Compliance / endorsements drafts pull from the same store —
+        // server-hydrated on launch via `profile.getDriverProfile`
+        // which reads `users.metadata.driver`.
+        draftCdlNumber    = profile.cdlNumber
+        draftCdlState     = profile.cdlState
+        draftCdlExpDate   = profile.cdlExpirationDate
+        draftMedExpDate   = profile.medicalExpirationDate
+        draftMedExaminer  = profile.medicalExaminerName
+        draftTwicNumber   = profile.twicNumber
+        draftTwicExpDate  = profile.twicExpirationDate
+        draftHazmat       = profile.hazmatEndorsement
+        draftTanker       = profile.tankerEndorsement
+        draftHomeTerminal = profile.homeTerminal
     }
 }
 

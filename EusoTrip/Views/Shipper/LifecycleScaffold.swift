@@ -104,17 +104,37 @@ func resolveProduct(_ snap: ShipperAPI.LifecycleSnapshot, role: String?) -> Trip
     )
 }
 
-// MARK: - Shipper bottom nav (Round 4 doctrine)
+// MARK: - Shipper bottom nav (canonical 5-slot doctrine)
+//
+// Matches the canonical bottom-nav contract in `ShipperScreenWrap`:
+// Home / Create Load / [ESANG orb] / Loads / Me. The previous version
+// painted Home / Loads / Bids / Me — wrong (no Create Load, no ESANG
+// orb, "Bids" is not a real shipper tab) — and slot taps fell through
+// to no-op or web continuation because `ShipperNavRoute.map` has no
+// "bids" entry. Founder reported 2026-05-04 that leaf screens reached
+// from Me had dead nav slots.
+//
+// Detail screens reachable from any tab pass `currentSlot: .none`
+// (no pill highlighted) — same convention used by every screen
+// registered through `wrapShipperScreen(currentSlot: .none) { ... }`.
 
-func shipperLifecycleNav() -> BottomNav {
+func shipperLifecycleNav(currentSlot: ShipperBottomNavSlot = .none) -> BottomNav {
     BottomNav(
         leading: [
-            NavSlot(label: "Home", systemImage: "house", isCurrent: false),
-            NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: true),
+            NavSlot(label: "Home",
+                    systemImage: "house.fill",
+                    isCurrent: currentSlot == .home),
+            NavSlot(label: "Create Load",
+                    systemImage: "plus.rectangle.on.rectangle",
+                    isCurrent: currentSlot == .createLoad),
         ],
         trailing: [
-            NavSlot(label: "Bids", systemImage: "hand.raised.fill", isCurrent: false),
-            NavSlot(label: "Me", systemImage: "person", isCurrent: false),
+            NavSlot(label: "Loads",
+                    systemImage: "shippingbox.fill",
+                    isCurrent: currentSlot == .loads),
+            NavSlot(label: "Me",
+                    systemImage: "person.fill",
+                    isCurrent: currentSlot == .me),
         ],
         orbState: .idle
     )

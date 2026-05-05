@@ -175,6 +175,24 @@ enum ScreenRegistry {
             .init(id: "108", title: "Me · LoadBoard",               role: .driver) { p in AnyView(MeLoadBoardScreen(theme: p)) },
             .init(id: "109", title: "Me · Bid Detail",              role: .driver) { p in AnyView(MeBidDetailScreen(theme: p, loadId: 0)) },
             .init(id: "110", title: "Me · Auto-Accept",             role: .driver) { p in AnyView(MeAutoAcceptRulesScreen(theme: p)) },
+            // Driver Me hub — parent + 7 children mirroring the
+            // Shipper 320/320a-g design. Founder feedback 2026-05-04:
+            // wanted the same parent-child IA on driver. The catalog
+            // (`DriverMeHubCatalog`) drills into existing leaf
+            // screens 060-110 with no dead taps.
+            .init(id: "067hub", title: "Driver · Me Home",          role: .driver) { p in AnyView(DriverMeHomeScreen(theme: p)) },
+            .init(id: "067a",   title: "Driver · Me · Account",     role: .driver) { p in AnyView(DriverMeAccountHubScreen(theme: p)) },
+            .init(id: "067b",   title: "Driver · Me · Wallet",      role: .driver) { p in AnyView(DriverMeWalletHubScreen(theme: p)) },
+            .init(id: "067c",   title: "Driver · Me · Compliance",  role: .driver) { p in AnyView(DriverMeComplianceHubScreen(theme: p)) },
+            .init(id: "067d",   title: "Driver · Me · Vehicle",     role: .driver) { p in AnyView(DriverMeVehicleHubScreen(theme: p)) },
+            .init(id: "067e",   title: "Driver · Me · Operations",  role: .driver) { p in AnyView(DriverMeOperationsHubScreen(theme: p)) },
+            .init(id: "067f",   title: "Driver · Me · The Haul",    role: .driver) { p in AnyView(DriverMeHaulHubScreen(theme: p)) },
+            .init(id: "067g",   title: "Driver · Me · Settings",    role: .driver) { p in AnyView(DriverMeSettingsHubScreen(theme: p)) },
+            // EusoTrip Pulse (Apple Watch pairing) — registered for
+            // BOTH roles so Driver and Shipper Me Settings hubs both
+            // drill into the same canonical surface.
+            .init(id: "PULSE",  title: "EusoTrip Pulse",             role: .driver)  { p in AnyView(PulseSettingsScreen(theme: p)) },
+            .init(id: "PULSE",  title: "EusoTrip Pulse",             role: .shipper) { p in AnyView(PulseSettingsScreen(theme: p)) },
         ]
 
         // MARK: Non-driver role placeholders (DEBUG only)
@@ -613,6 +631,89 @@ enum ScreenRegistry {
         list.append(.init(id: "228b", title: "Shipper · RFP Detail",      role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperRFPDetail() }) })
         list.append(.init(id: "229b", title: "Shipper · BOL Upload",      role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .me) { ShipperBOLUpload() }) })
         list.append(.init(id: "230b", title: "Shipper · Weekly Allocations", role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .loads) { ShipperWeeklyAllocations() }) })
+        // 320 — Shipper Me Home gateway. The canonical landing surface for
+        // the bottom-nav "Me" tap (see `ShipperNavRoute.map` → "me" → "320").
+        // 320 is the parent hub; 320a-g are child hubs that group the
+        // ~30 Me-section surfaces into 7 intuitive buckets so the top
+        // page isn't a flat wall of cells. Each child hub drills into
+        // registered shipper-role leaf screens — no dead taps. Co-exists
+        // with the Carrier-role "320" (CarrierVehiclesListScreen) —
+        // `forRole` filters by role first, so IDs are scoped per-chrome.
+        list.append(.init(id: "320",  title: "Shipper · Me Home",        role: .shipper) { p in AnyView(MeHomeScreen(theme: p)) })
+        list.append(.init(id: "320a", title: "Shipper · Me · Account",   role: .shipper) { p in AnyView(MeAccountHubScreen(theme: p)) })
+        list.append(.init(id: "320b", title: "Shipper · Me · Wallet",    role: .shipper) { p in AnyView(MeWalletHubScreen(theme: p)) })
+        list.append(.init(id: "320c", title: "Shipper · Me · Operations", role: .shipper) { p in AnyView(MeOperationsHubScreen(theme: p)) })
+        list.append(.init(id: "320d", title: "Shipper · Me · Network",   role: .shipper) { p in AnyView(MeNetworkHubScreen(theme: p)) })
+        list.append(.init(id: "320e", title: "Shipper · Me · Compliance", role: .shipper) { p in AnyView(MeComplianceHubScreen(theme: p)) })
+        list.append(.init(id: "320f", title: "Shipper · Me · Intel",     role: .shipper) { p in AnyView(MeIntelHubScreen(theme: p)) })
+        list.append(.init(id: "320g", title: "Shipper · Me · Settings",  role: .shipper) { p in AnyView(MeSettingsHubScreen(theme: p)) })
+        // Me-section leaf screens not previously registered. The 280s,
+        // 290s, 380s, 390s blocks below already register CatalystDirectory,
+        // WalletHome, SettlementsList, PaymentMethods, MonthlyStatement,
+        // RfpInbox, ContractList, etc. for shipper — these are the
+        // remaining 10 surfaces the Me hubs need: ESANG settings,
+        // Profile edit, Tier detail, Insurance, FMCSA SAFER, Hazmat
+        // audit, Settings home, Notification prefs, Help, Legal.
+        list.append(.init(id: "319", title: "Shipper · ESANG Settings",        role: .shipper) { p in AnyView(EsangSettingsScreen(theme: p)) })
+        list.append(.init(id: "322", title: "Shipper · Profile Edit",          role: .shipper) { p in AnyView(ProfileEditScreen(theme: p)) })
+        list.append(.init(id: "323", title: "Shipper · Tier Detail",           role: .shipper) { p in AnyView(TierDetailScreen(theme: p)) })
+        list.append(.init(id: "325", title: "Shipper · Insurance Detail",      role: .shipper) { p in AnyView(InsuranceDetailScreen(theme: p)) })
+        list.append(.init(id: "326", title: "Shipper · FMCSA SAFER Mirror",    role: .shipper) { p in AnyView(FmcsaSaferMirrorScreen(theme: p)) })
+        list.append(.init(id: "327", title: "Shipper · Hazmat Audit",          role: .shipper) { p in AnyView(HazmatAuditScreen(theme: p)) })
+        list.append(.init(id: "340", title: "Shipper · Settings Home",         role: .shipper) { p in AnyView(SettingsHomeScreen(theme: p)) })
+        list.append(.init(id: "343", title: "Shipper · Notification Prefs",    role: .shipper) { p in AnyView(NotificationPrefsScreen(theme: p)) })
+        list.append(.init(id: "347", title: "Shipper · Help & Support",        role: .shipper) { p in AnyView(HelpSupportScreen(theme: p)) })
+        list.append(.init(id: "348", title: "Shipper · Legal",                 role: .shipper) { p in AnyView(LegalScreen(theme: p)) })
+
+        // Final pass — remaining shipper screens that have a Screen
+        // struct + canonical chrome (Shell + shipperLifecycleNav) but
+        // were missing from the registry. Detail screens use sentinel
+        // ids/empty strings so the registry walker can paint them; live
+        // call sites override with the real value at navigation time.
+        // Skipped intentionally:
+        //   • 260 (PostedAwaitingBidsScreen) — `#if false` shelved per
+        //     the file header doctrine: references LoadsAPI.cancel and
+        //     OrbESang.State.alert, which don't exist on the iOS
+        //     client today. Resurrect once those APIs land.
+        //   • 324 (ComplianceDashboardScreen) — superseded by 216
+        //     ("Shipper · Compliance"), which Me hub 320e routes to.
+        //   • 410 LoadsFilterSheetScreen / 411 LoadsSortSheetScreen —
+        //     hold @Binding state owned by parent 201_ShipperLoads;
+        //     presented modally, never reached via screenId.
+        list.append(.init(id: "333", title: "Shipper · Contact Detail",          role: .shipper) { p in AnyView(ContactDetailScreen(theme: p, contactId: "0")) })
+        list.append(.init(id: "334", title: "Shipper · Add Contact",             role: .shipper) { p in AnyView(AddContactScreen(theme: p)) })
+        list.append(.init(id: "336", title: "Shipper · Grade Detail",            role: .shipper) { p in AnyView(GradeDetailScreen(theme: p)) })
+        list.append(.init(id: "341", title: "Shipper · Lane Templates",          role: .shipper) { p in AnyView(LaneTemplatesListScreen(theme: p)) })
+        list.append(.init(id: "342", title: "Shipper · Lane Template Editor",    role: .shipper) { p in AnyView(LaneTemplateEditorScreen(theme: p, templateId: "0")) })
+        list.append(.init(id: "344", title: "Shipper · Security Sessions",       role: .shipper) { p in AnyView(SecuritySessionsScreen(theme: p)) })
+        list.append(.init(id: "345", title: "Shipper · Two-Factor",              role: .shipper) { p in AnyView(TwoFactorManageScreen(theme: p)) })
+        list.append(.init(id: "346", title: "Shipper · Connected Apps",          role: .shipper) { p in AnyView(ConnectedAppsScreen(theme: p)) })
+        list.append(.init(id: "349", title: "Shipper · Account Export / Delete", role: .shipper) { p in AnyView(AccountExportDeleteScreen(theme: p)) })
+        list.append(.init(id: "412", title: "Shipper · Drafts List",             role: .shipper) { p in AnyView(DraftsListScreen(theme: p)) })
+        list.append(.init(id: "413", title: "Shipper · Archived Loads",          role: .shipper) { p in AnyView(ArchivedLoadsScreen(theme: p)) })
+        list.append(.init(id: "414", title: "Shipper · Bid Detail Sheet",        role: .shipper) { p in AnyView(BidDetailSheetScreen(theme: p, loadId: "0", bidId: "0")) })
+        list.append(.init(id: "415", title: "Shipper · Counter-Offer Composer",  role: .shipper) { p in AnyView(CounterOfferComposerScreen(theme: p, loadId: "0", bidId: "0")) })
+        list.append(.init(id: "416", title: "Shipper · Bid Reject Sheet",        role: .shipper) { p in AnyView(BidRejectSheetScreen(theme: p, loadId: "0", bidId: "0")) })
+        list.append(.init(id: "417", title: "Shipper · Bid Accept Confirmation", role: .shipper) { p in AnyView(BidAcceptConfirmationScreen(theme: p, loadId: "0", bidId: "0")) })
+        list.append(.init(id: "418", title: "Shipper · Tender Accept Countdown", role: .shipper) { p in AnyView(TenderAcceptCountdownScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "419", title: "Shipper · Exception Response",      role: .shipper) { p in AnyView(ExceptionResponseScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "420", title: "Shipper · Bid Review Board",        role: .shipper) { p in AnyView(BidReviewBoardScreen(theme: p)) })
+        list.append(.init(id: "421", title: "Shipper · Load Consolidation",      role: .shipper) { p in AnyView(LoadConsolidationScreen(theme: p)) })
+        list.append(.init(id: "422", title: "Shipper · My Terminals",            role: .shipper) { p in AnyView(MyTerminalsScreen(theme: p)) })
+        list.append(.init(id: "423", title: "Shipper · Facility Search",         role: .shipper) { p in AnyView(FacilitySearchScreen(theme: p)) })
+        list.append(.init(id: "424", title: "Shipper · Spectra-Match",           role: .shipper) { p in AnyView(SpectraMatchScreen(theme: p)) })
+        list.append(.init(id: "425", title: "Shipper · Port Intelligence",       role: .shipper) { p in AnyView(PortIntelligenceScreen(theme: p)) })
+        list.append(.init(id: "426", title: "Shipper · Demurrage Charges",       role: .shipper) { p in AnyView(DemurrageChargesScreen(theme: p)) })
+        list.append(.init(id: "427", title: "Shipper · Cross-Border Shipping",   role: .shipper) { p in AnyView(CrossBorderShippingScreen(theme: p)) })
+        list.append(.init(id: "428", title: "Shipper · Carrier Capacity",        role: .shipper) { p in AnyView(CarrierCapacityScreen(theme: p)) })
+        list.append(.init(id: "429", title: "Shipper · Competitive Intelligence", role: .shipper) { p in AnyView(CompetitiveIntelligenceScreen(theme: p)) })
+        list.append(.init(id: "430", title: "Shipper · Industry Verticals",      role: .shipper) { p in AnyView(IndustryVerticalsScreen(theme: p)) })
+        list.append(.init(id: "431", title: "Shipper · Multi-Modal Transport",   role: .shipper) { p in AnyView(MultiModalTransportScreen(theme: p)) })
+        list.append(.init(id: "432", title: "Shipper · Vendor Management",       role: .shipper) { p in AnyView(VendorManagementScreen(theme: p)) })
+        list.append(.init(id: "433", title: "Shipper · Recurring Loads Composer", role: .shipper) { p in AnyView(RecurringLoadsComposerScreen(theme: p)) })
+        list.append(.init(id: "434", title: "Shipper · Partner Detail",          role: .shipper) { p in AnyView(PartnerDetailScreen(theme: p, partnerId: "0")) })
+        list.append(.init(id: "435", title: "Shipper · Partner Agreements",      role: .shipper) { p in AnyView(PartnerAgreementsScreen(theme: p, partnerId: "0")) })
+        list.append(.init(id: "436", title: "Shipper · Hot Zone City Detail",    role: .shipper) { p in AnyView(HotZoneCityDetailScreen(theme: p, city: "")) })
         // 231-240 — Arc L iOS-platform integration preview surfaces.
         // These ARE NOT extension targets — they're in-app reference
         // screens that paint what the eventual Widget Extension /
@@ -1550,7 +1651,7 @@ struct ContentView: View {
             }
             // Shipper-mode tap router. Mirror of `driverNavHandler`.
             // Resolves the slot label to the matching ScreenRegistry id
-            // (Home → 200, Create Load → 204, Loads → 201, Me → 202)
+            // (Home → 200, Create Load → 204, Loads → 201, Me → 320)
             // and flips `currentIndex` so the screen swap is local —
             // no NotificationCenter round-trip needed when ContentView
             // already owns the index. Founder direction 2026-04-28:
@@ -2126,7 +2227,16 @@ struct ContentView: View {
             // existing `.earnings` MeDetailRoute.
             paneWithNav(.wallet) { DriverLoadsPane() }
         case .me:
-            paneWithNav(.me)    { DriverMePane() }
+            // Founder direction 2026-05-04: driver Me adopts the
+            // Shipper-320 parent-child hub design. `DriverMeSurface`
+            // owns the navigation stack + back overlay + drills into
+            // the existing leaf screens 060-110. Each registered hub
+            // screen brings its own `Shell + driverMeHubNav` chrome
+            // (same BottomNav slots as `paneWithNav(.me)` but with
+            // Me current), so this branch renders the surface
+            // directly without an outer pane wrapper to avoid
+            // doubling up the BottomNav.
+            DriverMeSurface(palette: register.palette)
         }
     }
 

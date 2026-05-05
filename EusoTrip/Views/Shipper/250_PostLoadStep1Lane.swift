@@ -43,18 +43,49 @@ private struct PostLoadStep1Body: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "sparkles").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text("SHIPPER · POST A LOAD · STEP 1 OF 4 · LANE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+                Text("POST A LOAD · STEP 1 · LANE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
-            Text("Where is the freight going?").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("Enter origin, destination, and the pickup window.").font(EType.body).foregroundStyle(palette.textSecondary)
+            Text("Where is the freight going?")
+                .font(.system(size: 22, weight: .heavy))
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
+            Text("Enter origin, destination, and the pickup window.")
+                .font(EType.body).foregroundStyle(palette.textSecondary)
+                .lineLimit(2).minimumScaleFactor(0.85)
         }
     }
 
     private var fieldsCard: some View {
         LifecycleCard {
             LifecycleSection(label: "LANE", icon: "map")
-            field(label: "Origin")        { TextField("City, ST", text: $draft.origin).textFieldStyle(.plain).font(EType.body) }
-            field(label: "Destination")   { TextField("City, ST", text: $draft.destination).textFieldStyle(.plain).font(EType.body) }
+            // Origin / destination use HereAddressField so the user gets
+            // typeahead suggestions from the HERE Geocoding API and can
+            // also paste raw coordinates ("32.7767,-96.7970") — the way
+            // truckers capture pickup/delivery for unaddressed sites
+            // (oilfield pads, agricultural lots, port slips). Coords
+            // ride along to `shippers.create` so distance + map render
+            // without a second-pass server geocode.
+            field(label: "Origin") {
+                HereAddressField(
+                    text: $draft.origin,
+                    lat:  $draft.originLat,
+                    lng:  $draft.originLng,
+                    placeholder: "City, ST or lat,lng"
+                )
+            }
+            field(label: "Destination") {
+                HereAddressField(
+                    text: $draft.destination,
+                    lat:  $draft.destLat,
+                    lng:  $draft.destLng,
+                    placeholder: "City, ST or lat,lng"
+                )
+            }
             field(label: "Pickup window") {
                 DatePicker("", selection: Binding(
                     get: { draft.pickupDate ?? Date() },

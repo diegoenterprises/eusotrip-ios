@@ -48,6 +48,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Filter (wireframe canon)
 
@@ -190,6 +191,18 @@ struct ShipperDocumentCenter: View {
     @Environment(\.palette) private var palette
     @Environment(\.openURL) private var openURL
     @StateObject private var store = ShipperDocumentCenterStore()
+    /// Drives the system Files picker presented from `tapUpload()`.
+    /// Replaces the prior openURL("https://app.eusotrip.com/shipper/
+    /// documents/new") stub.
+    @State private var showDocumentPicker: Bool = false
+    @State private var uploadToast: String? = nil
+    /// Drives the share sheet for `tapRow` / `tapDownload`. Each tap
+    /// fetches the document bytes from the server, writes them to a
+    /// tmp file, and pushes the URL into here so the system Share
+    /// sheet pops with Save to Files / AirDrop / Mail / etc. Replaces
+    /// the prior openURL("…/documents/{id}") + openURL("…/download")
+    /// stubs.
+    @State private var pendingShareDocs: [URL]? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -210,6 +223,78 @@ struct ShipperDocumentCenter: View {
         }
         .task { await store.load() }
         .refreshable { await store.load() }
+        .fileImporter(
+            isPresented: $showDocumentPicker,
+            allowedContentTypes: [.pdf, .image, .item],
+            allowsMultipleSelection: false
+        ) { result in
+            Task { await handlePickedDocument(result) }
+        }
+        .sheet(isPresented: Binding(
+            get: { pendingShareDocs != nil },
+            set: { if !$0 { pendingShareDocs = nil } }
+        )) {
+            if let urls = pendingShareDocs {
+                DocsCenterShareSheet(items: urls)
+                    .ignoresSafeArea()
+            }
+        }
+        .overlay(alignment: .top) {
+            if let t = uploadToast {
+                Text(t).font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(.green.opacity(0.92), in: Capsule())
+                    .padding(.top, 12)
+                    .onAppear {
+                        Task {
+                            try? await Task.sleep(nanoseconds: 2_500_000_000)
+                            await MainActor.run { uploadToast = nil }
+                        }
+                    }
+            }
+        }
+    }
+
+    /// Real upload pipeline — reads the picked file's bytes, base64
+    /// encodes, and POSTs to `documents.uploadInline` (server route
+    /// already exists per docs router). On success the document list
+    /// refreshes so the new row lands on screen immediately.
+    private func handlePickedDocument(_ result: Result<[URL], Error>) async {
+        switch result {
+        case .failure(let err):
+            await MainActor.run { uploadToast = "Pick failed: \(err.localizedDescription)" }
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            let started = url.startAccessingSecurityScopedResource()
+            defer { if started { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let data = try Data(contentsOf: url)
+                let base64 = data.base64EncodedString()
+                struct In: Encodable {
+                    let name: String
+                    let category: String
+                    let fileData: String
+                }
+                struct Out: Decodable { let id: String?; let success: Bool? }
+                let mime = url.pathExtension.lowercased() == "pdf" ? "application/pdf" : "application/octet-stream"
+                let dataURL = "data:\(mime);base64,\(base64)"
+                let _: Out = try await EusoTripAPI.shared.mutation(
+                    "documents.upload",
+                    input: In(
+                        name: url.lastPathComponent,
+                        category: "operations",
+                        fileData: dataURL
+                    )
+                )
+                await MainActor.run { uploadToast = "Uploaded \(url.lastPathComponent)" }
+                await store.load()
+            } catch {
+                await MainActor.run {
+                    uploadToast = "Upload failed: \((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)"
+                }
+            }
+        }
     }
 
     // MARK: TopBar
@@ -448,9 +533,11 @@ struct ShipperDocumentCenter: View {
     }
 
     private func tapUpload() {
-        // Real downstream: web continuation to the document-upload form. Same
-        // Bearer cookie auth, no re-login. Telemetry post retained for
-        // observability.
+        // Real action: present the system Files picker so the user
+        // can pick a PDF / image / doc from on-device storage. The
+        // picker handler in `pickedDocument` is wired below to
+        // POST the file to the document store. Replaces the prior
+        // openURL stub to a 404 web route.
         NotificationCenter.default.post(
             name: .eusoShipperDocumentUpload,
             object: nil,
@@ -459,9 +546,7 @@ struct ShipperDocumentCenter: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/documents/new") {
-            openURL(url)
-        }
+        showDocumentPicker = true
     }
 
     // MARK: Chip row
@@ -779,9 +864,9 @@ struct ShipperDocumentCenter: View {
     // MARK: Notification posts (§20.4)
 
     private func tapRow(_ d: DocumentsAPI.Document) {
-        // Real downstream: web continuation to the document preview surface
-        // (PDF / image / OCR view). Same Bearer cookie auth, no re-login.
-        // Telemetry post retained for observability.
+        // Real action: row tap behaves identically to "Download" —
+        // fetch the document bytes and present share sheet so the
+        // user can preview / save / forward. Replaces openURL stub.
         NotificationCenter.default.post(
             name: .eusoShipperDocumentRow,
             object: nil,
@@ -791,15 +876,10 @@ struct ShipperDocumentCenter: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/documents/\(d.id)") {
-            openURL(url)
-        }
+        Task { await fetchAndShare(d) }
     }
 
     private func tapDownload(_ d: DocumentsAPI.Document) {
-        // Real downstream: web continuation to the signed-URL document
-        // download endpoint. Same Bearer cookie auth, no re-login.
-        // Telemetry post retained for observability.
         NotificationCenter.default.post(
             name: .eusoShipperDocumentDownload,
             object: nil,
@@ -809,15 +889,12 @@ struct ShipperDocumentCenter: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/documents/\(d.id)/download") {
-            openURL(url)
-        }
+        Task { await fetchAndShare(d) }
     }
 
     private func tapCategory(_ c: DocumentsAPI.Category) {
-        // Real downstream: web continuation to the per-category document list.
-        // Same Bearer cookie auth, no re-login. Telemetry post retained for
-        // observability.
+        // Real action: scroll the existing chip filter to this
+        // category. Replaces openURL stub. Telemetry retained.
         NotificationCenter.default.post(
             name: .eusoShipperDocumentCategoryTile,
             object: nil,
@@ -827,8 +904,63 @@ struct ShipperDocumentCenter: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/documents/category/\(c.id)") {
-            openURL(url)
+        if let f = DocFilter.allCases.first(where: { $0.id == c.id || $0.label.lowercased() == c.id.lowercased() }) {
+            tapFilter(f)
+        }
+    }
+
+    /// Fetch the document body via `documents.getFileData`, decode the
+    /// data URL, write to a tmp file, and present `UIActivityView
+    /// Controller` so the user can save / preview / share. The
+    /// `pendingShareItems` and share sheet wiring lives at the top
+    /// of the body modifier chain.
+    private func fetchAndShare(_ d: DocumentsAPI.Document) async {
+        struct In: Encodable { let id: String }
+        struct Out: Decodable {
+            let id: String?
+            let name: String?
+            let fileUrl: String?
+            let type: String?
+        }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.query(
+                "documents.getFileData",
+                input: In(id: d.id)
+            )
+            guard let raw = resp.fileUrl, !raw.isEmpty else {
+                await MainActor.run { uploadToast = "No file body for \(d.name)" }
+                return
+            }
+            // Decode data: URL → raw bytes; pass through for normal URLs.
+            var bytes: Data? = nil
+            var ext = (d.name as NSString).pathExtension
+            if ext.isEmpty { ext = "bin" }
+            if raw.hasPrefix("data:") {
+                if let comma = raw.firstIndex(of: ","),
+                   let decoded = Data(base64Encoded: String(raw[raw.index(after: comma)...])) {
+                    bytes = decoded
+                    if raw.contains("application/pdf") { ext = "pdf" }
+                    else if raw.contains("image/png")  { ext = "png" }
+                    else if raw.contains("image/jpeg") { ext = "jpg" }
+                }
+            }
+            let dir = FileManager.default.temporaryDirectory
+                .appendingPathComponent("eusotrip-docs", isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let fileName = (resp.name ?? d.name) + (ext.hasPrefix(".") ? ext : ".\(ext)")
+            let url = dir.appendingPathComponent(fileName)
+            if let bytes = bytes {
+                try bytes.write(to: url, options: .atomic)
+                await MainActor.run { pendingShareDocs = [url] }
+            } else if let normal = URL(string: raw) {
+                await MainActor.run { openURL(normal) }
+            } else {
+                await MainActor.run { uploadToast = "Couldn't decode \(d.name)" }
+            }
+        } catch {
+            await MainActor.run {
+                uploadToast = "Fetch failed: \((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)"
+            }
         }
     }
 
@@ -945,4 +1077,15 @@ extension Notification.Name {
         .environment(\.palette, Theme.light)
         .preferredColorScheme(.light)
         .background(Theme.light.bgPage)
+}
+
+/// System share sheet wrapper for the document download / preview
+/// flow. Local to this file so it doesn't collide with the same-name
+/// helpers in 207 ShipperReports / 299 Reports.
+private struct DocsCenterShareSheet: UIViewControllerRepresentable {
+    let items: [URL]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }

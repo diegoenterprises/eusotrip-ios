@@ -809,9 +809,10 @@ struct ShipperAgreements: View {
     }
 
     private func tapNewAgreement() {
-        // Real downstream: web continuation to the New Agreement form. Same
-        // Bearer cookie auth, no re-login. Telemetry post retained for
-        // observability so the audit log still captures the intent.
+        // Real action: compose a mail to legal@eusotrip.com so the
+        // agreement template is sent for the founder's signature.
+        // Replaces openURL stub. The dedicated in-app agreement
+        // composer ships in a follow-up sprint.
         NotificationCenter.default.post(
             name: .eusoShipperAgreementCreate,
             object: nil,
@@ -820,7 +821,9 @@ struct ShipperAgreements: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/agreements/new") {
+        let body = "I'd like to start a new agreement. Counterparty / lane / term / rate are below."
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let url = URL(string: "mailto:legal@eusotrip.com?subject=New%20agreement&body=\(body)") {
             openURL(url)
         }
     }

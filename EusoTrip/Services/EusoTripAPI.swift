@@ -304,6 +304,7 @@ final class EusoTripAPI: ObservableObject {
     lazy var eld: ELDAPI = ELDAPI(api: self)
     lazy var capabilities: CapabilitiesAPI = CapabilitiesAPI(api: self)
     lazy var media: MediaAPI = MediaAPI(api: self)
+    lazy var reports: ReportsAPI = ReportsAPI(api: self)
 
     // --- Driver-facing surfaces added to back the gamification / wallet /
     // fleet / availability screens. Each router mirrors a file under
@@ -10754,6 +10755,14 @@ struct ShipperAPI {
         /// `Date` via `new Date(input.pickupDate)` for the Drizzle
         /// insert. Empty strings are coalesced to nil before send.
         let pickupDate: String?
+        /// Captured from HERE autosuggest / "lat,lng" paste in
+        /// `HereAddressField`. When present the backend skips
+        /// re-geocoding and goes straight to truck-route distance.
+        /// Nil → server geocodes the free-text address as a fallback.
+        let originLat: Double?
+        let originLng: Double?
+        let destLat: Double?
+        let destLng: Double?
     }
 
     /// Acknowledgement envelope returned by `shippers.create`.
@@ -10792,7 +10801,11 @@ struct ShipperAPI {
         rate: Double? = nil,
         weight: Double? = nil,
         notes: String? = nil,
-        pickupDate: String? = nil
+        pickupDate: String? = nil,
+        originLat: Double? = nil,
+        originLng: Double? = nil,
+        destLat: Double? = nil,
+        destLng: Double? = nil
     ) async throws -> PostLoadAck {
         try await api.mutation(
             "shippers.create",
@@ -10803,7 +10816,11 @@ struct ShipperAPI {
                 rate: rate,
                 weight: weight,
                 notes: notes,
-                pickupDate: pickupDate
+                pickupDate: pickupDate,
+                originLat: originLat,
+                originLng: originLng,
+                destLat: destLat,
+                destLng: destLng
             )
         )
     }
@@ -16483,5 +16500,82 @@ struct MediaAPI {
 
     struct SimpleResult: Decodable {
         let success: Bool
+    }
+}
+
+// =====================================================================
+// ReportsAPI — Shipper Reports (207_ShipperReports.swift) wired to real
+// server export procedures. Each method returns the rendered file body
+// + filename + MIME so the screen can write a tmp file and present
+// `UIActivityViewController` (system Share sheet → Save to Files,
+// AirDrop, Mail, Messages, etc).
+// 2026-05-05 — replaces the prior `openURL("https://app.eusotrip.com/
+// shipper/reports/export/...")` web-continuation, which 404'd because
+// no `/shipper/reports/export/` route existed. Founder no-stubs
+// doctrine: "wire production app, no skeletons no stubs."
+// =====================================================================
+
+struct ReportsAPI {
+    let api: EusoTripAPI
+
+    /// Server response shape for every export procedure. iOS writes
+    /// `body` to a temp file named `filename` and presents the Share
+    /// sheet so the user can save / mail / AirDrop the export.
+    struct ExportFile: Decodable, Hashable {
+        let filename: String
+        let mime: String
+        let body: String
+    }
+
+    /// CSV: spend rolled up per origin → destination lane, for every
+    /// load attributed to the signed-in shipper across the union of
+    /// possible shipperId resolutions (email-resolved DB id, raw auth
+    /// id, companyId, teammates).
+    func exportSpendByLane() async throws -> ExportFile {
+        try await api.queryNoInput("reports.exportSpendByLane")
+    }
+
+    /// CSV: gross / settled / outstanding payable per catalyst.
+    func exportCatalystPayable() async throws -> ExportFile {
+        try await api.queryNoInput("reports.exportCatalystPayable")
+    }
+
+    /// CSV: full hazmat audit log (loads where cargoType == "hazmat")
+    /// — UN number, hazmat class, lane, status, rate.
+    func exportHazmatAudit() async throws -> ExportFile {
+        try await api.queryNoInput("reports.exportHazmatAudit")
+    }
+
+    /// CSV: GLEC v3.0 CO₂ statement — distance × weight × emissions
+    /// factor per load. Ready to drop into Scope-3 reporting.
+    func exportCO2Statement() async throws -> ExportFile {
+        try await api.queryNoInput("reports.exportCO2Statement")
+    }
+
+    /// CSV: run a saved-report cell. Verb selects how the server
+    /// shapes the rows (Q1 spend rollup, catalyst scorecard,
+    /// detention & accessorial, hazmat exposure log).
+    struct RunSavedInput: Encodable, Hashable {
+        let verb: String
+        let title: String
+    }
+    func runSavedReport(verb: String, title: String) async throws -> ExportFile {
+        try await api.mutation(
+            "reports.runSavedReport",
+            input: RunSavedInput(verb: verb, title: title)
+        )
+    }
+
+    /// CSV: custom builder compose. Picks a metric and a group-by
+    /// dimension and ships the rolled-up rows.
+    struct ComposeInput: Encodable, Hashable {
+        let metric: String   // "spend" | "loads" | "miles"
+        let groupBy: String  // "lane" | "equipment" | "catalyst"
+    }
+    func composeCustom(metric: String, groupBy: String) async throws -> ExportFile {
+        try await api.mutation(
+            "reports.composeCustom",
+            input: ComposeInput(metric: metric, groupBy: groupBy)
+        )
     }
 }

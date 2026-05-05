@@ -167,16 +167,32 @@ extension AvailableLoad {
     /// draws a valid polyline instead of dropping the camera into the
     /// Atlantic.
     static func from(_ s: LoadSummary) -> AvailableLoad {
+        // Map needs SOMETHING to anchor the camera, so use the loose
+        // centroid that falls back to US-center on miss.
         let (oLat, oLng) = Self.centroid(for: s.origin)
         let (dLat, dLng) = Self.centroid(for: s.destination)
+        // Distance must be HONEST — only compute haversine when BOTH
+        // endpoints have a real centroid hit. Unknown cities (Long
+        // Beach, Reno, Bakersfield, etc.) returned nil from the
+        // strict lookup → no fabricated miles → UI's `miles > 0`
+        // guard hides the "0 mi" badge cleanly.
+        let estMiles: Int
+        if let oReal = Self.centroidStrict(for: s.origin),
+           let dReal = Self.centroidStrict(for: s.destination) {
+            estMiles = Self.haversineRoadMiles(oLat: oReal.0, oLng: oReal.1,
+                                               dLat: dReal.0, dLng: dReal.1)
+        } else {
+            estMiles = 0
+        }
+        let rpm = estMiles > 0 ? s.rate / Double(estMiles) : 0
         return AvailableLoad(
             id: s.loadNumber,
             origin: s.origin,
             destination: s.destination,
-            miles: 0,                      // not in LoadSummary — hidden in UI
+            miles: estMiles,
             equipment: (s.cargoType ?? "Dry").capitalized,
             rate: s.rate,
-            rpm: 0,                        // miles missing → rpm unknown
+            rpm: rpm,
             pickupWindow: s.pickupDate,
             broker: "—",                   // summary doesn't carry broker name
             hazmat: false,
@@ -190,6 +206,23 @@ extension AvailableLoad {
             originState: Self.stateFromCityState(s.origin),
             destState: Self.stateFromCityState(s.destination)
         )
+    }
+
+    /// Haversine great-circle miles × 1.2 road factor — same recipe
+    /// the server uses when no HERE-routed distance is on the load row.
+    /// Returns 0 (not a fabricated value) when either centroid lookup
+    /// failed so the UI's `miles > 0` guard hides the "0 mi" badge
+    /// and "$0.00/mi" rpm display gracefully.
+    static func haversineRoadMiles(oLat: Double, oLng: Double, dLat: Double, dLng: Double) -> Int {
+        guard oLat != 0, oLng != 0, dLat != 0, dLng != 0 else { return 0 }
+        let earthRadiusMiles = 3958.8
+        let dLatR = (dLat - oLat) * .pi / 180
+        let dLngR = (dLng - oLng) * .pi / 180
+        let a = sin(dLatR / 2) * sin(dLatR / 2)
+              + cos(oLat * .pi / 180) * cos(dLat * .pi / 180)
+              * sin(dLngR / 2) * sin(dLngR / 2)
+        let c = 2 * atan2(sqrt(a), sqrt(1 - a))
+        return Int((earthRadiusMiles * c * 1.2).rounded())
     }
 }
 
@@ -229,17 +262,37 @@ extension AvailableLoad {
     /// — the geographic center of the continental US) so MapKit has
     /// something legal to render instead of (0, 0) which drops the camera
     /// into the Atlantic.
+    /// Returns a real centroid lookup for known cities, or the
+    /// US-geographic-center fallback `(39.8283, -98.5795)` for
+    /// unknowns. Map drawers want SOMETHING to anchor the camera even
+    /// when the lookup misses, so the fallback is fine for that
+    /// purpose. **Distance helpers must NOT use this directly** — see
+    /// `centroidStrict(_:)` below for the nil-on-miss variant that
+    /// keeps haversine math honest.
     fileprivate static func centroid(for cityState: String) -> (Double, Double) {
+        if let hit = centroidStrict(for: cityState) { return hit }
+        return (39.8283, -98.5795)
+    }
+
+    /// Strict lookup — returns nil when the city isn't in the table
+    /// so callers can branch. The previous loose `centroid(for:)`
+    /// resolved every miss to the US geographic center, which made
+    /// haversine distance computations between an unknown origin
+    /// (Long Beach, Reno, etc.) and a known destination report
+    /// 1000+ fabricated miles. Founder report 2026-05-04. With the
+    /// strict lookup, callers get 0 mi instead of a wildly wrong
+    /// fake distance — the UI's `miles > 0` guard then hides the
+    /// badge entirely, which is the honest answer.
+    fileprivate static func centroidStrict(for cityState: String) -> (Double, Double)? {
         let key = cityState
             .trimmingCharacters(in: .whitespaces)
             .lowercased()
         if let hit = Self.centroids[key] { return hit }
-        // Try "city" prefix — handles "Dallas, TX" / "Dallas TX" variants.
         if let comma = key.firstIndex(of: ",") {
             let city = key[..<comma].trimmingCharacters(in: .whitespaces)
             if let hit = Self.centroids[city] { return hit }
         }
-        return (39.8283, -98.5795)
+        return nil
     }
 
     /// Small hand-curated table of US freight cities — matches the cities
@@ -288,5 +341,114 @@ extension AvailableLoad {
         "orlando":            (28.5383, -81.3792),
         "miami, fl":          (25.7617, -80.1918),
         "miami":              (25.7617, -80.1918),
+        // California freight network — expanded 2026-05-05 after
+        // founder report ("how do you get 1000+ mile from ca to nv
+        // that doesn't make sense"). Long Beach was the missing entry
+        // that made `Long Beach → Las Vegas` haversine resolve from
+        // US-center → 1100+ fake miles.
+        "long beach, ca":     (33.7701, -118.1937),
+        "long beach":         (33.7701, -118.1937),
+        "san diego, ca":      (32.7157, -117.1611),
+        "san diego":          (32.7157, -117.1611),
+        "san francisco, ca":  (37.7749, -122.4194),
+        "san francisco":      (37.7749, -122.4194),
+        "oakland, ca":        (37.8044, -122.2712),
+        "oakland":            (37.8044, -122.2712),
+        "sacramento, ca":     (38.5816, -121.4944),
+        "sacramento":         (38.5816, -121.4944),
+        "fresno, ca":         (36.7378, -119.7871),
+        "fresno":             (36.7378, -119.7871),
+        "bakersfield, ca":    (35.3733, -119.0187),
+        "bakersfield":        (35.3733, -119.0187),
+        "stockton, ca":       (37.9577, -121.2908),
+        "stockton":           (37.9577, -121.2908),
+        "ontario, ca":        (34.0633, -117.6509),
+        "ontario":            (34.0633, -117.6509),
+        "riverside, ca":      (33.9533, -117.3962),
+        "riverside":          (33.9533, -117.3962),
+        // Pacific NW + Mountain West
+        "seattle, wa":        (47.6062, -122.3321),
+        "seattle":            (47.6062, -122.3321),
+        "tacoma, wa":         (47.2529, -122.4443),
+        "tacoma":             (47.2529, -122.4443),
+        "portland, or":       (45.5152, -122.6784),
+        "portland":           (45.5152, -122.6784),
+        "salt lake city, ut": (40.7608, -111.8910),
+        "salt lake city":     (40.7608, -111.8910),
+        "boise, id":          (43.6150, -116.2023),
+        "boise":              (43.6150, -116.2023),
+        "reno, nv":           (39.5296, -119.8138),
+        "reno":               (39.5296, -119.8138),
+        "tucson, az":         (32.2226, -110.9747),
+        "tucson":             (32.2226, -110.9747),
+        "albuquerque, nm":    (35.0844, -106.6504),
+        "albuquerque":        (35.0844, -106.6504),
+        "el paso, tx":        (31.7619, -106.4850),
+        "el paso":            (31.7619, -106.4850),
+        // Northeast + Midwest
+        "new york, ny":       (40.7128, -74.0060),
+        "new york":           (40.7128, -74.0060),
+        "newark, nj":         (40.7357, -74.1724),
+        "newark":             (40.7357, -74.1724),
+        "philadelphia, pa":   (39.9526, -75.1652),
+        "philadelphia":       (39.9526, -75.1652),
+        "boston, ma":         (42.3601, -71.0589),
+        "boston":             (42.3601, -71.0589),
+        "detroit, mi":        (42.3314, -83.0458),
+        "detroit":            (42.3314, -83.0458),
+        "indianapolis, in":   (39.7684, -86.1581),
+        "indianapolis":       (39.7684, -86.1581),
+        "columbus, oh":       (39.9612, -82.9988),
+        "columbus":           (39.9612, -82.9988),
+        "cleveland, oh":      (41.4993, -81.6944),
+        "cleveland":          (41.4993, -81.6944),
+        "cincinnati, oh":     (39.1031, -84.5120),
+        "cincinnati":         (39.1031, -84.5120),
+        "minneapolis, mn":    (44.9778, -93.2650),
+        "minneapolis":        (44.9778, -93.2650),
+        "milwaukee, wi":      (43.0389, -87.9065),
+        "milwaukee":          (43.0389, -87.9065),
+        "st. louis, mo":      (38.6270, -90.1994),
+        "st louis, mo":       (38.6270, -90.1994),
+        "saint louis, mo":    (38.6270, -90.1994),
+        "st. louis":          (38.6270, -90.1994),
+        "st louis":           (38.6270, -90.1994),
+        "saint louis":        (38.6270, -90.1994),
+        "louisville, ky":     (38.2527, -85.7585),
+        "louisville":         (38.2527, -85.7585),
+        // South + Southeast
+        "charlotte, nc":      (35.2271, -80.8431),
+        "charlotte":          (35.2271, -80.8431),
+        "raleigh, nc":        (35.7796, -78.6382),
+        "raleigh":            (35.7796, -78.6382),
+        "richmond, va":       (37.5407, -77.4360),
+        "richmond":           (37.5407, -77.4360),
+        "savannah, ga":       (32.0809, -81.0912),
+        "savannah":           (32.0809, -81.0912),
+        "tampa, fl":          (27.9506, -82.4572),
+        "tampa":              (27.9506, -82.4572),
+        "fort lauderdale, fl": (26.1224, -80.1373),
+        "fort lauderdale":    (26.1224, -80.1373),
+        "mobile, al":         (30.6954, -88.0399),
+        "mobile":             (30.6954, -88.0399),
+        "baton rouge, la":    (30.4515, -91.1871),
+        "baton rouge":        (30.4515, -91.1871),
+        "lake charles, la":   (30.2266, -93.2174),
+        "lake charles":       (30.2266, -93.2174),
+        "little rock, ar":    (34.7465, -92.2896),
+        "little rock":        (34.7465, -92.2896),
+        // Texas freight hubs
+        "lubbock, tx":        (33.5779, -101.8552),
+        "lubbock":            (33.5779, -101.8552),
+        "amarillo, tx":       (35.2220, -101.8313),
+        "amarillo":           (35.2220, -101.8313),
+        "laredo, tx":         (27.5036, -99.5076),
+        "laredo":             (27.5036, -99.5076),
+        "midland, tx":        (31.9974, -102.0779),
+        "midland":            (31.9974, -102.0779),
+        "odessa, tx":         (31.8457, -102.3676),
+        "odessa":             (31.8457, -102.3676),
+        "corpus christi, tx": (27.8006, -97.3964),
+        "corpus christi":     (27.8006, -97.3964),
     ]
 }

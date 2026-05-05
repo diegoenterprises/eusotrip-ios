@@ -48,6 +48,34 @@ extension EnvironmentValues {
 extension Notification.Name {
     /// `userInfo["screenId"]` — the screen registry id to swap to.
     static let eusoShipperNavSwap = Notification.Name("eusoShipperNavSwap")
+
+    /// Pop one entry off the ShipperSurface navigation stack. Posted by
+    /// the surface-level back overlay AND by any leaf screen that wants
+    /// a programmatic back action ("Done" buttons on sheet-style
+    /// detail screens, gesture-driven dismissals). No userInfo —
+    /// `popOne()` is the only behavior. Resolves the founder's
+    /// "stuck on the screen" complaint where Me-hub leaf screens had
+    /// no path back to the parent hub.
+    static let eusoShipperNavBack = Notification.Name("eusoShipperNavBack")
+
+    /// Avatar-tap from the Me hero. ShipperSurface listens and
+    /// presents a `PhotosPicker` sheet; on selection the picked
+    /// `Data` rides through `profile.updateAvatar` so the new photo
+    /// persists server-side and shows on web + iPad.
+    static let eusoShipperAvatarPickRequested = Notification.Name("eusoShipperAvatarPickRequested")
+
+    /// Fired after `profile.updateAvatar` succeeds so any surface
+    /// rendering the avatar (Me hero, top-bar duAvatar, profile
+    /// edit) can re-fetch and repaint. Role-agnostic — both shipper
+    /// and driver listen.
+    static let eusoProfileAvatarUpdated = Notification.Name("eusoProfileAvatarUpdated")
+
+    /// Real-time broadcast from `profile.updateProfile` /
+    /// `profile.updateAvatar` on the server. Fires when a remote
+    /// device edits the user's profile — listening surfaces re-fetch
+    /// via `profile.getMyProfile` so iPad and iPhone stay in sync
+    /// while both apps are open.
+    static let eusoProfileUpdated = Notification.Name("eusoProfileUpdated")
 }
 
 /// Slot-label → screen-id map. Keyed off the lowercased label string
@@ -58,7 +86,11 @@ enum ShipperNavRoute {
         "home":        "200",
         "create load": "204",
         "loads":       "201",
-        "me":          "202",
+        // "Me" lands on 320 (MeHomeScreen) — the gateway with ACCOUNT /
+        // INTEL / EUSOWALLET / NETWORK / COMPLIANCE / TERMINAL OPS /
+        // SETTINGS cell groups. 202 (ShipperProfile) is reachable from
+        // inside Me via the ACCOUNT → "Profile" cell.
+        "me":          "320",
     ]
 
     /// `BottomNav` emits the orb tap as `"esang"` — surfaced via a

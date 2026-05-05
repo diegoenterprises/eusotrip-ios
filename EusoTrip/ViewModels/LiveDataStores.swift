@@ -1077,13 +1077,22 @@ final class CratesStore: BaseDynamicListStore<GamificationAPI.Crate> {
 /// `EusoEmptyState`.
 @MainActor
 final class PulseLobbyStore: BaseDynamicListStore<MessagingMessage> {
-    var conversationId: String = "driver-lobby"
+    /// Decodable envelope for `messaging.getLobby`. The endpoint
+    /// resolves the user → company → "The Lobby" conversation and
+    /// returns the recent messages in the canonical
+    /// `MessagingMessage` shape (server-side mapped — see
+    /// `messaging.ts :: getLobby`). The previous implementation
+    /// posted to a hardcoded `conversationId: "driver-lobby"`,
+    /// which the canonical `messages.getMessages` parser rejected
+    /// (parseInt of "driver-lobby" → 0 → "Invalid conversation
+    /// ID") so the lobby was always empty.
+    private struct LobbyEnvelope: Decodable {
+        let messages: [MessagingMessage]
+    }
 
     override func fetch() async throws -> [MessagingMessage] {
-        try await EusoTripAPI.shared.messaging.getMessages(
-            conversationId: conversationId,
-            limit: 50
-        )
+        let env: LobbyEnvelope = try await EusoTripAPI.shared.queryNoInput("messaging.getLobby")
+        return env.messages
     }
 }
 
@@ -3562,7 +3571,11 @@ final class ShipperPostLoadStore: ObservableObject {
         rate: Double?,
         weight: Double?,
         notes: String?,
-        pickupDate: String?
+        pickupDate: String?,
+        originLat: Double? = nil,
+        originLng: Double? = nil,
+        destLat: Double? = nil,
+        destLng: Double? = nil
     ) async {
         let trimOrigin = origin.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimDest   = destination.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -3583,7 +3596,11 @@ final class ShipperPostLoadStore: ObservableObject {
                 },
                 pickupDate: (pickupDate?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap {
                     $0.isEmpty ? nil : $0
-                }
+                },
+                originLat: originLat,
+                originLng: originLng,
+                destLat: destLat,
+                destLng: destLng
             )
             self.phase = .success(ack)
         } catch let api as EusoTripAPIError {

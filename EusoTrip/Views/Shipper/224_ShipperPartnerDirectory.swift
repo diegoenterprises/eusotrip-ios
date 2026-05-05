@@ -802,9 +802,9 @@ struct ShipperPartnerDirectory: View {
     // MARK: Notification posts (§20.4)
 
     private func tapRow(_ p: SupplyChainAPI.Partner) {
-        // Real downstream: web continuation to the partner detail surface
-        // (contracts + lane history). Same Bearer cookie auth, no re-login.
-        // Telemetry post retained for observability.
+        // Real action: jump to 213 Catalyst Scorecards filtered to
+        // this partner so the founder sees their lane history,
+        // on-time rate, and grade in-app. Replaces openURL stub.
         NotificationCenter.default.post(
             name: .eusoShipperPartnerRow,
             object: nil,
@@ -814,9 +814,10 @@ struct ShipperPartnerDirectory: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/partners/\(p.id)") {
-            openURL(url)
-        }
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "213", "partnerId": p.id]
+        )
     }
 
     // MARK: Empty / error
@@ -836,8 +837,9 @@ struct ShipperPartnerDirectory: View {
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
             Button {
-                // Real downstream: web continuation to the partner invite form.
-                // Same Bearer cookie auth. Telemetry post retained for observability.
+                // Real action: compose a mail to ops to broker a
+                // partner introduction. Replaces openURL stub. The
+                // dedicated in-app invite form ships in a follow-up.
                 NotificationCenter.default.post(
                     name: .eusoShipperPartnerInvite,
                     object: nil,
@@ -846,7 +848,9 @@ struct ShipperPartnerDirectory: View {
                         "shipperCompanyId": 1
                     ]
                 )
-                if let url = URL(string: "https://app.eusotrip.com/shipper/partners/new") {
+                let body = "I'd like to invite a partner. Carrier name / MC# / lanes / hazmat capability are below."
+                    .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+                if let url = URL(string: "mailto:ops@eusotrip.com?subject=Partner%20invite&body=\(body)") {
                     openURL(url)
                 }
             } label: {

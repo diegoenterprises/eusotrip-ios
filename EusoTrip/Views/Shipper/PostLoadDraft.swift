@@ -79,6 +79,15 @@ final class PostLoadDraft: ObservableObject {
 
     @Published var origin: String = ""
     @Published var destination: String = ""
+    /// Geocoded coordinates captured by `HereAddressField` (HERE
+    /// autosuggest selection or "lat,lng" paste). Sent with
+    /// `shippers.create` so the load detail map renders the lane and
+    /// the server can route distance directly without re-geocoding.
+    /// Falls back to server-side geocode on shippers.create when nil.
+    @Published var originLat: Double? = nil
+    @Published var originLng: Double? = nil
+    @Published var destLat: Double? = nil
+    @Published var destLng: Double? = nil
     @Published var pickupDate: Date? = nil
     @Published var deliveryDate: Date? = nil
     @Published var stops: [Stop] = []   // optional intermediate stops
@@ -210,9 +219,17 @@ final class PostLoadDraft: ObservableObject {
             // Hit `shippers.create` directly with a strict Zod payload.
             // The string-literal cargoType matches the server enum and
             // the existing typed wrapper at line 9755.
+            //
+            // originLat/originLng/destLat/destLng are sent when the user
+            // picked a HERE autosuggest result or pasted "lat,lng" in
+            // the address field. Server uses these to skip re-geocoding
+            // and route distance directly. When nil the server geocodes
+            // both ends as a fallback.
             struct In: Encodable {
                 let origin: String; let destination: String; let cargoType: String
                 let rate: Double?; let weight: Double?; let notes: String?; let pickupDate: String?
+                let originLat: Double?; let originLng: Double?
+                let destLat:   Double?; let destLng:   Double?
             }
             struct Out: Decodable {
                 let success: Bool; let id: Int; let loadNumber: String
@@ -226,7 +243,9 @@ final class PostLoadDraft: ObservableObject {
                     rate: rate,
                     weight: weight,
                     notes: composedNotes().isEmpty ? nil : composedNotes(),
-                    pickupDate: pickupDate.map { iso.string(from: $0) }
+                    pickupDate: pickupDate.map { iso.string(from: $0) },
+                    originLat: originLat, originLng: originLng,
+                    destLat:   destLat,   destLng:   destLng
                 )
             )
             postedLoadNumber = result.loadNumber

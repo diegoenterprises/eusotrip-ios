@@ -805,9 +805,10 @@ struct ShipperControlTower: View {
     }
 
     private func tapViewAllExceptions() {
-        // "View all" exceptions — full exception sheet hasn't shipped
-        // in-app yet; route to the canonical web exceptions page (same
-        // Bearer cookie auth). Telemetry post retained for observability.
+        // Real action: jump to 201 ShipperLoads with "exception" as
+        // the search query so the row list narrows to the actual
+        // exception loads. Replaces openURL("…/control-tower/
+        // exceptions") which 404'd. Telemetry post retained.
         NotificationCenter.default.post(
             name: .eusoShipperControlTowerViewAllExceptions,
             object: nil,
@@ -816,15 +817,17 @@ struct ShipperControlTower: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/control-tower/exceptions") {
-            openURL(url)
-        }
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "201", "query": "exception"]
+        )
     }
 
     private func tapException(_ ex: ControlTowerAPI.ExceptionRow) {
-        // Exception detail sheet hasn't shipped in-app yet; route to
-        // the canonical web exception page filtered by row + mode.
-        // Telemetry post retained for observability.
+        // Real action: open the load detail (205) for this exception
+        // row so the user lands on the load that's in trouble and can
+        // act on it directly. Replaces openURL("…/exceptions/{id}")
+        // which 404'd. Telemetry post retained.
         NotificationCenter.default.post(
             name: .eusoShipperControlTowerException,
             object: nil,
@@ -836,9 +839,10 @@ struct ShipperControlTower: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/control-tower/exceptions/\(ex.rowId)") {
-            openURL(url)
-        }
+        NotificationCenter.default.post(
+            name: .eusoShipperLoadOpen, object: nil,
+            userInfo: ["loadId": ex.rowId]
+        )
     }
 }
 

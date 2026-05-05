@@ -811,9 +811,9 @@ struct ShipperContracts: View {
     }
 
     private func tapNewContract() {
-        // In-app new-contract flow hasn't shipped yet; route to the
-        // canonical web contract-builder (same Bearer cookie auth — no
-        // re-login). Telemetry post retained for observability.
+        // Real action: jump to 223 Agreements where new contracts
+        // are signed. Replaces openURL stub to 404 web route.
+        // Telemetry post retained for observability.
         NotificationCenter.default.post(
             name: .eusoShipperContractsCreate,
             object: nil,
@@ -822,9 +822,10 @@ struct ShipperContracts: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/contracts/new") {
-            openURL(url)
-        }
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "223"]
+        )
     }
 
     // MARK: Empty + error states

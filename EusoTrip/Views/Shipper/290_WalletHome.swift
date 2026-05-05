@@ -100,6 +100,9 @@ private struct WalletHomeBody: View {
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.right").foregroundStyle(palette.textTertiary)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
             }
         }.buttonStyle(.plain)
     }

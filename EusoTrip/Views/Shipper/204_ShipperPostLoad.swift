@@ -66,6 +66,17 @@ struct ShipperPostLoad: View {
     // Form state — preserved from prior surface
     @State private var origin: String = ""
     @State private var destination: String = ""
+    // Geocoded coordinates captured by `HereAddressField`. Sent with
+    // `shippers.create` so distance / map render without a server-
+    // side re-geocode round-trip. Founder report 2026-05-05 — the
+    // 204 Post Load screen was using plain `TextField` for
+    // origin/destination, not the autocomplete-aware HereAddressField
+    // that step 250 uses, so users typing "Housto" got iOS keyboard
+    // predictions but no platform autocomplete. Swapped below.
+    @State private var originLat: Double? = nil
+    @State private var originLng: Double? = nil
+    @State private var destLat: Double? = nil
+    @State private var destLng: Double? = nil
     @State private var cargoType: ShipperAPI.CargoType = .general
     @State private var hasPickupDate: Bool = false
     @State private var pickupDate: Date = Date()
@@ -248,12 +259,16 @@ struct ShipperPostLoad: View {
             ZStack(alignment: .topTrailing) {
                 VStack(alignment: .leading, spacing: 0) {
                     laneField(label: "ORIGIN",
-                              binding: $origin,
-                              placeholder: "City, ST · e.g. Houston, TX")
+                              text: $origin,
+                              lat: $originLat,
+                              lng: $originLng,
+                              placeholder: "City, ST or lat,lng · e.g. Houston, TX")
                     laneConnector
                     laneField(label: "DESTINATION",
-                              binding: $destination,
-                              placeholder: "City, ST · e.g. Dallas, TX")
+                              text: $destination,
+                              lat: $destLat,
+                              lng: $destLng,
+                              placeholder: "City, ST or lat,lng · e.g. Dallas, TX")
                 }
                 .padding(Space.s4)
                 .background(palette.bgCard)
@@ -271,7 +286,19 @@ struct ShipperPostLoad: View {
         }
     }
 
-    private func laneField(label: String, binding: Binding<String>, placeholder: String) -> some View {
+    /// Lane row — origin or destination — uses `HereAddressField` for
+    /// HERE-Geocoding-backed autocomplete + raw "lat,lng" paste
+    /// support. Founder report 2026-05-05: the prior plain
+    /// `TextField` produced ZERO autocomplete suggestions (only iOS
+    /// keyboard's own predictive bar showed); now real HERE place
+    /// suggestions appear inline.
+    private func laneField(
+        label: String,
+        text: Binding<String>,
+        lat: Binding<Double?>,
+        lng: Binding<Double?>,
+        placeholder: String
+    ) -> some View {
         HStack(alignment: .top, spacing: Space.s3) {
             ZStack {
                 Circle()
@@ -286,13 +313,13 @@ struct ShipperPostLoad: View {
                 Text(label)
                     .font(EType.micro).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
-                TextField(placeholder, text: binding)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
-                    .tint(LinearGradient.diagonal)
-                    .textInputAutocapitalization(.words)
-                    .autocorrectionDisabled()
-                    .disabled(isSubmitting)
+                HereAddressField(
+                    text: text,
+                    lat: lat,
+                    lng: lng,
+                    placeholder: placeholder
+                )
+                .disabled(isSubmitting)
             }
             Spacer(minLength: 0)
         }
@@ -377,12 +404,24 @@ struct ShipperPostLoad: View {
 
     private var pickupTile: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
+            HStack(spacing: 6) {
                 Text("PICKUP")
                     .font(EType.micro).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
-                Spacer()
-                Toggle("Schedule", isOn: $hasPickupDate.animation(.spring(response: 0.22, dampingFraction: 0.85)))
+                Spacer(minLength: 4)
+                // The "Schedule" label was inside the Toggle's title
+                // string and `.labelsHidden()` failed to hide it
+                // under dynamic type, so the founder saw "Sched-\nule"
+                // wrap inside a tiny pill on the Post Load screen
+                // (2026-05-05). Splitting the label out as a sibling
+                // Text + passing an empty title to Toggle bypasses
+                // both the label-hidden bug and the wrap.
+                Text("SCHEDULE")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                Toggle("", isOn: $hasPickupDate.animation(.spring(response: 0.22, dampingFraction: 0.85)))
                     .toggleStyle(GradientToggleStyle())
                     .labelsHidden()
             }
@@ -923,7 +962,11 @@ struct ShipperPostLoad: View {
             rate: rate,
             weight: weight,
             notes: notes,
-            pickupDate: pickupISO
+            pickupDate: pickupISO,
+            originLat: originLat,
+            originLng: originLng,
+            destLat: destLat,
+            destLng: destLng
         )
         if case .success(let ack) = store.phase {
             self.lastSuccess = ack
@@ -934,6 +977,8 @@ struct ShipperPostLoad: View {
     private func resetForm() {
         origin = ""
         destination = ""
+        originLat = nil; originLng = nil
+        destLat   = nil; destLng   = nil
         hasPickupDate = false
         pickupDate = Date()
         weightText = ""

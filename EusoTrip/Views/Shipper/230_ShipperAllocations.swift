@@ -720,9 +720,17 @@ struct ShipperWeeklyAllocations: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/allocations/\(row.alcId)") {
-            openURL(url)
-        }
+        // Native nav into the canonical Allocations screen (229).
+        // Was force-opening `app.eusotrip.com/...` in the in-app
+        // Safari sheet which surfaced as the founder's "redirects
+        // to web for some reason and its an error" report
+        // (2026-05-04). The web URL is kept on the notification
+        // userInfo so any listener that wants the deep-link can use
+        // it; the user-visible action stays in-app.
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "229"]
+        )
     }
 
     private func tapCompact(_ row: CompactAllocRow) {
@@ -735,9 +743,10 @@ struct ShipperWeeklyAllocations: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/allocations/\(row.alcId)") {
-            openURL(url)
-        }
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "229"]
+        )
     }
 
     private func tapAllocate() {
@@ -749,9 +758,13 @@ struct ShipperWeeklyAllocations: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/allocations/new") {
-            openURL(url)
-        }
+        // "Create allocation" routes to the canonical 229 Allocations
+        // board where the create flow lives. Same web-redirect fix as
+        // the row taps above.
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "229"]
+        )
     }
 
     // MARK: No-match card

@@ -1366,7 +1366,16 @@ struct Shell<Content: View, Nav: View>: View {
                 content()
                 Color.clear.frame(height: Device.navHeight + Device.safeBottom + Space.s4)
             }
+            // `.ignoresSafeArea(.keyboard, edges: .bottom)` pins the
+            // bottom nav to the actual screen bottom even when the
+            // keyboard is up — without this the nav lifts with the
+            // keyboard and parks in the middle of the screen behind
+            // any active TextField. Reported by founder 2026-05-04
+            // ("bottom nav gets stuck on middle of screen when posting
+            // a load") — Post Load step 1's Origin/Destination fields
+            // raise the keyboard and the nav rode up with it.
             nav()
+                .ignoresSafeArea(.keyboard, edges: .bottom)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environment(\.palette, theme)

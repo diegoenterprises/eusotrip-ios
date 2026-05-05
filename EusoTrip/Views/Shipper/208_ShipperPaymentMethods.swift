@@ -53,6 +53,11 @@ struct ShipperPaymentMethods: View {
 
     @State private var showAddSheet: Bool = false
     @State private var pendingUnlink: PaymentsAPI.PaymentMethod?
+    /// Tap on a method row (or the hero card) sets this so a
+    /// confirmationDialog presents Set-as-default / Unlink / Cancel.
+    /// Replaces the prior openURL("/shipper/payment-methods/{id}")
+    /// stub which 404'd because no such web route existed.
+    @State private var pendingAction: PaymentsAPI.PaymentMethod?
     @State private var lastToast: String?
 
     /// Auto-pay rules — local toggles until payments.{getAutoPayRules,
@@ -125,6 +130,28 @@ struct ShipperPaymentMethods: View {
             } else {
                 Text("This removes \(row.bankName ?? "the bank") ••\(row.last4). Load funding will pause until you pick another default.")
             }
+        }
+        .confirmationDialog(
+            pendingAction.map { rowTitle($0) } ?? "",
+            isPresented: Binding(
+                get: { pendingAction != nil },
+                set: { if !$0 { pendingAction = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingAction
+        ) { row in
+            if !row.isDefault {
+                Button("Set as default") {
+                    Task {
+                        await store.setDefault(id: row.id)
+                        flashToast("Funding default updated")
+                    }
+                }
+            }
+            Button("Unlink", role: .destructive) {
+                pendingUnlink = row
+            }
+            Button("Cancel", role: .cancel) {}
         }
     }
 
@@ -202,22 +229,22 @@ struct ShipperPaymentMethods: View {
 
     private var heroCardView: some View {
         Button {
-            // Card-detail sheet hasn't shipped in-app yet; route to
-            // the canonical web payment-method detail page so the
-            // tap lands on a real surface (same Bearer cookie auth
-            // — no re-login). Telemetry post retained for
-            // observability.
-            let methodId = defaultCardRow?.id ?? "card_4821"
-            NotificationCenter.default.post(
-                name: .eusoShipperPaymentDefaultCard, object: nil,
-                userInfo: [
-                    "source": "208_ShipperPaymentMethods",
-                    "shipperCompanyId": session.user?.companyId ?? "1",
-                    "methodId": methodId,
-                ]
-            )
-            if let url = URL(string: "https://app.eusotrip.com/shipper/payment-methods/\(methodId)") {
-                openURL(url)
+            // Real action: tap on the hero card pops the same
+            // Set-as-default / Unlink confirmationDialog as the row
+            // taps below. Replaces the prior openURL("…/payment-
+            // methods/{id}") which 404'd. Telemetry post retained.
+            if let row = defaultCardRow {
+                NotificationCenter.default.post(
+                    name: .eusoShipperPaymentDefaultCard, object: nil,
+                    userInfo: [
+                        "source": "208_ShipperPaymentMethods",
+                        "shipperCompanyId": session.user?.companyId ?? "1",
+                        "methodId": row.id,
+                    ]
+                )
+                pendingAction = row
+            } else {
+                showAddSheet = true
             }
         } label: {
             ZStack(alignment: .topLeading) {
@@ -345,11 +372,9 @@ struct ShipperPaymentMethods: View {
         let isMutating = store.mutatingId == row.id
         let status: PaymentRowStatus = row.isDefault ? .defaultMethod : .verified
         return Button {
-            // Method-row detail surface hasn't shipped in-app yet;
-            // route to the canonical web payment-method detail page
-            // so the tap lands on a real surface (same Bearer cookie
-            // auth — no re-login). Telemetry post retained for
-            // observability.
+            // Real action: open the Set-as-default / Unlink
+            // confirmationDialog. Replaces openURL fallback to a
+            // non-existent web route. Telemetry post retained.
             NotificationCenter.default.post(
                 name: .eusoShipperPaymentMethodTap, object: nil,
                 userInfo: [
@@ -360,9 +385,7 @@ struct ShipperPaymentMethods: View {
                     "isDefault": row.isDefault,
                 ]
             )
-            if let url = URL(string: "https://app.eusotrip.com/shipper/payment-methods/\(row.id)") {
-                openURL(url)
-            }
+            pendingAction = row
         } label: {
             HStack(alignment: .center, spacing: 16) {
                 methodIcon(for: row)

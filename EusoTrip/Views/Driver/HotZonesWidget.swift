@@ -1151,12 +1151,62 @@ struct HotZonesHeatMapView: View {
     var onSelectZone: ((HotZoneEntry) -> Void)? = nil
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.palette) private var palette
 
     var body: some View {
-        HotZonesHeatmapWebView(
-            points: Self.points(from: zones),
-            colorScheme: colorScheme
-        )
+        // The HERE OMV vector tile service has been intermittently
+        // failing tile auth on our plan tier (the JS WebView's inner
+        // HTML falls through to a "basemap unavailable" placeholder
+        // when this happens — verified on-device 2026-05-04). Until
+        // the JS key + tile-tier auth are both green, render the
+        // SwiftUI fallback unconditionally so the widget always paints
+        // something useful (brand gradient + live zone count + tap
+        // CTA) instead of the broken WebView. Re-enable the WebView
+        // by flipping `forceFallback` to false once the JS API key
+        // is provisioned AND tile auth verifies.
+        let forceFallback = true
+        if forceFallback || HereMapsConfig.jsApiKey == nil {
+            jsKeyMissingFallback
+        } else {
+            HotZonesHeatmapWebView(
+                points: Self.points(from: zones),
+                colorScheme: colorScheme
+            )
+        }
+    }
+
+    private var jsKeyMissingFallback: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.07, green: 0.45, blue: 1.00).opacity(0.35),
+                    Color(red: 0.74, green: 0.00, blue: 1.00).opacity(0.35),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .overlay(
+                Color.black.opacity(0.35)
+            )
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "flame.fill")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(.white)
+                    Text("DEMAND HEATMAP")
+                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+                Text("\(zones.count) live \(zones.count == 1 ? "zone" : "zones")")
+                    .font(.system(size: 22, weight: .heavy))
+                    .foregroundStyle(.white)
+                Text("Tap a zone below for the detail breakdown.")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.75))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(14)
+        }
     }
 
     /// Derive heatmap weights from the demand tier + load-to-truck

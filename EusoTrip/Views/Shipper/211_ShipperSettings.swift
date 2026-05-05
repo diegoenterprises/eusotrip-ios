@@ -58,6 +58,10 @@ struct ShipperSettings: View {
     @StateObject private var laneTemplatesStore = LoadTemplatesListStore()
     @State private var showSignOutConfirm = false
     @State private var lastToast: String?
+    /// Drives the in-app About sheet presented from `tapAbout()`.
+    /// Replaces the prior openURL("https://app.eusotrip.com/about")
+    /// stub.
+    @State private var showAboutSheet: Bool = false
 
     /// Closure injected by ContentView so role-tab destinations can
     /// fall through to other registry rows without owning the routing
@@ -134,6 +138,13 @@ struct ShipperSettings: View {
             async let a: Void = prefsStore.refresh()
             async let b: Void = laneTemplatesStore.refresh()
             _ = await (a, b)
+        }
+        .sheet(isPresented: $showAboutSheet) {
+            ShipperSettingsAboutSheet(
+                version: Self.shortVersion,
+                build: Self.buildNumber
+            )
+            .eusoSheetX()
         }
         .overlay(alignment: .bottom) {
             if let toast = lastToast {
@@ -921,9 +932,10 @@ struct ShipperSettings: View {
     // MARK: - Notification posts (§20.4 — wireframe-defined names)
 
     private func tapLaneTemplate(_ t: LoadTemplatesAPI.Template) {
-        // Lane-template detail editor hasn't shipped in-app yet; route
-        // to the canonical web template editor (same Bearer cookie auth
-        // — no re-login). Telemetry post retained for observability.
+        // Real action: jump to 204 Post Load with the template id so
+        // the post-load wizard pre-fills from the saved lane. The
+        // wizard listens for `templateId` in eusoShipperNavSwap
+        // userInfo. Replaces the prior openURL("…/templates/{id}").
         NotificationCenter.default.post(
             name: .eusoShipperSettingsLaneTemplateRow,
             object: nil,
@@ -933,15 +945,17 @@ struct ShipperSettings: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/templates/\(t.id)") {
-            openURL(url)
-        }
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "204", "templateId": t.id]
+        )
     }
 
     private func tapNewTemplate() {
-        // "+ New template" — in-app template-creation flow not yet
-        // shipped; route to the canonical web new-template form.
-        // Telemetry post retained for observability.
+        // Real action: jump to 204 Post Load. The wizard's "Save as
+        // template" toggle persists the just-typed lane as a fresh
+        // template via `loadTemplates.create`. Replaces the prior
+        // openURL("…/templates/new").
         NotificationCenter.default.post(
             name: .eusoShipperSettingsLaneTemplateAdd,
             object: nil,
@@ -950,15 +964,18 @@ struct ShipperSettings: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/templates/new") {
-            openURL(url)
-        }
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "204", "saveAsTemplate": true]
+        )
     }
 
     private func tapManage2FA() {
-        // EUSO-2105 — auth.tfaStatus + auth.{tfaEnable,tfaDisable} not
-        // yet shipped on iOS; route to web 2FA management page (same
-        // Bearer cookie auth). Telemetry post retained for observability.
+        // Real action: 2FA is enterprise-managed pending the
+        // auth.tfaEnable / tfaDisable / tfaStatus build-out
+        // (EUSO-2105). For now, surface a real mail composer to
+        // security@eusotrip.com so the founder + ops team can
+        // co-ordinate the enrolment. No more dead 404 link.
         NotificationCenter.default.post(
             name: .eusoShipperSettingsSecurityManage,
             object: nil,
@@ -968,15 +985,18 @@ struct ShipperSettings: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/settings/security/2fa") {
+        let body = "I'd like to enrol in 2-factor authentication on my Eusorone Technologies account. Please reach out with the next step."
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let url = URL(string: "mailto:security@eusotrip.com?subject=2FA%20enrolment&body=\(body)") {
             openURL(url)
         }
     }
 
     private func tapViewSessions() {
-        // EUSO-2106 — auth.listSessions + auth.revokeSession not yet
-        // shipped on iOS; route to web active-sessions page (same
-        // Bearer cookie auth). Telemetry post retained for observability.
+        // Real action: same enterprise-managed pattern as 2FA above.
+        // Composes a mail to ops with the device hint so the founder
+        // can request a session audit. Replaces the prior
+        // openURL("…/security/sessions").
         NotificationCenter.default.post(
             name: .eusoShipperSettingsSecuritySessions,
             object: nil,
@@ -985,14 +1005,18 @@ struct ShipperSettings: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/settings/security/sessions") {
+        let body = "Please send me the active-sessions audit for my Eusorone Technologies account."
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let url = URL(string: "mailto:security@eusotrip.com?subject=Active%20sessions%20audit&body=\(body)") {
             openURL(url)
         }
     }
 
     private func tapAbout() {
-        // About → canonical doctrine + release-notes page on web.
-        // Telemetry post retained for observability.
+        // Real action: present an in-app About sheet showing version,
+        // build, copyright, and quick links to privacy + terms +
+        // support. Drives a SwiftUI `.sheet(isPresented:)` flag on
+        // the screen body. Replaces openURL("…/about") which 404'd.
         NotificationCenter.default.post(
             name: .eusoShipperSettingsAbout,
             object: nil,
@@ -1003,9 +1027,7 @@ struct ShipperSettings: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/about") {
-            openURL(url)
-        }
+        showAboutSheet = true
     }
 
     // MARK: - Toast
@@ -1102,4 +1124,88 @@ struct ShipperSettingsScreen: View {
     ShipperSettingsScreen(theme: Theme.light)
         .environmentObject(EusoTripSession())
         .preferredColorScheme(.light)
+}
+
+/// In-app About sheet — replaces the prior openURL("…/about") stub.
+/// Shows version + build, copyright, and quick-tap links to the
+/// privacy policy / terms / support email. Tapped at the founder's
+/// 2026-05-05 dead-button audit.
+private struct ShipperSettingsAboutSheet: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
+    @Environment(\.dismiss) private var dismiss
+    let version: String
+    let build: String
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    Image(systemName: "shippingbox.fill")
+                        .resizable().scaledToFit()
+                        .frame(width: 56, height: 56)
+                        .foregroundStyle(LinearGradient.diagonal)
+                        .padding(.top, 24)
+                    Text("EusoTrip")
+                        .font(.system(size: 26, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Version \(version) (\(build))")
+                        .font(EType.caption).foregroundStyle(palette.textSecondary)
+                    Text("Eusorone Technologies, Inc.")
+                        .font(EType.caption).foregroundStyle(palette.textTertiary)
+
+                    LifecycleCard {
+                        VStack(spacing: 0) {
+                            row(icon: "doc.text", label: "Privacy Policy") {
+                                if let u = URL(string: "https://eusotrip.com/privacy") { openURL(u) }
+                            }
+                            Divider().overlay(palette.borderFaint)
+                            row(icon: "doc.text", label: "Terms of Service") {
+                                if let u = URL(string: "https://eusotrip.com/terms") { openURL(u) }
+                            }
+                            Divider().overlay(palette.borderFaint)
+                            row(icon: "envelope.fill", label: "Email support") {
+                                if let u = URL(string: "mailto:support@eusotrip.com") { openURL(u) }
+                            }
+                            Divider().overlay(palette.borderFaint)
+                            row(icon: "globe", label: "eusotrip.com") {
+                                if let u = URL(string: "https://eusotrip.com") { openURL(u) }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.top, 8)
+
+                    Text("Powered by ESANG AI™")
+                        .font(EType.micro).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                        .padding(.top, 8)
+
+                    Color.clear.frame(height: 32)
+                }
+            }
+            .navigationTitle("About")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func row(icon: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Image(systemName: icon).foregroundStyle(LinearGradient.diagonal)
+                Text(label).font(EType.body).foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").foregroundStyle(palette.textTertiary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
 }

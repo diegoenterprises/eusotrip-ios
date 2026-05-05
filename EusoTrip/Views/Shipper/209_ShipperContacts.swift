@@ -93,6 +93,15 @@ struct ShipperContacts: View {
     @State private var lastToast: String?
     @State private var localFavoriteOverrides: [String: Bool] = [:]
 
+    /// Dialog state — set when the user taps a contact row. Drives a
+    /// confirmationDialog with Call / Text / Email / Cancel options.
+    /// Replaces the prior openURL("…/contacts/{id}") stub which 404'd.
+    @State private var pendingContactAction: ContactActionRef?
+
+    /// Sheet state — set when the user taps "Add contact". Drives a
+    /// real in-app form that calls `contacts.create`.
+    @State private var showAddContactSheet: Bool = false
+
     /// §11 / §11.2 / §11.4 facility canon — three flagship facility POCs
     /// that mirror the §11.2 MATRIX-50 lanes (Houston tanker, KC NH₃,
     /// LA→Phoenix berries). Until `facilities.list` ships, these are the
@@ -155,6 +164,40 @@ struct ShipperContacts: View {
         }
         .task { await store.refresh() }
         .refreshable { await store.refresh() }
+        .confirmationDialog(
+            pendingContactAction?.name ?? "Contact",
+            isPresented: Binding(
+                get: { pendingContactAction != nil },
+                set: { if !$0 { pendingContactAction = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingContactAction
+        ) { ref in
+            if !ref.phone.isEmpty {
+                Button("Call \(ref.phone)") {
+                    let digits = ref.phone.filter { $0.isNumber || $0 == "+" }
+                    if let url = URL(string: "tel://\(digits)") { openURL(url) }
+                }
+                Button("Text \(ref.phone)") {
+                    let digits = ref.phone.filter { $0.isNumber || $0 == "+" }
+                    if let url = URL(string: "sms:\(digits)") { openURL(url) }
+                }
+            }
+            if !ref.email.isEmpty {
+                Button("Email \(ref.email)") {
+                    if let url = URL(string: "mailto:\(ref.email)") { openURL(url) }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .sheet(isPresented: $showAddContactSheet) {
+            AddContactSheet(onCreated: { name in
+                showAddContactSheet = false
+                Task { await store.refresh() }
+                flashToast("Saved \(name)")
+            })
+            .eusoSheetX()
+        }
     }
 
     // MARK: - TopBar
@@ -234,9 +277,7 @@ struct ShipperContacts: View {
                         "shipperCompanyId": session.user?.companyId ?? "1",
                     ]
                 )
-                if let url = URL(string: "https://app.eusotrip.com/shipper/contacts/new") {
-                    openURL(url)
-                }
+                showAddContactSheet = true
             } label: {
                 ZStack {
                     Capsule().fill(LinearGradient.primary)
@@ -635,10 +676,10 @@ struct ShipperContacts: View {
 
     // MARK: - Tap handlers
 
-    private func tapContactRow(_ contactId: String) {
-        // Contact-detail surface hasn't shipped in-app yet; route to
-        // the web detail page so the tap lands on a real surface.
-        // Telemetry post retained for observability.
+    private func tapContactRow(_ contactId: String,
+                               name: String = "",
+                               phone: String = "",
+                               email: String = "") {
         NotificationCenter.default.post(
             name: .eusoShipperContactRow, object: nil,
             userInfo: [
@@ -647,9 +688,11 @@ struct ShipperContacts: View {
                 "shipperCompanyId": session.user?.companyId ?? "1",
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/contacts/\(contactId)") {
-            openURL(url)
-        }
+        // Real action: pop a Call / Text / Email confirmationDialog.
+        // Replaces the prior openURL("…/contacts/{id}") stub.
+        pendingContactAction = ContactActionRef(
+            id: contactId, name: name, phone: phone, email: email
+        )
     }
 
     private func tapFavorite(_ contactId: String, currentlyFavorited: Bool) {
@@ -910,4 +953,121 @@ private func shipperNavTrailing_209() -> [NavSlot] {
     ShipperContactsScreen(theme: Theme.light)
         .environmentObject(EusoTripSession())
         .preferredColorScheme(.light)
+}
+
+/// Identifier wrapper used by the row-tap confirmationDialog so the
+/// caller can stash name + phone + email in one shot. The dialog
+/// renders Call / Text / Email / Cancel against these fields.
+private struct ContactActionRef: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let phone: String
+    let email: String
+}
+
+/// In-app contact-creation sheet — replaces the prior openURL hand-off
+/// to a non-existent web `/shipper/contacts/new` route. Calls
+/// `contacts.create` directly so the row lands in the contacts list
+/// on the next refresh.
+private struct AddContactSheet: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+    let onCreated: (String) -> Void
+
+    @State private var contactType: String = "shipper"
+    @State private var name: String = ""
+    @State private var company: String = ""
+    @State private var email: String = ""
+    @State private var phone: String = ""
+    @State private var saving: Bool = false
+    @State private var saveError: String? = nil
+
+    private let typeOptions: [(id: String, label: String)] = [
+        ("shipper", "Shipper"),
+        ("catalyst", "Catalyst"),
+        ("broker", "Broker"),
+        ("driver", "Driver"),
+        ("terminal", "Terminal / Facility"),
+        ("vendor", "Vendor"),
+        ("other", "Other"),
+    ]
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Contact") {
+                    TextField("Name", text: $name)
+                        .textInputAutocapitalization(.words)
+                    Picker("Type", selection: $contactType) {
+                        ForEach(typeOptions, id: \.id) { opt in
+                            Text(opt.label).tag(opt.id)
+                        }
+                    }
+                    TextField("Company (optional)", text: $company)
+                }
+                Section("Reach") {
+                    TextField("Phone", text: $phone)
+                        .keyboardType(.phonePad)
+                    TextField("Email", text: $email)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+                if let err = saveError {
+                    Section {
+                        Text(err).foregroundStyle(Brand.danger).font(EType.caption)
+                    }
+                }
+            }
+            .navigationTitle("Add contact")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if saving {
+                        ProgressView()
+                    } else {
+                        Button("Save") { Task { await save() } }
+                            .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
+            }
+        }
+    }
+
+    private func save() async {
+        guard !saving else { return }
+        saving = true
+        saveError = nil
+        struct In: Encodable {
+            let type: String
+            let name: String
+            let company: String?
+            let email: String?
+            let phone: String?
+        }
+        struct Out: Decodable { let id: String }
+        let trimmedEmail = email.trimmingCharacters(in: .whitespaces)
+        let trimmedPhone = phone.trimmingCharacters(in: .whitespaces)
+        let trimmedCompany = company.trimmingCharacters(in: .whitespaces)
+        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        do {
+            let _: Out = try await EusoTripAPI.shared.mutation(
+                "contacts.create",
+                input: In(
+                    type: contactType,
+                    name: trimmedName,
+                    company: trimmedCompany.isEmpty ? nil : trimmedCompany,
+                    email: trimmedEmail.isEmpty ? nil : trimmedEmail,
+                    phone: trimmedPhone.isEmpty ? nil : trimmedPhone
+                )
+            )
+            onCreated(trimmedName)
+        } catch {
+            saveError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        saving = false
+    }
 }

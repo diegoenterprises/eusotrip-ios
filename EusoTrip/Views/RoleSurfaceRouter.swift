@@ -34,6 +34,7 @@
 //
 
 import SwiftUI
+import PhotosUI
 import SafariServices
 
 // MARK: - Role surface router
@@ -179,8 +180,29 @@ struct ShipperSurface: View {
     let palette: Theme.Palette
 
     @EnvironmentObject var session: EusoTripSession
-    @State private var currentScreenId: String = "200"
+    /// Navigation stack — pushes on `eusoShipperNavSwap`, pops on
+    /// `eusoShipperNavBack`. The four canonical bottom-nav tabs (200
+    /// home / 201 loads / 204 create-load / 320 me-home) reset the
+    /// stack to a single entry so tab-switching never strands the
+    /// user inside a back-trail of an unrelated tab. The previous
+    /// implementation used a single `currentScreenId` with no
+    /// history, so leaf screens drilled from Me had no path back to
+    /// the parent hub other than re-tapping the Me tab — which dumped
+    /// the user on Me Home (320) instead of returning to the hub
+    /// child they were viewing. Reported by founder 2026-05-04
+    /// ("none of the menu items in 'Me' for shipper have a back
+    /// button so you get stuck on the screen").
+    @State private var screenStack: [String] = ["200"]
     @State private var showESang: Bool = false
+
+    /// Top of the navigation stack — the screen currently rendered.
+    private var currentScreenId: String { screenStack.last ?? "200" }
+
+    /// Bottom-nav tab roots. Pushing one of these collapses the stack
+    /// to a single entry rather than appending — same semantics as
+    /// UIKit's `UITabBarController` where switching tabs resets the
+    /// per-tab back-stack.
+    private static let tabRoots: Set<String> = ["200", "201", "204", "320"]
     /// Captured from `.eusoShipperLoadOpen` / `.eusoShipperLoadOpenMap`
     /// / `.eusoShipperSettlementOpenLoad` notification userInfo. When
     /// non-nil and the current screen is 205 / 222, we construct that
@@ -191,6 +213,15 @@ struct ShipperSurface: View {
     /// web continuation (load edit, settlement approve flow, etc.).
     /// Cleared when the sheet dismisses.
     @State private var webContinuationURL: URL? = nil
+
+    /// Photos picker visibility — toggled by the avatar tap from the
+    /// Me hero. The picked `PhotosPickerItem` resolves to JPEG `Data`
+    /// in `.onChange`, gets uploaded as a base64 data URL via
+    /// `profile.updateAvatar`, and the new URL is mirrored into the
+    /// session user so the Me hero re-renders with the new image
+    /// without a manual refresh.
+    @State private var avatarPickerItem: PhotosPickerItem? = nil
+    @State private var avatarPickerOpen: Bool = false
 
     private var current: ProductionScreen {
         // Detail screens with a captured loadId override the registry
@@ -235,171 +266,37 @@ struct ShipperSurface: View {
     }
 
     var body: some View {
+        // Body kept short to dodge SwiftUI's "compiler unable to
+        // type-check this expression in reasonable time" timeout —
+        // the surface previously chained 26+ modifiers on a single
+        // expression which exceeds the type-checker's tractable
+        // budget. Heavy work (back overlay, environment injections,
+        // 15 onReceive subscribers, sheets) is split into private
+        // ViewModifier types below.
         current.view(palette)
             .id("shipper-\(currentScreenId)")
             .transition(.opacity)
-            // Mask the inherited driver-mode env handler — ContentView
-            // injects `driverNavHandler` on the outer container so the
-            // driver tab routes work app-wide. Without this mask the
-            // shipper user's BottomNav slots resolved to the driver
-            // closure (BottomNav.activeNavHandler picks
-            // driverNavHandler first in its priority chain) → taps
-            // fired into a no-op for shipper screens. Mask = nil
-            // forces the activeNavHandler chain to fall through to
-            // shipperNavHandler.
-            .environment(\.driverNavHandler, nil)
-            .environment(\.shipperNavHandler) { label in
-                // Direct in-process dispatch — no NotificationCenter
-                // round-trip needed when this surface owns the state.
-                // Mirrors the Driver-side `driverNavHandler` pattern
-                // already wired in ContentView.
-                ShipperNavDispatcher.handle(label)
-            }
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoShipperNavSwap)) { note in
-                guard let id = note.userInfo?["screenId"] as? String else { return }
-                guard RoleAccess.canRender(role: .shipper, screenId: id) else {
-                    currentScreenId = "200"
-                    return
+            .modifier(ShipperBackOverlay(stackDepth: screenStack.count))
+            .modifier(ShipperEnvInjections())
+            .modifier(ShipperNotificationListeners(
+                screenStack: $screenStack,
+                activeLoadId: $activeLoadId,
+                avatarPickerOpen: $avatarPickerOpen,
+                showESang: $showESang,
+                webContinuationURL: $webContinuationURL,
+                pushOrTab: pushOrTab,
+                popOne: popOne,
+                handleMeAction: handleShipperMeAction
+            ))
+            .photosPicker(isPresented: $avatarPickerOpen,
+                          selection: $avatarPickerItem,
+                          matching: .images)
+            .onChange(of: avatarPickerItem) { _, newItem in
+                guard let newItem else { return }
+                Task {
+                    await uploadShipperAvatar(item: newItem)
+                    avatarPickerItem = nil
                 }
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    currentScreenId = id
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoShipperEsangTapped)) { _ in
-                showESang = true
-            }
-            // 200_ShipperHome's "Post a load" button posts
-            // `eusoShipperLoadCreate`; "Browse carriers" posts
-            // `eusoShipperBrowseCarriers`. Without these listeners
-            // both buttons fired into the void. Now they navigate
-            // to 204 (Post Load wizard) and 224 (Partner Directory
-            // — the carrier-vetting board) respectively. Same RBAC
-            // guard as the canonical `eusoShipperNavSwap` so a
-            // foreign payload can't sneak through.
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoShipperLoadCreate)) { _ in
-                guard RoleAccess.canRender(role: .shipper, screenId: "204") else { return }
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    currentScreenId = "204"
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoShipperBrowseCarriers)) { _ in
-                guard RoleAccess.canRender(role: .shipper, screenId: "224") else { return }
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    activeLoadId = nil
-                    currentScreenId = "224"
-                }
-            }
-            // Open the canonical Loads board (201).
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoShipperLoadListOpen)) { _ in
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    activeLoadId = nil
-                    currentScreenId = "201"
-                }
-            }
-            // Drill into a specific load (205 Load Detail). The
-            // notification carries `userInfo["loadId"]`; we capture
-            // it into `activeLoadId` so the `current` resolver
-            // constructs ShipperLoadDetailScreen with the real id
-            // instead of the registry's "0" sentinel.
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoShipperLoadOpen)) { note in
-                guard let id = note.userInfo?["loadId"] as? String else { return }
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    activeLoadId = id
-                    currentScreenId = "205"
-                }
-            }
-            // Open the live-tracking map view (222) for a load.
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoShipperLoadOpenMap)) { note in
-                guard RoleAccess.canRender(role: .shipper, screenId: "222") else { return }
-                if let id = note.userInfo?["loadId"] as? String { activeLoadId = id }
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    currentScreenId = "222"
-                }
-            }
-            // Open the load detail from the settlement detail screen.
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoShipperSettlementOpenLoad)) { note in
-                guard let id = note.userInfo?["loadId"] as? String else { return }
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    activeLoadId = id
-                    currentScreenId = "205"
-                }
-            }
-            // PostLoad wizard's close gestures route back to home.
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoShipperPostLoadDismiss)) { _ in
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    activeLoadId = nil
-                    currentScreenId = "200"
-                }
-            }
-            // Two posted aliases for "open the ESANG sheet":
-            // `eusoShipperEsangOpen` (legacy) and
-            // `eusoShipperLoadMessageEsang` (load-context-aware) both
-            // toggle the same sheet as `eusoShipperEsangTapped`.
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoShipperEsangOpen)) { _ in showESang = true }
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoShipperLoadMessageEsang)) { _ in showESang = true }
-            // Web continuation: action-menu "Edit / Open on web /
-            // Cancel" choices on the load-detail surface route here
-            // and we present `app.eusotrip.com/loads/{loadId}` in a
-            // Safari sheet. Same Bearer cookie keeps the user
-            // authenticated; the web app's edit + cancel forms are
-            // canonical until the in-app mutations land.
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoShipperLoadOpenOnWeb)) { note in
-                let id = (note.userInfo?["loadId"] as? String) ?? ""
-                let action = (note.userInfo?["action"] as? String) ?? ""
-                // Branch by action so the same notification can route
-                // load-edits / counter-all / settlement-approve-all
-                // through the right web path. Loads pre-pop the
-                // counter amount via query string so the user lands
-                // on the right form pre-filled.
-                let path: String
-                switch action {
-                case "counter-all":
-                    let amt = (note.userInfo?["amount"] as? String) ?? ""
-                    path = "loads/\(id)/bids?action=counter-all&amount=\(amt)"
-                case "settlement-approve-all":
-                    path = "settlements?action=approve-all"
-                case "settlement.openOnWeb":
-                    path = "settlements"
-                case "agreement.openOnWeb":
-                    path = "agreements"
-                default:
-                    path = id.isEmpty ? "loads" : "loads/\(id)"
-                }
-                webContinuationURL = URL(string: "https://app.eusotrip.com/\(path)")
-            }
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoShipperLoadCancelRequested)) { note in
-                let id = (note.userInfo?["loadId"] as? String) ?? ""
-                webContinuationURL = URL(string:
-                    "https://app.eusotrip.com/loads/\(id)?action=cancel"
-                )
-            }
-            // Global subscriber for `MeAction.fire("shipper.*")` keys
-            // posted by Shipper screens. Each key maps to either an
-            // in-app deep-link, a sheet open, or a web continuation
-            // — every key resolves to a real action, no more dead
-            // taps. Per [feedback_no_dead_buttons] doctrine: if a
-            // CTA's full backend wave hasn't shipped yet, it still
-            // fires through here and lands the user somewhere
-            // useful (web portal w/ shared session) instead of
-            // dropping the tap.
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoMeActionFired)) { note in
-                guard let key = note.object as? String else { return }
-                let info = note.userInfo ?? [:]
-                handleShipperMeAction(key: key, userInfo: info)
             }
             .sheet(item: Binding<ShipperWebContinuationItem?>(
                 get: { webContinuationURL.map(ShipperWebContinuationItem.init) },
@@ -409,15 +306,6 @@ struct ShipperSurface: View {
                     .ignoresSafeArea()
             }
             .sheet(isPresented: $showESang) {
-                // Shipper-context ESANG sheet — driver sheet was a
-                // mistake (showed driver chips like "HOS buffer" /
-                // "Fuel stop" / "Detention log" to a shipper).
-                // ShipperESangCoachSheet uses shipper chips
-                // (Active bids / Carrier vet / Settlement / Spend
-                // YTD / Post a load / Best lane rate) and sends
-                // `currentPage = "shipper.coach"` so server-side
-                // ESANG tunes its system prompt to the shipper
-                // knowledge slice.
                 ShipperESangCoachSheet()
                     .environment(\.palette, palette)
                     .environmentObject(session)
@@ -440,11 +328,11 @@ struct ShipperSurface: View {
                 activeLoadId = id
             }
             withAnimation(.easeInOut(duration: 0.22)) {
-                currentScreenId = "281"
+                pushOrTab("281")
             }
         case "shipper.allocation.detail":
             withAnimation(.easeInOut(duration: 0.22)) {
-                currentScreenId = "230b"
+                pushOrTab("230b")
             }
         case "shipper.bol.preview", "shipper.document.preview":
             if let urlStr = userInfo["url"] as? String,
@@ -452,32 +340,434 @@ struct ShipperSurface: View {
                 webContinuationURL = url
             } else {
                 withAnimation(.easeInOut(duration: 0.22)) {
-                    currentScreenId = "226"
+                    pushOrTab("226")
                 }
             }
 
-        // Compose / upload paths route to the web canonical form
-        // until each in-app mutation ships.
-        case "shipper.agreement.create":
-            webContinuationURL = URL(string: "https://app.eusotrip.com/agreements/new")
-        case "shipper.agreement.openOnWeb":
-            webContinuationURL = URL(string: "https://app.eusotrip.com/agreements")
+        // Native screens for actions that previously force-routed to the
+        // web. Founder direction 2026-05-04: "we built all these screens
+        // plus the logic" — the web fallback was masking shipped iOS
+        // surfaces. Each native screen is registered for shipper role
+        // (see ContentView ScreenRegistry); RoleAccess.canRender keeps
+        // the routes RBAC-safe.
+        case "shipper.agreement.create", "shipper.agreement.openOnWeb":
+            withAnimation(.easeInOut(duration: 0.22)) {
+                pushOrTab("223")  // Shipper · Agreements
+            }
         case "shipper.allocation.create":
-            webContinuationURL = URL(string: "https://app.eusotrip.com/allocations/new")
+            withAnimation(.easeInOut(duration: 0.22)) {
+                pushOrTab("229")  // Shipper · Allocations
+            }
         case "shipper.partner.invite":
-            webContinuationURL = URL(string: "https://app.eusotrip.com/partners/invite")
+            withAnimation(.easeInOut(duration: 0.22)) {
+                pushOrTab("224")  // Shipper · Partner Directory (invite)
+            }
         case "shipper.recurring.schedule":
-            webContinuationURL = URL(string: "https://app.eusotrip.com/recurring-loads/new")
+            withAnimation(.easeInOut(duration: 0.22)) {
+                pushOrTab("221")  // Shipper · Recurring Loads
+            }
         case "shipper.document.upload":
-            webContinuationURL = URL(string: "https://app.eusotrip.com/documents/upload")
+            withAnimation(.easeInOut(duration: 0.22)) {
+                pushOrTab("226")  // Shipper · Document Center
+            }
         case "shipper.settlement.openOnWeb":
-            webContinuationURL = URL(string: "https://app.eusotrip.com/settlements")
+            withAnimation(.easeInOut(duration: 0.22)) {
+                pushOrTab("206")  // Shipper · Settlements
+            }
 
         default:
             // Non-shipper.* keys (e.g., driver.*) belong to other
             // surfaces — silent default; the post is still valid
             // for any other listener subscribed in parallel.
             break
+        }
+    }
+
+    // MARK: - Avatar upload
+
+    /// Convert the picked photo to a JPEG data URL and ship it through
+    /// `profile.updateAvatar`. The mutation persists `profilePicture`
+    /// on the `users` row so web + iPad read the new image on next
+    /// `profile.getMyProfile`. Best-effort — silent failure leaves
+    /// the previous avatar in place.
+    @MainActor
+    private func uploadShipperAvatar(item: PhotosPickerItem) async {
+        guard let data = try? await item.loadTransferable(type: Data.self),
+              !data.isEmpty else { return }
+        // Compress to JPEG ≤ 200KB so the data-URL payload stays
+        // reasonable for a tRPC string field. UIKit's
+        // `UIImage(data:).jpegData(compressionQuality:)` produces a
+        // smaller blob than the original PNG/HEIC the picker hands us.
+        let bytes: Data = {
+            #if canImport(UIKit)
+            if let img = UIImage(data: data) {
+                let target: CGFloat = 512
+                let scale = min(target / img.size.width, target / img.size.height, 1)
+                let size = CGSize(width: img.size.width * scale, height: img.size.height * scale)
+                let renderer = UIGraphicsImageRenderer(size: size)
+                let resized = renderer.image { _ in
+                    img.draw(in: CGRect(origin: .zero, size: size))
+                }
+                if let jpeg = resized.jpegData(compressionQuality: 0.8) {
+                    return jpeg
+                }
+            }
+            #endif
+            return data
+        }()
+        let dataURL = "data:image/jpeg;base64,\(bytes.base64EncodedString())"
+
+        struct In: Encodable { let avatarUrl: String }
+        struct Out: Decodable { let success: Bool; let avatarUrl: String }
+        if let _: Out = try? await EusoTripAPI.shared.mutation(
+            "profile.updateAvatar",
+            input: In(avatarUrl: dataURL)
+        ) {
+            // Surface a refresh notification so any avatar-rendering
+            // surface (Me hero, top-bar `duAvatar`, MeProfile card)
+            // can re-fetch the profile and pick up the new picture.
+            NotificationCenter.default.post(name: .eusoProfileAvatarUpdated, object: nil)
+        }
+    }
+
+    // MARK: - Navigation stack helpers
+
+    /// Push a screen id onto the stack, OR collapse to a tab root.
+    /// Bottom-nav tab roots (200/201/204/320) reset the stack to a
+    /// single entry — same semantics as a UITabBarController where
+    /// switching tabs clears the per-tab back-trail. Re-tapping the
+    /// current tab is a no-op so duplicate entries don't accumulate.
+    private func pushOrTab(_ id: String) {
+        if Self.tabRoots.contains(id) {
+            screenStack = [id]
+            return
+        }
+        if screenStack.last == id { return }   // dedupe consecutive
+        screenStack.append(id)
+    }
+
+    /// Pop one entry off the stack. Never pops below the tab root —
+    /// the back overlay is hidden when stack count == 1, but defend
+    /// against rogue `.eusoShipperNavBack` posts anyway.
+    private func popOne() {
+        if screenStack.count > 1 {
+            screenStack.removeLast()
+        }
+    }
+}
+
+// MARK: - ShipperSurface modifier groups
+//
+// SwiftUI's type-checker times out around 15+ generic modifiers on a
+// single expression. Splitting the surface chain into named
+// ViewModifier types keeps each chain ≤ ~7 modifiers — well within
+// the type-checker's reliable budget — without changing semantics.
+
+/// No-op pass-through. The surface previously rendered a translucent
+/// back-arrow pill at top:56 — but every Me hub child screen
+/// (320a-g) already paints its own "← Me" affordance in its header
+/// row, so the overlay collided with the page subtitle (founder
+/// screenshot 2026-05-04). Leaf screens reachable below the hub
+/// children either have their own back affordance or land via
+/// notification posts that pop the stack programmatically. If a
+/// future leaf screen needs an extra back hit-target, give it its
+/// own header back row — keeping the overlay path off avoids the
+/// double-button collision.
+private struct ShipperBackOverlay: ViewModifier {
+    let stackDepth: Int
+    func body(content: Content) -> some View {
+        content
+    }
+}
+
+/// Three environment overrides applied in sequence:
+///   • driverNavHandler = nil — masks the inherited driver handler so
+///     bottom-nav slots route to ShipperNavDispatcher.
+///   • shipperNavHandler — direct in-process tab dispatch.
+///   • openURL — `app.eusotrip.com/shipper/*` deep-links re-route to
+///     the matching native screen (`ShipperWebToNativeMap`).
+private struct ShipperEnvInjections: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .environment(\.driverNavHandler, nil)
+            .environment(\.shipperNavHandler) { label in
+                ShipperNavDispatcher.handle(label)
+            }
+            .environment(\.openURL, OpenURLAction { url in
+                if let id = ShipperWebToNativeMap.screenId(for: url) {
+                    NotificationCenter.default.post(
+                        name: .eusoShipperNavSwap, object: nil,
+                        userInfo: ["screenId": id]
+                    )
+                    return .handled
+                }
+                return .systemAction
+            })
+    }
+}
+
+/// All 15 NotificationCenter subscribers the surface listens to —
+/// nav swaps, back, avatar-pick, ESANG sheet, load-create / browse-
+/// carriers / load-list / load-open / load-open-map / settlement-
+/// open-load / post-load-dismiss / esang-open / load-message-esang /
+/// load-open-on-web / load-cancel / me-action-fired. Re-exposes
+/// state via @Binding so the surface keeps owning truth.
+private struct ShipperNotificationListeners: ViewModifier {
+    @Binding var screenStack: [String]
+    @Binding var activeLoadId: String?
+    @Binding var avatarPickerOpen: Bool
+    @Binding var showESang: Bool
+    @Binding var webContinuationURL: URL?
+    let pushOrTab: (String) -> Void
+    let popOne: () -> Void
+    let handleMeAction: (String, [AnyHashable: Any]) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .modifier(ShipperNavReceivers(
+                screenStack: $screenStack,
+                activeLoadId: $activeLoadId,
+                avatarPickerOpen: $avatarPickerOpen,
+                showESang: $showESang,
+                pushOrTab: pushOrTab,
+                popOne: popOne
+            ))
+            .modifier(ShipperLoadReceivers(
+                screenStack: $screenStack,
+                activeLoadId: $activeLoadId,
+                showESang: $showESang,
+                webContinuationURL: $webContinuationURL,
+                pushOrTab: pushOrTab,
+                handleMeAction: handleMeAction
+            ))
+    }
+}
+
+/// Half 1 — nav-class subscribers. Limit to ≤ 7 receivers to keep the
+/// type-checker happy.
+private struct ShipperNavReceivers: ViewModifier {
+    @Binding var screenStack: [String]
+    @Binding var activeLoadId: String?
+    @Binding var avatarPickerOpen: Bool
+    @Binding var showESang: Bool
+    let pushOrTab: (String) -> Void
+    let popOne: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperNavSwap)) { note in
+                guard let id = note.userInfo?["screenId"] as? String else { return }
+                // `_logout` is a synthetic screenId posted by the Me
+                // hub Sign-out cell. Forward to the global logout
+                // notification — `EusoTripApp` listens and calls
+                // `session.signOut()`. Without this intercept the
+                // RBAC `canRender` check below fails (no registered
+                // screen named "_logout") and the user landed on
+                // Home instead of being signed out.
+                if id == "_logout" {
+                    NotificationCenter.default.post(name: Notification.Name("eusoLogoutRequested"), object: nil)
+                    return
+                }
+                guard RoleAccess.canRender(role: .shipper, screenId: id) else {
+                    screenStack = ["200"]
+                    return
+                }
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperNavBack)) { _ in
+                withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperAvatarPickRequested)) { _ in
+                avatarPickerOpen = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperEsangTapped)) { _ in
+                showESang = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperLoadCreate)) { _ in
+                guard RoleAccess.canRender(role: .shipper, screenId: "204") else { return }
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab("204") }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperBrowseCarriers)) { _ in
+                guard RoleAccess.canRender(role: .shipper, screenId: "224") else { return }
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    activeLoadId = nil
+                    pushOrTab("224")
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperLoadListOpen)) { _ in
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    activeLoadId = nil
+                    pushOrTab("201")
+                }
+            }
+    }
+}
+
+/// Half 2 — load-context + ESANG + MeAction subscribers. Same ≤ 7
+/// budget per modifier.
+private struct ShipperLoadReceivers: ViewModifier {
+    @Binding var screenStack: [String]
+    @Binding var activeLoadId: String?
+    @Binding var showESang: Bool
+    @Binding var webContinuationURL: URL?
+    let pushOrTab: (String) -> Void
+    let handleMeAction: (String, [AnyHashable: Any]) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperLoadOpen)) { note in
+                guard let id = note.userInfo?["loadId"] as? String else { return }
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    activeLoadId = id
+                    pushOrTab("205")
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperLoadOpenMap)) { note in
+                guard RoleAccess.canRender(role: .shipper, screenId: "222") else { return }
+                if let id = note.userInfo?["loadId"] as? String { activeLoadId = id }
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab("222") }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperSettlementOpenLoad)) { note in
+                guard let id = note.userInfo?["loadId"] as? String else { return }
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    activeLoadId = id
+                    pushOrTab("205")
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperPostLoadDismiss)) { _ in
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    activeLoadId = nil
+                    screenStack = ["200"]
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperEsangOpen)) { _ in
+                showESang = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperLoadMessageEsang)) { _ in
+                showESang = true
+            }
+            .modifier(ShipperWebContReceivers(
+                webContinuationURL: $webContinuationURL,
+                handleMeAction: handleMeAction
+            ))
+    }
+}
+
+/// Tail subscribers — load-open-on-web, load-cancel, MeAction. Split
+/// out so `ShipperLoadReceivers` stays ≤ 7 chained `onReceive` calls.
+private struct ShipperWebContReceivers: ViewModifier {
+    @Binding var webContinuationURL: URL?
+    let handleMeAction: (String, [AnyHashable: Any]) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperLoadOpenOnWeb)) { note in
+                let id = (note.userInfo?["loadId"] as? String) ?? ""
+                let action = (note.userInfo?["action"] as? String) ?? ""
+                let path: String
+                switch action {
+                case "counter-all":
+                    let amt = (note.userInfo?["amount"] as? String) ?? ""
+                    path = "loads/\(id)/bids?action=counter-all&amount=\(amt)"
+                case "settlement-approve-all": path = "settlements?action=approve-all"
+                case "settlement.openOnWeb":   path = "settlements"
+                case "agreement.openOnWeb":    path = "agreements"
+                default:                       path = id.isEmpty ? "loads" : "loads/\(id)"
+                }
+                webContinuationURL = URL(string: "https://app.eusotrip.com/\(path)")
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperLoadCancelRequested)) { note in
+                let id = (note.userInfo?["loadId"] as? String) ?? ""
+                webContinuationURL = URL(string: "https://app.eusotrip.com/loads/\(id)?action=cancel")
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoMeActionFired)) { note in
+                guard let key = note.object as? String else { return }
+                handleMeAction(key, note.userInfo ?? [:])
+            }
+    }
+}
+
+// MARK: - Shipper web→native deep-link mapper
+
+/// Maps `https://app.eusotrip.com/shipper/...` deep-link URLs to the
+/// shipper-role screen ID that handles the same surface natively. Used
+/// by `ShipperSurface`'s `\.openURL` interceptor to keep taps in-app
+/// when a native equivalent ships, while letting non-shipper URLs
+/// (PDF documents, Stripe checkout, mailto:, App Store, help articles)
+/// fall through to `SFSafariViewController` / system handlers.
+///
+/// Returning `nil` means "no native route — open the URL via the
+/// default system action." That preserves every legitimate web
+/// continuation; only the shipper deep-links that mask shipped iOS
+/// surfaces get redirected.
+enum ShipperWebToNativeMap {
+
+    /// Single source of truth for shipper deep-link → screen ID
+    /// mapping. Path patterns are matched against `URLComponents.path`
+    /// after stripping the leading slash. Trailing path segments are
+    /// ignored (the resource id is opaque to this mapper — the
+    /// destination screen reads its own id from notification userInfo
+    /// when it needs one).
+    static func screenId(for url: URL) -> String? {
+        // Only intercept shipper deep-links on the canonical app
+        // host. PDFs, Stripe redirects, mailto, etc. should bypass
+        // this mapper entirely.
+        guard let host = url.host,
+              host == "app.eusotrip.com" || host == "eusotrip.com" else {
+            return nil
+        }
+        let segments = url.pathComponents.filter { $0 != "/" }
+        guard segments.first == "shipper", segments.count >= 2 else {
+            return nil
+        }
+        switch segments[1] {
+        case "allocations":           return "229"
+        case "agreements":            return "223"
+        case "agreement":             return "223"
+        case "partner-directory":     return "224"
+        case "partners":              return "224"
+        case "partner":               return "434"
+        case "recurring-loads",
+             "recurring":             return "221"
+        case "documents",
+             "document-center":       return "226"
+        case "settlements":           return "206"
+        case "settlement":            return "227"
+        case "payment-methods",
+             "payment-method":        return "208"
+        case "bol",
+             "bols":                  return "228"
+        case "rfp",
+             "rfps":                  return "215"
+        case "contracts",
+             "contract":              return "217"
+        case "freight-claims",
+             "freight-claim",
+             "claims":                return "219"
+        case "control-tower":         return "212"
+        case "compliance":            return "216"
+        case "sustainability":        return "214"
+        case "reports":               return "207"
+        case "analytics":             return "210"
+        case "live-tracking",
+             "tracking":              return "222"
+        case "hot-zones":             return "225"
+        case "rate-board":            return "220"
+        case "settings":              return "211"
+        case "live-activity":         return "232"
+        case "watch":                 return "233"
+        case "haptic":                return "234"
+        case "focus":                 return "235"
+        case "widget",
+             "widgets":               return "236"
+        case "intents",
+             "siri":                  return "237"
+        case "handoff":               return "238"
+        case "apple-pay":             return "239"
+        case "carplay":               return "240"
+        case "loads":                 return "201"
+        case "load":                  return "205"
+        default:                      return nil
         }
     }
 }

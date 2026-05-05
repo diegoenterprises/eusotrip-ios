@@ -266,6 +266,14 @@ struct DriverHome: View {
                 // gradient restores the identity without a color flip.
                 .foregroundStyle(LinearGradient.diagonal)
                 .lineSpacing(-4)
+                .lineLimit(2)
+                // Without minimumScaleFactor a long first name (e.g.
+                // "Christopherson") forced a 3-line wrap inside the
+                // 180pt frame and spilled over the IridescentHairline.
+                // With it the text shrinks gracefully so "Hey, Long"
+                // and "Welcome back" both fit on two lines without
+                // overlapping the right-rail location/time block.
+                .minimumScaleFactor(0.6)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 180, alignment: .leading)
 

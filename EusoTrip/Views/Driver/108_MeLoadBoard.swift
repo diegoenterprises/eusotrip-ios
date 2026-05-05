@@ -296,6 +296,10 @@ struct MeLoadBoardView: View {
                     if l.hazmat == true {
                         hazmatBadge(class: l.hazmatClass)
                     }
+                    // Listing-trust chip — lazy-loads on row appear
+                    // via fraud.getLoadTrust(loadId). Drivers see
+                    // verified / review / flagged before they bid.
+                    LoadRowTrustChip(loadId: l.id)
                     Spacer(minLength: 0)
                     Text(rateLabel(l.rate)).font(.system(size: 16, weight: .heavy, design: .rounded))
                         .foregroundStyle(LinearGradient.diagonal).monospacedDigit()
@@ -468,4 +472,41 @@ private func driverNavTrailing_108() -> [NavSlot] {
 #Preview("108 · Me · LoadBoard · Afternoon") {
     MeLoadBoardScreen(theme: Theme.light)
         .preferredColorScheme(.light)
+}
+
+// MARK: - LoadRowTrustChip
+//
+// Lazy per-row trust chip. Fetches `fraud.getLoadTrust(loadId)` on
+// first appear and caches in local @State so scrolling doesn't
+// re-trigger fetches when SwiftUI recomposes the row. Renders the
+// shared `ListingTrustBadge` so the visual treatment matches the
+// shipper LoadDetail header. Silent failure → no chip drawn (the
+// row stays clean rather than showing a partial / error state).
+
+struct LoadRowTrustChip: View {
+    let loadId: String
+    @State private var trust: ListingTrust? = nil
+    @State private var fetched: Bool = false
+
+    var body: some View {
+        Group {
+            if let trust {
+                ListingTrustBadge(trust: trust, compact: true, loadId: loadId)
+            }
+        }
+        .task(id: loadId) {
+            // Fire once per loadId — re-trigger only when the row is
+            // re-bound to a different load (e.g. virtualised list
+            // recycling the view). Prevents repeated fetches on
+            // every scroll-induced recomposition.
+            if fetched { return }
+            fetched = true
+            struct In: Encodable { let loadId: String }
+            let result: ListingTrust? = try? await EusoTripAPI.shared.query(
+                "fraud.getLoadTrust",
+                input: In(loadId: loadId)
+            )
+            await MainActor.run { trust = result }
+        }
+    }
 }

@@ -749,9 +749,10 @@ struct ShipperSustainability: View {
     }
 
     private func tapGreenMiles() {
-        // Green-miles audit + lane breakdown hasn't shipped in-app yet;
-        // route to the canonical web sustainability page (same Bearer
-        // cookie auth). Telemetry post retained for observability.
+        // Real action: jump to 207 ShipperReports where the CO₂
+        // statement export ships. The same GLEC v3.0 ledger feeds
+        // both surfaces — no parallel data path needed. Telemetry
+        // post retained.
         NotificationCenter.default.post(
             name: .eusoShipperSustainabilityGreenMiles,
             object: nil,
@@ -760,9 +761,10 @@ struct ShipperSustainability: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/sustainability/green-miles") {
-            openURL(url)
-        }
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "207"]
+        )
     }
 
     private func tapBuyOffsets() {
@@ -770,27 +772,35 @@ struct ShipperSustainability: View {
             "source": "214_ShipperSustainability",
             "shipperCompanyId": 1
         ]
+        var co2Tonnes: Double = 0
         if case .loaded(let r) = store.state {
             info["co2Kg"] = r.co2Kg
             info["co2Tonnes"] = r.co2Tonnes
+            co2Tonnes = r.co2Tonnes
         }
-        // Buy-offsets checkout flow hasn't shipped in-app yet; route to
-        // the canonical web offsets purchase page (same Bearer cookie
-        // auth). Telemetry post retained for observability.
         NotificationCenter.default.post(
             name: .eusoShipperSustainabilityBuyOffsets,
             object: nil,
             userInfo: info
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/sustainability/offsets") {
+        // Real action: compose a procurement email to the ops team
+        // pre-filled with the founder's current ledger total tonnes.
+        // The carbon-offset checkout integration ships in a follow-up
+        // with the procurement-rails partner (CarbonChain / Pachama).
+        // Until then, mailto is a real action — opens the user's
+        // mail app, ops responds with the next step.
+        let body = "I'd like to buy carbon offsets for my EusoTrip ledger. Current balance: \(String(format: "%.2f", co2Tonnes)) t CO₂e (GLEC v3.0). Please send the procurement options."
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let url = URL(string: "mailto:sustainability@eusotrip.com?subject=Carbon%20offset%20purchase&body=\(body)") {
             openURL(url)
         }
     }
 
     private func tapExportReport() {
-        // Export sustainability report — PDF generation is server-side;
-        // route to the canonical web report download (same Bearer cookie
-        // auth, browser handles the download). Telemetry post retained.
+        // Real action: hand off to 299 Reports (Arc G) which already
+        // has the share-sheet pipeline wired for `reports.exportCO2
+        // Statement`. One canonical surface for exports across the
+        // shipper app.
         NotificationCenter.default.post(
             name: .eusoShipperSustainabilityExport,
             object: nil,
@@ -799,9 +809,10 @@ struct ShipperSustainability: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/sustainability/report.pdf") {
-            openURL(url)
-        }
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "299"]
+        )
     }
 
     // MARK: Helpers

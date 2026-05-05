@@ -98,6 +98,12 @@ struct ShipperLoadDetail: View {
     @State private var dockAssignError: String? = nil
     @State private var dockAssignToast: String? = nil
 
+    /// Listing-trust verdict for this load — fetched from
+    /// `fraud.getLoadTrust(loadId)` on appear. Drives the trust chip
+    /// in the top bar (verified / review / flagged) plus the report-
+    /// listing flow accessible from the chip's tap.
+    @State private var listingTrust: ListingTrust? = nil
+
     private var lifecycleVertical: TripVertical {
         TripVertical(role: session.user?.role)
     }
@@ -138,8 +144,14 @@ struct ShipperLoadDetail: View {
         // smoothly. RemoteState itself isn't Equatable across optionals,
         // so observe a derived String key instead.
         .animation(.easeOut(duration: 0.18), value: detailStore.state.value??.status ?? "")
-        .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .task {
+            await refreshAll()
+            await loadListingTrust()
+        }
+        .refreshable {
+            await refreshAll()
+            await loadListingTrust()
+        }
         // Kebab (⋯) tap fires `eusoShipperLoadActionMenu`; listen
         // here on the same screen so the action sheet actually
         // surfaces instead of the notification dropping into the
@@ -769,11 +781,12 @@ struct ShipperLoadDetail: View {
 
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
+            HStack(spacing: Space.s2) {
                 Text("✦ SHIPPER · LOAD · \(cargoEyebrow)")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()
+                ListingTrustBadge(trust: listingTrust, loadId: loadId)
                 Text(displayLoadId)
                     .font(EType.mono(.micro)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
@@ -1689,6 +1702,19 @@ struct ShipperLoadDetail: View {
             driverReadiness = readiness
             loadAppointment = appointment
         }
+    }
+
+    /// Pull the listing-trust verdict for this load. Verdict comes
+    /// straight off the load's `metadata.trust` JSON, computed at
+    /// post time and updated on user reports / admin overrides.
+    /// Failures fold to nil — the badge silently doesn't render.
+    private func loadListingTrust() async {
+        struct In: Encodable { let loadId: String }
+        let trust: ListingTrust? = try? await EusoTripAPI.shared.query(
+            "fraud.getLoadTrust",
+            input: In(loadId: loadId)
+        )
+        await MainActor.run { listingTrust = trust }
     }
 
     // MARK: - NRC compliance card (Hazmat-7 closure)

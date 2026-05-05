@@ -1396,7 +1396,13 @@ struct ShipperRFP: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/rfp/new") {
+        // Real action: compose a mail to the bid desk so ops can
+        // assemble the RFP bundle. Replaces the prior openURL stub
+        // to a 404 web route. The dedicated in-app RFP-builder
+        // surface ships in a follow-up sprint.
+        let body = "I'd like to start a new RFP. Lanes, equipment, volume, and award date below."
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let url = URL(string: "mailto:bids@eusotrip.com?subject=New%20RFP&body=\(body)") {
             openURL(url)
         }
     }

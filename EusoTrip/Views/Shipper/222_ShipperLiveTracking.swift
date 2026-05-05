@@ -720,10 +720,9 @@ struct ShipperLiveTracking: View {
     // MARK: View-all tap
 
     private func tapViewAll() {
-        // Full 50-load live tracking surface lives on the web until
-        // the paged tracking endpoint ships in-app. openURL routes
-        // the tap to a real surface; telemetry post retained for
-        // observability.
+        // Real action: jump to 201 ShipperLoads with "in_transit"
+        // as the search query so the row list shows the full live
+        // fleet. Replaces openURL stub. Telemetry post retained.
         NotificationCenter.default.post(
             name: .eusoShipperLiveViewAll,
             object: nil,
@@ -732,9 +731,10 @@ struct ShipperLiveTracking: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/live-tracking") {
-            openURL(url)
-        }
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "201", "query": "in_transit"]
+        )
     }
 
     // MARK: Empty + error

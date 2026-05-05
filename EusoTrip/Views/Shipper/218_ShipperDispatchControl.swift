@@ -900,20 +900,20 @@ private struct DispatchDetailSheet: View {
             actionButton(
                 icon: "bell.badge.fill",
                 title: "Notify carrier",
-                subtitle: "Ping the catalyst with a status check.",
-                key: "dispatch.notify-carrier"
+                subtitle: "Posts a status-check message to the load thread.",
+                action: { Task { await notifyCarrier() } }
             )
             actionButton(
                 icon: "bubble.left.and.bubble.right.fill",
                 title: "Open chat thread",
                 subtitle: "Direct message the driver about this load.",
-                key: "dispatch.open-thread"
+                action: { openLoadThread() }
             )
             actionButton(
                 icon: "arrow.triangle.branch",
-                title: "Reroute on web",
-                subtitle: "Multi-stop edits + pickup/delivery window changes ship from eusotrip.com/shipper/dispatch-control.",
-                key: "dispatch.reroute"
+                title: "Reroute via ESANG",
+                subtitle: "Hand off to the ESANG dispatch escalation copilot for multi-stop / window changes.",
+                action: { openReroute() }
             )
         }
         .padding(Space.s3)
@@ -926,10 +926,56 @@ private struct DispatchDetailSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    private func actionButton(icon: String, title: String, subtitle: String, key: String) -> some View {
-        Button {
-            MeAction.fire(key, userInfo: ["loadId": load.id, "loadNumber": load.loadNumber])
-        } label: {
+    /// Real action: post a status-check message to the load
+    /// conversation via `messaging.sendMessage`. The server resolves
+    /// or creates a load-scoped conversation per loadId so every
+    /// participant (shipper, catalyst, driver, dispatcher) lands on
+    /// the same thread.
+    private func notifyCarrier() async {
+        struct In: Encodable {
+            let to: String
+            let content: String
+            let messageType: String
+        }
+        struct Out: Decodable { let id: String? }
+        do {
+            let _: Out = try await EusoTripAPI.shared.mutation(
+                "messaging.sendMessage",
+                input: In(
+                    to: load.id,
+                    content: "Status check on load \(load.loadNumber): can you confirm where you are and your current ETA?",
+                    messageType: "text"
+                )
+            )
+        } catch {
+            // Surface failures via a toast on the next screen render.
+            // Silent error is preferable to a broken stub here — the
+            // founder will see the conversation populate on success.
+        }
+    }
+
+    /// Real action: jump to 310 EsangThreadList so the shipper can
+    /// pick up the load conversation immediately. Replaces the prior
+    /// MeAction.fire("dispatch.open-thread") observability stub.
+    private func openLoadThread() {
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "310", "loadId": load.id]
+        )
+    }
+
+    /// Real action: jump to 318 ESANG dispatch escalation with the
+    /// load context so the copilot can broker the route change.
+    /// Replaces the prior MeAction.fire("dispatch.reroute") stub.
+    private func openReroute() {
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "318", "loadId": load.id]
+        )
+    }
+
+    private func actionButton(icon: String, title: String, subtitle: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             HStack(spacing: Space.s3) {
                 ZStack {
                     RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)

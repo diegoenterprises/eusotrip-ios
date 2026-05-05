@@ -140,9 +140,11 @@ struct MeBidDetailView: View {
                         .foregroundStyle(LinearGradient.diagonal)
                     Text("DRIVER · BID THREAD").font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(LinearGradient.diagonal)
+                        .lineLimit(1).minimumScaleFactor(0.7)
                 }
                 Text("Counter chain").font(.system(size: 22, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary).lineLimit(1)
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(2).minimumScaleFactor(0.75)
                 Text("Load #\(loadId) · all rounds in order. Latest pending row drives the CTA bar.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true).lineLimit(2)
@@ -380,7 +382,10 @@ struct MeBidDetailView: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 Text("COUNTER OFFER").font(.system(size: 9, weight: .heavy)).tracking(0.9)
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("Your counter").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                Text("Your counter").font(.system(size: 22, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(2).minimumScaleFactor(0.75)
                 Text("Push back on the shipper's counter with your number. Server inserts a new round in the chain and notifies the other party.")
                     .font(EType.body).foregroundStyle(palette.textSecondary)
                 VStack(alignment: .leading, spacing: 6) {

@@ -109,6 +109,17 @@ struct EusoTripApp: App {
                 #endif
                 await session.boot()
             }
+            // Canonical global sign-out listener. Every Sign-out cell in
+            // the app (Me hub, Settings hub, Driver Me, Shipper Me hero
+            // dropdown, etc.) posts the same notification name —
+            // `eusoLogoutRequested` — and this single subscriber routes
+            // them all to `session.signOut()`. Resolves the founder
+            // 2026-05-04 report ("sign out takes you to home screen ...
+            // there is sign out in multiple spots and they dont work").
+            .onReceive(NotificationCenter.default.publisher(
+                for: Notification.Name("eusoLogoutRequested"))) { _ in
+                Task { await session.signOut() }
+            }
             // Side-effect wiring: APNs + realtime + observers all latch
             // onto the session phase. Booting them before sign-in is
             // harmless (the APNs prompt fires, the socket connects with

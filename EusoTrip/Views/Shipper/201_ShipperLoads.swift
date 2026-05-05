@@ -50,10 +50,15 @@ private enum ShipperLoadsFilter: String, CaseIterable, Identifiable {
     }
 
     /// Pull the correct count out of the loads.getShipperSummary envelope.
+    /// "All" must report `totalLoads` so the chip number matches the
+    /// topline counter ("65 TOTAL · 12 ACTIVE") and the visible row count
+    /// when no filter is applied. Showing `activeLoads` here was the
+    /// bug behind "65 total / All 50 / no rows" — the chip looked like
+    /// the page was filtered even when it wasn't.
     func count(in s: LoadsAPI.ShipperSummary?) -> Int {
         guard let s else { return 0 }
         switch self {
-        case .all:        return s.activeLoads
+        case .all:        return s.totalLoads
         case .bidding:    return s.pending
         case .awarded:    return max(0, s.activeLoads - s.inTransit - s.pending)
         case .inTransit:  return s.inTransit
@@ -182,6 +187,17 @@ struct ShipperLoads: View {
         // selection. No more dead button.
         .onReceive(NotificationCenter.default.publisher(for: .eusoShipperLoadSort)) { _ in
             showSortSheet = true
+        }
+        // Cross-screen prefill — 210 Analytics Deep-dive posts a
+        // navSwap to "201" with `query` in userInfo when a lane bar
+        // is tapped. Apply it to the local search field so the load
+        // list narrows to that lane on landing. Replaces the prior
+        // dead-end web-continuation handoff.
+        .onReceive(NotificationCenter.default.publisher(for: .eusoShipperNavSwap)) { note in
+            guard let screenId = note.userInfo?["screenId"] as? String, screenId == "201" else { return }
+            if let q = note.userInfo?["query"] as? String, !q.isEmpty {
+                query = q
+            }
         }
         .confirmationDialog("Sort loads", isPresented: $showSortSheet, titleVisibility: .visible) {
             ForEach(ShipperLoadsSort.allCases, id: \.self) { option in

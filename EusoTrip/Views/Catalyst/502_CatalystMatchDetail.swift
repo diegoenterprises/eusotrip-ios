@@ -127,10 +127,12 @@ struct CatalystMatchDetail: View {
                         Text("CATALYST · MATCH DETAIL")
                             .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                             .foregroundStyle(LinearGradient.diagonal)
+                            .lineLimit(1).minimumScaleFactor(0.7)
                     }
                     Text(loadNumber)
                         .font(.system(size: 22, weight: .heavy))
                         .foregroundStyle(palette.textPrimary)
+                        .lineLimit(2).minimumScaleFactor(0.75)
                 }
                 Spacer(minLength: 0)
                 if !status.isEmpty {
@@ -426,10 +428,12 @@ struct CatalystMatchDetail: View {
                 Text(candidatesDisplay())
                     .font(.system(size: 22, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.6)
                 Spacer(minLength: Space.s2)
                 Text("SCORED")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
             }
             if let agent = previewAgentName, !agent.isEmpty {
                 HStack(spacing: 6) {
@@ -580,6 +584,7 @@ struct CatalystMatchDetail: View {
             Text(text)
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.diagonal)
+                .lineLimit(1).minimumScaleFactor(0.7)
         }
     }
 

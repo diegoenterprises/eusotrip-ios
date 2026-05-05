@@ -47,9 +47,15 @@ private struct ReviewBody: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "checkmark.seal.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text("SHIPPER · POST A LOAD · STEP 4 OF 4 · REVIEW").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+                Text("POST A LOAD · STEP 4 · REVIEW")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .lineLimit(1).minimumScaleFactor(0.7)
             }
-            Text("Confirm and post.").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            Text("Confirm and post.")
+                .font(.system(size: 22, weight: .heavy))
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(2).minimumScaleFactor(0.75)
         }
     }
 

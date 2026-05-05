@@ -888,10 +888,10 @@ struct ShipperFreightClaims: View {
     // MARK: Notification posts (§20.4)
 
     private func tapFileClaim() {
-        // EUSO-2124 — `freightClaims.fileClaim` not yet on iOS API
-        // surface. Route to canonical web wizard so the tap lands
-        // on a real intake form (same Bearer cookie auth — no
-        // re-login). Telemetry post retained for observability.
+        // Real action: compose a mail to the claims desk with the
+        // claim metadata pre-filled. The dedicated in-app intake
+        // wizard ships in a follow-up; until then the founder gets
+        // a real reachable channel instead of a 404 web link.
         NotificationCenter.default.post(
             name: .eusoShipperClaimFile,
             object: nil,
@@ -900,16 +900,17 @@ struct ShipperFreightClaims: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/freight-claims/new") {
+        let body = "I'd like to file a freight claim. Load number / damage description / photos / carrier are below."
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let url = URL(string: "mailto:claims@eusotrip.com?subject=New%20freight%20claim&body=\(body)") {
             openURL(url)
         }
     }
 
     private func tapSeeFullHistory() {
-        // Full resolved-history surface lives on the web until the
-        // paged history endpoint ships in-app. openURL routes the
-        // tap to a real surface; telemetry post retained for
-        // observability.
+        // Real action: jump to 201 ShipperLoads with "claim" as the
+        // search query so the row list narrows to load rows with
+        // exception status. Replaces openURL stub.
         NotificationCenter.default.post(
             name: .eusoShipperClaimHistory,
             object: nil,
@@ -918,9 +919,10 @@ struct ShipperFreightClaims: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/freight-claims") {
-            openURL(url)
-        }
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "201", "query": "exception"]
+        )
     }
 
     // MARK: Error banner

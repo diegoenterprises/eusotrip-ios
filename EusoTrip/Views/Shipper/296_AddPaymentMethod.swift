@@ -53,7 +53,7 @@ private struct AddPaymentMethodBody: View {
         } else if let url = setupUrl {
             LifecycleCard(accentGradient: true) {
                 LifecycleSection(label: "STRIPE SECURE SESSION", icon: "checkmark.shield")
-                Text("Tap to complete card setup in the Stripe-hosted secure flow. iOS-native PaymentSheet ships in a follow-up round.")
+                Text("Tap to complete card or ACH setup in the Stripe-hosted secure flow. Returns here when the method is attached.")
                     .font(EType.body).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true)
                 Button {
                     if let u = URL(string: url) { UIApplication.shared.open(u) }
@@ -64,9 +64,16 @@ private struct AddPaymentMethodBody: View {
                 }.buttonStyle(.plain)
             }
         } else {
-            LifecycleCard {
-                Text("Setup endpoint not yet wired. Manage payment methods from the web shipper page until iOS PaymentSheet ships.")
-                    .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+            LifecycleCard(accentDanger: true) {
+                Text("Couldn't reach Stripe. Check the connection and try again.")
+                    .font(EType.caption).foregroundStyle(Brand.danger).fixedSize(horizontal: false, vertical: true)
+                Button {
+                    Task { await load() }
+                } label: {
+                    Text("Retry").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
+                        .padding(.horizontal, 18).padding(.vertical, 10)
+                        .background(Brand.danger).clipShape(Capsule())
+                }.buttonStyle(.plain)
             }
         }
     }

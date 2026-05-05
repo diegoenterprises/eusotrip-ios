@@ -123,7 +123,15 @@ struct ShipperHome: View {
                 Text(headline)
                     .font(EType.display)
                     .foregroundStyle(palette.textPrimary)
-                Spacer()
+                    // Long names ("Christopherson") used to wrap into a
+                    // third line that overlapped the avatar; the empty-
+                    // name fallback produced no greeting at all because
+                    // the hardcoded "Diego" only fit Diego. Now: trim +
+                    // shrink-to-fit so every name renders cleanly, and
+                    // fall back to "Welcome back" when no name is set.
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.6)
+                Spacer(minLength: 8)
                 duAvatar
             }
             .padding(.top, Space.s2)
@@ -139,19 +147,25 @@ struct ShipperHome: View {
 
     /// Identity-aware + time-of-day-aware greeting. "Good morning, Diego"
     /// / "Good afternoon, Diego" / "Good evening, Diego" / "Hey, Diego"
-    /// per the local hour. Falls back to canon when session is empty so
-    /// previews and cold-start still render a meaningful greeting.
+    /// per the local hour. When the session has no first name we drop
+    /// the comma-tail entirely so the headline reads as a clean
+    /// "Good morning" instead of "Good morning, Diego" (the previous
+    /// hardcoded fallback shipped the founder's name to every cold-
+    /// start screen, which was the "discombobulated welcome back" the
+    /// user flagged 2026-05-04).
     private var headline: String {
-        let first = (session.user?.firstName).flatMap { $0.isEmpty ? nil : $0 } ?? "Diego"
+        let first = (session.user?.firstName)
+            .flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
         let hour = Calendar.current.component(.hour, from: Date())
         let salutation: String
         switch hour {
         case 5..<12:  salutation = "Good morning"
         case 12..<17: salutation = "Good afternoon"
         case 17..<22: salutation = "Good evening"
-        default:      salutation = "Hey"   // late-night / early-morning — informal feels right
+        default:      salutation = "Welcome back"  // late-night / early-morning — neutral, no comma-tail
         }
-        return "\(salutation), \(first)"
+        if let first { return "\(salutation), \(first)" }
+        return salutation
     }
 
     /// "Eusorone Technologies · 50 MATRIX loads · 2 need attention" when
@@ -180,6 +194,9 @@ struct ShipperHome: View {
     /// AuthUser doesn't carry `initials` or unread-count; derive initials
     /// from `name` and assume the dot is on (top-bar bell will be wired
     /// when notifications.getUnreadCount lands).
+    /// Tapping the avatar drills into the Me Home gateway (320), same as
+    /// the bottom-nav Me tab. Without this Button the avatar paints but
+    /// dead-taps — a known UX bug per founder feedback 2026-05-04.
     private var duAvatar: some View {
         let initials: String = {
             if let n = session.user?.name, !n.isEmpty {
@@ -190,27 +207,36 @@ struct ShipperHome: View {
             }
             return "DU"
         }()
-        return ZStack(alignment: .topTrailing) {
-            ZStack {
-                Circle().fill(LinearGradient.diagonal)
-                Text(initials)
-                    .font(.system(size: 14, weight: .bold)).tracking(0.4)
-                    .foregroundStyle(.white)
-            }
-            .frame(width: 40, height: 40)
-            .accessibilityLabel("Diego Usoro · Eusorone Technologies")
+        return Button {
+            NotificationCenter.default.post(
+                name: .eusoShipperNavSwap, object: nil,
+                userInfo: ["screenId": "320"]
+            )
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                ZStack {
+                    Circle().fill(LinearGradient.diagonal)
+                    Text(initials)
+                        .font(.system(size: 14, weight: .bold)).tracking(0.4)
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 40, height: 40)
 
-            // EUSO-2057: gated on UnreadMessageStore.shared.total
-            // (messages.getUnreadCount). Hidden when zero unread.
-            if unread.total > 0 {
-                Circle()
-                    .fill(.white)
-                    .frame(width: 10, height: 10)
-                    .overlay(Circle().fill(Brand.danger).frame(width: 7, height: 7))
-                    .offset(x: 2, y: -2)
-                    .accessibilityLabel("\(unread.total) unread")
+                // EUSO-2057: gated on UnreadMessageStore.shared.total
+                // (messages.getUnreadCount). Hidden when zero unread.
+                if unread.total > 0 {
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 10, height: 10)
+                        .overlay(Circle().fill(Brand.danger).frame(width: 7, height: 7))
+                        .offset(x: 2, y: -2)
+                        .accessibilityLabel("\(unread.total) unread")
+                }
             }
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Open Me · Diego Usoro · Eusorone Technologies")
+        .accessibilityHint("Open your account, wallet, network, and settings")
     }
 
     // MARK: - Attention card — gradient-rimmed, danger-washed top

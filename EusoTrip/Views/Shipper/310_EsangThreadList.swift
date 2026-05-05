@@ -13,13 +13,29 @@ struct EsangThreadListScreen: View {
     }
 }
 
+/// Decodable view of `messages.getConversations` returns. Server fields
+/// are remapped via CodingKeys so the existing view code keeps reading
+/// `c.title` / `c.kind` while the wire format uses the canonical
+/// `name` / `type` keys. Migrating to the canonical `messages` router
+/// (away from the deprecated `messaging` router) restored the unread
+/// counter on the inbox row — `messaging.getConversations` did NOT
+/// surface unreadCount; `messages.getConversations` does.
 private struct Conversation: Decodable, Identifiable, Hashable {
     let id: String
     let title: String?
     let lastMessage: String?
     let lastMessageAt: String?
     let unreadCount: Int?
-    let kind: String?  // "carrier", "dispatch", "esang_ai", etc.
+    let kind: String?  // "direct", "group", etc. (server returns `type`)
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case title = "name"
+        case lastMessage
+        case lastMessageAt
+        case unreadCount
+        case kind = "type"
+    }
 }
 
 private struct ThreadListBody: View {
@@ -88,7 +104,16 @@ private struct ThreadListBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [Conversation] = try await EusoTripAPI.shared.queryNoInput("messaging.getConversations")
+            // Canonical messaging router. Was `messaging.getConversations`
+            // which returned `{items:[...]}` shape — incompatible with the
+            // `[Conversation]` decoder here. `messages.getConversations`
+            // returns the flat array AND the `unreadCount` field the
+            // inbox row badge needs.
+            struct In: Encodable { let search: String? }
+            let r: [Conversation] = try await EusoTripAPI.shared.query(
+                "messages.getConversations",
+                input: In(search: nil)
+            )
             rows = r
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

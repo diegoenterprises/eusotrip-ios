@@ -39,9 +39,15 @@ private struct PostLoadStep3Body: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "dollarsign.circle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text("SHIPPER · POST A LOAD · STEP 3 OF 4 · PRICING").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+                Text("POST A LOAD · STEP 3 · PRICING")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .lineLimit(1).minimumScaleFactor(0.7)
             }
-            Text("Set the rate.").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            Text("Set the rate.")
+                .font(.system(size: 22, weight: .heavy))
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(2).minimumScaleFactor(0.75)
         }
     }
 

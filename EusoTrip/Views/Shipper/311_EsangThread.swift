@@ -13,6 +13,13 @@ struct EsangThreadScreen: View {
     }
 }
 
+/// Decodable view of `messages.getMessages` returns. Server fields
+/// `content` / `timestamp` / `isOwn` are remapped via CodingKeys so
+/// the view code keeps using `m.body` / `m.createdAt` / `m.isMine`.
+/// Migrating to the canonical `messages` router fixed two bugs:
+/// (1) `messaging.getMessages` returned `{items:[...]}` (shape mismatch
+/// with the flat-array decoder here); (2) the `body` field name on
+/// the wire was always `content` so decoding was failing silently.
 private struct EsangChatMessage: Decodable, Identifiable, Hashable {
     let id: String
     let senderId: String?
@@ -20,6 +27,15 @@ private struct EsangChatMessage: Decodable, Identifiable, Hashable {
     let body: String
     let createdAt: String
     let isMine: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case senderId
+        case senderName
+        case body = "content"
+        case createdAt = "timestamp"
+        case isMine = "isOwn"
+    }
 }
 
 private struct EsangThreadBody: View {
@@ -95,9 +111,14 @@ private struct EsangThreadBody: View {
 
     private func load() async {
         loading = true; loadError = nil
-        struct In: Encodable { let conversationId: String }
+        // Canonical `messages.getMessages` requires `limit` (default 50
+        // server-side, but the procedure marks it required in Zod).
+        struct In: Encodable { let conversationId: String; let limit: Int }
         do {
-            let m: [EsangChatMessage] = try await EusoTripAPI.shared.query("messaging.getMessages", input: In(conversationId: conversationId))
+            let m: [EsangChatMessage] = try await EusoTripAPI.shared.query(
+                "messages.getMessages",
+                input: In(conversationId: conversationId, limit: 50)
+            )
             messages = m
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -107,10 +128,17 @@ private struct EsangThreadBody: View {
 
     private func send() async {
         sending = true
-        struct In: Encodable { let conversationId: String; let body: String }
+        // Server-side schema is `{conversationId, content, type}` —
+        // not `body`. Old `messaging.sendMessage` route accepted
+        // `body` only as a deprecation shim; canonical
+        // `messages.sendMessage` is strict so we send `content`.
+        struct In: Encodable { let conversationId: String; let content: String; let type: String }
         struct Out: Decodable { let success: Bool }
         do {
-            let _ : Out = try await EusoTripAPI.shared.mutation("messaging.sendMessage", input: In(conversationId: conversationId, body: draft))
+            let _ : Out = try await EusoTripAPI.shared.mutation(
+                "messages.sendMessage",
+                input: In(conversationId: conversationId, content: draft, type: "text")
+            )
             draft = ""
             await load()
         } catch { /* surface inline */ }

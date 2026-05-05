@@ -41,6 +41,12 @@ struct MeHotZones: View {
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var store = HotZonesStore()
 
+    /// Currently-presented zone in `HotZonesDetailSheet`. Set by
+    /// row taps on `criticalCard` / `compactRow`. Founder report
+    /// 2026-05-04: cockpit row taps were dead — the rows were
+    /// static `HStack`s with no Button wrapper.
+    @State private var selectedZone: HotZoneEntry? = nil
+
     private let equipmentOptions: [(label: String, raw: String?)] = [
         ("All", nil),
         ("Dry Van", "DRY_VAN"),
@@ -68,6 +74,12 @@ struct MeHotZones: View {
         }
         .task { await store.bootstrap() }
         .refreshable { await store.refresh() }
+        .sheet(item: $selectedZone) { zone in
+            HotZonesDetailSheet(zone: zone, marketPulse: store.marketPulse)
+                .environment(\.palette, palette)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
     }
 
     // MARK: Heat map
@@ -76,18 +88,21 @@ struct MeHotZones: View {
     /// powering the Driver Home widget, sized for the standalone
     /// screen's vertical budget so the gradient density actually
     /// reads from across the cab.
+    ///
+    /// When `HereMapsConfig.jsApiKey` is unprovisioned (the JS SDK
+    /// requires its own scoped key separate from the REST OAuth
+    /// pair), defer to `HotZonesHeatMapView` which renders a
+    /// brand-gradient fallback in place of the broken WebView so
+    /// the cockpit doesn't paint a "key not configured" rectangle.
     private var heatMap: some View {
         ZStack(alignment: .topLeading) {
-            HotZonesHeatmapWebView(
-                points: HotZonesHeatMapView.points(from: store.zones),
-                colorScheme: colorScheme
-            )
-            .frame(height: 320)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .strokeBorder(palette.borderFaint)
-            )
+            HotZonesHeatMapView(zones: store.zones)
+                .frame(height: 320)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                        .strokeBorder(palette.borderFaint)
+                )
 
             HStack(spacing: 4) {
                 Image(systemName: "dot.radiowaves.left.and.right")
@@ -273,66 +288,71 @@ struct MeHotZones: View {
     }
 
     private func criticalCard(_ z: HotZoneEntry) -> some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(z.zoneName.uppercased())
-                        .font(EType.bodyStrong)
-                        .foregroundStyle(palette.textPrimary)
-                    Text(z.state)
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textTertiary)
+        Button {
+            selectedZone = z
+        } label: {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(z.zoneName.uppercased())
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(palette.textPrimary)
+                        Text(z.state)
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                    Spacer()
+                    demandChip(z.demandLevel)
                 }
-                Spacer()
-                demandChip(z.demandLevel)
-            }
-            HStack(spacing: Space.s3) {
-                rateBlock(rate: z.liveRate, change: z.rateChangePercent)
-                Spacer()
-                ratioBlock(ratio: z.liveRatio, surge: z.liveSurge)
-            }
-            if let reasons = z.reasons, !reasons.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(reasons.prefix(3), id: \.self) { reason in
-                        HStack(alignment: .top, spacing: 4) {
-                            Text("•")
-                                .foregroundStyle(LinearGradient.diagonal)
-                            Text(reason)
-                                .font(EType.caption)
-                                .foregroundStyle(palette.textSecondary)
+                HStack(spacing: Space.s3) {
+                    rateBlock(rate: z.liveRate, change: z.rateChangePercent)
+                    Spacer()
+                    ratioBlock(ratio: z.liveRatio, surge: z.liveSurge)
+                }
+                if let reasons = z.reasons, !reasons.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(reasons.prefix(3), id: \.self) { reason in
+                            HStack(alignment: .top, spacing: 4) {
+                                Text("•")
+                                    .foregroundStyle(LinearGradient.diagonal)
+                                Text(reason)
+                                    .font(EType.caption)
+                                    .foregroundStyle(palette.textSecondary)
+                            }
                         }
                     }
                 }
+                HStack(spacing: 6) {
+                    if !z.topEquipment.isEmpty {
+                        equipmentPill(z.topEquipment.prefix(3).joined(separator: ", "))
+                    }
+                    if z.femaDisasterActive == true {
+                        riskPill(icon: "shield.lefthalf.filled", text: "FEMA", tint: Brand.magenta)
+                    }
+                    if (z.activeWildfires ?? 0) > 0 {
+                        riskPill(icon: "flame.fill", text: "WILDFIRE", tint: Brand.warning)
+                    }
+                    if let forecast = z.nextWeekForecast, !forecast.isEmpty {
+                        Spacer()
+                        Text(forecast.uppercased())
+                            .font(EType.micro)
+                            .tracking(1.1)
+                            .foregroundStyle(palette.textTertiary)
+                            .lineLimit(1)
+                    }
+                }
             }
-            HStack(spacing: 6) {
-                if !z.topEquipment.isEmpty {
-                    equipmentPill(z.topEquipment.prefix(3).joined(separator: ", "))
-                }
-                if z.femaDisasterActive == true {
-                    riskPill(icon: "shield.lefthalf.filled", text: "FEMA", tint: Brand.magenta)
-                }
-                if (z.activeWildfires ?? 0) > 0 {
-                    riskPill(icon: "flame.fill", text: "WILDFIRE", tint: Brand.warning)
-                }
-                if let forecast = z.nextWeekForecast, !forecast.isEmpty {
-                    Spacer()
-                    Text(forecast.uppercased())
-                        .font(EType.micro)
-                        .tracking(1.1)
-                        .foregroundStyle(palette.textTertiary)
-                        .lineLimit(1)
-                }
-            }
+            .padding(Space.s3)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(palette.bgCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(Brand.magenta.opacity(0.5), lineWidth: 1)
+                    )
+            )
         }
-        .padding(Space.s3)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .fill(palette.bgCard)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(Brand.magenta.opacity(0.5), lineWidth: 1)
-                )
-        )
+        .buttonStyle(.plain)
     }
 
     private func rateBlock(rate: Double, change: Double?) -> some View {
@@ -451,36 +471,44 @@ struct MeHotZones: View {
     }
 
     private func compactRow(_ z: HotZoneEntry) -> some View {
-        HStack(spacing: Space.s3) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(z.zoneName)
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
-                HStack(spacing: 4) {
-                    Text(z.state)
-                    Text("·")
-                    Text(String(format: "L:T %.2f", z.liveRatio))
-                        .monospacedDigit()
-                    if z.liveSurge > 1 {
+        Button {
+            selectedZone = z
+        } label: {
+            HStack(spacing: Space.s3) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(z.zoneName)
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    HStack(spacing: 4) {
+                        Text(z.state)
                         Text("·")
-                        Text(String(format: "%.1f×", z.liveSurge))
+                        Text(String(format: "L:T %.2f", z.liveRatio))
                             .monospacedDigit()
+                        if z.liveSurge > 1 {
+                            Text("·")
+                            Text(String(format: "%.1f×", z.liveSurge))
+                                .monospacedDigit()
+                        }
                     }
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textTertiary)
                 }
-                .font(EType.caption)
-                .foregroundStyle(palette.textTertiary)
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(String(format: "$%.2f", z.liveRate))
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(LinearGradient.diagonal)
+                        .monospacedDigit()
+                    demandChip(z.demandLevel)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
             }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(String(format: "$%.2f", z.liveRate))
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(LinearGradient.diagonal)
-                    .monospacedDigit()
-                demandChip(z.demandLevel)
-            }
+            .padding(Space.s3)
+            .eusoCard(radius: Radius.md)
         }
-        .padding(Space.s3)
-        .eusoCard(radius: Radius.md)
+        .buttonStyle(.plain)
     }
 
     // MARK: Footer

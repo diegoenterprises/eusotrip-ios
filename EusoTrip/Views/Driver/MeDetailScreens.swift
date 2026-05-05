@@ -2712,10 +2712,20 @@ private struct HaulLobbyTab: View {
         postError = nil
         isPosting = true
         defer { isPosting = false }
+        // The lobby uses a dedicated `messaging.sendLobbyMessage`
+        // procedure that resolves the caller → company → "The Lobby"
+        // conversation server-side. The previous implementation called
+        // the canonical `messages.sendMessage` with conversationId
+        // = "driver-lobby" (a string token), which the server's
+        // parseInt rejected with "Invalid conversation ID" — so every
+        // lobby post failed silently. The dedicated endpoint takes
+        // just `{text}` and handles routing internally.
+        struct In: Encodable { let text: String }
+        struct Out: Decodable { let messageId: Int; let conversationId: Int }
         do {
-            _ = try await EusoTripAPI.shared.messaging.sendMessage(
-                conversationId: Self.lobbyConversationId,
-                content: trimmed
+            let _: Out = try await EusoTripAPI.shared.mutation(
+                "messaging.sendLobbyMessage",
+                input: In(text: trimmed)
             )
             draft = ""
             await store.refresh()
@@ -3773,7 +3783,11 @@ struct MeSettingsView: View {
 /// after sign-in, and when the last sync landed. Added in build 30 so the
 /// driver can confirm their wrist is in sync without leaving the iOS
 /// shell — companion to the "LINK" indicator on the watch HomeView.
-private struct MePulseView: View {
+/// Made internal (was `private`) so external Screen wrappers can host
+/// it from registered IDs ("PULSE" — added to both driver and
+/// shipper Me Settings hubs after founder report 2026-05-04 "i see
+/// no eusotrip pulse settings for either user types right now").
+struct MePulseView: View {
     @Environment(\.palette) var palette
     @EnvironmentObject private var session: EusoTripSession
 

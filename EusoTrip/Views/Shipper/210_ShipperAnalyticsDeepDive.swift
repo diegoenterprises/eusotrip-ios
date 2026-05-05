@@ -382,10 +382,11 @@ struct ShipperAnalyticsDeepDive: View {
 
     private func laneRowView(_ row: LaneRow) -> some View {
         Button {
-            // Lane drill-down — in-app analytics-by-lane surface hasn't
-            // shipped yet; route to the canonical web analytics page
-            // filtered to this lane (same Bearer cookie auth — no
-            // re-login). Telemetry post retained for observability.
+            // Real action: jump to 201 ShipperLoads with the lane
+            // pre-applied as a search filter so the user sees the
+            // actual loads behind the lane bar. Replaces the prior
+            // openURL("…/analytics/lanes/{id}") stub. Telemetry post
+            // retained for observability.
             NotificationCenter.default.post(
                 name: .eusoShipperAnalyticsLane, object: nil,
                 userInfo: [
@@ -395,9 +396,13 @@ struct ShipperAnalyticsDeepDive: View {
                     "amount": row.amount,
                 ]
             )
-            if let url = URL(string: "https://app.eusotrip.com/shipper/analytics/lanes/\(row.id)") {
-                openURL(url)
-            }
+            NotificationCenter.default.post(
+                name: .eusoShipperNavSwap, object: nil,
+                userInfo: [
+                    "screenId": "201",
+                    "query": row.lane,
+                ]
+            )
         } label: {
             HStack(alignment: .center, spacing: 12) {
                 Text(row.lane)

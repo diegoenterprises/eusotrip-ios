@@ -64,9 +64,15 @@ private struct PostLoadStep2Body: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "shippingbox").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text("SHIPPER · POST A LOAD · STEP 2 OF 4 · EQUIPMENT").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+                Text("POST A LOAD · STEP 2 · EQUIPMENT")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .lineLimit(1).minimumScaleFactor(0.7)
             }
-            Text("What's the equipment?").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            Text("What's the equipment?")
+                .font(.system(size: 22, weight: .heavy))
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(2).minimumScaleFactor(0.75)
         }
     }
 

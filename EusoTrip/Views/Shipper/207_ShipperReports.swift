@@ -80,6 +80,15 @@ struct ShipperReports: View {
     @State private var activeMetricChips: Set<String> = ["spend"]
     @State private var activeGroupByChips: Set<String> = ["lane"]
 
+    /// Real-export plumbing. `pendingShareItems` triggers the system
+    /// `UIActivityViewController` so the user can save the CSV to
+    /// Files / AirDrop / Mail. `exportError` surfaces server failures
+    /// inline as a toast so taps never silently die. `isExporting`
+    /// gates duplicate taps while the network is in flight.
+    @State private var pendingShareItems: [URL]? = nil
+    @State private var exportError: String? = nil
+    @State private var isExporting: Bool = false
+
     private let metricChips: [BuilderChip] = [
         BuilderChip(id: "spend",  label: "Spend $",   width: 80),
         BuilderChip(id: "ontime", label: "On-time %", width: 86),
@@ -116,6 +125,82 @@ struct ShipperReports: View {
         }
         .task { await refreshAll() }
         .refreshable { await refreshAll() }
+        .sheet(isPresented: Binding(
+            get: { pendingShareItems != nil },
+            set: { if !$0 { pendingShareItems = nil } }
+        )) {
+            if let urls = pendingShareItems {
+                ReportShareSheet(items: urls)
+                    .ignoresSafeArea()
+            }
+        }
+        .overlay(alignment: .top) {
+            if let err = exportError {
+                Text(err)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(.red.opacity(0.92), in: Capsule())
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .onAppear {
+                        Task {
+                            try? await Task.sleep(nanoseconds: 3_500_000_000)
+                            await MainActor.run { withAnimation { exportError = nil } }
+                        }
+                    }
+            }
+        }
+        .overlay {
+            if isExporting {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.large)
+                    .padding(20)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+        }
+    }
+
+    /// Shared writer + share-sheet trigger. Writes the export body to
+    /// a fresh tmp file, sets `pendingShareItems` so the sheet binding
+    /// presents `UIActivityViewController`. Errors land in
+    /// `exportError` so the user gets a tap-acknowledgement either way.
+    @MainActor
+    private func presentExport(_ file: ReportsAPI.ExportFile) {
+        do {
+            let dir = FileManager.default.temporaryDirectory
+                .appendingPathComponent("eusotrip-reports", isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = dir.appendingPathComponent(file.filename)
+            try file.body.data(using: .utf8)?.write(to: url, options: .atomic)
+            pendingShareItems = [url]
+        } catch {
+            exportError = "Couldn't prepare \(file.filename): \(error.localizedDescription)"
+        }
+    }
+
+    /// Convenience wrapper around the export network call so every
+    /// tap site is one line: spinner up, fetch, present share sheet
+    /// or surface the error toast, spinner down.
+    private func runExport(_ work: @escaping () async throws -> ReportsAPI.ExportFile) {
+        guard !isExporting else { return }
+        isExporting = true
+        Task {
+            do {
+                let file = try await work()
+                await MainActor.run {
+                    isExporting = false
+                    presentExport(file)
+                }
+            } catch {
+                await MainActor.run {
+                    isExporting = false
+                    let msg = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+                    exportError = "Export failed: \(msg)"
+                }
+            }
+        }
     }
 
     private func refreshAll() async {
@@ -222,11 +307,12 @@ struct ShipperReports: View {
 
     private func quickExportTile(kind: QuickExportKind, title: String, sub: String, cta: String) -> some View {
         Button {
-            // Quick-export run+download surface hasn't shipped in-app
-            // yet; route to the canonical web export endpoint so the
-            // tap lands on a real surface that actually generates +
-            // downloads the file (same Bearer cookie auth — no
-            // re-login). Telemetry post retained for observability.
+            // Real in-app export — calls the matching tRPC procedure,
+            // writes the rendered CSV body to a temp file, and
+            // presents `UIActivityViewController` so the user can
+            // Save to Files / AirDrop / Mail / Messages the file. No
+            // Safari hand-off, no 404 web URL, no observability stub.
+            // Telemetry post retained alongside the real action.
             NotificationCenter.default.post(
                 name: .eusoShipperReportQuickExport, object: nil,
                 userInfo: [
@@ -236,8 +322,15 @@ struct ShipperReports: View {
                     "format": kind.format,
                 ]
             )
-            if let url = URL(string: "https://app.eusotrip.com/shipper/reports/export/\(kind.rawValue)?format=\(kind.format)") {
-                openURL(url)
+            switch kind {
+            case .spendByLane:
+                runExport { try await EusoTripAPI.shared.reports.exportSpendByLane() }
+            case .catalystPayable:
+                runExport { try await EusoTripAPI.shared.reports.exportCatalystPayable() }
+            case .hazmatAudit:
+                runExport { try await EusoTripAPI.shared.reports.exportHazmatAudit() }
+            case .co2Statement:
+                runExport { try await EusoTripAPI.shared.reports.exportCO2Statement() }
             }
         } label: {
             HStack(alignment: .top, spacing: 12) {
@@ -360,11 +453,10 @@ struct ShipperReports: View {
     @ViewBuilder
     private func statusPill(_ status: ReportStatus, verb: String, title: String) -> some View {
         Button {
-            // Saved-report run / open-schedule surface hasn't shipped
-            // in-app yet; route to the canonical web saved-reports
-            // page so the tap lands on a real surface (same Bearer
-            // cookie auth — no re-login). Telemetry post retained
-            // for observability.
+            // Real in-app run — `reports.runSavedReport` shapes the CSV
+            // by title (Q1 spend rollup / catalyst scorecard / detention
+            // & accessorial / hazmat exposure log) and the share sheet
+            // ships the file. Telemetry post retained.
             NotificationCenter.default.post(
                 name: .eusoShipperReportRow, object: nil,
                 userInfo: [
@@ -374,9 +466,8 @@ struct ShipperReports: View {
                     "title": title,
                 ]
             )
-            let encodedTitle = title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? title
-            if let url = URL(string: "https://app.eusotrip.com/shipper/reports/saved/\(verb)?title=\(encodedTitle)") {
-                openURL(url)
+            runExport {
+                try await EusoTripAPI.shared.reports.runSavedReport(verb: verb, title: title)
             }
         } label: {
             ZStack {
@@ -494,12 +585,11 @@ struct ShipperReports: View {
 
     private var composeChip: some View {
         Button {
-            // Custom-report compose surface hasn't shipped in-app
-            // yet; route to the canonical web report-builder with
-            // the selected metric + group-by set pre-applied so
-            // the tap lands on a real surface (same Bearer cookie
-            // auth — no re-login). Telemetry post retained for
-            // observability.
+            // Real in-app custom-builder compose — server rolls the
+            // user's load corpus by the selected metric + group-by
+            // and returns a CSV. Server enum is single-valued for
+            // each axis; iOS picks the first chip from each set.
+            // Telemetry post retained.
             NotificationCenter.default.post(
                 name: .eusoShipperReportCompose, object: nil,
                 userInfo: [
@@ -509,12 +599,31 @@ struct ShipperReports: View {
                     "groupBy": Array(activeGroupByChips),
                 ]
             )
-            let metrics = activeMetricChips.sorted().joined(separator: ",")
-            let groupBy = activeGroupByChips.sorted().joined(separator: ",")
-            let encMetrics = metrics.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? metrics
-            let encGroupBy = groupBy.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? groupBy
-            if let url = URL(string: "https://app.eusotrip.com/shipper/reports/compose?metrics=\(encMetrics)&groupBy=\(encGroupBy)") {
-                openURL(url)
+            // Map the iOS chip taxonomy to the server's enum.
+            // Server accepts: metric ∈ {spend, loads, miles}, groupBy ∈
+            // {lane, equipment, catalyst}. iOS chip ids `ontime` and
+            // `co2` are upper-funnel views that don't have a backing
+            // metric column yet, so they fall through to `loads`.
+            let rawMetric = activeMetricChips.first ?? "spend"
+            let metric: String = {
+                switch rawMetric {
+                case "spend":  return "spend"
+                case "miles":  return "miles"
+                case "ontime", "co2", "loads": return "loads"
+                default:       return "spend"
+                }
+            }()
+            let rawGroupBy = activeGroupByChips.first ?? "lane"
+            let groupBy: String = {
+                switch rawGroupBy {
+                case "lane", "equipment", "catalyst": return rawGroupBy
+                default: return "lane"
+                }
+            }()
+            runExport {
+                try await EusoTripAPI.shared.reports.composeCustom(
+                    metric: metric, groupBy: groupBy
+                )
             }
         } label: {
             ZStack {
@@ -936,4 +1045,18 @@ private func shipperNavTrailing_207() -> [NavSlot] {
     ShipperReportsScreen(theme: Theme.light)
         .environmentObject(EusoTripSession())
         .preferredColorScheme(.light)
+}
+
+// MARK: - System share sheet wrapper
+
+/// Bridge to `UIActivityViewController` so the reports screen can ship
+/// the rendered CSV files via Save to Files / AirDrop / Mail / Messages
+/// without ever leaving the app. Each tap on a quick-export tile or
+/// saved-report row writes a temp file and pushes its URL into here.
+private struct ReportShareSheet: UIViewControllerRepresentable {
+    let items: [URL]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }

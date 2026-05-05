@@ -145,9 +145,11 @@ struct ShipperBidThread: View {
                         .foregroundStyle(LinearGradient.diagonal)
                     Text("SHIPPER · BID THREAD").font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(LinearGradient.diagonal)
+                        .lineLimit(1).minimumScaleFactor(0.7)
                 }
                 Text("Counter chain").font(.system(size: 22, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary).lineLimit(1)
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(2).minimumScaleFactor(0.75)
                 Text("Load #\(loadId) · all rounds in order. Latest pending row drives the CTA bar.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true).lineLimit(2)
@@ -390,7 +392,10 @@ struct ShipperBidThread: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 Text("COUNTER OFFER").font(.system(size: 9, weight: .heavy)).tracking(0.9)
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("Your counter").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                Text("Your counter").font(.system(size: 22, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(2).minimumScaleFactor(0.75)
                 Text("Send a counter rate to the driver. The chain advances by one round and the driver gets a push.")
                     .font(EType.body).foregroundStyle(palette.textSecondary)
                 VStack(alignment: .leading, spacing: 6) {
@@ -439,7 +444,10 @@ struct ShipperBidThread: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 Text("REJECT BID").font(.system(size: 9, weight: .heavy)).tracking(0.9)
                     .foregroundStyle(Brand.danger)
-                Text("Decline this bid").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                Text("Decline this bid").font(.system(size: 22, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(2).minimumScaleFactor(0.75)
                 Text("The driver gets a push notification with your reason. The thread closes — they can't counter back without reposting.")
                     .font(EType.body).foregroundStyle(palette.textSecondary)
                 ZStack(alignment: .topLeading) {
