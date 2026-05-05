@@ -809,10 +809,10 @@ struct ShipperAgreements: View {
     }
 
     private func tapNewAgreement() {
-        // Real action: compose a mail to legal@eusotrip.com so the
-        // agreement template is sent for the founder's signature.
-        // Replaces openURL stub. The dedicated in-app agreement
-        // composer ships in a follow-up sprint.
+        // Real action: open the iOS Agreement Wizard (223A) — 7-step
+        // generator → Gemini-backed `agreements.generate` → gradient
+        // signature pad → `agreements.sign`. Replaces the prior
+        // mailto stub now that the wizard ships.
         NotificationCenter.default.post(
             name: .eusoShipperAgreementCreate,
             object: nil,
@@ -821,11 +821,10 @@ struct ShipperAgreements: View {
                 "shipperCompanyId": 1
             ]
         )
-        let body = "I'd like to start a new agreement. Counterparty / lane / term / rate are below."
-            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        if let url = URL(string: "mailto:legal@eusotrip.com?subject=New%20agreement&body=\(body)") {
-            openURL(url)
-        }
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "223A"]
+        )
     }
 
     // MARK: Empty / error

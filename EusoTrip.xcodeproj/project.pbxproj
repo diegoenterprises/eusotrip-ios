@@ -24,6 +24,8 @@
 		A12E1A1C0010CE0FF1000011 /* HereMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000012 /* HereMapView.swift */; };
 		HAFD00010CE0FF10000011A1 /* HereAddressField.swift in Sources */ = {isa = PBXBuildFile; fileRef = HAFD00010CE0FF10000012A1 /* HereAddressField.swift */; };
 		LTBD00010CE0FF10000011A1 /* ListingTrustBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */; };
+		GSPD00010CE0FF10000011A1 /* GradientSignaturePad.swift in Sources */ = {isa = PBXBuildFile; fileRef = GSPD00010CE0FF10000012A1 /* GradientSignaturePad.swift */; };
+		AVSB00010CE0FF10000011A1 /* AIVisualScanButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = AVSB00010CE0FF10000012A1 /* AIVisualScanButton.swift */; };
 		A12E1A1C0010CE0FF1000017 /* EusoAddressField.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000018 /* EusoAddressField.swift */; };
 		A12E1A1C0010CE0FF1000019 /* EusoHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100001A /* EusoHeader.swift */; };
 		A12E1A1C0010CE0FF100001B /* EusoBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100001C /* EusoBadge.swift */; };
@@ -129,6 +131,8 @@
 		A58D0FA2CE1A4B7E0000D009 /* 058_DriverWeeklyPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A58D0FA2CE1A4B7E0000D00A /* 058_DriverWeeklyPlan.swift */; };
 		A59D0FA2CE1A4B7E0000D00B /* 059_DriverTripsHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59D0FA2CE1A4B7E0000D00C /* 059_DriverTripsHistory.swift */; };
 		A60D0FA2CE1A4B7E0000D00D /* 060_TheHaulDashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60D0FA2CE1A4B7E0000D00E /* 060_TheHaulDashboard.swift */; };
+		A60D0FA2CE1A4B7EDDDDD00D /* 060L_TheHaulLobby.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60D0FA2CE1A4B7EDDDDD00E /* 060L_TheHaulLobby.swift */; };
+		A74E0FA2CE1A4B7E0000ELDD /* 074E_ELDConnect.swift in Sources */ = {isa = PBXBuildFile; fileRef = A74E0FA2CE1A4B7E0000ELDE /* 074E_ELDConnect.swift */; };
 		A61D0FA2CE1A4B7E0000D00F /* 061_TheHaulMissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61D0FA2CE1A4B7E0000D010 /* 061_TheHaulMissions.swift */; };
 		A62D0FA2CE1A4B7E0000D011 /* 062_TheHaulBadges.swift in Sources */ = {isa = PBXBuildFile; fileRef = A62D0FA2CE1A4B7E0000D012 /* 062_TheHaulBadges.swift */; };
 		A63D0FA2CE1A4B7E0000D015 /* 063_TheHaulCrates.swift in Sources */ = {isa = PBXBuildFile; fileRef = A63D0FA2CE1A4B7E0000D016 /* 063_TheHaulCrates.swift */; };
@@ -456,6 +460,8 @@
 		D2280000000000000028CB /* 228_ShipperBOLs.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2280000000000000028CA /* 228_ShipperBOLs.swift */; };
 		D2280000000000000028DB /* 228_ShipperRFPDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2280000000000000028DA /* 228_ShipperRFPDetail.swift */; };
 		D2290000000000000029CB /* 229_ShipperAllocations.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2290000000000000029CA /* 229_ShipperAllocations.swift */; };
+		D2330000000000000033MI /* 233_MarketIntelligence.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2330000000000000033MJ /* 233_MarketIntelligence.swift */; };
+		D223A0000000000000023AI /* 223A_AgreementWizard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D223A0000000000000023AJ /* 223A_AgreementWizard.swift */; };
 		D2290000000000000029DB /* 229_ShipperBOLUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2290000000000000029DA /* 229_ShipperBOLUpload.swift */; };
 		D2300000000000000030CB /* 230_ShipperBidThread.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2300000000000000030CA /* 230_ShipperBidThread.swift */; };
 		D2300000000000000030DB /* 230_ShipperAllocations.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2300000000000000030DA /* 230_ShipperAllocations.swift */; };
@@ -577,6 +583,8 @@
 		A12E1A1C0010CE0FF1000012 /* HereMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereMapView.swift; sourceTree = "<group>"; };
 		HAFD00010CE0FF10000012A1 /* HereAddressField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereAddressField.swift; sourceTree = "<group>"; };
 		LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListingTrustBadge.swift; sourceTree = "<group>"; };
+		GSPD00010CE0FF10000012A1 /* GradientSignaturePad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradientSignaturePad.swift; sourceTree = "<group>"; };
+		AVSB00010CE0FF10000012A1 /* AIVisualScanButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIVisualScanButton.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000015 /* EusoTrip.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = EusoTrip.xcconfig; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000016 /* HEREAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HEREAuthService.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000018 /* EusoAddressField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoAddressField.swift; sourceTree = "<group>"; };
@@ -681,6 +689,8 @@
 		A58D0FA2CE1A4B7E0000D00A /* 058_DriverWeeklyPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 058_DriverWeeklyPlan.swift; sourceTree = "<group>"; };
 		A59D0FA2CE1A4B7E0000D00C /* 059_DriverTripsHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 059_DriverTripsHistory.swift; sourceTree = "<group>"; };
 		A60D0FA2CE1A4B7E0000D00E /* 060_TheHaulDashboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 060_TheHaulDashboard.swift; sourceTree = "<group>"; };
+		A60D0FA2CE1A4B7EDDDDD00E /* 060L_TheHaulLobby.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 060L_TheHaulLobby.swift; sourceTree = "<group>"; };
+		A74E0FA2CE1A4B7E0000ELDE /* 074E_ELDConnect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 074E_ELDConnect.swift; sourceTree = "<group>"; };
 		A61D0FA2CE1A4B7E0000D010 /* 061_TheHaulMissions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 061_TheHaulMissions.swift; sourceTree = "<group>"; };
 		A62D0FA2CE1A4B7E0000D012 /* 062_TheHaulBadges.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 062_TheHaulBadges.swift; sourceTree = "<group>"; };
 		A63D0FA2CE1A4B7E0000D016 /* 063_TheHaulCrates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 063_TheHaulCrates.swift; sourceTree = "<group>"; };
@@ -1009,6 +1019,8 @@
 		D2280000000000000028CA /* 228_ShipperBOLs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 228_ShipperBOLs.swift; path = EusoTrip/Views/Shipper/228_ShipperBOLs.swift; sourceTree = SOURCE_ROOT; };
 		D2280000000000000028DA /* 228_ShipperRFPDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 228_ShipperRFPDetail.swift; path = EusoTrip/Views/Shipper/228_ShipperRFPDetail.swift; sourceTree = SOURCE_ROOT; };
 		D2290000000000000029CA /* 229_ShipperAllocations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 229_ShipperAllocations.swift; path = EusoTrip/Views/Shipper/229_ShipperAllocations.swift; sourceTree = SOURCE_ROOT; };
+		D2330000000000000033MJ /* 233_MarketIntelligence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 233_MarketIntelligence.swift; path = EusoTrip/Views/Shipper/233_MarketIntelligence.swift; sourceTree = SOURCE_ROOT; };
+		D223A0000000000000023AJ /* 223A_AgreementWizard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 223A_AgreementWizard.swift; path = EusoTrip/Views/Shipper/223A_AgreementWizard.swift; sourceTree = SOURCE_ROOT; };
 		D2290000000000000029DA /* 229_ShipperBOLUpload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 229_ShipperBOLUpload.swift; path = EusoTrip/Views/Shipper/229_ShipperBOLUpload.swift; sourceTree = SOURCE_ROOT; };
 		D2300000000000000030CA /* 230_ShipperBidThread.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 230_ShipperBidThread.swift; path = EusoTrip/Views/Shipper/230_ShipperBidThread.swift; sourceTree = SOURCE_ROOT; };
 		D2300000000000000030DA /* 230_ShipperAllocations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 230_ShipperAllocations.swift; path = EusoTrip/Views/Shipper/230_ShipperAllocations.swift; sourceTree = SOURCE_ROOT; };
@@ -1233,6 +1245,8 @@
 				A58D0FA2CE1A4B7E0000D00A /* 058_DriverWeeklyPlan.swift */,
 				A59D0FA2CE1A4B7E0000D00C /* 059_DriverTripsHistory.swift */,
 				A60D0FA2CE1A4B7E0000D00E /* 060_TheHaulDashboard.swift */,
+				A60D0FA2CE1A4B7EDDDDD00E /* 060L_TheHaulLobby.swift */,
+				A74E0FA2CE1A4B7E0000ELDE /* 074E_ELDConnect.swift */,
 				A61D0FA2CE1A4B7E0000D010 /* 061_TheHaulMissions.swift */,
 				A62D0FA2CE1A4B7E0000D012 /* 062_TheHaulBadges.swift */,
 				A63D0FA2CE1A4B7E0000D016 /* 063_TheHaulCrates.swift */,
@@ -1522,6 +1536,8 @@
 				D2280000000000000028CA /* 228_ShipperBOLs.swift */,
 				D2280000000000000028DA /* 228_ShipperRFPDetail.swift */,
 				D2290000000000000029CA /* 229_ShipperAllocations.swift */,
+				D2330000000000000033MJ /* 233_MarketIntelligence.swift */,
+				D223A0000000000000023AJ /* 223A_AgreementWizard.swift */,
 				D2290000000000000029DA /* 229_ShipperBOLUpload.swift */,
 				D2300000000000000030CA /* 230_ShipperBidThread.swift */,
 				D2300000000000000030DA /* 230_ShipperAllocations.swift */,
@@ -1678,6 +1694,8 @@
 				A12E1A1C0010CE0FF1000012 /* HereMapView.swift */,
 				HAFD00010CE0FF10000012A1 /* HereAddressField.swift */,
 				LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */,
+				GSPD00010CE0FF10000012A1 /* GradientSignaturePad.swift */,
+				AVSB00010CE0FF10000012A1 /* AIVisualScanButton.swift */,
 				B1A11111111111111111AA06 /* WeatherCard.swift */,
 				D2RHIN000000000000ACDS /* RoleHomeIntro.swift */,
 				B1A11111111111111111AB02 /* ESangParticleBurst.swift */,
@@ -2054,6 +2072,8 @@
 				A58D0FA2CE1A4B7E0000D009 /* 058_DriverWeeklyPlan.swift in Sources */,
 				A59D0FA2CE1A4B7E0000D00B /* 059_DriverTripsHistory.swift in Sources */,
 				A60D0FA2CE1A4B7E0000D00D /* 060_TheHaulDashboard.swift in Sources */,
+				A60D0FA2CE1A4B7EDDDDD00D /* 060L_TheHaulLobby.swift in Sources */,
+				A74E0FA2CE1A4B7E0000ELDD /* 074E_ELDConnect.swift in Sources */,
 				A61D0FA2CE1A4B7E0000D00F /* 061_TheHaulMissions.swift in Sources */,
 				A62D0FA2CE1A4B7E0000D011 /* 062_TheHaulBadges.swift in Sources */,
 				A63D0FA2CE1A4B7E0000D015 /* 063_TheHaulCrates.swift in Sources */,
@@ -2140,6 +2160,8 @@
 				A12E1A1C0010CE0FF1000011 /* HereMapView.swift in Sources */,
 				HAFD00010CE0FF10000011A1 /* HereAddressField.swift in Sources */,
 				LTBD00010CE0FF10000011A1 /* ListingTrustBadge.swift in Sources */,
+				GSPD00010CE0FF10000011A1 /* GradientSignaturePad.swift in Sources */,
+				AVSB00010CE0FF10000011A1 /* AIVisualScanButton.swift in Sources */,
 				A12E1A1C0010CE0FF1000021 /* HEREAuthService.swift in Sources */,
 				A1DMC0001000000000000001 /* HereBearerFetch.swift in Sources */,
 				A1DMC0001000000000000003 /* HereFuelPricesClient.swift in Sources */,
@@ -2404,6 +2426,8 @@
 				D2280000000000000028CB /* 228_ShipperBOLs.swift in Sources */,
 				D2280000000000000028DB /* 228_ShipperRFPDetail.swift in Sources */,
 				D2290000000000000029CB /* 229_ShipperAllocations.swift in Sources */,
+				D2330000000000000033MI /* 233_MarketIntelligence.swift in Sources */,
+				D223A0000000000000023AI /* 223A_AgreementWizard.swift in Sources */,
 				D2290000000000000029DB /* 229_ShipperBOLUpload.swift in Sources */,
 				D2300000000000000030CB /* 230_ShipperBidThread.swift in Sources */,
 				D2300000000000000030DB /* 230_ShipperAllocations.swift in Sources */,

@@ -8888,11 +8888,37 @@ struct ErgAPI {
         let guideNumber: Int?
         let hazardClass: String?
         let placard: String?
+        let placardColor: String?
         let isTIH: Bool?
         let isWR: Bool?
         let alternateNames: [String]?
         let guide: GuideDetail?
+        let guideFull: GuideFull?
         let protectiveDistance: ProtectiveDistance?
+    }
+
+    /// Full structured ERG handbook data — every field the canonical
+    /// guide page lists, decoded directly so iOS can lay out health
+    /// vs fire/explosion separately, isolation distances as hero
+    /// stats, fire small/large/tank in 3 columns, etc. Server emits
+    /// this alongside the back-compat flat `guide` block.
+    struct GuideFull: Decodable, Equatable {
+        let title: String?
+        let health: [String]
+        let fireExplosion: [String]
+        let isolationDistanceMeters: Int?
+        let isolationDistanceFeet: Int?
+        let fireIsolationMeters: Int?
+        let fireIsolationFeet: Int?
+        let protectiveClothing: String?
+        let evacuationNotes: String?
+        let fireSmall: [String]
+        let fireLarge: [String]
+        let fireTank: [String]
+        let spillGeneral: [String]
+        let spillSmall: [String]
+        let spillLarge: [String]
+        let firstAid: [String]
     }
 
     /// `erg.searchByUN` — full detail + emergency response steps +

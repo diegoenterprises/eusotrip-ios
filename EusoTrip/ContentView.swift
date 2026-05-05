@@ -125,6 +125,8 @@ enum ScreenRegistry {
             .init(id: "058", title: "Driver Weekly Plan",          role: .driver) { p in AnyView(DriverWeeklyPlanScreen(theme: p)) },
             .init(id: "059", title: "Driver Trips History",        role: .driver) { p in AnyView(DriverTripsHistoryScreen(theme: p)) },
             .init(id: "060", title: "The Haul · Dashboard",         role: .driver) { p in AnyView(TheHaulDashboardScreen(theme: p)) },
+            .init(id: "060L", title: "The Haul · Lobby",            role: .driver) { p in AnyView(TheHaulLobbyScreen(theme: p)) },
+            .init(id: "074E", title: "ELD Device · Connect",         role: .driver) { p in AnyView(ELDConnectScreen(theme: p)) },
             .init(id: "061", title: "The Haul · Missions",          role: .driver) { p in AnyView(TheHaulMissionsScreen(theme: p)) },
             .init(id: "062", title: "The Haul · Badges",            role: .driver) { p in AnyView(TheHaulBadgesScreen(theme: p)) },
             .init(id: "063", title: "The Haul · Crates",            role: .driver) { p in AnyView(TheHaulCratesScreen(theme: p)) },
@@ -622,6 +624,8 @@ enum ScreenRegistry {
         list.append(.init(id: "227", title: "Shipper · Settlement Detail", role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperSettlementDetail() }) })
         list.append(.init(id: "228", title: "Shipper · BOLs",            role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .me) { ShipperBOLs() }) })
         list.append(.init(id: "229", title: "Shipper · Allocations",     role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .loads) { ShipperAllocations() }) })
+        list.append(.init(id: "233", title: "Shipper · Market Intelligence", role: .shipper) { p in AnyView(MarketIntelligenceScreen(theme: p)) })
+        list.append(.init(id: "223A", title: "Shipper · Agreement Wizard",   role: .shipper) { p in AnyView(AgreementWizardScreen(theme: p)) })
         list.append(.init(id: "230", title: "Shipper · Bid Thread",      role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperBidThread(loadId: 0) }) })
         // 228b / 229b / 230b — sibling files at the same slot numbers.
         // Now in the build target after the dual-file pbxproj add and

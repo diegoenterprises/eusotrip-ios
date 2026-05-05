@@ -177,6 +177,33 @@ struct PretripDVIR: View {
                     }
                     .padding(.horizontal, Space.s5)
                     .padding(.top, Space.s3)
+
+                    // ESANG Vision DVIR scan — driver photographs a
+                    // suspect part / fluid / wear; Gemini multi-pass
+                    // returns findings with severity + recommendation.
+                    // Real-data wiring per Gemini parity audit
+                    // 2026-05-05.
+                    AIVisualScanButton(
+                        title: "Scan vehicle with ESANG Vision",
+                        subtitle: "Photo → AI inspection (brakes, lights, leaks, tire wear)",
+                        procPath: "visualIntelligence.inspectDVIR"
+                    ) { result in
+                        // Surface the result by appending findings to
+                        // the current DVIR notes (the editor view-model
+                        // owns the section state). Drivers see the AI
+                        // signal inline and can mark sections accordingly.
+                        if let summary = result.summary, !summary.isEmpty {
+                            vm.appendInspectorNote(summary)
+                        }
+                        for f in result.findings ?? [] {
+                            if let desc = f.description {
+                                vm.appendInspectorNote("• [\(f.severity ?? "note")] \(desc)")
+                            }
+                        }
+                    }
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s3)
+
                     ForEach(Array(vm.sections.enumerated()), id: \.element.id) { idx, section in
                         sectionBlock(section, index: idx + 1, total: vm.sections.count)
                     }

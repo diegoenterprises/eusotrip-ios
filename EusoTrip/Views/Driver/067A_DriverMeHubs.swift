@@ -39,6 +39,7 @@
 //
 
 import SwiftUI
+import PhotosUI
 
 // MARK: - Public Screen wrappers (one per IA node)
 
@@ -229,8 +230,15 @@ enum DriverMeHubCatalog {
 
     static let compliance: [DriverMeSection] = [
         DriverMeSection(title: "HOURS OF SERVICE", icon: "clock.fill", cells: [
+            // Canonical HOS dashboard — same surface the homepage HOS
+            // widget opens (019). Keeps Home + Me views in sync per the
+            // founder mandate "I like the one on the homescreen, just
+            // make sure it is synced."
+            DriverMeCell(icon: "speedometer",           label: "HOS dashboard",       action: .screen("019")),
             DriverMeCell(icon: "waveform.path.ecg",     label: "HOS logs",            action: .screen("074")),
             DriverMeCell(icon: "doc.text.magnifyingglass", label: "ELD logs detail",  action: .screen("081")),
+            DriverMeCell(icon: "antenna.radiowaves.left.and.right",
+                                                          label: "ELD device · connect", action: .screen("074E")),
         ]),
         DriverMeSection(title: "SAFETY", icon: "shield.lefthalf.filled", cells: [
             DriverMeCell(icon: "speedometer",           label: "Safety score",        action: .screen("075")),
@@ -281,6 +289,8 @@ enum DriverMeHubCatalog {
     static let haul: [DriverMeSection] = [
         DriverMeSection(title: "DASHBOARD", icon: "trophy.fill", cells: [
             DriverMeCell(icon: "trophy.fill",           label: "The Haul · Dashboard", action: .screen("060")),
+            DriverMeCell(icon: "bubble.left.and.bubble.right.fill",
+                                                          label: "Lobby",               action: .screen("060L")),
         ]),
         DriverMeSection(title: "GAME LOOP", icon: "flag.fill", cells: [
             DriverMeCell(icon: "flag.fill",             label: "Missions",            action: .screen("061")),
@@ -300,6 +310,17 @@ enum DriverMeHubCatalog {
 private struct DriverMeHomeBody: View {
     @Environment(\.palette) private var palette
     @EnvironmentObject private var profile: DriverProfileStore
+    /// Avatar PhotosPicker trigger — replaces the prior dead avatar
+    /// where the founder reported "no longer a place to change
+    /// profile name or edit picture." Tapping the avatar surfaces
+    /// the system Photos picker; the picked Data is uploaded via
+    /// `profile.updateAvatar` and the new URL persists across
+    /// device restarts.
+    @State private var avatarPickerItem: PhotosPickerItem? = nil
+    /// Drives the in-app ProfileEditView sheet so name / phone /
+    /// email edits land via `profile.updateProfile` instead of
+    /// going through some other path.
+    @State private var showProfileEdit: Bool = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -341,30 +362,101 @@ private struct DriverMeHomeBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 8)
         }
+        .onChange(of: avatarPickerItem) { _, item in
+            guard let item else { return }
+            Task { await uploadAvatar(item: item) }
+        }
+        .sheet(isPresented: $showProfileEdit) {
+            ProfileEditView()
+                .environmentObject(profile)
+        }
     }
 
     private var hero: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
-                let initials = profileInitials()
-                Text(initials)
-                    .font(.system(size: 22, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .frame(width: 64, height: 64)
-                    .background(LinearGradient.diagonal)
-                    .clipShape(Circle())
+                // Tappable avatar — opens PhotosPicker so the driver
+                // can change their profile photo. Replaces the
+                // previously dead avatar circle.
+                PhotosPicker(selection: $avatarPickerItem,
+                             matching: .images,
+                             photoLibrary: .shared()) {
+                    let initials = profileInitials()
+                    Text(initials)
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .frame(width: 64, height: 64)
+                        .background(LinearGradient.diagonal)
+                        .clipShape(Circle())
+                        .overlay(alignment: .bottomTrailing) {
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 10, weight: .heavy))
+                                .foregroundStyle(.white)
+                                .padding(5)
+                                .background(Circle().fill(palette.bgCard))
+                                .overlay(Circle().strokeBorder(palette.borderFaint))
+                                .offset(x: 2, y: 2)
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Change profile photo")
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text(displayName())
                         .font(.system(size: 22, weight: .heavy))
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(2).minimumScaleFactor(0.7)
-                    Text("Driver")
-                        .font(EType.body)
-                        .foregroundStyle(palette.textSecondary)
+                    HStack(spacing: 4) {
+                        Text("Driver")
+                            .font(EType.body)
+                            .foregroundStyle(palette.textSecondary)
+                        // Pencil → opens ProfileEditView sheet so
+                        // name / email / phone edits persist via
+                        // profile.updateProfile.
+                        Button {
+                            showProfileEdit = true
+                        } label: {
+                            Image(systemName: "pencil.circle.fill")
+                                .font(.system(size: 14, weight: .heavy))
+                                .foregroundStyle(LinearGradient.diagonal)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Edit profile")
+                    }
                 }
                 Spacer(minLength: 0)
             }
         }
+    }
+
+    /// Compress + base64-encode the picked photo, upload via
+    /// `profile.updateAvatar`, and reseat the local store so the new
+    /// image renders without a manual reload.
+    private func uploadAvatar(item: PhotosPickerItem) async {
+        guard let data = try? await item.loadTransferable(type: Data.self),
+              !data.isEmpty else { return }
+        // Re-encode to JPEG ≤ 200KB so the data-URL stays reasonable.
+        var jpeg = data
+        if let img = UIImage(data: data) {
+            var quality: CGFloat = 0.85
+            while quality > 0.3 {
+                if let d = img.jpegData(compressionQuality: quality), d.count <= 200_000 {
+                    jpeg = d
+                    break
+                }
+                quality -= 0.1
+            }
+        }
+        let dataURL = "data:image/jpeg;base64,\(jpeg.base64EncodedString())"
+        struct In: Encodable { let imageData: String }
+        struct Out: Decodable { let success: Bool?; let url: String? }
+        do {
+            let _: Out = try await EusoTripAPI.shared.mutation(
+                "profile.updateAvatar", input: In(imageData: dataURL)
+            )
+            await profile.refreshFromServer()
+        } catch { /* surface via toast in a follow-up */ }
+        avatarPickerItem = nil
     }
 
     /// Card-style hub button — opens its child via the canonical
@@ -652,17 +744,47 @@ struct DriverMeSurface: View {
                                 }
     }
 
+    /// Hub child screens that ship their own header back chevron —
+    /// suppressing the surface overlay for these prevents the
+    /// double-back collision the founder flagged. Every other
+    /// pushed leaf (HOS logs detail, ELD detail, Haul leaderboard,
+    /// ERG, etc) gets the surface overlay so a one-tap back is
+    /// always available.
+    private static let driverScreensWithOwnBack: Set<String> = [
+        "067hub", "067a", "067b", "067c", "067d", "067e", "067f", "067g",
+    ]
+
     var body: some View {
         current.view(palette)
             .id("driver-me-\(currentScreenId)")
             .transition(.opacity)
-            // Surface-level back overlay intentionally removed —
-            // every driver hub child screen (067a-g) renders its
-            // own "← Back" header row in `DriverMeHubBody.header`,
-            // and the surface overlay at top:56pt was colliding
-            // with that in-screen back button (founder screenshot
-            // 2026-05-04 "double back buttons here"). Programmatic
-            // pop still works via `eusoDriverMeNavBack`.
+            .overlay(alignment: .topLeading) {
+                // Re-introduces a single canonical surface back
+                // chevron for any driver-Me leaf that doesn't ship
+                // its own header back. Resolves "no back button on
+                // The Haul Leaderboard / ERG / etc" reports without
+                // touching every leaf file.
+                if screenStack.count > 1,
+                   !Self.driverScreensWithOwnBack.contains(currentScreenId) {
+                    Button {
+                        NotificationCenter.default.post(
+                            name: .eusoDriverMeNavBack, object: nil
+                        )
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .heavy))
+                            .foregroundStyle(.white)
+                            .padding(10)
+                            .background(.black.opacity(0.55), in: Circle())
+                            .overlay(Circle().strokeBorder(.white.opacity(0.18), lineWidth: 1))
+                            .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, 12)
+                    .padding(.top, 8)
+                    .accessibilityLabel("Back")
+                }
+            }
             .onReceive(NotificationCenter.default.publisher(
                 for: .eusoDriverMeNavSwap)) { note in
                 guard let id = note.userInfo?["screenId"] as? String else { return }

@@ -257,9 +257,11 @@ struct ShipperDocumentCenter: View {
     }
 
     /// Real upload pipeline — reads the picked file's bytes, base64
-    /// encodes, and POSTs to `documents.uploadInline` (server route
-    /// already exists per docs router). On success the document list
-    /// refreshes so the new row lands on screen immediately.
+    /// encodes, classifies the document via Gemini
+    /// (`aiDocProcessor.classifyDocument`) using the filename + mime
+    /// as the hint, and POSTs to `documents.upload` with the
+    /// AI-classified category. Replaces the prior hardcoded
+    /// `category: "operations"` per founder Gemini parity audit.
     private func handlePickedDocument(_ result: Result<[URL], Error>) async {
         switch result {
         case .failure(let err):
@@ -271,29 +273,84 @@ struct ShipperDocumentCenter: View {
             do {
                 let data = try Data(contentsOf: url)
                 let base64 = data.base64EncodedString()
+                let mime = url.pathExtension.lowercased() == "pdf" ? "application/pdf" : "application/octet-stream"
+                let dataURL = "data:\(mime);base64,\(base64)"
+
+                // Step 1: AI-classify the document so the category
+                // dropdown lands correctly. Best-effort — falls
+                // through to "operations" if Gemini fails.
+                let category = await classifyCategory(filename: url.lastPathComponent, mime: mime)
+
                 struct In: Encodable {
                     let name: String
                     let category: String
                     let fileData: String
                 }
                 struct Out: Decodable { let id: String?; let success: Bool? }
-                let mime = url.pathExtension.lowercased() == "pdf" ? "application/pdf" : "application/octet-stream"
-                let dataURL = "data:\(mime);base64,\(base64)"
                 let _: Out = try await EusoTripAPI.shared.mutation(
                     "documents.upload",
                     input: In(
                         name: url.lastPathComponent,
-                        category: "operations",
+                        category: category,
                         fileData: dataURL
                     )
                 )
-                await MainActor.run { uploadToast = "Uploaded \(url.lastPathComponent)" }
+                await MainActor.run { uploadToast = "Uploaded \(url.lastPathComponent) → \(category)" }
                 await store.load()
             } catch {
                 await MainActor.run {
                     uploadToast = "Upload failed: \((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)"
                 }
             }
+        }
+    }
+
+    /// Calls `aiDocProcessor.classifyDocument` with the filename +
+    /// mime as the classifier hint. Server's prompt picks one of
+    /// 16 freight document categories; iOS maps unknowns back to
+    /// "operations" as a safe default.
+    private func classifyCategory(filename: String, mime: String) async -> String {
+        struct In: Encodable {
+            let content: String
+            let fileName: String
+        }
+        struct Out: Decodable {
+            let classification: String?
+            let confidence: Double?
+        }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "aiDocProcessor.classifyDocument",
+                input: In(
+                    content: "Filename: \(filename)\nMIME: \(mime)\n",
+                    fileName: filename
+                )
+            )
+            // Map Gemini classification → existing documents.upload
+            // category enum (compliance, insurance, permits, contracts,
+            // invoices, bols, receipts, run_tickets, agreements,
+            // freight, operations, financial, company, vehicle, other).
+            switch resp.classification?.lowercased() ?? "" {
+            case "rate_confirmation":   return "freight"
+            case "bill_of_lading":      return "bols"
+            case "proof_of_delivery":   return "bols"
+            case "invoice":             return "invoices"
+            case "customs_entry":       return "freight"
+            case "packing_list":        return "freight"
+            case "weight_ticket":       return "run_tickets"
+            case "lumper_receipt":      return "receipts"
+            case "fuel_receipt":        return "receipts"
+            case "inspection_report":   return "compliance"
+            case "insurance_certificate": return "insurance"
+            case "carrier_packet":      return "agreements"
+            case "w9":                  return "company"
+            case "comcheck":            return "financial"
+            case "detention_receipt":   return "receipts"
+            case "other":               return "operations"
+            default:                    return "operations"
+            }
+        } catch {
+            return "operations"
         }
     }
 

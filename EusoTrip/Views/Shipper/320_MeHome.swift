@@ -169,6 +169,7 @@ enum MeHubCatalog {
             MeCell(icon: "rectangle.3.group",    label: "Control Tower",       action: .screen("212")),
             MeCell(icon: "location.viewfinder",  label: "Live tracking",       action: .screen("222")),
             MeCell(icon: "flame",                label: "Hot zones",           action: .screen("225")),
+            MeCell(icon: "chart.line.uptrend.xyaxis", label: "Market intelligence", action: .screen("233")),
         ]),
         MeSection(title: "EXECUTION", icon: "arrow.triangle.branch", cells: [
             MeCell(icon: "arrow.clockwise",      label: "Recurring loads",     action: .screen("221")),

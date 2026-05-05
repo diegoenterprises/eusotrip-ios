@@ -48,6 +48,21 @@ final class PretripDVIRViewModel: ObservableObject {
     /// Free-text notes added at submit time.
     @Published var notes: String = ""
 
+    /// Append a note from the ESANG Vision DVIR scan. Used by 011's
+    /// AIVisualScanButton callback so AI findings land directly in
+    /// the driver's notes field where the submit pipeline already
+    /// captures them. Pre-pends a blank line so successive scans
+    /// don't run together.
+    func appendInspectorNote(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if notes.isEmpty {
+            notes = trimmed
+        } else {
+            notes += "\n" + trimmed
+        }
+    }
+
     // MARK: - Outputs
 
     @Published private(set) var phase: Phase = .idle

@@ -2535,7 +2535,7 @@ private struct HaulLeaderboardTab: View {
 // driver badge so a freshly-seeded server row still lands with a
 // consistent look instead of a blank chip.
 
-private struct HaulLobbyTab: View {
+struct HaulLobbyTab: View {
     @Environment(\.palette) var palette
 
     enum Role { case driver, dispatch, fleet, staff

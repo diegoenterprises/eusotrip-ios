@@ -57,6 +57,11 @@ struct MeVehicle: View {
     @Environment(\.palette) var palette
     @StateObject private var assigned = AssignedVehicleStore()
     @StateObject private var maintenance = VehicleMaintenanceHistoryStore()
+    /// AI scan state — calls `equipmentIntelligence.scanVehicleIntelligence`
+    /// with the assigned vehicle id and surfaces Gemini's analysis.
+    @State private var aiScanInflight: Bool = false
+    @State private var aiScanResult: VehicleScanResult? = nil
+    @State private var aiScanError: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -75,6 +80,8 @@ struct MeVehicle: View {
                     } else {
                         heroCard(v)
                         identityStrip(v)
+                        aiScanRibbon(v)
+                        if let s = aiScanResult { aiScanResultCard(s) }
                         maintenanceSection
                     }
                 }
@@ -86,6 +93,128 @@ struct MeVehicle: View {
         }
         .task { await reload() }
         .refreshable { await reload() }
+        .overlay(alignment: .top) {
+            if let err = aiScanError {
+                Text(err)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(.red.opacity(0.92), in: Capsule())
+                    .padding(.top, 12)
+                    .onAppear {
+                        Task {
+                            try? await Task.sleep(nanoseconds: 3_500_000_000)
+                            await MainActor.run { aiScanError = nil }
+                        }
+                    }
+            }
+        }
+    }
+
+    private func aiScanRibbon(_ v: VehicleAPI.AssignedVehicle) -> some View {
+        Button {
+            Task { await runAIScan(v) }
+        } label: {
+            HStack(spacing: 10) {
+                if aiScanInflight {
+                    ProgressView().progressViewStyle(.circular)
+                        .tint(.white).controlSize(.small)
+                } else {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(.white)
+                }
+                Text(aiScanInflight ? "Scanning…" : "AI scan with ESANG")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(.white)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(.white.opacity(0.7))
+            }
+            .padding(.horizontal, Space.s3).padding(.vertical, Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(LinearGradient.diagonal)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(aiScanInflight)
+    }
+
+    private func aiScanResultCard(_ s: VehicleScanResult) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("ESANG VEHICLE INTELLIGENCE")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(LinearGradient.diagonal)
+            }
+            if let summary = s.summary, !summary.isEmpty {
+                Text(summary)
+                    .font(EType.body)
+                    .foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let recs = s.recommendations, !recs.isEmpty {
+                Text("Recommendations").font(EType.micro).tracking(0.6).foregroundStyle(palette.textTertiary)
+                ForEach(Array(recs.enumerated()), id: \.offset) { _, r in
+                    HStack(alignment: .top, spacing: 6) {
+                        Text("•").foregroundStyle(palette.textSecondary)
+                        Text(r).font(EType.caption).foregroundStyle(palette.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            if let risks = s.risks, !risks.isEmpty {
+                Text("Risk flags").font(EType.micro).tracking(0.6).foregroundStyle(Brand.warning)
+                ForEach(Array(risks.enumerated()), id: \.offset) { _, r in
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 9, weight: .heavy))
+                            .foregroundStyle(Brand.warning)
+                        Text(r).font(EType.caption).foregroundStyle(palette.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.md)
+    }
+
+    private func runAIScan(_ v: VehicleAPI.AssignedVehicle) async {
+        guard !aiScanInflight else { return }
+        aiScanInflight = true
+        defer { Task { @MainActor in aiScanInflight = false } }
+        struct In: Encodable { let vehicleId: Int }
+        struct Out: Decodable {
+            let summary: String?
+            let recommendations: [String]?
+            let risks: [String]?
+            let aiAnalysis: String?
+        }
+        do {
+            let id = Int(v.id) ?? 0
+            guard id > 0 else { return }
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "equipmentIntelligence.scanVehicleIntelligence",
+                input: In(vehicleId: id)
+            )
+            await MainActor.run {
+                aiScanResult = VehicleScanResult(
+                    summary: resp.summary ?? resp.aiAnalysis,
+                    recommendations: resp.recommendations,
+                    risks: resp.risks
+                )
+            }
+        } catch {
+            await MainActor.run {
+                aiScanError = "Scan failed: \((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)"
+            }
+        }
     }
 
     private func reload() async {
@@ -516,4 +645,11 @@ private func driverNavTrailing_073() -> [NavSlot] {
 #Preview("073 · Me Vehicle · Afternoon") {
     MeVehicleScreen(theme: Theme.light)
         .preferredColorScheme(.light)
+}
+
+/// AI scan result envelope from `equipmentIntelligence.scanVehicleIntelligence`.
+private struct VehicleScanResult: Hashable {
+    let summary: String?
+    let recommendations: [String]?
+    let risks: [String]?
 }

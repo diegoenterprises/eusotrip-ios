@@ -345,19 +345,31 @@ private struct ErgDetailSheet: View {
                 VStack(alignment: .leading, spacing: Space.s4) {
                     if let d = store.detail, d.found == true {
                         heroCard(d)
-                        if let guide = d.guide {
+                        // Full structured handbook layout when the
+                        // server emits guideFull (every UN since
+                        // 2026-05-05 deploy). Falls through to the
+                        // flat guide view for older legacy entries.
+                        if let g = d.guideFull {
+                            healthSection(g)
+                            fireExplosionSection(g)
+                            isolationSection(g)
+                            evacuationSection(g)
+                            fireResponseSection(g)
+                            spillResponseSection(g)
+                            firstAidSection(g)
+                        } else if let guide = d.guide {
                             guideSection(guide)
                         }
                         if let pd = d.protectiveDistance {
                             protectiveSection(pd)
                         }
                     } else if store.detail == nil {
-                        HStack {
-                            Spacer()
-                            ProgressView()
-                            Spacer()
-                        }
-                        .padding(.vertical, Space.s5)
+                        // Single seamless loading state — auto-retries
+                        // every 4s while detail is nil so a transient
+                        // network hiccup self-heals without surfacing
+                        // an error UI. Founder mandate 2026-05-05:
+                        // "i dont want to see any error anything."
+                        loadingState
                     } else {
                         EusoEmptyState(
                             systemImage: "questionmark.circle",
@@ -424,6 +436,283 @@ private struct ErgDetailSheet: View {
         .padding(Space.s4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .eusoCard(radius: Radius.lg)
+    }
+
+    /// Seamless loading state — auto-fires a retry every 4 seconds
+    /// while `store.detail` is nil so a transient network hiccup
+    /// self-heals without ever surfacing an error to the user.
+    @ViewBuilder
+    private var loadingState: some View {
+        VStack(spacing: Space.s3) {
+            ProgressView()
+                .progressViewStyle(.circular)
+                .controlSize(.large)
+            Text("Loading UN\(unNumber) from the ERG handbook…")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Space.s5)
+        .task {
+            while store.detail == nil {
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                if store.detail == nil {
+                    await store.loadDetail(unNumber: unNumber)
+                }
+            }
+        }
+    }
+
+    // MARK: - Full ERG handbook sections
+
+    @ViewBuilder
+    private func healthSection(_ g: ErgAPI.GuideFull) -> some View {
+        if !g.health.isEmpty {
+            ergSection(
+                label: "HEALTH HAZARDS",
+                icon: "cross.case.fill",
+                tint: Brand.magenta,
+                bullets: g.health
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func fireExplosionSection(_ g: ErgAPI.GuideFull) -> some View {
+        if !g.fireExplosion.isEmpty {
+            ergSection(
+                label: "FIRE / EXPLOSION",
+                icon: "flame.fill",
+                tint: Brand.warning,
+                bullets: g.fireExplosion
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func isolationSection(_ g: ErgAPI.GuideFull) -> some View {
+        let hasIso = (g.isolationDistanceMeters ?? 0) > 0
+        let hasFire = (g.fireIsolationMeters ?? 0) > 0
+        if hasIso || hasFire {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                HStack(spacing: 6) {
+                    Image(systemName: "shield.fill")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text("ISOLATION DISTANCES")
+                        .font(EType.micro).tracking(1.3)
+                        .foregroundStyle(LinearGradient.diagonal)
+                }
+                HStack(spacing: Space.s2) {
+                    if hasIso {
+                        isoTile(
+                            label: "INITIAL",
+                            meters: g.isolationDistanceMeters ?? 0,
+                            feet: g.isolationDistanceFeet ?? 0,
+                            color: Brand.warning
+                        )
+                    }
+                    if hasFire {
+                        isoTile(
+                            label: "FIRE",
+                            meters: g.fireIsolationMeters ?? 0,
+                            feet: g.fireIsolationFeet ?? 0,
+                            color: Brand.danger
+                        )
+                    }
+                }
+            }
+            .padding(Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .eusoCard(radius: Radius.md)
+        }
+    }
+
+    private func isoTile(label: String, meters: Int, feet: Int, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(EType.micro).tracking(1.0)
+                .foregroundStyle(color)
+            Text("\(meters)m")
+                .font(.system(size: 22, weight: .heavy, design: .rounded))
+                .foregroundStyle(palette.textPrimary)
+                .monospacedDigit()
+            Text("\(feet) ft")
+                .font(EType.micro)
+                .foregroundStyle(palette.textTertiary)
+                .monospacedDigit()
+        }
+        .padding(.horizontal, Space.s3)
+        .padding(.vertical, Space.s2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                .fill(color.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                .strokeBorder(color.opacity(0.3))
+        )
+    }
+
+    @ViewBuilder
+    private func evacuationSection(_ g: ErgAPI.GuideFull) -> some View {
+        if g.protectiveClothing != nil || g.evacuationNotes != nil {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                HStack(spacing: 6) {
+                    Image(systemName: "person.line.dotted.person.fill")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(Brand.warning)
+                    Text("PUBLIC SAFETY")
+                        .font(EType.micro).tracking(1.3)
+                        .foregroundStyle(Brand.warning)
+                }
+                if let pc = g.protectiveClothing, !pc.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Protective clothing")
+                            .font(EType.micro).tracking(0.6)
+                            .foregroundStyle(palette.textTertiary)
+                        Text(pc)
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if let ev = g.evacuationNotes, !ev.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Evacuation")
+                            .font(EType.micro).tracking(0.6)
+                            .foregroundStyle(palette.textTertiary)
+                        Text(ev)
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .padding(Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .eusoCard(radius: Radius.md)
+        }
+    }
+
+    @ViewBuilder
+    private func fireResponseSection(_ g: ErgAPI.GuideFull) -> some View {
+        if !g.fireSmall.isEmpty || !g.fireLarge.isEmpty || !g.fireTank.isEmpty {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                HStack(spacing: 6) {
+                    Image(systemName: "flame")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(Brand.danger)
+                    Text("FIRE RESPONSE")
+                        .font(EType.micro).tracking(1.3)
+                        .foregroundStyle(Brand.danger)
+                }
+                if !g.fireSmall.isEmpty { responseBlock(title: "SMALL FIRE", bullets: g.fireSmall) }
+                if !g.fireLarge.isEmpty { responseBlock(title: "LARGE FIRE", bullets: g.fireLarge) }
+                if !g.fireTank.isEmpty  { responseBlock(title: "TANK FIRE",  bullets: g.fireTank) }
+            }
+            .padding(Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .eusoCard(radius: Radius.md)
+        }
+    }
+
+    @ViewBuilder
+    private func spillResponseSection(_ g: ErgAPI.GuideFull) -> some View {
+        if !g.spillGeneral.isEmpty || !g.spillSmall.isEmpty || !g.spillLarge.isEmpty {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                HStack(spacing: 6) {
+                    Image(systemName: "drop.fill")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(Brand.info)
+                    Text("SPILL / LEAK")
+                        .font(EType.micro).tracking(1.3)
+                        .foregroundStyle(Brand.info)
+                }
+                if !g.spillGeneral.isEmpty { responseBlock(title: "GENERAL", bullets: g.spillGeneral) }
+                if !g.spillSmall.isEmpty   { responseBlock(title: "SMALL",   bullets: g.spillSmall) }
+                if !g.spillLarge.isEmpty   { responseBlock(title: "LARGE",   bullets: g.spillLarge) }
+            }
+            .padding(Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .eusoCard(radius: Radius.md)
+        }
+    }
+
+    @ViewBuilder
+    private func firstAidSection(_ g: ErgAPI.GuideFull) -> some View {
+        if !g.firstAid.isEmpty {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                HStack(spacing: 6) {
+                    Image(systemName: "cross.fill")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(Brand.success)
+                    Text("FIRST AID")
+                        .font(EType.micro).tracking(1.3)
+                        .foregroundStyle(Brand.success)
+                }
+                ForEach(Array(g.firstAid.enumerated()), id: \.offset) { _, line in
+                    Text(line)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .eusoCard(radius: Radius.md)
+        }
+    }
+
+    private func responseBlock(title: String, bullets: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            ForEach(Array(bullets.enumerated()), id: \.offset) { _, b in
+                HStack(alignment: .top, spacing: 6) {
+                    Text("•").foregroundStyle(palette.textSecondary)
+                    Text(b)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    /// Shared section frame used by health + fire/explosion (single
+    /// bullet list with colored accent stripe).
+    private func ergSection(
+        label: String,
+        icon: String,
+        tint: Color,
+        bullets: [String]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(tint)
+                Text(label)
+                    .font(EType.micro).tracking(1.3)
+                    .foregroundStyle(tint)
+            }
+            ForEach(Array(bullets.enumerated()), id: \.offset) { _, b in
+                HStack(alignment: .top, spacing: 8) {
+                    Text("•").foregroundStyle(tint)
+                    Text(b)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.md)
     }
 
     private func guideSection(_ g: ErgAPI.GuideDetail) -> some View {

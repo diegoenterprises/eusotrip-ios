@@ -180,6 +180,39 @@ struct MeIncidentReportFiler: View {
                     locationField
                     whenField
                     narrativeField
+                    // ESANG Vision damage assessment — driver
+                    // photographs the scene; Gemini returns
+                    // structured damage description that auto-fills
+                    // the narrative field. Replaces the "describe
+                    // every detail by hand" friction the founder
+                    // flagged in the Gemini parity audit 2026-05-05.
+                    AIVisualScanButton(
+                        title: "Scan scene with ESANG Vision",
+                        subtitle: "Auto-describes damage, severity, liability cues",
+                        procPath: "visualIntelligence.assessDamage"
+                    ) { result in
+                        var lines: [String] = []
+                        if let s = result.summary, !s.isEmpty { lines.append(s) }
+                        for f in result.findings ?? [] {
+                            if let desc = f.description {
+                                lines.append("• [\(f.severity ?? "note")] \(desc)")
+                            }
+                        }
+                        let block = lines.joined(separator: "\n")
+                        if description.isEmpty {
+                            description = block
+                        } else {
+                            description += "\n\n" + block
+                        }
+                        if let sev = result.overallSeverity?.lowercased() {
+                            switch sev {
+                            case "critical":           severity = .critical
+                            case "high", "moderate":   severity = .major
+                            case "low":                severity = .minor
+                            default:                   break
+                            }
+                        }
+                    }
                     if kind == .nearMiss {
                         nearMissExtrasSection
                     }

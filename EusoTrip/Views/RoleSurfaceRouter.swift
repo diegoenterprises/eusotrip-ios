@@ -276,7 +276,10 @@ struct ShipperSurface: View {
         current.view(palette)
             .id("shipper-\(currentScreenId)")
             .transition(.opacity)
-            .modifier(ShipperBackOverlay(stackDepth: screenStack.count))
+            .modifier(ShipperBackOverlay(
+                stackDepth: screenStack.count,
+                currentScreenId: currentScreenId
+            ))
             .modifier(ShipperEnvInjections())
             .modifier(ShipperNotificationListeners(
                 screenStack: $screenStack,
@@ -475,8 +478,44 @@ struct ShipperSurface: View {
 /// double-button collision.
 private struct ShipperBackOverlay: ViewModifier {
     let stackDepth: Int
+    /// Screens that ship their own header back chevron — suppressing the
+    /// surface overlay for these prevents the double-back collision the
+    /// founder flagged 2026-04-30. Every other pushed screen gets the
+    /// overlay so leaves like 222 Live Tracking, 226 Document Center,
+    /// 106 EusoTickets, 064 Haul Leaderboard never strand the user.
+    private static let screensWithOwnBack: Set<String> = [
+        // 320 hub family draws its own "< Me" chevron in the header
+        "320a", "320b", "320c", "320d", "320e", "320f", "320g",
+        // Post-Load wizard has its own < chevron next to the title
+        "204", "250", "251", "252", "253",
+        // Hub roots have no parent to return to
+        "200", "201", "320",
+    ]
+
+    let currentScreenId: String
+
     func body(content: Content) -> some View {
-        content
+        content.overlay(alignment: .topLeading) {
+            if stackDepth > 1, !Self.screensWithOwnBack.contains(currentScreenId) {
+                Button {
+                    NotificationCenter.default.post(
+                        name: .eusoShipperNavBack, object: nil
+                    )
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 16, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .padding(10)
+                        .background(.black.opacity(0.55), in: Circle())
+                        .overlay(Circle().strokeBorder(.white.opacity(0.18), lineWidth: 1))
+                        .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 12)
+                .padding(.top, 8)
+                .accessibilityLabel("Back")
+            }
+        }
     }
 }
 

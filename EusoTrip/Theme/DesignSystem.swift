@@ -1366,18 +1366,22 @@ struct Shell<Content: View, Nav: View>: View {
                 content()
                 Color.clear.frame(height: Device.navHeight + Device.safeBottom + Space.s4)
             }
-            // `.ignoresSafeArea(.keyboard, edges: .bottom)` pins the
-            // bottom nav to the actual screen bottom even when the
-            // keyboard is up — without this the nav lifts with the
-            // keyboard and parks in the middle of the screen behind
-            // any active TextField. Reported by founder 2026-05-04
-            // ("bottom nav gets stuck on middle of screen when posting
-            // a load") — Post Load step 1's Origin/Destination fields
-            // raise the keyboard and the nav rode up with it.
             nav()
-                .ignoresSafeArea(.keyboard, edges: .bottom)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Hard-pin the entire Shell to the device frame regardless of
+        // keyboard. Founder report 2026-05-05: the bottom nav was
+        // floating mid-screen when the keyboard came up on Post Load,
+        // because the parent ZStack shrank with the keyboard inset
+        // (so its alignment-bottom child rode up with it). Applying
+        // `.ignoresSafeArea(.keyboard, edges: .bottom)` on the OUTER
+        // frame keeps the ZStack's bottom anchor at the real screen
+        // bottom. The keyboard now slides up over the nav (standard
+        // iOS chat-app behavior); the active TextField is still
+        // scrolled into view by the inner ScrollView. Replaces the
+        // prior `.ignoresSafeArea(.keyboard, edges: .bottom)` on the
+        // nav child which didn't affect the parent's geometry.
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         .environment(\.palette, theme)
     }
 }
