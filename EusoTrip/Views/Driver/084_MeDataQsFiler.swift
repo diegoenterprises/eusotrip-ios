@@ -92,6 +92,16 @@ struct MeDataQsFiler: View {
     @State private var submittedResult: CsaScoresAPI.DataQsChallengeResponse?
     @State private var lastToast: String?
 
+    // ESANG-assisted draft (Gemini via dataqs.aiDraft).
+    @State private var isDrafting: Bool = false
+    @State private var draftRisk: String?
+    @State private var draftReasoning: String?
+    @State private var draftChecklist: [String] = []
+    @State private var draftRegulations: [String] = []
+
+    // Recent filings (dataqs.listMine).
+    @State private var recentFilings: [DataQsAPI.Filing] = []
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: Space.s5) {
@@ -102,9 +112,12 @@ struct MeDataQsFiler: View {
                     violationPicker
                     reasonPicker
                     explanationEditor
+                    aiAssistRibbon
+                    aiDraftCard
                     supportingDocsPicker
                     submitCTA
                 }
+                recentFilingsSection
                 disclosureFooter
             }
             .padding(.horizontal, Space.s4)
@@ -131,7 +144,57 @@ struct MeDataQsFiler: View {
         violations.status = "open"
         async let a: Void = violations.refresh()
         async let b: Void = documents.refresh()
-        _ = await (a, b)
+        async let c: Void = loadRecentFilings()
+        _ = await (a, b, c)
+    }
+
+    /// Pull the last 25 RDR filings for this user/company so the
+    /// driver can see what's already in flight without leaving 084.
+    private func loadRecentFilings() async {
+        do {
+            let resp = try await EusoTripAPI.shared.dataqs.listMine(limit: 25)
+            await MainActor.run { self.recentFilings = resp.rows }
+        } catch {
+            await MainActor.run { self.recentFilings = [] }
+        }
+    }
+
+    /// Fire ESANG (Gemini) to draft the challenge statement. Reform-aware:
+    /// the server prompt cites 49 CFR 386 + the 2026 burden-of-proof rule
+    /// + Missouri/Nebraska state-trooper guidance against frivolous
+    /// filings. Returns a structured draft we surface here.
+    private func runAIDraft() async {
+        guard let v = selectedViolation, !isDrafting else { return }
+        isDrafting = true
+        defer { Task { @MainActor in self.isDrafting = false } }
+        let driverFacts = explanation.trimmingCharacters(in: .whitespacesAndNewlines)
+        let carrierFacts = "\(v.title) — \(v.subtitle). Severity: \(v.severity)."
+        do {
+            let draft = try await EusoTripAPI.shared.dataqs.aiDraft(
+                .init(
+                    requestType: reason == .notResponsible ? "csa_violation" : "inspection_violation",
+                    violationCode: nil,
+                    eventDate: nil,
+                    jurisdiction: nil,
+                    issuingOfficer: nil,
+                    carrierFacts: carrierFacts,
+                    driverAccount: driverFacts.isEmpty ? nil : driverFacts
+                )
+            )
+            await MainActor.run {
+                if draft.available && !draft.challengeStatement.isEmpty {
+                    self.explanation = draft.challengeStatement
+                }
+                self.draftRisk = draft.frivolousClaimRisk
+                self.draftReasoning = draft.reasoning
+                self.draftChecklist = draft.evidenceChecklist
+                self.draftRegulations = draft.regulationsCited ?? []
+            }
+        } catch {
+            await MainActor.run {
+                self.flashToast("ESANG draft unavailable")
+            }
+        }
     }
 
     // MARK: Header
@@ -326,6 +389,202 @@ struct MeDataQsFiler: View {
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    // MARK: ESANG AI assist (Gemini-backed draft)
+
+    @ViewBuilder
+    private var aiAssistRibbon: some View {
+        let canDraft = selectedViolation != nil && !isDrafting
+        Button {
+            Task { await runAIDraft() }
+        } label: {
+            HStack(spacing: Space.s2) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text(isDrafting ? "ESANG drafting…" : "ESANG · draft challenge statement")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                if isDrafting {
+                    ProgressView().progressViewStyle(.circular).controlSize(.small)
+                } else {
+                    Image(systemName: "wand.and.stars")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+            .padding(.horizontal, Space.s3)
+            .padding(.vertical, Space.s3)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(palette.bgCard.opacity(0.7))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(!canDraft)
+        .opacity(canDraft ? 1.0 : 0.5)
+    }
+
+    @ViewBuilder
+    private var aiDraftCard: some View {
+        let hasDraft = (draftRisk != nil) || !draftChecklist.isEmpty
+        if hasDraft {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                HStack(spacing: Space.s2) {
+                    Text("ESANG GUIDANCE")
+                        .font(EType.micro).tracking(1.4)
+                        .foregroundStyle(palette.textTertiary)
+                    Spacer()
+                    if let risk = draftRisk {
+                        let isHighRisk = risk.lowercased() == "high"
+                        Text("FRIVOLOUS RISK · \(risk.uppercased())")
+                            .font(EType.micro).tracking(1.1)
+                            .foregroundStyle(isHighRisk ? Brand.warning : palette.textSecondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                Capsule().strokeBorder(
+                                    isHighRisk ? Brand.warning.opacity(0.6) : palette.borderFaint,
+                                    lineWidth: 1
+                                )
+                            )
+                    }
+                }
+                if let reasoning = draftReasoning, !reasoning.isEmpty {
+                    Text(reasoning)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if !draftChecklist.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("EVIDENCE CHECKLIST")
+                            .font(EType.micro).tracking(1.2)
+                            .foregroundStyle(palette.textTertiary)
+                        ForEach(Array(draftChecklist.enumerated()), id: \.offset) { _, item in
+                            HStack(alignment: .top, spacing: Space.s2) {
+                                Image(systemName: "checkmark.circle")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(LinearGradient.diagonal)
+                                Text(item)
+                                    .font(EType.caption)
+                                    .foregroundStyle(palette.textPrimary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer()
+                            }
+                        }
+                    }
+                    .padding(.top, 2)
+                }
+                if !draftRegulations.isEmpty {
+                    HStack(alignment: .top, spacing: 4) {
+                        Image(systemName: "book.closed")
+                            .font(.system(size: 12))
+                            .foregroundStyle(palette.textTertiary)
+                        Text(draftRegulations.joined(separator: " · "))
+                            .font(EType.micro).tracking(1.0)
+                            .foregroundStyle(palette.textTertiary)
+                            .lineLimit(2)
+                    }
+                }
+            }
+            .padding(Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(palette.bgCard.opacity(0.6))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+        }
+    }
+
+    // MARK: Recent filings (history of RDRs already filed)
+
+    @ViewBuilder
+    private var recentFilingsSection: some View {
+        if !recentFilings.isEmpty {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                HStack {
+                    Text("RECENT FILINGS")
+                        .font(EType.micro).tracking(1.4)
+                        .foregroundStyle(palette.textTertiary)
+                    Spacer()
+                    Text("\(recentFilings.count)")
+                        .font(EType.micro).tracking(1.1)
+                        .foregroundStyle(palette.textTertiary)
+                }
+                VStack(spacing: Space.s2) {
+                    ForEach(recentFilings.prefix(8)) { f in
+                        recentFilingRow(f)
+                    }
+                }
+            }
+        }
+    }
+
+    private func recentFilingRow(_ f: DataQsAPI.Filing) -> some View {
+        let statusUpper = f.status.replacingOccurrences(of: "_", with: " ").uppercased()
+        let isResolved = f.resolvedAt != nil
+        let isApproved = f.status.lowercased() == "approved"
+        return HStack(alignment: .top, spacing: Space.s3) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: Space.s2) {
+                    Text(f.requestType.replacingOccurrences(of: "_", with: " ").uppercased())
+                        .font(EType.micro).tracking(1.1)
+                        .foregroundStyle(palette.textTertiary)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().strokeBorder(palette.borderFaint, lineWidth: 1))
+                    Text("#\(f.referenceNumber)")
+                        .font(EType.micro).tracking(1.0)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                }
+                Text(f.challengeStatement)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(2)
+                if let dueIso = f.expectedReplyBy, let due = shortDate(dueIso) {
+                    Text(isResolved ? "Resolved" : "FMCSA reply by \(due)")
+                        .font(EType.micro).tracking(1.0)
+                        .foregroundStyle(palette.textTertiary)
+                }
+            }
+            Spacer(minLength: Space.s2)
+            Text(statusUpper)
+                .font(EType.micro).tracking(1.1)
+                .foregroundStyle(
+                    isApproved
+                        ? AnyShapeStyle(LinearGradient.diagonal)
+                        : AnyShapeStyle(palette.textSecondary)
+                )
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .background(
+                    Capsule().strokeBorder(
+                        isApproved ? Color.white.opacity(0.25) : palette.borderFaint,
+                        lineWidth: 1
+                    )
+                )
+        }
+        .padding(.horizontal, Space.s3)
+        .padding(.vertical, Space.s3)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .fill(palette.bgCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
     }
 
     // MARK: Supporting docs

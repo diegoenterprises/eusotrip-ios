@@ -402,6 +402,11 @@ final class EusoTripAPI: ObservableObject {
     /// Added in the 77th firing (brick port 084 Me · DataQs Filer).
     lazy var csaScores: CsaScoresAPI = CsaScoresAPI(api: self)
 
+    /// `dataqsRouter` — FMCSA Request for Data Review (RDR) tracking
+    /// + Gemini-assisted draft, reform-aware (2026 burden-of-proof).
+    /// MCP-verified at `frontend/server/routers/dataqs.ts:113`.
+    lazy var dataqs: DataQsAPI = DataQsAPI(api: self)
+
     /// `esangCoachRouter` — ESANG-powered safety coaching for the
     /// driver's 087 Me · Safety Coach screen. Role + vertical aware;
     /// hazmat is the most-stringent regulatory lens. MCP-verified at
@@ -6830,6 +6835,176 @@ struct TrainingAPI {
     /// scopes to the signed-in user via ctx.user.id — no param needed.
     func getMyCertificates() async throws -> CertificatesResponse {
         try await api.queryNoInput("trainingLMS.getMyCertificates")
+    }
+
+    // MARK: - Course catalog (training.listCourses)
+
+    /// One row from `training.listCourses` — full regulatory catalog.
+    struct CatalogCourse: Decodable, Identifiable, Equatable {
+        let id: String
+        let title: String
+        let category: String
+        let duration: Int
+        let modules: Int
+        let passingScore: Int
+        let description: String
+        let renewalPeriod: Int
+    }
+
+    struct ListCoursesInput: Encodable {
+        let category: String?
+        let search: String?
+    }
+
+    /// Catalog browse — backs the iOS Training "Courses" tab.
+    func listCourses(category: String? = nil, search: String? = nil) async throws -> [CatalogCourse] {
+        try await api.query(
+            "training.listCourses",
+            input: ListCoursesInput(category: category, search: search)
+        )
+    }
+
+    struct StartCourseInput: Encodable { let courseId: String }
+    struct StartCourseAck: Decodable { let success: Bool; let enrollmentId: String }
+
+    /// Enroll the signed-in driver in a catalog course. Returns the
+    /// fresh `userTraining.id` so the caller can link to a take-test
+    /// flow.
+    func startCourse(courseId: String) async throws -> StartCourseAck {
+        try await api.mutation(
+            "training.startCourse",
+            input: StartCourseInput(courseId: courseId)
+        )
+    }
+
+    struct UpdateProgressInput: Encodable { let assignmentId: String; let progress: Int }
+    struct UpdateProgressAck: Decodable { let success: Bool; let newProgress: Int }
+
+    /// Drive the in-app course player progress bar.
+    func updateProgress(assignmentId: String, progress: Int) async throws -> UpdateProgressAck {
+        try await api.mutation(
+            "training.updateProgress",
+            input: UpdateProgressInput(assignmentId: assignmentId, progress: progress)
+        )
+    }
+
+    struct CompleteTrainingInput: Encodable { let assignmentId: String; let score: Int }
+    struct CompleteTrainingAck: Decodable {
+        let success: Bool
+        let passed: Bool
+        let certificateId: String?
+        let expirationDate: String?
+    }
+
+    /// Final exam submit. Score 0-100 — server passes at ≥75 and issues
+    /// a certificate id when so.
+    func completeTraining(assignmentId: String, score: Int) async throws -> CompleteTrainingAck {
+        try await api.mutation(
+            "training.completeTraining",
+            input: CompleteTrainingInput(assignmentId: assignmentId, score: score)
+        )
+    }
+}
+
+// MARK: - DataQsAPI
+//
+// FMCSA Request for Data Review (RDR) filing surface backing the iOS
+// 077A DataQs Filer screen. Mirrors `dataqs.*` server router (added
+// alongside the 2026 reform: burden of proof on the requestor; 21/21/45
+// timeline; issuing officers can no longer decide their own challenges).
+
+struct DataQsAPI {
+    let api: EusoTripAPI
+
+    struct Filing: Decodable, Identifiable, Equatable {
+        let id: String
+        let requestType: String
+        let referenceNumber: String
+        let eventDate: String?
+        let jurisdiction: String?
+        let issuingOfficer: String?
+        let violationCode: String?
+        let challengeStatement: String
+        let evidenceUrls: [String]
+        let rdrSubmissionId: String?
+        let status: String
+        let reviewerNotes: String?
+        let resolution: String?
+        let expectedReplyBy: String?
+        let submittedAt: String?
+        let resolvedAt: String?
+        let createdAt: String
+    }
+
+    struct ListResponse: Decodable, Equatable {
+        let total: Int
+        let rows: [Filing]
+    }
+
+    struct ListInput: Encodable {
+        let status: String?
+        let limit: Int
+        let offset: Int
+    }
+
+    func listMine(status: String? = nil, limit: Int = 25, offset: Int = 0) async throws -> ListResponse {
+        try await api.query(
+            "dataqs.listMine",
+            input: ListInput(status: status, limit: limit, offset: offset)
+        )
+    }
+
+    struct FileInput: Encodable {
+        let requestType: String
+        let referenceNumber: String
+        let eventDate: String?
+        let jurisdiction: String?
+        let issuingOfficer: String?
+        let violationCode: String?
+        let challengeStatement: String
+        let evidenceUrls: [String]
+        let dotNumber: String?
+        let driverId: String?
+        let rdrSubmissionId: String?
+        let status: String
+    }
+
+    struct FileAck: Decodable {
+        let success: Bool
+        let id: String
+        let status: String
+        let expectedReplyBy: String
+    }
+
+    func file(_ input: FileInput) async throws -> FileAck {
+        try await api.mutation("dataqs.file", input: input)
+    }
+
+    struct AIDraftInput: Encodable {
+        let requestType: String
+        let violationCode: String?
+        let eventDate: String?
+        let jurisdiction: String?
+        let issuingOfficer: String?
+        let carrierFacts: String
+        let driverAccount: String?
+    }
+
+    struct AIDraft: Decodable {
+        let available: Bool
+        let challengeStatement: String
+        let evidenceChecklist: [String]
+        let frivolousClaimRisk: String
+        let reasoning: String
+        let localResolutionRecommended: Bool?
+        let regulationsCited: [String]?
+    }
+
+    /// Gemini-assisted draft. Reads the carrier's facts + driver's
+    /// account and returns the burden-of-proof challenge statement +
+    /// evidence checklist + frivolous-claim self-check.
+    func aiDraft(_ input: AIDraftInput) async throws -> AIDraft {
+        try await api.mutation("dataqs.aiDraft", input: input)
     }
 }
 

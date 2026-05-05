@@ -57,6 +57,15 @@ struct MeTraining: View {
     @StateObject private var pending = PendingMandatoryTrainingStore()
     @StateObject private var certs = DriverCertificatesStore()
 
+    /// Course catalog (training.listCourses) — populated lazily when
+    /// the driver expands the Catalog disclosure. Mirrors the web
+    /// TrainingCompliance "Browse" tab.
+    @State private var catalog: [TrainingAPI.CatalogCourse] = []
+    @State private var catalogExpanded: Bool = false
+    @State private var catalogLoading: Bool = false
+    @State private var enrollingCourseId: String?
+    @State private var enrollToast: String?
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: Space.s5) {
@@ -71,6 +80,7 @@ struct MeTraining: View {
                     assignmentsSection
                     certificatesSection
                 }
+                catalogSection
                 disclosureFooter
             }
             .padding(.horizontal, Space.s4)
@@ -507,6 +517,183 @@ struct MeTraining: View {
                 .padding(.horizontal, Space.s2)
                 .padding(.vertical, 2)
                 .background(Capsule().fill(LinearGradient.diagonal))
+        }
+    }
+
+    // MARK: Catalog (browse + enroll — web TrainingCompliance parity)
+
+    @ViewBuilder
+    private var catalogSection: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Button {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    catalogExpanded.toggle()
+                }
+                if catalogExpanded && catalog.isEmpty {
+                    Task { await loadCatalog() }
+                }
+            } label: {
+                HStack(spacing: Space.s2) {
+                    Image(systemName: "books.vertical")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text("BROWSE COURSES")
+                        .font(EType.micro).tracking(1.4)
+                        .foregroundStyle(palette.textTertiary)
+                    Spacer()
+                    Image(systemName: catalogExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .padding(.horizontal, Space.s3)
+                .padding(.vertical, Space.s3)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(palette.bgCard.opacity(0.6))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint, lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+
+            if catalogExpanded {
+                if catalogLoading {
+                    HStack {
+                        ProgressView().progressViewStyle(.circular).controlSize(.small)
+                        Text("Loading catalog…")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                    .padding(Space.s3)
+                } else if catalog.isEmpty {
+                    Text("No courses in the catalog right now.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textTertiary)
+                        .padding(Space.s3)
+                } else {
+                    VStack(spacing: Space.s2) {
+                        ForEach(catalog) { c in
+                            catalogRow(c)
+                        }
+                    }
+                }
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let toast = enrollToast {
+                HStack(spacing: Space.s2) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text(toast)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textPrimary)
+                }
+                .padding(Space.s3)
+                .background(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(palette.bgCard)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint, lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
+                .padding(.bottom, -Space.s5)
+                .transition(.opacity)
+            }
+        }
+    }
+
+    private func catalogRow(_ c: TrainingAPI.CatalogCourse) -> some View {
+        let isEnrolling = enrollingCourseId == c.id
+        return HStack(alignment: .top, spacing: Space.s3) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: Space.s2) {
+                    Text(c.category.uppercased())
+                        .font(EType.micro).tracking(1.1)
+                        .foregroundStyle(palette.textTertiary)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().strokeBorder(palette.borderFaint, lineWidth: 1))
+                    Text("\(c.duration) min · pass \(c.passingScore)%")
+                        .font(EType.micro).tracking(1.0)
+                        .foregroundStyle(palette.textTertiary)
+                }
+                Text(c.title)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(2)
+                if !c.description.isEmpty {
+                    Text(c.description)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textTertiary)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: Space.s2)
+            Button {
+                Task { await enrollInCourse(c) }
+            } label: {
+                if isEnrolling {
+                    ProgressView().progressViewStyle(.circular).controlSize(.small)
+                        .frame(minWidth: 64)
+                } else {
+                    Text("Enroll")
+                        .font(EType.micro).tracking(1.1)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, Space.s3)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(LinearGradient.diagonal))
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(isEnrolling)
+        }
+        .padding(.horizontal, Space.s3)
+        .padding(.vertical, Space.s3)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .fill(palette.bgCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+    }
+
+    private func loadCatalog() async {
+        await MainActor.run { self.catalogLoading = true }
+        defer { Task { @MainActor in self.catalogLoading = false } }
+        do {
+            let rows = try await EusoTripAPI.shared.training.listCourses()
+            await MainActor.run { self.catalog = rows }
+        } catch {
+            await MainActor.run { self.catalog = [] }
+        }
+    }
+
+    private func enrollInCourse(_ c: TrainingAPI.CatalogCourse) async {
+        await MainActor.run { self.enrollingCourseId = c.id }
+        defer { Task { @MainActor in self.enrollingCourseId = nil } }
+        do {
+            _ = try await EusoTripAPI.shared.training.startCourse(courseId: c.id)
+            await MainActor.run {
+                withAnimation { self.enrollToast = "Enrolled in \(c.title)" }
+            }
+            await assignments.refresh()
+            try? await Task.sleep(nanoseconds: 2_400_000_000)
+            await MainActor.run {
+                withAnimation { self.enrollToast = nil }
+            }
+        } catch {
+            await MainActor.run {
+                withAnimation { self.enrollToast = "Enrollment failed" }
+            }
+            try? await Task.sleep(nanoseconds: 2_400_000_000)
+            await MainActor.run { withAnimation { self.enrollToast = nil } }
         }
     }
 
