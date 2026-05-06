@@ -927,6 +927,85 @@ enum BoardFactory {
     //      loadNumber, shipper, catalyst, amount, filedDate,
     //      description }], total }
 
+    // MARK: DataQs — dataqs.listMine
+    //
+    // Server shape (routers/dataqs.ts:listMine, deployed 2026-05-05):
+    //   { total: number, rows: [{ id, requestType, referenceNumber,
+    //       jurisdiction, issuingOfficer, violationCode,
+    //       challengeStatement, status, expectedReplyBy, submittedAt,
+    //       resolvedAt, createdAt }] }
+    //
+    // Glance copy: ref # → "INSP-MO-…"; subtitle = jurisdiction +
+    // status; accessory = days remaining on the FMCSA 21-day SLA.
+    // Reform-aware: status `denied` paints critical, `approved` is
+    // positive, `submitted/in_review` are watch.
+    static func dataqs() -> DynamicBoardStore {
+        DynamicBoardStore(
+            endpoint: "dataqs.listMine",
+            input: ["limit": 8, "offset": 0]
+        ) { data in
+            struct Envelope: Decodable {
+                let total: Int
+                let rows: [Row]
+            }
+            struct Row: Decodable {
+                let id: String
+                let requestType: String
+                let referenceNumber: String
+                let jurisdiction: String?
+                let issuingOfficer: String?
+                let violationCode: String?
+                let status: String
+                let expectedReplyBy: String?
+                let submittedAt: String?
+                let resolvedAt: String?
+                let createdAt: String
+            }
+            let env = try JSONDecoder().decode(TRPCEnvelope<Envelope>.self, from: data)
+            let now = Date()
+            return env.result.data.json.rows.map { r in
+                let statusLower = r.status.lowercased()
+                let sev: BoardRowSeverity = {
+                    switch statusLower {
+                    case "denied", "appeal_denied":      return .critical
+                    case "approved":                     return .positive
+                    case "submitted", "in_review",
+                         "info_requested", "appeal_filed": return .watch
+                    default:                             return .info
+                    }
+                }()
+                // Days remaining against the 21d FMCSA initial-review
+                // SLA (or "Resolved"). Surfaces "5d left" on the wrist
+                // so a Compliance Officer / Safety Mgr knows at a
+                // glance which RDR is about to lapse.
+                let accessory: String? = {
+                    if r.resolvedAt != nil { return "DONE" }
+                    if let iso = r.expectedReplyBy,
+                       let d = BoardDate.parse(iso) {
+                        let days = Int((d.timeIntervalSince(now) / 86_400).rounded())
+                        if days < 0 { return "OVERDUE" }
+                        if days == 0 { return "TODAY" }
+                        return "\(days)d"
+                    }
+                    return r.status.uppercased()
+                }()
+                let subtitle = [
+                    r.jurisdiction.map { "MO·\($0)".replacingOccurrences(of: "MO·", with: "") },
+                    r.violationCode,
+                    r.issuingOfficer
+                ].compactMap { $0 }.joined(separator: " · ")
+                return BoardRow(
+                    id: r.id,
+                    title: "RDR \(r.referenceNumber)",
+                    subtitle: subtitle.isEmpty ? r.requestType.replacingOccurrences(of: "_", with: " ") : subtitle,
+                    accessory: accessory,
+                    severity: sev,
+                    timestamp: BoardDate.parse(r.submittedAt ?? r.createdAt)
+                )
+            }
+        }
+    }
+
     static func insurance() -> DynamicBoardStore {
         DynamicBoardStore(
             endpoint: "claims.list",

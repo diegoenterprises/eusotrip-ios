@@ -96,6 +96,13 @@ enum WatchTab: String, Codable, CaseIterable {
     case intermodal
     case portOps
     case insurance
+
+    /// FMCSA Request for Data Review (RDR) tracking. Backed by the
+    /// `dataqs.listMine` proc deployed 2026-05-05. Reform-aware:
+    /// `expectedReplyBy` is the 21d FMCSA initial-review SLA; the wrist
+    /// surfaces "5d left" so Compliance Officer / Safety Manager /
+    /// Driver / Catalyst can glance at which RDRs are about to lapse.
+    case dataqs
 }
 
 // MARK: - RoleComposition
@@ -132,18 +139,23 @@ enum RoleComposition {
 
     private static let canonicalLayouts: [String: [WatchTab]] = [
         // ── Truck (12) ────────────────────────────────────────────
+        // DataQs RDR added to roles that own FMCSA record correction
+        // (Compliance Officer, Safety Manager, Driver, Catalyst,
+        // Admin/Super Admin). Shipper/Broker/Factoring don't file
+        // DataQs against their own carrier records, so the tab is
+        // omitted from their layouts to keep wrist real estate tight.
         "SHIPPER":             [.home, .shipperBoard, .inbox, .wallet, .compliance],
-        "CATALYST":            [.home, .dispatchBoard, .brokerAuctions, .inbox, .wallet],
+        "CATALYST":            [.home, .dispatchBoard, .brokerAuctions, .dataqs, .inbox, .wallet],
         "BROKER":              [.home, .brokerAuctions, .dispatchBoard, .inbox, .wallet],
-        "DRIVER":              [.home, .hos, .route, .inbox, .wallet, .safetyCoach],
+        "DRIVER":              [.home, .hos, .route, .inbox, .wallet, .safetyCoach, .dataqs],
         "DISPATCH":            [.home, .dispatchBoard, .inbox, .hos, .maintenance],
         "ESCORT":              [.home, .hazmatEscort, .route, .inbox, .compliance],
         "TERMINAL_MANAGER":    [.home, .dispatchBoard, .compliance, .maintenance, .inbox],
-        "COMPLIANCE_OFFICER":  [.home, .compliance, .hos, .safetyOps, .inbox],
-        "SAFETY_MANAGER":      [.home, .safetyOps, .compliance, .hos, .inbox],
+        "COMPLIANCE_OFFICER":  [.home, .compliance, .dataqs, .hos, .safetyOps, .inbox],
+        "SAFETY_MANAGER":      [.home, .safetyOps, .compliance, .dataqs, .hos, .inbox],
         "FACTORING":           [.home, .factoring, .wallet, .inbox, .dispatchBoard],
-        "ADMIN":               [.home, .adminPlatform, .dispatchBoard, .compliance, .inbox],
-        "SUPER_ADMIN":         [.home, .adminPlatform, .dispatchBoard, .compliance, .safetyOps],
+        "ADMIN":               [.home, .adminPlatform, .dispatchBoard, .compliance, .dataqs, .inbox],
+        "SUPER_ADMIN":         [.home, .adminPlatform, .dispatchBoard, .compliance, .dataqs, .safetyOps],
 
         // ── Rail (6) ─────────────────────────────────────────────
         "RAIL_SHIPPER":        [.home, .railShipmentBoard, .inbox, .wallet, .customs],
@@ -202,10 +214,10 @@ enum RoleComposition {
     // closest real-data tab for that role.
 
     private static let legacyLayouts: [String: [WatchTab]] = [
-        "driver_ownerop":              [.home, .hos, .wallet, .route, .inbox],
-        "driver_company":              [.home, .hos, .route, .inbox, .wallet],
-        "driver_team":                 [.home, .hos, .route, .inbox, .wallet],
-        "driver":                      [.home, .hos, .route, .inbox, .wallet],
+        "driver_ownerop":              [.home, .hos, .wallet, .route, .inbox, .dataqs],
+        "driver_company":              [.home, .hos, .route, .inbox, .wallet, .dataqs],
+        "driver_team":                 [.home, .hos, .route, .inbox, .wallet, .dataqs],
+        "driver":                      [.home, .hos, .route, .inbox, .wallet, .dataqs],
 
         "dispatcher_independent":      [.home, .dispatchBoard, .inbox, .hos, .wallet],
         "dispatcher_inhouse":          [.home, .dispatchBoard, .inbox, .hos, .maintenance],
@@ -227,8 +239,8 @@ enum RoleComposition {
         "warehouse_manager":           [.home, .maintenance, .dispatchBoard, .inbox, .compliance],
         "dock_supervisor":             [.home, .dispatchBoard, .compliance, .inbox, .hos],
 
-        "hazmat_specialist":           [.home, .hazmatEscort, .compliance, .route, .inbox],
-        "fmcsa_auditor":               [.home, .compliance, .hos, .inbox, .maintenance],
+        "hazmat_specialist":           [.home, .hazmatEscort, .compliance, .route, .inbox, .dataqs],
+        "fmcsa_auditor":               [.home, .compliance, .dataqs, .hos, .inbox, .maintenance],
 
         "maintenance_manager":         [.home, .maintenance, .dispatchBoard, .inbox, .fuel],
         "fuel_backoffice":             [.home, .fuel, .wallet, .dispatchBoard, .inbox],

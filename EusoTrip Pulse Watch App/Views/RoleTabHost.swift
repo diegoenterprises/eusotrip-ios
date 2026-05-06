@@ -129,6 +129,18 @@ struct RoleTabHost: View {
                 emptyMessage: "No open claims.",
                 store: BoardFactory.insurance()
             )
+        case .dataqs:
+            // FMCSA Request for Data Review tracker — reform-aware
+            // 21d initial-review SLA shown as "5d left" / "OVERDUE"
+            // accessory chips per row. 49 CFR §386 governs the RDR
+            // process; the 2026 reform placed burden of proof on the
+            // requestor and barred officers from deciding their own.
+            DynamicBoardView(
+                title: "DataQs RDR",
+                regulator: "49 CFR §386",
+                emptyMessage: "No filed RDRs. Tap a violation on the iPhone to file one.",
+                store: BoardFactory.dataqs()
+            )
         }
     }
 }
