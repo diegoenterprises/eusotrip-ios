@@ -1193,6 +1193,15 @@ extension Notification.Name {
     /// Posted by `\.driverShowHelp` — ESangAutopilot subscribes and seeds
     /// the first-turn prompt with the topic string on the next sheet open.
     static let esangOpenHelp = Notification.Name("com.eusorone.EusoTrip.esang.openHelp")
+
+    /// Role-agnostic "pop one entry off the current surface's nav stack."
+    /// Every non-Driver/non-Shipper role surface (Catalyst/Carrier, Broker,
+    /// Escort, Terminal, Admin, Dispatch, Compliance) listens to this and
+    /// pops its own stack. Driver is tab-based (no stack) and Shipper has
+    /// `eusoShipperNavBack` already; both intentionally ignore this so
+    /// they don't pop when an unrelated leaf screen fires it. Founder
+    /// mandate 2026-05-05 — every screen needs a back button.
+    static let eusoRoleNavBack = Notification.Name("eusoRoleNavBack")
 }
 
 // MARK: - DriverMessagingSheet

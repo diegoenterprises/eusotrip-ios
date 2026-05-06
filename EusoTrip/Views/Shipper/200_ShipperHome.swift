@@ -42,6 +42,13 @@ struct ShipperHome: View {
     // unread count via the existing project-wide store.
     @ObservedObject private var unread = UnreadMessageStore.shared
 
+    /// Founder mandate 2026-05-05: every role's home gets the same
+    /// top-right messages affordance. Tapping presents `MessagesScreen`
+    /// as a full-screen cover (NOT a pull-up sheet) so the shipper
+    /// lands on the real inbox + can drill into a thread + start a new
+    /// conversation, matching the web platform's messaging surface.
+    @State private var showMessages: Bool = false
+
     // Real weather snapshot (CoreLocation + WeatherKit → NWS → Open-Meteo
     // cascade in WeatherService). nil → render nothing — no fake "sunny"
     // tile in its place. Per home-widget doctrine the weather card sits
@@ -78,6 +85,10 @@ struct ShipperHome: View {
         }
         .task { await refreshAll() }
         .refreshable { await refreshAll() }
+        .fullScreenCover(isPresented: $showMessages) {
+            MessagesScreen()
+                .environment(\.palette, palette)
+        }
         .screenTileRoot()
     }
 
@@ -132,7 +143,16 @@ struct ShipperHome: View {
                     .lineLimit(2)
                     .minimumScaleFactor(0.6)
                 Spacer(minLength: 8)
-                duAvatar
+                // Top-right cluster — messages glyph then DU avatar.
+                // Mirrors the driver home (010) header so muscle memory
+                // carries between roles. The MessagesBadgeButton
+                // already paints its own unread pill from the same
+                // `UnreadMessageStore` the avatar's red dot reads, so
+                // both surfaces stay in sync.
+                HStack(spacing: 8) {
+                    MessagesBadgeButton(showMessages: $showMessages, palette: palette)
+                    duAvatar
+                }
             }
             .padding(.top, Space.s2)
             Text(subhead)

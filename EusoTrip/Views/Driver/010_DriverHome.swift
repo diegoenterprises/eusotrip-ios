@@ -311,11 +311,13 @@ struct DriverHome: View {
         .padding(.horizontal, Space.s5)
         .padding(.top, Space.s5)
         .padding(.bottom, Space.s3)
-        .sheet(isPresented: $showMessages) {
-            DriverMessagesSheet()
+        // Founder mandate 2026-05-05: replace the bottom-sheet pull-up
+        // with a real full-screen messaging page (mirrors the web
+        // platform). `MessagesScreen` owns the inbox + push-to-
+        // conversation + new-message compose + back chevron.
+        .fullScreenCover(isPresented: $showMessages) {
+            MessagesScreen()
                 .environment(\.palette, palette)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
         }
     }
 

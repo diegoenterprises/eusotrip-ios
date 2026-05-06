@@ -3502,7 +3502,7 @@ struct MessagesBadgeButton: View {
 /// Lightweight thread descriptor shared between the inbox list and the
 /// conversation view. Exposed at file-scope so both surfaces compile
 /// against the same type.
-struct InboxThread: Identifiable, Equatable {
+struct InboxThread: Identifiable, Equatable, Hashable {
     let id: String
     let glyph: String
     let title: String
@@ -3515,6 +3515,10 @@ struct InboxThread: Identifiable, Equatable {
     /// wallet to send to; driver-to-driver + owner-operator threads turn
     /// it on.
     let allowsTransfer: Bool
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
 }
 
 extension InboxThread {

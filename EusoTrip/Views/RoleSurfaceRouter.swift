@@ -823,16 +823,16 @@ struct CarrierSurface: View {
     let palette: Theme.Palette
 
     @EnvironmentObject var session: EusoTripSession
-    @State private var currentScreenId: String = "300"
+    /// Founder mandate 2026-05-05 — push/pop nav stack so leaf screens
+    /// always have a back path. Bottom-nav tabs reset the stack to a
+    /// single entry; non-tab screens append.
+    @State private var screenStack: [String] = ["300"]
     @State private var showESang: Bool = false
+    private static let tabRoots: Set<String> = ["300", "301", "302", "303"]
+
+    private var currentScreenId: String { screenStack.last ?? "300" }
 
     private var current: ProductionScreen {
-        // Look across both `.carrier` (300-320) and `.catalyst`
-        // (500-502) registries so the carrier user can navigate
-        // into the SpectraMatch sub-surface without re-registering
-        // those screens under `.carrier`. RBAC has already approved
-        // the swap before the surface gets here (see
-        // `RoleAccess.allowedScreenRoles(for:.catalyst)`).
         let pool = ScreenRegistry.forRole(.carrier)
                  + ScreenRegistry.forRole(.catalyst)
         return pool.first { $0.id == currentScreenId }
@@ -845,39 +845,42 @@ struct CarrierSurface: View {
                                 }
     }
 
+    private func pushOrTab(_ id: String) {
+        if Self.tabRoots.contains(id) { screenStack = [id]; return }
+        if screenStack.last == id { return }
+        screenStack.append(id)
+    }
+    private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
+
     var body: some View {
         current.view(palette)
             .id("carrier-\(currentScreenId)")
             .transition(.opacity)
+            .modifier(RoleNavBackOverlay(
+                stackDepth: screenStack.count,
+                currentScreenId: currentScreenId,
+                screensWithOwnBack: Self.tabRoots
+            ))
             .environment(\.driverNavHandler, nil)
-            .environment(\.shipperNavHandler, nil)  // mask outer driver + shipper handlers
+            .environment(\.shipperNavHandler, nil)
             .environment(\.carrierNavHandler) { label in
-                // In-process dispatch — same pattern as the
-                // Driver / Shipper handlers. The dispatcher posts
-                // through NotificationCenter so per-screen helpers
-                // (e.g. row taps, deep-links from sheet bodies)
-                // can also post the same notification without
-                // needing a handle to this surface.
                 CarrierNavDispatcher.handle(label)
             }
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoCarrierNavSwap)) { note in
+            .onReceive(NotificationCenter.default.publisher(for: .eusoCarrierNavSwap)) { note in
                 guard let id = note.userInfo?["screenId"] as? String else { return }
                 guard RoleAccess.canRender(role: .catalyst, screenId: id) else {
-                    currentScreenId = "300"
-                    return
+                    screenStack = ["300"]; return
                 }
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    currentScreenId = id
-                }
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
             }
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoCarrierEsangTapped)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
+                withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoCarrierEsangTapped)) { _ in
                 showESang = true
             }
             .sheet(isPresented: $showESang) {
-                DriverESangCoachSheet()
-                    .environment(\.palette, palette)
+                DriverESangCoachSheet().environment(\.palette, palette)
             }
     }
 }
@@ -894,8 +897,11 @@ struct BrokerSurface: View {
     let palette: Theme.Palette
 
     @EnvironmentObject var session: EusoTripSession
-    @State private var currentScreenId: String = "400"
+    @State private var screenStack: [String] = ["400"]
     @State private var showESang: Bool = false
+    private static let tabRoots: Set<String> = ["400", "401", "402", "403"]
+
+    private var currentScreenId: String { screenStack.last ?? "400" }
 
     private var current: ProductionScreen {
         ScreenRegistry.forRole(.broker).first { $0.id == currentScreenId }
@@ -908,33 +914,42 @@ struct BrokerSurface: View {
                                 }
     }
 
+    private func pushOrTab(_ id: String) {
+        if Self.tabRoots.contains(id) { screenStack = [id]; return }
+        if screenStack.last == id { return }
+        screenStack.append(id)
+    }
+    private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
+
     var body: some View {
         current.view(palette)
             .id("broker-\(currentScreenId)")
             .transition(.opacity)
+            .modifier(RoleNavBackOverlay(
+                stackDepth: screenStack.count,
+                currentScreenId: currentScreenId,
+                screensWithOwnBack: Self.tabRoots
+            ))
             .environment(\.driverNavHandler, nil)
-            .environment(\.shipperNavHandler, nil)  // mask outer driver + shipper handlers
+            .environment(\.shipperNavHandler, nil)
             .environment(\.brokerNavHandler) { label in
                 BrokerNavDispatcher.handle(label)
             }
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoBrokerNavSwap)) { note in
+            .onReceive(NotificationCenter.default.publisher(for: .eusoBrokerNavSwap)) { note in
                 guard let id = note.userInfo?["screenId"] as? String else { return }
                 guard RoleAccess.canRender(role: .broker, screenId: id) else {
-                    currentScreenId = "400"
-                    return
+                    screenStack = ["400"]; return
                 }
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    currentScreenId = id
-                }
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
             }
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoBrokerEsangTapped)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
+                withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoBrokerEsangTapped)) { _ in
                 showESang = true
             }
             .sheet(isPresented: $showESang) {
-                DriverESangCoachSheet()
-                    .environment(\.palette, palette)
+                DriverESangCoachSheet().environment(\.palette, palette)
             }
     }
 }
@@ -947,8 +962,11 @@ struct EscortSurface: View {
     let palette: Theme.Palette
 
     @EnvironmentObject var session: EusoTripSession
-    @State private var currentScreenId: String = "600"
+    @State private var screenStack: [String] = ["600"]
     @State private var showESang: Bool = false
+    private static let tabRoots: Set<String> = ["600", "601", "602", "603"]
+
+    private var currentScreenId: String { screenStack.last ?? "600" }
 
     private var current: ProductionScreen {
         ScreenRegistry.forRole(.escort).first { $0.id == currentScreenId }
@@ -961,28 +979,38 @@ struct EscortSurface: View {
                                 }
     }
 
+    private func pushOrTab(_ id: String) {
+        if Self.tabRoots.contains(id) { screenStack = [id]; return }
+        if screenStack.last == id { return }
+        screenStack.append(id)
+    }
+    private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
+
     var body: some View {
         current.view(palette)
             .id("escort-\(currentScreenId)")
             .transition(.opacity)
+            .modifier(RoleNavBackOverlay(
+                stackDepth: screenStack.count,
+                currentScreenId: currentScreenId,
+                screensWithOwnBack: Self.tabRoots
+            ))
             .environment(\.driverNavHandler, nil)
-            .environment(\.shipperNavHandler, nil)  // mask outer driver + shipper handlers
+            .environment(\.shipperNavHandler, nil)
             .environment(\.escortNavHandler) { label in
                 EscortNavDispatcher.handle(label)
             }
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoEscortNavSwap)) { note in
+            .onReceive(NotificationCenter.default.publisher(for: .eusoEscortNavSwap)) { note in
                 guard let id = note.userInfo?["screenId"] as? String else { return }
                 guard RoleAccess.canRender(role: .escort, screenId: id) else {
-                    currentScreenId = "600"
-                    return
+                    screenStack = ["600"]; return
                 }
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    currentScreenId = id
-                }
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
             }
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoEscortEsangTapped)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
+                withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoEscortEsangTapped)) { _ in
                 showESang = true
             }
             .sheet(isPresented: $showESang) {
@@ -999,8 +1027,11 @@ struct TerminalSurface: View {
     let palette: Theme.Palette
 
     @EnvironmentObject var session: EusoTripSession
-    @State private var currentScreenId: String = "700"
+    @State private var screenStack: [String] = ["700"]
     @State private var showESang: Bool = false
+    private static let tabRoots: Set<String> = ["700", "701", "702", "703"]
+
+    private var currentScreenId: String { screenStack.last ?? "700" }
 
     private var current: ProductionScreen {
         ScreenRegistry.forRole(.terminal).first { $0.id == currentScreenId }
@@ -1013,28 +1044,38 @@ struct TerminalSurface: View {
                                 }
     }
 
+    private func pushOrTab(_ id: String) {
+        if Self.tabRoots.contains(id) { screenStack = [id]; return }
+        if screenStack.last == id { return }
+        screenStack.append(id)
+    }
+    private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
+
     var body: some View {
         current.view(palette)
             .id("terminal-\(currentScreenId)")
             .transition(.opacity)
+            .modifier(RoleNavBackOverlay(
+                stackDepth: screenStack.count,
+                currentScreenId: currentScreenId,
+                screensWithOwnBack: Self.tabRoots
+            ))
             .environment(\.driverNavHandler, nil)
-            .environment(\.shipperNavHandler, nil)  // mask outer driver + shipper handlers
+            .environment(\.shipperNavHandler, nil)
             .environment(\.terminalNavHandler) { label in
                 TerminalNavDispatcher.handle(label)
             }
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoTerminalNavSwap)) { note in
+            .onReceive(NotificationCenter.default.publisher(for: .eusoTerminalNavSwap)) { note in
                 guard let id = note.userInfo?["screenId"] as? String else { return }
                 guard RoleAccess.canRender(role: .terminal, screenId: id) else {
-                    currentScreenId = "700"
-                    return
+                    screenStack = ["700"]; return
                 }
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    currentScreenId = id
-                }
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
             }
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoTerminalEsangTapped)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
+                withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoTerminalEsangTapped)) { _ in
                 showESang = true
             }
             .sheet(isPresented: $showESang) {
@@ -1054,8 +1095,11 @@ struct AdminSurface: View {
     let palette: Theme.Palette
 
     @EnvironmentObject var session: EusoTripSession
-    @State private var currentScreenId: String = "800"
+    @State private var screenStack: [String] = ["800"]
     @State private var showESang: Bool = false
+    private static let tabRoots: Set<String> = ["800", "801", "802", "803"]
+
+    private var currentScreenId: String { screenStack.last ?? "800" }
 
     private var current: ProductionScreen {
         ScreenRegistry.forRole(.admin).first { $0.id == currentScreenId }
@@ -1068,28 +1112,38 @@ struct AdminSurface: View {
                                 }
     }
 
+    private func pushOrTab(_ id: String) {
+        if Self.tabRoots.contains(id) { screenStack = [id]; return }
+        if screenStack.last == id { return }
+        screenStack.append(id)
+    }
+    private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
+
     var body: some View {
         current.view(palette)
             .id("admin-\(currentScreenId)")
             .transition(.opacity)
+            .modifier(RoleNavBackOverlay(
+                stackDepth: screenStack.count,
+                currentScreenId: currentScreenId,
+                screensWithOwnBack: Self.tabRoots
+            ))
             .environment(\.driverNavHandler, nil)
-            .environment(\.shipperNavHandler, nil)  // mask outer driver + shipper handlers
+            .environment(\.shipperNavHandler, nil)
             .environment(\.adminNavHandler) { label in
                 AdminNavDispatcher.handle(label)
             }
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoAdminNavSwap)) { note in
+            .onReceive(NotificationCenter.default.publisher(for: .eusoAdminNavSwap)) { note in
                 guard let id = note.userInfo?["screenId"] as? String else { return }
                 guard RoleAccess.canRender(role: .admin, screenId: id) else {
-                    currentScreenId = "800"
-                    return
+                    screenStack = ["800"]; return
                 }
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    currentScreenId = id
-                }
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
             }
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoAdminEsangTapped)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
+                withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoAdminEsangTapped)) { _ in
                 showESang = true
             }
             .sheet(isPresented: $showESang) {
@@ -1107,8 +1161,11 @@ struct DispatchSurface: View {
     let palette: Theme.Palette
 
     @EnvironmentObject var session: EusoTripSession
-    @State private var currentScreenId: String = "Dpch700"
+    @State private var screenStack: [String] = ["Dpch700"]
     @State private var showESang: Bool = false
+    private static let tabRoots: Set<String> = ["Dpch700", "Dpch701", "Dpch702", "Dpch703"]
+
+    private var currentScreenId: String { screenStack.last ?? "Dpch700" }
 
     private var current: ProductionScreen {
         ScreenRegistry.forRole(.dispatch).first { $0.id == currentScreenId }
@@ -1121,28 +1178,38 @@ struct DispatchSurface: View {
                                 }
     }
 
+    private func pushOrTab(_ id: String) {
+        if Self.tabRoots.contains(id) { screenStack = [id]; return }
+        if screenStack.last == id { return }
+        screenStack.append(id)
+    }
+    private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
+
     var body: some View {
         current.view(palette)
             .id("dispatch-\(currentScreenId)")
             .transition(.opacity)
+            .modifier(RoleNavBackOverlay(
+                stackDepth: screenStack.count,
+                currentScreenId: currentScreenId,
+                screensWithOwnBack: Self.tabRoots
+            ))
             .environment(\.driverNavHandler, nil)
-            .environment(\.shipperNavHandler, nil)  // mask outer driver + shipper handlers
+            .environment(\.shipperNavHandler, nil)
             .environment(\.dispatchNavHandler) { label in
                 DispatchNavDispatcher.handle(label)
             }
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoDispatchNavSwap)) { note in
+            .onReceive(NotificationCenter.default.publisher(for: .eusoDispatchNavSwap)) { note in
                 guard let id = note.userInfo?["screenId"] as? String else { return }
                 guard RoleAccess.canRender(role: .dispatch, screenId: id) else {
-                    currentScreenId = "Dpch700"
-                    return
+                    screenStack = ["Dpch700"]; return
                 }
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    currentScreenId = id
-                }
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
             }
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoDispatchEsangTapped)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
+                withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoDispatchEsangTapped)) { _ in
                 showESang = true
             }
             .sheet(isPresented: $showESang) {
@@ -1160,8 +1227,11 @@ struct ComplianceSurface: View {
     let palette: Theme.Palette
 
     @EnvironmentObject var session: EusoTripSession
-    @State private var currentScreenId: String = "900"
+    @State private var screenStack: [String] = ["900"]
     @State private var showESang: Bool = false
+    private static let tabRoots: Set<String> = ["900", "901", "902", "903"]
+
+    private var currentScreenId: String { screenStack.last ?? "900" }
 
     private var current: ProductionScreen {
         ScreenRegistry.forRole(.compliance).first { $0.id == currentScreenId }
@@ -1174,33 +1244,89 @@ struct ComplianceSurface: View {
                                 }
     }
 
+    private func pushOrTab(_ id: String) {
+        if Self.tabRoots.contains(id) { screenStack = [id]; return }
+        if screenStack.last == id { return }
+        screenStack.append(id)
+    }
+    private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
+
     var body: some View {
         current.view(palette)
             .id("compliance-\(currentScreenId)")
             .transition(.opacity)
+            .modifier(RoleNavBackOverlay(
+                stackDepth: screenStack.count,
+                currentScreenId: currentScreenId,
+                screensWithOwnBack: Self.tabRoots
+            ))
             .environment(\.driverNavHandler, nil)
-            .environment(\.shipperNavHandler, nil)  // mask outer driver + shipper handlers
+            .environment(\.shipperNavHandler, nil)
             .environment(\.complianceNavHandler) { label in
                 ComplianceNavDispatcher.handle(label)
             }
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoComplianceNavSwap)) { note in
+            .onReceive(NotificationCenter.default.publisher(for: .eusoComplianceNavSwap)) { note in
                 guard let id = note.userInfo?["screenId"] as? String else { return }
                 guard RoleAccess.canRender(role: .compliance, screenId: id) else {
-                    currentScreenId = "900"
-                    return
+                    screenStack = ["900"]; return
                 }
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    currentScreenId = id
-                }
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
             }
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoComplianceEsangTapped)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
+                withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoComplianceEsangTapped)) { _ in
                 showESang = true
             }
             .sheet(isPresented: $showESang) {
                 DriverESangCoachSheet().environment(\.palette, palette)
             }
+    }
+}
+
+// MARK: - Shared role-stack back overlay
+//
+// Founder mandate 2026-05-05 — every leaf screen across every role
+// must have a back button that doesn't overlap content. The Shipper
+// surface already had this via `ShipperBackOverlay`. Catalyst (Carrier),
+// Broker, Escort, Terminal, Admin, Dispatch, and Compliance surfaces
+// were single-`currentScreenId` containers with no stack and no back
+// affordance — drilling into a leaf screen left the user stranded.
+//
+// This overlay paints a translucent black-pill chevron at top:8 / leading:12
+// (same metrics as `ShipperBackOverlay`) with a 36pt hit-target. It posts
+// `.eusoRoleNavBack` on tap; each role surface listens to that single
+// notification and pops its own stack. The overlay is suppressed for
+// screens that draw their own header back chevron (per-role lists),
+// matching the Shipper pattern that prevents the double-back collision.
+
+private struct RoleNavBackOverlay: ViewModifier {
+    let stackDepth: Int
+    let currentScreenId: String
+    let screensWithOwnBack: Set<String>
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .topLeading) {
+            if stackDepth > 1, !screensWithOwnBack.contains(currentScreenId) {
+                Button {
+                    NotificationCenter.default.post(
+                        name: .eusoRoleNavBack, object: nil
+                    )
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 16, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .padding(10)
+                        .background(.black.opacity(0.55), in: Circle())
+                        .overlay(Circle().strokeBorder(.white.opacity(0.18), lineWidth: 1))
+                        .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 12)
+                .padding(.top, 8)
+                .accessibilityLabel("Back")
+            }
+        }
     }
 }
 
