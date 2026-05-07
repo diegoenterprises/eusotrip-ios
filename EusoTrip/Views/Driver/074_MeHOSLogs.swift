@@ -75,6 +75,11 @@ struct MeHOSLogs: View {
         }
         .task { await store.bootstrap() }
         .refreshable { await store.refreshAll() }
+        // RealtimeService → live ELD duty-status changes refresh
+        // the logs view in place.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.refreshAll() }
+        }
     }
 
     // MARK: Header

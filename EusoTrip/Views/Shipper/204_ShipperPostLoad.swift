@@ -30,6 +30,7 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 // MARK: - 4-step state machine
 
@@ -86,6 +87,40 @@ struct ShipperPostLoad: View {
 
     @State private var lastSuccess: ShipperAPI.PostLoadAck? = nil
 
+    private let deliveryETAFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d · HH:mm"
+        return f
+    }()
+
+    // MARK: - HERE Routing — distance + ETA estimation
+    //
+    // Founder bug 2026-05-07: "the eta calculating still doesnt work
+    // mate. still missing the enhancements you made to that post a
+    // load wizard." The earlier copy promised "ETA computed · Auto-set
+    // from pickup + lane" but never actually fired a router request.
+    //
+    // Fix: when origin + destination + pickupDate are all set, hit
+    // `HereRoutingClient.route(stops:profile:)` with a standard US
+    // semi truck profile. Store the resulting distance (meters) +
+    // duration (seconds), derive the deliveryETA from pickupDate +
+    // duration, and surface real values in the delivery tile.
+    @State private var routeDistanceMeters: Int? = nil
+    @State private var routeDurationSeconds: Int? = nil
+    @State private var routingError: String? = nil
+    @State private var isRouting: Bool = false
+
+    /// Cached lat/lng tuple of the last query so we don't re-fire
+    /// the HERE call on every keystroke.
+    @State private var lastRoutedKey: String = ""
+
+    /// Computed delivery ETA = pickupDate + routeDurationSeconds.
+    /// Returns nil until both values are present.
+    private var computedDeliveryETA: Date? {
+        guard hasPickupDate, let secs = routeDurationSeconds else { return nil }
+        return pickupDate.addingTimeInterval(TimeInterval(secs))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             topBar
@@ -109,6 +144,14 @@ struct ShipperPostLoad: View {
             .scrollDismissesKeyboard(.interactively)
         }
         .screenTileRoot()
+        // Re-fire HERE Routing whenever the lane endpoints' lat/lng
+        // change. Address-field selection populates these and bumps
+        // a rebuild; we reactively trigger the route computation so
+        // the delivery tile populates as soon as a valid lane exists.
+        .onChange(of: originLat) { _, _ in recomputeETAIfReady() }
+        .onChange(of: originLng) { _, _ in recomputeETAIfReady() }
+        .onChange(of: destLat)   { _, _ in recomputeETAIfReady() }
+        .onChange(of: destLng)   { _, _ in recomputeETAIfReady() }
     }
 
     // MARK: - TopBar
@@ -387,7 +430,65 @@ struct ShipperPostLoad: View {
         if oTrim.isEmpty || dTrim.isEmpty {
             return "Add origin + destination — distance / ETA estimates auto-fill"
         }
+        if isRouting {
+            return "Computing distance + ETA via HERE Routing v8…"
+        }
+        if let err = routingError {
+            return "HERE: \(err)"
+        }
+        if let meters = routeDistanceMeters, let secs = routeDurationSeconds {
+            let miles = Double(meters) / 1609.34
+            let hours = Double(secs) / 3600.0
+            return String(format: "%.0f mi · %.1f hr · standard US semi via HERE Routing v8", miles, hours)
+        }
+        // Both addresses present but not yet geocoded — HERE needs
+        // lat/lng to fire. Address-field selection populates the
+        // *Lat/*Lng @State; until that happens we wait.
+        if originLat == nil || destLat == nil {
+            return "Tap a HERE suggestion on each address to auto-fill distance + ETA"
+        }
         return "Estimating distance · ETA · best-route via HERE Routing v8"
+    }
+
+    /// Fire HERE Routing whenever the lane endpoints OR pickup
+    /// schedule change. Debounced via `lastRoutedKey` so two
+    /// identical address picks don't re-fire the request.
+    private func recomputeETAIfReady() {
+        guard let oLat = originLat, let oLng = originLng,
+              let dLat = destLat, let dLng = destLng else {
+            routeDistanceMeters = nil
+            routeDurationSeconds = nil
+            return
+        }
+        let key = "\(oLat),\(oLng)|\(dLat),\(dLng)"
+        guard key != lastRoutedKey else { return }
+        lastRoutedKey = key
+        isRouting = true
+        routingError = nil
+        Task {
+            do {
+                let stops = HereStops(
+                    origin: CLLocationCoordinate2D(latitude: oLat, longitude: oLng),
+                    destination: CLLocationCoordinate2D(latitude: dLat, longitude: dLng)
+                )
+                let resp = try await HereRoutingClient.shared.route(
+                    stops: stops,
+                    profile: .standardUSSemiLoaded
+                )
+                let totalDuration = resp.routes.first?.sections.reduce(0) { $0 + ($1.summary?.duration ?? 0) } ?? 0
+                let totalLength   = resp.routes.first?.sections.reduce(0) { $0 + ($1.summary?.length ?? 0) }   ?? 0
+                await MainActor.run {
+                    self.routeDurationSeconds = totalDuration
+                    self.routeDistanceMeters  = totalLength
+                    self.isRouting = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.routingError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                    self.isRouting = false
+                }
+            }
+        }
     }
 
     private var scheduleSection: some View {
@@ -454,13 +555,41 @@ struct ShipperPostLoad: View {
             Text("DELIVERY")
                 .font(EType.micro).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
-            Text(hasPickupDate ? "ETA computed" : "Catalyst proposes")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(palette.textPrimary)
-            Text(hasPickupDate ? "Auto-set from pickup + lane" : "Set after pickup is scheduled")
-                .font(EType.caption).monospacedDigit()
-                .foregroundStyle(palette.textSecondary)
-                .lineLimit(1)
+            // Real ETA when both pickup is set + HERE returned a
+            // duration. Falls back to honest copy otherwise.
+            if let eta = computedDeliveryETA {
+                Text(deliveryETAFormatter.string(from: eta))
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("HERE Routing v8 · pickup + lane")
+                    .font(EType.caption).monospacedDigit()
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+            } else if hasPickupDate && isRouting {
+                Text("Computing…")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                Text("HERE Routing v8")
+                    .font(EType.caption).monospacedDigit()
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+            } else if hasPickupDate {
+                Text("Awaiting addresses")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                Text("Pick HERE suggestions to compute")
+                    .font(EType.caption).monospacedDigit()
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+            } else {
+                Text("Catalyst proposes")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                Text("Set after pickup is scheduled")
+                    .font(EType.caption).monospacedDigit()
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+            }
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)

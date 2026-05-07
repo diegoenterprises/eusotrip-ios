@@ -249,6 +249,12 @@ struct HosDutyStatus: View {
         .onReceive(tick) { now = $0 }
         .task { await store.bootstrap() }
         .refreshable { await store.refreshAll() }
+        // RealtimeService → ELD posts a duty-status change for this
+        // driver (or any other) → refresh the HOS clock + violations
+        // strip + daily log without waiting for the next tick.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.refreshAll() }
+        }
         .sheet(isPresented: $showRemark) {
             remarkSheet
                 .eusoSheetX()

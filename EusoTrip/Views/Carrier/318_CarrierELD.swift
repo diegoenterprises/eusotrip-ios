@@ -48,6 +48,12 @@ private struct ELDBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
+        .refreshable { await load() }
+        // RealtimeService → ELD device + driver-status updates
+        // refresh the carrier's fleet ELD board live.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await load() }
+        }
     }
 
     private var header: some View {

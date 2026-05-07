@@ -83,6 +83,11 @@ struct MeELDLogsDetail: View {
         }
         .task { await store.bootstrap() }
         .refreshable { await store.refreshAll() }
+        // RealtimeService → live ELD duty-status changes refresh
+        // the daily log + segment viewer in place.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.refreshAll() }
+        }
         .sheet(item: $remarkTarget, onDismiss: { remarkText = "" }) { entry in
             remarkSheet(for: entry)
                 .eusoSheetX()

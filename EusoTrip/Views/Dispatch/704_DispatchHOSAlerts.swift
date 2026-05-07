@@ -45,6 +45,12 @@ private struct HOSBody: View {
         }
         .task { await load() }
         .refreshable { await load() }
+        // RealtimeService → driver duty-status changes propagate
+        // into this dispatch board live so the alerts strip and
+        // proactive coaching CTAs reflect actual fleet state.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await load() }
+        }
     }
 
     private var header: some View {
