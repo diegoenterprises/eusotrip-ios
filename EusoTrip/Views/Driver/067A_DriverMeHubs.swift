@@ -151,7 +151,7 @@ private func driverMeHubNav() -> BottomNav {
             NavSlot(label: "Trips",  systemImage: "shippingbox.fill",  isCurrent: false),
         ],
         trailing: [
-            NavSlot(label: "Wallet", systemImage: "wallet.pass.fill",  isCurrent: false),
+            NavSlot(label: "My Loads", systemImage: "shippingbox.fill",  isCurrent: false),
             NavSlot(label: "Me",     systemImage: "person.fill",       isCurrent: true),
         ],
         orbState: .idle

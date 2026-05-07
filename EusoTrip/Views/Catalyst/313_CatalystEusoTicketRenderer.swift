@@ -153,7 +153,7 @@ private func catalystNavLeading_313() -> [NavSlot] {
 }
 
 private func catalystNavTrailing_313() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "wallet.pass", isCurrent: false),
+    [NavSlot(label: "My Loads", systemImage: "shippingbox.fill", isCurrent: false),
      NavSlot(label: "Me",     systemImage: "person",      isCurrent: false)]
 }
 

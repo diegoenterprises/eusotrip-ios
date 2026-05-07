@@ -865,7 +865,7 @@ private func driverNavLeading_069() -> [NavSlot] {
      NavSlot(label: "Haul",  systemImage: "trophy", isCurrent: false)]
 }
 private func driverNavTrailing_069() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "wallet.pass", isCurrent: true),
+    [NavSlot(label: "My Loads", systemImage: "shippingbox.fill", isCurrent: true),
      NavSlot(label: "Me",     systemImage: "person",      isCurrent: false)]
 }
 

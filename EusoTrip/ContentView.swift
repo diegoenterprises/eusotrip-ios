@@ -1007,6 +1007,7 @@ enum ScreenRegistry {
         list.append(.init(id: "318", title: "Carrier · ELD",               role: .carrier) { p in AnyView(CarrierELDScreen(theme: p)) })
         list.append(.init(id: "319", title: "Carrier · Drivers List",      role: .carrier) { p in AnyView(CarrierDriversListScreen(theme: p)) })
         list.append(.init(id: "320", title: "Carrier · Vehicles List",     role: .carrier) { p in AnyView(CarrierVehiclesListScreen(theme: p)) })
+        list.append(.init(id: "350", title: "Carrier · Me",                role: .carrier) { p in AnyView(CarrierMeScreen(theme: p)) })
         // 2026-04-25 — eusotrip-killers 99th firing
         // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
         // First real Broker-track brick lands in production. Lifts id
@@ -2269,13 +2270,29 @@ struct ContentView: View {
     private func handleDriverMeAction(key: String, userInfo: [AnyHashable: Any]) {
         switch key {
         // Navigation: load / bid / loadboard surfaces live under the
-        // Loads tab (the slot was renamed from "Wallet" to "Loads"
-        // but kept the .wallet enum case for back-compat).
+        // My Loads tab (the slot was renamed from "Wallet" to
+        // "My Loads" 2026-05-07; the enum case stays `.wallet` for
+        // back-compat with screen swap targets).
+        //
+        // `driver.load.detail` was previously routed here too, but
+        // the founder bug 2026-05-07 surfaced that tapping a load
+        // inside `108_MeLoadBoard` (Eusoboards) yanked the user to
+        // My Loads — wrong destination. The fix lives at the source:
+        // 108 now presents the canonical `LoadDetailSheet` IN-PLACE
+        // via `.sheet(item:)` so the user stays inside Eusoboards.
+        // Keeping `driver.load.detail` out of this tab-switch list
+        // prevents the same regression from any future caller.
         case "driver.loadboard.open",
-             "driver.load.detail",
              "driver.bid.detail",
              "earnings.load.detail":
             nav.currentTab = .wallet
+        case "driver.load.detail":
+            // Intentionally NOT switching tabs. Source screens are
+            // expected to handle the detail presentation locally
+            // (sheet, push, in-place card). If a caller needs the
+            // global Loads-tab path, they should fire
+            // `driver.loadboard.open` instead.
+            break
 
         // Me-detail sub-routes — switch tab + post the open-detail
         // notification consumed by `DriverMePane`.

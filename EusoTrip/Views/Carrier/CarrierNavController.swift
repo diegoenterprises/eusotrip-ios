@@ -51,15 +51,19 @@ extension Notification.Name {
 ///
 /// `Loads` resolves to `301_CarrierLoads` (the "all my loads" board);
 /// `Drivers` resolves to `304_CarrierDrivers` (the dispatch /
-/// driver-assignment hub); `Me` resolves to `300_CarrierHome` until
-/// the carrier-side Me-pane brick lands. Tapping `Me` from
-/// `300_CarrierHome` is a no-op route — Home stays mounted.
+/// driver-assignment hub); `Me` resolves to `350_CarrierMe` — the
+/// canonical Catalyst Me hub with identity hero, full surface index
+/// (Account / Operations / Fleet / Financials / Compliance /
+/// Support), and the founder-mandated sign-out button. Founder ask
+/// 2026-05-07: "catalyst profile has not sign out button" + "make
+/// sure all necessary screens outside of active load and load board
+/// is accessible".
 enum CarrierNavRoute {
     static let map: [String: String] = [
         "home":    "300",
         "loads":   "301",
         "drivers": "304",
-        "me":      "300",
+        "me":      "350",
         // Catalyst SpectraMatch sub-surface deep-links — not in the
         // bottom-nav slots (the canonical Carrier nav is Home /
         // Loads / Drivers / Me) but addressable from in-screen CTAs

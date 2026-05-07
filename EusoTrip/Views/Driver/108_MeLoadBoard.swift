@@ -86,6 +86,15 @@ struct MeLoadBoardView: View {
     @Environment(\.palette) private var palette
     @StateObject private var store = MeLoadBoardStore()
 
+    /// Tap-on-row presents the canonical load-detail sheet IN-PLACE
+    /// inside Eusoboards. Founder bug 2026-05-07: tapping a load
+    /// previously fired `MeAction.fire("driver.load.detail")` which
+    /// the global handler routed to `.wallet` (My Loads) — wrong
+    /// destination. Driver Me LoadBoard IS Eusoboards (the public
+    /// market); tapping a load should open that load inside this
+    /// context, not yank the user to a different tab.
+    @State private var selectedRow: SelectedEusoboardsRow? = nil
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -105,6 +114,53 @@ struct MeLoadBoardView: View {
         .onChange(of: store.hazmatOnly) { _, _ in Task { await store.search() } }
         .onChange(of: store.sortBy) { _, _ in Task { await store.search() } }
         .refreshable { await store.search() }
+        .sheet(item: $selectedRow) { selected in
+            LoadDetailSheet(load: availableLoad(from: selected.row))
+                .environment(\.palette, palette)
+                .eusoSheetX()
+        }
+    }
+
+    /// In-context wrapper so the SearchRow has an Identifiable handle
+    /// for `.sheet(item:)`. We can't conform `LoadBoardAPI.SearchRow`
+    /// to Identifiable here without affecting other call sites, so we
+    /// box it.
+    fileprivate struct SelectedEusoboardsRow: Identifiable {
+        let row: LoadBoardAPI.SearchRow
+        var id: String { row.id }
+    }
+
+    /// SearchRow → AvailableLoad adapter. Only the fields the
+    /// LoadDetailSheet renders are populated — pickup/delivery
+    /// strings, miles, rate, equipment, hazmat. SearchRow doesn't
+    /// carry geocoded lat/lng; LoadDetailSheet falls back to its
+    /// HereRoutingClient lookup so 0/0 is fine for the seed.
+    fileprivate func availableLoad(from r: LoadBoardAPI.SearchRow) -> AvailableLoad {
+        let perMile = (r.distance > 0) ? r.rate / r.distance : 0
+        let weightString: String = {
+            guard let w = r.weight, w > 0 else { return "" }
+            let unit = (r.weightUnit ?? "lb").lowercased()
+            return "\(Int(w.rounded())) \(unit)"
+        }()
+        return AvailableLoad(
+            id: r.loadNumber ?? r.id,
+            origin: r.origin.display,
+            destination: r.destination.display,
+            miles: Int(r.distance.rounded()),
+            equipment: r.equipmentType ?? "Any",
+            rate: r.rate,
+            rpm: perMile,
+            pickupWindow: r.pickupDate ?? "",
+            broker: "Eusoboards",
+            hazmat: r.hazmat == true,
+            weight: weightString,
+            hotScore: 0,
+            originLat: 0,
+            originLng: 0,
+            destLat: 0,
+            destLng: 0,
+            backendLoadId: Int(r.id)
+        )
     }
 
     private var header: some View {
@@ -283,7 +339,7 @@ struct MeLoadBoardView: View {
         let perMile: Double = (l.distance > 0) ? l.rate / l.distance : 0
         let isContract = l.isLaneContract == true
         return Button {
-            MeAction.fire("driver.load.detail", userInfo: ["loadId": l.id])
+            selectedRow = SelectedEusoboardsRow(row: l)
         } label: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
@@ -458,7 +514,7 @@ private func driverNavLeading_108() -> [NavSlot] {
      NavSlot(label: "Haul", systemImage: "trophy", isCurrent: false)]
 }
 private func driverNavTrailing_108() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "wallet.pass", isCurrent: false),
+    [NavSlot(label: "My Loads", systemImage: "shippingbox.fill", isCurrent: false),
      NavSlot(label: "Me",     systemImage: "person",      isCurrent: true)]
 }
 
