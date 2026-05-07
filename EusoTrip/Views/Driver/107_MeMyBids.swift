@@ -146,7 +146,7 @@ struct MeMyBidsView: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "shippingbox.and.arrow.backward").font(.system(size: 11, weight: .heavy))
-                    Text("Loadboard").font(.system(size: 11, weight: .heavy))
+                    Text("Eusoboards").font(.system(size: 11, weight: .heavy))
                 }.foregroundStyle(.white)
                 .padding(.horizontal, 10).padding(.vertical, 7)
                 .background(LinearGradient.diagonal).clipShape(Capsule())
@@ -314,13 +314,13 @@ struct MeMyBidsView: View {
             Image(systemName: "tray").font(.system(size: 28, weight: .heavy))
                 .foregroundStyle(palette.textTertiary)
             Text("No bids placed yet").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-            Text("Open the loadboard to find broker-posted loads. Tap Book Now to bid the posted rate or Counter to start a chain.")
+            Text("Open Eusoboards to find broker-posted loads. Tap Book Now to bid the posted rate or Counter to start a chain.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
             Button {
                 MeAction.fire("driver.loadboard.open")
             } label: {
-                Text("Open loadboard").font(.system(size: 13, weight: .heavy))
+                Text("Open Eusoboards").font(.system(size: 13, weight: .heavy))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14).padding(.vertical, 9)
                     .background(LinearGradient.diagonal).clipShape(Capsule())

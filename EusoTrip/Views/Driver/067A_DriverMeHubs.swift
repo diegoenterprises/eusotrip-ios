@@ -270,7 +270,7 @@ enum DriverMeHubCatalog {
     static let operations: [DriverMeSection] = [
         DriverMeSection(title: "BIDDING", icon: "hand.raised", cells: [
             DriverMeCell(icon: "hand.raised.fill",      label: "My bids",             action: .screen("107")),
-            DriverMeCell(icon: "shippingbox",           label: "LoadBoard",           action: .screen("108")),
+            DriverMeCell(icon: "shippingbox",           label: "Eusoboards",          action: .screen("108")),
             DriverMeCell(icon: "bolt.circle",           label: "Auto-accept rules",   action: .screen("110")),
         ]),
         DriverMeSection(title: "SCHEDULING", icon: "calendar", cells: [

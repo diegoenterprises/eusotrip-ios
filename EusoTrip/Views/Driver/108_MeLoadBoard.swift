@@ -173,7 +173,7 @@ struct MeLoadBoardView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "sparkles").font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.diagonal)
-                    Text("DRIVER · LOADBOARD").font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    Text("DRIVER · EUSOBOARDS").font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(LinearGradient.diagonal)
                 }
                 Text("Open loads").font(.system(size: 22, weight: .heavy))
@@ -316,7 +316,7 @@ struct MeLoadBoardView: View {
         case .idle, .loading:
             HStack {
                 ProgressView()
-                Text("Searching loadboard…").font(EType.caption).foregroundStyle(palette.textSecondary)
+                Text("Searching Eusoboards…").font(EType.caption).foregroundStyle(palette.textSecondary)
                 Spacer()
             }
             .padding(Space.s3).frame(maxWidth: .infinity, alignment: .leading).background(palette.bgCard)
