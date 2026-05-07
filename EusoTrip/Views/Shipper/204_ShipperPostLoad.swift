@@ -100,6 +100,19 @@ struct ShipperPostLoad: View {
     @State private var tankerHoseSpec: String = ""
     @State private var tankerFitting: String = ""
 
+    // ERG (Emergency Response Guidebook) lookup state. When the user
+    // types a UN number, debounce → fire `erg.searchByUN` → if a
+    // match is found, auto-populate hazmat class + proper shipping
+    // name + ERG guide. Web parity with the platform's ERG database.
+    @State private var ergMatch: ErgAPI.MaterialDetail? = nil
+    @State private var isLookingUpERG: Bool = false
+    @State private var ergLookupError: String? = nil
+    @State private var lastErgQueryKey: String = ""
+    @State private var showErgSearchSheet: Bool = false
+    @State private var ergSearchQuery: String = ""
+    @State private var ergSearchHits: [ErgAPI.SearchHit] = []
+    @State private var isSearchingERG: Bool = false
+
     // Reefer subform.
     @State private var reeferTempLowText:  String = ""
     @State private var reeferTempHighText: String = ""
@@ -117,6 +130,27 @@ struct ShipperPostLoad: View {
     @State private var oversizePermits:        Bool = false
 
     @State private var lastSuccess: ShipperAPI.PostLoadAck? = nil
+
+    // MARK: - Autosave + cross-device continuity
+    //
+    // Founder ask 2026-05-07: "truly autosaves in case phone dies or
+    // app closes" + "save on one device it should show up in their
+    // account on the other, pure continuity".
+    //
+    // Strategy:
+    // 1. Local crash-recovery: UserDefaults via PostLoadDraftSnapshot.
+    // 2. Cross-device: NSUbiquitousKeyValueStore (Apple's free iCloud
+    //    KVS — auto-syncs across user's devices, ~1KB / draft fits
+    //    well under 1MB cap).
+    // 3. Server-backed templates for true cross-platform parity:
+    //    `loadTemplates.create` saves a named template; web platform
+    //    sees it via the same router.
+    @State private var didHydrateDraft: Bool = false
+    @State private var showTemplatePicker: Bool = false
+    @State private var showSaveTemplateSheet: Bool = false
+    @State private var savingTemplate: Bool = false
+    @State private var templateSaveAck: String? = nil
+    @State private var templateNameDraft: String = ""
 
     /// Equipment-type choice covering truck (dry van / reefer /
     /// flatbed / step deck / conestoga / container / tanker variants
@@ -294,6 +328,333 @@ struct ShipperPostLoad: View {
         // re-geocoding.
         .onChange(of: rateText)  { _, _ in recomputeRateCompareIfReady() }
         .onChange(of: cargoType) { _, _ in recomputeRateCompareIfReady() }
+        // Hydrate any in-progress draft on first appear (crash
+        // recovery + iCloud cross-device continuity). Skip on
+        // subsequent appears so navigating back to step 1 doesn't
+        // wipe in-progress edits.
+        .onAppear {
+            if !didHydrateDraft {
+                hydrateDraftIfPresent()
+                didHydrateDraft = true
+            }
+        }
+        // Autosave on every meaningful field change. Collapsed into
+        // a single onChange driven by `autosaveDigest` (a hash of
+        // every watched value) — chaining 30+ `.onChange` modifiers
+        // overwhelmed Swift's type-checker. The persist helper
+        // writes to UserDefaults (local crash recovery) AND
+        // NSUbiquitousKeyValueStore (iCloud KVS — cross-device).
+        .onChange(of: autosaveDigest) { _, _ in persistDraft() }
+        // ERG lookup fires off a separate UN-only debouncer so
+        // typing in unrelated fields doesn't trigger a re-lookup.
+        .onChange(of: unNumber) { _, _ in lookupERGIfReady() }
+        // Listen to remote iCloud KVS changes — when the user edits
+        // the draft on another signed-in device, NSUbiquitousKVStore
+        // posts a change notification; we re-hydrate so the in-flight
+        // wizard reflects the remote edits.
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSUbiquitousKeyValueStore.didChangeExternallyNotification
+        )) { _ in
+            hydrateDraftIfPresent()
+        }
+        // ERG search sheet (typeahead by name)
+        .sheet(isPresented: $showErgSearchSheet) { ergSearchSheet }
+    }
+
+    // MARK: - ERG search sheet
+
+    private var ergSearchSheet: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack {
+                Text("ERG · Find a material")
+                    .font(.system(size: 18, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 0)
+                Button { showErgSearchSheet = false } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                TextField("UN number or material name", text: $ergSearchQuery)
+                    .font(EType.body)
+                    .foregroundStyle(palette.textPrimary)
+                    .tint(LinearGradient.diagonal)
+                    .autocorrectionDisabled()
+                    .onSubmit { searchERG() }
+                    .onChange(of: ergSearchQuery) { _, _ in searchERG() }
+            }
+            .padding(Space.s3)
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            if isSearchingERG {
+                HStack(spacing: 6) {
+                    ProgressView().scaleEffect(0.7).tint(LinearGradient.diagonal)
+                    Text("Searching ERG…")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: Space.s2) {
+                    ForEach(ergSearchHits) { hit in
+                        Button { applyERGHit(hit) } label: {
+                            ergSearchRow(hit)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if ergSearchHits.isEmpty && !ergSearchQuery.isEmpty && !isSearchingERG {
+                        Text("No ERG match for '\(ergSearchQuery)'")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textTertiary)
+                            .padding(.top, Space.s4)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s5)
+        .background(palette.bgPrimary)
+    }
+
+    @ViewBuilder
+    private func ergSearchRow(_ hit: ErgAPI.SearchHit) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text("UN\(hit.unNumber)")
+                        .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text("Guide \(hit.guide)")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                        .foregroundStyle(palette.textSecondary)
+                    if hit.isTIH == true {
+                        Text("TIH").font(.system(size: 8, weight: .heavy))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4).padding(.vertical, 1)
+                            .background(Capsule().fill(Brand.danger))
+                    }
+                }
+                Text(hit.name.capitalized)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(2)
+                Text("Class \(hit.hazardClass) · \(hit.placardName)")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .heavy))
+                .foregroundStyle(palette.textTertiary)
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    // MARK: - Draft autosave + iCloud KVS continuity
+
+    /// JSON-encodable snapshot of every field the wizard captures.
+    /// Bumped to `v: 2` when adding ERG/equipment fields beyond the
+    /// original lane/cargo/rate set so older drafts in storage decode
+    /// gracefully (missing fields become defaults).
+    private struct PostLoadDraftSnapshot: Codable {
+        var v: Int = 2
+        var origin: String = ""
+        var destination: String = ""
+        var originLat: Double? = nil
+        var originLng: Double? = nil
+        var destLat: Double? = nil
+        var destLng: Double? = nil
+        var cargoTypeRaw: String = "general"
+        var equipmentTypeRaw: String = "dry_van"
+        var hasPickupDate: Bool = false
+        var pickupDateUnix: Double = 0
+        var weightText: String = ""
+        var rateText: String = ""
+        var notes: String = ""
+        var unNumber: String = ""
+        var hazmatClass: String = ""
+        var packingGroup: String = ""
+        var properShippingName: String = ""
+        var tankerHoseSpec: String = ""
+        var tankerFitting: String = ""
+        var reeferTempLowText: String = ""
+        var reeferTempHighText: String = ""
+        var preCoolRequired: Bool = false
+        var continuousMode: Bool = true
+        var flatbedStraps: Bool = false
+        var flatbedTarps: Bool = false
+        var flatbedChains: Bool = false
+        var flatbedEdgeProtectors: Bool = false
+        var oversizeLengthText: String = ""
+        var oversizeWidthText: String = ""
+        var oversizeHeightText: String = ""
+        var oversizePermits: Bool = false
+        var savedAt: Double = 0
+    }
+
+    /// Single hash of every autosaved field. Drives one `.onChange`
+    /// call — chaining 30+ `.onChange` modifiers tripped Swift's
+    /// type-checker timeout. Built imperatively so the type-checker
+    /// has nothing to infer beyond `String + String`.
+    private var autosaveDigest: String {
+        var s = ""
+        s += origin; s += "|"
+        s += destination; s += "|"
+        s += originLat.map { String($0) } ?? ""; s += "|"
+        s += originLng.map { String($0) } ?? ""; s += "|"
+        s += destLat.map { String($0) } ?? ""; s += "|"
+        s += destLng.map { String($0) } ?? ""; s += "|"
+        s += cargoType.rawValue; s += "|"
+        s += equipmentType.rawValue; s += "|"
+        s += String(hasPickupDate); s += "|"
+        s += String(Int(pickupDate.timeIntervalSince1970)); s += "|"
+        s += weightText; s += "|"
+        s += rateText; s += "|"
+        s += notes; s += "|"
+        s += unNumber; s += "|"
+        s += hazmatClass; s += "|"
+        s += packingGroup; s += "|"
+        s += properShippingName; s += "|"
+        s += tankerHoseSpec; s += "|"
+        s += tankerFitting; s += "|"
+        s += reeferTempLowText; s += "|"
+        s += reeferTempHighText; s += "|"
+        s += String(preCoolRequired); s += "|"
+        s += String(continuousMode); s += "|"
+        s += String(flatbedStraps); s += "|"
+        s += String(flatbedTarps); s += "|"
+        s += String(flatbedChains); s += "|"
+        s += String(flatbedEdgeProtectors); s += "|"
+        s += oversizeLengthText; s += "|"
+        s += oversizeWidthText; s += "|"
+        s += oversizeHeightText; s += "|"
+        s += String(oversizePermits)
+        return s
+    }
+
+    /// Per-user draft key — guards against draft cross-contamination
+    /// when multiple accounts share a device. Falls back to a shared
+    /// key when no userId is signed in (rare; pre-auth state).
+    private var draftStorageKey: String {
+        let uid = session.user?.id ?? "anon"
+        return "shipper.postLoadDraft.\(uid)"
+    }
+
+    private func persistDraft() {
+        guard didHydrateDraft else { return }   // skip on first hydrate pass
+        let snap = PostLoadDraftSnapshot(
+            v: 2,
+            origin: origin,
+            destination: destination,
+            originLat: originLat, originLng: originLng,
+            destLat: destLat, destLng: destLng,
+            cargoTypeRaw: cargoType.rawValue,
+            equipmentTypeRaw: equipmentType.rawValue,
+            hasPickupDate: hasPickupDate,
+            pickupDateUnix: pickupDate.timeIntervalSince1970,
+            weightText: weightText,
+            rateText: rateText,
+            notes: notes,
+            unNumber: unNumber,
+            hazmatClass: hazmatClass,
+            packingGroup: packingGroup,
+            properShippingName: properShippingName,
+            tankerHoseSpec: tankerHoseSpec,
+            tankerFitting: tankerFitting,
+            reeferTempLowText: reeferTempLowText,
+            reeferTempHighText: reeferTempHighText,
+            preCoolRequired: preCoolRequired,
+            continuousMode: continuousMode,
+            flatbedStraps: flatbedStraps,
+            flatbedTarps: flatbedTarps,
+            flatbedChains: flatbedChains,
+            flatbedEdgeProtectors: flatbedEdgeProtectors,
+            oversizeLengthText: oversizeLengthText,
+            oversizeWidthText: oversizeWidthText,
+            oversizeHeightText: oversizeHeightText,
+            oversizePermits: oversizePermits,
+            savedAt: Date().timeIntervalSince1970
+        )
+        if let data = try? JSONEncoder().encode(snap) {
+            UserDefaults.standard.set(data, forKey: draftStorageKey)
+            // iCloud KVS — synchronous in-memory write; .synchronize()
+            // schedules upload. Cross-device propagation handled by
+            // Apple's iCloud daemon.
+            NSUbiquitousKeyValueStore.default.set(data, forKey: draftStorageKey)
+            NSUbiquitousKeyValueStore.default.synchronize()
+        }
+    }
+
+    private func hydrateDraftIfPresent() {
+        // Prefer iCloud copy when present (most-recently-edited
+        // device wins); fall back to local UserDefaults.
+        let cloud = NSUbiquitousKeyValueStore.default.data(forKey: draftStorageKey)
+        let local = UserDefaults.standard.data(forKey: draftStorageKey)
+        let chosen: Data? = {
+            switch (cloud, local) {
+            case (let c?, let l?):
+                let cs = (try? JSONDecoder().decode(PostLoadDraftSnapshot.self, from: c))?.savedAt ?? 0
+                let ls = (try? JSONDecoder().decode(PostLoadDraftSnapshot.self, from: l))?.savedAt ?? 0
+                return cs >= ls ? c : l
+            case (let c?, nil): return c
+            case (nil, let l?): return l
+            default: return nil
+            }
+        }()
+        guard let data = chosen,
+              let snap = try? JSONDecoder().decode(PostLoadDraftSnapshot.self, from: data) else {
+            return
+        }
+        origin = snap.origin
+        destination = snap.destination
+        originLat = snap.originLat; originLng = snap.originLng
+        destLat = snap.destLat; destLng = snap.destLng
+        cargoType = ShipperAPI.CargoType(rawValue: snap.cargoTypeRaw) ?? .general
+        equipmentType = EquipmentChoice(rawValue: snap.equipmentTypeRaw) ?? .dryVan
+        hasPickupDate = snap.hasPickupDate
+        if snap.pickupDateUnix > 0 {
+            pickupDate = Date(timeIntervalSince1970: snap.pickupDateUnix)
+        }
+        weightText = snap.weightText
+        rateText = snap.rateText
+        notes = snap.notes
+        unNumber = snap.unNumber
+        hazmatClass = snap.hazmatClass
+        packingGroup = snap.packingGroup
+        properShippingName = snap.properShippingName
+        tankerHoseSpec = snap.tankerHoseSpec
+        tankerFitting = snap.tankerFitting
+        reeferTempLowText = snap.reeferTempLowText
+        reeferTempHighText = snap.reeferTempHighText
+        preCoolRequired = snap.preCoolRequired
+        continuousMode = snap.continuousMode
+        flatbedStraps = snap.flatbedStraps
+        flatbedTarps = snap.flatbedTarps
+        flatbedChains = snap.flatbedChains
+        flatbedEdgeProtectors = snap.flatbedEdgeProtectors
+        oversizeLengthText = snap.oversizeLengthText
+        oversizeWidthText = snap.oversizeWidthText
+        oversizeHeightText = snap.oversizeHeightText
+        oversizePermits = snap.oversizePermits
+    }
+
+    private func clearDraft() {
+        UserDefaults.standard.removeObject(forKey: draftStorageKey)
+        NSUbiquitousKeyValueStore.default.removeObject(forKey: draftStorageKey)
+        NSUbiquitousKeyValueStore.default.synchronize()
     }
 
     // MARK: - TopBar
@@ -704,6 +1065,92 @@ struct ShipperPostLoad: View {
         }
     }
 
+    // MARK: - ERG (Emergency Response Guidebook) lookup
+
+    /// Fires `erg.searchByUN` when the user types a 4-digit UN
+    /// number. Auto-populates hazmat class + proper shipping name +
+    /// ERG guide on a successful match. Web parity with the
+    /// platform's ERG database — same router (`erg.searchByUN`).
+    private func lookupERGIfReady() {
+        let raw = unNumber.uppercased()
+            .replacingOccurrences(of: "UN", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        // Server requires at least 4 digits to lookup. Bail otherwise.
+        guard raw.count >= 4, raw.allSatisfy(\.isNumber) else {
+            ergMatch = nil
+            ergLookupError = nil
+            return
+        }
+        let key = raw
+        guard key != lastErgQueryKey else { return }
+        lastErgQueryKey = key
+        isLookingUpERG = true
+        ergLookupError = nil
+        Task {
+            do {
+                let detail = try await EusoTripAPI.shared.erg.searchByUN(raw)
+                await MainActor.run {
+                    self.isLookingUpERG = false
+                    if detail.found {
+                        self.ergMatch = detail
+                        // Auto-populate ONLY when the user hasn't
+                        // already typed a value — never overwrite
+                        // explicit entry.
+                        if hazmatClass.isEmpty, let cls = detail.hazardClass {
+                            hazmatClass = cls
+                        }
+                        if properShippingName.isEmpty, let name = detail.name {
+                            properShippingName = name.uppercased()
+                        }
+                    } else {
+                        self.ergMatch = nil
+                        self.ergLookupError = "UN\(raw) not found in ERG"
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    self.isLookingUpERG = false
+                    self.ergLookupError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                }
+            }
+        }
+    }
+
+    /// Apply a search-hit selection from the ERG search sheet —
+    /// prefills UN + class + shipping name; the subsequent
+    /// `erg.searchByUN` finishes hydrating the full match.
+    private func applyERGHit(_ hit: ErgAPI.SearchHit) {
+        unNumber = hit.unNumber
+        hazmatClass = hit.hazardClass
+        properShippingName = hit.placardName.isEmpty ? hit.name.uppercased() : hit.placardName
+        showErgSearchSheet = false
+    }
+
+    /// `erg.search` typeahead — debounced inside the search sheet
+    /// onSubmit / commit, fired with the current `ergSearchQuery`.
+    private func searchERG() {
+        let q = ergSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard q.count >= 2 else {
+            ergSearchHits = []
+            return
+        }
+        isSearchingERG = true
+        Task {
+            do {
+                let resp = try await EusoTripAPI.shared.erg.search(query: q, limit: 12)
+                await MainActor.run {
+                    self.ergSearchHits = resp.results
+                    self.isSearchingERG = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.ergSearchHits = []
+                    self.isSearchingERG = false
+                }
+            }
+        }
+    }
+
     /// Resolved geocode hit — coordinate + state code. Used by both
     /// the routing step (needs lat/lng) and the rate compare step
     /// (needs state code).
@@ -993,17 +1440,100 @@ struct ShipperPostLoad: View {
                 Text("HAZMAT · 49 CFR 172")
                     .font(EType.micro).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 0)
+                // ERG search button — opens a typeahead sheet so the
+                // user can find any UN material by name when they
+                // don't know the number. Web parity with the
+                // platform's `erg.search`.
+                Button { showErgSearchSheet = true } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 9, weight: .heavy))
+                        Text("ERG search")
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    }
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .overlay(Capsule().strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
             }
             HStack(spacing: 8) {
-                hazmatTextField(label: "UN", text: $unNumber, placeholder: "UN1203", width: 90)
+                hazmatTextField(label: "UN", text: $unNumber, placeholder: "UN1267", width: 90)
                 hazmatTextField(label: "Class", text: $hazmatClass, placeholder: "3", width: 80)
                 hazmatTextField(label: "PG", text: $packingGroup, placeholder: "II", width: 70)
             }
             hazmatTextField(label: "Proper shipping name",
                             text: $properShippingName,
-                            placeholder: "Gasoline",
+                            placeholder: "Crude oil",
                             width: nil)
+            // Live ERG match chip — prefilled by `erg.searchByUN`.
+            if isLookingUpERG {
+                HStack(spacing: 6) {
+                    ProgressView().scaleEffect(0.6).tint(LinearGradient.diagonal)
+                    Text("Looking up UN in ERG database…")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            } else if let m = ergMatch, m.found {
+                ergMatchChip(m)
+            } else if let err = ergLookupError {
+                Text(err)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.warning)
+            }
         }
+    }
+
+    /// Compact "ERG matched" chip — material name + guide # + TIH /
+    /// water-reactive flags. Tapping opens the existing 096 ERG
+    /// detail surface for the full guide page.
+    @ViewBuilder
+    private func ergMatchChip(_ m: ErgAPI.MaterialDetail) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 10, weight: .heavy))
+                .foregroundStyle(LinearGradient.diagonal)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 4) {
+                    Text((m.name ?? "—").capitalized)
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    if m.isTIH == true {
+                        Text("TIH")
+                            .font(.system(size: 8, weight: .heavy)).tracking(0.4)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(Capsule().fill(Brand.danger))
+                    }
+                    if m.isWR == true {
+                        Text("WR")
+                            .font(.system(size: 8, weight: .heavy)).tracking(0.4)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(Capsule().fill(Brand.info))
+                    }
+                }
+                Text(ergMatchSubtitle(m))
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(palette.bgCardSoft)
+        .overlay(RoundedRectangle(cornerRadius: Radius.sm)
+                    .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
+    }
+
+    private func ergMatchSubtitle(_ m: ErgAPI.MaterialDetail) -> String {
+        var bits: [String] = []
+        if let g = m.guideNumber { bits.append("Guide \(g)") }
+        if let c = m.hazardClass { bits.append("Class \(c)") }
+        if let p = m.placard, !p.isEmpty { bits.append(p) }
+        return bits.joined(separator: " · ")
     }
 
     @ViewBuilder
@@ -1317,30 +1847,69 @@ struct ShipperPostLoad: View {
         }
     }
 
-    /// Equipment spec hint per cargoType — calibrated against the §11.4
-    /// MATRIX-50 anchor rows (UN1203 / MC-306, MC-331 NH₃, 53′ Reefer).
-    /// Eusotrans LLC USDOT 3 194 882 runs MC-306 + MC-331 multi-equipment.
+    /// Equipment spec hint — DYNAMIC. Reads the live ERG match and
+    /// user-entered UN/Class/PG when present; falls back to the
+    /// equipment-type default + cargo-type default. Founder bug
+    /// 2026-05-07 (screenshot): preview was hardcoded to "MC-306 ·
+    /// UN1203 · PG II" while the user had typed UN1267 / Crude Oil
+    /// — preview now reflects what the user actually entered.
     private var equipmentSpecText: String {
-        switch cargoType.label.lowercased() {
-        case "hazmat", "petroleum":  return "MC-306 · UN1203 · PG II"
-        case "chemicals":            return "MC-307 · UN1760 · PG II"
-        case "liquid":               return "MC-307 · food-grade liner"
-        case "gas":                  return "MC-331 · UN1075 · cryo"
-        case "cryogenic":            return "MC-338 · LIN/LOX"
-        case "refrigerated":         return "53′ Reefer · 33–40°F"
-        case "food_grade", "food grade": return "Food-grade trailer · sanitary"
-        case "dry_bulk", "dry bulk", "grain": return "Pneumatic / hopper · sealed"
-        case "intermodal":           return "20′/40′/53′ ISO container"
-        case "oversized", "vehicles","timber": return "Flatbed / step-deck"
-        case "livestock":            return "Possum-belly · ventilated"
-        default:                     return "53′ Dry Van · standard"
+        // 1. Hazmat case → derive from ERG match + user fields.
+        if let m = ergMatch, m.found, let un = m.unNumber {
+            let cls = (m.hazardClass ?? hazmatClass).isEmpty ? "—" : (m.hazardClass ?? hazmatClass)
+            let pg  = packingGroup.isEmpty ? "" : " · PG \(packingGroup)"
+            let hose = tankerHoseSpec.isEmpty ? "" : " · \(hoseLabel(tankerHoseSpec))"
+            return "UN\(un) · Class \(cls)\(pg)\(hose)"
+        }
+        // 2. User has typed a UN but ERG hasn't matched yet — show
+        //    what they typed honestly.
+        let typedUN = unNumber.uppercased().replacingOccurrences(of: "UN", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !typedUN.isEmpty {
+            let cls = hazmatClass.isEmpty ? "—" : hazmatClass
+            let pg  = packingGroup.isEmpty ? "" : " · PG \(packingGroup)"
+            return "UN\(typedUN) · Class \(cls)\(pg)\(isLookingUpERG ? " · looking up…" : "")"
+        }
+        // 3. Equipment type drives the spec when no UN entered yet.
+        switch equipmentType {
+        case .tankerHazmat:    return "MC-306 · awaiting UN"
+        case .tankerPetro:     return "MC-306 · petroleum"
+        case .tankerLiquid:    return "MC-307 · food-grade liner"
+        case .tankerGas:       return "MC-331 · gas / cryo"
+        case .reefer:          return reeferTempLowText.isEmpty
+                                       ? "53′ Reefer · spec pending"
+                                       : "53′ Reefer · \(reeferTempLowText)–\(reeferTempHighText)°F"
+        case .flatbed:         return "Flatbed · 48′/53′ · standard"
+        case .stepDeck:        return "Step deck · 48′/53′"
+        case .conestoga:       return "Conestoga · curtain-side"
+        case .container:       return "20′ / 40′ / 53′ ISO container"
+        case .oversized:       return oversizeDimsText.contains("—") ? "Oversized · dims pending" : oversizeDimsText
+        case .powerOnly:       return "Power-only · driver bring own trailer"
+        case .railTOFC:        return "Rail · TOFC (trailer-on-flatcar)"
+        case .railCOFC:        return "Rail · COFC (container-on-flatcar)"
+        case .railIntermodal:  return "Rail · intermodal container"
+        case .vesselContainer: return "Vessel · ISO container"
+        case .vesselBulk:      return "Vessel · bulk hold"
+        case .vesselTanker:    return "Vessel · tanker"
+        case .dryVan:          return "53′ Dry Van · standard"
         }
     }
 
     private var equipmentNoteText: String {
+        // ERG match drives the safety-note line when present.
+        if let m = ergMatch, m.found {
+            var bits: [String] = []
+            if let g = m.guideNumber { bits.append("ERG Guide \(g)") }
+            if m.isTIH == true        { bits.append("⚠ Toxic-by-inhalation") }
+            if m.isWR  == true        { bits.append("⚠ Water-reactive") }
+            if let n = m.name, !n.isEmpty { bits.append(n.capitalized) }
+            return bits.isEmpty ? "CHEMTREC +1-800-424-9300" : bits.joined(separator: " · ")
+        }
+        if let err = ergLookupError, !err.isEmpty {
+            return err
+        }
         switch cargoType.label.lowercased() {
         case "hazmat", "petroleum", "chemicals", "gas", "cryogenic":
-            return "CHEMTREC +1-800-424-9300 · escort optional"
+            return "CHEMTREC +1-800-424-9300 · enter UN to load ERG"
         case "refrigerated", "food_grade", "food grade":
             return "Continuous temp logging · last-load-out check"
         case "intermodal":
@@ -1435,6 +2004,15 @@ struct ShipperPostLoad: View {
                 Text("Resolving lane states for market compare…")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
+            } else if let routeErr = routingError {
+                // Route call failed — surface here too so the user
+                // doesn't see a stuck "computing distance" state on
+                // step 3 with no path to recover. Mirrors the route
+                // meta strip on step 1.
+                Text("Route error: \(routeErr) — go back to step 1 to retry")
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
             } else if (routeDistanceMeters ?? 0) <= 0 {
                 Text("Distance computing — meter populates after route resolves")
                     .font(EType.caption)
@@ -1589,32 +2167,208 @@ struct ShipperPostLoad: View {
     @ViewBuilder
     private var reviewStepBody: some View {
         VStack(alignment: .leading, spacing: Space.s5) {
+            eusoTicketTypeBanner
             reviewSummaryCard
+            equipmentReviewCard
+            esangMarketReviewCard
         }
+    }
+
+    /// Banner showing what EusoTicket the load will generate. Web
+    /// parity: the wizard data IS the EusoTicket. BOL for general
+    /// freight, Run Ticket for crude oil / hazmat / petroleum tanker
+    /// (per-haul measurement), Haul Receipt for the post-POD copy.
+    /// Driver views the same record via 106B; shipper via 303 / 304 /
+    /// 305.
+    private var eusoTicketTypeBanner: some View {
+        let (kind, blurb, icon) = eusoTicketKindForCurrentSelection
+        return HStack(alignment: .center, spacing: 12) {
+            ZStack {
+                Circle().fill(LinearGradient.diagonal).frame(width: 40, height: 40)
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .heavy))
+                    .foregroundStyle(.white)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Will generate · \(kind)")
+                    .font(.system(size: 13, weight: .heavy)).tracking(0.4)
+                    .foregroundStyle(palette.textPrimary)
+                Text(blurb)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(LinearGradient.diagonal.opacity(0.55), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    /// Resolves the EusoTicket kind based on current selections.
+    /// Crude oil / hazmat / petroleum / chemicals tankers and bulk-
+    /// liquid loads → Run Ticket (per-haul measurement). Everything
+    /// else → BOL. Haul Receipt is generated POST-POD by the carrier
+    /// — not chosen here.
+    private var eusoTicketKindForCurrentSelection: (kind: String, blurb: String, icon: String) {
+        let isTanker = [EquipmentChoice.tankerHazmat, .tankerPetro, .tankerLiquid, .tankerGas, .vesselTanker].contains(equipmentType)
+        let isHazmat = cargoType == .hazmat || cargoType == .petroleum || cargoType == .chemicals || cargoType == .gas
+        if isTanker || isHazmat {
+            return (
+                kind: "Run Ticket",
+                blurb: "Per-haul measurement record. Driver + shipper view the same EusoTicket. Required for crude / hazmat / tanker.",
+                icon: "drop.triangle.fill"
+            )
+        }
+        return (
+            kind: "BOL · Bill of Lading",
+            blurb: "Standard bill of lading. Acts as the receipt + chain-of-custody record. Driver + shipper view the same EusoTicket.",
+            icon: "doc.richtext.fill"
+        )
     }
 
     private var reviewSummaryCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            reviewRow(label: "Origin",       value: nonEmpty(origin))
+            reviewSection("LANE")
+            reviewRow(label: "Origin",      value: nonEmpty(origin))
             Divider().overlay(palette.borderFaint)
-            reviewRow(label: "Destination",  value: nonEmpty(destination))
+            reviewRow(label: "Destination", value: nonEmpty(destination))
             Divider().overlay(palette.borderFaint)
-            reviewRow(label: "Cargo type",   value: cargoType.label)
+            reviewRow(label: "Distance",    value: distanceReviewText)
             Divider().overlay(palette.borderFaint)
-            reviewRow(label: "Pickup",       value: hasPickupDate ? formatDate(pickupDate) : "Catalyst proposes")
+            reviewRow(label: "Pickup",      value: hasPickupDate ? formatDate(pickupDate) : "Catalyst proposes")
             Divider().overlay(palette.borderFaint)
-            reviewRow(label: "Weight",       value: parseDouble(weightText).map { "\(Int($0)) lbs" } ?? "—")
+            reviewRow(label: "Delivery ETA", value: deliveryReviewText)
+
+            reviewSection("CARGO + EQUIPMENT")
+            reviewRow(label: "Cargo type",     value: cargoType.label)
             Divider().overlay(palette.borderFaint)
-            reviewRow(label: "Posted rate",  value: parseDouble(rateText).map(dollars) ?? "—", isHero: true)
-            if !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            reviewRow(label: "Equipment",      value: equipmentType.label)
+            Divider().overlay(palette.borderFaint)
+            reviewRow(label: "Vertical",       value: equipmentType.vertical.uppercased())
+            Divider().overlay(palette.borderFaint)
+            reviewRow(label: "Weight",         value: parseDouble(weightText).map { "\(Int($0)) lbs" } ?? "—")
+
+            reviewSection("FREIGHT CHARGE")
+            reviewRow(label: "Posted rate",    value: parseDouble(rateText).map(dollars) ?? "—", isHero: true)
+            if let cmp = rateComparison {
                 Divider().overlay(palette.borderFaint)
-                reviewRow(label: "Notes",    value: notes)
+                reviewRow(label: "Vs market",  value: "\(cmp.position.replacingOccurrences(of: "_", with: " ")) · \(cmp.percentile)th pct")
+            }
+
+            if !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                reviewSection("NOTES")
+                reviewRow(label: "Free-form",  value: notes)
             }
         }
         .background(palette.bgCard)
         .overlay(RoundedRectangle(cornerRadius: Radius.xl)
                     .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5))
         .clipShape(RoundedRectangle(cornerRadius: Radius.xl))
+    }
+
+    /// Shows the equipment-specific subform fields only when the
+    /// selection actually has a subform (tanker / reefer / flatbed).
+    /// Otherwise renders nothing — keeps step 4 honest about what
+    /// data is in the record.
+    @ViewBuilder
+    private var equipmentReviewCard: some View {
+        switch equipmentType {
+        case .tankerHazmat, .tankerPetro, .tankerLiquid, .tankerGas, .vesselTanker:
+            tankerReviewCard
+        case .reefer:
+            reeferReviewCard
+        case .flatbed, .stepDeck, .conestoga, .oversized:
+            flatbedReviewCard
+        default:
+            EmptyView()
+        }
+    }
+
+    private var tankerReviewCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            reviewSection("TANKER REQUIREMENTS")
+            reviewRow(label: "Hose spec",      value: hoseLabel(tankerHoseSpec))
+            Divider().overlay(palette.borderFaint)
+            reviewRow(label: "Fitting",        value: fittingLabel(tankerFitting))
+            if cargoType == .hazmat || cargoType == .petroleum || cargoType == .chemicals {
+                Divider().overlay(palette.borderFaint)
+                reviewRow(label: "UN",             value: nonEmpty(unNumber))
+                Divider().overlay(palette.borderFaint)
+                reviewRow(label: "Hazmat class",   value: nonEmpty(hazmatClass))
+                Divider().overlay(palette.borderFaint)
+                reviewRow(label: "Packing group",  value: nonEmpty(packingGroup))
+                Divider().overlay(palette.borderFaint)
+                reviewRow(label: "Shipping name",  value: nonEmpty(properShippingName))
+            }
+        }
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    private var reeferReviewCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            reviewSection("REEFER REQUIREMENTS")
+            reviewRow(label: "Temp range", value: reeferTempRangeText)
+            Divider().overlay(palette.borderFaint)
+            reviewRow(label: "Pre-cool",   value: preCoolRequired ? "Required" : "Not required")
+            Divider().overlay(palette.borderFaint)
+            reviewRow(label: "Mode",       value: continuousMode ? "Continuous" : "Cycling")
+        }
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    private var flatbedReviewCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            reviewSection("FLATBED · OVERSIZED REQUIREMENTS")
+            reviewRow(label: "Securing",    value: flatbedGearText)
+            Divider().overlay(palette.borderFaint)
+            reviewRow(label: "Dimensions",  value: oversizeDimsText)
+            Divider().overlay(palette.borderFaint)
+            reviewRow(label: "Permits",     value: oversizePermits ? "Required" : "Not required")
+        }
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    /// ESANG market meter reprised on the review step so the shipper
+    /// sees their final price posture before submitting.
+    @ViewBuilder
+    private var esangMarketReviewCard: some View {
+        if let cmp = rateComparison {
+            VStack(alignment: .leading, spacing: 0) {
+                reviewSection("ESANG · RATE VS MARKET")
+                reviewRow(label: "Position",   value: cmp.position.replacingOccurrences(of: "_", with: " "))
+                Divider().overlay(palette.borderFaint)
+                reviewRow(label: "Your $/mi",  value: String(format: "$%.2f", cmp.yourRPM))
+                Divider().overlay(palette.borderFaint)
+                reviewRow(label: "Market avg", value: String(format: "$%.2f / mi", cmp.marketAvgRPM))
+                Divider().overlay(palette.borderFaint)
+                reviewRow(label: "Percentile", value: "\(cmp.percentile)th · n=\(cmp.sampleSize)")
+            }
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                        .strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+        }
+    }
+
+    private func reviewSection(_ title: String) -> some View {
+        Text(title)
+            .font(EType.micro).tracking(0.8)
+            .foregroundStyle(LinearGradient.diagonal)
+            .padding(.horizontal, Space.s4)
+            .padding(.top, Space.s4)
+            .padding(.bottom, 6)
     }
 
     private func reviewRow(label: String, value: String, isHero: Bool = false) -> some View {
@@ -1633,6 +2387,67 @@ struct ShipperPostLoad: View {
         .padding(.vertical, Space.s3)
     }
 
+    private var distanceReviewText: String {
+        guard let m = routeDistanceMeters, m > 0 else {
+            if let err = routingError { return "error: \(err)" }
+            return "—"
+        }
+        return String(format: "%.0f mi", Double(m) / 1609.34)
+    }
+
+    private var deliveryReviewText: String {
+        if let eta = computedDeliveryETA {
+            return deliveryETAFormatter.string(from: eta)
+        }
+        if hasPickupDate { return "—" }
+        return "Catalyst proposes"
+    }
+
+    private var reeferTempRangeText: String {
+        let lo = reeferTempLowText.trimmingCharacters(in: .whitespaces)
+        let hi = reeferTempHighText.trimmingCharacters(in: .whitespaces)
+        if lo.isEmpty && hi.isEmpty { return "—" }
+        return "\(lo.isEmpty ? "—" : lo)°F – \(hi.isEmpty ? "—" : hi)°F"
+    }
+
+    private var flatbedGearText: String {
+        var gear: [String] = []
+        if flatbedStraps          { gear.append("straps") }
+        if flatbedTarps           { gear.append("tarps") }
+        if flatbedChains          { gear.append("chains") }
+        if flatbedEdgeProtectors  { gear.append("edge protectors") }
+        return gear.isEmpty ? "—" : gear.joined(separator: ", ")
+    }
+
+    private var oversizeDimsText: String {
+        let l = oversizeLengthText.trimmingCharacters(in: .whitespaces)
+        let w = oversizeWidthText.trimmingCharacters(in: .whitespaces)
+        let h = oversizeHeightText.trimmingCharacters(in: .whitespaces)
+        if l.isEmpty && w.isEmpty && h.isEmpty { return "—" }
+        return "L \(l.isEmpty ? "—" : l) · W \(w.isEmpty ? "—" : w) · H \(h.isEmpty ? "—" : h) ft"
+    }
+
+    private func hoseLabel(_ raw: String) -> String {
+        switch raw {
+        case "2_camlock":     return "2\" cam-lock"
+        case "3_camlock":     return "3\" cam-lock"
+        case "4_camlock":     return "4\" cam-lock"
+        case "dry_disconnect":return "Dry-disconnect"
+        case "":              return "—"
+        default:              return raw
+        }
+    }
+
+    private func fittingLabel(_ raw: String) -> String {
+        switch raw {
+        case "api":   return "API adapter"
+        case "ttma":  return "TTMA"
+        case "other": return "Other"
+        case "":      return "—"
+        default:      return raw
+        }
+    }
+
     private func nonEmpty(_ s: String) -> String {
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
         return t.isEmpty ? "—" : t
@@ -1647,17 +2462,22 @@ struct ShipperPostLoad: View {
     // MARK: - Banners
 
     private func successBanner(_ ack: ShipperAPI.PostLoadAck) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+        let kind = eusoTicketKindForCurrentSelection.kind
+        return HStack(alignment: .top, spacing: 8) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 13, weight: .heavy))
                 .foregroundStyle(LinearGradient.diagonal)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Load posted")
+                Text("Load posted · \(kind) generated")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
                 Text(loadNumberSubtitle(ack))
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
+                    .lineLimit(2)
+                Text("Driver views the same EusoTicket from their Loads tab.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textTertiary)
                     .lineLimit(2)
             }
             Spacer(minLength: 0)
@@ -1857,11 +2677,38 @@ struct ShipperPostLoad: View {
         destination = ""
         originLat = nil; originLng = nil
         destLat   = nil; destLng   = nil
+        cargoType = .general
+        equipmentType = .dryVan
         hasPickupDate = false
         pickupDate = Date()
         weightText = ""
         rateText = ""
         notes = ""
+        unNumber = ""
+        hazmatClass = ""
+        packingGroup = ""
+        properShippingName = ""
+        tankerHoseSpec = ""
+        tankerFitting = ""
+        reeferTempLowText = ""
+        reeferTempHighText = ""
+        preCoolRequired = false
+        continuousMode = true
+        flatbedStraps = false
+        flatbedTarps = false
+        flatbedChains = false
+        flatbedEdgeProtectors = false
+        oversizeLengthText = ""
+        oversizeWidthText = ""
+        oversizeHeightText = ""
+        oversizePermits = false
+        ergMatch = nil
+        ergLookupError = nil
+        rateComparison = nil
+        routeDistanceMeters = nil
+        routeDurationSeconds = nil
+        // Wipe autosave so the next user doesn't see stale draft.
+        clearDraft()
     }
 
     private func parseDouble(_ raw: String) -> Double? {
