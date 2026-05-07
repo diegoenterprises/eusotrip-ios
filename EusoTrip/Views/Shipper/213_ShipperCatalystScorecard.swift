@@ -282,6 +282,17 @@ struct ShipperCatalystScorecard: View {
         }
         .task { await store.refresh() }
         .refreshable { await store.refresh() }
+        // RealtimeService → catalyst scorecards refresh when their
+        // load activity moves (acceptance rate, on-time delivery, etc).
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
+            Task { await store.refresh() }
+        }
         .sheet(item: $selected) { row in
             CatalystDetailSheet(row: row)
                 .environment(\.palette, palette)

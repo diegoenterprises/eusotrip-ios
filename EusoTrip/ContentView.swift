@@ -1161,6 +1161,158 @@ enum ScreenRegistry {
                 )
             }
         )
+        // 2026-05-06 — Catalyst EusoTicket Renderer (Figma 313 light +
+        // dark) lands. Pixel-faithful port of the Catalyst-side BOL ·
+        // POD · run-ticket · haul-receipt rendering surface — sole-driver
+        // Catalyst (Eusotrans LLC · Michael Eusorone) reviews the as-
+        // rendered EusoTicket document for the active load before
+        // dispatching to the shipper-of-record (Diego Usoro · Eusorone
+        // Technologies) and the receiver. Wired to `loads.getById` for
+        // the previewed load + `eusoTicket.generateBOLPDF` on Send;
+        // QR uses the canonical `EusoQRView` (kind `.eusoTicket(.bol)`,
+        // role `.carrier`) so the same QR scans into the iOS deep-link
+        // handler and the web router.
+        list.append(
+            .init(id: "313", title: "Catalyst · EusoTicket Renderer", role: .catalyst) { p in
+                AnyView(CatalystEusoTicketRendererScreen(theme: p, loadId: "0"))
+            }
+        )
+        // 2026-05-06 — Catalyst Fleet Drivers (Figma 304 light + dark)
+        // lands. The carrier's driver roster — canonical Catalyst↔Driver
+        // relationship lens. Hero card for the active driver +
+        // endorsements strip + DQ files quarter strip + onboarding/DQ
+        // alerts feed + additional drivers list. Wired to
+        // `catalysts.getMyDrivers` (real DB joins for status / current
+        // load / hours remaining / GPS location), plus the active hero
+        // adjuncts via `driverQualification.getOverview`,
+        // `driverQualification.getDocuments`, and
+        // `driverQualification.getExpiringItems` (60-day company-scoped
+        // expiry watchlist, filtered to the hero driver). All four
+        // procedures are real — no stubs / no mock data; tiles collapse
+        // to "—" when a per-driver datum isn't yet on file.
+        list.append(
+            .init(id: "304", title: "Catalyst · Fleet · Drivers", role: .catalyst) { p in
+                AnyView(CatalystFleetDriversScreen(theme: p))
+            }
+        )
+        // 2026-05-06 — Catalyst Load Detail (Figma 305 light + dark)
+        // lands. FLAGSHIP Catalyst-side load detail mirroring 205
+        // ShipperLoadDetail with two Catalyst-specific delta cards
+        // added per §57.4 / §58.4 candidate-queue lead doctrine:
+        //
+        //   • ASSIGNMENT card — joins the live `loads.driverId` ↔
+        //     `catalysts.getMyDrivers` row so HOS countdown + status
+        //     pill + driver location paint with REAL data, never a
+        //     synthetic label. REASSIGN action emits the canonical
+        //     `eusoCatalystReassignDriver` notification for the
+        //     dispatch reassign flow. Honest "Pending assignment" /
+        //     "Cross-fleet relay" empty states when the driver isn't
+        //     in the catalyst's roster.
+        //   • SHIPPER-OF-RECORD card — Diego Usoro · Eusorone
+        //     Technologies for §11 flagship companyId 1; generic
+        //     "Shipper #N" line for any other shipperId — never a
+        //     fabricated name.
+        //
+        // Wired to `loads.getById` for the load envelope and
+        // `catalysts.getMyDrivers` for the assigned driver row. 8-stage
+        // canonical lifecycle strip with status-aware progress.
+        list.append(
+            .init(id: "305", title: "Catalyst · Load Detail", role: .catalyst) { p in
+                AnyView(CatalystLoadDetailScreen(theme: p, loadId: "0"))
+            }
+        )
+        // 2026-05-06 — Catalyst Driver Performance Scorecard (Figma 320
+        // light + dark) lands. The catalyst→driver scorecard surface —
+        // same letter-grade engine as 213 Catalyst Scorecard (shipper→
+        // catalyst vantage), pivoted to the catalyst→driver vantage
+        // per §63.6 doctrine. Closes the cross-track scorecard symmetry:
+        // shippers grade catalysts, catalysts grade drivers, both with
+        // the same A+/A/A−/B-tier engine. Wired to the REAL
+        // `drivers.getPerformanceMetrics(driverId, period)` (drivers.ts:544)
+        // which joins loads + inspections + hosLogs + fuelTransactions
+        // for the named period. The composite letter grade is computed
+        // client-side per §9.1 formula (on-time × 0.5 + completion × 0.3
+        // + log₁₀(loads+1)/log₁₀(50) × 0.2). Defaults to the catalyst's
+        // primary driver via `catalysts.getMyDrivers` when no driverId
+        // is passed. Honest empty / zero envelope when the driver has no
+        // loads in the window — never fabricated metrics.
+        list.append(
+            .init(id: "320", title: "Catalyst · Driver Scorecard", role: .catalyst) { p in
+                AnyView(CatalystDriverScorecardScreen(theme: p, driverId: ""))
+            }
+        )
+        // 2026-05-06 — Catalyst Driver Compliance (Figma 326 light +
+        // dark) lands. Per-driver federal compliance dashboard — pairs
+        // with 317 Catalyst Compliance (carrier-level aggregate) at the
+        // per-driver scanline. Five federal regulatory axes: CSA BASIC
+        // · §395 HOS · MCSAP roadside · §391.41 Medical · §382 Drug
+        // pool. Wired to REAL endpoints — every status pill is
+        // computed from the driver's own tables: compliance status +
+        // safety from `compliance.getDriverComplianceList`, DQ score
+        // from `driverQualification.getOverview`, expiry windows from
+        // `driverQualification.getExpiringItems`, drug-screen presence
+        // from `driverQualification.getDocuments`, HOS + roadside pass
+        // rates from `drivers.getPerformanceMetrics`. When a federal
+        // axis isn't yet wired iOS-side (CSA carrier-level), the row
+        // surfaces "Not yet wired · check 317 compliance home" rather
+        // than a fabricated value. §382 row cross-references the same
+        // drug-test document records 322 Documents and 325 Onboarding
+        // read — three surfaces over the §382 trinity.
+        list.append(
+            .init(id: "326", title: "Catalyst · Driver Compliance", role: .catalyst) { p in
+                AnyView(CatalystDriverComplianceScreen(theme: p, driverId: ""))
+            }
+        )
+        // 2026-05-06 — Catalyst Driver Documents (Figma 322 light + dark)
+        // lands. The catalyst-side document vault for a single driver —
+        // the file binaries behind 321 Driver Profile's credential pills
+        // (CDL · MEDICAL · DQ FILE · MVR/DRUG). Wired to REAL endpoints:
+        // `driverQualification.getDocuments(driverId)` for the file
+        // list (newest first) and `driverQualification.getOverview` for
+        // the KPI strip (valid / expiring / expired / DQ score).
+        // Filter chips bucket via type-name matchers — same matcher
+        // 326 Driver Compliance uses for its federal axis status,
+        // keeping the §382 / §391.41 / §383 taxonomy consistent across
+        // all three §391 surfaces. Empty / loading / per-filter-empty
+        // states are honest — no fabricated PDF placeholder rows ever.
+        list.append(
+            .init(id: "322", title: "Catalyst · Driver Documents", role: .catalyst) { p in
+                AnyView(CatalystDriverDocumentsScreen(theme: p, driverId: ""))
+            }
+        )
+        // 2026-05-06 — Catalyst Driver Profile (Figma 321 light + dark)
+        // lands. The catalyst-side detail view of one driver — the
+        // canonical catalyst→driver record. Pairs with 304 Fleet
+        // Drivers (roster) and 322 Driver Documents (file vault).
+        // Wired to REAL `drivers.getById(id)` (drivers.ts:378) for the
+        // full profile envelope (CDL · medical · current load · monthly
+        // stats), `catalysts.getMyDrivers` for the live HOS countdown +
+        // GPS location, and `driverQualification.getOverview` for the
+        // DQ compliance score. Tap-to-call / SMS / email use real
+        // `tel:` / `sms:` / `mailto:` URLs against the live
+        // `users.phone` and `users.email` columns. Quick-actions row
+        // navigates to 322 (Documents), 326 (Compliance), 320
+        // (Scorecard) — closing the catalyst→driver deep-dive trio.
+        list.append(
+            .init(id: "321", title: "Catalyst · Driver Profile", role: .catalyst) { p in
+                AnyView(CatalystDriverProfileScreen(theme: p, driverId: ""))
+            }
+        )
+        // 2026-05-06 — Catalyst Compliance (carrier-level companion to
+        // 326 driver compliance) lands. Wired to REAL endpoints:
+        // `compliance.getCatalystCompliance` (companies row → score +
+        // MC + DOT + insurance + safety rating), `fmcsa.lookupSelf`
+        // (live FMCSA SAFER pull cached via Redis + MySQL), and
+        // `compliance.getDriverComplianceList` for the per-driver
+        // roster strip. Closes the empty state I left on 326 ("Not yet
+        // wired · check 317 carrier compliance home"). Action ribbon
+        // surfaces the next remediation: insurance renewal → SAFER
+        // remediation → MC filing → driver gaps → quarterly report.
+        list.append(
+            .init(id: "317", title: "Catalyst · Compliance", role: .catalyst) { p in
+                AnyView(CatalystComplianceScreen(theme: p))
+            }
+        )
         // 2026-04-25 — eusotrip-killers 103rd firing
         // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
         // First real Escort-track brick lands in production. Lifts

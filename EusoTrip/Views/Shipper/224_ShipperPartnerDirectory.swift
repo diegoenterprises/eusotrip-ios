@@ -195,7 +195,7 @@ struct ShipperPartnerDirectory: View {
                 titleBlock
                     .padding(.top, Space.s2)
                 IridescentHairline()
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s5)
 
                 content
@@ -206,6 +206,15 @@ struct ShipperPartnerDirectory: View {
         }
         .task { await store.load() }
         .refreshable { await store.load() }
+        // RealtimeService → partner directory refreshes when carrier
+        // performance metrics shift, new partners onboard, or roster
+        // updates land.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.load() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.load() }
+        }
     }
 
     // MARK: TopBar
@@ -225,7 +234,7 @@ struct ShipperPartnerDirectory: View {
                 .foregroundStyle(palette.textTertiary)
                 .accessibilityLabel(counterAccessibility)
         }
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     private var counterEyebrow: String {
@@ -253,7 +262,7 @@ struct ShipperPartnerDirectory: View {
                 .foregroundStyle(palette.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     // MARK: Content state machine
@@ -269,18 +278,18 @@ struct ShipperPartnerDirectory: View {
                         .frame(height: 92)
                 }
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
         case .error(let m):
             errorCard(m)
-                .padding(.horizontal, Space.s5)
+                .padding(.horizontal, Space.s3)
         case .loaded(let rows):
             VStack(alignment: .leading, spacing: 0) {
                 kpiSummaryCard
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s3)
 
                 searchBar
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s3)
 
                 filterChipRow
@@ -288,11 +297,11 @@ struct ShipperPartnerDirectory: View {
 
                 if rows.isEmpty {
                     emptyOrNoMatchCard
-                        .padding(.horizontal, Space.s5)
+                        .padding(.horizontal, Space.s3)
                         .padding(.top, Space.s4)
                 } else {
                     partnerListCard(rows)
-                        .padding(.horizontal, Space.s5)
+                        .padding(.horizontal, Space.s3)
                         .padding(.top, Space.s4)
                 }
 
@@ -429,7 +438,7 @@ struct ShipperPartnerDirectory: View {
                 }
                 Color.clear.frame(width: 16, height: 1)
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
         }
         .overlay(alignment: .trailing) {
             LinearGradient(
@@ -794,7 +803,7 @@ struct ShipperPartnerDirectory: View {
                 .minimumScaleFactor(0.74)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
         .padding(.top, Space.s4)
         .padding(.bottom, Space.s2)
     }

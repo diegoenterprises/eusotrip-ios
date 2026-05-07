@@ -121,7 +121,7 @@ struct ShipperLoadDetail: View {
         VStack(alignment: .leading, spacing: 0) {
             topBar
             IridescentHairline()
-                .padding(.horizontal, Space.s5)
+                .padding(.horizontal, Space.s3)
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.s4) {
                     heroMap
@@ -135,7 +135,7 @@ struct ShipperLoadDetail: View {
                     ctaRow
                     Color.clear.frame(height: 96)
                 }
-                .padding(.horizontal, Space.s5)
+                .padding(.horizontal, Space.s3)
                 .padding(.top, Space.s4)
             }
         }
@@ -147,17 +147,32 @@ struct ShipperLoadDetail: View {
         .task {
             await refreshAll()
             await loadListingTrust()
+            joinLoadRoom()
         }
         .refreshable {
             await refreshAll()
             await loadListingTrust()
         }
+        .onDisappear { leaveLoadRoom() }
         // Kebab (⋯) tap fires `eusoShipperLoadActionMenu`; listen
         // here on the same screen so the action sheet actually
         // surfaces instead of the notification dropping into the
         // void.
         .onReceive(NotificationCenter.default.publisher(for: .eusoShipperLoadActionMenu)) { _ in
             showActionMenu = true
+        }
+        // RealtimeService → live updates from the load's Socket.IO
+        // room — carrier accept, driver assign, status change, POD
+        // submission, dock assignment. Keeps the shipper detail
+        // surface in sync with the carrier/driver side.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await refreshAll() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await refreshAll() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
+            Task { await refreshAll() }
         }
         .confirmationDialog("Load actions",
                             isPresented: $showActionMenu,
@@ -823,7 +838,7 @@ struct ShipperLoadDetail: View {
             }
             .padding(.top, Space.s2)
         }
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
         .padding(.top, Space.s5)
         .padding(.bottom, Space.s3)
     }
@@ -860,7 +875,14 @@ struct ShipperLoadDetail: View {
     }
 
     private func backTapped() {
-        NotificationCenter.default.post(name: .eusoShipperLoadListOpen, object: nil)
+        // Pop the actual ShipperSurface stack so the user returns to
+        // wherever they came from (settlements, agreements, market
+        // intel, post-load review …) — NOT unconditionally to the
+        // Loads tab. The previous post (`.eusoShipperLoadListOpen`)
+        // collapsed the stack to `[201]` regardless of origin, which
+        // is why the back button felt broken from non-Loads entry
+        // points (founder report 2026-05-05).
+        NotificationCenter.default.post(name: .eusoShipperNavBack, object: nil)
     }
 
     private func kebabTapped() {
@@ -1682,10 +1704,49 @@ struct ShipperLoadDetail: View {
     }
 
     private func readableError(_ error: Error) -> String {
+        // The raw `loads.getById` failure on a missing schema column
+        // (e.g. `tanker_sub_state` before migration 0100 ran) returns
+        // a 600+ char SQL trace that floods the error card. Strip it
+        // down to a useful one-liner — the founder report on
+        // 2026-05-05 was a screenshot of the entire `select id,
+        // shipperId, … from loads where id = ? limit ?` query
+        // surfaced raw under "COULDN'T LOAD". Server fix is migration
+        // 0100; this is the client-side hardening so the next
+        // schema drift is at least readable.
+        let raw: String
         if let api = error as? EusoTripAPIError {
-            return api.errorDescription ?? "Request failed."
+            raw = api.errorDescription ?? "Request failed."
+        } else {
+            raw = error.localizedDescription
         }
-        return error.localizedDescription
+        let lower = raw.lowercased()
+        if lower.contains("failed query") ||
+           lower.contains("unknown column") ||
+           lower.contains("er_bad_field") {
+            return "Server-side schema is out of sync — missing column on `loads`. Apply the latest tanker / lifecycle migrations on the deploy target. (Surfacing the raw query was hiding this — see ops on-call.)"
+        }
+        if lower.contains("network") || lower.contains("offline") {
+            return "We can't reach the server right now. Pull to refresh once you're back online."
+        }
+        // Long messages still fold but we keep the first line so a
+        // genuine TRPC user-message ("Load not found", "Permission
+        // denied") remains visible.
+        let firstLine = raw.split(separator: "\n").first.map(String.init) ?? raw
+        return firstLine.count > 240 ? String(firstLine.prefix(240)) + "…" : firstLine
+    }
+
+    private func joinLoadRoom() {
+        guard let intId = Int(loadId), intId > 0 else { return }
+        Task { @MainActor in
+            RealtimeService.shared.joinLoad(intId)
+        }
+    }
+
+    private func leaveLoadRoom() {
+        guard let intId = Int(loadId), intId > 0 else { return }
+        Task { @MainActor in
+            RealtimeService.shared.leaveLoad(intId)
+        }
     }
 
     private func refreshAll() async {

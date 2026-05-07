@@ -204,7 +204,7 @@ struct ShipperRecurringLoads: View {
                 titleBlock
                     .padding(.top, Space.s2)
                 IridescentHairline()
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s5)
 
                 content
@@ -217,6 +217,17 @@ struct ShipperRecurringLoads: View {
         .onChange(of: store.filter) { _, _ in Task { await store.load() } }
         .onChange(of: store.lastAck?.id ?? -1) { _, v in if v != -1 { showAck = true } }
         .onChange(of: storeStateKey) { _, _ in updateUnfiltered() }
+        // RealtimeService → recurring loads refresh when scheduled
+        // dispatches fire or a recurring lane is amended upstream.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.load() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.load() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
+            Task { await store.load() }
+        }
         .sheet(item: $detail) {
             ShipperRecurringLoadDetail(template: $0).environmentObject(store)
         }
@@ -286,7 +297,7 @@ struct ShipperRecurringLoads: View {
                 .foregroundStyle(palette.textSecondary)
                 .accessibilityLabel(counterAccessibility)
         }
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     private var counterEyebrow: String {
@@ -315,7 +326,7 @@ struct ShipperRecurringLoads: View {
                 .foregroundStyle(palette.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     // MARK: Content state machine
@@ -331,14 +342,14 @@ struct ShipperRecurringLoads: View {
                         .frame(height: 116)
                 }
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
         case .error(let m):
             errorCard(m)
-                .padding(.horizontal, Space.s5)
+                .padding(.horizontal, Space.s3)
         case .loaded(let rows):
             VStack(alignment: .leading, spacing: 0) {
                 kpiHeroCard
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s3)
 
                 filterRow
@@ -346,7 +357,7 @@ struct ShipperRecurringLoads: View {
 
                 if rows.isEmpty {
                     emptyOrNoMatchCard
-                        .padding(.horizontal, Space.s5)
+                        .padding(.horizontal, Space.s3)
                         .padding(.top, Space.s4)
                 } else {
                     VStack(spacing: Space.s4) {
@@ -354,12 +365,12 @@ struct ShipperRecurringLoads: View {
                             templateRowView(row)
                         }
                     }
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s4)
                 }
 
                 newScheduleButton
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s5)
             }
         }
@@ -451,7 +462,7 @@ struct ShipperRecurringLoads: View {
                     filterChip(f, count: count(for: f))
                 }
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
         }
         .overlay(alignment: .trailing) {
             LinearGradient(

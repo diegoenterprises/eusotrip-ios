@@ -102,6 +102,18 @@ struct MeMyBidsView: View {
         .task { await store.load() }
         .onChange(of: store.statusFilter) { _, _ in Task { await store.load() } }
         .refreshable { await store.load() }
+        // RealtimeService → reload my-bids the moment a load is
+        // assigned/reassigned or surface refreshes (broker accept,
+        // bid counter, bid expire). Keeps the bids board live.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.load() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.load() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
+            Task { await store.load() }
+        }
         .onChange(of: store.lastWithdrew ?? -1) { _, v in if v != -1 { showWithdrawAck = true } }
         .alert("Withdrawn", isPresented: $showWithdrawAck, actions: {
             Button("OK") { store.lastWithdrew = nil }

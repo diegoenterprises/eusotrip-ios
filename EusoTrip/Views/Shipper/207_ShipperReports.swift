@@ -141,7 +141,7 @@ struct ShipperReports: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14).padding(.vertical, 8)
                     .background(.red.opacity(0.92), in: Capsule())
-                    .padding(.top, 8)
+                    .padding(.top, 56)
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .onAppear {
                         Task {

@@ -157,7 +157,7 @@ struct ShipperRFPDetail: View {
                 .foregroundStyle(counterColor)
                 .accessibilityLabel(counterAccessibility)
         }
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     private var counterEyebrow: String {
@@ -206,7 +206,7 @@ struct ShipperRFPDetail: View {
                 Spacer()
             }
             .contentShape(Rectangle())
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Back to RFPs")
@@ -238,23 +238,23 @@ struct ShipperRFPDetail: View {
                         .frame(height: 92)
                 }
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
         case .error(let m):
             errorCard(m)
-                .padding(.horizontal, Space.s5)
+                .padding(.horizontal, Space.s3)
         case .loaded(let rfp, let bids, let scorecards):
             VStack(alignment: .leading, spacing: 0) {
                 titleBlock(rfp, bids: bids)
                 IridescentHairline()
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s4)
 
                 heroCard(rfp)
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s4)
 
                 kpiQuartet(rfp, bids: bids)
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s4)
 
                 sectionLabel("BID RESPONSES · \(bids.count) RANKED")
@@ -272,12 +272,12 @@ struct ShipperRFPDetail: View {
                         compactBidRowView(compact)
                     }
                 }
-                .padding(.horizontal, Space.s5)
+                .padding(.horizontal, Space.s3)
                 .padding(.top, Space.s3)
 
                 if bids.count > 4 {
                     viewAllLink(bids.count)
-                        .padding(.horizontal, Space.s5)
+                        .padding(.horizontal, Space.s3)
                         .padding(.top, Space.s4)
                 }
             }
@@ -291,7 +291,7 @@ struct ShipperRFPDetail: View {
             .tracking(1.0)
             .foregroundStyle(palette.textTertiary)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
     }
 
     // MARK: Title block
@@ -309,7 +309,7 @@ struct ShipperRFPDetail: View {
                 .foregroundStyle(palette.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
         .padding(.top, Space.s2)
     }
 

@@ -185,9 +185,24 @@ enum HereTileStyle {
     /// when the HERE plan upgrades to a night-licensed tier.
     var rawValue: String { "explore.day" }
 
-    /// Higher DPI for retina displays. HERE accepts 100 / 200 / 250 / 320 / 400 / 500 ppi.
-    var ppi: Int { 400 }
+    /// HERE accepts 72 / 100 / 200 / 250 / 320 / 400 / 500. We pair
+    /// `ppi=250` with `size=512` so labels render at a normal-map size
+    /// on iPhone retina (~14–16 pt physical) instead of the oversized
+    /// 30–50 pt blocks you got with `ppi=400` (those were sized for a
+    /// hypothetical 400-PPI desktop display, not iOS retina).
+    var ppi: Int { 250 }
 
-    /// Tile edge size in points (256 is the OSM / MapKit default; 512 is retina-friendly).
+    /// HERE PNG dimension in PIXELS. We request 512 px so the asset is
+    /// 2× the on-screen point-size MKTileOverlay paints (256 pt). That
+    /// gives retina-friendly downsampling on iPhone 2x and 3x devices.
     var sizePx: Int { 512 }
+
+    /// IETF BCP-47 language tag passed to HERE so labels stay in
+    /// English worldwide. Without this the `explore.day` style falls
+    /// back to local-language labels when you pan to Europe / Asia /
+    /// LatAm — Cyrillic over Russia, Cyrillic+Latin over Bulgaria,
+    /// Greek over Greece, Arabic over the Maghreb, etc. Forcing `en`
+    /// matches the web platform's HERE basemap, which is also locked
+    /// to English.
+    var labelLanguage: String { "en" }
 }

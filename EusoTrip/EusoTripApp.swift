@@ -108,6 +108,20 @@ struct EusoTripApp: App {
                 MockDataGuard.runSelfCheck()
                 #endif
                 await session.boot()
+                // Proactively trigger the iOS "Allow EusoTrip to use
+                // your location?" prompt at app launch. WeatherService
+                // also requests it lazily on first fetch, but that
+                // race occasionally lost to the home view rendering
+                // first — leaving the dashboard with no weather card
+                // AND no prompt. Idempotent: a no-op if status is
+                // already determined. Founder report 2026-05-05.
+                //
+                // No `await` — `requestPermissionIfNeeded()` is sync
+                // and `WeatherService` is `@MainActor`. The enclosing
+                // `.task` already runs on the main actor, so this is a
+                // same-actor call (the prior `await` produced the
+                // "No 'async' operations occur within 'await'" warning).
+                WeatherService.shared.requestPermissionIfNeeded()
             }
             // Canonical global sign-out listener. Every Sign-out cell in
             // the app (Me hub, Settings hub, Driver Me, Shipper Me hero

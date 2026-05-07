@@ -62,7 +62,7 @@ private struct SearchBody: View {
                 }
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .padding(.horizontal, 14).padding(.top, 56)
         }
         .onAppear { recents = UserDefaults.standard.stringArray(forKey: "shipper.search.recents") ?? [] }
     }

@@ -734,7 +734,7 @@ private struct ClipboardCard: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Paste the Universal Clipboard load ID into the active text field.")
             }
-            .padding(.top, 8)
+            .padding(.top, 56)
             .padding(.bottom, 16)
         }
         .padding(.horizontal, 20)

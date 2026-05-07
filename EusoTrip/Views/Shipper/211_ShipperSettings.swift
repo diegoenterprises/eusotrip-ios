@@ -1174,12 +1174,12 @@ private struct ShipperSettingsAboutSheet: View {
                         }
                     }
                     .padding(.horizontal, 14)
-                    .padding(.top, 8)
+                    .padding(.top, 56)
 
                     Text("Powered by ESANG AI™")
                         .font(EType.micro).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
-                        .padding(.top, 8)
+                        .padding(.top, 56)
 
                     Color.clear.frame(height: 32)
                 }

@@ -71,6 +71,14 @@ struct MeIfta: View {
             await store.refresh()
         }
         .refreshable { await store.refresh() }
+        // RealtimeService → IFTA fuel/mileage data refreshes when
+        // load events fire (new mileage logged, fuel purchase added).
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.refresh() }
+        }
     }
 
     // MARK: Header
@@ -108,7 +116,12 @@ struct MeIfta: View {
             HStack(spacing: Space.s2) {
                 Menu {
                     ForEach(years, id: \.self) { y in
-                        Button("\(y)") {
+                        // Button(LocalizedStringKey) auto-formats Ints
+                        // with locale grouping → renders "2,026" for
+                        // year 2026. Wrap in String() to bypass the
+                        // LocalizedStringKey path so the year reads as
+                        // a year, not a thousands-separated number.
+                        Button(String(y)) {
                             store.year = y
                             Task { await store.refresh() }
                         }

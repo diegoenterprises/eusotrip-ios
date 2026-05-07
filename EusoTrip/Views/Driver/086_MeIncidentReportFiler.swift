@@ -147,6 +147,11 @@ struct MeIncidentReportFiler: View {
     @State private var severity: Severity = .minor
     @State private var description: String = ""
     @State private var location: String = ""
+    /// Captured when the driver picks a HERE autosuggest result OR
+    /// pastes raw "lat,lng". Persisted alongside the freeform string
+    /// so the server can geofence the incident without re-geocoding.
+    @State private var locationLat: Double? = nil
+    @State private var locationLng: Double? = nil
     @State private var occurredAt: Date = Date()
 
     // Near-miss-only fields
@@ -412,9 +417,18 @@ struct MeIncidentReportFiler: View {
             Text("LOCATION")
                 .font(EType.micro).tracking(1.4)
                 .foregroundStyle(palette.textTertiary)
-            TextField("City, state, or nearest mile marker", text: $location)
-                .textFieldStyle(.roundedBorder)
-                .autocorrectionDisabled()
+            // Was a freeform TextField — swapped to `HereAddressField`
+            // so the driver gets HERE autosuggest AND can paste raw
+            // "lat,lng" coordinates (e.g. "32.7767,-96.7970"). Same
+            // component the shipper post-load wizard uses; geocoded
+            // lat/lng accompany the incident payload so dispatch can
+            // geofence without a second resolution pass.
+            HereAddressField(
+                text: $location,
+                lat: $locationLat,
+                lng: $locationLng,
+                placeholder: "City, state, mile marker, or lat,lng"
+            )
         }
     }
 
@@ -662,6 +676,8 @@ struct MeIncidentReportFiler: View {
         severity = .minor
         description = ""
         location = ""
+        locationLat = nil
+        locationLng = nil
         occurredAt = Date()
         nearMissType = .closeCall
         weather = ""

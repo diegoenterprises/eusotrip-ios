@@ -33,7 +33,7 @@ private struct CatalystRatingsBody: View {
                 reviewListCard
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await perf.refresh() }
     }

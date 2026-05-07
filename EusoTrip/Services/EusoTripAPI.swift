@@ -395,6 +395,7 @@ final class EusoTripAPI: ObservableObject {
     /// `frontend/server/routers/compliance.ts:1055`. Added in the
     /// 75th firing (brick port 082 Me · Violations Manager).
     lazy var compliance: ComplianceAPI = ComplianceAPI(api: self)
+    lazy var fmcsa: FMCSAAPI = FMCSAAPI(api: self)
 
     /// `csaScoresRouter` — FMCSA CSA scoring + DataQs challenge
     /// filer. Today's iOS-relevant surface: `submitDataQsChallenge`.
@@ -1205,6 +1206,87 @@ struct LoadsAPI {
         return try await api.query("loads.getById", input: Input(id: id))
     }
 
+    // MARK: - updateLoadStatus (Catalyst 305 + Driver lifecycle)
+
+    /// Server-side `loads.updateLoadStatus` enum (loads.ts:3373). The
+    /// Catalyst 305 status picker only surfaces a subset (the manually
+    /// updatable transit states) — the lifecycle states like
+    /// `en_route_pickup` / `at_pickup` / `loading` flip via the driver
+    /// app's lifecycle screens (013-051), not catalyst-side.
+    enum LoadStatusUpdate: String, Encodable, CaseIterable, Hashable {
+        case posted
+        case bidding
+        case assigned
+        case enRoutePickup     = "en_route_pickup"
+        case atPickup          = "at_pickup"
+        case loading
+        case inTransit         = "in_transit"
+        case atDelivery        = "at_delivery"
+        case unloading
+        case delivered
+        case cancelled
+        case disputed
+        case tempExcursion     = "temp_excursion"
+        case reeferBreakdown   = "reefer_breakdown"
+        case contaminationReject = "contamination_reject"
+        case sealBreach        = "seal_breach"
+        case weightViolation   = "weight_violation"
+
+        /// Human-readable label for the status picker UI.
+        var label: String {
+            switch self {
+            case .posted:               return "Posted"
+            case .bidding:              return "Bidding"
+            case .assigned:             return "Assigned"
+            case .enRoutePickup:        return "En route to pickup"
+            case .atPickup:             return "At pickup"
+            case .loading:              return "Loading"
+            case .inTransit:            return "In transit"
+            case .atDelivery:           return "At delivery"
+            case .unloading:            return "Unloading"
+            case .delivered:            return "Delivered"
+            case .cancelled:            return "Cancelled"
+            case .disputed:             return "Disputed"
+            case .tempExcursion:        return "Temperature excursion"
+            case .reeferBreakdown:      return "Reefer breakdown"
+            case .contaminationReject:  return "Contamination reject"
+            case .sealBreach:           return "Seal breach"
+            case .weightViolation:      return "Weight violation"
+            }
+        }
+    }
+
+    struct LoadStatusUpdateResult: Decodable {
+        let success: Bool?
+        let loadId: String?
+        let status: String?
+    }
+
+    /// `loads.updateLoadStatus` — flips the `loads.status` column and
+    /// fans out `LOAD_STATE_CHANGED` over the WebSocket. Authorized for
+    /// shipper-of-record (cancel-only), catalyst (anything), admin.
+    /// Optional `lat`/`lng` are stamped onto the load's current
+    /// location; optional `notes` are appended to special instructions.
+    func updateLoadStatus(
+        loadId: String,
+        status: LoadStatusUpdate,
+        lat: Double? = nil,
+        lng: Double? = nil,
+        notes: String? = nil
+    ) async throws -> LoadStatusUpdateResult {
+        struct Input: Encodable {
+            let loadId: String
+            let status: String
+            let lat: Double?
+            let lng: Double?
+            let notes: String?
+        }
+        return try await api.mutation(
+            "loads.updateLoadStatus",
+            input: Input(loadId: loadId, status: status.rawValue, lat: lat, lng: lng, notes: notes)
+        )
+    }
+
     /// Mirrors `loads.getShipperSummary` (loads.ts:769). Topline counts
     /// for the 201 Shipper Loads filter chips + the 200 Home stat strip.
     /// Server returns a 7-key envelope; we project all of them so screens
@@ -1285,6 +1367,23 @@ struct LoadsAPI {
         }
         let broker: Broker?
         let agreement: Agreement?
+        /// Always-non-null reachable target for the Message button on
+        /// the load-detail surface. Resolves to the first available
+        /// poster (broker → shipper → driver) per server logic in
+        /// `loads.getCommercialContext`. Founder mandate 2026-05-06 —
+        /// "whether its a broker or just shipper or its dispatch it
+        /// needs to work when contacting whoever posts a load."
+        struct Counterparty: Decodable, Hashable {
+            let userId: Int
+            let userName: String?
+            let companyId: Int?
+            let companyName: String?
+            /// `BROKER | SHIPPER | DISPATCH | DRIVER | ADMIN | …` —
+            /// pulled from `users.role`, falls back to the nominal
+            /// candidate role when the user row is sparse.
+            let role: String
+        }
+        let counterparty: Counterparty?
     }
 
     /// `loads.getCommercialContext` — broker + agreement projection for
@@ -3581,6 +3680,221 @@ struct DriversAPI {
     /// "Attach to a carrier" CTA in that branch.
     func getMyCarrier() async throws -> MyCarrier? {
         try await api.queryNoInput("drivers.getMyCarrier")
+    }
+
+    // MARK: - Performance metrics (Catalyst 320 Driver Scorecard)
+
+    /// One driver's performance scorecard. Backed by
+    /// `drivers.getPerformanceMetrics` (frontend/server/routers/drivers.ts:544)
+    /// which joins loads + inspections + hosLogs + fuelTransactions
+    /// for the named period and emits real metric numerators —
+    /// onTimeDeliveryRate is delivered/total over the window,
+    /// hosCompliance is non-violation HOS days / total, fuelEfficiency
+    /// is loads.distance / fuelTransactions.gallons. The scorecard
+    /// surface (320 Catalyst Driver Performance Scorecard) renders
+    /// these directly. Empty / zeroed envelope when the driver has no
+    /// loads in the window — never a fabricated number.
+    struct PerformanceMetrics: Decodable, Equatable {
+        let totalMiles: Double
+        let totalLoads: Int
+        let onTimeDeliveryRate: Double  // 0–100
+        let safetyScore: Double         // 0–100 (server stores int)
+        let fuelEfficiency: Double      // mpg
+        let customerRating: Double      // 0–5
+        let hosCompliance: Double       // 0–100
+        let inspectionPassRate: Double  // 0–100
+    }
+
+    struct PerformanceRankings: Decodable, Equatable {
+        let overall: Int
+        let totalDrivers: Int
+        let safetyRank: Int
+        let productivityRank: Int
+    }
+
+    struct PerformanceTrend: Decodable, Equatable {
+        let current: Double
+        let previous: Double
+        let change: Double
+    }
+
+    struct PerformanceTrends: Decodable, Equatable {
+        let safetyScore: PerformanceTrend
+        let onTimeRate: PerformanceTrend
+    }
+
+    struct PerformanceScorecard: Decodable, Equatable {
+        let driverId: String
+        let period: String
+        let metrics: PerformanceMetrics
+        let rankings: PerformanceRankings
+        let trends: PerformanceTrends
+    }
+
+    enum PerformancePeriod: String, Encodable {
+        case week, month, quarter, year
+    }
+
+    func getPerformanceMetrics(
+        driverId: String,
+        period: PerformancePeriod = .month
+    ) async throws -> PerformanceScorecard {
+        struct Input: Encodable {
+            let driverId: String
+            let period: String
+        }
+        return try await api.query(
+            "drivers.getPerformanceMetrics",
+            input: Input(driverId: driverId, period: period.rawValue)
+        )
+    }
+
+    // MARK: - Driver profile (Catalyst 321 Driver Profile)
+
+    /// Full driver profile envelope returned by `drivers.getById`
+    /// (drivers.ts:378). Joins drivers ↔ users for the display name +
+    /// contact, then per-driver joins the live `loads` row (in_transit
+    /// / assigned status) for `currentLoad` and the trailing-month
+    /// `loads` aggregate for the stats sub-envelope. Powers the
+    /// Catalyst-side 321 Driver Profile screen + future driver-detail
+    /// surfaces (323 Performance, 324 Settlement Ledger, 327 Quarterly
+    /// History) that need richer per-driver context than the lightweight
+    /// `catalysts.getMyDrivers` row.
+    struct DriverProfileLocation: Decodable, Hashable {
+        let lat: Double
+        let lng: Double
+        let city: String
+        let state: String
+    }
+
+    struct DriverProfileCDL: Decodable, Hashable {
+        let number: String
+        /// "A" | "B" | "C"
+        let `class`: String
+        /// Endorsements like ["H", "N", "T", "P", "X"]
+        let endorsements: [String]
+        let expirationDate: String
+    }
+
+    struct DriverProfileMedicalCard: Decodable, Hashable {
+        let expirationDate: String
+        /// "valid" | "expired"
+        let status: String
+    }
+
+    struct DriverProfilePayRate: Decodable, Hashable {
+        let type: String       // "per_mile" | "per_load" | "salary"
+        let rate: Double
+    }
+
+    struct DriverProfileMonthlyStats: Decodable, Hashable {
+        let loadsThisMonth: Int
+        let milesThisMonth: Double
+        let earningsThisMonth: Double
+        let onTimeRate: Double
+    }
+
+    struct DriverProfile: Decodable, Hashable {
+        let id: String
+        let name: String
+        let phone: String
+        let email: String
+        /// "on_load" | "available" | "off_duty"
+        let status: String
+        let currentLoad: String?
+        let location: DriverProfileLocation
+        let hoursRemaining: Double
+        let safetyScore: Double
+        let rating: Double
+        let hireDate: String
+        let truckNumber: String
+        let cdlNumber: String
+        let cdl: DriverProfileCDL
+        let medicalCard: DriverProfileMedicalCard
+        let homeTerminal: String
+        let payRate: DriverProfilePayRate
+        let stats: DriverProfileMonthlyStats
+        let loadsCompleted: Int
+        let onTimeRate: Double
+        let milesLogged: Double
+    }
+
+    /// `drivers.getById` — full per-driver profile. Returns nil when
+    /// the row doesn't exist (server returns null, not an error).
+    func getProfileById(driverId: String) async throws -> DriverProfile? {
+        struct Input: Encodable { let id: String }
+        return try await api.query(
+            "drivers.getById",
+            input: Input(id: driverId)
+        )
+    }
+
+    // MARK: - assignLoad (Catalyst 305 dispatcher action)
+
+    struct AssignLoadResult: Decodable {
+        let success: Bool
+        let driverId: String
+        let loadId: String
+        let assignedAt: String
+    }
+
+    /// `drivers.assignLoad` (drivers.ts:597) — flips a load's
+    /// `driverId` column to the named driver's `userId` and bumps
+    /// `loads.status` to `'assigned'`. Catalyst 305 dispatcher action
+    /// is the canonical caller (REASSIGN / ASSIGN buttons).
+    func assignLoad(driverId: String, loadId: String, notes: String? = nil) async throws -> AssignLoadResult {
+        struct Input: Encodable {
+            let driverId: String
+            let loadId: String
+            let notes: String?
+        }
+        return try await api.mutation(
+            "drivers.assignLoad",
+            input: Input(driverId: driverId, loadId: loadId, notes: notes)
+        )
+    }
+
+    // MARK: - update (Catalyst 321 Edit Profile)
+
+    struct UpdateDriverResult: Decodable {
+        let success: Bool?
+    }
+
+    /// `drivers.update` (drivers.ts:45) — patches a driver row's
+    /// editable columns. Server takes Int id; iOS sends as Int via the
+    /// matching Encodable. Catalyst 321 Edit sheet is the canonical
+    /// caller (catalyst editing one of their own drivers' DQ fields).
+    func update(
+        driverId: String,
+        licenseNumber: String? = nil,
+        licenseState: String? = nil,
+        licenseExpiry: String? = nil,
+        medicalCardExpiry: String? = nil,
+        hazmatEndorsement: Bool? = nil,
+        status: String? = nil
+    ) async throws -> UpdateDriverResult {
+        struct Input: Encodable {
+            let id: Int
+            let licenseNumber: String?
+            let licenseState: String?
+            let licenseExpiry: String?
+            let medicalCardExpiry: String?
+            let hazmatEndorsement: Bool?
+            let status: String?
+        }
+        let intId = Int(driverId) ?? 0
+        return try await api.mutation(
+            "drivers.update",
+            input: Input(
+                id: intId,
+                licenseNumber: licenseNumber,
+                licenseState: licenseState,
+                licenseExpiry: licenseExpiry,
+                medicalCardExpiry: medicalCardExpiry,
+                hazmatEndorsement: hazmatEndorsement,
+                status: status
+            )
+        )
     }
 }
 
@@ -7232,6 +7546,123 @@ struct ComplianceAPI {
             input: ResolveViolationInput(id: id, resolution: resolution, notes: notes)
         )
     }
+
+    // MARK: - Driver compliance roster (Catalyst 326 Driver Compliance)
+
+    /// One driver row in the catalyst's compliance list. Backed by
+    /// `compliance.getDriverComplianceList` (compliance.ts:2395) which
+    /// joins drivers ↔ users for the display name and emits CDL,
+    /// medical, hazmat expiry dates plus a derived per-driver
+    /// "compliant / expiring / expired" status against the 30-day
+    /// horizon. Powers the canonical 49 CFR §391 / §382 / §391.41
+    /// row stack on Catalyst 326.
+    struct DriverComplianceRow: Decodable, Identifiable, Hashable {
+        let id: String
+        let name: String
+        let cdlNumber: String
+        /// "compliant" | "expiring" | "expired"
+        let status: String
+        let safetyScore: Int
+        /// Driver row's `drivers.status` column ("active", "off_duty", ...).
+        let driverStatus: String
+        /// `YYYY-MM-DD` projection of the underlying TIMESTAMP, empty
+        /// when not on file.
+        let licenseExpiry: String
+        let medicalExpiry: String
+        let nearestExpiry: String
+    }
+
+    struct DriverComplianceList: Decodable {
+        let drivers: [DriverComplianceRow]
+    }
+
+    func getDriverComplianceList(limit: Int = 50) async throws -> DriverComplianceList {
+        struct Input: Encodable { let limit: Int }
+        return try await api.query(
+            "compliance.getDriverComplianceList",
+            input: Input(limit: limit)
+        )
+    }
+
+    // MARK: - Catalyst (carrier-level) compliance overview (Catalyst 317)
+
+    /// Carrier-level compliance envelope. Backed by
+    /// `compliance.getCatalystCompliance` (compliance.ts:2456) which
+    /// reads the catalyst's `companies` row and derives the score from
+    /// MC + DOT + insurance expiry + compliance_status + hazmat license
+    /// presence. Powers the Catalyst 317 surface (carrier-level mirror
+    /// of the per-driver 326 federal scanline).
+    struct CatalystComplianceInsurance: Decodable, Hashable {
+        /// "active" | "expiring" | "expired" | "missing"
+        let status: String
+        let coverage: Double
+        /// `YYYY-MM-DD` projection of the underlying TIMESTAMP, empty
+        /// when not on file.
+        let expires: String
+    }
+
+    struct CatalystComplianceOverview: Decodable, Hashable {
+        /// 0–100 overall score. Sum of: MC (20) + DOT (20) + insurance
+        /// not expired (20) + compliance_status compliant (20) + hazmat
+        /// license (10) + baseline (10).
+        let score: Int
+        /// MC number (empty when no for-hire authority).
+        let mcAuthority: String
+        let dotNumber: String
+        /// "Active" when MC is on file, empty otherwise.
+        let ucr: String
+        let ifta: String
+        let irp: String
+        let liabilityInsurance: CatalystComplianceInsurance
+        let cargoInsurance: CatalystComplianceInsurance
+        /// "Satisfactory" | "Conditional" | "Unsatisfactory"
+        let safetyRating: String
+        /// FMCSA CSA composite score; 0 until the SMS feed is wired.
+        let csaScore: Int
+    }
+
+    func getCatalystCompliance() async throws -> CatalystComplianceOverview {
+        try await api.queryNoInput("compliance.getCatalystCompliance")
+    }
+}
+
+// MARK: - FMCSA self-lookup (Catalyst 317 — live SAFER record)
+
+/// Mirrors `fmcsa.lookupSelf` (frontend/server/routers/fmcsa.ts:298).
+/// Returns the catalyst's own DOT/MC SAFER record, joining the QCMobile
+/// catalyst payload + Redis/MySQL cache + live SAFER call. The two
+/// shapes share the `available` discriminator: when `available: false`
+/// the response carries a `reason` string; when `available: true` the
+/// response carries the flattened SAFER fields below.
+struct FMCSASelfLookup: Decodable, Hashable {
+    /// True when the SAFER record resolved. False with a `reason`
+    /// string when DOT/MC isn't on file or SAFER returned no record.
+    let available: Bool
+    let reason: String?
+
+    let dotNumber: String?
+    let mcNumber: String?
+    let legalName: String?
+    /// "SATISFACTORY" | "CONDITIONAL" | "UNSATISFACTORY" | "NOT RATED"
+    let safetyRating: String?
+    /// Out-of-service violations across driver + vehicle + hazmat
+    /// inspection sets (sum from QCMobile feed).
+    let oosViolations: Int?
+    /// `lastInspection` is the SAFER `ratingDate` projection — empty
+    /// when no rating has been issued yet.
+    let lastInspection: String?
+}
+
+struct FMCSAAPI {
+    unowned let api: EusoTripAPI
+
+    /// `fmcsa.lookupSelf` — pulls the signed-in catalyst's own DOT
+    /// from `companies.dotNumber` and resolves the SAFER record via
+    /// the cached / live QCMobile chain. Powers 317 Catalyst
+    /// Compliance + 308 Authority + Insurance surfaces.
+    func lookupSelf() async throws -> FMCSASelfLookup {
+        try await api.queryNoInput("fmcsa.lookupSelf")
+    }
 }
 
 // MARK: - CsaScoresAPI
@@ -8379,6 +8810,68 @@ struct DriverQualificationAPI {
         return try await api.query(
             "driverQualification.getExpiringItems",
             input: Input(daysAhead: daysAhead)
+        )
+    }
+
+    // MARK: - Mutations (Catalyst 322 Documents · upload + update status)
+
+    struct UploadDocumentResult: Decodable {
+        let documentId: String
+        let uploadedBy: Int?
+        let uploadedAt: String?
+    }
+
+    /// `driverQualification.uploadDocument` (driverQualification.ts:64).
+    /// Server-side only stores metadata (type / name / expiresAt /
+    /// notes) — the file binary upload is a separate flow handled by
+    /// `documentManagement.uploadDocument` when needed. Use this
+    /// procedure for "record-keeping" entries (catalyst noting a
+    /// medical card was filed offline, etc.).
+    func uploadDocument(
+        driverId: String,
+        type: String,
+        name: String,
+        expiresAt: String? = nil,
+        notes: String? = nil
+    ) async throws -> UploadDocumentResult {
+        struct Input: Encodable {
+            let driverId: String
+            let type: String
+            let name: String
+            let expiresAt: String?
+            let notes: String?
+        }
+        return try await api.mutation(
+            "driverQualification.uploadDocument",
+            input: Input(driverId: driverId, type: type, name: name, expiresAt: expiresAt, notes: notes)
+        )
+    }
+
+    struct UpdateDocumentResult: Decodable {
+        let success: Bool?
+        let documentId: String?
+        let updatedAt: String?
+    }
+
+    /// `driverQualification.updateDocument` — flips a document's
+    /// status (`valid` / `expiring_soon` / `expired` / `pending` /
+    /// `missing`) or sets/extends its `expiresAt`. Catalyst 322 row
+    /// detail sheet's "Mark expired" / "Mark valid" buttons call here.
+    func updateDocument(
+        documentId: String,
+        status: String? = nil,
+        expiresAt: String? = nil,
+        notes: String? = nil
+    ) async throws -> UpdateDocumentResult {
+        struct Input: Encodable {
+            let documentId: String
+            let status: String?
+            let expiresAt: String?
+            let notes: String?
+        }
+        return try await api.mutation(
+            "driverQualification.updateDocument",
+            input: Input(documentId: documentId, status: status, expiresAt: expiresAt, notes: notes)
         )
     }
 }
@@ -10414,6 +10907,11 @@ struct ShipperAPI {
         let hazmatClass: String?
         let weightDisplay: String?
         let cargoSummary: String?
+        // Real distance from `loads.distance` — was missing entirely
+        // and every active-loads card showed 0 mi. Founder report
+        // 2026-05-06: "i see alot of loads with 0 miles."
+        let distance: Double?
+        let miles: Double?
     }
 
     struct GetActiveLoadsInput: Encodable { let limit: Int }
@@ -10452,6 +10950,8 @@ struct ShipperAPI {
         let destination: String
         let deliveredAt: String
         let rate: Double
+        let distance: Double?
+        let miles: Double?
     }
 
     struct GetRecentLoadsInput: Encodable { let limit: Int }
@@ -10496,6 +10996,12 @@ struct ShipperAPI {
         // Optional — will be nil until backend ships the projection
         // change (server ticket EUSO-2042b).
         let createdAt: String?
+        /// Distance in miles, projected from `loads.distance`. Was
+        /// missing from the server projection — every "My Loads" row
+        /// rendered 0 mi. Optional so older server builds that
+        /// don't carry the field still decode.
+        let distance: Double?
+        let miles: Double?
 
         // Map server JSON to the struct above. The server emits
         // `origin` / `destination` as `{city,state}` — Swift can't bind
@@ -10504,6 +11010,7 @@ struct ShipperAPI {
             case id, loadNumber, status, pickupDate, deliveryDate
             case equipment, weight, hazmat, hazmatClass, product
             case catalyst, driver, rate, eta, bidsReceived, deliveredAt, createdAt
+            case distance, miles
             case originRef = "origin"
             case destinationRef = "destination"
         }
@@ -11236,6 +11743,31 @@ struct ShipperAPI {
         )
     }
 
+    /// 10-bucket time-series for the spend trend hero on
+    /// 210_ShipperAnalyticsDeepDive. `current[i]` is the spend in
+    /// bucket `i` of the in-window period; `prior[i]` is the same
+    /// bucket from the period before that, so the chart can render
+    /// the "vs prior" dashed comparison line. Server-side: see
+    /// `shippers.getSpendTrend` in `frontend/server/routers/shippers.ts`.
+    struct SpendTrend: Decodable, Hashable {
+        let period: String
+        let bucketCount: Int
+        let current: [Double]
+        let prior: [Double]
+        let currentTotal: Double
+        let priorTotal: Double
+    }
+
+    func getSpendTrend(
+        period: SpendingPeriod = .quarter
+    ) async throws -> SpendTrend {
+        struct In: Encodable { let period: SpendingPeriod }
+        return try await api.query(
+            "shippers.getSpendTrend",
+            input: In(period: period)
+        )
+    }
+
     /// Fetch this shipper's catalyst-performance leaderboard.
     /// Server returns an empty array (not an error) when the shipper
     /// has no catalyst-assigned loads in window.
@@ -11723,6 +12255,43 @@ struct CatalystAPI {
         try await api.query(
             "catalysts.getRecentMatches",
             input: GetRecentMatchesInput(limit: limit)
+        )
+    }
+
+    /// One driver row on the Catalyst fleet roster. Backed by
+    /// `catalysts.getMyDrivers` (frontend/server/routers/catalysts.ts:382)
+    /// — server resolves the catalyst's companyId from the auth ctx,
+    /// joins drivers ↔ users for the display name, then per-row
+    /// joins the live `loads` row (in_transit / assigned status) for
+    /// `currentLoad`, the latest `hos_logs` row for `hoursRemaining`
+    /// (660-min cap minus today's drivingMinutesAtEvent → hours), and
+    /// the latest `gps_tracking` row for `location` (lat,lng tuple
+    /// rendered as a "DD.DD, DD.DD" pair). Catalyst↔Driver relationship
+    /// surface — this is the canonical roster the §11.4 sole-driver
+    /// Eusotrans LLC carrier renders on its 304 Fleet · Drivers screen.
+    struct FleetDriver: Decodable, Identifiable, Hashable {
+        let id: String
+        let name: String
+        /// "driving" when there's an active load, otherwise the
+        /// drivers.status column ("available", "off_duty", etc.).
+        let status: String
+        /// Active load number if the driver is currently in_transit
+        /// or assigned, nil otherwise.
+        let currentLoad: String?
+        /// Hours of drive time remaining today (0.0…11.0). Nil when
+        /// the driver hasn't logged a HOS event today.
+        let hoursRemaining: Double?
+        /// "lat, lng" formatted to 2 decimals, or "Unknown" when no
+        /// GPS data is available for this driver yet.
+        let location: String
+    }
+
+    struct GetMyDriversInput: Encodable { let limit: Int }
+
+    func getMyDrivers(limit: Int = 25) async throws -> [FleetDriver] {
+        try await api.query(
+            "catalysts.getMyDrivers",
+            input: GetMyDriversInput(limit: limit)
         )
     }
 }

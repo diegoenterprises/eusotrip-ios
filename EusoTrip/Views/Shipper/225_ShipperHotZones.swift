@@ -150,7 +150,7 @@ struct ShipperHotZones: View {
                 titleBlock
                     .padding(.top, Space.s2)
                 IridescentHairline()
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s5)
 
                 content
@@ -161,6 +161,14 @@ struct ShipperHotZones: View {
         }
         .task { await store.load() }
         .refreshable { await store.load() }
+        // RealtimeService → hot-zone heatmap rebalances when load
+        // density shifts; refresh on assignment / surface events.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.load() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.load() }
+        }
         .sheet(item: $pendingDetailCity) { ref in
             HotZoneCityDetailScreen(theme: palette, city: ref.city)
                 .presentationDetents([.large])
@@ -185,7 +193,7 @@ struct ShipperHotZones: View {
                 .foregroundStyle(palette.textTertiary)
                 .accessibilityLabel(counterAccessibility)
         }
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     private var counterEyebrow: String {
@@ -216,7 +224,7 @@ struct ShipperHotZones: View {
                 .foregroundStyle(palette.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     // MARK: Content state machine
@@ -232,14 +240,14 @@ struct ShipperHotZones: View {
                         .frame(height: 92)
                 }
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
         case .error(let m):
             errorCard(m)
-                .padding(.horizontal, Space.s5)
+                .padding(.horizontal, Space.s3)
         case .loaded(let f):
             VStack(alignment: .leading, spacing: 0) {
                 kpiSummaryStrip(f)
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s3)
 
                 equipmentChipRow
@@ -250,7 +258,7 @@ struct ShipperHotZones: View {
                     sectionLabel("HOT ZONES · \(zones.count) METROS · DEMAND > CAPACITY")
                         .padding(.top, Space.s5)
                     hotGrid(zones)
-                        .padding(.horizontal, Space.s5)
+                        .padding(.horizontal, Space.s3)
                         .padding(.top, Space.s2)
                 }
 
@@ -258,18 +266,18 @@ struct ShipperHotZones: View {
                     sectionLabel("COLD ZONES · \(cold.count) METROS · CAPACITY > DEMAND")
                         .padding(.top, Space.s5)
                     coldStrip(cold)
-                        .padding(.horizontal, Space.s5)
+                        .padding(.horizontal, Space.s3)
                         .padding(.top, Space.s2)
                 }
 
                 if let cold = f.coldZones?.first {
                     actionRibbon(cold: cold)
-                        .padding(.horizontal, Space.s5)
+                        .padding(.horizontal, Space.s3)
                         .padding(.top, Space.s4)
                 }
 
                 formulaExplainer
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s4)
             }
         }
@@ -289,7 +297,7 @@ struct ShipperHotZones: View {
             .tracking(1.0)
             .foregroundStyle(palette.textTertiary)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
     }
 
     // MARK: KPI summary strip (3-cell · AVG PULSE / HOT METROS / COLD METROS)
@@ -382,7 +390,7 @@ struct ShipperHotZones: View {
                 }
                 Color.clear.frame(width: 16, height: 1)
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
         }
         .overlay(alignment: .trailing) {
             LinearGradient(

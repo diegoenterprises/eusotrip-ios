@@ -223,6 +223,14 @@ struct MeRateSheet: View {
             case .reconcile:  await store.refreshReconciliations()
             }
         }
+        // RealtimeService → rate sheets + reconciliation rows refresh
+        // when new sheets land from carriers or settlements clear.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.refreshSheets() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.refreshSheets() }
+        }
         .fileImporter(
             isPresented: $showUploadPicker,
             allowedContentTypes: [.pdf, .image, .commaSeparatedText, .plainText],

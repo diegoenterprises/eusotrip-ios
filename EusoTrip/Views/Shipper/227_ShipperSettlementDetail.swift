@@ -208,6 +208,18 @@ struct ShipperSettlementDetail: View {
         }
         .task { await store.load() }
         .refreshable { await store.load() }
+        // RealtimeService → settlement state mutates when payable
+        // approves clear, disputes resolve, or dispute responses
+        // arrive from the carrier-side claim review.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.load() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.load() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
+            Task { await store.load() }
+        }
         .sheet(isPresented: $showDispute) { disputeSheet }
         .sheet(isPresented: $showRateDriver) {
             // Resolve everything the prompt needs from store.phase.
@@ -250,7 +262,7 @@ struct ShipperSettlementDetail: View {
                 .foregroundStyle(LinearGradient.primary)
                 .accessibilityLabel("Settlement status pending")
         }
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     private var topBarStatus: String {
@@ -278,7 +290,7 @@ struct ShipperSettlementDetail: View {
             .buttonStyle(.plain)
             Spacer()
         }
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
         .accessibilityLabel("Back to settlements")
     }
 
@@ -308,20 +320,20 @@ struct ShipperSettlementDetail: View {
                         .frame(height: 92)
                 }
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
         case .error(let m):
             errorCard(m)
-                .padding(.horizontal, Space.s5)
+                .padding(.horizontal, Space.s3)
         case .loaded(let s):
             VStack(alignment: .leading, spacing: 0) {
                 titleBlock(s)
                     .padding(.top, Space.s2)
                 IridescentHairline()
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s3)
 
                 heroCard(s)
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s3)
 
                 let lifecycle = deriveLifecycle(status: s.status)
@@ -329,7 +341,7 @@ struct ShipperSettlementDetail: View {
                 sectionLabel("SETTLEMENT LIFECYCLE · STAGE \(activeIdx + 1) OF 5")
                     .padding(.top, Space.s5)
                 lifecycleStrip(lifecycle)
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s4)
 
                 if let b = s.breakdown,
@@ -337,27 +349,27 @@ struct ShipperSettlementDetail: View {
                     sectionLabel("BREAKDOWN · LINE / FSC / ACC.")
                         .padding(.top, Space.s5)
                     breakdownCard(s, breakdown: b)
-                        .padding(.horizontal, Space.s5)
+                        .padding(.horizontal, Space.s3)
                         .padding(.top, Space.s2)
                     totalStrip(s, breakdown: b)
-                        .padding(.horizontal, Space.s5)
+                        .padding(.horizontal, Space.s3)
                         .padding(.top, Space.s3)
                 }
 
                 sectionLabel("DOCUMENTS · BACKEND PENDING")
                     .padding(.top, Space.s5)
                 documentsStrip
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s2)
 
                 sectionLabel("ACTIVITY · BACKEND PENDING")
                     .padding(.top, Space.s5)
                 activityPlaceholder
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s2)
 
                 actions(s)
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s5)
             }
         }
@@ -370,7 +382,7 @@ struct ShipperSettlementDetail: View {
             .tracking(1.0)
             .foregroundStyle(palette.textTertiary)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
     }
 
     // MARK: Title block — gradient amount
@@ -397,7 +409,7 @@ struct ShipperSettlementDetail: View {
                 .minimumScaleFactor(0.85)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     // MARK: Hero card — 3pt tier rim · load id + status · lane · carrier · gradient amount

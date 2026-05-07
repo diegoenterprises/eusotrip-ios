@@ -38,7 +38,7 @@ private struct ImageViewerBody: View {
                 LifecycleCard { Text("Could not load image.").font(EType.caption).foregroundStyle(palette.textSecondary) }
             }
         }
-        .padding(.horizontal, 14).padding(.top, 8)
+        .padding(.horizontal, 14).padding(.top, 56)
         .task { await fetchImage() }
     }
 

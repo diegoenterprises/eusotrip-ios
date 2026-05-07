@@ -42,7 +42,7 @@ private struct SettlementDetailBody: View {
                 else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
     }

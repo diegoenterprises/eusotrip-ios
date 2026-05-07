@@ -119,7 +119,7 @@ struct ShipperBidThread: View {
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14)
-            .padding(.top, 8)
+            .padding(.top, 56)
         }
         .task { await store.load() }
         .refreshable { await store.load() }

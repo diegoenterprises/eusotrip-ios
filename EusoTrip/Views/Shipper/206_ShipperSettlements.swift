@@ -86,6 +86,17 @@ struct ShipperSettlements: View {
         }
         .task { await store.refresh() }
         .refreshable { await store.refresh() }
+        // RealtimeService → settlement records refresh as POD lands,
+        // payables clear, or carrier-side claims resolve.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
+            Task { await store.refresh() }
+        }
         // "Approve N payables" bottom ribbon → real confirmation
         // dialog. The iOS `earnings.approveSettlement` mutation
         // isn't on the WalletAPI surface yet; the web portal is

@@ -49,7 +49,7 @@ private struct ReconcileBody: View {
                 else if let e = env { totalsCard(e); section(title: "UNMATCHED", items: e.unmatched, danger: true); section(title: "FLAGGED", items: e.flagged, warning: true) }
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
     }

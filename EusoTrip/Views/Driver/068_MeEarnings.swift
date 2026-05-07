@@ -535,7 +535,7 @@ struct MeEarnings068: View {
                 } label: {
                     HStack {
                         Spacer()
-                        Text(taxAvailable ? "View full 1099" : "1099 ships Jan 31, \(y.year + 1)")
+                        Text(taxAvailable ? "View full 1099" : "1099 ships Jan 31, \(String(y.year + 1))")
                             .font(EType.title)
                             .foregroundStyle(.white)
                         Spacer()

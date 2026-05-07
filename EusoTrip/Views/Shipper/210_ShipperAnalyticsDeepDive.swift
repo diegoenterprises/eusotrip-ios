@@ -69,6 +69,14 @@ struct ShipperAnalyticsDeepDive: View {
     @StateObject private var spendStore = ShipperSpendingAnalyticsStore()
     @StateObject private var catalystStore = ShipperCatalystPerformanceStore()
 
+    /// Live spend-trend time series — drives the Spend Trend hero
+    /// chart's polylines instead of the canonical 10-point stub.
+    /// Server source: `shippers.getSpendTrend`. Optional: `nil`
+    /// while in flight or on transient failure, in which case the
+    /// view falls back to the canonical anchor points so the chart
+    /// never paints empty.
+    @State private var liveTrend: ShipperAPI.SpendTrend? = nil
+
     @State private var selectedWindow: String = "90d"
 
     private let timeWindows: [TimeWindow] = [
@@ -156,7 +164,107 @@ struct ShipperAnalyticsDeepDive: View {
     private func refreshAll() async {
         async let a: Void = spendStore.refresh()
         async let b: Void = catalystStore.refresh()
-        _ = await (a, b)
+        async let c: ShipperAPI.SpendTrend? = (try? await EusoTripAPI.shared.shipper.getSpendTrend(period: currentPeriod))
+        let (_, _, trend) = await (a, b, c)
+        await MainActor.run { liveTrend = trend }
+    }
+
+    /// Resolve the active `SpendingPeriod` for the time-window chip.
+    /// Drives both the analytics envelope fetch and the spend-trend
+    /// fetch above.
+    private var currentPeriod: ShipperAPI.SpendingPeriod {
+        timeWindows.first(where: { $0.id == selectedWindow })?.period ?? .quarter
+    }
+
+    /// Live `LaneRow`s computed from the server's `byLane` cohort.
+    /// Top 5 by spend, fraction normalised against the largest entry
+    /// so the bar widths read at a glance. Falls back to the
+    /// canonical anchor rows when the server returns nothing — keeps
+    /// dev / fresh-account builds rendering the visual canon.
+    private var resolvedLaneRows: [LaneRow] {
+        guard let s = liveSpend, !s.byLane.isEmpty else {
+            return canonicalLaneRows
+        }
+        let topFive = Array(s.byLane.prefix(5))
+        let largest = topFive.first?.totalSpend ?? 1
+        return topFive.map { c in
+            LaneRow(
+                id: c.id,
+                lane: "\(c.origin) → \(c.destination)",
+                amount: shortMoney(c.totalSpend),
+                fraction: largest > 0 ? CGFloat(c.totalSpend / largest) : 0
+            )
+        }
+    }
+
+    /// Spend tail — "N more lanes · $K" line under the top-5 list.
+    /// Computed live from the cohort: count + sum beyond the top 5.
+    private var resolvedLaneTail: (label: String, amount: String) {
+        guard let s = liveSpend, s.byLane.count > 5 else {
+            return (laneTailLabel, laneTailAmount)
+        }
+        let tail = Array(s.byLane.dropFirst(5))
+        let count = tail.count
+        let sum = tail.reduce(0) { $0 + $1.totalSpend }
+        return ("\(count) more lane\(count == 1 ? "" : "s")", shortMoney(sum))
+    }
+
+    /// Live equipment donut segments — falls back to the §11.2
+    /// canonical Tanker/Reefer/Dry mix when the server returns
+    /// nothing.
+    private var resolvedEquipmentSegments: [DonutSegment] {
+        guard let s = liveSpend, !s.byEquipment.isEmpty else {
+            return equipmentSegments
+        }
+        let top = s.byEquipment.prefix(3)
+        let paints: [DonutSegment.SegmentPaint] = [.gradient, .warning, .success]
+        return top.enumerated().map { (i, e) in
+            DonutSegment(
+                id: e.equipment,
+                label: e.equipment.capitalized,
+                percent: max(0, min(100, e.share)),
+                paint: paints[i % paints.count]
+            )
+        }
+    }
+
+    /// 10-point fractional polyline derived from the server's bucket
+    /// time-series. Points are normalized so the largest spend in
+    /// either current or prior maps to y=0 (top), zero maps to y=1
+    /// (bottom of chart) — same shape the canonical stub used.
+    private func polyline(from buckets: [Double], peak: Double) -> [CGPoint] {
+        guard !buckets.isEmpty, peak > 0 else { return [] }
+        return buckets.enumerated().map { (i, v) in
+            let x = buckets.count > 1 ? CGFloat(i) / CGFloat(buckets.count - 1) : 0
+            // Compress vertical so the trend stays in the upper 80% of
+            // the chart frame (the bottom strip is reserved for FEB /
+            // MAR / APR labels). 1.0 = bottom, 0.05 = near-top.
+            let normalized = 1.0 - CGFloat(v / peak)
+            let yScale: CGFloat = 0.78
+            return CGPoint(x: x, y: 0.05 + normalized * yScale)
+        }
+    }
+
+    /// Resolved current-period polyline — live when available,
+    /// canonical otherwise.
+    private var resolvedCurrentPoints: [CGPoint] {
+        guard let t = liveTrend else { return currentPoints }
+        let peak = max((t.current + t.prior).max() ?? 0, 1)
+        let pts = polyline(from: t.current, peak: peak)
+        return pts.isEmpty ? currentPoints : pts
+    }
+    private var resolvedPriorPoints: [CGPoint] {
+        guard let t = liveTrend else { return priorPoints }
+        let peak = max((t.current + t.prior).max() ?? 0, 1)
+        let pts = polyline(from: t.prior, peak: peak)
+        return pts.isEmpty ? priorPoints : pts
+    }
+
+    /// Compact "$184k" / "$2.3M" label for lane bars.
+    private func shortMoney(_ v: Double) -> String {
+        if v >= 1_000_000 { return String(format: "$%.1fM", v / 1_000_000) }
+        if v >= 1_000     { return String(format: "$%.0fk", v / 1_000) }
+        return String(format: "$%.0f", v)
     }
 
     private var liveSpend: ShipperAPI.SpendingAnalytics? {
@@ -315,10 +423,10 @@ struct ShipperAnalyticsDeepDive: View {
                     }
                     .stroke(palette.borderFaint, lineWidth: 0.8)
                 }
-                PriorPolyline(points: priorPoints, areaHeight: chartHeight)
+                PriorPolyline(points: resolvedPriorPoints, areaHeight: chartHeight)
                     .stroke(palette.textTertiary,
                             style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
-                CurrentTrendFill(points: currentPoints, areaHeight: chartHeight)
+                CurrentTrendFill(points: resolvedCurrentPoints, areaHeight: chartHeight)
                     .fill(LinearGradient(
                         stops: [
                             Gradient.Stop(color: Brand.magenta.opacity(0.20), location: 0.0),
@@ -326,10 +434,10 @@ struct ShipperAnalyticsDeepDive: View {
                         ],
                         startPoint: .top, endPoint: .bottom
                     ))
-                CurrentTrendLine(points: currentPoints, areaHeight: chartHeight)
+                CurrentTrendLine(points: resolvedCurrentPoints, areaHeight: chartHeight)
                     .stroke(LinearGradient.primary,
                             style: StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round))
-                if let last = currentPoints.last {
+                if let last = resolvedCurrentPoints.last {
                     Circle()
                         .fill(palette.bgCard)
                         .frame(width: 8, height: 8)
@@ -353,22 +461,24 @@ struct ShipperAnalyticsDeepDive: View {
     // MARK: - BY LANE card
 
     private var laneCard: some View {
-        VStack(spacing: 0) {
-            ForEach(canonicalLaneRows.indices, id: \.self) { idx in
-                laneRowView(canonicalLaneRows[idx])
+        let rows = resolvedLaneRows
+        let tail = resolvedLaneTail
+        return VStack(spacing: 0) {
+            ForEach(rows.indices, id: \.self) { idx in
+                laneRowView(rows[idx])
                     .padding(.horizontal, 20)
                     .padding(.vertical, 11)
-                if idx < canonicalLaneRows.count - 1 {
+                if idx < rows.count - 1 {
                     Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.horizontal, 20)
                 }
             }
             Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.horizontal, 20)
             HStack(alignment: .firstTextBaseline) {
-                Text(laneTailLabel)
+                Text(tail.label)
                     .font(.system(size: 11))
                     .foregroundStyle(palette.textSecondary)
                 Spacer()
-                Text(laneTailAmount)
+                Text(tail.amount)
                     .font(.system(size: 11, weight: .semibold).monospacedDigit())
                     .foregroundStyle(palette.textSecondary)
             }
@@ -444,7 +554,9 @@ struct ShipperAnalyticsDeepDive: View {
     // MARK: - BY EQUIPMENT donut
 
     private var equipmentCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let segments = resolvedEquipmentSegments
+        let center = segments.first ?? DonutSegment(id: "n/a", label: "—", percent: 0, paint: .gradient)
+        return VStack(alignment: .leading, spacing: 0) {
             Text("BY EQUIPMENT")
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
@@ -454,20 +566,20 @@ struct ShipperAnalyticsDeepDive: View {
                 Circle()
                     .stroke(palette.borderFaint, lineWidth: 10)
                     .frame(width: 80, height: 80)
-                ForEach(equipmentSegments.indices, id: \.self) { idx in
+                ForEach(segments.indices, id: \.self) { idx in
                     DonutSegmentShape(
-                        startFraction: cumulativeStart(idx),
-                        endFraction:   cumulativeEnd(idx)
+                        startFraction: cumulativeStart(idx, in: segments),
+                        endFraction:   cumulativeEnd(idx, in: segments)
                     )
-                    .stroke(paintForSegment(equipmentSegments[idx]),
+                    .stroke(paintForSegment(segments[idx]),
                             style: StrokeStyle(lineWidth: 10, lineCap: .round))
                     .frame(width: 80, height: 80)
                 }
                 VStack(spacing: 2) {
-                    Text("TANKER")
+                    Text(center.label.uppercased())
                         .font(EType.micro).tracking(0.4)
                         .foregroundStyle(palette.textTertiary)
-                    Text("60%")
+                    Text("\(center.percent)%")
                         .font(.system(size: 14, weight: .bold).monospacedDigit())
                         .foregroundStyle(palette.textPrimary)
                 }
@@ -476,12 +588,12 @@ struct ShipperAnalyticsDeepDive: View {
             .frame(maxWidth: .infinity)
 
             VStack(alignment: .leading, spacing: 6) {
-                ForEach(equipmentSegments.indices, id: \.self) { idx in
+                ForEach(segments.indices, id: \.self) { idx in
                     HStack(spacing: 8) {
                         Circle()
-                            .fill(paintForSegment(equipmentSegments[idx]))
+                            .fill(paintForSegment(segments[idx]))
                             .frame(width: 6, height: 6)
-                        Text("\(equipmentSegments[idx].label) · \(equipmentSegments[idx].percent)%")
+                        Text("\(segments[idx].label) · \(segments[idx].percent)%")
                             .font(.system(size: 9, weight: .semibold))
                             .tracking(0.4)
                             .foregroundStyle(palette.textPrimary)
@@ -496,18 +608,25 @@ struct ShipperAnalyticsDeepDive: View {
                     .stroke(palette.borderFaint, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("By equipment. Tanker 60 percent. Reefer 24 percent. Dry 16 percent.")
+        .accessibilityLabel("By equipment. " + segments.map { "\($0.label) \($0.percent) percent." }.joined(separator: " "))
     }
 
     private func cumulativeStart(_ i: Int) -> CGFloat {
+        cumulativeStart(i, in: equipmentSegments)
+    }
+    private func cumulativeEnd(_ i: Int) -> CGFloat {
+        cumulativeEnd(i, in: equipmentSegments)
+    }
+    private func cumulativeStart(_ i: Int, in segments: [DonutSegment]) -> CGFloat {
         var sum: CGFloat = 0
-        for k in 0..<i {
-            sum += CGFloat(equipmentSegments[k].percent) / 100.0
+        for k in 0..<i where k < segments.count {
+            sum += CGFloat(segments[k].percent) / 100.0
         }
         return sum
     }
-    private func cumulativeEnd(_ i: Int) -> CGFloat {
-        cumulativeStart(i) + CGFloat(equipmentSegments[i].percent) / 100.0
+    private func cumulativeEnd(_ i: Int, in segments: [DonutSegment]) -> CGFloat {
+        guard i < segments.count else { return cumulativeStart(i, in: segments) }
+        return cumulativeStart(i, in: segments) + CGFloat(segments[i].percent) / 100.0
     }
     private func paintForSegment(_ seg: DonutSegment) -> AnyShapeStyle {
         switch seg.paint {

@@ -149,11 +149,54 @@ struct LoadDetailSheet: View {
         // neutral state rather than a red toast — drivers shouldn't
         // see a "load failed to fetch broker" panic 65 mph.
         .task(id: load.id) {
-            do {
-                commercial = try await EusoTripAPI.shared.loads
-                    .getCommercialContext(loadId: load.id)
-                commercialError = false
-            } catch {
+            // Hard 6-second timeout — `Loading…` was hanging forever
+            // when the procedure was slow or the network blipped, per
+            // the founder report 2026-05-06 (broker line stuck on
+            // "Loading…" with no fallback). Whichever finishes first
+            // (real fetch or timeout) flips `commercial` or
+            // `commercialError` so the broker card always resolves to
+            // a non-loading state within 6s.
+            // Server's `loads.getCommercialContext` does
+            // `parseInt(input.loadId)` and returns null when that's
+            // NaN. AvailableLoad's `load.id` is the human-readable
+            // loadNumber (e.g. "LD-MATRIX-50-2026-04-26-D1461BB0")
+            // while the server expects the numeric id. Use
+            // `backendLoadId` when populated; only fall through to
+            // `load.id` for legacy callers that haven't wired the
+            // numeric id yet.
+            let resolvedLoadId: String = {
+                if let n = load.backendLoadId { return String(n) }
+                return load.id
+            }()
+            let result: Result<LoadsAPI.CommercialContext?, Error> = await withTaskGroup(
+                of: Result<LoadsAPI.CommercialContext?, Error>.self
+            ) { group in
+                group.addTask {
+                    do {
+                        let r = try await EusoTripAPI.shared.loads
+                            .getCommercialContext(loadId: resolvedLoadId)
+                        return .success(r)
+                    } catch {
+                        return .failure(error)
+                    }
+                }
+                group.addTask {
+                    try? await Task.sleep(nanoseconds: 6_000_000_000)
+                    return .failure(URLError(.timedOut))
+                }
+                let first = await group.next() ?? .failure(URLError(.unknown))
+                group.cancelAll()
+                return first
+            }
+            switch result {
+            case .success(let ctx):
+                commercial = ctx
+                // When ctx is nil (server returned null because the
+                // loadId couldn't be resolved on its side), flip the
+                // error flag so the view falls out of "Loading…" into
+                // the neutral em-dash state.
+                commercialError = (ctx == nil)
+            case .failure:
                 commercialError = true
             }
         }
@@ -821,7 +864,7 @@ struct LoadDetailSheet: View {
                 }
 
                 Button {
-                    onMessageBroker?()
+                    handleMessageTap()
                 } label: {
                     Image(systemName: "bubble.left.fill")
                         .font(.system(size: 14, weight: .semibold))
@@ -832,11 +875,82 @@ struct LoadDetailSheet: View {
                         )
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Message broker")
-                .disabled(commercial?.broker == nil && load.broker.isEmpty)
-                .opacity((commercial?.broker == nil && load.broker.isEmpty) ? 0.4 : 1.0)
+                .accessibilityLabel("Message counterparty")
             }
         }
+    }
+
+    /// Message button never goes dead. Three cases:
+    ///   1. Caller passed `onMessageBroker` — invoke it (legacy path
+    ///      where the surface owns its own threading).
+    ///   2. We have a real broker (`commercial.broker`) — open the
+    ///      messaging thread with that company via the canonical
+    ///      `eusoMessagingThreadOpen` notification, which both the
+    ///      shipper and driver surfaces already route to
+    ///      `MessagesScreen` with the thread pre-selected.
+    ///   3. Otherwise (shipper-direct, or commercial still loading) —
+    ///      fall through to ESANG so the user can ask "who's the
+    ///      shipper on LD-…?" and the assistant routes them, instead
+    ///      of staring at a dead button.
+    /// Founder report 2026-05-06 — the message button was wired to
+    /// `onMessageBroker?()` which is `nil` whenever the LoadDetailSheet
+    /// is presented from a surface that doesn't pass the closure.
+    private func handleMessageTap() {
+        if let onMessageBroker {
+            onMessageBroker()
+            return
+        }
+        // Server resolves whoever posted the load — broker, shipper,
+        // dispatch, driver — into a single `counterparty` field on
+        // CommercialContext. We route to that user regardless of
+        // role, so the Message button works whether the load was
+        // posted by a brokerage, a shipper directly, a dispatcher
+        // on a fleet's behalf, or an owner-operator. Founder
+        // mandate 2026-05-06 — "whether its a broker or just
+        // shipper or its dispatch it needs to work when contacting
+        // whoever posts a load."
+        if let cp = commercial?.counterparty {
+            NotificationCenter.default.post(
+                name: Notification.Name("eusoMessagingThreadOpen"),
+                object: nil,
+                userInfo: [
+                    "userId":      cp.userId,
+                    "companyId":   cp.companyId as Any,
+                    "displayName": cp.companyName ?? cp.userName ?? cp.role.capitalized,
+                    "role":        cp.role,
+                    "loadId":      load.backendLoadId.map(String.init) ?? load.id,
+                ]
+            )
+            return
+        }
+        // Legacy broker fallback — kept for the brief window when
+        // a build hits the new client but old server (which doesn't
+        // return `counterparty`).
+        if let broker = commercial?.broker {
+            NotificationCenter.default.post(
+                name: Notification.Name("eusoMessagingThreadOpen"),
+                object: nil,
+                userInfo: [
+                    "userId":      broker.userId,
+                    "companyId":   broker.companyId as Any,
+                    "displayName": broker.companyName ?? broker.userName ?? "Broker",
+                    "role":        "BROKER",
+                    "loadId":      load.backendLoadId.map(String.init) ?? load.id,
+                ]
+            )
+            return
+        }
+        // Commercial context still loading — drop the user into
+        // ESANG with the load id pre-loaded so they can ask "who
+        // do I message about this load?" without typing it.
+        NotificationCenter.default.post(
+            name: Notification.Name("eusoEsangOpenWithLoadContext"),
+            object: nil,
+            userInfo: [
+                "loadId": load.backendLoadId.map(String.init) ?? load.id,
+                "intent": "message_counterparty",
+            ]
+        )
     }
 
     /// "BROKER" while we still don't know, or when one is wired.
@@ -871,7 +985,12 @@ struct LoadDetailSheet: View {
 
     private var brokerSecondaryLine: String {
         if commercial == nil {
-            return commercialError ? "—" : "Loading…"
+            // commercialError is set from either the catch path OR the
+            // 6s timeout in the .task above. "Tap to message" beats a
+            // bare em-dash when the lookup fails — the message button
+            // is wired to ESANG fallback so the user always has an
+            // action.
+            return commercialError ? "Tap to message · context loading" : "Loading…"
         }
         if let b = commercial?.broker {
             var parts: [String] = []
@@ -1217,8 +1336,40 @@ struct LoadDetailSheet: View {
             // before bidding…", "Carrier missing CDL-H endorsement…",
             // "You have already submitted a bid…"). Falls back to a
             // generic line for transport-level failures.
+            //
+            // 2026-05-05: explicit handling for `.unauthenticated` was
+            // missing — server 401/403 surfaced as the cryptic
+            // `EusoTripAPIError error 0` from `localizedDescription`,
+            // which is what the founder hit on Book Now ("does nothing
+            // says something about authentication"). Now we emit a
+            // direct human line and post a session-refresh notification
+            // so the surface can prompt re-auth without dead-ending.
             let msg: String = {
-                if let api = error as? EusoTripAPIError, case .trpcError(let m) = api { return m }
+                if let api = error as? EusoTripAPIError {
+                    switch api {
+                    case .unauthenticated:
+                        NotificationCenter.default.post(
+                            name: Notification.Name("eusoSessionRefreshRequested"),
+                            object: nil
+                        )
+                        return "Your session expired or this account isn't allowed to bid on this lane. Sign in again or switch to a carrier / dispatcher account."
+                    case .trpcError(let m):
+                        return m
+                    case .httpStatus(let code, _):
+                        if code == 401 || code == 403 {
+                            return "This account isn't allowed to bid on this lane (HTTP \(code))."
+                        }
+                        return "Server error \(code). Try again in a moment."
+                    case .decodingFailed:
+                        return "We couldn't read the server's response. Try again — if it persists, retry from the load board."
+                    case .notConfigured:
+                        return "API not configured. Try restarting the app."
+                    case .badURL:
+                        return "Bid URL was malformed. Refresh the load board and try again."
+                    case .empty:
+                        return "Server returned an empty response. Try again."
+                    }
+                }
                 if ns.domain == NSURLErrorDomain { return "Network unavailable — check your connection and try again." }
                 return error.localizedDescription
             }()

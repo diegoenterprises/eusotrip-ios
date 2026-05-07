@@ -1154,23 +1154,39 @@ struct HotZonesHeatMapView: View {
     @Environment(\.palette) private var palette
 
     var body: some View {
-        // The HERE OMV vector tile service has been intermittently
-        // failing tile auth on our plan tier (the JS WebView's inner
-        // HTML falls through to a "basemap unavailable" placeholder
-        // when this happens — verified on-device 2026-05-04). Until
-        // the JS key + tile-tier auth are both green, render the
-        // SwiftUI fallback unconditionally so the widget always paints
-        // something useful (brand gradient + live zone count + tap
-        // CTA) instead of the broken WebView. Re-enable the WebView
-        // by flipping `forceFallback` to false once the JS API key
-        // is provisioned AND tile auth verifies.
-        let forceFallback = true
-        if forceFallback || HereMapsConfig.jsApiKey == nil {
+        // Render the canonical native HERE map (`HereMapView`) with
+        // each hot zone painted as a brand-coloured pin. Was forced
+        // to a SwiftUI gradient fallback because the HERE JS WebView
+        // was timing out tile auth — but the native OAuth tile path
+        // is rock-solid (same one shipper Live Tracking + load
+        // detail use), so we use that instead and ditch the
+        // WebView entirely. Fallback to the gradient card stays as
+        // the empty state when there are no zones to plot.
+        // Founder report 2026-05-06: "on homescreen driver the
+        // hotzones map doesnt show at all."
+        if zones.isEmpty {
             jsKeyMissingFallback
         } else {
-            HotZonesHeatmapWebView(
-                points: Self.points(from: zones),
-                colorScheme: colorScheme
+            HereMapView(
+                markers: zones.map { z in
+                    HereMapView.LoadMarker(
+                        id: z.zoneId,
+                        title: z.zoneName,
+                        subtitle: "\(z.demandLevel) · \(z.zoneId)",
+                        coordinate: CLLocationCoordinate2D(
+                            latitude: z.center.lat,
+                            longitude: z.center.lng
+                        )
+                    )
+                },
+                onSelectMarker: { id in
+                    if let z = zones.first(where: { $0.zoneId == id }) {
+                        onSelectZone?(z)
+                    }
+                },
+                useHereTiles: true,
+                showsUserLocation: false,
+                showsCompass: false
             )
         }
     }
@@ -2180,7 +2196,11 @@ struct HotZonesDetailSheet: View {
         ActiveCard {
             VStack(alignment: .leading, spacing: Space.s2) {
                 HStack(spacing: 4) {
-                    Text("FMCSA 9.8M")
+                    // Founder report 2026-05-06: "fmcsa 9.8 m just
+                    // needs to say fmcsa" — the 9.8M was the source
+                    // database row count, not a per-zone metric, so
+                    // it read as confusing trivia in the zone detail.
+                    Text("FMCSA")
                         .font(EType.micro).tracking(0.8)
                         .foregroundStyle(palette.textTertiary)
                     Image(systemName: "shield.lefthalf.filled")

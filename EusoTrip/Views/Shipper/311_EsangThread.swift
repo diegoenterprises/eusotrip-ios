@@ -49,7 +49,7 @@ private struct EsangThreadBody: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header.padding(.horizontal, 14).padding(.top, 8)
+            header.padding(.horizontal, 14).padding(.top, 56)
             ScrollView { VStack(alignment: .leading, spacing: 8) { messagesList }.padding(.horizontal, 14).padding(.top, Space.s2) }
             composer
         }

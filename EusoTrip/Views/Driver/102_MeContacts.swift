@@ -60,6 +60,14 @@ struct MeContacts: View {
         .refreshable { await store.refresh() }
         .onChange(of: store.typeFilter) { _, _ in Task { await store.refresh() } }
         .onChange(of: store.favoritesOnly) { _, _ in Task { await store.refresh() } }
+        // RealtimeService → contacts refresh when new partners onboard
+        // through dispatch or new shipper/broker contacts land.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.refresh() }
+        }
     }
 
     // MARK: Header

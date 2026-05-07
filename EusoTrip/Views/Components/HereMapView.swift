@@ -137,6 +137,7 @@ struct HereMapView: UIViewRepresentable {
         style ?? (colorScheme == .dark ? .dark : .light)
     }
 
+
     // MARK: - Coordinator (MKMapView delegate)
 
     final class Coordinator: NSObject, MKMapViewDelegate {
@@ -167,6 +168,19 @@ struct HereMapView: UIViewRepresentable {
         static let markerRolePrefix = "marker"
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            if let tile = overlay as? HereTileOverlay {
+                // Tinting renderer: draws the HERE tile, then in dark
+                // mode lays a translucent blue-slate fill on top of it.
+                // Tints ONLY the basemap pixels — pins and polylines are
+                // drawn by MKMapView's own renderers above this layer
+                // and stay vivid.
+                return TintingTileOverlayRenderer(
+                    tileOverlay: tile,
+                    tint: tile.style == .dark
+                        ? UIColor(red: 0.10, green: 0.14, blue: 0.20, alpha: 0.55)
+                        : nil
+                )
+            }
             if let tile = overlay as? MKTileOverlay {
                 return MKTileOverlayRenderer(tileOverlay: tile)
             }
@@ -482,6 +496,12 @@ struct HereMapView: UIViewRepresentable {
     }
 
     /// Auto-fits the camera to enclose every coord we're rendering.
+    /// When there are no markers / lanes / stops to fit (typical first
+    /// paint before the data store has resolved), we fall back to a
+    /// continental-US framing instead of leaving MKMapView at its
+    /// default zoom-0 world view (which centers on null island and
+    /// reads as Australia/Indian-Ocean to a US driver — verified
+    /// 2026-05-06 via HotZonesWidget on driver home).
     private func fitCamera(map: MKMapView) {
         var rect = MKMapRect.null
         let eps  = MKMapSize(width: 0.01, height: 0.01)
@@ -510,9 +530,63 @@ struct HereMapView: UIViewRepresentable {
             rect = rect.union(MKMapRect(origin: p, size: eps))
         }
 
-        guard !rect.isNull else { return }
+        if rect.isNull {
+            // Continental-US default framing so the map never opens at
+            // MKMapView's zoom-0 world view. Same center used by the
+            // legacy MapKit heatmap fallback (HotZonesWidget.swift L690)
+            // — keeps the visual contract consistent.
+            let conus = MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: 39.5, longitude: -98.35),
+                span:   MKCoordinateSpan(latitudeDelta: 36, longitudeDelta: 60)
+            )
+            map.setRegion(conus, animated: false)
+            return
+        }
         let padding = UIEdgeInsets(top: 56, left: 48, bottom: 56, right: 48)
         map.setVisibleMapRect(rect, edgePadding: padding, animated: true)
+    }
+}
+
+// MARK: - Dark-mode tint renderer
+
+/// MKTileOverlayRenderer subclass that draws the underlying HERE tile
+/// then, in dark mode, lays a translucent dark-slate fill on top of
+/// the same tile rectangle. Tints ONLY the basemap pixels — pins and
+/// polylines render via MKMapView's own renderers above this layer
+/// and stay vivid. The HERE plan tier rejects `explore.night` so we
+/// can't ask HERE for a real night raster; this is the same strategy
+/// the web platform uses to dim HERE day tiles for dark mode.
+final class TintingTileOverlayRenderer: MKTileOverlayRenderer {
+    /// `MKTileOverlayRenderer.init(tileOverlay:)` is a convenience that
+    /// dispatches through Obj-C back to `init(overlay:)` on the
+    /// receiving Swift subclass. When the subclass adds a `let` stored
+    /// property, Swift's auto-synthesised bridge inserts a precondition
+    /// that traps with `brk 1` (EXC_BREAKPOINT / SIGTRAP) before our
+    /// override gains control — TestFlight crash 2026-05-06 build 209
+    /// fired immediately on splash → home transition when the HotZones
+    /// widget allocated this renderer.
+    ///
+    /// Fix: keep `tint` as a `var` with a default value so the property
+    /// is always initialised before any init runs, expose a
+    /// `convenience init` that delegates to Apple's designated
+    /// `init(tileOverlay:)`, and assign `tint` after delegation. No
+    /// stored-property invariant for the bridge to check, no override
+    /// of `init(overlay:)`, no trap.
+    var tint: UIColor? = nil
+
+    convenience init(tileOverlay: MKTileOverlay, tint: UIColor?) {
+        self.init(tileOverlay: tileOverlay)
+        self.tint = tint
+    }
+
+    override func draw(_ mapRect: MKMapRect,
+                       zoomScale: MKZoomScale,
+                       in context: CGContext) {
+        super.draw(mapRect, zoomScale: zoomScale, in: context)
+        guard let tint else { return }
+        context.setFillColor(tint.cgColor)
+        context.setBlendMode(.normal)
+        context.fill(rect(for: mapRect))
     }
 }
 

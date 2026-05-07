@@ -52,12 +52,171 @@ private struct PostLoadStep2Body: View {
                 weightCard
                 if draft.cargoType == .hazmat { hazmatLink }
                 if draft.cargoType == .refrigerated { reeferLink }
+                escortCard
+                endorsementsCard
+                specialEquipmentCard
+                catalystGateCard
                 ctaRow
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14)
-            .padding(.top, 8)
+            .padding(.top, 56)
         }
+    }
+
+    // MARK: - Escort + endorsements + special-equipment + catalyst-gate
+    //
+    // Web parity from `LoadCreationWizard.tsx` step 4 — these were
+    // missing from the iOS wizard and a shipper couldn't post an
+    // oversize hazmat lane that needed escort + Hazmat-endorsed
+    // driver + tarps + $5M insurance ceiling. Founder report
+    // 2026-05-06: "no options for adding escort or escort
+    // requirement. or equipment requirement thers a few key things
+    // missing."
+
+    private var escortCard: some View {
+        LifecycleCard {
+            LifecycleSection(label: "ESCORT", icon: "shield.lefthalf.filled")
+            Toggle("Requires escort", isOn: $draft.requiresEscort)
+                .toggleStyle(SwitchToggleStyle(tint: Brand.warning))
+            if draft.requiresEscort {
+                HStack {
+                    Text("Escort headcount").font(EType.caption).foregroundStyle(palette.textSecondary)
+                    Spacer(minLength: 0)
+                    Picker("", selection: Binding(
+                        get: { draft.escortCount ?? 1 },
+                        set: { draft.escortCount = $0 }
+                    )) {
+                        Text("1 (lead)").tag(1)
+                        Text("2 (lead + chase)").tag(2)
+                        Text("3").tag(3)
+                        Text("4").tag(4)
+                    }
+                    .pickerStyle(.menu).labelsHidden()
+                }
+            }
+        }
+    }
+
+    private var endorsementsCard: some View {
+        // Multi-select chips. Tap to toggle; selected chips fill with
+        // the brand gradient. Server accepts the canonical IDs in
+        // `requiredEndorsements: string[]`.
+        let options: [(id: String, label: String)] = [
+            ("TWIC",            "TWIC"),
+            ("Hazmat",          "Hazmat (H)"),
+            ("Tanker",          "Tanker (N)"),
+            ("DoublesTriples",  "Doubles/Triples (T)"),
+            ("Passenger",       "Passenger (P)"),
+        ]
+        return LifecycleCard {
+            LifecycleSection(label: "REQUIRED ENDORSEMENTS", icon: "checkmark.seal")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(options, id: \.id) { opt in
+                        let active = draft.requiredEndorsements.contains(opt.id)
+                        Button {
+                            toggle(&draft.requiredEndorsements, opt.id)
+                        } label: {
+                            Text(opt.label)
+                                .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                                .foregroundStyle(active ? .white : palette.textPrimary)
+                                .padding(.horizontal, 12).padding(.vertical, 7)
+                                .background(active
+                                    ? AnyShapeStyle(LinearGradient.diagonal)
+                                    : AnyShapeStyle(palette.tintNeutral))
+                                .clipShape(Capsule())
+                        }.buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private var specialEquipmentCard: some View {
+        // Same chip pattern as endorsements. Canonical equipment IDs
+        // match the web platform's `specialEquipment` enum values.
+        let options: [(id: String, label: String)] = [
+            ("tarps",           "Tarps"),
+            ("chains",          "Chains"),
+            ("straps",          "Straps"),
+            ("edge_protectors", "Edge Protectors"),
+            ("load_locks",      "Load Locks"),
+            ("liftgate",        "Liftgate"),
+            ("ramps",           "Ramps"),
+            ("pallet_jack",     "Pallet Jack"),
+        ]
+        return LifecycleCard {
+            LifecycleSection(label: "SPECIAL EQUIPMENT", icon: "wrench.and.screwdriver")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(options, id: \.id) { opt in
+                        let active = draft.specialEquipment.contains(opt.id)
+                        Button {
+                            toggle(&draft.specialEquipment, opt.id)
+                        } label: {
+                            Text(opt.label)
+                                .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                                .foregroundStyle(active ? .white : palette.textPrimary)
+                                .padding(.horizontal, 12).padding(.vertical, 7)
+                                .background(active
+                                    ? AnyShapeStyle(LinearGradient.diagonal)
+                                    : AnyShapeStyle(palette.tintNeutral))
+                                .clipShape(Capsule())
+                        }.buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private var catalystGateCard: some View {
+        LifecycleCard {
+            LifecycleSection(label: "CATALYST REQUIREMENTS", icon: "person.badge.shield.checkmark")
+
+            HStack {
+                Text("Min insurance (USD)").font(EType.caption).foregroundStyle(palette.textSecondary)
+                Spacer(minLength: 0)
+                TextField("1,000,000", text: $draft.minInsuranceCoverage)
+                    .keyboardType(.numberPad)
+                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: 140)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(palette.bgCard.opacity(0.6))
+                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+            HStack {
+                Text("Min FMCSA rating").font(EType.caption).foregroundStyle(palette.textSecondary)
+                Spacer(minLength: 0)
+                Picker("", selection: $draft.minSafetyRating) {
+                    Text("Satisfactory").tag("satisfactory")
+                    Text("Conditional").tag("conditional")
+                    Text("Unrated OK").tag("unrated")
+                    Text("Any").tag("any")
+                }
+                .pickerStyle(.menu).labelsHidden()
+            }
+            Toggle("Hazmat operating authority required",
+                   isOn: $draft.hazmatAuthRequired)
+                .toggleStyle(SwitchToggleStyle(tint: Brand.warning))
+            Toggle("Contract carriers only",
+                   isOn: $draft.contractOnly)
+                .toggleStyle(SwitchToggleStyle(tint: Brand.blue))
+            Toggle("Escrow required (EusoWallet)",
+                   isOn: $draft.escrowRequired)
+                .toggleStyle(SwitchToggleStyle(tint: Brand.blue))
+            Toggle("Appointment required (EusoTicket)",
+                   isOn: $draft.appointmentRequired)
+                .toggleStyle(SwitchToggleStyle(tint: Brand.blue))
+        }
+    }
+
+    /// In-place toggle helper for the multi-select chip cards.
+    private func toggle(_ list: inout [String], _ id: String) {
+        if let i = list.firstIndex(of: id) { list.remove(at: i) }
+        else                                { list.append(id) }
     }
 
     private var header: some View {

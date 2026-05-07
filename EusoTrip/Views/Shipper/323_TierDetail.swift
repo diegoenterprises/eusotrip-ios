@@ -33,7 +33,7 @@ private struct TierDetailBody: View {
                 ladder
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { do { stats = try await EusoTripAPI.shared.shipper.getStats() } catch {}; loading = false }
     }

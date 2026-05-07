@@ -50,10 +50,19 @@ struct ShipperHome: View {
     @State private var showMessages: Bool = false
 
     // Real weather snapshot (CoreLocation + WeatherKit → NWS → Open-Meteo
-    // cascade in WeatherService). nil → render nothing — no fake "sunny"
-    // tile in its place. Per home-widget doctrine the weather card sits
-    // between the attention card and the CTA row across every role.
+    // cascade in WeatherService). nil → render the "Enable location"
+    // CTA when CoreLocation is .notDetermined / .denied / .restricted,
+    // or render nothing when authorized but momentarily unavailable.
+    // Per home-widget doctrine the weather card sits between the
+    // attention card and the CTA row across every role.
     @State private var weather: WeatherSnapshot? = nil
+    /// Mirrors `DriverHomeViewModel.WeatherAvailability` — same four
+    /// states (.pending / .live / .needsLocation / .unavailable) so
+    /// the shipper home renders the same enable-location CTA the
+    /// driver home does. Founder report 2026-05-05 — "the app
+    /// doesn't ask for my location so it doesn't load the weather
+    /// widget for shipper or driver role".
+    @State private var weatherNeedsLocation: Bool = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -85,6 +94,26 @@ struct ShipperHome: View {
         }
         .task { await refreshAll() }
         .refreshable { await refreshAll() }
+        // After the user taps Allow / Deny on the iOS location
+        // prompt, WeatherService posts this — re-run the dashboard
+        // refresh so the weather card flips from the CTA into the
+        // live snapshot without waiting for a manual pull.
+        .onReceive(NotificationCenter.default.publisher(
+            for: Notification.Name("eusoWeatherAuthorizationChanged"))) { _ in
+            Task { await refreshAll() }
+        }
+        // RealtimeService → live updates from the shipper's load room
+        // fan-out (carrier accept, driver assign, status changes)
+        // refresh the home dashboard surface in real time.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await refreshAll() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await refreshAll() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
+            Task { await refreshAll() }
+        }
         .fullScreenCover(isPresented: $showMessages) {
             MessagesScreen()
                 .environment(\.palette, palette)
@@ -101,6 +130,16 @@ struct ShipperHome: View {
         let snap = await w
         _ = await (a, b, c, d)
         weather = snap
+        // Resolve CTA visibility from the post-fetch authorization
+        // status so the home renders an "Enable location" affordance
+        // when CoreLocation hasn't been asked yet (.notDetermined) or
+        // when the user previously denied / restricted access.
+        let status = WeatherService.shared.authorizationStatus
+        weatherNeedsLocation = (snap == nil) && (
+            status == .notDetermined ||
+            status == .denied ||
+            status == .restricted
+        )
         unread.refresh()  // EUSO-2057: kicks UnreadMessageStore -> messaging.getUnreadCount
     }
 
@@ -114,7 +153,63 @@ struct ShipperHome: View {
     private var weatherSection: some View {
         if let w = weather {
             WeatherCard(snapshot: w)
+        } else if weatherNeedsLocation {
+            shipperEnableLocationCard
         }
+    }
+
+    /// "Enable location for live weather" CTA — same shape as the
+    /// driver home's `enableLocationCard`. Tap behavior:
+    ///   • `.notDetermined` → fire `requestPermissionIfNeeded()` and
+    ///     re-fetch after the user responds (1s debounce gives iOS
+    ///     time to record the new status before the retry).
+    ///   • `.denied` / `.restricted` → open Settings since iOS won't
+    ///     re-prompt.
+    private var shipperEnableLocationCard: some View {
+        Button {
+            let status = WeatherService.shared.authorizationStatus
+            if status == .notDetermined {
+                WeatherService.shared.requestPermissionIfNeeded()
+                Task {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    await refreshAll()
+                }
+            } else if let url = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(url)
+            }
+        } label: {
+            HStack(alignment: .center, spacing: Space.s3) {
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient.diagonal)
+                        .frame(width: 48, height: 48)
+                    Image(systemName: "location.circle")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Enable location for live weather")
+                        .font(EType.body.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Grant location access to see local conditions, visibility, and route weather alerts.")
+                        .font(EType.micro)
+                        .foregroundStyle(palette.textSecondary)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(Space.s3)
+            .background(palette.bgCard)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(palette.borderFaint)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - TopBar — eyebrow + counter + greeting + DU avatar
@@ -320,32 +415,55 @@ struct ShipperHome: View {
     @ViewBuilder
     private func attentionRowsList(_ rows: [ShipperAPI.LoadAlert]) -> some View {
         ForEach(Array(rows.enumerated()), id: \.element.id) { idx, r in
-            attentionRow(meta: "\(r.loadNumber) · \(r.message)", title: r.issue.uppercased())
+            attentionRow(
+                loadId: r.id,
+                meta: "\(r.loadNumber) · \(r.message)",
+                title: r.issue.uppercased()
+            )
             if idx < rows.count - 1 { Divider().overlay(palette.borderFaint) }
         }
     }
 
-    private func attentionRow(meta: String, title: String) -> some View {
-        HStack(alignment: .top, spacing: Space.s3) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(meta)
-                    .font(EType.mono(.caption))
-                    .foregroundStyle(palette.textSecondary)
-                    .lineLimit(1)
-                Text(title)
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
-                    .lineLimit(1)
+    private func attentionRow(loadId: String, meta: String, title: String) -> some View {
+        // Was a static HStack — both the "VIEW" pill and tapping the
+        // row itself were dead-buttons (founder report 2026-05-06 —
+        // "loads requiring attention the buttons are dead. i want
+        // them to work, view doesnt do anything, it should show the
+        // load"). Now wrapped in a Button that posts
+        // `.eusoShipperLoadOpen`, which `ShipperLoadReceivers` (in
+        // `RoleSurfaceRouter.swift`) already routes to screen 205
+        // (Load Detail) with the captured loadId.
+        Button {
+            NotificationCenter.default.post(
+                name: .eusoShipperLoadOpen,
+                object: nil,
+                userInfo: ["loadId": loadId]
+            )
+        } label: {
+            HStack(alignment: .top, spacing: Space.s3) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(meta)
+                        .font(EType.mono(.caption))
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                    Text(title)
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: Space.s2)
+                Text("VIEW")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(Brand.danger)
+                    .padding(.horizontal, 12).padding(.vertical, 5)
+                    .background(Capsule().fill(palette.tintDanger))
             }
-            Spacer(minLength: Space.s2)
-            Text("VIEW")
-                .font(EType.micro).tracking(0.6)
-                .foregroundStyle(Brand.danger)
-                .padding(.horizontal, 12).padding(.vertical, 5)
-                .background(Capsule().fill(palette.tintDanger))
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, Space.s3)
+            .contentShape(Rectangle())   // makes the whole row hit-testable, not just the labels
         }
-        .padding(.horizontal, Space.s4)
-        .padding(.vertical, Space.s3)
+        .buttonStyle(.plain)
+        .accessibilityLabel("View load \(meta), \(title)")
     }
 
     private var attentionSkeleton: some View {
@@ -801,33 +919,53 @@ struct ShipperHome: View {
     }
 
     private func recentRow(_ row: ShipperAPI.RecentLoad) -> some View {
-        HStack(alignment: .center, spacing: Space.s3) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(row.loadNumber)
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
-                Text("\(row.origin) → \(row.destination)")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
-                    .lineLimit(1)
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(row.status.uppercased())
-                    .font(EType.micro).tracking(0.6)
-                    .foregroundStyle(palette.textTertiary)
-                if !row.deliveredAt.isEmpty {
-                    Text(row.deliveredAt)
-                        .font(EType.mono(.micro)).tracking(0.3)
+        // Wrapped in a Button so the row actually opens Load Detail.
+        // Was a static HStack — founder report 2026-05-06: "nothing in
+        // recent activity is clickable. fix this." Same notification
+        // path the Active Loads section uses (`eusoShipperLoadOpen`)
+        // so `ShipperLoadReceivers` routes to screen 205 with the
+        // captured loadId.
+        Button {
+            NotificationCenter.default.post(
+                name: .eusoShipperLoadOpen,
+                object: nil,
+                userInfo: [
+                    "loadId":     row.id,
+                    "loadNumber": row.loadNumber,
+                ]
+            )
+        } label: {
+            HStack(alignment: .center, spacing: Space.s3) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.loadNumber)
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text("\(row.origin) → \(row.destination)")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(row.status.uppercased())
+                        .font(EType.micro).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
+                    if !row.deliveredAt.isEmpty {
+                        Text(row.deliveredAt)
+                            .font(EType.mono(.micro)).tracking(0.3)
+                            .foregroundStyle(palette.textTertiary)
+                    }
                 }
             }
+            .padding(Space.s3)
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .contentShape(Rectangle())
         }
-        .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .strokeBorder(palette.borderFaint))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .buttonStyle(.plain)
+        .accessibilityLabel("Open load \(row.loadNumber), \(row.origin) to \(row.destination)")
     }
 
     // MARK: - Shared widgets

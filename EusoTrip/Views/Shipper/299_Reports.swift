@@ -74,7 +74,7 @@ private struct ReportsBody: View {
                 composeCTA
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
         .sheet(isPresented: Binding(
@@ -93,7 +93,7 @@ private struct ReportsBody: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14).padding(.vertical, 8)
                     .background(.red.opacity(0.92), in: Capsule())
-                    .padding(.top, 8)
+                    .padding(.top, 56)
                     .onAppear {
                         Task {
                             try? await Task.sleep(nanoseconds: 3_500_000_000)

@@ -38,7 +38,7 @@ private struct CompIntelBody: View {
                 else if let d = data { positionCard(d); benchmarksCard(d); recsCard(d) }
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
     }

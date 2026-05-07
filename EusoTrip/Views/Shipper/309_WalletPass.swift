@@ -36,7 +36,7 @@ private struct WalletPassBody: View {
                 else { LifecycleCard { Text("Wallet pass signing not yet on this deploy.").font(EType.caption).foregroundStyle(palette.textSecondary) } }
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
     }

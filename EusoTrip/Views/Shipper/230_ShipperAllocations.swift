@@ -188,11 +188,11 @@ struct ShipperWeeklyAllocations: View {
                 titleBlock
                     .padding(.top, Space.s2)
                 IridescentHairline()
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s5)
 
                 kpiHeroCard
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s3)
 
                 filterRow
@@ -201,7 +201,7 @@ struct ShipperWeeklyAllocations: View {
                 let rows = filtered()
                 if rows.isEmpty && filter != .all {
                     noMatchCard
-                        .padding(.horizontal, Space.s5)
+                        .padding(.horizontal, Space.s3)
                         .padding(.top, Space.s4)
                 } else {
                     VStack(spacing: Space.s2) {
@@ -212,12 +212,12 @@ struct ShipperWeeklyAllocations: View {
                             compactRowView(compactRow)
                         }
                     }
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s4)
                 }
 
                 allocateButton
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s5)
 
                 Color.clear.frame(height: 96)
@@ -243,7 +243,7 @@ struct ShipperWeeklyAllocations: View {
                 .foregroundStyle(atRisk > 0 ? Brand.danger : palette.textTertiary)
                 .accessibilityLabel("\(canonRows.count) allocated, \(atRisk) at risk")
         }
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     // MARK: Title block
@@ -259,7 +259,7 @@ struct ShipperWeeklyAllocations: View {
                 .foregroundStyle(palette.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     // MARK: KPI hero card
@@ -371,7 +371,7 @@ struct ShipperWeeklyAllocations: View {
                     filterChip(f, count: count(for: f))
                 }
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
         }
         .overlay(alignment: .trailing) {
             LinearGradient(

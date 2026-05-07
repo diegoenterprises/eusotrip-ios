@@ -64,6 +64,17 @@ struct MeAppointments: View {
         .onChange(of: store.window) { _, _ in
             Task { await store.refresh() }
         }
+        // RealtimeService → refresh appointments when load assignment
+        // / reassignment / dock-assign / surface refresh events fire.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
+            Task { await store.refresh() }
+        }
         .sheet(item: $cancelling) { appt in
             CancelSheet(appt: appt, store: store)
                 .eusoSheetX()

@@ -202,7 +202,7 @@ struct ShipperContracts: View {
                 titleBlock
                     .padding(.top, Space.s2)
                 IridescentHairline()
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s5)
 
                 content
@@ -213,6 +213,14 @@ struct ShipperContracts: View {
         }
         .task { await store.refresh() }
         .refreshable { await store.refresh() }
+        // RealtimeService → contracts refresh when carrier signs,
+        // amends, or contract terms expire upstream.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.refresh() }
+        }
         .sheet(item: Binding(
             get: { selectedId.map { IdentifiedContractId(id: $0) } },
             set: { newValue in
@@ -251,7 +259,7 @@ struct ShipperContracts: View {
                 .foregroundStyle(counterColor)
                 .accessibilityLabel(counterAccessibility)
         }
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     private var counterEyebrow: String {
@@ -289,7 +297,7 @@ struct ShipperContracts: View {
                 .foregroundStyle(palette.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     // MARK: Content state machine
@@ -305,17 +313,17 @@ struct ShipperContracts: View {
                         .frame(height: 116)
                 }
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
         case .empty:
             emptyHero
-                .padding(.horizontal, Space.s5)
+                .padding(.horizontal, Space.s3)
         case .error(let msg):
             errorBanner(msg)
-                .padding(.horizontal, Space.s5)
+                .padding(.horizontal, Space.s3)
         case .loaded(let stats, let rows):
             VStack(alignment: .leading, spacing: 0) {
                 kpiHeroCard(stats)
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s3)
 
                 filterRow(rows: rows)
@@ -323,7 +331,7 @@ struct ShipperContracts: View {
 
                 if rows.isEmpty {
                     noFilteredResults
-                        .padding(.horizontal, Space.s5)
+                        .padding(.horizontal, Space.s3)
                         .padding(.top, Space.s4)
                 } else {
                     VStack(spacing: Space.s4) {
@@ -331,12 +339,12 @@ struct ShipperContracts: View {
                             contractRowView(row)
                         }
                     }
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s4)
                 }
 
                 newContractButton
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s5)
             }
         }
@@ -442,7 +450,7 @@ struct ShipperContracts: View {
                     filterChip(f, count: count(for: f, rows: rows))
                 }
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
         }
         .overlay(alignment: .trailing) {
             LinearGradient(

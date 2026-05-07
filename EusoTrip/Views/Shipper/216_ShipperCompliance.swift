@@ -191,6 +191,14 @@ struct ShipperCompliance: View {
         }
         .task { await store.refresh() }
         .refreshable { await store.refresh() }
+        // RealtimeService → compliance status shifts when carrier
+        // documents land, certificates expire, or audit findings clear.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.refresh() }
+        }
         .animation(
             reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.18),
             value: category
@@ -312,7 +320,7 @@ struct ShipperCompliance: View {
                     Text(scopeBlurb)
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
-                        .padding(.top, 8)
+                        .padding(.top, 56)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                 }
@@ -400,7 +408,7 @@ struct ShipperCompliance: View {
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                    .padding(.top, 8)
+                    .padding(.top, 56)
                 Text(sub)
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)

@@ -189,6 +189,11 @@
 		B07D0FA2CE1A4B7E0000D067 /* SheetCloseButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = B07D0FA2CE1A4B7E0000D068 /* SheetCloseButton.swift */; };
 		B1A11111111111111111AA01 /* WeatherSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA02 /* WeatherSnapshot.swift */; };
 		B1A11111111111111111AA03 /* WeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA04 /* WeatherService.swift */; };
+		B1A21111111111111111AA01 /* AgreementPDFBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A21111111111111111AA02 /* AgreementPDFBuilder.swift */; };
+		B1A31111111111111111AA01 /* EusoQR.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A31111111111111111AA02 /* EusoQR.swift */; };
+		B1A51111111111111111AA01 /* EusoTicketCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A51111111111111111AA02 /* EusoTicketCanvas.swift */; };
+		B1A61111111111111111AA01 /* 106B_DriverEusoTicketRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A61111111111111111AA02 /* 106B_DriverEusoTicketRenderer.swift */; };
+		B1A41111111111111111AA01 /* EusoWalletPassService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A41111111111111111AA02 /* EusoWalletPassService.swift */; };
 		B1A11111111111111111AA05 /* WeatherCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA06 /* WeatherCard.swift */; };
 		D2RHIN000000000000ABDS /* RoleHomeIntro.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RHIN000000000000ACDS /* RoleHomeIntro.swift */; };
 		B1A11111111111111111AA07 /* DriverTabPanes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA08 /* DriverTabPanes.swift */; };
@@ -246,6 +251,14 @@
 		D1A11111111111111111KH01 /* 500_CatalystHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111KH02 /* 500_CatalystHome.swift */; };
 		D1A11111111111111111CM01 /* 501_CatalystMatches.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CM02 /* 501_CatalystMatches.swift */; };
 		D1A11111111111111111KMD1 /* 502_CatalystMatchDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111KMD2 /* 502_CatalystMatchDetail.swift */; };
+		D1A11111111111111111CER1 /* 313_CatalystEusoTicketRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CER2 /* 313_CatalystEusoTicketRenderer.swift */; };
+		D1A11111111111111111CFD1 /* 304_CatalystFleetDrivers.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CFD2 /* 304_CatalystFleetDrivers.swift */; };
+		D1A11111111111111111CLD1 /* 305_CatalystLoadDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CLD2 /* 305_CatalystLoadDetail.swift */; };
+		D1A11111111111111111CDS1 /* 320_CatalystDriverScorecard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CDS2 /* 320_CatalystDriverScorecard.swift */; };
+		D1A11111111111111111CDC1 /* 326_CatalystDriverCompliance.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CDC2 /* 326_CatalystDriverCompliance.swift */; };
+		D1A11111111111111111CDD1 /* 322_CatalystDriverDocuments.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CDD2 /* 322_CatalystDriverDocuments.swift */; };
+		D1A11111111111111111CDP1 /* 321_CatalystDriverProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CDP2 /* 321_CatalystDriverProfile.swift */; };
+		D1A11111111111111111CMP1 /* 317_CatalystCompliance.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CMP2 /* 317_CatalystCompliance.swift */; };
 		D1A11111111111111111LP01 /* LifecycleProductContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111LP02 /* LifecycleProductContext.swift */; };
 		D1A11111111111111111MX01 /* HereMatrixCandidatesStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111MX02 /* HereMatrixCandidatesStrip.swift */; };
 		D1A11111111111111111PK01 /* HereParkingStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111PK02 /* HereParkingStrip.swift */; };
@@ -748,6 +761,11 @@
 		B07D0FA2CE1A4B7E0000D068 /* SheetCloseButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SheetCloseButton.swift; sourceTree = "<group>"; };
 		B1A11111111111111111AA02 /* WeatherSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherSnapshot.swift; sourceTree = "<group>"; };
 		B1A11111111111111111AA04 /* WeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherService.swift; sourceTree = "<group>"; };
+		B1A21111111111111111AA02 /* AgreementPDFBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgreementPDFBuilder.swift; sourceTree = "<group>"; };
+		B1A31111111111111111AA02 /* EusoQR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EusoQR.swift; path = EusoTrip/Views/Components/EusoQR.swift; sourceTree = SOURCE_ROOT; };
+		B1A51111111111111111AA02 /* EusoTicketCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EusoTicketCanvas.swift; path = EusoTrip/Views/Components/EusoTicketCanvas.swift; sourceTree = SOURCE_ROOT; };
+		B1A61111111111111111AA02 /* 106B_DriverEusoTicketRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 106B_DriverEusoTicketRenderer.swift; path = EusoTrip/Views/Driver/106B_DriverEusoTicketRenderer.swift; sourceTree = SOURCE_ROOT; };
+		B1A41111111111111111AA02 /* EusoWalletPassService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoWalletPassService.swift; sourceTree = "<group>"; };
 		B1A11111111111111111AA06 /* WeatherCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherCard.swift; sourceTree = "<group>"; };
 		D2RHIN000000000000ACDS /* RoleHomeIntro.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RoleHomeIntro.swift; path = EusoTrip/Views/Components/RoleHomeIntro.swift; sourceTree = SOURCE_ROOT; };
 		B1A11111111111111111AA08 /* DriverTabPanes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverTabPanes.swift; sourceTree = "<group>"; };
@@ -806,6 +824,14 @@
 		D1A11111111111111111KH02 /* 500_CatalystHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 500_CatalystHome.swift; path = EusoTrip/Views/Catalyst/500_CatalystHome.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CM02 /* 501_CatalystMatches.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 501_CatalystMatches.swift; path = EusoTrip/Views/Catalyst/501_CatalystMatches.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111KMD2 /* 502_CatalystMatchDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 502_CatalystMatchDetail.swift; path = EusoTrip/Views/Catalyst/502_CatalystMatchDetail.swift; sourceTree = SOURCE_ROOT; };
+		D1A11111111111111111CER2 /* 313_CatalystEusoTicketRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 313_CatalystEusoTicketRenderer.swift; path = EusoTrip/Views/Catalyst/313_CatalystEusoTicketRenderer.swift; sourceTree = SOURCE_ROOT; };
+		D1A11111111111111111CFD2 /* 304_CatalystFleetDrivers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 304_CatalystFleetDrivers.swift; path = EusoTrip/Views/Catalyst/304_CatalystFleetDrivers.swift; sourceTree = SOURCE_ROOT; };
+		D1A11111111111111111CLD2 /* 305_CatalystLoadDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 305_CatalystLoadDetail.swift; path = EusoTrip/Views/Catalyst/305_CatalystLoadDetail.swift; sourceTree = SOURCE_ROOT; };
+		D1A11111111111111111CDS2 /* 320_CatalystDriverScorecard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 320_CatalystDriverScorecard.swift; path = EusoTrip/Views/Catalyst/320_CatalystDriverScorecard.swift; sourceTree = SOURCE_ROOT; };
+		D1A11111111111111111CDC2 /* 326_CatalystDriverCompliance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 326_CatalystDriverCompliance.swift; path = EusoTrip/Views/Catalyst/326_CatalystDriverCompliance.swift; sourceTree = SOURCE_ROOT; };
+		D1A11111111111111111CDD2 /* 322_CatalystDriverDocuments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 322_CatalystDriverDocuments.swift; path = EusoTrip/Views/Catalyst/322_CatalystDriverDocuments.swift; sourceTree = SOURCE_ROOT; };
+		D1A11111111111111111CDP2 /* 321_CatalystDriverProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 321_CatalystDriverProfile.swift; path = EusoTrip/Views/Catalyst/321_CatalystDriverProfile.swift; sourceTree = SOURCE_ROOT; };
+		D1A11111111111111111CMP2 /* 317_CatalystCompliance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 317_CatalystCompliance.swift; path = EusoTrip/Views/Catalyst/317_CatalystCompliance.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111LP02 /* LifecycleProductContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifecycleProductContext.swift; sourceTree = "<group>"; };
 		D1A11111111111111111MX02 /* HereMatrixCandidatesStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereMatrixCandidatesStrip.swift; sourceTree = "<group>"; };
 		D1A11111111111111111PK02 /* HereParkingStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereParkingStrip.swift; sourceTree = "<group>"; };
@@ -1574,6 +1600,14 @@
 				D1A11111111111111111KH02 /* 500_CatalystHome.swift */,
 				D1A11111111111111111CM02 /* 501_CatalystMatches.swift */,
 				D1A11111111111111111KMD2 /* 502_CatalystMatchDetail.swift */,
+				D1A11111111111111111CER2 /* 313_CatalystEusoTicketRenderer.swift */,
+				D1A11111111111111111CFD2 /* 304_CatalystFleetDrivers.swift */,
+				D1A11111111111111111CLD2 /* 305_CatalystLoadDetail.swift */,
+				D1A11111111111111111CDS2 /* 320_CatalystDriverScorecard.swift */,
+				D1A11111111111111111CDC2 /* 326_CatalystDriverCompliance.swift */,
+				D1A11111111111111111CDD2 /* 322_CatalystDriverDocuments.swift */,
+				D1A11111111111111111CDP2 /* 321_CatalystDriverProfile.swift */,
+				D1A11111111111111111CMP2 /* 317_CatalystCompliance.swift */,
 				D1A11111111111111111EH02 /* 600_EscortHome.swift */,
 				D1A11111111111111111ENC2 /* EscortNavController.swift */,
 				D1A11111111111111111EAD2 /* 601_EscortAssignmentDetail.swift */,
@@ -1614,6 +1648,8 @@
 				A13B8109FC394A8921DF752F /* EusoTripSession.swift */,
 				C1A11111111111111111BA02 /* DriverProfileStore.swift */,
 				B1A11111111111111111AA04 /* WeatherService.swift */,
+				B1A21111111111111111AA02 /* AgreementPDFBuilder.swift */,
+				B1A41111111111111111AA02 /* EusoWalletPassService.swift */,
 				A1DMC0001000000000000021 /* DriverLocationResolver.swift */,
 				A1A11111111111111111F005 /* PushService.swift */,
 				A1A11111111111111111API2 /* ShipperAppIntents.swift */,
@@ -2182,6 +2218,11 @@
 				A12E1A1C0010CE0FF100001D /* LatLongParser.swift in Sources */,
 				B1A11111111111111111AA01 /* WeatherSnapshot.swift in Sources */,
 				B1A11111111111111111AA03 /* WeatherService.swift in Sources */,
+				B1A21111111111111111AA01 /* AgreementPDFBuilder.swift in Sources */,
+				B1A31111111111111111AA01 /* EusoQR.swift in Sources */,
+				B1A51111111111111111AA01 /* EusoTicketCanvas.swift in Sources */,
+				B1A61111111111111111AA01 /* 106B_DriverEusoTicketRenderer.swift in Sources */,
+				B1A41111111111111111AA01 /* EusoWalletPassService.swift in Sources */,
 				A1DMC0001000000000000020 /* DriverLocationResolver.swift in Sources */,
 				B1A11111111111111111AA05 /* WeatherCard.swift in Sources */,
 				D2RHIN000000000000ABDS /* RoleHomeIntro.swift in Sources */,
@@ -2466,6 +2507,14 @@
 				D1A11111111111111111KH01 /* 500_CatalystHome.swift in Sources */,
 				D1A11111111111111111CM01 /* 501_CatalystMatches.swift in Sources */,
 				D1A11111111111111111KMD1 /* 502_CatalystMatchDetail.swift in Sources */,
+				D1A11111111111111111CER1 /* 313_CatalystEusoTicketRenderer.swift in Sources */,
+				D1A11111111111111111CFD1 /* 304_CatalystFleetDrivers.swift in Sources */,
+				D1A11111111111111111CLD1 /* 305_CatalystLoadDetail.swift in Sources */,
+				D1A11111111111111111CDS1 /* 320_CatalystDriverScorecard.swift in Sources */,
+				D1A11111111111111111CDC1 /* 326_CatalystDriverCompliance.swift in Sources */,
+				D1A11111111111111111CDD1 /* 322_CatalystDriverDocuments.swift in Sources */,
+				D1A11111111111111111CDP1 /* 321_CatalystDriverProfile.swift in Sources */,
+				D1A11111111111111111CMP1 /* 317_CatalystCompliance.swift in Sources */,
 				D1A11111111111111111EH01 /* 600_EscortHome.swift in Sources */,
 				D1A11111111111111111ENC1 /* EscortNavController.swift in Sources */,
 				D1A11111111111111111EAD1 /* 601_EscortAssignmentDetail.swift in Sources */,
@@ -2694,7 +2743,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = EusoTrip/EusoTrip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 201;
+				CURRENT_PROJECT_VERSION = 228;
 				DEVELOPMENT_ASSET_PATHS = "\"EusoTrip/Preview Content\"";
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				ENABLE_PREVIEWS = YES;
@@ -2735,7 +2784,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = EusoTrip/EusoTrip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 201;
+				CURRENT_PROJECT_VERSION = 228;
 				DEVELOPMENT_ASSET_PATHS = "\"EusoTrip/Preview Content\"";
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				ENABLE_PREVIEWS = YES;
@@ -2775,7 +2824,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = EusoTripPulseWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 201;
+				CURRENT_PROJECT_VERSION = 228;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -2808,7 +2857,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = EusoTripPulseWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 201;
+				CURRENT_PROJECT_VERSION = 228;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -2838,7 +2887,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 201;
+				CURRENT_PROJECT_VERSION = 228;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -2862,7 +2911,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 201;
+				CURRENT_PROJECT_VERSION = 228;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -2884,7 +2933,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 201;
+				CURRENT_PROJECT_VERSION = 228;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -2907,7 +2956,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 201;
+				CURRENT_PROJECT_VERSION = 228;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -2937,7 +2986,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				CURRENT_PROJECT_VERSION = 201;
+				CURRENT_PROJECT_VERSION = 228;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = EusoTripiOSWidgets/Info.plist;
@@ -2970,7 +3019,7 @@
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
-				CURRENT_PROJECT_VERSION = 201;
+				CURRENT_PROJECT_VERSION = 228;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = EusoTripiOSWidgets/Info.plist;

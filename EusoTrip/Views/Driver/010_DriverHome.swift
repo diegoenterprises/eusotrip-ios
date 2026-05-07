@@ -183,6 +183,28 @@ struct DriverHome: View {
             await vm.load()
             await suggestedLoadsStore.refresh()
         }
+        // RealtimeService → live updates from the driver's load
+        // assignments / reassignments / surface refresh events trigger
+        // an immediate dashboard reload so a brand-new load shows up
+        // without waiting for the next pull-to-refresh.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task {
+                await vm.load()
+                await suggestedLoadsStore.refresh()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task {
+                await vm.load()
+                await suggestedLoadsStore.refresh()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
+            Task {
+                await vm.load()
+                await suggestedLoadsStore.refresh()
+            }
+        }
         // Load Details sheet for the active/assigned load. Reuses the
         // canonical LoadDetailSheet the Eusoboards surface renders so
         // drivers get the same route map, rate breakdown, and broker
@@ -391,10 +413,29 @@ struct DriverHome: View {
     /// placeholder that rendered a fake 72°/8 mph/10 mi snapshot.
     private var enableLocationCard: some View {
         Button {
-            // Deep-link into the app's iOS Settings page so the driver
-            // can flip the Location permission. A real navigation — not
-            // a dead button.
-            if let url = URL(string: UIApplication.openSettingsURLString) {
+            // Three states funnel through this CTA:
+            //   • .notDetermined → fire the iOS "Allow location?"
+            //     prompt (no Settings detour). After the user taps
+            //     Allow, the next `.refreshable` pass populates
+            //     `vm.weather` with live data.
+            //   • .denied / .restricted → open Settings since iOS
+            //     won't re-prompt; the founder needs the kill-switch
+            //     in Settings to flip back on.
+            // Founder report 2026-05-05 — "the app doesn't ask for
+            // my location" — caused by the prior unconditional
+            // Settings-deep-link path firing even when the system
+            // had never asked.
+            let status = WeatherService.shared.authorizationStatus
+            if status == .notDetermined {
+                WeatherService.shared.requestPermissionIfNeeded()
+                Task {
+                    // Re-poll the dashboard once the user responds so
+                    // the card flips from the CTA into the live
+                    // WeatherCard automatically.
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    await vm.load()
+                }
+            } else if let url = URL(string: UIApplication.openSettingsURLString) {
                 UIApplication.shared.open(url)
             }
         } label: {

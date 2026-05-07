@@ -370,10 +370,22 @@ final class DriverHomeViewModel: ObservableObject {
                     // for (a) and silently omit for (b).
                     switch service.authorizationStatus {
                     case .notDetermined:
-                        // Fetch already prompted; still undetermined means
-                        // the user hasn't responded yet. Leave pending —
-                        // a subsequent refresh will retry.
-                        self.weatherAvailability = .pending
+                        // Was `.pending` (silent) — but `.pending`
+                        // hides the card entirely, which meant a
+                        // first-time install never saw any weather
+                        // affordance because the iOS prompt
+                        // sometimes races past the 8-second poll
+                        // window in `requestLocationIfNeeded()`.
+                        // Surface the same CTA we use for `.denied`
+                        // so the founder gets a tap-to-grant entry
+                        // point on first launch (founder report
+                        // 2026-05-05 — "the app doesn't ask for my
+                        // location"). The CTA's tap action calls
+                        // `WeatherService.requestPermissionIfNeeded()`
+                        // when status is still `.notDetermined`,
+                        // and falls back to opening Settings when
+                        // `.denied` / `.restricted`.
+                        self.weatherAvailability = .needsLocation
                     case .denied, .restricted:
                         self.weatherAvailability = .needsLocation
                     case .authorizedWhenInUse, .authorizedAlways:

@@ -45,6 +45,26 @@
 //
 
 import SwiftUI
+import UIKit
+
+// MARK: - Continuity / share helpers
+
+/// Identifiable wrapper so `.sheet(item:)` can drive presentation.
+struct AgreementShareItem: Identifiable, Hashable {
+    let url: URL
+    var id: URL { url }
+}
+
+/// SwiftUI bridge to `UIActivityViewController`. Presents the system
+/// share sheet for the supplied PDF URL — AirDrop, Save to Files,
+/// Mail, Markup, Print, and any third-party share extensions.
+struct AgreementShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
+}
 
 // MARK: - Filter (wireframe canon labels)
 
@@ -168,6 +188,11 @@ struct ShipperAgreements: View {
     @StateObject private var store = ShipperAgreementsStore()
     @State private var detail: ShipperAgreementsAPI.Agreement? = nil
     @State private var showSignedToast: Bool = false
+    /// PDF share-sheet payload — set when the user taps "Download PDF"
+    /// from the row context menu. Drives a `.sheet` that wraps the
+    /// system `UIActivityViewController` so AirDrop, Save-to-Files,
+    /// Mail, Print, and Markup all light up.
+    @State private var shareItem: AgreementShareItem? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -177,7 +202,7 @@ struct ShipperAgreements: View {
                 titleBlock
                     .padding(.top, Space.s2)
                 IridescentHairline()
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s5)
 
                 content
@@ -190,6 +215,14 @@ struct ShipperAgreements: View {
         .onChange(of: store.lastSigned ?? "") { _, v in if !v.isEmpty { showSignedToast = true } }
         .sheet(item: $detail) {
             ShipperAgreementDetailSheet(row: $0).environmentObject(store)
+        }
+        .sheet(item: $shareItem) { item in
+            // Wraps UIActivityViewController so AirDrop / Files / Mail
+            // / Print all light up natively. Founder mandate
+            // 2026-05-05: agreement row needs Download-PDF parity
+            // with the web platform's `/agreements/:id/export` link.
+            AgreementShareSheet(items: [item.url])
+                .ignoresSafeArea()
         }
         .alert("Signed", isPresented: $showSignedToast, actions: {
             Button("OK") { store.lastSigned = nil }
@@ -215,7 +248,7 @@ struct ShipperAgreements: View {
                 .foregroundStyle(palette.textTertiary)
                 .accessibilityLabel(counterAccessibility)
         }
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     private var counterEyebrow: String {
@@ -281,7 +314,7 @@ struct ShipperAgreements: View {
                 .foregroundStyle(palette.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     // MARK: Content state machine
@@ -297,14 +330,14 @@ struct ShipperAgreements: View {
                         .frame(height: 124)
                 }
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
         case .error(let m):
             errorCard(m)
-                .padding(.horizontal, Space.s5)
+                .padding(.horizontal, Space.s3)
         case .loaded(let rows):
             VStack(alignment: .leading, spacing: 0) {
                 kpiSummaryCard
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s3)
 
                 filterRow
@@ -312,7 +345,7 @@ struct ShipperAgreements: View {
 
                 if rows.isEmpty {
                     emptyOrNoMatchCard
-                        .padding(.horizontal, Space.s5)
+                        .padding(.horizontal, Space.s3)
                         .padding(.top, Space.s4)
                 } else {
                     VStack(spacing: Space.s4) {
@@ -320,12 +353,12 @@ struct ShipperAgreements: View {
                             agreementRowView(row)
                         }
                     }
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s4)
                 }
 
                 newAgreementButton
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s5)
             }
         }
@@ -396,7 +429,7 @@ struct ShipperAgreements: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     // MARK: Filter row
@@ -408,7 +441,7 @@ struct ShipperAgreements: View {
                     filterChip(f, count: count(for: f))
                 }
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
         }
         .overlay(alignment: .trailing) {
             LinearGradient(
@@ -584,6 +617,7 @@ struct ShipperAgreements: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(AgreementRowStyle())
+        .contextMenu { agreementRowMenu(row) }
     }
 
     @ViewBuilder
@@ -630,6 +664,59 @@ struct ShipperAgreements: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(AgreementRowStyle())
+        .contextMenu { agreementRowMenu(row) }
+    }
+
+    /// Long-press context menu shared by both row variants. Three
+    /// actions:
+    ///   • Open in app           — same as default tap; presents the
+    ///                             native iOS detail sheet (signature
+    ///                             pad + counter / activate flow).
+    ///   • Open on web           — Continuity / Handoff hand-off to
+    ///                             the canonical `/agreements/:id`
+    ///                             surface; lands the same view in
+    ///                             Safari on the same Apple ID's
+    ///                             Mac if continuity is configured.
+    ///   • Download PDF          — renders the row to a PDF on-
+    ///                             device and presents the system
+    ///                             share sheet so AirDrop / Save-to-
+    ///                             Files / Mail / Print all work.
+    @ViewBuilder
+    private func agreementRowMenu(_ row: ShipperAgreementsAPI.Agreement) -> some View {
+        Button {
+            tapRow(row)
+        } label: {
+            Label("Open in app", systemImage: "iphone")
+        }
+        Button {
+            openOnWeb(row)
+        } label: {
+            Label("Open on web · Continuity", systemImage: "safari")
+        }
+        Button {
+            downloadPDF(row)
+        } label: {
+            Label("Download PDF", systemImage: "arrow.down.doc")
+        }
+    }
+
+    /// Hand off the agreement to the web surface. Uses
+    /// `app.eusotrip.com` as the canonical host so deep-link
+    /// re-routing in `ShipperWebToNativeMap` skips it (we
+    /// explicitly want the web surface here, not the native
+    /// route). On iPad / Mac with the same Apple ID this hands
+    /// off via Universal Links + Handoff to Safari.
+    private func openOnWeb(_ row: ShipperAgreementsAPI.Agreement) {
+        guard let url = URL(string: "https://eusotrip.com/agreements/\(row.id)") else { return }
+        openURL(url)
+    }
+
+    /// Render the row to a PDF and present the system share sheet.
+    /// Best-effort — if the temp-file write fails we silently no-op
+    /// rather than dropping a dead error onto the screen.
+    private func downloadPDF(_ row: ShipperAgreementsAPI.Agreement) {
+        guard let url = AgreementPDFBuilder.writeToTemp(agreement: row) else { return }
+        shareItem = AgreementShareItem(url: url)
     }
 
     private func rowDisplayId(_ row: ShipperAgreementsAPI.Agreement) -> String {

@@ -623,7 +623,7 @@ private struct ProfileRow: View {
 
                             CategoryDotStrip(passthrough: profile.passthrough,
                                              emphasis: .row)
-                                .padding(.top, 8)
+                                .padding(.top, 56)
 
                             HStack(alignment: .center, spacing: 0) {
                                 Text(profile.countCaption)

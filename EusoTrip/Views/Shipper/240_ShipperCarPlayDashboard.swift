@@ -320,7 +320,7 @@ struct ShipperCarPlayDashboard: View {
                                     .minimumScaleFactor(0.78)
                             }
                         }
-                        .padding(.top, 8)
+                        .padding(.top, 56)
 
                         Spacer(minLength: 0)
                     }
@@ -361,7 +361,7 @@ struct ShipperCarPlayDashboard: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 14)
-                .padding(.top, 8)
+                .padding(.top, 56)
             }
         }
         .frame(maxWidth: .infinity, minHeight: 200, alignment: .topLeading)
@@ -623,7 +623,7 @@ private struct GradientPassHeader: View {
                 .frame(width: 50, height: 18)
             }
             .padding(.horizontal, 20)
-            .padding(.top, 8)
+            .padding(.top, 56)
         }
         .frame(maxWidth: .infinity, minHeight: 40, maxHeight: 40)
         .accessibilityElement(children: .combine)

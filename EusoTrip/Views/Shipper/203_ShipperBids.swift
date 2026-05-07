@@ -103,6 +103,17 @@ struct ShipperBids: View {
         }
         .task { await refreshAll() }
         .refreshable { await refreshAll() }
+        // RealtimeService → carrier-side bid placements / counters /
+        // withdrawals refresh the shipper bids board live.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await refreshAll() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await refreshAll() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
+            Task { await refreshAll() }
+        }
         // "Counter all" → composer. The button posts the
         // notification; we listen on the same screen and show a
         // sheet with a single amount field that, on submit, calls

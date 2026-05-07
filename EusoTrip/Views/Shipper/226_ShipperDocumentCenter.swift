@@ -212,7 +212,7 @@ struct ShipperDocumentCenter: View {
                 titleBlock
                     .padding(.top, Space.s2)
                 IridescentHairline()
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s5)
 
                 content
@@ -223,6 +223,17 @@ struct ShipperDocumentCenter: View {
         }
         .task { await store.load() }
         .refreshable { await store.load() }
+        // RealtimeService → live updates refresh the document center
+        // when a new doc lands (POD upload, signed contract, etc).
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.load() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.load() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
+            Task { await store.load() }
+        }
         .fileImporter(
             isPresented: $showDocumentPicker,
             allowedContentTypes: [.pdf, .image, .item],
@@ -371,7 +382,7 @@ struct ShipperDocumentCenter: View {
                 .foregroundStyle(palette.textTertiary)
                 .accessibilityLabel(counterAccessibility)
         }
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     private var counterEyebrow: String {
@@ -398,7 +409,7 @@ struct ShipperDocumentCenter: View {
                 .foregroundStyle(palette.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     // MARK: Content state machine
@@ -414,22 +425,22 @@ struct ShipperDocumentCenter: View {
                         .frame(height: 92)
                 }
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
         case .error(let m):
             errorCard(m)
-                .padding(.horizontal, Space.s5)
+                .padding(.horizontal, Space.s3)
         case .loaded:
             VStack(alignment: .leading, spacing: 0) {
                 kpiSummaryStrip
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s3)
 
                 searchRow
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s4)
 
                 chipRow
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s3)
 
                 let filtered = store.filtered()
@@ -439,7 +450,7 @@ struct ShipperDocumentCenter: View {
                     sectionLabel("RECENT · LAST UPLOADS · \(recent.count) OF \(filtered.count)")
                         .padding(.top, Space.s5)
                     recentCard(recent)
-                        .padding(.horizontal, Space.s5)
+                        .padding(.horizontal, Space.s3)
                         .padding(.top, Space.s2)
                 }
 
@@ -447,18 +458,18 @@ struct ShipperDocumentCenter: View {
                     sectionLabel("BY CATEGORY · \(store.categories.count) LIBRARIES · STATUS-RIMMED")
                         .padding(.top, Space.s5)
                     categoryGrid
-                        .padding(.horizontal, Space.s5)
+                        .padding(.horizontal, Space.s3)
                         .padding(.top, Space.s2)
                 }
 
                 if filtered.isEmpty && recent.isEmpty {
                     emptyCard
-                        .padding(.horizontal, Space.s5)
+                        .padding(.horizontal, Space.s3)
                         .padding(.top, Space.s4)
                 }
 
                 retentionFooter
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s4)
             }
         }
@@ -475,7 +486,7 @@ struct ShipperDocumentCenter: View {
             .tracking(1.0)
             .foregroundStyle(palette.textTertiary)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
     }
 
     // MARK: KPI summary strip (3-cell · TOTAL DOCS / EXPIRES SOON / STORAGE)

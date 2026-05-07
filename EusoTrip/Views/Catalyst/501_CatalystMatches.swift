@@ -149,6 +149,28 @@ struct CatalystMatches: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
+        // RealtimeService WebSocket: refresh the matches board the
+        // moment SpectraMatch fires a fresh candidate, a carrier
+        // accepts/rejects a tender, or a load gets reassigned. The
+        // dashboard never lies about what's live.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task {
+                matches.limit = 50
+                await matches.refresh()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task {
+                matches.limit = 50
+                await matches.refresh()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
+            Task {
+                matches.limit = 50
+                await matches.refresh()
+            }
+        }
     }
 
     // MARK: - Header

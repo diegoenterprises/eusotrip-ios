@@ -216,7 +216,7 @@ struct ShipperRFP: View {
                 titleBlock
                     .padding(.top, Space.s2)
                 IridescentHairline()
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s5)
 
                 content
@@ -227,6 +227,14 @@ struct ShipperRFP: View {
         }
         .task { await store.refresh() }
         .refreshable { await store.refresh() }
+        // RealtimeService → RFPs refresh when carriers submit bids,
+        // award decisions are made, or RFP windows open/close.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.refresh() }
+        }
         .overlay(alignment: .bottom) {
             if let toast = store.lastToast {
                 Text(toast)
@@ -268,7 +276,7 @@ struct ShipperRFP: View {
                 .foregroundStyle(palette.textTertiary)
                 .accessibilityLabel(counterAccessibility)
         }
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     private var counterEyebrow: String {
@@ -309,7 +317,7 @@ struct ShipperRFP: View {
                 .foregroundStyle(palette.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     // MARK: Content state machine
@@ -325,28 +333,28 @@ struct ShipperRFP: View {
                         .frame(height: 124)
                 }
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
         case .empty:
             emptyHero
-                .padding(.horizontal, Space.s5)
+                .padding(.horizontal, Space.s3)
         case .error(let msg):
             errorBanner(msg)
-                .padding(.horizontal, Space.s5)
+                .padding(.horizontal, Space.s3)
         case .loaded(let rfps):
             VStack(alignment: .leading, spacing: 0) {
                 kpiSummaryCard(rfps)
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s3)
 
                 filterRow
                     .padding(.top, Space.s5)
 
                 rfpList(filteredRows(rfps))
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s4)
 
                 newRFPButton
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s5)
             }
         }
@@ -435,7 +443,7 @@ struct ShipperRFP: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     // MARK: Filter row
@@ -468,7 +476,7 @@ struct ShipperRFP: View {
                     .accessibilityAddTraits(f == filter ? [.isSelected] : [])
                 }
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
         }
         .overlay(alignment: .trailing) {
             LinearGradient(

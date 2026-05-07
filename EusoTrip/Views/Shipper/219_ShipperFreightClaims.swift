@@ -219,6 +219,17 @@ struct ShipperFreightClaims: View {
         }
         .task { await store.refresh() }
         .refreshable { await store.refresh() }
+        // RealtimeService → freight claims refresh when carrier-side
+        // claim status changes (filed, investigation, settled).
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
+            Task { await store.refresh() }
+        }
         .sheet(item: $selected) { row in
             ClaimDetailSheet(claim: row)
                 .environment(\.palette, palette)

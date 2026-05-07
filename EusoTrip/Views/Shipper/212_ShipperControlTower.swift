@@ -134,6 +134,18 @@ struct ShipperControlTower: View {
         }
         .task { await store.refresh() }
         .refreshable { await store.refresh() }
+        // RealtimeService → ControlTower is the operational dashboard
+        // par excellence; every load event refreshes the exception
+        // counts, ETA distributions, and on-time scoring live.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
+            Task { await store.refresh() }
+        }
         .animation(
             reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.18),
             value: storeStateKey
@@ -169,7 +181,7 @@ struct ShipperControlTower: View {
                 .foregroundStyle(counterTint)
                 .accessibilityLabel(counterAccessibility)
         }
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     private var counterEyebrow: String {
@@ -206,7 +218,7 @@ struct ShipperControlTower: View {
                 .foregroundStyle(palette.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     private var titleSubtitle: String {
@@ -223,7 +235,7 @@ struct ShipperControlTower: View {
         switch store.state {
         case .loading:
             loadingShell
-                .padding(.horizontal, Space.s5)
+                .padding(.horizontal, Space.s3)
         case .empty:
             EusoEmptyState(
                 systemImage: "eye",
@@ -231,10 +243,10 @@ struct ShipperControlTower: View {
                 subtitle: "Once you post your first load, the control tower lights up with live mode counts, exceptions, and activity.",
                 comingSoon: false
             )
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
         case .error(let msg):
             inlineError(msg) { Task { await store.refresh() } }
-                .padding(.horizontal, Space.s5)
+                .padding(.horizontal, Space.s3)
         case .loaded(let o, let e, let a):
             VStack(spacing: 0) {
                 mapHero(overview: o, exceptionCount: e.totalExceptions)
@@ -261,7 +273,7 @@ struct ShipperControlTower: View {
                 modeFilterChips(overview: overview)
                 kpiStrip(overview: overview, exceptionCount: exceptionCount)
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
             .padding(.top, 10)
         }
     }
@@ -417,7 +429,7 @@ struct ShipperControlTower: View {
                     }
                 }
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
             .padding(.top, Space.s3)
             .padding(.bottom, Space.s4)
         }
@@ -502,7 +514,7 @@ struct ShipperControlTower: View {
             exceptionsCard(exceptions)
             activityCard(activity)
         }
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
         .padding(.top, Space.s5)
     }
 

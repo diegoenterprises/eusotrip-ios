@@ -165,6 +165,18 @@ struct MeEusoTicketsView: View {
         }
         .task { await store.refresh() }
         .refreshable { await store.refresh() }
+        // RealtimeService → re-fetch the EusoTickets list the moment a
+        // load is assigned/reassigned or any surface-refresh event
+        // fires (new BOL, new run ticket, POD-driven haul receipt).
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
+            Task { await store.refresh() }
+        }
         .sheet(item: Binding(
             get: { pdfURL.map { IdentifiedURL(url: $0) } },
             set: { pdfURL = $0?.url }

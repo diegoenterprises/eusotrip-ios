@@ -46,7 +46,14 @@ final class HereTileOverlay: MKTileOverlay {
         // parent class requires one in the initializer.
         super.init(urlTemplate: nil)
 
-        self.tileSize = CGSize(width: CGFloat(style.sizePx), height: CGFloat(style.sizePx))
+        // tileSize is the on-screen LOGICAL POINT size of each tile. The
+        // standard Web-Mercator tile grid expects 256 pt — anything larger
+        // forces MapKit to request fewer, lower-zoom tiles, which is why
+        // labels rendered enormous and the basemap looked coarse pre-fix.
+        // The PNG itself comes back from HERE at `style.sizePx` px (512)
+        // → MKTileOverlayRenderer downsamples to 256 pt = retina-crisp on
+        // 2x and 3x devices.
+        self.tileSize = CGSize(width: 256, height: 256)
         self.maximumZ = 20
         self.minimumZ = 0
         // Replace Apple's basemap entirely — important for cohesive dark/light palette.
@@ -75,6 +82,7 @@ final class HereTileOverlay: MKTileOverlay {
             URLQueryItem(name: "style", value: style.rawValue),
             URLQueryItem(name: "size",  value: String(style.sizePx)),
             URLQueryItem(name: "ppi",   value: String(style.ppi)),
+            URLQueryItem(name: "lang",  value: style.labelLanguage),
         ]
         // Force-unwrap is safe: every component above is literal or an integer.
         return comps.url!
@@ -93,6 +101,16 @@ final class HereTileOverlay: MKTileOverlay {
         // xcconfig), short-circuit to a transparent PNG so the map
         // doesn't log a network error on every pan.
         guard HereMapsConfig.hasBearerCredentials else {
+            // Log once per process so we know why the basemap is blank
+            // (founder report 2026-05-05: "map in driver load details
+            // still isn't showing"). The cause is invariably an
+            // un-populated EusoTrip.xcconfig — the keys are
+            // git-ignored, so a fresh clone / CI build / new dev
+            // device has the placeholders the plistString() guard
+            // rejects. Posting `eusoHereCredsMissing` lets the
+            // surface render an inline banner so the gap is visible
+            // without trawling Console.app.
+            Self.logMissingCredsOnce()
             result(Self.transparentPNG, nil)
             return
         }
@@ -132,4 +150,21 @@ final class HereTileOverlay: MKTileOverlay {
         let base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mMAAQAABQABDQottAAAAABJRU5ErkJggg=="
         return Data(base64Encoded: base64) ?? Data()
     }()
+
+    /// One-shot console + Notification post when HERE creds are missing.
+    /// Guarded with a static flag so panning the map doesn't spam the
+    /// log with the same line for every tile.
+    private static var didLogMissingCreds = false
+    private static let missingCredsLock = NSLock()
+    private static func logMissingCredsOnce() {
+        missingCredsLock.lock()
+        defer { missingCredsLock.unlock() }
+        guard !didLogMissingCreds else { return }
+        didLogMissingCreds = true
+        NSLog("[HereTileOverlay] HERE OAuth creds missing — basemap blank. Populate HERE_ACCESS_KEY_ID / HERE_ACCESS_KEY_SECRET / HERE_TOKEN_ENDPOINT_URL in EusoTrip.xcconfig.")
+        NotificationCenter.default.post(
+            name: Notification.Name("eusoHereCredsMissing"),
+            object: nil
+        )
+    }
 }

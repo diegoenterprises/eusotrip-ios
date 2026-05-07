@@ -160,7 +160,7 @@ struct ShipperLiveTracking: View {
                 titleBlock
                     .padding(.top, Space.s2)
                 IridescentHairline()
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s5)
 
                 content
@@ -173,6 +173,20 @@ struct ShipperLiveTracking: View {
         .task { store.startPolling() }
         .onDisappear { store.stopPolling() }
         .sheet(item: $detail) { ShipperLiveTrackingDetail(load: $0) }
+        // RealtimeService → any inbound load assignment / reassignment
+        // / surface-refresh event triggers an immediate store refresh
+        // on top of the standard polling cadence so the board reflects
+        // a fresh dispatch within sub-second instead of waiting for
+        // the next polling tick.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
+            Task { await store.refresh() }
+        }
     }
 
     // MARK: TopBar
@@ -192,7 +206,7 @@ struct ShipperLiveTracking: View {
                 .foregroundStyle(counterColor)
                 .accessibilityLabel(counterAccessibility)
         }
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     private var counterEyebrow: String {
@@ -246,7 +260,7 @@ struct ShipperLiveTracking: View {
                 .foregroundStyle(palette.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     private var titleSubtitle: String {
@@ -269,15 +283,15 @@ struct ShipperLiveTracking: View {
                         .frame(height: 92)
                 }
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
         case .error(let m):
             errorCard(m)
-                .padding(.horizontal, Space.s5)
+                .padding(.horizontal, Space.s3)
         case .loaded:
             VStack(alignment: .leading, spacing: 0) {
                 mapHero
                 shipmentsSection
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s4)
                 geofenceRibbon
                     .padding(.top, Space.s4)
@@ -298,7 +312,7 @@ struct ShipperLiveTracking: View {
                 modeFilterChips
                 kpiStrip
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
             .padding(.top, 10)
         }
     }
@@ -678,7 +692,7 @@ struct ShipperLiveTracking: View {
                 .foregroundStyle(palette.textSecondary)
                 .lineLimit(1)
         }
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
         .padding(.vertical, Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(

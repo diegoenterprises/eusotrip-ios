@@ -36,7 +36,7 @@ private struct PortIntelBody: View {
                 content
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .padding(.horizontal, 14).padding(.top, 56)
         }
     }
 

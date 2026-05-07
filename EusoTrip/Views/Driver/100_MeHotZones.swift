@@ -74,6 +74,15 @@ struct MeHotZones: View {
         }
         .task { await store.bootstrap() }
         .refreshable { await store.refresh() }
+        // RealtimeService → refresh hot-zone heatmap when surface
+        // events fire (load assignments shift demand, market pulse
+        // ticks update zone scoring).
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.refresh() }
+        }
         .sheet(item: $selectedZone) { zone in
             HotZonesDetailSheet(zone: zone, marketPulse: store.marketPulse)
                 .environment(\.palette, palette)

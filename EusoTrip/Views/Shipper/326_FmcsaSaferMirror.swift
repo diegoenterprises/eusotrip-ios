@@ -13,6 +13,15 @@ struct FmcsaSaferMirrorScreen: View {
 }
 
 private struct FmcsaSelf: Decodable, Hashable {
+    /// `false` when the caller has no DOT on file, the company row is
+    /// missing, or SAFER returned no record for the resolved DOT.
+    /// `true` when every safety field below is populated. Server-set
+    /// — see `fmcsaRouter.lookupSelf` in `frontend/server/routers/fmcsa.ts`.
+    let available: Bool?
+    /// Human-readable explanation when `available == false`. Surfaced
+    /// in a neutral card so the screen reads as a setup nudge instead
+    /// of an error.
+    let reason: String?
     let dotNumber: String?
     let mcNumber: String?
     let legalName: String?
@@ -43,6 +52,24 @@ private struct FmcsaBody: View {
                 header
                 if loading { LifecycleCard { Text("Pulling FMCSA data…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
                 else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
+                else if let d = data, d.available == false {
+                    // No DOT on file / SAFER miss — neutral card with
+                    // the server's `reason` instead of forcing the user
+                    // to stare at empty safety fields. Founder report
+                    // 2026-05-06: every error path here was rendering
+                    // as a hard failure even though "no DOT yet" is a
+                    // benign setup state.
+                    LifecycleCard {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("FMCSA SAFER record unavailable")
+                                .font(EType.body.weight(.semibold))
+                                .foregroundStyle(palette.textPrimary)
+                            Text(d.reason ?? "Add a USDOT number to your company profile to mirror your FMCSA SAFER record here.")
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                        }
+                    }
+                }
                 else if let d = data {
                     authorityCard(d)
                     aiAnalysisCard(d)
@@ -51,7 +78,11 @@ private struct FmcsaBody: View {
                 }
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            // Top inset clears the floating ShipperBackOverlay chevron
+            // (top:8 + leading:12 + ~44pt circle). The previous 8pt
+            // top inset let the eyebrow + title sit underneath the
+            // overlay. Founder report 2026-05-06.
+            .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
     }

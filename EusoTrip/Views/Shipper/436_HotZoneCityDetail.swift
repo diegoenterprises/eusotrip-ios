@@ -40,7 +40,7 @@ private struct HotZoneDetailBody: View {
                 else if let d = detail { demandCard(d); ratesCard(d); commodityCard(d); lanesCard(d) }
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
     }

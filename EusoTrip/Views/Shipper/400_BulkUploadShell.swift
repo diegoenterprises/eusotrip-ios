@@ -70,7 +70,7 @@ private struct BulkUploadShellBody: View {
                 historyCard
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await loadEntityTypes(); await loadHistory() }
         .fileImporter(isPresented: $fileImporterPresented, allowedContentTypes: [.commaSeparatedText, .json, .text], allowsMultipleSelection: false) { result in

@@ -25,7 +25,7 @@ private struct SuccessBody: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 14)
-        .padding(.top, 8)
+        .padding(.top, 56)
     }
 
     private var successHero: some View {

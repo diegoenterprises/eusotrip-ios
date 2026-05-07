@@ -596,7 +596,7 @@ private struct MediumWidgetThumbnail: View {
                         .foregroundStyle(.white.opacity(0.62))
                 }
                 .padding(.leading, 22)
-                .padding(.top, 8)
+                .padding(.top, 56)
 
                 Spacer(minLength: 0)
 
@@ -611,7 +611,7 @@ private struct MediumWidgetThumbnail: View {
                         .monospacedDigit()
                 }
                 .padding(.trailing, 12)
-                .padding(.top, 8)
+                .padding(.top, 56)
             }
 
             MicroStrip()
@@ -825,7 +825,7 @@ private struct SizeRow: View {
 
                             CategoryDotStrip(payload: size.payload,
                                              emphasis: .row)
-                                .padding(.top, 8)
+                                .padding(.top, 56)
 
                             HStack(alignment: .center, spacing: 0) {
                                 Text(size.countCaption)

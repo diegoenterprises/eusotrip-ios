@@ -57,6 +57,21 @@ struct ShipperApplePayWallet: View {
     @Environment(\.palette) var palette
     @Environment(\.openURL) private var openURL
 
+    /// Inline QR payload, set when `EusoWalletPassService` falls back
+    /// to the no-pkpass branch. The hero pickup card swaps from the
+    /// decorative grid to a live `EusoQRView` whenever this is non-nil.
+    @State var inlineQrPayload: String? = nil
+    /// 5-digit fallback code shown next to the QR for the "type-it"
+    /// path when the gate scanner can't read the QR (camera issue,
+    /// glare, rooted device with no camera permission).
+    @State var inlineShortCode: String? = nil
+    /// Inline banner — shown after every Add-to-Wallet attempt so the
+    /// user always knows the result. Auto-clears after 4 s.
+    @State var passBannerText: String? = nil
+    @State var passBannerKind: WalletBannerKind = .info
+
+    enum WalletBannerKind { case success, info, error }
+
     private let counterEyebrow = "3 PASSES · 1 ACTIVE"
 
     private let activePass = ActiveWalletPass(
@@ -278,9 +293,30 @@ struct ShipperApplePayWallet: View {
 
                     HStack {
                         Spacer()
-                        DecorativeQRGrid()
-                            .padding(.top, 12)
-                            .padding(.trailing, 20)
+                        // Real QR code via the shared EusoQR primitive.
+                        // Encodes a role-aware deeplink to the load
+                        // credential, plus the 5-digit fallback code
+                        // visible underneath when `inlineShortCode`
+                        // is populated. Founder mandate 2026-05-06 —
+                        // every QR surface needs to actually work.
+                        VStack(alignment: .trailing, spacing: 6) {
+                            EusoQRView(
+                                kind: .loadCredential(
+                                    loadId: activePass.loadId,
+                                    mode: .credential
+                                ),
+                                role: .shipper,
+                                size: 92,
+                                cornerRadius: 8
+                            )
+                            if let code = inlineShortCode {
+                                Text(code)
+                                    .font(EType.mono(.micro)).tracking(2.0)
+                                    .foregroundStyle(palette.textPrimary)
+                            }
+                        }
+                        .padding(.top, 12)
+                        .padding(.trailing, 20)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -310,7 +346,7 @@ struct ShipperApplePayWallet: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 14)
-                .padding(.top, 8)
+                .padding(.top, 56)
             }
         }
         .frame(maxWidth: .infinity, minHeight: 220, alignment: .topLeading)
@@ -427,8 +463,19 @@ struct ShipperApplePayWallet: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/wallet/pass/\(activePass.id)/add") {
-            openURL(url)
+        // Hand off to PassKit instead of openURL'ing Safari at a
+        // dead web URL. The service handles the
+        //   server credential mint → .pkpass fetch → PKPass parse →
+        //   PKAddPassesViewController present
+        // chain, plus a graceful fallback to the inline QR + 5-digit
+        // shortCode card when the .pkpass signing pipeline is offline
+        // (founder report 2026-05-06 — "clicking on passes opens up
+        // web browser and error screen instead of connecting to the
+        // apple wallet").
+        let loadId = activePass.loadId
+        Task {
+            let result = await EusoWalletPassService.shared.addPass(forLoadId: loadId)
+            await MainActor.run { applyPassResult(result) }
         }
     }
 
@@ -444,8 +491,40 @@ struct ShipperApplePayWallet: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/wallet/pass/\(pass.id)") {
-            openURL(url)
+        // Tapping any pass row in the list also routes to the same
+        // PassKit flow — every pass should add to Apple Wallet, not
+        // open Safari.
+        let loadId = pass.id
+        Task {
+            let result = await EusoWalletPassService.shared.addPass(forLoadId: loadId)
+            await MainActor.run { applyPassResult(result) }
+        }
+    }
+
+    /// Apply the result of `EusoWalletPassService.addPass` to local
+    /// state. `presented` needs no UI work — the system Apple Wallet
+    /// sheet is already up. The other two cases drive an inline
+    /// banner so the user always knows what happened (no silent
+    /// failures, per the no-dead-buttons doctrine).
+    @MainActor
+    private func applyPassResult(_ result: EusoWalletPassResult) {
+        switch result {
+        case .presented:
+            passBannerKind = .success
+            passBannerText = "Pass added to Apple Wallet"
+        case .signingUnavailable(let qrPayload, let shortCode):
+            passBannerKind = .info
+            passBannerText = "Wallet signing offline — show the in-app QR + code \(shortCode) at the gate."
+            inlineQrPayload = qrPayload
+            inlineShortCode = shortCode
+        case .failure(let message):
+            passBannerKind = .error
+            passBannerText = message
+        }
+        // Auto-clear after 4s so the banner doesn't linger.
+        Task {
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            await MainActor.run { passBannerText = nil }
         }
     }
 
@@ -596,7 +675,7 @@ private struct GradientPassHeader: View {
                 .frame(width: 50, height: 18)
             }
             .padding(.horizontal, 20)
-            .padding(.top, 8)
+            .padding(.top, 56)
         }
         .frame(maxWidth: .infinity, minHeight: 40, maxHeight: 40)
         .accessibilityElement(children: .combine)

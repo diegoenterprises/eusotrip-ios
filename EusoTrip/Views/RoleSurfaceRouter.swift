@@ -490,6 +490,15 @@ private struct ShipperBackOverlay: ViewModifier {
         "204", "250", "251", "252", "253",
         // Hub roots have no parent to return to
         "200", "201", "320",
+        // 205 Shipper Load Detail draws its own < chevron next to the
+        // lane title; suppress the surface overlay to avoid the
+        // double-back collision.
+        "205",
+        // Detail / leaf screens that ship a header back chevron of
+        // their own (audit 2026-05-05). Suppressing surface overlay
+        // here prevents the floating circle from overlapping the
+        // screen's own chevron.
+        "227", "228", "229", "230", "230b",
     ]
 
     let currentScreenId: String
@@ -756,6 +765,17 @@ enum ShipperWebToNativeMap {
             return nil
         }
         let segments = url.pathComponents.filter { $0 != "/" }
+
+        // Wallet pickup credential — `/wallet/credential/<loadId>` is
+        // the canonical web-parity surface for the same EusoWallet
+        // pickup card the iOS shipper sees on screen 239. Universal
+        // Link routing pulls iOS users into the native wallet.
+        if segments.first == "wallet",
+           segments.count >= 3,
+           segments[1] == "credential" {
+            return "239"
+        }
+
         guard segments.first == "shipper", segments.count >= 2 else {
             return nil
         }

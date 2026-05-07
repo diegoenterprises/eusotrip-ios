@@ -37,11 +37,15 @@ final class WeatherService: NSObject, ObservableObject {
     }()
 
     /// Maximum age (in seconds) of a CoreLocation fix we'll accept.
-    /// Tightened from 300s → 60s — 5 min was still letting a stale
-    /// fix from a prior county leak through when the driver moved
-    /// quickly. 60s means within the past minute, the driver hasn't
-    /// realistically left the local weather cell.
-    private let maxLocationAgeSeconds: TimeInterval = 60
+    /// Was 60s — too tight: CoreLocation's first response on a fresh
+    /// app launch is frequently a cached fix older than 60s, which
+    /// got silently rejected and the weather widget never rendered
+    /// for either persona (founder report 2026-05-05 — "home screen
+    /// weather widget didn't load … for either user"). 600s (10 min)
+    /// is the sweet spot — drivers stay inside the same weather cell
+    /// for that long unless on a sustained haul, and the next
+    /// `requestLocation()` we issue refreshes the fix anyway.
+    private let maxLocationAgeSeconds: TimeInterval = 600
 
     private let weatherService = WeatherKit.WeatherService.shared
 
@@ -65,6 +69,20 @@ final class WeatherService: NSObject, ObservableObject {
     /// momentarily unavailable" so the UI can offer the right CTA.
     var authorizationStatus: CLAuthorizationStatus {
         locationManager.authorizationStatus
+    }
+
+    /// Fire the iOS "Allow EusoTrip to use your location?" prompt
+    /// directly. Idempotent: if status is already determined (granted,
+    /// denied, or restricted), this is a no-op. Callers use it to
+    /// surface the system dialog from a CTA tap when the previous
+    /// "request on first weather fetch" path didn't fire (e.g.
+    /// because the home view appeared before `fetchCurrent()`'s
+    /// internal `requestWhenInUseAuthorization()` reached the runloop).
+    /// Founder report 2026-05-05 — "the app doesn't ask for my
+    /// location so it doesn't load the weather widget".
+    func requestPermissionIfNeeded() {
+        guard locationManager.authorizationStatus == .notDetermined else { return }
+        locationManager.requestWhenInUseAuthorization()
     }
 
     // MARK: - Public
@@ -892,6 +910,15 @@ extension WeatherService: CLLocationManagerDelegate {
     nonisolated func locationManagerDidChangeAuthorization(
         _ manager: CLLocationManager
     ) {
-        // No-op: the one-shot path re-checks authorizationStatus itself.
+        // Broadcast the auth change so home views can re-run their
+        // weather fetch after the user taps Allow on the prompt.
+        // Without this, the dashboard rendered empty on first launch
+        // because `fetchCurrent()` had already finished (returning
+        // nil for `.notDetermined`) and no signal told the view to
+        // try again once the user responded.
+        NotificationCenter.default.post(
+            name: Notification.Name("eusoWeatherAuthorizationChanged"),
+            object: nil
+        )
     }
 }

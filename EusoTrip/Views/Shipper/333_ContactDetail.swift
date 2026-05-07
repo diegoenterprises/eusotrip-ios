@@ -40,7 +40,7 @@ private struct ContactDetailBody: View {
                 else if let c = contact { detailCard(c); ctaRow(c); historyCard(c) }
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
     }

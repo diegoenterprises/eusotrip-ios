@@ -85,6 +85,8 @@ struct CatalystMatchDetail: View {
 
     @StateObject private var detailStore = CatalystMatchDetailStore()
 
+    @State private var presentingFullLoadDetail: Bool = false
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -95,8 +97,60 @@ struct CatalystMatchDetail: View {
             .padding(.horizontal, 14)
             .padding(.top, 8)
         }
-        .task { await refreshAll() }
+        .task {
+            await refreshAll()
+            joinLoadRoom()
+        }
         .refreshable { await refreshAll() }
+        .onDisappear { leaveLoadRoom() }
+        // RealtimeService → live updates from the match's Socket.IO
+        // room (status changes, candidate fan-out, carrier accept,
+        // reassignment) refresh the detail surface in place.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await refreshAll() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await refreshAll() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
+            Task { await refreshAll() }
+        }
+        // "Open full load detail" CTA → 305 Catalyst Load Detail with
+        // the resolved loadId so the catalyst can update status,
+        // reassign carrier, or message ESang from the load surface.
+        .sheet(isPresented: $presentingFullLoadDetail) {
+            CatalystLoadDetailScreen(theme: palette, loadId: resolvedLoadId)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+    }
+
+    /// Live load id from the loaded detail row — falls back to the
+    /// matchId if the detail hasn't arrived yet (the 305 sheet will
+    /// then either resolve it or show its own "match not found"
+    /// state). Never returns an empty string so the sheet always
+    /// has *some* id to dispatch on.
+    private var resolvedLoadId: String {
+        if let live = detailStore.state.value ?? nil {
+            return live.id
+        }
+        return matchId
+    }
+
+    private func joinLoadRoom() {
+        guard let live = detailStore.state.value ?? nil else { return }
+        guard let intId = Int(live.id), intId > 0 else { return }
+        Task { @MainActor in
+            RealtimeService.shared.joinLoad(intId)
+        }
+    }
+
+    private func leaveLoadRoom() {
+        guard let live = detailStore.state.value ?? nil else { return }
+        guard let intId = Int(live.id), intId > 0 else { return }
+        Task { @MainActor in
+            RealtimeService.shared.leaveLoad(intId)
+        }
     }
 
     // MARK: - Header
@@ -485,10 +539,10 @@ struct CatalystMatchDetail: View {
         }
     }
 
-    /// Override-to-manual CTA — disabled affordance until
-    /// `catalysts.overrideMatch` ships server-side. Honest about
-    /// why it's not yet actionable. Renders only on matches that
-    /// are in a state where overriding would be plausible (status
+    /// Override-to-manual CTA — routes the catalyst to 305 Load
+    /// Detail where the existing assign/reassign carrier picker is
+    /// the production manual-override path. Renders only on matches
+    /// in a state where overriding would be plausible (status
     /// `available` / `posted` / `bidding_open` / `matching`); the
     /// CTA is suppressed for already-locked / in-flight / delivered
     /// matches.
@@ -496,29 +550,61 @@ struct CatalystMatchDetail: View {
     private func overrideCTA(_ d: LoadsAPI.LoadDetail) -> some View {
         let overridable: Set<String> = ["available", "posted", "bidding_open", "open", "matching"]
         if overridable.contains(d.status.lowercased()) {
-            VStack(alignment: .leading, spacing: 6) {
+            Button {
+                presentingFullLoadDetail = true
+            } label: {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Open full load detail")
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(palette.textPrimary)
+                        Spacer()
+                        Image(systemName: "arrow.up.right.square.fill")
+                            .font(.system(size: 12, weight: .heavy))
+                            .foregroundStyle(LinearGradient.diagonal)
+                    }
+                    Text("Open the full Load Detail surface to assign or reassign a carrier (manual override), update status, send to ESang, or message the driver. Manual override pulls the match out of SpectraMatch.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(Space.s3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(palette.bgCard)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(LinearGradient.diagonal.opacity(0.4), lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+        } else {
+            // Even on non-overridable matches the catalyst should be
+            // able to drill into the load (e.g. to see live driver
+            // location once the carrier accepts). Same target — just
+            // worded as a navigation, not an override.
+            Button {
+                presentingFullLoadDetail = true
+            } label: {
                 HStack {
-                    Text("Override to manual")
+                    Text("Open full load detail")
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                     Spacer()
-                    Image(systemName: "lock.fill")
+                    Image(systemName: "arrow.up.right.square.fill")
                         .font(.system(size: 12, weight: .heavy))
-                        .foregroundStyle(palette.textTertiary)
+                        .foregroundStyle(LinearGradient.diagonal)
                 }
-                Text("Manual override pulls the match out of SpectraMatch and lets the catalyst pick a carrier directly. Today this surface confirms the match is overridable; once `catalysts.overrideMatch` ships, this CTA activates.")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+                .padding(Space.s3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(palette.bgCard)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint, lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
-            .padding(Space.s3)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(palette.bgCard.opacity(0.6))
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .strokeBorder(palette.borderFaint, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .buttonStyle(.plain)
         }
     }
 

@@ -228,7 +228,7 @@ struct ShipperWatchComplication: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
             }
-            .padding(.top, 8)
+            .padding(.top, 56)
             .padding(.horizontal, 20)
             .padding(.bottom, 18)
         }

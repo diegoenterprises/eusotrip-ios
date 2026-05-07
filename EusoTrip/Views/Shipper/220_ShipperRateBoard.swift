@@ -150,19 +150,19 @@ struct ShipperRateBoard: View {
                 titleBlock
                     .padding(.top, Space.s2)
                 IridescentHairline()
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s5)
 
                 sectionLabel("FEATURED LANE · HOUSTON → DALLAS")
                     .padding(.top, Space.s4)
                 featuredLaneCard
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s2)
 
                 sectionLabel("YOUR LANES · PORTFOLIO COMPARISON")
                     .padding(.top, Space.s5)
                 yourLanesCard
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s2)
 
                 sectionLabel("PULL CUSTOM RATE")
@@ -180,6 +180,14 @@ struct ShipperRateBoard: View {
         .task {
             await store.refreshFeatured()
             await store.calculate(origin: origin, destination: dest, equipment: equipment, period: period)
+        }
+        // RealtimeService → market rate signals shift with new
+        // matches/assignments; refresh featured rate cards live.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.refreshFeatured() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.refreshFeatured() }
         }
     }
 
@@ -200,7 +208,7 @@ struct ShipperRateBoard: View {
                 .foregroundStyle(palette.textTertiary)
                 .accessibilityLabel("Live rate data sourced from DAT and Greenscreens")
         }
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     // MARK: Title block
@@ -216,7 +224,7 @@ struct ShipperRateBoard: View {
                 .foregroundStyle(palette.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     @ViewBuilder
@@ -226,7 +234,7 @@ struct ShipperRateBoard: View {
             .tracking(1.0)
             .foregroundStyle(palette.textTertiary)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
     }
 
     // MARK: Featured lane hero card (gradient rim · numeral pair · forecast chart)
@@ -242,16 +250,16 @@ struct ShipperRateBoard: View {
             VStack(alignment: .leading, spacing: 0) {
                 numeralPair
                     .padding(.top, Space.s5)
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
 
                 forecastChartPlaceholder
                     .frame(height: 96)
                     .padding(.top, Space.s4)
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
 
                 forecastLegend
                     .padding(.top, Space.s2)
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.bottom, Space.s5)
             }
         }

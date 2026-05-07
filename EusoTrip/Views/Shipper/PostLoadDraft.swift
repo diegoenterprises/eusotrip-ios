@@ -132,6 +132,67 @@ final class PostLoadDraft: ObservableObject {
     @Published var preCoolRequired: Bool = false
     @Published var continuousMode: Bool = true
 
+    // MARK: - Step 2.5 · Catalyst / load requirements (web parity)
+    //
+    // Mirrors the web `LoadCreationWizard.tsx` step-4 fields the iOS
+    // wizard was previously missing. Founder report 2026-05-06 —
+    // "shipper post load wizard is missing some details, theres no
+    // options for adding escort or escort requirement. or equipment
+    // requirement thers a few key things missing."
+    //
+    // Each field threads into `shippers.create` so the load lands
+    // server-side with the same metadata web posters set, and
+    // downstream surfaces (driver eligibility filter, escort
+    // marketplace, rate-board minimum-tier filter) light up
+    // immediately.
+
+    /// True when the load needs a lead/chase escort (oversized,
+    /// hazmat-9, certain UN-coded chemicals). Drives the canonical
+    /// EscortJobMarketplace inclusion + auto-routes the load to
+    /// escort dispatch when posted.
+    @Published var requiresEscort: Bool = false
+    /// Optional escort headcount — 1 lead, 2 lead+chase, 3+ for
+    /// permitted oversized convoys. nil = "router decides".
+    @Published var escortCount: Int? = nil
+    /// CDL endorsements the assigned driver must hold.
+    /// Canonical values: "TWIC", "Hazmat", "Tanker", "DoublesTriples",
+    /// "Passenger", "School Bus". Multi-select on the wizard step.
+    @Published var requiredEndorsements: [String] = []
+    /// Special equipment the trailer must carry — "tarps",
+    /// "chains", "straps", "edge_protectors", "load_locks",
+    /// "liftgate", "ramps", "pallet_jack". Multi-select.
+    @Published var specialEquipment: [String] = []
+    /// Minimum catalyst combined-single-limit insurance, in USD.
+    /// Server-side rate sheets default to $1M; hazmat lanes typically
+    /// require $5M; high-value cargo $10M+. Stored as a string so the
+    /// server's zod parser handles big-number safely.
+    @Published var minInsuranceCoverage: String = "1000000"
+    /// FMCSA safety rating gate. Canonical values:
+    /// "satisfactory" | "conditional" | "unrated" | "any". The
+    /// scheduler / book-now flow rejects bidders whose rating is
+    /// below this floor.
+    @Published var minSafetyRating: String = "satisfactory"
+    /// Hazmat operating-authority required on the catalyst's
+    /// MC docket. Auto-true when `cargoType == .hazmat`.
+    @Published var hazmatAuthRequired: Bool = false
+    /// Allowlist of catalyst userIds that can see / bid on this load.
+    /// Empty = open marketplace.
+    @Published var preferredCatalystIds: [Int] = []
+    /// Blocklist of catalyst userIds. Bids from these carriers are
+    /// auto-rejected.
+    @Published var blockedCatalystIds: [Int] = []
+    /// True = only catalysts with an active contract for this lane
+    /// can bid. False = open spot market.
+    @Published var contractOnly: Bool = false
+    /// True = require Apple-Pay / EusoWallet escrow before the bid is
+    /// accepted. Surfaces a green "Escrow funded" pill on the iOS
+    /// load detail when true.
+    @Published var escrowRequired: Bool = false
+    /// Optional appointment window enforcement. When true, the driver
+    /// can't depart pickup until the EusoTicket appointment slot
+    /// matches.
+    @Published var appointmentRequired: Bool = false
+
     // MARK: - Step 3 · Pricing
 
     @Published var rate: Double? = nil
@@ -139,6 +200,15 @@ final class PostLoadDraft: ObservableObject {
     @Published var accessorialsAllowed: [String] = []
     @Published var contractTier: String = ""
     @Published var notes: String = ""
+
+    /// Pricing strategy — matches the web wizard's step-6 enum.
+    /// "auction" | "book_now" | "target".
+    @Published var pricingStrategy: String = "auction"
+    @Published var bookNowRate: Double? = nil
+    @Published var minimumBid:   Double? = nil
+    @Published var targetRate:   Double? = nil
+    /// Auction window in hours (web default = 24).
+    @Published var biddingDurationHours: Int = 24
 
     // MARK: - Submit state
 
@@ -157,8 +227,19 @@ final class PostLoadDraft: ObservableObject {
         properShippingName = ""; ergGuide = nil; chemtrecPhone = ""
         reeferTempLow = nil; reeferTempHigh = nil
         preCoolRequired = false; continuousMode = true
+        // Web-parity catalyst-requirement fields
+        requiresEscort = false; escortCount = nil
+        requiredEndorsements = []; specialEquipment = []
+        minInsuranceCoverage = "1000000"; minSafetyRating = "satisfactory"
+        hazmatAuthRequired = false
+        preferredCatalystIds = []; blockedCatalystIds = []
+        contractOnly = false; escrowRequired = false
+        appointmentRequired = false
         rate = nil; fuelSurchargeRate = nil
         accessorialsAllowed = []; contractTier = ""; notes = ""
+        pricingStrategy = "auction"
+        bookNowRate = nil; minimumBid = nil; targetRate = nil
+        biddingDurationHours = 24
         isPosting = false; postError = nil
         postedLoadNumber = nil; postedLoadId = nil
     }
@@ -225,11 +306,36 @@ final class PostLoadDraft: ObservableObject {
             // the address field. Server uses these to skip re-geocoding
             // and route distance directly. When nil the server geocodes
             // both ends as a fallback.
+            // Hazmat cargo type auto-implies the hazmat-auth gate so a
+            // shipper can't accidentally post UN-coded freight to a
+            // non-hazmat catalyst.
+            let resolvedHazmatAuth = hazmatAuthRequired || cargoType == .hazmat
+
             struct In: Encodable {
                 let origin: String; let destination: String; let cargoType: String
                 let rate: Double?; let weight: Double?; let notes: String?; let pickupDate: String?
                 let originLat: Double?; let originLng: Double?
                 let destLat:   Double?; let destLng:   Double?
+                // Web-parity catalyst requirements (`LoadCreationWizard.tsx` step 4)
+                let requiresEscort: Bool?
+                let escortCount:    Int?
+                let requiredEndorsements: [String]?
+                let specialEquipment:     [String]?
+                let minInsuranceCoverage: String?
+                let minSafetyRating:      String?
+                let hazmatAuthRequired:   Bool?
+                let preferredCatalystIds: [Int]?
+                let blockedCatalystIds:   [Int]?
+                let contractOnly:         Bool?
+                let escrowRequired:       Bool?
+                let appointmentRequired:  Bool?
+                // Pricing strategy block (web step 6)
+                let pricingStrategy:      String?
+                let bookNowRate:          Double?
+                let minimumBid:           Double?
+                let targetRate:           Double?
+                let biddingDurationHours: Int?
+                let equipmentType:        String?
             }
             struct Out: Decodable {
                 let success: Bool; let id: Int; let loadNumber: String
@@ -245,7 +351,25 @@ final class PostLoadDraft: ObservableObject {
                     notes: composedNotes().isEmpty ? nil : composedNotes(),
                     pickupDate: pickupDate.map { iso.string(from: $0) },
                     originLat: originLat, originLng: originLng,
-                    destLat:   destLat,   destLng:   destLng
+                    destLat:   destLat,   destLng:   destLng,
+                    requiresEscort:        requiresEscort ? true : nil,
+                    escortCount:           escortCount,
+                    requiredEndorsements:  requiredEndorsements.isEmpty ? nil : requiredEndorsements,
+                    specialEquipment:      specialEquipment.isEmpty ? nil : specialEquipment,
+                    minInsuranceCoverage:  minInsuranceCoverage.isEmpty ? nil : minInsuranceCoverage,
+                    minSafetyRating:       minSafetyRating.isEmpty ? nil : minSafetyRating,
+                    hazmatAuthRequired:    resolvedHazmatAuth ? true : nil,
+                    preferredCatalystIds:  preferredCatalystIds.isEmpty ? nil : preferredCatalystIds,
+                    blockedCatalystIds:    blockedCatalystIds.isEmpty ? nil : blockedCatalystIds,
+                    contractOnly:          contractOnly ? true : nil,
+                    escrowRequired:        escrowRequired ? true : nil,
+                    appointmentRequired:   appointmentRequired ? true : nil,
+                    pricingStrategy:       pricingStrategy.isEmpty ? nil : pricingStrategy,
+                    bookNowRate:           bookNowRate,
+                    minimumBid:            minimumBid,
+                    targetRate:            targetRate,
+                    biddingDurationHours:  biddingDurationHours > 0 ? biddingDurationHours : nil,
+                    equipmentType:         equipmentType.isEmpty ? nil : equipmentType
                 )
             )
             postedLoadNumber = result.loadNumber

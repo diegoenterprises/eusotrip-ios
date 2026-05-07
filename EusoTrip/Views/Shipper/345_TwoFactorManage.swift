@@ -35,7 +35,7 @@ private struct TwoFactorBody: View {
                 else if let s = status { statusCard(s); ctaRow(s); backupCodesCard(s) }
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
     }

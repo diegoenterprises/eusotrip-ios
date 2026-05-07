@@ -201,6 +201,17 @@ struct ShipperDispatchControl: View {
         }
         .task { await store.refresh() }
         .refreshable { await store.refresh() }
+        // RealtimeService → driver/carrier dispatch updates refresh
+        // the dispatch control surface live.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
+            Task { await store.refresh() }
+        }
         .sheet(item: $selected) { row in
             DispatchDetailSheet(load: row, role: session.user?.role)
                 .environment(\.palette, palette)

@@ -180,15 +180,15 @@ struct ShipperBOLUpload: View {
                 titleBlock
                     .padding(.top, Space.s2)
                 IridescentHairline()
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s4)
 
                 heroCard
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s4)
 
                 kpiQuartet
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s4)
 
                 sectionLabel("SIGNATORIES · 2/3 SIGNED")
@@ -200,11 +200,11 @@ struct ShipperBOLUpload: View {
                     }
                     auditLogRow
                 }
-                .padding(.horizontal, Space.s5)
+                .padding(.horizontal, Space.s3)
                 .padding(.top, Space.s3)
 
                 viewAuditTrailLink
-                    .padding(.horizontal, Space.s5)
+                    .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s4)
 
                 Color.clear.frame(height: 96)
@@ -229,7 +229,7 @@ struct ShipperBOLUpload: View {
                 .foregroundStyle(Brand.success)
                 .accessibilityLabel("Pickup signed, two of three parties")
         }
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     // MARK: Back chevron + breadcrumb
@@ -246,7 +246,7 @@ struct ShipperBOLUpload: View {
                 Spacer()
             }
             .contentShape(Rectangle())
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Back to Loads")
@@ -277,7 +277,7 @@ struct ShipperBOLUpload: View {
                 .minimumScaleFactor(0.85)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s3)
     }
 
     // MARK: Section label
@@ -289,7 +289,7 @@ struct ShipperBOLUpload: View {
             .tracking(1.0)
             .foregroundStyle(palette.textTertiary)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, Space.s3)
     }
 
     // MARK: Hero BOL card

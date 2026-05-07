@@ -117,6 +117,14 @@ struct MeAgreements: View {
         .task { await store.refresh() }
         .refreshable { await store.refresh() }
         .onChange(of: store.statusFilter) { _, _ in Task { await store.refresh() } }
+        // RealtimeService → refresh agreements when carrier-issued
+        // agreements land or load assignment triggers a new sign-up.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.refresh() }
+        }
         .sheet(item: $signing) { agreement in
             SignSheet(agreement: agreement, store: store)
                 .eusoSheetX()

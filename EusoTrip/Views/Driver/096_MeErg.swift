@@ -438,9 +438,19 @@ private struct ErgDetailSheet: View {
         .eusoCard(radius: Radius.lg)
     }
 
-    /// Seamless loading state — auto-fires a retry every 4 seconds
-    /// while `store.detail` is nil so a transient network hiccup
-    /// self-heals without ever surfacing an error to the user.
+    /// Bounded loading state — fires up to N retries with exponential
+    /// backoff while `store.detail` is nil. After exhausting retries
+    /// we stop and let the user pull-to-refresh or back out.
+    ///
+    /// Was: an unbounded `while store.detail == nil` loop with a fixed
+    /// 4s cadence. That hammered the same endpoint indefinitely when
+    /// the UN number wasn't on the server, and after ~8 minutes of
+    /// repeated `URLSession.data(for:)` calls CFNetwork's per-request
+    /// dispatch sources started colliding inside
+    /// `_dispatch_source_set_runloop_timer_4CF` and the app crashed
+    /// (EXC_BAD_ACCESS / SIGSEGV at offset 0x1d). Surfaced via TestFlight
+    /// crash report on build 201, 2026-05-05 — `EusoTripAPI.swift:963`
+    /// trace originating from this view.
     @ViewBuilder
     private var loadingState: some View {
         VStack(spacing: Space.s3) {
@@ -455,11 +465,24 @@ private struct ErgDetailSheet: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, Space.s5)
         .task {
-            while store.detail == nil {
-                try? await Task.sleep(nanoseconds: 4_000_000_000)
-                if store.detail == nil {
-                    await store.loadDetail(unNumber: unNumber)
-                }
+            // First attempt fires immediately so the spinner doesn't
+            // sit empty for 2s on a fresh open.
+            await store.loadDetail(unNumber: unNumber)
+            // Up to 4 backoff retries (2s, 4s, 8s, 16s = 30s total)
+            // before we give up. Honors task cancellation so backing
+            // out of the sheet drops the loop instead of leaking
+            // requests into a zombie URLSession context — the
+            // exact precondition of the build-201 CFNetwork crash.
+            var delayNs: UInt64 = 2_000_000_000
+            for _ in 0..<4 {
+                if Task.isCancelled { return }
+                if store.detail != nil { return }
+                do { try await Task.sleep(nanoseconds: delayNs) }
+                catch { return }
+                if Task.isCancelled { return }
+                if store.detail != nil { return }
+                await store.loadDetail(unNumber: unNumber)
+                delayNs &*= 2
             }
         }
     }

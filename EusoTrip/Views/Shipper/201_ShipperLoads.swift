@@ -180,6 +180,19 @@ struct ShipperLoads: View {
         }
         .task { await refreshAll() }
         .refreshable { await refreshAll() }
+        // RealtimeService → live updates from any load on the
+        // shipper's roster (carrier accept, driver assign, status
+        // change, POD landing) refresh the loads board immediately
+        // instead of waiting for the next pull-to-refresh.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await refreshAll() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await refreshAll() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
+            Task { await refreshAll() }
+        }
         // SORT button posts `eusoShipperLoadSort` — show the sort
         // picker sheet so the user picks Newest / Oldest /
         // Highest-rate / Lowest-rate / Pickup-soonest. The picker

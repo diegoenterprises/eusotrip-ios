@@ -35,7 +35,7 @@ private struct PostLoadStep1Body: View {
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14)
-            .padding(.top, 8)
+            .padding(.top, 56)
         }
     }
 

@@ -41,7 +41,7 @@ private struct PartnerDetailBody: View {
                 else if let p = partner { detailCard(p); subscreenLinks(p) }
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
     }

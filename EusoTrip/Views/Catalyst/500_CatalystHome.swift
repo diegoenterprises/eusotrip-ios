@@ -72,6 +72,9 @@ struct CatalystHome: View {
     // because the sheet is the same regardless of which row was
     // tapped (the full match-board, filtered server-side later).
     @State private var presentingMatchesBoard: Bool = false
+    @State private var selectedMatch: CatalystAPI.ActiveMatch? = nil
+    @State private var selectedRecent: CatalystAPI.RecentMatch? = nil
+    @State private var presentingAlert: CatalystAPI.LoadAlert? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -93,6 +96,53 @@ struct CatalystHome: View {
                 .environmentObject(session)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
+        }
+        // Active match row tap → open 502 Match Detail with the
+        // matchId pre-bound. RealtimeService load events refresh both
+        // surfaces while the sheet is open.
+        .sheet(item: $selectedMatch) { match in
+            CatalystMatchDetailScreen(
+                theme: palette,
+                matchId: match.id,
+                previewLoadNumber: match.loadNumber,
+                previewLane: "\(match.origin) → \(match.destination)",
+                previewStartedAt: nil,
+                previewCandidateCount: match.candidateCount,
+                previewBestFitScore: match.bestFitScore,
+                previewAgentName: match.agentName.isEmpty ? nil : match.agentName
+            )
+            .environmentObject(session)
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+        // Recent activity row tap → open 305 Catalyst Load Detail for
+        // the resolved match's loadId. Same canvas the dispatcher uses
+        // when opening the load from the dispatch board.
+        .sheet(item: $selectedRecent) { recent in
+            CatalystLoadDetailScreen(theme: palette, loadId: recent.id)
+                .environmentObject(session)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        // Alert row tap → 305 Load Detail focused on the load that
+        // triggered the alert (match-stall, fit-drift, capacity-shortage,
+        // etc). The catalyst can then update status / reassign / message
+        // ESang directly from the load surface.
+        .sheet(item: $presentingAlert) { alert in
+            CatalystLoadDetailScreen(theme: palette, loadId: alert.id)
+                .environmentObject(session)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        // RealtimeService → load events refresh the home surface live.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await refreshAll() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await refreshAll() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
+            Task { await refreshAll() }
         }
         .screenTileRoot()
     }
@@ -206,10 +256,26 @@ struct CatalystHome: View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.s2),
                             GridItem(.flexible(), spacing: Space.s2)],
                   spacing: Space.s2) {
-            kpiTile(label: "ACTIVE MATCHES", value: "\(s.activeMatches)",       sub: "agents wired")
-            kpiTile(label: "MATCHED · 7D",   value: "\(s.matchedThisWeek)",     sub: "carrier accepted")
-            kpiTile(label: "DELIVERED · 7D", value: "\(s.deliveredThisWeek)",   sub: "completed this week")
-            kpiTile(label: "GMV · 7D",       value: dollars(s.gmvThisWeek),     sub: "lane value · 7d")
+            // Every KPI tile drills into the live matches board — that's
+            // the canvas where the catalyst can filter by status, see
+            // each match, and act on it. GMV currently routes there too
+            // until a dedicated Catalyst settlement surface ships.
+            Button { presentingMatchesBoard = true } label: {
+                kpiTile(label: "ACTIVE MATCHES", value: "\(s.activeMatches)",       sub: "agents wired")
+            }
+            .buttonStyle(.plain)
+            Button { presentingMatchesBoard = true } label: {
+                kpiTile(label: "MATCHED · 7D",   value: "\(s.matchedThisWeek)",     sub: "carrier accepted")
+            }
+            .buttonStyle(.plain)
+            Button { presentingMatchesBoard = true } label: {
+                kpiTile(label: "DELIVERED · 7D", value: "\(s.deliveredThisWeek)",   sub: "completed this week")
+            }
+            .buttonStyle(.plain)
+            Button { presentingMatchesBoard = true } label: {
+                kpiTile(label: "GMV · 7D",       value: dollars(s.gmvThisWeek),     sub: "lane value · 7d")
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -278,7 +344,12 @@ struct CatalystHome: View {
                         .foregroundStyle(palette.textTertiary)
                 }
                 ForEach(rows) { row in
-                    alertRow(row)
+                    Button {
+                        presentingAlert = row
+                    } label: {
+                        alertRow(row)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         case .error(let e):
@@ -372,7 +443,14 @@ struct CatalystHome: View {
                 listSkeleton
             case .loaded(let rows):
                 VStack(spacing: Space.s2) {
-                    ForEach(rows) { matchRow($0) }
+                    ForEach(rows) { row in
+                        Button {
+                            selectedMatch = row
+                        } label: {
+                            matchRow(row)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             case .empty:
                 EusoEmptyState(
@@ -466,7 +544,14 @@ struct CatalystHome: View {
                 listSkeleton
             case .loaded(let rows):
                 VStack(spacing: Space.s2) {
-                    ForEach(rows) { recentRow($0) }
+                    ForEach(rows) { row in
+                        Button {
+                            selectedRecent = row
+                        } label: {
+                            recentRow(row)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             case .empty:
                 EusoEmptyState(

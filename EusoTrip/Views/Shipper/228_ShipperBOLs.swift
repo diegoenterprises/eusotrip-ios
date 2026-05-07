@@ -89,11 +89,23 @@ struct ShipperBOLs: View {
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14)
-            .padding(.top, 8)
+            .padding(.top, 56)
         }
         .task { await store.load() }
         .onChange(of: store.statusFilter) { _, _ in Task { await store.load() } }
         .refreshable { await store.load() }
+        // RealtimeService → live updates refresh the BOL list when
+        // upstream load events flip a BOL into available/expired,
+        // when a new BOL is generated, or when POD lands.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await store.load() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
+            Task { await store.load() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
+            Task { await store.load() }
+        }
         .sheet(isPresented: $showGenerateSheet) { generateSheet }
         .onChange(of: store.lastBOL?.bolNumber ?? "") { _, v in if !v.isEmpty { showAck = true } }
         .alert("BOL generated", isPresented: $showAck, actions: {

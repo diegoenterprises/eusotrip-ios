@@ -40,7 +40,7 @@ private struct NotifDetailBody: View {
                 else if let d = detail { mainCard(d); deepLinkRow(d) }
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
     }
