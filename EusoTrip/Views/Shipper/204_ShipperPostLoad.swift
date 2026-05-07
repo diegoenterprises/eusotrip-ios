@@ -1863,8 +1863,42 @@ struct ShipperPostLoad: View {
     /// State lives on @State vars below — they all flow into the
     /// `shippers.create` payload at submit time so the catalyst's
     /// driver knows what gear they need.
+    /// Live equipment animation — silhouette + ambient motion that
+    /// reacts to every wizard selection (cargo type, equipment type,
+    /// hazmat, hose spec, reefer temp range / pre-cool / continuous,
+    /// flatbed straps / tarps / chains / edge protectors, oversized
+    /// permits, ERG match). Doctrine: tanker silhouette never paints
+    /// on a dry-van load; hazmat is a variant, not the default.
+    @ViewBuilder
+    private var equipmentAnimation: some View {
+        EquipmentAnimation(
+            equipment: equipmentType.animationKind,
+            cargo: cargoType.animationKind,
+            weightUnit: weightUnit.rawValue,
+            tankerHose: tankerHoseSpec,
+            isHazmat: cargoType == .hazmat || cargoType == .petroleum
+                       || cargoType == .chemicals || cargoType == .gas
+                       || equipmentType == .tankerHazmat,
+            ergMatched: ergMatch?.found == true,
+            reeferLowText: reeferTempLowText,
+            reeferHighText: reeferTempHighText,
+            preCoolRequired: preCoolRequired,
+            continuousMode: continuousMode,
+            flatbedStraps: flatbedStraps,
+            flatbedTarps: flatbedTarps,
+            flatbedChains: flatbedChains,
+            flatbedEdgeProtectors: flatbedEdgeProtectors,
+            oversizePermits: oversizePermits
+        )
+        .frame(height: 180)
+    }
+
     @ViewBuilder
     private var equipmentSubform: some View {
+        // Animation always renders — silhouette adapts to every
+        // equipment + product choice. Subform-specific cards stack
+        // beneath the animation.
+        equipmentAnimation
         switch equipmentType {
         case .tankerHazmat, .tankerPetro, .tankerLiquid, .tankerGas, .vesselTanker:
             tankerSubform
@@ -3407,6 +3441,54 @@ struct ShipperPostLoad: View {
 
 extension Notification.Name {
     static let eusoShipperPostLoadDismiss = Notification.Name("eusoShipperPostLoadDismiss")
+}
+
+// MARK: - Wizard → EquipmentAnimation taxonomy bridges
+//
+// EquipmentChoice + ShipperAPI.CargoType are wizard-internal enums;
+// EquipmentKind + CargoKind are component-level enums (in
+// EquipmentAnimation.swift). Mapping is 1:1 by raw value where the
+// rawValues match, with fallbacks for cases where the wizard has
+// types the component doesn't model 1:1.
+
+fileprivate extension ShipperPostLoad.EquipmentChoice {
+    var animationKind: EquipmentKind {
+        switch self {
+        case .dryVan:           return .dryVan
+        case .reefer:           return .reefer
+        case .flatbed:          return .flatbed
+        case .stepDeck:         return .stepDeck
+        case .conestoga:        return .conestoga
+        case .container:        return .container
+        case .tankerHazmat:     return .tankerHazmat
+        case .tankerPetro:      return .tankerPetro
+        case .tankerLiquid:     return .tankerLiquid
+        case .tankerGas:        return .tankerGas
+        case .powerOnly:        return .powerOnly
+        case .oversized:        return .oversized
+        case .railTOFC:         return .railTOFC
+        case .railCOFC:         return .railCOFC
+        case .railIntermodal:   return .railIntermodal
+        case .vesselContainer:  return .vesselContainer
+        case .vesselBulk:       return .vesselBulk
+        case .vesselTanker:     return .vesselTanker
+        }
+    }
+}
+
+fileprivate extension ShipperAPI.CargoType {
+    var animationKind: CargoKind {
+        switch self {
+        case .general:      return .general
+        case .hazmat:       return .hazmat
+        case .refrigerated: return .refrigerated
+        case .oversized:    return .oversized
+        case .liquid:       return .liquid
+        case .gas:          return .gas
+        case .chemicals:    return .chemicals
+        case .petroleum:    return .petroleum
+        }
+    }
 }
 
 // MARK: - Screen wrapper
