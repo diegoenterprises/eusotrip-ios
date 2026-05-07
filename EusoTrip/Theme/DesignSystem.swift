@@ -69,6 +69,12 @@ enum Brand {
     static let escort  = Color(hex: 0x9C27B0)
     static let rail    = Color(hex: 0x607D8B)
     static let vessel  = Color(hex: 0x00ACC1)
+
+    /// Canonical neutral for "inactive / withdrawn / expired / unknown"
+    /// status states. Replaces raw `.gray` per §5 palette doctrine
+    /// (no flat Color.gray fills in production UI). Palette-agnostic
+    /// — reads correctly on both light and dark surfaces.
+    static let neutral = Color(hex: 0x6B7280)
 }
 
 extension LinearGradient {

@@ -3947,7 +3947,7 @@ struct MePulseView: View {
     private var statusDot: some View {
         let ok = isPaired && isWatchAppInstalled && isReachable
         Circle()
-            .fill(ok ? Color.green : (isPaired ? Color.orange : Color.gray))
+            .fill(ok ? Brand.success : (isPaired ? Brand.warning : Brand.neutral))
             .frame(width: 10, height: 10)
             .overlay(Circle().stroke(.white.opacity(0.25), lineWidth: 0.5))
             .accessibilityLabel(ok ? "Synced" : (isPaired ? "Paired" : "Not paired"))

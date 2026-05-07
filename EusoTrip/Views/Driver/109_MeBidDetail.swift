@@ -445,8 +445,8 @@ struct MeBidDetailView: View {
                 let s = (last.status ?? "").lowercased()
                 if s == "accepted" || s == "auto_accepted" { return .terminal(label: "Accepted", color: Brand.success) }
                 if s == "rejected"  { return .terminal(label: "Rejected", color: Brand.danger) }
-                if s == "withdrawn" { return .terminal(label: "Withdrawn", color: .gray) }
-                if s == "expired"   { return .terminal(label: "Expired", color: .gray) }
+                if s == "withdrawn" { return .terminal(label: "Withdrawn", color: Brand.neutral) }
+                if s == "expired"   { return .terminal(label: "Expired", color: Brand.neutral) }
                 if s == "countered" { return .terminal(label: "Countered (out)", color: Brand.info) }
             }
             return nil
@@ -534,9 +534,9 @@ private struct ChainStatusStyle {
         case "auto_accepted":   return .init(label: "Auto-won",  color: Brand.success)
         case "countered":       return .init(label: "Countered", color: Brand.info)
         case "rejected":        return .init(label: "Rejected",  color: Brand.danger)
-        case "withdrawn":       return .init(label: "Withdrawn", color: .gray)
-        case "expired":         return .init(label: "Expired",   color: .gray)
-        default:                return .init(label: (raw ?? "?").capitalized, color: .gray)
+        case "withdrawn":       return .init(label: "Withdrawn", color: Brand.neutral)
+        case "expired":         return .init(label: "Expired",   color: Brand.neutral)
+        default:                return .init(label: (raw ?? "?").capitalized, color: Brand.neutral)
         }
     }
 }

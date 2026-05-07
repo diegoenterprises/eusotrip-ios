@@ -99,7 +99,7 @@ private struct DocumentStatusStyle {
         case "expired":    return .init(label: "Expired",  color: Brand.danger)
         case "pending":    return .init(label: "Pending",  color: Brand.info)
         case "rejected":   return .init(label: "Rejected", color: Brand.danger)
-        default:           return .init(label: raw.capitalized, color: .gray)
+        default:           return .init(label: raw.capitalized, color: Brand.neutral)
         }
     }
 }

@@ -878,7 +878,7 @@ private struct FuelPumpGlyph: View {
                 p.addLine(to: CGPoint(x: 24, y: 22))
                 p.addLine(to: CGPoint(x: 24, y: 12))
             }
-            .stroke(Color.gray, style:
+            .stroke(Brand.neutral, style:
                 StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
             .offset(x: -10, y: -12)
         }

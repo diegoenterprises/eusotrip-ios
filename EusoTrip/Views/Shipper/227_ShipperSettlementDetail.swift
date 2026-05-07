@@ -106,7 +106,7 @@ private struct SettlementStatusStyle {
         case "funded":     return .init(label: "Funded",    color: Brand.success, pillLegend: "FUNDED")
         case "disputed":   return .init(label: "Disputed",  color: Brand.danger,  pillLegend: "DISPUTED")
         case "voided":     return .init(label: "Voided",    color: Brand.danger,  pillLegend: "VOIDED")
-        default:           return .init(label: (raw ?? "Unknown").capitalized, color: .gray, pillLegend: (raw ?? "PENDING").uppercased())
+        default:           return .init(label: (raw ?? "Unknown").capitalized, color: Brand.neutral, pillLegend: (raw ?? "PENDING").uppercased())
         }
     }
 }

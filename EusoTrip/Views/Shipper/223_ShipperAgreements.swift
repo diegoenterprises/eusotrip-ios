@@ -1250,7 +1250,7 @@ private struct AgreementStatusStyle {
         case "negotiating":        return .init(label: "Negotiating", color: Brand.info)
         case "expired":            return .init(label: "Expired",  color: Brand.danger)
         case "terminated":         return .init(label: "Terminated", color: Brand.danger)
-        default:                   return .init(label: (raw ?? "Unknown").capitalized, color: .gray)
+        default:                   return .init(label: (raw ?? "Unknown").capitalized, color: Brand.neutral)
         }
     }
 }

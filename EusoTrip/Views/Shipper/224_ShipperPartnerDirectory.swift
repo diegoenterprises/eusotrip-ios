@@ -84,7 +84,7 @@ private struct PartnerStatusStyle {
         case "declined":    return .init(label: "Declined",   color: Brand.danger)
         case "suspended":   return .init(label: "Suspended",  color: Brand.danger)
         case "terminated":  return .init(label: "Terminated", color: Brand.danger)
-        default:            return .init(label: (raw ?? "Unknown").capitalized, color: .gray)
+        default:            return .init(label: (raw ?? "Unknown").capitalized, color: Brand.neutral)
         }
     }
 }

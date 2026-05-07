@@ -376,9 +376,9 @@ private struct BidStatusStyle {
         case "auto_accepted":   return .init(label: "Auto-won",  color: Brand.success)
         case "countered":       return .init(label: "Countered", color: Brand.info)
         case "rejected":        return .init(label: "Rejected",  color: Brand.danger)
-        case "withdrawn":       return .init(label: "Withdrawn", color: .gray)
-        case "expired":         return .init(label: "Expired",   color: .gray)
-        default:                return .init(label: raw.capitalized, color: .gray)
+        case "withdrawn":       return .init(label: "Withdrawn", color: Brand.neutral)
+        case "expired":         return .init(label: "Expired",   color: Brand.neutral)
+        default:                return .init(label: raw.capitalized, color: Brand.neutral)
         }
     }
 }

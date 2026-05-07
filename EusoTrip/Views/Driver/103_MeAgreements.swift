@@ -506,7 +506,7 @@ private struct SignSheet: View {
                             .fill(Color(.secondarySystemBackground))
                             .overlay(
                                 RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                                    .strokeBorder(.gray.opacity(0.3), lineWidth: 1)
+                                    .strokeBorder(palette.borderFaint, lineWidth: 1)
                             )
                     )
 

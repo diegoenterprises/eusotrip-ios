@@ -370,7 +370,7 @@ private struct BOLStatusStyle {
         case "delivered":  return .init(label: "Delivered", color: Brand.success)
         case "in_transit": return .init(label: "In transit",color: Brand.warning)
         case "voided":     return .init(label: "Voided",    color: Brand.danger)
-        default:           return .init(label: raw.capitalized, color: .gray)
+        default:           return .init(label: raw.capitalized, color: Brand.neutral)
         }
     }
 }
