@@ -107,7 +107,7 @@ struct HereCurrentLocationChip: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                     Spacer(minLength: 0)
-                    Text("HERE")
+                    Text("EUSOTRIP")
                         .font(EType.micro).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
                 }

@@ -80,7 +80,7 @@ struct HereEVStrip: View {
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
             Spacer(minLength: 0)
-            Text("HERE · \(store.items.count)")
+            Text("EUSOTRIP · \(store.items.count)")
                 .font(EType.micro).tracking(0.4)
                 .foregroundStyle(palette.textSecondary)
         }

@@ -142,7 +142,7 @@ struct HereMatrixCandidatesStrip: View {
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
             Spacer(minLength: 0)
-            Text("HERE · \(store.ranked.count)")
+            Text("EUSOTRIP · \(store.ranked.count)")
                 .font(EType.micro).tracking(0.4)
                 .foregroundStyle(palette.textSecondary)
         }

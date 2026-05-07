@@ -94,7 +94,7 @@ struct HereTypicalSpeedChip: View {
                         .font(EType.micro).tracking(0.6)
                         .foregroundStyle(palette.textPrimary)
                     Spacer(minLength: 0)
-                    Text("HERE · n=\(store.sampleCount)")
+                    Text("EUSOTRIP · n=\(store.sampleCount)")
                         .font(EType.micro).tracking(0.4)
                         .foregroundStyle(palette.textTertiary)
                 }

@@ -1436,7 +1436,7 @@ struct HotZonesWidget: View {
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: 0)
-                Text("HERE · \(store.fuelStations.count) stations")
+                Text("EUSOTRIP · \(store.fuelStations.count) stations")
                     .font(EType.micro).tracking(0.4)
                     .foregroundStyle(palette.textSecondary)
             }

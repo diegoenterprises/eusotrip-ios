@@ -85,7 +85,122 @@ struct ShipperPostLoad: View {
     @State private var rateText: String = ""
     @State private var notes: String = ""
 
+    // Equipment type picker — all verticals + product types per the
+    // founder's "all verticals" doctrine. The selected type is sent
+    // as `equipmentType` on `shippers.create`. Default = dry van.
+    @State private var equipmentType: EquipmentChoice = .dryVan
+
+    // Hazmat / tanker subform fields. Stored locally and packed into
+    // the `notes` field at submit time (server schema doesn't yet
+    // ship structured tanker spec columns; web parity).
+    @State private var unNumber: String = ""
+    @State private var hazmatClass: String = ""
+    @State private var packingGroup: String = ""
+    @State private var properShippingName: String = ""
+    @State private var tankerHoseSpec: String = ""
+    @State private var tankerFitting: String = ""
+
+    // Reefer subform.
+    @State private var reeferTempLowText:  String = ""
+    @State private var reeferTempHighText: String = ""
+    @State private var preCoolRequired:    Bool = false
+    @State private var continuousMode:     Bool = true
+
+    // Flatbed / oversized subform.
+    @State private var flatbedStraps:          Bool = false
+    @State private var flatbedTarps:           Bool = false
+    @State private var flatbedChains:          Bool = false
+    @State private var flatbedEdgeProtectors:  Bool = false
+    @State private var oversizeLengthText:     String = ""
+    @State private var oversizeWidthText:      String = ""
+    @State private var oversizeHeightText:     String = ""
+    @State private var oversizePermits:        Bool = false
+
     @State private var lastSuccess: ShipperAPI.PostLoadAck? = nil
+
+    /// Equipment-type choice covering truck (dry van / reefer /
+    /// flatbed / step deck / conestoga / container / tanker variants
+    /// / power-only), rail (TOFC / COFC / intermodal container),
+    /// and vessel (container / bulk / tanker) verticals. Web parity
+    /// with the platform's full LoadEquipmentType enum. Stored as
+    /// the raw string sent to `shippers.create` so the catalyst's
+    /// dispatcher / driver knows what physical asset to roll.
+    enum EquipmentChoice: String, CaseIterable, Identifiable {
+        // Truck verticals
+        case dryVan        = "dry_van"
+        case reefer        = "reefer"
+        case flatbed       = "flatbed"
+        case stepDeck      = "step_deck"
+        case conestoga     = "conestoga"
+        case container     = "container"
+        case tankerHazmat  = "tanker_hazmat"
+        case tankerPetro   = "tanker_petroleum"
+        case tankerLiquid  = "tanker_liquid"
+        case tankerGas     = "tanker_gas"
+        case powerOnly     = "power_only"
+        case oversized     = "oversized"
+        // Rail vertical
+        case railTOFC      = "rail_tofc"
+        case railCOFC      = "rail_cofc"
+        case railIntermodal = "rail_intermodal"
+        // Vessel vertical
+        case vesselContainer = "vessel_container"
+        case vesselBulk      = "vessel_bulk"
+        case vesselTanker    = "vessel_tanker"
+
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .dryVan:           return "Dry van"
+            case .reefer:           return "Reefer"
+            case .flatbed:          return "Flatbed"
+            case .stepDeck:         return "Step deck"
+            case .conestoga:        return "Conestoga"
+            case .container:        return "Container"
+            case .tankerHazmat:     return "Tanker · Hazmat"
+            case .tankerPetro:      return "Tanker · Petroleum"
+            case .tankerLiquid:     return "Tanker · Liquid bulk"
+            case .tankerGas:        return "Tanker · Gas"
+            case .powerOnly:        return "Power only"
+            case .oversized:        return "Oversized"
+            case .railTOFC:         return "Rail · TOFC"
+            case .railCOFC:         return "Rail · COFC"
+            case .railIntermodal:   return "Rail · Intermodal"
+            case .vesselContainer:  return "Vessel · Container"
+            case .vesselBulk:       return "Vessel · Bulk"
+            case .vesselTanker:     return "Vessel · Tanker"
+            }
+        }
+        var systemImage: String {
+            switch self {
+            case .dryVan:           return "shippingbox.fill"
+            case .reefer:           return "thermometer.snowflake"
+            case .flatbed:          return "rectangle.expand.vertical"
+            case .stepDeck:         return "rectangle.split.2x1"
+            case .conestoga:        return "shippingbox.and.arrow.backward"
+            case .container:        return "cube.box.fill"
+            case .tankerHazmat:     return "exclamationmark.triangle.fill"
+            case .tankerPetro:      return "fuelpump.fill"
+            case .tankerLiquid:     return "drop.triangle.fill"
+            case .tankerGas:        return "wind"
+            case .powerOnly:        return "bolt.car.fill"
+            case .oversized:        return "arrow.up.left.and.arrow.down.right"
+            case .railTOFC:         return "tram.fill"
+            case .railCOFC:         return "tram"
+            case .railIntermodal:   return "cube.transparent.fill"
+            case .vesselContainer:  return "ferry.fill"
+            case .vesselBulk:       return "ferry"
+            case .vesselTanker:     return "drop.fill"
+            }
+        }
+        var vertical: String {
+            switch self {
+            case .railTOFC, .railCOFC, .railIntermodal: return "rail"
+            case .vesselContainer, .vesselBulk, .vesselTanker: return "vessel"
+            default: return "truck"
+            }
+        }
+    }
 
     private let deliveryETAFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -110,8 +225,24 @@ struct ShipperPostLoad: View {
     @State private var routingError: String? = nil
     @State private var isRouting: Bool = false
 
+    /// Resolved state codes from the geocode hit. Used by the ESANG
+    /// rate-vs-market meter on step 3 (Pricing) — `rates.compareLaneRate`
+    /// is keyed by origin/destination state codes.
+    @State private var originStateCode: String? = nil
+    @State private var destStateCode: String? = nil
+
+    /// ESANG AI rate market position (above/at/below market) for the
+    /// posted rate vs comparable platform + national-benchmark loads.
+    /// Web parity (founder ask 2026-05-07): the wizard now shows the
+    /// same gradient meter the web Post Load form uses. Wired to
+    /// `rates.compareLaneRate`.
+    @State private var rateComparison: RatesAPI.LaneComparison? = nil
+    @State private var rateCompareError: String? = nil
+    @State private var isComparingRate: Bool = false
+    @State private var lastRateCompareKey: String = ""
+
     /// Cached lat/lng tuple of the last query so we don't re-fire
-    /// the HERE call on every keystroke.
+    /// the routing call on every keystroke.
     @State private var lastRoutedKey: String = ""
 
     /// Computed delivery ETA = pickupDate + routeDurationSeconds.
@@ -153,11 +284,16 @@ struct ShipperPostLoad: View {
         .onChange(of: destLat)   { _, _ in recomputeETAIfReady() }
         .onChange(of: destLng)   { _, _ in recomputeETAIfReady() }
         // Also re-fire when the typed strings settle — fall-back
-        // path for users who paste / type without tapping a HERE
+        // path for users who paste / type without tapping a
         // suggestion. `recomputeETAIfReady` will geocode the typed
         // text inline.
         .onChange(of: origin)      { _, _ in recomputeETAIfReady() }
         .onChange(of: destination) { _, _ in recomputeETAIfReady() }
+        // Rate compare fires when posted rate or cargo type changes —
+        // independent of routing, so the meter updates without
+        // re-geocoding.
+        .onChange(of: rateText)  { _, _ in recomputeRateCompareIfReady() }
+        .onChange(of: cargoType) { _, _ in recomputeRateCompareIfReady() }
     }
 
     // MARK: - TopBar
@@ -437,21 +573,18 @@ struct ShipperPostLoad: View {
             return "Add origin + destination — distance / ETA estimates auto-fill"
         }
         if isRouting {
-            return "Computing distance + ETA via HERE Routing v8…"
+            return "Computing distance + ETA via ESANG…"
         }
         if let err = routingError {
-            return "HERE: \(err)"
+            return "Routing error: \(err)"
         }
         if let meters = routeDistanceMeters, let secs = routeDurationSeconds {
             let miles = Double(meters) / 1609.34
             let hours = Double(secs) / 3600.0
-            return String(format: "%.0f mi · %.1f hr · standard US semi via HERE Routing v8", miles, hours)
+            return String(format: "%.0f mi · %.1f hr · standard US semi · ESANG-routed", miles, hours)
         }
-        // Both addresses present and `recomputeETAIfReady` is in flight
-        // (either geocoding the typed strings or routing the resolved
-        // coordinates). The isRouting / error / distance branches above
-        // already cover the resolved cases.
-        return "Estimating distance · ETA · best-route via HERE Routing v8"
+        // Both addresses present and `recomputeETAIfReady` is in flight.
+        return "Estimating distance · ETA · best-route via ESANG"
     }
 
     /// Fire HERE Routing whenever the lane endpoints OR pickup
@@ -479,27 +612,32 @@ struct ShipperPostLoad: View {
         routingError = nil
         Task {
             do {
-                let originCoord = try await ensureCoordinate(
+                let originResolved = try await ensureResolved(
                     text: oTrim,
                     cachedLat: originLat,
                     cachedLng: originLng
                 )
-                let destCoord = try await ensureCoordinate(
+                let destResolved = try await ensureResolved(
                     text: dTrim,
                     cachedLat: destLat,
                     cachedLng: destLng
                 )
                 // Backfill the @State bindings so the wizard's
-                // submit step has resolved coordinates without a
-                // second geocode round-trip.
+                // submit step has resolved coordinates + state
+                // codes without a second geocode round-trip. The
+                // state codes also feed the ESANG rate compare on
+                // step 3.
                 await MainActor.run {
-                    if originLat == nil { originLat = originCoord.latitude }
-                    if originLng == nil { originLng = originCoord.longitude }
-                    if destLat == nil   { destLat   = destCoord.latitude   }
-                    if destLng == nil   { destLng   = destCoord.longitude  }
+                    if originLat == nil { originLat = originResolved.coord.latitude }
+                    if originLng == nil { originLng = originResolved.coord.longitude }
+                    if destLat == nil   { destLat   = destResolved.coord.latitude   }
+                    if destLng == nil   { destLng   = destResolved.coord.longitude  }
+                    self.originStateCode = originResolved.stateCode
+                    self.destStateCode   = destResolved.stateCode
                 }
                 let resp = try await HereRoutingClient.shared.route(
-                    stops: HereStops(origin: originCoord, destination: destCoord),
+                    stops: HereStops(origin: originResolved.coord,
+                                     destination: destResolved.coord),
                     profile: .standardUSSemiLoaded
                 )
                 let totalDuration = resp.routes.first?.sections.reduce(0) { $0 + ($1.summary?.duration ?? 0) } ?? 0
@@ -508,6 +646,10 @@ struct ShipperPostLoad: View {
                     self.routeDurationSeconds = totalDuration
                     self.routeDistanceMeters  = totalLength
                     self.isRouting = false
+                    // Now that we have lane states + distance, fire
+                    // the rate compare if the user has already typed
+                    // a posted rate.
+                    self.recomputeRateCompareIfReady()
                 }
             } catch {
                 await MainActor.run {
@@ -518,22 +660,88 @@ struct ShipperPostLoad: View {
         }
     }
 
-    /// Returns a coordinate for the given address text. Uses cached
-    /// lat/lng (set by HereAddressField on suggestion-tap) when both
-    /// are present; otherwise forward-geocodes via HERE.
-    private func ensureCoordinate(
+    // MARK: - ESANG rate vs market meter (rates.compareLaneRate)
+
+    /// Fires `rates.compareLaneRate` when origin state + dest state +
+    /// distance + a posted rate are all known. Web parity meter; same
+    /// `LaneComparison` envelope the LoadDetailSheet renders next to
+    /// the posted rate.
+    private func recomputeRateCompareIfReady() {
+        guard let oState = originStateCode, !oState.isEmpty,
+              let dState = destStateCode,   !dState.isEmpty,
+              let meters = routeDistanceMeters, meters > 0,
+              let rate = parseDouble(rateText), rate > 0 else {
+            rateComparison = nil
+            rateCompareError = nil
+            return
+        }
+        let miles = Double(meters) / 1609.34
+        let key = "\(oState)|\(dState)|\(Int(miles))|\(Int(rate))|\(cargoType.rawValue)"
+        guard key != lastRateCompareKey else { return }
+        lastRateCompareKey = key
+        isComparingRate = true
+        rateCompareError = nil
+        Task {
+            do {
+                let r = try await EusoTripAPI.shared.rates.compareLaneRate(
+                    originState: oState,
+                    destState:   dState,
+                    rate:        rate,
+                    distance:    miles,
+                    cargoType:   cargoType.rawValue,
+                    lookbackDays: 90
+                )
+                await MainActor.run {
+                    self.rateComparison = r
+                    self.isComparingRate = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.rateCompareError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                    self.isComparingRate = false
+                }
+            }
+        }
+    }
+
+    /// Resolved geocode hit — coordinate + state code. Used by both
+    /// the routing step (needs lat/lng) and the rate compare step
+    /// (needs state code).
+    private struct ResolvedAddress {
+        let coord: CLLocationCoordinate2D
+        let stateCode: String?
+    }
+
+    /// Returns a resolved address for the given typed text. Uses
+    /// cached lat/lng (set by the address field on suggestion-tap)
+    /// when both are present; otherwise forward-geocodes via the
+    /// EusoTrip routing backend. State code is sourced from the
+    /// geocode hit's address payload.
+    private func ensureResolved(
         text: String,
         cachedLat: Double?,
         cachedLng: Double?
-    ) async throws -> CLLocationCoordinate2D {
+    ) async throws -> ResolvedAddress {
         if let lat = cachedLat, let lng = cachedLng {
-            return CLLocationCoordinate2D(latitude: lat, longitude: lng)
+            // Reverse-geocode for the state code — the lat/lng might
+            // have been pasted directly, so we still need a state
+            // resolution for the rate compare. Best-effort; falls
+            // back to nil stateCode which compareLaneRate accepts.
+            let coord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
+            let state = try? await HereGeocodingClient.shared
+                .reverseGeocode(at: coord, limit: 1)
+                .first?
+                .address.stateCode
+            return ResolvedAddress(coord: coord, stateCode: state ?? nil)
         }
         let hits = try await HereGeocodingClient.shared.geocode(query: text, limit: 1)
         guard let first = hits.first else {
             throw HereMapsError.providerError("No geocode result for '\(text)'")
         }
-        return CLLocationCoordinate2D(latitude: first.position.lat, longitude: first.position.lng)
+        return ResolvedAddress(
+            coord: CLLocationCoordinate2D(latitude: first.position.lat, longitude: first.position.lng),
+            stateCode: first.address.stateCode
+        )
     }
 
     private var scheduleSection: some View {
@@ -606,7 +814,7 @@ struct ShipperPostLoad: View {
                 Text(deliveryETAFormatter.string(from: eta))
                     .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("HERE Routing v8 · pickup + lane")
+                Text("ESANG-routed · pickup + lane")
                     .font(EType.caption).monospacedDigit()
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
@@ -614,7 +822,7 @@ struct ShipperPostLoad: View {
                 Text("Computing…")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                Text("HERE Routing v8")
+                Text("ESANG-routed")
                     .font(EType.caption).monospacedDigit()
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
@@ -622,7 +830,7 @@ struct ShipperPostLoad: View {
                 Text("Add addresses")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                Text("Type or pick HERE suggestions")
+                Text("Type or pick a suggestion")
                     .font(EType.caption).monospacedDigit()
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
@@ -650,9 +858,330 @@ struct ShipperPostLoad: View {
     private var equipmentStepBody: some View {
         VStack(alignment: .leading, spacing: Space.s5) {
             cargoTypePicker
+            equipmentTypePicker
             weightField
             equipmentPreviewSection
+            equipmentSubform
         }
+    }
+
+    /// Equipment-type picker — covers truck / rail / vessel
+    /// verticals + every product type (dry van, reefer, flatbed,
+    /// step deck, conestoga, container, tanker variants, power-only,
+    /// oversized, rail TOFC/COFC/intermodal, vessel container/bulk/
+    /// tanker). Web parity with the LoadEquipmentType enum on the
+    /// server (serialized to `equipmentType` on `shippers.create`).
+    private var equipmentTypePicker: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("EQUIPMENT TYPE")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 0)
+                Text(equipmentType.vertical.uppercased())
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(LinearGradient.diagonal)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(EquipmentChoice.allCases) { choice in
+                        Button {
+                            withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
+                                equipmentType = choice
+                            }
+                        } label: {
+                            equipmentChip(for: choice)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isSubmitting)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func equipmentChip(for choice: EquipmentChoice) -> some View {
+        let on = (equipmentType == choice)
+        HStack(spacing: 6) {
+            Image(systemName: choice.systemImage)
+                .font(.system(size: 10, weight: .heavy))
+            Text(choice.label)
+                .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+        }
+        .foregroundStyle(on ? AnyShapeStyle(.white) : AnyShapeStyle(palette.textSecondary))
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(Capsule().fill(on ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCard)))
+        .overlay(Capsule().strokeBorder(on ? AnyShapeStyle(.clear) : AnyShapeStyle(palette.borderFaint), lineWidth: 1))
+    }
+
+    /// Cargo-type-specific equipment subform. Web parity (founder ask
+    /// 2026-05-07): hazmat tanker needs hose specs / fittings; reefer
+    /// needs temp range + pre-cool flag; flatbed needs straps / tarps;
+    /// chemicals + gas + petroleum extend the hazmat shape.
+    /// State lives on @State vars below — they all flow into the
+    /// `shippers.create` payload at submit time so the catalyst's
+    /// driver knows what gear they need.
+    @ViewBuilder
+    private var equipmentSubform: some View {
+        switch equipmentType {
+        case .tankerHazmat, .tankerPetro, .tankerLiquid, .tankerGas, .vesselTanker:
+            tankerSubform
+        case .reefer:
+            reeferSubform
+        case .flatbed, .stepDeck, .conestoga, .oversized:
+            flatbedSubform
+        default:
+            EmptyView()
+        }
+    }
+
+    // MARK: tanker subform (hazmat / petroleum / chemicals / gas / liquid)
+
+    @ViewBuilder
+    private var tankerSubform: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: 6) {
+                Image(systemName: "drop.triangle.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text(cargoType == .hazmat || cargoType == .petroleum
+                     ? "TANKER · HAZMAT REQUIREMENTS"
+                     : "TANKER REQUIREMENTS")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            // Hose configuration — driver/catalyst needs to know what
+            // fittings + diameter to bring. Stored in `notes` on the
+            // load envelope until the backend ships a structured
+            // tanker spec field.
+            HStack(spacing: 8) {
+                tankerChip(label: "2\" cam-lock",     selected: tankerHoseSpec == "2_camlock")
+                tankerChip(label: "3\" cam-lock",     selected: tankerHoseSpec == "3_camlock")
+                tankerChip(label: "4\" cam-lock",     selected: tankerHoseSpec == "4_camlock")
+                tankerChip(label: "Dry-disconnect",   selected: tankerHoseSpec == "dry_disconnect")
+            }
+            HStack(spacing: 8) {
+                tankerChip(label: "API adapter",       selected: tankerFitting == "api")
+                tankerChip(label: "TTMA",              selected: tankerFitting == "ttma")
+                tankerChip(label: "Other",             selected: tankerFitting == "other")
+                Spacer(minLength: 0)
+            }
+            // UN / hazmat fields surface only for the hazmat/petroleum
+            // / chemicals branches (gas + liquid are food-grade or
+            // non-hazmat liquids). Mirrors the web Hazmat subform.
+            if cargoType == .hazmat || cargoType == .petroleum || cargoType == .chemicals {
+                Divider().background(palette.borderFaint).padding(.vertical, 2)
+                tankerHazmatRow
+            }
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    @ViewBuilder
+    private var tankerHazmatRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(Brand.warning)
+                Text("HAZMAT · 49 CFR 172")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            HStack(spacing: 8) {
+                hazmatTextField(label: "UN", text: $unNumber, placeholder: "UN1203", width: 90)
+                hazmatTextField(label: "Class", text: $hazmatClass, placeholder: "3", width: 80)
+                hazmatTextField(label: "PG", text: $packingGroup, placeholder: "II", width: 70)
+            }
+            hazmatTextField(label: "Proper shipping name",
+                            text: $properShippingName,
+                            placeholder: "Gasoline",
+                            width: nil)
+        }
+    }
+
+    @ViewBuilder
+    private func tankerChip(label: String, selected: Bool) -> some View {
+        Button {
+            toggleTankerSpec(label: label)
+        } label: {
+            Text(label)
+                .font(.system(size: 10, weight: .heavy)).tracking(0.4)
+                .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(palette.textSecondary))
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(Capsule().fill(selected ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCardSoft)))
+                .overlay(Capsule().strokeBorder(selected ? AnyShapeStyle(.clear) : AnyShapeStyle(palette.borderFaint), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func toggleTankerSpec(label: String) {
+        let key: String
+        switch label {
+        case "2\" cam-lock":     key = "2_camlock"
+        case "3\" cam-lock":     key = "3_camlock"
+        case "4\" cam-lock":     key = "4_camlock"
+        case "Dry-disconnect":   key = "dry_disconnect"
+        case "API adapter":      key = "api"
+        case "TTMA":             key = "ttma"
+        case "Other":            key = "other"
+        default:                 return
+        }
+        if ["2_camlock", "3_camlock", "4_camlock", "dry_disconnect"].contains(key) {
+            tankerHoseSpec = (tankerHoseSpec == key) ? "" : key
+        } else {
+            tankerFitting = (tankerFitting == key) ? "" : key
+        }
+    }
+
+    @ViewBuilder
+    private func hazmatTextField(label: String,
+                                 text: Binding<String>,
+                                 placeholder: String,
+                                 width: CGFloat?) -> some View {
+        HStack(spacing: 4) {
+            Text(label)
+                .font(EType.micro).tracking(0.4)
+                .foregroundStyle(palette.textTertiary)
+            TextField(placeholder, text: text)
+                .font(EType.body)
+                .foregroundStyle(palette.textPrimary)
+                .tint(LinearGradient.diagonal)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.characters)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 6)
+        .frame(width: width, alignment: .leading)
+        .background(palette.bgCardSoft)
+        .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                    .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+    }
+
+    // MARK: reefer subform
+
+    @ViewBuilder
+    private var reeferSubform: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: 6) {
+                Image(systemName: "thermometer.snowflake")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("REEFER REQUIREMENTS")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            HStack(spacing: 8) {
+                reeferTempField(label: "LOW °F",  binding: $reeferTempLowText,  placeholder: "33")
+                reeferTempField(label: "HIGH °F", binding: $reeferTempHighText, placeholder: "40")
+            }
+            Toggle("Pre-cool required",
+                   isOn: $preCoolRequired.animation(.spring(response: 0.22, dampingFraction: 0.85)))
+                .toggleStyle(GradientToggleStyle())
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundStyle(palette.textPrimary)
+            Toggle("Continuous mode",
+                   isOn: $continuousMode.animation(.spring(response: 0.22, dampingFraction: 0.85)))
+                .toggleStyle(GradientToggleStyle())
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundStyle(palette.textPrimary)
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    @ViewBuilder
+    private func reeferTempField(label: String,
+                                 binding: Binding<String>,
+                                 placeholder: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(EType.micro).tracking(0.4)
+                .foregroundStyle(palette.textTertiary)
+            HStack(spacing: 4) {
+                TextField(placeholder, text: binding)
+                    .font(EType.body)
+                    .foregroundStyle(palette.textPrimary)
+                    .tint(LinearGradient.diagonal)
+                    .keyboardType(.numbersAndPunctuation)
+                    .frame(width: 60)
+                Text("°F")
+                    .font(EType.mono(.micro)).tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .background(palette.bgCardSoft)
+            .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                        .strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+        }
+    }
+
+    // MARK: flatbed subform
+
+    @ViewBuilder
+    private var flatbedSubform: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: 6) {
+                Image(systemName: "rectangle.expand.vertical")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("FLATBED · OVERSIZED REQUIREMENTS")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            HStack(spacing: 8) {
+                flatbedFlag(title: "Straps", selected: flatbedStraps)
+                    .onTapGesture { flatbedStraps.toggle() }
+                flatbedFlag(title: "Tarps", selected: flatbedTarps)
+                    .onTapGesture { flatbedTarps.toggle() }
+                flatbedFlag(title: "Chains", selected: flatbedChains)
+                    .onTapGesture { flatbedChains.toggle() }
+                flatbedFlag(title: "Edge protectors", selected: flatbedEdgeProtectors)
+                    .onTapGesture { flatbedEdgeProtectors.toggle() }
+            }
+            HStack(spacing: 8) {
+                hazmatTextField(label: "Length (ft)", text: $oversizeLengthText, placeholder: "53", width: 110)
+                hazmatTextField(label: "Width (ft)",  text: $oversizeWidthText,  placeholder: "8.5", width: 110)
+            }
+            HStack(spacing: 8) {
+                hazmatTextField(label: "Height (ft)", text: $oversizeHeightText, placeholder: "13.5", width: 110)
+                Toggle("Permits required",
+                       isOn: $oversizePermits.animation(.spring(response: 0.22, dampingFraction: 0.85)))
+                    .toggleStyle(GradientToggleStyle())
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+            }
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    @ViewBuilder
+    private func flatbedFlag(title: String, selected: Bool) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 10, weight: .heavy))
+                .foregroundStyle(selected ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
+            Text(title)
+                .font(.system(size: 10, weight: .heavy)).tracking(0.4)
+                .foregroundStyle(selected ? AnyShapeStyle(palette.textPrimary) : AnyShapeStyle(palette.textSecondary))
+        }
+        .padding(.horizontal, 10).padding(.vertical, 5)
+        .background(Capsule().fill(palette.bgCardSoft))
+        .overlay(Capsule().strokeBorder(palette.borderFaint))
     }
 
     private var cargoTypePicker: some View {
@@ -860,47 +1389,178 @@ struct ShipperPostLoad: View {
         }
     }
 
+    /// ESANG AI rate-vs-market meter — replaces the prior stub
+    /// "estimate vs spot" copy. Wired to `rates.compareLaneRate`
+    /// (web-parity surface) and renders:
+    ///   • Position pill: BELOW MARKET / AT MARKET / ABOVE MARKET
+    ///     (color-coded against Brand.success / .info / .warning)
+    ///   • Position rating: poor / fair / good / excellent based on
+    ///     percentile bands (≤25 / 26-50 / 51-80 / 81+)
+    ///   • Range bar: market min — your rate — market max
+    ///   • RPM line: your $/mi vs market avg $/mi · sample size
+    ///   • Recommendation copy from the server
+    /// Surfaces the empty/loading/error states honestly.
+    @ViewBuilder
     private var targetRateCard: some View {
-        HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("TARGET RATE · ESTIMATE")
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("ESANG · RATE VS MARKET")
                     .font(EType.micro).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
-                HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
-                    Text(targetRateText)
-                        .font(.system(size: 22, weight: .bold).monospacedDigit())
-                        .foregroundStyle(LinearGradient.diagonal)
-                    Text("· spot avg estimate")
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textSecondary)
-                        .lineLimit(1)
+                Spacer(minLength: 0)
+                if let cmp = rateComparison {
+                    Text(cmp.source == "national_benchmark" ? "national" : "platform")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
                 }
             }
-            Spacer(minLength: 0)
-            Text(targetTrailText)
-                .font(EType.caption)
-                .foregroundStyle(targetTrailColor)
+            if isComparingRate {
+                Text("Comparing your rate against the lane…")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            } else if let err = rateCompareError {
+                Text("Rate compare error: \(err)")
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+            } else if let cmp = rateComparison {
+                rateMeterBody(cmp)
+            } else if (parseDouble(rateText) ?? 0) <= 0 {
+                Text("Add posted rate to see ESANG market position")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            } else if originStateCode == nil || destStateCode == nil {
+                Text("Resolving lane states for market compare…")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            } else if (routeDistanceMeters ?? 0) <= 0 {
+                Text("Distance computing — meter populates after route resolves")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
         }
         .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(palette.bgCard)
         .overlay(RoundedRectangle(cornerRadius: Radius.lg)
-                    .strokeBorder(palette.borderFaint))
+                    .strokeBorder(LinearGradient.diagonal.opacity(rateComparison == nil ? 0.25 : 0.55), lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
     }
 
-    private var targetRateText: String {
-        if let r = parseDouble(rateText), r > 0 { return dollars(r) }
-        return "—"
-    }
-
-    private var targetTrailText: String {
-        guard let r = parseDouble(rateText), r > 0 else {
-            return "Add rate to see vs spot"
+    @ViewBuilder
+    private func rateMeterBody(_ cmp: RatesAPI.LaneComparison) -> some View {
+        let (positionLabel, positionColor) = positionStyling(for: cmp.position)
+        let (ratingLabel, ratingColor) = ratingStyling(percentile: cmp.percentile,
+                                                        position: cmp.position)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                Text(dollars(cmp.yourRate))
+                    .font(.system(size: 24, weight: .bold).monospacedDigit())
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text(String(format: "$%.2f / mi", cmp.yourRPM))
+                    .font(EType.caption).monospacedDigit()
+                    .foregroundStyle(palette.textSecondary)
+                Spacer(minLength: 0)
+                Text(positionLabel)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Capsule().fill(positionColor))
+            }
+            // Range bar: market min -- your rate marker -- market max
+            rateRangeBar(cmp: cmp)
+            HStack(spacing: Space.s2) {
+                Text(ratingLabel)
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Capsule().fill(ratingColor))
+                Text("\(cmp.percentile)th percentile · n=\(cmp.sampleSize)")
+                    .font(EType.caption).monospacedDigit()
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 0)
+            }
+            Text(cmp.recommendation)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        return "estimate vs spot"
     }
-    private var targetTrailColor: Color { palette.textSecondary }
 
+    @ViewBuilder
+    private func rateRangeBar(cmp: RatesAPI.LaneComparison) -> some View {
+        // Map yourRPM into [min, max] range for the marker offset.
+        let lo = cmp.marketMinRPM
+        let hi = cmp.marketMaxRPM
+        let v  = cmp.yourRPM
+        // Clamp + normalize. If hi == lo (rare), draw the marker
+        // centered.
+        let pct: Double = {
+            guard hi > lo else { return 0.5 }
+            let raw = (v - lo) / (hi - lo)
+            return min(1.0, max(0.0, raw))
+        }()
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(LinearGradient(colors: [Brand.success, Brand.info, Brand.warning],
+                                         startPoint: .leading, endPoint: .trailing))
+                    .frame(height: 8)
+                Circle()
+                    .fill(.white)
+                    .frame(width: 16, height: 16)
+                    .overlay(Circle().strokeBorder(LinearGradient.diagonal, lineWidth: 2))
+                    .offset(x: max(0, geo.size.width * pct - 8))
+            }
+        }
+        .frame(height: 18)
+        HStack {
+            Text(String(format: "$%.2f / mi · min", lo))
+                .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                .foregroundStyle(palette.textTertiary).monospacedDigit()
+            Spacer(minLength: 0)
+            Text(String(format: "$%.2f / mi · avg", cmp.marketAvgRPM))
+                .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                .foregroundStyle(palette.textTertiary).monospacedDigit()
+            Spacer(minLength: 0)
+            Text(String(format: "$%.2f / mi · max", hi))
+                .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                .foregroundStyle(palette.textTertiary).monospacedDigit()
+        }
+    }
+
+    /// Server emits position uppercase like "ABOVE_MARKET". Map to
+    /// human label + color for the pill.
+    private func positionStyling(for raw: String) -> (String, Color) {
+        switch raw.uppercased() {
+        case "ABOVE_MARKET": return ("ABOVE MARKET", Brand.warning)
+        case "BELOW_MARKET": return ("BELOW MARKET", Brand.info)
+        case "AT_MARKET":    return ("AT MARKET",    Brand.success)
+        default:             return (raw,            Brand.neutral)
+        }
+    }
+
+    /// ESANG AI quality rating from the percentile + position. The
+    /// shipper's posted rate is "excellent" for them when it's at
+    /// or below the lane's midpoint (saves them money) and "poor"
+    /// when it's at the high end (carrier-favorable, shipper pays
+    /// more than they need to). Position label still flips the
+    /// shipper-vs-carrier framing in the pill above.
+    private func ratingStyling(percentile: Int, position: String) -> (String, Color) {
+        // For shippers: lower rate = better deal. Percentile ≤25
+        // means your rate is in the bottom quartile of comparable
+        // lanes — excellent for the shipper. ≥80th percentile is
+        // poor (overpaying). The middle bands: 26-50 = good, 51-79
+        // = fair.
+        switch percentile {
+        case 0...25:  return ("EXCELLENT", Brand.success)
+        case 26...50: return ("GOOD",      Brand.info)
+        case 51...79: return ("FAIR",      Brand.warning)
+        default:      return ("POOR",      Brand.danger)
+        }
+    }
     private var notesField: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("NOTES (OPTIONAL)")
@@ -1129,13 +1789,19 @@ struct ShipperPostLoad: View {
         let pickupISO = hasPickupDate ? isoDate(pickupDate) : nil
         let weight    = parseDouble(weightText)
         let rate      = parseDouble(rateText)
+        // Pack equipment-type + subform spec into the `notes` field
+        // so the catalyst's dispatcher / driver gets the full
+        // requirements at dispatch time. Server schema doesn't yet
+        // have structured tanker / reefer / flatbed columns; web
+        // parity at the application layer.
+        let composedNotes = composeSubmissionNotes()
         await store.submit(
             origin: origin,
             destination: destination,
             cargoType: cargoType,
             rate: rate,
             weight: weight,
-            notes: notes,
+            notes: composedNotes,
             pickupDate: pickupISO,
             originLat: originLat,
             originLng: originLng,
@@ -1146,6 +1812,44 @@ struct ShipperPostLoad: View {
             self.lastSuccess = ack
             resetForm()
         }
+    }
+
+    /// Concatenates equipment + subform fields into a single notes
+    /// string. Web parity — the catalyst's load-detail surface
+    /// surfaces these as a "REQUIREMENTS" block under the BOL.
+    /// Always prepends the user's free-form notes if non-empty.
+    private func composeSubmissionNotes() -> String {
+        var lines: [String] = []
+        if !notes.isEmpty { lines.append(notes) }
+        lines.append("Equipment: \(equipmentType.label) [\(equipmentType.rawValue)] · vertical=\(equipmentType.vertical)")
+        switch equipmentType {
+        case .tankerHazmat, .tankerPetro, .tankerLiquid, .tankerGas, .vesselTanker:
+            if !tankerHoseSpec.isEmpty { lines.append("Tanker hose: \(tankerHoseSpec)") }
+            if !tankerFitting.isEmpty  { lines.append("Tanker fitting: \(tankerFitting)") }
+            if !unNumber.isEmpty       { lines.append("UN: \(unNumber)") }
+            if !hazmatClass.isEmpty    { lines.append("Hazmat class: \(hazmatClass)") }
+            if !packingGroup.isEmpty   { lines.append("Packing group: \(packingGroup)") }
+            if !properShippingName.isEmpty { lines.append("Proper shipping name: \(properShippingName)") }
+        case .reefer:
+            if !reeferTempLowText.isEmpty || !reeferTempHighText.isEmpty {
+                lines.append("Reefer temp: \(reeferTempLowText)–\(reeferTempHighText)°F")
+            }
+            lines.append("Pre-cool: \(preCoolRequired ? "yes" : "no") · Continuous: \(continuousMode ? "yes" : "no")")
+        case .flatbed, .stepDeck, .conestoga, .oversized:
+            var gear: [String] = []
+            if flatbedStraps          { gear.append("straps") }
+            if flatbedTarps           { gear.append("tarps") }
+            if flatbedChains          { gear.append("chains") }
+            if flatbedEdgeProtectors  { gear.append("edge protectors") }
+            if !gear.isEmpty { lines.append("Securing: \(gear.joined(separator: ", "))") }
+            if !oversizeLengthText.isEmpty || !oversizeWidthText.isEmpty || !oversizeHeightText.isEmpty {
+                lines.append("Dimensions: L=\(oversizeLengthText) W=\(oversizeWidthText) H=\(oversizeHeightText) ft")
+            }
+            if oversizePermits { lines.append("Permits required") }
+        default:
+            break
+        }
+        return lines.joined(separator: "\n")
     }
 
     private func resetForm() {

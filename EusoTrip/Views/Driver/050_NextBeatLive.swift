@@ -367,7 +367,7 @@ private struct AmenitiesNearbySheet: View {
             if isLoading {
                 VStack(spacing: Space.s3) {
                     ProgressView()
-                    Text("Pulling fresh HERE data…")
+                    Text("Pulling fresh data…")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                 }

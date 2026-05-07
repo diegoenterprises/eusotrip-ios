@@ -2,16 +2,14 @@
 //  350_CarrierMe.swift
 //  EusoTrip — Catalyst (Carrier) · Me hub.
 //
-//  Carrier-side Me surface. Mirror of shipper 320_MeHome / driver
-//  067_MeProfile at MVP scope: identity hero + hub-card sections
-//  linking to every existing Carrier (.carrier registry) surface +
-//  sign-out. Lands the founder ask "catalyst profile has no sign out
-//  button" + "make sure all necessary screens outside of active load
-//  and load board is accessible".
+//  Visual parity with 320_MeHome (shipper) + 067A_DriverMeHubs:
+//  56pt gradient-avatar identity hero, LifecycleCard sections,
+//  40pt gradient icon circles on each row, gradient sign-out CTA.
 //
-//  Routes via `eusoCarrierNavSwap` (CarrierNavController). The "me"
-//  bottom-nav slot now points here (id "350"); previously pointed to
-//  "300" (CarrierHome) which is why no Me content surfaced.
+//  Carrier nav route map binds the "me" bottom-nav slot to "350".
+//  Pool = .carrier + .catalyst registry — destination ids audited
+//  against ContentView.swift registrations (see comments per
+//  section). Fictional / shipper-only ids removed.
 //
 
 import SwiftUI
@@ -35,16 +33,11 @@ struct CarrierMeScreen: View {
                 fleetSection
                 financialsSection
                 complianceSection
-                // Support section omitted — Help/Settings/Notifications/
-                // Legal screens are currently registered .shipper-only and
-                // are NOT addressable from CarrierSurface (its pool is
-                // .carrier + .catalyst). Will come back when carrier-side
-                // analogues ship.
                 signOutButton
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 56)
+            .padding(.horizontal, 14)
+            .padding(.top, 8)
         }
         .alert("Sign out?", isPresented: $showSignOutConfirm) {
             Button("Sign out", role: .destructive) {
@@ -69,7 +62,7 @@ struct CarrierMeScreen: View {
                     .foregroundStyle(LinearGradient.diagonal)
             }
             Spacer(minLength: 0)
-            Text(session.user?.companyId ?? session.user?.name ?? "—")
+            Text(session.user?.companyId.map { "companyId · \($0)" } ?? "—")
                 .font(.system(size: 9, weight: .heavy, design: .monospaced))
                 .tracking(1.0).foregroundStyle(palette.textTertiary).lineLimit(1)
         }
@@ -81,7 +74,7 @@ struct CarrierMeScreen: View {
                 .font(.system(size: 28, weight: .bold))
                 .tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
-            Text("Eusotrans / catalyst command surface")
+            Text("Catalyst command surface")
                 .font(.system(size: 11))
                 .foregroundStyle(palette.textSecondary)
         }
@@ -97,7 +90,7 @@ struct CarrierMeScreen: View {
             default:      return "Welcome back"
             }
         }()
-        let name = session.user?.firstName ?? session.user?.name?.split(separator: " ").first.map(String.init) ?? "Catalyst"
+        let name = session.user?.firstName ?? "Catalyst"
         return "\(timeOfDay), \(name)"
     }
 
@@ -106,50 +99,46 @@ struct CarrierMeScreen: View {
             .fill(LinearGradient(colors: [Brand.blue.opacity(0.55), Brand.magenta.opacity(0.55)],
                                  startPoint: .leading, endPoint: .trailing))
             .frame(height: 1)
-            .padding(.horizontal, -20)
+            .padding(.horizontal, -14)
     }
 
-    // MARK: - Identity hero
+    // MARK: - Identity hero (56pt avatar + parity with 320 hero)
 
     private var identityHero: some View {
         let user = session.user
-        let monogram = monogramFor(user?.name ?? "?")
-        return HStack(alignment: .center, spacing: Space.s3) {
-            ZStack {
-                Circle().fill(LinearGradient.diagonal)
+        let displayName = user?.name ?? "Catalyst user"
+        let monogram = monogramFor(displayName)
+        return LifecycleCard(accentGradient: true) {
+            HStack(alignment: .center, spacing: 10) {
                 Text(monogram)
                     .font(.system(size: 18, weight: .heavy))
                     .foregroundStyle(.white)
-            }
-            .frame(width: 56, height: 56)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(user?.name ?? "Carrier user")
-                    .font(.system(size: 17, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary)
-                if let cid = user?.companyId, !cid.isEmpty {
-                    Text("companyId · \(cid)")
-                        .font(.system(size: 12))
-                        .foregroundStyle(palette.textSecondary)
+                    .frame(width: 56, height: 56)
+                    .background(LinearGradient.diagonal)
+                    .clipShape(Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(displayName)
+                        .font(.system(size: 18, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.7)
+                    if let email = user?.email, !email.isEmpty {
+                        Text(email)
+                            .font(EType.body)
+                            .foregroundStyle(palette.textSecondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                    }
+                    if let cid = user?.companyId, !cid.isEmpty {
+                        Text("companyId · \(cid)")
+                            .font(EType.mono(.micro)).tracking(0.4)
+                            .foregroundStyle(palette.textTertiary)
+                            .lineLimit(1)
+                    }
                 }
-                if let email = user?.email, !email.isEmpty {
-                    Text(email)
-                        .font(.system(size: 11))
-                        .foregroundStyle(palette.textTertiary)
-                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
-            Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .heavy))
-                .foregroundStyle(palette.textTertiary)
         }
-        .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-        .onTapGesture { swap(to: "321") }   // 321 Catalyst Driver Profile (own profile view)
     }
 
     private func monogramFor(_ s: String) -> String {
@@ -158,69 +147,55 @@ struct CarrierMeScreen: View {
         return initials.isEmpty ? "?" : String(initials.prefix(2))
     }
 
-    // MARK: - Sections
+    // MARK: - Sections (LifecycleCard chrome — visual parity with 320)
+    //
+    // CarrierSurface pool = .carrier + .catalyst, .carrier wins on
+    // collisions. Each id below was verified against ContentView.swift
+    // registrations on 2026-05-07. Shipper-only ids and fictional ids
+    // removed.
 
     private var accountSection: some View {
-        // Verified destinations (CarrierSurface pool = .carrier + .catalyst):
-        //   321 — Catalyst Driver Profile (.catalyst, no .carrier collision)
-        //   317 — Carrier Authority (.carrier wins over Catalyst Compliance)
-        //
-        // Edit-profile is intentionally omitted: 322 in the merged pool
-        // resolves to Catalyst Driver Documents, NOT a profile editor.
-        // When a carrier-side ProfileEdit screen ships it can be added
-        // here with its real registry id.
-        section(title: "ACCOUNT", icon: "person.crop.square") {
-            row(label: "Profile",            icon: "person",                  to: "321")
-            row(label: "Authority · MC/DOT", icon: "shield.lefthalf.filled",  to: "317")
+        sectionCard(title: "ACCOUNT", icon: "person.crop.square") {
+            row(label: "Profile",            icon: "person",                 to: "321")  // .catalyst
+            row(label: "Authority · MC/DOT", icon: "shield.lefthalf.filled", to: "317")  // .carrier wins
         }
     }
 
     private var operationsSection: some View {
-        section(title: "OPERATIONS", icon: "antenna.radiowaves.left.and.right") {
-            row(label: "Catalyst Home · SpectraMatch", icon: "scope",  to: "500")
-            row(label: "Active matches",                icon: "bolt",   to: "501")
-            row(label: "Dispatch board",                icon: "list.bullet.rectangle", to: "303")
-            row(label: "Loads",                          icon: "shippingbox", to: "301")
+        sectionCard(title: "OPERATIONS", icon: "antenna.radiowaves.left.and.right") {
+            row(label: "Catalyst Home · SpectraMatch", icon: "scope",           to: "500")  // .catalyst
+            row(label: "Active matches",                icon: "bolt",            to: "501")  // .catalyst
+            row(label: "Dispatch board",                icon: "list.bullet.rectangle", to: "303")  // .carrier
+            row(label: "Loads",                          icon: "shippingbox",    to: "301")  // .carrier
         }
     }
 
     private var fleetSection: some View {
-        section(title: "FLEET", icon: "person.2") {
-            row(label: "Drivers",         icon: "person.2",            to: "304")
-            row(label: "Driver list",     icon: "list.bullet",         to: "319")
-            row(label: "Vehicles",        icon: "truck.box",           to: "320")
-            row(label: "ELD · Hours of Service", icon: "clock.badge",  to: "318")
-            row(label: "Maintenance",     icon: "wrench.adjustable",   to: "315")
-            row(label: "Fuel card",       icon: "fuelpump",            to: "314")
+        sectionCard(title: "FLEET", icon: "person.2") {
+            row(label: "Drivers",                icon: "person.2",            to: "304")  // .carrier
+            row(label: "Driver list",            icon: "list.bullet",         to: "319")  // .carrier wins
+            row(label: "Vehicles",               icon: "truck.box",           to: "320")  // .carrier wins
+            row(label: "ELD · Hours of Service", icon: "clock.badge",         to: "318")  // .carrier
+            row(label: "Maintenance",            icon: "wrench.adjustable",   to: "315")  // .carrier
+            row(label: "Fuel card",              icon: "fuelpump",            to: "314")  // .carrier
         }
     }
 
     private var financialsSection: some View {
-        section(title: "FINANCIALS", icon: "dollarsign.circle") {
-            row(label: "Earnings",         icon: "chart.line.uptrend.xyaxis", to: "312")
-            row(label: "Settlements",      icon: "doc.text",                  to: "313")
-            row(label: "My bids",          icon: "hand.tap",                  to: "308")
-            row(label: "Awarded loads",    icon: "checkmark.seal",            to: "309")
-            row(label: "Marketplace",      icon: "storefront",                to: "306")
+        sectionCard(title: "FINANCIALS", icon: "dollarsign.circle") {
+            row(label: "Earnings",      icon: "chart.line.uptrend.xyaxis", to: "312")  // .carrier
+            row(label: "Settlements",   icon: "doc.text",                  to: "313")  // .carrier wins
+            row(label: "My bids",       icon: "hand.tap",                  to: "308")  // .carrier
+            row(label: "Awarded loads", icon: "checkmark.seal",            to: "309")  // .carrier
+            row(label: "Marketplace",   icon: "storefront",                to: "306")  // .carrier
         }
     }
 
     private var complianceSection: some View {
-        // Verified destinations:
-        //   316 — Carrier Compliance Dash (.carrier)
-        //   326 — Catalyst Driver Compliance (.catalyst, no .carrier collision)
-        //   322 — Catalyst Driver Documents (.catalyst, no .carrier collision)
-        //
-        // "Driver scorecard" + "Catalyst compliance" are intentionally
-        // omitted — the .carrier registrations for 320 + 317 win the
-        // pool ordering, so those ids resolve to Vehicles List +
-        // Authority instead of the catalyst variants. They'll come
-        // back when carrier-specific scorecard / compliance ids are
-        // assigned.
-        section(title: "COMPLIANCE", icon: "checkmark.shield") {
-            row(label: "Compliance dash",   icon: "shield.checkered",                   to: "316")
-            row(label: "Driver compliance", icon: "person.badge.shield.checkmark",      to: "326")
-            row(label: "Driver documents",  icon: "doc.on.doc",                         to: "322")
+        sectionCard(title: "COMPLIANCE", icon: "checkmark.shield") {
+            row(label: "Compliance dash",   icon: "shield.checkered",                   to: "316")  // .carrier
+            row(label: "Driver compliance", icon: "person.badge.shield.checkmark",      to: "326")  // .catalyst
+            row(label: "Driver documents",  icon: "doc.on.doc",                         to: "322")  // .catalyst
         }
     }
 
@@ -244,13 +219,13 @@ struct CarrierMeScreen: View {
         .padding(.top, Space.s3)
     }
 
-    // MARK: - Helpers
+    // MARK: - Section + row primitives (LifecycleCard parity)
 
     @ViewBuilder
-    private func section<Content: View>(title: String,
-                                        icon: String,
-                                        @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
+    private func sectionCard<Content: View>(title: String,
+                                            icon: String,
+                                            @ViewBuilder content: () -> Content) -> some View {
+        LifecycleCard {
             HStack(spacing: 6) {
                 Image(systemName: icon)
                     .font(.system(size: 11, weight: .heavy))
@@ -259,25 +234,22 @@ struct CarrierMeScreen: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textPrimary)
             }
-            VStack(spacing: 1) {
+            .padding(.bottom, 2)
+            VStack(spacing: 6) {
                 content()
             }
-            .background(palette.bgCard)
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .strokeBorder(palette.borderFaint)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
         }
     }
 
     private func row(label: String, icon: String, to screenId: String) -> some View {
         Button(action: { swap(to: screenId) }) {
             HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.system(size: 13, weight: .heavy))
-                    .foregroundStyle(LinearGradient.diagonal)
-                    .frame(width: 22)
+                ZStack {
+                    Circle().fill(LinearGradient.diagonal).frame(width: 36, height: 36)
+                    Image(systemName: icon)
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(.white)
+                }
                 Text(label)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
@@ -286,9 +258,7 @@ struct CarrierMeScreen: View {
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(palette.textTertiary)
             }
-            .padding(.horizontal, Space.s3)
-            .padding(.vertical, 13)
-            .background(palette.bgCard)
+            .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
     }
