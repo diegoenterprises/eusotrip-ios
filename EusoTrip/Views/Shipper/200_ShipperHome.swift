@@ -56,6 +56,13 @@ struct ShipperHome: View {
     // Per home-widget doctrine the weather card sits between the
     // attention card and the CTA row across every role.
     @State private var weather: WeatherSnapshot? = nil
+    /// Collapsible state for the attention card. Founder ask
+    /// 2026-05-07: 'loads requiring attention on home screen needs
+    /// to be hideable. not just stretched out no matter what. let
+    /// it be collapsable in a graceful manner.' Default expanded so
+    /// the user sees the urgent context on first paint; persisted
+    /// via UserDefaults so the user's choice carries across sessions.
+    @State private var attentionExpanded: Bool = (UserDefaults.standard.object(forKey: "shipper.home.attentionExpanded") as? Bool) ?? true
     /// Mirrors `DriverHomeViewModel.WeatherAvailability` — same four
     /// states (.pending / .live / .needsLocation / .unavailable) so
     /// the shipper home renders the same enable-location CTA the
@@ -71,8 +78,11 @@ struct ShipperHome: View {
                 IridescentHairline()
                     .padding(.horizontal, Space.s5)
                 VStack(alignment: .leading, spacing: Space.s5) {
-                    attentionCard
+                    // Founder ask 2026-05-07: weather widget pinned
+                    // to the top of every role's home, everything
+                    // else after.
                     weatherSection
+                    collapsibleAttentionCard
                     ctaRow
                     statRow
                     activeLoadsSection
@@ -355,6 +365,62 @@ struct ShipperHome: View {
     }
 
     // MARK: - Attention card — gradient-rimmed, danger-washed top
+
+    /// Wraps the existing attentionCard with a collapsible chrome —
+    /// header always visible, body slides + fades on toggle. When
+    /// the user collapses it, only the count + chevron remain so
+    /// the home reclaims vertical space.
+    @ViewBuilder
+    private var collapsibleAttentionCard: some View {
+        if case .loaded(let rows) = alerts.state, !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        attentionExpanded.toggle()
+                    }
+                    UserDefaults.standard.set(attentionExpanded, forKey: "shipper.home.attentionExpanded")
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 13, weight: .heavy))
+                            .foregroundStyle(LinearGradient.diagonal)
+                        Text("LOADS REQUIRING ATTENTION")
+                            .font(.system(size: 10, weight: .heavy)).tracking(0.8)
+                            .foregroundStyle(palette.textPrimary)
+                        Text("\(rows.count)")
+                            .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Capsule().fill(LinearGradient.diagonal))
+                        Spacer(minLength: 0)
+                        Image(systemName: attentionExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 11, weight: .heavy))
+                            .foregroundStyle(palette.textTertiary)
+                            .rotationEffect(.degrees(attentionExpanded ? 0 : 0))
+                    }
+                    .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if attentionExpanded {
+                    attentionCard
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .move(edge: .top)),
+                            removal: .opacity
+                        ))
+                }
+            }
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                        .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        } else {
+            // Loading / empty / error states still flow through the
+            // original card so the user gets the same skeleton +
+            // empty + error UX.
+            attentionCard
+        }
+    }
 
     @ViewBuilder
     private var attentionCard: some View {

@@ -57,6 +57,16 @@ private struct BulkUploadShellBody: View {
     @State private var actionError: String? = nil
     @State private var loading = true
     @State private var fileImporterPresented = false
+    /// ESANG AI parse mode toggle. When ON, the upload routes through
+    /// the platform's Gemini-backed structured-extraction pipeline
+    /// (`payloadKind: "ai-parse"` per founder doctrine 2026-05-07).
+    /// The server detects file format (CSV / JSON / XLS / PDF), runs
+    /// Gemini OCR + structured extraction, maps rows into the
+    /// selected entity's table schema, and returns a job id we poll
+    /// the same way as the deterministic CSV path. ON by default for
+    /// XLS/PDF inputs (deterministic CSV parsing is enough for
+    /// straight CSV); user can override either way.
+    @State private var aiParseEnabled: Bool = true
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -157,9 +167,32 @@ private struct BulkUploadShellBody: View {
     private var dataSourceCard: some View {
         LifecycleCard {
             LifecycleSection(label: "DATA", icon: "tray.and.arrow.down")
+            // ESANG AI smart-parse toggle. ON → server routes through
+            // Gemini for structured extraction so XLS / XLSX / PDF
+            // (and even messy CSVs from legacy systems) get mapped
+            // into the entity's table columns automatically.
+            Toggle(isOn: $aiParseEnabled.animation(.spring(response: 0.22, dampingFraction: 0.85))) {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Smart parse with ESANG AI")
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(palette.textPrimary)
+                        Text("Gemini OCR + structured extraction · XLS, PDF, messy CSV → \(selected?.label.lowercased() ?? "rows")")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .toggleStyle(GradientToggleStyle())
+            .padding(.bottom, 4)
             HStack(spacing: 8) {
                 Button { fileImporterPresented = true } label: {
-                    Text("Pick file (CSV / JSON)").font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(palette.textPrimary)
+                    Text(aiParseEnabled ? "Pick file (CSV / XLS / PDF)" : "Pick file (CSV / JSON)")
+                        .font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(palette.textPrimary)
                         .padding(.horizontal, 14).padding(.vertical, 8)
                         .background(palette.tintNeutral).clipShape(Capsule())
                 }.buttonStyle(.plain)
@@ -169,7 +202,7 @@ private struct BulkUploadShellBody: View {
                         .background(palette.tintNeutral).clipShape(Capsule())
                 }.buttonStyle(.plain).disabled(rawCsv.isEmpty)
             }
-            Text("OR PASTE CSV / JSON").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary).padding(.top, 6)
+            Text(aiParseEnabled ? "OR PASTE ANY TABULAR DATA — ESANG INFERS COLUMNS" : "OR PASTE CSV / JSON").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary).padding(.top, 6)
             TextEditor(text: $rawCsv)
                 .font(.system(.caption, design: .monospaced))
                 .frame(minHeight: 120, maxHeight: 280)
@@ -285,10 +318,14 @@ private struct BulkUploadShellBody: View {
         uploading = true; actionError = nil
         struct In: Encodable { let entityType: String; let payload: String; let payloadKind: String }
         struct Out: Decodable { let success: Bool; let jobId: String? }
+        // payloadKind drives the server-side parser: 'csv' for
+        // deterministic CSV; 'ai-parse' for ESANG/Gemini structured
+        // extraction which handles XLS/XLSX/PDF + messy CSV.
+        let kind = aiParseEnabled ? "ai-parse" : "csv"
         do {
             let r: Out = try await EusoTripAPI.shared.mutation(
                 "bulkUpload.uploadAndProcess",
-                input: In(entityType: entity.key, payload: rawCsv, payloadKind: "csv")
+                input: In(entityType: entity.key, payload: rawCsv, payloadKind: kind)
             )
             if let id = r.jobId {
                 lastJob = UploadJob(id: id, status: "queued", entityType: entity.key, total: rowCount, processed: 0, errors: 0, createdAt: ISO8601DateFormatter().string(from: Date()))

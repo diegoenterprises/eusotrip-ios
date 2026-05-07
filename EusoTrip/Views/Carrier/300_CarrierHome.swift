@@ -56,12 +56,18 @@ struct CarrierHome: View {
     @StateObject private var active    = CarrierActiveLoadsStore()
     @StateObject private var recent    = CarrierRecentLoadsStore()
 
+    // Founder ask 2026-05-07: weather pinned top + attention collapsible.
+    @State private var weather: WeatherSnapshot? = nil
+    @State private var weatherNeedsLocation: Bool = false
+    @State private var attentionExpanded: Bool = (UserDefaults.standard.object(forKey: "carrier.home.attentionExpanded") as? Bool) ?? true
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
+                weatherSection
                 kpiStrip
-                attentionStrip
+                collapsibleAttentionStrip
                 activeLoadsCard
                 recentActivityCard
                 Color.clear.frame(height: 96)
@@ -79,7 +85,106 @@ struct CarrierHome: View {
         async let b: Void = alerts.refresh()
         async let c: Void = active.refresh()
         async let d: Void = recent.refresh()
+        async let w: WeatherSnapshot? = WeatherService.shared.fetchCurrent()
+        let snap = await w
         _ = await (a, b, c, d)
+        weather = snap
+        let status = WeatherService.shared.authorizationStatus
+        weatherNeedsLocation = (snap == nil) && (
+            status == .notDetermined ||
+            status == .denied ||
+            status == .restricted
+        )
+    }
+
+    @ViewBuilder
+    private var weatherSection: some View {
+        if let w = weather {
+            WeatherCard(snapshot: w)
+        } else if weatherNeedsLocation {
+            carrierEnableLocationCard
+        }
+    }
+
+    private var carrierEnableLocationCard: some View {
+        Button {
+            let status = WeatherService.shared.authorizationStatus
+            if status == .notDetermined {
+                WeatherService.shared.requestPermissionIfNeeded()
+            } else if let url = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(url)
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "location.fill")
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(Circle().fill(LinearGradient.diagonal))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Enable location for live weather")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Powers ESANG dispatch decisions in your morning brief.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(Space.s3)
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                        .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var collapsibleAttentionStrip: some View {
+        if case .loaded(let rows) = alerts.state, !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        attentionExpanded.toggle()
+                    }
+                    UserDefaults.standard.set(attentionExpanded, forKey: "carrier.home.attentionExpanded")
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(LinearGradient.diagonal)
+                        Text("NEEDS YOUR ATTENTION")
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                            .foregroundStyle(palette.textPrimary)
+                        Text("\(rows.count)")
+                            .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5).padding(.vertical, 2)
+                            .background(Capsule().fill(LinearGradient.diagonal))
+                        Spacer(minLength: 0)
+                        Image(systemName: attentionExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 11, weight: .heavy))
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if attentionExpanded {
+                    attentionStrip
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .move(edge: .top)),
+                            removal: .opacity
+                        ))
+                }
+            }
+        } else {
+            attentionStrip
+        }
     }
 
     // MARK: - Header
