@@ -73,7 +73,26 @@ private struct BulkUploadShellBody: View {
             .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await loadEntityTypes(); await loadHistory() }
-        .fileImporter(isPresented: $fileImporterPresented, allowedContentTypes: [.commaSeparatedText, .json, .text], allowsMultipleSelection: false) { result in
+        // Founder ask 2026-05-07: shippers, brokers, dispatchers
+        // need bulk upload from the file formats they actually use.
+        // Server expects CSV/JSON in the payload string; XLSX +
+        // PDF are accepted at the picker level, the parsing handler
+        // converts them to CSV before submit. UTType.xlsx is not in
+        // the SDK's enum on iOS 17+ — use the explicit MIME-derived
+        // identifier.
+        .fileImporter(
+            isPresented: $fileImporterPresented,
+            allowedContentTypes: [
+                .commaSeparatedText,
+                .json,
+                .text,
+                .pdf,
+                UTType(filenameExtension: "xls")  ?? .data,
+                UTType(filenameExtension: "xlsx") ?? .data,
+                UTType.spreadsheet
+            ],
+            allowsMultipleSelection: false
+        ) { result in
             handleFile(result)
         }
     }

@@ -129,6 +129,15 @@ struct ShipperPostLoad: View {
     @State private var oversizeHeightText:     String = ""
     @State private var oversizePermits:        Bool = false
 
+    /// Quantity-unit choice — auto-defaults from equipment + cargo
+    /// type but the user can override. Carriers measure freight in
+    /// units that match the product, not pounds for everything.
+    /// Petroleum runs on barrels / gallons, dry bulk on bushels /
+    /// tons, palletized freight on pallets / lbs, vessel containers
+    /// on TEUs / metric tons. Web parity: same unit menu the
+    /// platform's web shipper UI surfaces.
+    @State private var weightUnit: MeasurementUnit = .pounds
+
     @State private var lastSuccess: ShipperAPI.PostLoadAck? = nil
 
     // MARK: - Autosave + cross-device continuity
@@ -239,6 +248,108 @@ struct ShipperPostLoad: View {
             case .vesselContainer, .vesselBulk, .vesselTanker: return "vessel"
             default: return "truck"
             }
+        }
+    }
+
+    /// Quantity-measurement unit. The wizard surfaces a dynamic
+    /// subset based on the user's equipment + cargo type — petroleum
+    /// runs on barrels / gallons, grain on bushels, palletized
+    /// freight on pallets, vessel containers on TEUs / metric tons.
+    /// Founder ask 2026-05-07: 'lbs alone is just too basic'.
+    enum MeasurementUnit: String, CaseIterable, Identifiable {
+        // Mass
+        case pounds        = "lbs"
+        case kilograms     = "kg"
+        case shortTons     = "ton"           // 2000 lb US ton
+        case metricTons    = "mt"            // 1000 kg
+        // Liquid volume
+        case gallons       = "gal"           // US gallons
+        case barrels       = "bbl"           // 42 US gallons (oil)
+        case liters        = "L"
+        case cubicMeters   = "m³"
+        // Solid volume / count
+        case bushels       = "bu"
+        case pallets       = "plt"
+        case cases         = "cs"
+        case cartons       = "ctn"
+        case rolls         = "rl"
+        case bundles       = "bdl"
+        case feu           = "FEU"           // 40-ft container equiv (vessel)
+        case teu           = "TEU"           // 20-ft container equiv (vessel)
+        case pieces        = "pcs"
+
+        var id: String { rawValue }
+        var label: String { rawValue }
+        var longLabel: String {
+            switch self {
+            case .pounds:      return "Pounds"
+            case .kilograms:   return "Kilograms"
+            case .shortTons:   return "Short tons (US)"
+            case .metricTons:  return "Metric tons"
+            case .gallons:     return "Gallons (US)"
+            case .barrels:     return "Barrels (oil)"
+            case .liters:      return "Liters"
+            case .cubicMeters: return "Cubic meters"
+            case .bushels:     return "Bushels"
+            case .pallets:     return "Pallets"
+            case .cases:       return "Cases"
+            case .cartons:     return "Cartons"
+            case .rolls:       return "Rolls"
+            case .bundles:     return "Bundles"
+            case .feu:         return "FEU (40' container)"
+            case .teu:         return "TEU (20' container)"
+            case .pieces:      return "Pieces"
+            }
+        }
+    }
+
+    /// Suggested unit options based on equipment + cargo type.
+    /// First entry is the default. User can pick any value from
+    /// `MeasurementUnit.allCases` via the menu — these are the
+    /// short list surfaced first.
+    private var suggestedUnits: [MeasurementUnit] {
+        switch equipmentType {
+        case .tankerHazmat, .tankerPetro:
+            return [.barrels, .gallons, .pounds, .kilograms]
+        case .tankerLiquid:
+            return [.gallons, .liters, .barrels, .pounds]
+        case .tankerGas:
+            return [.gallons, .cubicMeters, .pounds, .kilograms]
+        case .reefer:
+            // Reefer cargo varies hugely; surface produce + protein
+            // common units. Pallets is a common reefer unit.
+            return [.pallets, .pounds, .kilograms, .cases]
+        case .flatbed, .stepDeck, .conestoga, .oversized:
+            return [.pounds, .kilograms, .shortTons, .pieces]
+        case .container, .railTOFC, .railCOFC, .railIntermodal:
+            return [.pounds, .kilograms, .shortTons, .metricTons]
+        case .vesselContainer:
+            return [.teu, .feu, .metricTons, .pounds]
+        case .vesselBulk:
+            return [.metricTons, .shortTons, .bushels, .pounds]
+        case .vesselTanker:
+            return [.barrels, .metricTons, .gallons, .liters]
+        case .powerOnly:
+            return [.pounds, .kilograms, .pallets]
+        case .dryVan:
+            switch cargoType {
+            case .general:        return [.pounds, .pallets, .cases, .kilograms]
+            case .refrigerated:   return [.pallets, .pounds, .kilograms]
+            case .hazmat:         return [.pounds, .kilograms, .pieces]
+            case .oversized:      return [.pounds, .pieces, .shortTons]
+            case .liquid, .gas, .chemicals, .petroleum:
+                return [.gallons, .pounds, .barrels, .liters]
+            }
+        }
+    }
+
+    /// Recompute the default unit when the equipment type changes —
+    /// only if the user hasn't already overridden to a non-default
+    /// unit.
+    private func resyncWeightUnit() {
+        guard let first = suggestedUnits.first else { return }
+        if !suggestedUnits.contains(weightUnit) {
+            weightUnit = first
         }
     }
 
@@ -646,6 +757,10 @@ struct ShipperPostLoad: View {
             equipmentType = mapped
         }
         if let w = tpl.weight, !w.isEmpty { weightText = w }
+        if let raw = tpl.weightUnit,
+           let mapped = MeasurementUnit(rawValue: raw) {
+            weightUnit = mapped
+        }
         if let r = tpl.rate, !r.isEmpty   { rateText = r }
         if let un = tpl.unNumber, !un.isEmpty { unNumber = un }
         if let cls = tpl.hazmatClass, !cls.isEmpty { hazmatClass = cls }
@@ -760,7 +875,7 @@ struct ShipperPostLoad: View {
                 cargoType: cargoType.rawValue,
                 equipmentType: equipmentType.rawValue,
                 weight: weightText.isEmpty ? nil : weightText,
-                weightUnit: weightText.isEmpty ? nil : "lbs",
+                weightUnit: weightText.isEmpty ? nil : weightUnit.rawValue,
                 rate: parseDouble(rateText),
                 rateType: rateText.isEmpty ? nil : "flat",
                 preferredDays: nil,
@@ -829,6 +944,7 @@ struct ShipperPostLoad: View {
         var oversizeWidthText: String = ""
         var oversizeHeightText: String = ""
         var oversizePermits: Bool = false
+        var weightUnitRaw: String = "lbs"
         var savedAt: Double = 0
     }
 
@@ -868,7 +984,8 @@ struct ShipperPostLoad: View {
         s += oversizeLengthText; s += "|"
         s += oversizeWidthText; s += "|"
         s += oversizeHeightText; s += "|"
-        s += String(oversizePermits)
+        s += String(oversizePermits); s += "|"
+        s += weightUnit.rawValue
         return s
     }
 
@@ -913,6 +1030,7 @@ struct ShipperPostLoad: View {
             oversizeWidthText: oversizeWidthText,
             oversizeHeightText: oversizeHeightText,
             oversizePermits: oversizePermits,
+            weightUnitRaw: weightUnit.rawValue,
             savedAt: Date().timeIntervalSince1970
         )
         if let data = try? JSONEncoder().encode(snap) {
@@ -976,6 +1094,9 @@ struct ShipperPostLoad: View {
         oversizeWidthText = snap.oversizeWidthText
         oversizeHeightText = snap.oversizeHeightText
         oversizePermits = snap.oversizePermits
+        if let unit = MeasurementUnit(rawValue: snap.weightUnitRaw) {
+            weightUnit = unit
+        }
     }
 
     private func clearDraft() {
@@ -1011,9 +1132,9 @@ struct ShipperPostLoad: View {
                     .foregroundStyle(palette.textPrimary)
                 Spacer()
 
-                // Templates button — opens the saved-templates picker.
-                // Only surfaces on step 1 since hydrating mid-wizard
-                // would clobber unsaved entries.
+                // Templates + Bulk upload only surface on step 1.
+                // Hydrating templates mid-wizard would clobber
+                // unsaved entries; bulk upload is a separate flow.
                 if step == .lane {
                     Button {
                         showTemplatePicker = true
@@ -1031,6 +1152,29 @@ struct ShipperPostLoad: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Open saved load templates")
+                    // Bulk upload — XLS / XLSX / CSV / PDF / JSON
+                    // for shippers, brokers, dispatchers. Routes to
+                    // the existing 400_BulkUploadShell which is
+                    // wired to bulkUpload.uploadAndProcess.
+                    Button {
+                        NotificationCenter.default.post(
+                            name: .eusoShipperNavSwap,
+                            object: nil,
+                            userInfo: ["screenId": "400b"]   // 400b = BulkUploadShell (id below)
+                        )
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "square.and.arrow.up.on.square")
+                                .font(.system(size: 11, weight: .heavy))
+                            Text("Bulk")
+                                .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                        }
+                        .foregroundStyle(LinearGradient.diagonal)
+                        .padding(.horizontal, 8).padding(.vertical, 5)
+                        .overlay(Capsule().strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open bulk upload — CSV / XLS / PDF")
                 }
 
                 Button(action: closeTapped) {
@@ -2104,11 +2248,17 @@ struct ShipperPostLoad: View {
 
     private var weightField: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("WEIGHT")
-                .font(EType.micro).tracking(0.6)
-                .foregroundStyle(palette.textTertiary)
+            HStack {
+                Text("QUANTITY")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 0)
+                Text(unitGuidanceText)
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+            }
             HStack(alignment: .center, spacing: Space.s3) {
-                Image(systemName: "scalemass.fill")
+                Image(systemName: weightUnitIcon)
                     .font(.system(size: 13, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                     .frame(width: 18)
@@ -2118,15 +2268,88 @@ struct ShipperPostLoad: View {
                     .tint(LinearGradient.diagonal)
                     .keyboardType(.decimalPad)
                     .disabled(isSubmitting)
-                Text("lbs")
-                    .font(EType.mono(.micro)).tracking(0.4)
-                    .foregroundStyle(palette.textTertiary)
+                weightUnitMenu
             }
             .padding(Space.s3)
             .background(palette.bgCard)
             .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                         .strokeBorder(palette.borderFaint))
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
+        .onChange(of: equipmentType) { _, _ in resyncWeightUnit() }
+        .onChange(of: cargoType)     { _, _ in resyncWeightUnit() }
+    }
+
+    /// Menu picker — surfaces the suggested unit list at the top
+    /// (most-relevant for the current equipment + cargo combo) and
+    /// the full list under "Other units" so any unit is reachable.
+    private var weightUnitMenu: some View {
+        Menu {
+            Section("Suggested for \(equipmentType.label)") {
+                ForEach(suggestedUnits) { u in
+                    Button {
+                        weightUnit = u
+                    } label: {
+                        if weightUnit == u {
+                            Label(u.longLabel, systemImage: "checkmark")
+                        } else {
+                            Text(u.longLabel)
+                        }
+                    }
+                }
+            }
+            Section("Other units") {
+                ForEach(MeasurementUnit.allCases.filter { !suggestedUnits.contains($0) }) { u in
+                    Button { weightUnit = u } label: {
+                        Text(u.longLabel)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(weightUnit.label)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                    .monospacedDigit()
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(palette.textSecondary)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .overlay(Capsule().strokeBorder(palette.borderFaint, lineWidth: 1))
+        }
+    }
+
+    /// SF Symbol that swaps with the unit so the icon reflects the
+    /// physical reality of the chosen measurement.
+    private var weightUnitIcon: String {
+        switch weightUnit {
+        case .pounds, .kilograms, .shortTons, .metricTons: return "scalemass.fill"
+        case .gallons, .liters:                            return "drop.fill"
+        case .barrels:                                     return "drop.triangle.fill"
+        case .cubicMeters:                                 return "cube.fill"
+        case .bushels:                                     return "leaf.fill"
+        case .pallets:                                     return "shippingbox.fill"
+        case .cases, .cartons:                             return "shippingbox.and.arrow.backward.fill"
+        case .rolls, .bundles:                             return "rectangle.stack.fill"
+        case .feu, .teu:                                   return "cube.box.fill"
+        case .pieces:                                      return "number"
+        }
+    }
+
+    /// Hint copy under the QUANTITY label — explains why the
+    /// suggested units differ for this equipment combo.
+    private var unitGuidanceText: String {
+        switch equipmentType {
+        case .tankerHazmat, .tankerPetro:    return "PETROLEUM · BBL = 42 US GAL"
+        case .tankerLiquid, .tankerGas:      return "LIQUID / GAS"
+        case .reefer:                        return "REEFER · PALLET COMMON"
+        case .vesselContainer:               return "VESSEL · TEU/FEU = ISO CONTAINER"
+        case .vesselBulk:                    return "BULK · METRIC TONS / BUSHELS"
+        case .vesselTanker:                  return "VESSEL TANKER · BBL/MT"
+        case .flatbed, .stepDeck, .conestoga, .oversized:
+            return "FLATBED · LBS / TONS / PIECES"
+        default:                             return ""
         }
     }
 
@@ -2676,7 +2899,7 @@ struct ShipperPostLoad: View {
             Divider().overlay(palette.borderFaint)
             reviewRow(label: "Vertical",       value: equipmentType.vertical.uppercased())
             Divider().overlay(palette.borderFaint)
-            reviewRow(label: "Weight",         value: parseDouble(weightText).map { "\(Int($0)) lbs" } ?? "—")
+            reviewRow(label: "Quantity",       value: parseDouble(weightText).map { "\(formatQty($0)) \(weightUnit.rawValue)" } ?? "—")
 
             reviewSection("FREIGHT CHARGE")
             reviewRow(label: "Posted rate",    value: parseDouble(rateText).map(dollars) ?? "—", isHero: true)
@@ -3069,6 +3292,9 @@ struct ShipperPostLoad: View {
         var lines: [String] = []
         if !notes.isEmpty { lines.append(notes) }
         lines.append("Equipment: \(equipmentType.label) [\(equipmentType.rawValue)] · vertical=\(equipmentType.vertical)")
+        if !weightText.isEmpty {
+            lines.append("Quantity: \(weightText) \(weightUnit.rawValue) (\(weightUnit.longLabel))")
+        }
         switch equipmentType {
         case .tankerHazmat, .tankerPetro, .tankerLiquid, .tankerGas, .vesselTanker:
             if !tankerHoseSpec.isEmpty { lines.append("Tanker hose: \(tankerHoseSpec)") }
@@ -3109,6 +3335,7 @@ struct ShipperPostLoad: View {
         hasPickupDate = false
         pickupDate = Date()
         weightText = ""
+        weightUnit = .pounds
         rateText = ""
         notes = ""
         unNumber = ""
@@ -3150,6 +3377,21 @@ struct ShipperPostLoad: View {
         f.dateFormat = "yyyy-MM-dd"
         f.timeZone = TimeZone(secondsFromGMT: 0)
         return f.string(from: date)
+    }
+
+    /// Formats a quantity value — integer for whole numbers (so
+    /// "9800" reads as "9,800" not "9,800.0"), one decimal for
+    /// fractional quantities (e.g. "12.5 bbl"). Mirrors the web
+    /// platform's quantity-display rule.
+    private func formatQty(_ value: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        if value.truncatingRemainder(dividingBy: 1) == 0 {
+            f.maximumFractionDigits = 0
+        } else {
+            f.maximumFractionDigits = 2
+        }
+        return f.string(from: NSNumber(value: value)) ?? "\(value)"
     }
 
     private func dollars(_ value: Double) -> String {

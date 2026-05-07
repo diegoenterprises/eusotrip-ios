@@ -644,6 +644,7 @@ enum ScreenRegistry {
         // with the Carrier-role "320" (CarrierVehiclesListScreen) —
         // `forRole` filters by role first, so IDs are scoped per-chrome.
         list.append(.init(id: "320",  title: "Shipper · Me Home",        role: .shipper) { p in AnyView(MeHomeScreen(theme: p)) })
+        list.append(.init(id: "400b", title: "Shipper · Bulk Upload",    role: .shipper) { p in AnyView(BulkUploadShellScreen(theme: p)) })
         list.append(.init(id: "320a", title: "Shipper · Me · Account",   role: .shipper) { p in AnyView(MeAccountHubScreen(theme: p)) })
         list.append(.init(id: "320b", title: "Shipper · Me · Wallet",    role: .shipper) { p in AnyView(MeWalletHubScreen(theme: p)) })
         list.append(.init(id: "320c", title: "Shipper · Me · Operations", role: .shipper) { p in AnyView(MeOperationsHubScreen(theme: p)) })
