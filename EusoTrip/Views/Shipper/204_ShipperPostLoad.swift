@@ -150,7 +150,13 @@ struct ShipperPostLoad: View {
     @State private var showSaveTemplateSheet: Bool = false
     @State private var savingTemplate: Bool = false
     @State private var templateSaveAck: String? = nil
+    @State private var templateSaveError: String? = nil
     @State private var templateNameDraft: String = ""
+
+    // Templates picker state (loadTemplates.list)
+    @State private var templates: [LoadTemplatesAPI.Template] = []
+    @State private var isLoadingTemplates: Bool = false
+    @State private var templateSearchQuery: String = ""
 
     /// Equipment-type choice covering truck (dry van / reefer /
     /// flatbed / step deck / conestoga / container / tanker variants
@@ -359,6 +365,11 @@ struct ShipperPostLoad: View {
         }
         // ERG search sheet (typeahead by name)
         .sheet(isPresented: $showErgSearchSheet) { ergSearchSheet }
+        // Templates picker (loadTemplates.list — server-backed,
+        // visible on web platform too for true cross-device parity)
+        .sheet(isPresented: $showTemplatePicker) { templatePickerSheet }
+        // Save-as-template (loadTemplates.create)
+        .sheet(isPresented: $showSaveTemplateSheet) { saveTemplateSheet }
     }
 
     // MARK: - ERG search sheet
@@ -461,6 +472,322 @@ struct ShipperPostLoad: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                     .strokeBorder(palette.borderFaint))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    // MARK: - Templates picker sheet (loadTemplates.list)
+
+    private var templatePickerSheet: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack {
+                Text("Saved templates")
+                    .font(.system(size: 18, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 0)
+                Button { showTemplatePicker = false } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                TextField("Search by name, lane, commodity", text: $templateSearchQuery)
+                    .font(EType.body)
+                    .foregroundStyle(palette.textPrimary)
+                    .tint(LinearGradient.diagonal)
+                    .autocorrectionDisabled()
+                    .onSubmit { Task { await loadTemplatesList() } }
+                    .onChange(of: templateSearchQuery) { _, _ in
+                        Task { await loadTemplatesList() }
+                    }
+            }
+            .padding(Space.s3)
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+
+            if isLoadingTemplates {
+                HStack(spacing: 6) {
+                    ProgressView().scaleEffect(0.7).tint(LinearGradient.diagonal)
+                    Text("Loading templates…")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: Space.s2) {
+                    ForEach(templates) { tpl in
+                        Button { applyTemplate(tpl) } label: {
+                            templateRow(tpl)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if templates.isEmpty && !isLoadingTemplates {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("No saved templates yet")
+                                .font(EType.bodyStrong)
+                                .foregroundStyle(palette.textPrimary)
+                            Text("Post a load + tap 'Save as template' on the review step. Saved templates show up here AND on the web platform — same account, same shipping list.")
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(.top, Space.s4)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s5)
+        .background(palette.bgPrimary)
+    }
+
+    @ViewBuilder
+    private func templateRow(_ tpl: LoadTemplatesAPI.Template) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(LinearGradient.diagonal)
+                    .frame(width: 36, height: 36)
+                Image(systemName: tpl.isFavorite == true ? "star.fill" : "rectangle.stack.fill")
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(.white)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tpl.name)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(2)
+                Text(templateLaneText(tpl))
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+                Text(templateMetaText(tpl))
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .heavy))
+                .foregroundStyle(palette.textTertiary)
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    private func templateLaneText(_ tpl: LoadTemplatesAPI.Template) -> String {
+        let o = locationDisplay(tpl.origin)
+        let d = locationDisplay(tpl.destination)
+        if o.isEmpty && d.isEmpty { return "Lane not set" }
+        return "\(o.isEmpty ? "—" : o) → \(d.isEmpty ? "—" : d)"
+    }
+
+    private func templateMetaText(_ tpl: LoadTemplatesAPI.Template) -> String {
+        var bits: [String] = []
+        if let eq = tpl.equipmentType, !eq.isEmpty { bits.append(eq) }
+        if let cargo = tpl.cargoType, !cargo.isEmpty { bits.append(cargo) }
+        if let count = tpl.useCount, count > 0 { bits.append("used \(count)×") }
+        return bits.joined(separator: " · ")
+    }
+
+    private func locationDisplay(_ loc: LoadTemplatesAPI.Template.Location?) -> String {
+        guard let loc else { return "" }
+        let c = (loc.city ?? "").trimmingCharacters(in: .whitespaces)
+        let s = (loc.state ?? "").trimmingCharacters(in: .whitespaces)
+        if !c.isEmpty && !s.isEmpty { return "\(c), \(s)" }
+        if !c.isEmpty { return c }
+        return s
+    }
+
+    private func loadTemplatesList() async {
+        isLoadingTemplates = true
+        defer { isLoadingTemplates = false }
+        do {
+            let q = templateSearchQuery.trimmingCharacters(in: .whitespaces)
+            let rows = try await EusoTripAPI.shared.loadTemplates.list(
+                search: q.isEmpty ? nil : q,
+                favoritesOnly: nil,
+                includeArchived: nil
+            )
+            self.templates = rows
+        } catch {
+            self.templates = []
+        }
+    }
+
+    /// Hydrate the wizard from a saved template. Origin / destination
+    /// are reconstructed from the template's Location columns; lat/lng
+    /// will fall back to geocoding via the existing
+    /// `recomputeETAIfReady` path. Equipment + cargo + hazmat fields
+    /// pre-populate where the template carries them.
+    private func applyTemplate(_ tpl: LoadTemplatesAPI.Template) {
+        if let o = tpl.origin {
+            origin = locationDisplay(o)
+            originLat = nil; originLng = nil
+        }
+        if let d = tpl.destination {
+            destination = locationDisplay(d)
+            destLat = nil; destLng = nil
+        }
+        if let raw = tpl.cargoType,
+           let mapped = ShipperAPI.CargoType(rawValue: raw) {
+            cargoType = mapped
+        }
+        if let raw = tpl.equipmentType,
+           let mapped = EquipmentChoice(rawValue: raw) {
+            equipmentType = mapped
+        }
+        if let w = tpl.weight, !w.isEmpty { weightText = w }
+        if let r = tpl.rate, !r.isEmpty   { rateText = r }
+        if let un = tpl.unNumber, !un.isEmpty { unNumber = un }
+        if let cls = tpl.hazmatClass, !cls.isEmpty { hazmatClass = cls }
+        if let desc = tpl.description, !desc.isEmpty { notes = desc }
+        showTemplatePicker = false
+        templateSaveAck = "Loaded · \(tpl.name)"
+        // Returning to step 1 forces the user to confirm the lane
+        // and lets the geocode fallback re-resolve coordinates.
+        step = .lane
+    }
+
+    // MARK: - Save-as-template sheet (loadTemplates.create)
+
+    private var saveTemplateSheet: some View {
+        VStack(alignment: .leading, spacing: Space.s4) {
+            HStack {
+                Text("Save as template")
+                    .font(.system(size: 18, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 0)
+                Button { showSaveTemplateSheet = false } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+            Text("Saves to your account so you can quick-post the same lane next time. Templates sync across iOS and the web platform — same shipper, same list.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("TEMPLATE NAME")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                TextField("Houston → Austin · Tanker · Hazmat",
+                          text: $templateNameDraft)
+                    .font(EType.body)
+                    .foregroundStyle(palette.textPrimary)
+                    .tint(LinearGradient.diagonal)
+                    .padding(Space.s3)
+                    .background(palette.bgCard)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                .strokeBorder(palette.borderFaint))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            if let err = templateSaveError {
+                Text(err)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Button {
+                Task { await saveAsTemplate() }
+            } label: {
+                HStack(spacing: 8) {
+                    if savingTemplate {
+                        ProgressView().scaleEffect(0.7).tint(.white)
+                    } else {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 12, weight: .heavy))
+                    }
+                    Text(savingTemplate ? "Saving…" : "Save template")
+                        .font(.system(size: 14, weight: .heavy))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .foregroundStyle(.white)
+                .background(LinearGradient.diagonal)
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(savingTemplate || templateNameDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s5)
+        .background(palette.bgPrimary)
+    }
+
+    private func saveAsTemplate() async {
+        let name = templateNameDraft.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        savingTemplate = true
+        templateSaveError = nil
+        defer { savingTemplate = false }
+        do {
+            let originLoc = LoadTemplatesAPI.TemplateLocation(
+                city: cityFromText(origin),
+                state: stateFromText(origin),
+                zipCode: nil,
+                address: origin.trimmingCharacters(in: .whitespaces),
+                facilityName: nil
+            )
+            let destLoc = LoadTemplatesAPI.TemplateLocation(
+                city: cityFromText(destination),
+                state: stateFromText(destination),
+                zipCode: nil,
+                address: destination.trimmingCharacters(in: .whitespaces),
+                facilityName: nil
+            )
+            // Build description with the equipment + subform spec so
+            // the catalyst's view of the template carries the full
+            // requirements at materialization time.
+            let desc = composeSubmissionNotes()
+            let input = LoadTemplatesAPI.CreateInput(
+                name: name,
+                description: desc.isEmpty ? nil : desc,
+                origin: originLoc,
+                destination: destLoc,
+                distance: routeDistanceMeters.map { Double($0) / 1609.34 },
+                commodity: properShippingName.isEmpty ? nil : properShippingName,
+                cargoType: cargoType.rawValue,
+                equipmentType: equipmentType.rawValue,
+                weight: weightText.isEmpty ? nil : weightText,
+                weightUnit: weightText.isEmpty ? nil : "lbs",
+                rate: parseDouble(rateText),
+                rateType: rateText.isEmpty ? nil : "flat",
+                preferredDays: nil,
+                preferredPickupTime: nil,
+                specialInstructions: notes.isEmpty ? nil : notes
+            )
+            let ack = try await EusoTripAPI.shared.loadTemplates.create(input)
+            showSaveTemplateSheet = false
+            templateSaveAck = "Saved · \(ack.name ?? name)"
+        } catch {
+            templateSaveError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// Best-effort city extraction. Pulls the leading piece before
+    /// the first comma so "Houston, TX, United States" → "Houston".
+    private func cityFromText(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.split(separator: ",").first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? ""
+    }
+
+    /// Best-effort state extraction. Pulls the second comma-separated
+    /// piece so "Houston, TX, United States" → "TX".
+    private func stateFromText(_ raw: String) -> String {
+        let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ",")
+        guard parts.count >= 2 else { return "" }
+        return String(parts[1]).trimmingCharacters(in: .whitespaces)
     }
 
     // MARK: - Draft autosave + iCloud KVS continuity
@@ -683,6 +1010,28 @@ struct ShipperPostLoad: View {
                     .font(EType.display)
                     .foregroundStyle(palette.textPrimary)
                 Spacer()
+
+                // Templates button — opens the saved-templates picker.
+                // Only surfaces on step 1 since hydrating mid-wizard
+                // would clobber unsaved entries.
+                if step == .lane {
+                    Button {
+                        showTemplatePicker = true
+                        Task { await loadTemplatesList() }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "rectangle.stack")
+                                .font(.system(size: 11, weight: .heavy))
+                            Text("Templates")
+                                .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                        }
+                        .foregroundStyle(LinearGradient.diagonal)
+                        .padding(.horizontal, 8).padding(.vertical, 5)
+                        .overlay(Capsule().strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open saved load templates")
+                }
 
                 Button(action: closeTapped) {
                     Image(systemName: "xmark")
@@ -2171,7 +2520,85 @@ struct ShipperPostLoad: View {
             reviewSummaryCard
             equipmentReviewCard
             esangMarketReviewCard
+            saveAsTemplateCTA
+            if let toast = templateSaveAck {
+                templateAckBanner(toast)
+            }
         }
+    }
+
+    /// Save-as-template CTA on the review step. Persists the current
+    /// wizard state as a named template via `loadTemplates.create`
+    /// — same record the web shipper sees in their saved-templates
+    /// list, so the next time they open the post-load wizard on
+    /// either platform, they can hydrate from the saved template.
+    private var saveAsTemplateCTA: some View {
+        Button {
+            templateNameDraft = suggestedTemplateName
+            templateSaveError = nil
+            showSaveTemplateSheet = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "square.and.arrow.down")
+                    .font(.system(size: 12, weight: .heavy))
+                Text("Save as template")
+                    .font(.system(size: 13, weight: .heavy)).tracking(0.4)
+            }
+            .foregroundStyle(LinearGradient.diagonal)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .overlay(Capsule().strokeBorder(LinearGradient.diagonal.opacity(0.55), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func templateAckBanner(_ msg: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 11, weight: .heavy))
+                .foregroundStyle(LinearGradient.diagonal)
+            Text(msg)
+                .font(EType.caption)
+                .foregroundStyle(palette.textPrimary)
+            Spacer(minLength: 0)
+            Button { templateSaveAck = nil } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    /// Default template name suggestion — uses the lane (origin →
+    /// destination) when both are present, otherwise the equipment +
+    /// cargo combo. Web parity: matches the suggested-name format
+    /// the platform's quick-save uses.
+    private var suggestedTemplateName: String {
+        let oTrim = origin.trimmingCharacters(in: .whitespacesAndNewlines)
+        let dTrim = destination.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !oTrim.isEmpty && !dTrim.isEmpty {
+            // "Houston, TX → Austin, TX · Tanker · Hazmat"
+            return "\(shortAddress(oTrim)) → \(shortAddress(dTrim)) · \(equipmentType.label)"
+        }
+        return "\(equipmentType.label) · \(cargoType.label)"
+    }
+
+    /// Trim the trailing ", United States" / ", USA" so the suggested
+    /// name fits in the suggested name field without truncation.
+    private func shortAddress(_ s: String) -> String {
+        var trimmed = s
+        for suffix in [", United States", ", USA", ", US"] {
+            if trimmed.hasSuffix(suffix) {
+                trimmed = String(trimmed.dropLast(suffix.count))
+            }
+        }
+        return trimmed
     }
 
     /// Banner showing what EusoTicket the load will generate. Web
