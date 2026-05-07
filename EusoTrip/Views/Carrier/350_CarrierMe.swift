@@ -35,7 +35,11 @@ struct CarrierMeScreen: View {
                 fleetSection
                 financialsSection
                 complianceSection
-                supportSection
+                // Support section omitted — Help/Settings/Notifications/
+                // Legal screens are currently registered .shipper-only and
+                // are NOT addressable from CarrierSurface (its pool is
+                // .carrier + .catalyst). Will come back when carrier-side
+                // analogues ship.
                 signOutButton
                 Color.clear.frame(height: 96)
             }
@@ -157,10 +161,17 @@ struct CarrierMeScreen: View {
     // MARK: - Sections
 
     private var accountSection: some View {
+        // Verified destinations (CarrierSurface pool = .carrier + .catalyst):
+        //   321 — Catalyst Driver Profile (.catalyst, no .carrier collision)
+        //   317 — Carrier Authority (.carrier wins over Catalyst Compliance)
+        //
+        // Edit-profile is intentionally omitted: 322 in the merged pool
+        // resolves to Catalyst Driver Documents, NOT a profile editor.
+        // When a carrier-side ProfileEdit screen ships it can be added
+        // here with its real registry id.
         section(title: "ACCOUNT", icon: "person.crop.square") {
-            row(label: "Profile",          icon: "person",                 to: "321")
-            row(label: "Edit profile",     icon: "square.and.pencil",      to: "322")
-            row(label: "Authority · MC/DOT", icon: "shield.lefthalf.filled", to: "317")
+            row(label: "Profile",            icon: "person",                  to: "321")
+            row(label: "Authority · MC/DOT", icon: "shield.lefthalf.filled",  to: "317")
         }
     }
 
@@ -195,21 +206,21 @@ struct CarrierMeScreen: View {
     }
 
     private var complianceSection: some View {
+        // Verified destinations:
+        //   316 — Carrier Compliance Dash (.carrier)
+        //   326 — Catalyst Driver Compliance (.catalyst, no .carrier collision)
+        //   322 — Catalyst Driver Documents (.catalyst, no .carrier collision)
+        //
+        // "Driver scorecard" + "Catalyst compliance" are intentionally
+        // omitted — the .carrier registrations for 320 + 317 win the
+        // pool ordering, so those ids resolve to Vehicles List +
+        // Authority instead of the catalyst variants. They'll come
+        // back when carrier-specific scorecard / compliance ids are
+        // assigned.
         section(title: "COMPLIANCE", icon: "checkmark.shield") {
-            row(label: "Compliance dash",        icon: "shield.checkered", to: "316")
-            row(label: "Driver compliance",      icon: "person.badge.shield.checkmark", to: "326")
-            row(label: "Driver documents",       icon: "doc.on.doc",       to: "322c")
-            row(label: "Driver scorecard",       icon: "chart.bar",        to: "320c")
-            row(label: "Catalyst compliance",    icon: "shield",           to: "317c")
-        }
-    }
-
-    private var supportSection: some View {
-        section(title: "SUPPORT & SETTINGS", icon: "gearshape") {
-            row(label: "Help & support",   icon: "lifepreserver", to: "347")
-            row(label: "Settings",         icon: "gearshape",     to: "340")
-            row(label: "Notifications",    icon: "bell",          to: "343")
-            row(label: "Legal",            icon: "doc.plaintext", to: "348")
+            row(label: "Compliance dash",   icon: "shield.checkered",                   to: "316")
+            row(label: "Driver compliance", icon: "person.badge.shield.checkmark",      to: "326")
+            row(label: "Driver documents",  icon: "doc.on.doc",                         to: "322")
         }
     }
 

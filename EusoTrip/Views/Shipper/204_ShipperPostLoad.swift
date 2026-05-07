@@ -152,6 +152,12 @@ struct ShipperPostLoad: View {
         .onChange(of: originLng) { _, _ in recomputeETAIfReady() }
         .onChange(of: destLat)   { _, _ in recomputeETAIfReady() }
         .onChange(of: destLng)   { _, _ in recomputeETAIfReady() }
+        // Also re-fire when the typed strings settle — fall-back
+        // path for users who paste / type without tapping a HERE
+        // suggestion. `recomputeETAIfReady` will geocode the typed
+        // text inline.
+        .onChange(of: origin)      { _, _ in recomputeETAIfReady() }
+        .onChange(of: destination) { _, _ in recomputeETAIfReady() }
     }
 
     // MARK: - TopBar
@@ -441,38 +447,59 @@ struct ShipperPostLoad: View {
             let hours = Double(secs) / 3600.0
             return String(format: "%.0f mi · %.1f hr · standard US semi via HERE Routing v8", miles, hours)
         }
-        // Both addresses present but not yet geocoded — HERE needs
-        // lat/lng to fire. Address-field selection populates the
-        // *Lat/*Lng @State; until that happens we wait.
-        if originLat == nil || destLat == nil {
-            return "Tap a HERE suggestion on each address to auto-fill distance + ETA"
-        }
+        // Both addresses present and `recomputeETAIfReady` is in flight
+        // (either geocoding the typed strings or routing the resolved
+        // coordinates). The isRouting / error / distance branches above
+        // already cover the resolved cases.
         return "Estimating distance · ETA · best-route via HERE Routing v8"
     }
 
     /// Fire HERE Routing whenever the lane endpoints OR pickup
-    /// schedule change. Debounced via `lastRoutedKey` so two
-    /// identical address picks don't re-fire the request.
+    /// schedule change. Debounced via `lastRoutedKey`. When lat/lng
+    /// haven't been captured yet (user typed an address but never
+    /// tapped a HERE suggestion), forward-geocodes the typed text
+    /// first so the ETA computes regardless of whether the user
+    /// picked from the dropdown. Founder bug 2026-05-07: "ETA
+    /// calculating still doesnt work mate" — typing 'Houston, TX'
+    /// + 'Austin, TX' previously left the delivery tile stuck on
+    /// 'Awaiting addresses · Pick HERE suggestions' because the
+    /// HereAddressField only captures coordinates on tap.
     private func recomputeETAIfReady() {
-        guard let oLat = originLat, let oLng = originLng,
-              let dLat = destLat, let dLng = destLng else {
+        let oTrim = origin.trimmingCharacters(in: .whitespacesAndNewlines)
+        let dTrim = destination.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !oTrim.isEmpty, !dTrim.isEmpty else {
             routeDistanceMeters = nil
             routeDurationSeconds = nil
             return
         }
-        let key = "\(oLat),\(oLng)|\(dLat),\(dLng)"
+        let key = "\(originLat ?? .nan),\(originLng ?? .nan)|\(destLat ?? .nan),\(destLng ?? .nan)|\(oTrim)|\(dTrim)"
         guard key != lastRoutedKey else { return }
         lastRoutedKey = key
         isRouting = true
         routingError = nil
         Task {
             do {
-                let stops = HereStops(
-                    origin: CLLocationCoordinate2D(latitude: oLat, longitude: oLng),
-                    destination: CLLocationCoordinate2D(latitude: dLat, longitude: dLng)
+                let originCoord = try await ensureCoordinate(
+                    text: oTrim,
+                    cachedLat: originLat,
+                    cachedLng: originLng
                 )
+                let destCoord = try await ensureCoordinate(
+                    text: dTrim,
+                    cachedLat: destLat,
+                    cachedLng: destLng
+                )
+                // Backfill the @State bindings so the wizard's
+                // submit step has resolved coordinates without a
+                // second geocode round-trip.
+                await MainActor.run {
+                    if originLat == nil { originLat = originCoord.latitude }
+                    if originLng == nil { originLng = originCoord.longitude }
+                    if destLat == nil   { destLat   = destCoord.latitude   }
+                    if destLng == nil   { destLng   = destCoord.longitude  }
+                }
                 let resp = try await HereRoutingClient.shared.route(
-                    stops: stops,
+                    stops: HereStops(origin: originCoord, destination: destCoord),
                     profile: .standardUSSemiLoaded
                 )
                 let totalDuration = resp.routes.first?.sections.reduce(0) { $0 + ($1.summary?.duration ?? 0) } ?? 0
@@ -489,6 +516,24 @@ struct ShipperPostLoad: View {
                 }
             }
         }
+    }
+
+    /// Returns a coordinate for the given address text. Uses cached
+    /// lat/lng (set by HereAddressField on suggestion-tap) when both
+    /// are present; otherwise forward-geocodes via HERE.
+    private func ensureCoordinate(
+        text: String,
+        cachedLat: Double?,
+        cachedLng: Double?
+    ) async throws -> CLLocationCoordinate2D {
+        if let lat = cachedLat, let lng = cachedLng {
+            return CLLocationCoordinate2D(latitude: lat, longitude: lng)
+        }
+        let hits = try await HereGeocodingClient.shared.geocode(query: text, limit: 1)
+        guard let first = hits.first else {
+            throw HereMapsError.providerError("No geocode result for '\(text)'")
+        }
+        return CLLocationCoordinate2D(latitude: first.position.lat, longitude: first.position.lng)
     }
 
     private var scheduleSection: some View {
@@ -574,10 +619,10 @@ struct ShipperPostLoad: View {
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
             } else if hasPickupDate {
-                Text("Awaiting addresses")
+                Text("Add addresses")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                Text("Pick HERE suggestions to compute")
+                Text("Type or pick HERE suggestions")
                     .font(EType.caption).monospacedDigit()
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
