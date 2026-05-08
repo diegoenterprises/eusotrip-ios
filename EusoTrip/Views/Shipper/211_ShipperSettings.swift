@@ -1143,6 +1143,8 @@ private struct ShipperSettingsAboutSheet: View {
     let version: String
     let build: String
 
+    @State private var presentingLegalDoc: LegalDoc? = nil
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -1162,12 +1164,16 @@ private struct ShipperSettingsAboutSheet: View {
 
                     LifecycleCard {
                         VStack(spacing: 0) {
+                            // Founder doctrine 2026-05-07: legal docs
+                            // render IN-APP (LegalDocSheet) with the
+                            // embedded EusoTrip-canonical text. No
+                            // more web hand-offs for terms / privacy.
                             row(icon: "doc.text", label: "Privacy Policy") {
-                                if let u = URL(string: "https://eusotrip.com/privacy") { openURL(u) }
+                                presentingLegalDoc = .privacyPolicy
                             }
                             Divider().overlay(palette.borderFaint)
                             row(icon: "doc.text", label: "Terms of Service") {
-                                if let u = URL(string: "https://eusotrip.com/terms") { openURL(u) }
+                                presentingLegalDoc = .termsOfService
                             }
                             Divider().overlay(palette.borderFaint)
                             row(icon: "envelope.fill", label: "Email support") {
@@ -1196,6 +1202,11 @@ private struct ShipperSettingsAboutSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
+            }
+            .sheet(item: $presentingLegalDoc) { doc in
+                LegalDocSheet(doc: doc)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
             }
         }
     }

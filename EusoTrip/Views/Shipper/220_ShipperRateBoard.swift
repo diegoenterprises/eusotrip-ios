@@ -315,6 +315,12 @@ struct ShipperRateBoard: View {
     }
 
     private var featuredSpotSubLine: String {
+        // Founder bug 2026-05-07: when the featured fetch errored
+        // out, the line stayed on '/ mi · loading' forever. Surface
+        // the actual error so the user knows to retry.
+        if let err = store.featuredError {
+            return "/ mi · " + (err.count > 38 ? String(err.prefix(35)) + "…" : err)
+        }
         guard let r = store.featuredSpot else { return "/ mi · loading" }
         let arrow: String = {
             switch r.trend.lowercased() {
