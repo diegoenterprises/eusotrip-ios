@@ -101,14 +101,45 @@ private struct HotZoneDetailBody: View {
 
     private func load() async {
         loading = true; loadError = nil
-        struct In: Encodable { let city: String }
+        defer { loading = false }
+        // Founder bug 2026-05-07: `hotZones.getCity` doesn't exist
+        // server-side. The canonical procedure is `getRateFeed`
+        // which returns the full national feed; filter to the
+        // requested city locally so the drill-down renders honestly
+        // off the same authoritative source the heatmap uses.
         do {
-            let d: HotZoneDetail = try await EusoTripAPI.shared.query("hotZones.getCity", input: In(city: city))
-            detail = d
+            let feed = try await EusoTripAPI.shared.hotZones.getRateFeed()
+            let needle = city.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            // Match against zoneName + state. Zone names are typically
+            // 'City Cluster · ST' (server-formatted); strip the cluster
+            // suffix when comparing.
+            let match = feed.zones.first { z in
+                let nameOnly = z.zoneName
+                    .components(separatedBy: " · ")
+                    .first?
+                    .trimmingCharacters(in: .whitespaces)
+                    .lowercased() ?? ""
+                return nameOnly.contains(needle) || needle.contains(nameOnly)
+            }
+            guard let z = match else {
+                loadError = "No live hot-zone data for \(city) right now. Check back when demand patterns update."
+                return
+            }
+            // Map HotZoneEntry → local detail shape so the existing
+            // SwiftUI cards render unchanged.
+            detail = HotZoneDetail(
+                city: z.zoneName.components(separatedBy: " · ").first ?? z.zoneName,
+                state: z.state,
+                demandIndex: z.liveSurge > 0 ? (z.liveSurge - 1.0) * 100 : nil,
+                avgRate: z.liveRate,
+                avgRateDelta30d: z.rateChangePercent,
+                topCommodities: z.topEquipment,    // surface equipment as commodity proxy
+                topLanes: z.reasons,                // server packs lane signals into reasons
+                carriersAvailable: z.liveTrucks > 0 ? z.liveTrucks : nil
+            )
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
-        loading = false
     }
 }
 

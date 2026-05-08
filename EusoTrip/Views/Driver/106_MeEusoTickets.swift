@@ -181,10 +181,17 @@ struct MeEusoTicketsView: View {
             get: { pdfURL.map { IdentifiedURL(url: $0) } },
             set: { pdfURL = $0?.url }
         )) { ident in
-            #if canImport(UIKit)
-            SafariView(url: ident.url)
-                .ignoresSafeArea()
-            #endif
+            // Founder doctrine 2026-05-07: render BOL / RunTicket
+            // PDFs IN-APP via EusoPDFViewer instead of the prior
+            // SFSafariViewController hand-off.
+            EusoPDFViewer(
+                title: "EusoTicket",
+                subtitle: "Driver · BOL / Run Ticket",
+                source: .url(ident.url),
+                allowSigning: false
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
         .overlay(alignment: .bottom) {
             if let toast = store.lastToast {

@@ -78,6 +78,16 @@ struct ShipperBOLs: View {
     @State private var generateLoadId: String = ""
     @State private var showGenerateSheet: Bool = false
     @State private var showAck: Bool = false
+    @State private var pdfPreview: BOLPDFPreview? = nil
+    @State private var pdfFetching: String? = nil
+    @State private var pdfError: String? = nil
+
+    /// Identifiable wrapper for the in-app PDF preview sheet.
+    fileprivate struct BOLPDFPreview: Identifiable {
+        let id = UUID()
+        let url: URL
+        let bolNumber: String
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -107,12 +117,45 @@ struct ShipperBOLs: View {
             Task { await store.load() }
         }
         .sheet(isPresented: $showGenerateSheet) { generateSheet }
-        .onChange(of: store.lastBOL?.bolNumber ?? "") { _, v in if !v.isEmpty { showAck = true } }
-        .alert("BOL generated", isPresented: $showAck, actions: {
-            Button("OK") { store.lastBOL = nil }
-        }, message: {
-            if let b = store.lastBOL?.bolNumber { Text("New BOL: \(b)") }
-        })
+        .sheet(item: $pdfPreview) { p in
+            EusoPDFViewer(
+                title: "BOL · \(p.bolNumber)",
+                subtitle: "Bill of Lading · Eusorone",
+                source: .url(p.url),
+                allowSigning: false
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+        .overlay(alignment: .bottom) {
+            if let n = pdfFetching {
+                Text("Fetching BOL · \(n)…")
+                    .font(EType.caption)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(Capsule().fill(LinearGradient.diagonal))
+                    .padding(.bottom, 100)
+            } else if let err = pdfError {
+                Text(err)
+                    .font(EType.caption)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(Capsule().fill(Brand.danger))
+                    .padding(.bottom, 100)
+                    .onAppear {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { pdfError = nil }
+                    }
+            }
+        }
+        .onChange(of: store.lastBOL?.bolNumber ?? "") { _, v in
+            // Founder doctrine 2026-05-07: BOL generation from a
+            // load auto-presents the EusoPDFViewer in-app so the
+            // user immediately sees the freshly-rendered ticket
+            // instead of just an "OK" alert.
+            guard !v.isEmpty else { return }
+            Task { await openBOLPreview(bolNumber: v) }
+            store.lastBOL = nil
+        }
     }
 
     private var header: some View {
@@ -227,9 +270,12 @@ struct ShipperBOLs: View {
     private func bolRow(_ b: EusoTicketAPI.BOLRow) -> some View {
         let style = BOLStatusStyle.from(b.status)
         return Button {
-            if let n = b.bolNumber {
-                MeAction.fire("shipper.bol.preview", userInfo: ["bolNumber": n])
-            }
+            // Founder doctrine 2026-05-07: BOLs render IN-APP via
+            // EusoPDFViewer instead of the prior Continuity-handoff
+            // to the web preview. Fetch the PDF URL via
+            // eusoTicket.generateBOLPDF, then present.
+            guard let n = b.bolNumber else { return }
+            Task { await openBOLPreview(bolNumber: n) }
         } label: {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "doc.text.fill").font(.system(size: 14, weight: .heavy))
@@ -294,6 +340,34 @@ struct ShipperBOLs: View {
         .background(palette.bgCard)
         .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    /// Fetch BOL PDF via eusoTicket.generateBOLPDF, then surface
+    /// the URL through `pdfPreview` so the EusoPDFViewer sheet
+    /// presents IN-APP. Replaces the prior MeAction.fire continuation
+    /// hand-off to the web preview.
+    private func openBOLPreview(bolNumber: String) async {
+        pdfFetching = bolNumber
+        defer { pdfFetching = nil }
+        do {
+            let res = try await EusoTripAPI.shared.eusoTicket.generateBOLPDF(bolNumber: bolNumber)
+            // documentUrl can be a relative path; resolve against
+            // the platform base. EusoTripAPI does NOT prefix host
+            // for these — best-effort treat as absolute first, fall
+            // back to the production host.
+            guard let url = absoluteURL(for: res.documentUrl) else {
+                pdfError = "Couldn't resolve BOL URL."
+                return
+            }
+            pdfPreview = BOLPDFPreview(url: url, bolNumber: bolNumber)
+        } catch {
+            pdfError = "Couldn't fetch BOL: \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)"
+        }
+    }
+
+    private func absoluteURL(for raw: String) -> URL? {
+        if let u = URL(string: raw), u.scheme != nil { return u }
+        return URL(string: "https://eusotrip.com" + (raw.hasPrefix("/") ? raw : "/" + raw))
     }
 
     private func errorCard(_ m: String) -> some View {

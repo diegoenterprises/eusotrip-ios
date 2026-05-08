@@ -43,10 +43,20 @@ struct EusoPDFViewer: View {
     let source: EusoPDFSource
     var allowSigning: Bool = false
     var onSigned: ((UIImage, String) -> Void)? = nil
+    /// When non-nil, surfaces an "Add to Apple Wallet" affordance in
+    /// the top bar — the underlying load id is used to fetch the
+    /// signed `.pkpass` via `EusoWalletPassService.addPass`.
+    var loadIdForWalletPass: String? = nil
 
     @State private var doc: PDFDocument? = nil
     @State private var loadError: String? = nil
     @State private var showSignSheet: Bool = false
+    @State private var fetchedData: Data? = nil
+    @State private var showShareSheet: Bool = false
+    @State private var fileURLForExport: URL? = nil
+    @State private var walletBusy: Bool = false
+    @State private var walletAck: String? = nil
+    @State private var savedAck: String? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -68,12 +78,40 @@ struct EusoPDFViewer: View {
             }
             .presentationDetents([.large])
         }
+        .sheet(isPresented: $showShareSheet) {
+            if let url = fileURLForExport ?? writeShareTempIfNeeded() {
+                EusoShareSheet(items: [url])
+            }
+        }
+        .sheet(item: Binding(
+            get: { fileURLForExport.map { ExportTarget(url: $0) } },
+            set: { _ in }
+        )) { _ in
+            EmptyView()
+        }
+        .overlay(alignment: .bottom) {
+            VStack(spacing: 6) {
+                if let toast = walletAck { toastChip(text: toast, success: true) }
+                if let toast = savedAck  { toastChip(text: toast, success: true) }
+            }
+            .padding(.bottom, 24)
+        }
     }
+
+    private func toastChip(text: String, success: Bool) -> some View {
+        Text(text)
+            .font(EType.caption)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .background(Capsule().fill(success ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(Brand.danger)))
+    }
+
+    private struct ExportTarget: Identifiable { let id = UUID(); let url: URL }
 
     // MARK: - Bars
 
     private var topBar: some View {
-        HStack(alignment: .firstTextBaseline) {
+        HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.system(size: 18, weight: .heavy))
@@ -87,9 +125,47 @@ struct EusoPDFViewer: View {
                 }
             }
             Spacer(minLength: 0)
-            ShareLink(item: shareItem)
-                .labelStyle(.iconOnly)
-                .tint(LinearGradient.diagonal)
+            // Apple Wallet — only when a load id is provided.
+            if let _ = loadIdForWalletPass {
+                Button { Task { await addToAppleWallet() } } label: {
+                    HStack(spacing: 4) {
+                        if walletBusy {
+                            ProgressView().tint(.white).scaleEffect(0.7)
+                        } else {
+                            Image(systemName: "wallet.pass.fill")
+                                .font(.system(size: 13, weight: .heavy))
+                        }
+                        Text("Wallet")
+                            .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(Capsule().fill(LinearGradient.diagonal))
+                }
+                .buttonStyle(.plain)
+                .disabled(walletBusy)
+            }
+            // Download — saves into the iOS Files app via UIDocumentPicker.
+            Button { Task { await downloadPDF() } } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.down.doc")
+                        .font(.system(size: 13, weight: .heavy))
+                    Text("Download")
+                        .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                }
+                .foregroundStyle(LinearGradient.diagonal)
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .overlay(Capsule().strokeBorder(LinearGradient.diagonal.opacity(0.55), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            // Share sheet — printer / iMessage / mail / etc.
+            Button { showShareSheet = true } label: {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 16, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
             Button { dismiss() } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 22, weight: .heavy))
@@ -173,7 +249,10 @@ struct EusoPDFViewer: View {
             do {
                 let data = try await Self.fetchData(from: url)
                 if let pdf = PDFDocument(data: data) {
-                    await MainActor.run { doc = pdf }
+                    await MainActor.run {
+                        doc = pdf
+                        fetchedData = data
+                    }
                 } else {
                     await MainActor.run { loadError = "Document is not a valid PDF." }
                 }
@@ -185,6 +264,7 @@ struct EusoPDFViewer: View {
         case .data(let d):
             if let pdf = PDFDocument(data: d) {
                 doc = pdf
+                fetchedData = d
             } else {
                 loadError = "Document is not a valid PDF."
             }
@@ -204,6 +284,89 @@ struct EusoPDFViewer: View {
         }
         return data
     }
+
+    /// Writes the current PDF bytes to a temp .pdf file so the
+    /// share sheet / Files picker can hand it to other apps.
+    private func writeShareTempIfNeeded() -> URL? {
+        if let url = fileURLForExport { return url }
+        guard let data = fetchedData ?? doc?.dataRepresentation() else { return nil }
+        let safeTitle = title
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: " ", with: "_")
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(safeTitle)-\(Int(Date().timeIntervalSince1970)).pdf")
+        do {
+            try data.write(to: tmp, options: .atomic)
+            fileURLForExport = tmp
+            return tmp
+        } catch {
+            return nil
+        }
+    }
+
+    /// Save-to-Files via UIDocumentPickerViewController. Hosts the
+    /// pickerand presents from the topmost view controller.
+    private func downloadPDF() async {
+        guard let url = writeShareTempIfNeeded() else {
+            savedAck = "Couldn't prepare PDF."
+            scheduleAckClear()
+            return
+        }
+        await MainActor.run {
+            let picker = UIDocumentPickerViewController(forExporting: [url], asCopy: true)
+            picker.shouldShowFileExtensions = true
+            picker.modalPresentationStyle = .formSheet
+            // Best-effort topmost-presentation; uses the connected
+            // UIWindowScene root.
+            if let scene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene }).first,
+               let root = scene.windows.first(where: { $0.isKeyWindow })?.rootViewController {
+                var top = root
+                while let p = top.presentedViewController { top = p }
+                top.present(picker, animated: true)
+            }
+            savedAck = "Saved · pick a destination"
+            scheduleAckClear()
+        }
+    }
+
+    /// Adds the underlying load to Apple Wallet via the platform's
+    /// signed `.pkpass` flow — surfaces the system PKAddPassesViewController.
+    private func addToAppleWallet() async {
+        guard let loadId = loadIdForWalletPass else { return }
+        walletBusy = true
+        defer { walletBusy = false }
+        let result = await EusoWalletPassService.shared.addPass(forLoadId: loadId)
+        await MainActor.run {
+            switch result {
+            case .presented:
+                walletAck = "Apple Wallet sheet presented"
+            case .signingUnavailable:
+                walletAck = "Wallet pass not yet available — try after dispatch"
+            case .failure(let msg):
+                walletAck = "Wallet error: \(msg)"
+            }
+            scheduleAckClear()
+        }
+    }
+
+    private func scheduleAckClear() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            walletAck = nil
+            savedAck = nil
+        }
+    }
+}
+
+/// Bridge to UIActivityViewController — needed so we can present
+/// the share sheet with a saved file URL without depending on
+/// SwiftUI ShareLink's URL-only restrictions.
+private struct EusoShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
 }
 
 // MARK: - PDFKit bridge
