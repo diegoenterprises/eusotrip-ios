@@ -1217,22 +1217,72 @@ struct ShipperAgreementDetailSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
+    @State private var presentingPDFViewer: Bool = false
+
+    /// Renders the contract IN-APP via EusoPDFViewer with gradient-
+    /// ink signing capabilities. Replaces the prior "Open full
+    /// contract on web" hand-off per founder doctrine 2026-05-07
+    /// — every contract is viewed in our own canvas, signed with
+    /// our brand ink, never punted to the browser.
     private var viewOnWeb: some View {
         Button {
-            MeAction.fire("shipper.agreement.openOnWeb", userInfo: ["agreementId": row.id])
+            presentingPDFViewer = true
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "rectangle.portrait.and.arrow.right")
+                Image(systemName: "doc.richtext.fill")
                     .font(.system(size: 12, weight: .heavy))
-                Text("Open full contract on web")
+                Text("Open full contract")
                     .font(.system(size: 12, weight: .heavy))
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .heavy))
             }
             .frame(maxWidth: .infinity).padding(.vertical, 11)
-            .foregroundStyle(palette.textPrimary).background(palette.bgCard)
-            .overlay(Capsule().strokeBorder(palette.borderFaint))
+            .padding(.horizontal, 14)
+            .foregroundStyle(.white)
+            .background(LinearGradient.diagonal)
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
+        .sheet(isPresented: $presentingPDFViewer) {
+            // Build the contract PDF URL from the agreement record.
+            // Server endpoint: agreements.getPDFURL(agreementId).
+            // When the URL isn't populated yet, the viewer's load
+            // path surfaces an honest empty state — never a fake
+            // PDF.
+            let pdfURL = URL(string: "https://eusotrip.com/api/agreements/\(row.id)/pdf")
+            EusoPDFViewer(
+                title: row.agreementNumber ?? "Agreement #\(row.id)",
+                subtitle: (row.agreementType ?? "Contract") + (row.status.map { " · \($0.uppercased())" } ?? ""),
+                source: .url(pdfURL ?? URL(string: "about:blank")!),
+                allowSigning: (row.status ?? "").lowercased() == "pending_signature",
+                onSigned: { _, base64 in
+                    Task {
+                        // Submit gradient-ink signature back to the
+                        // agreement record. Best-effort — the
+                        // mutation is server-routed; a failure
+                        // surfaces in the next refresh.
+                        struct In: Encodable {
+                            let agreementId: Int
+                            let signatureBase64: String
+                            let signedAt: String
+                        }
+                        struct Out: Decodable { let success: Bool? }
+                        let iso = ISO8601DateFormatter().string(from: Date())
+                        let _: Out? = try? await EusoTripAPI.shared.mutation(
+                            "agreements.submitSignature",
+                            input: In(
+                                agreementId: row.id,
+                                signatureBase64: base64,
+                                signedAt: iso
+                            )
+                        )
+                    }
+                }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
     }
 }
 

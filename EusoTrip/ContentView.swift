@@ -663,7 +663,7 @@ enum ScreenRegistry {
         list.append(.init(id: "322", title: "Shipper · Profile Edit",          role: .shipper) { p in AnyView(ProfileEditScreen(theme: p)) })
         list.append(.init(id: "323", title: "Shipper · Tier Detail",           role: .shipper) { p in AnyView(TierDetailScreen(theme: p)) })
         list.append(.init(id: "325", title: "Shipper · Insurance Detail",      role: .shipper) { p in AnyView(InsuranceDetailScreen(theme: p)) })
-        list.append(.init(id: "326", title: "Shipper · FMCSA SAFER Mirror",    role: .shipper) { p in AnyView(FmcsaSaferMirrorScreen(theme: p)) })
+        list.append(.init(id: "326", title: "Shipper · FMCSA SAFER",           role: .shipper) { p in AnyView(FmcsaSaferMirrorScreen(theme: p)) })
         list.append(.init(id: "327", title: "Shipper · Hazmat Audit",          role: .shipper) { p in AnyView(HazmatAuditScreen(theme: p)) })
         list.append(.init(id: "340", title: "Shipper · Settings Home",         role: .shipper) { p in AnyView(SettingsHomeScreen(theme: p)) })
         list.append(.init(id: "343", title: "Shipper · Notification Prefs",    role: .shipper) { p in AnyView(NotificationPrefsScreen(theme: p)) })

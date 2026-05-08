@@ -155,7 +155,7 @@ private struct FmcsaBody: View {
                 Image(systemName: "checkmark.shield.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("SHIPPER · FMCSA SAFER").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
-            Text("FMCSA SAFER mirror").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            Text("FMCSA SAFER").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
         }
     }
 

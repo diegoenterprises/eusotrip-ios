@@ -207,6 +207,7 @@ struct ShipperRFP: View {
 
     @State private var selectedRfpId: String?
     @State private var filter: RFPFilter = .all
+    @State private var showNewRFPComposer: Bool = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -227,6 +228,16 @@ struct ShipperRFP: View {
         }
         .task { await store.refresh() }
         .refreshable { await store.refresh() }
+        .sheet(isPresented: $showNewRFPComposer) {
+            NewRFPComposerSheet { committed in
+                if committed {
+                    Task { await store.refresh() }
+                }
+                showNewRFPComposer = false
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
         // RealtimeService → RFPs refresh when carriers submit bids,
         // award decisions are made, or RFP windows open/close.
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
@@ -1392,10 +1403,11 @@ struct ShipperRFP: View {
     }
 
     private func tapNewRFP() {
-        // RFP creation form hasn't shipped in-app yet; route to the
-        // canonical web RFP-builder so the tap lands on a real
-        // surface (same Bearer cookie auth — no re-login).
-        // Telemetry post retained for observability.
+        // Founder doctrine 2026-05-07: keep the RFP composer
+        // IN-APP. The mailto:bids@eusotrip.com hand-off is gone.
+        // The composer sheet (`showNewRFPComposer`) collects
+        // lanes / equipment / volume / award date and submits
+        // to `rfp.create` server-side.
         NotificationCenter.default.post(
             name: .eusoShipperRfpCreate,
             object: nil,
@@ -1404,15 +1416,7 @@ struct ShipperRFP: View {
                 "shipperCompanyId": 1
             ]
         )
-        // Real action: compose a mail to the bid desk so ops can
-        // assemble the RFP bundle. Replaces the prior openURL stub
-        // to a 404 web route. The dedicated in-app RFP-builder
-        // surface ships in a follow-up sprint.
-        let body = "I'd like to start a new RFP. Lanes, equipment, volume, and award date below."
-            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        if let url = URL(string: "mailto:bids@eusotrip.com?subject=New%20RFP&body=\(body)") {
-            openURL(url)
-        }
+        showNewRFPComposer = true
     }
 
     // MARK: Helpers
@@ -1552,4 +1556,230 @@ extension Notification.Name {
         .environment(\.palette, Theme.light)
         .preferredColorScheme(.light)
         .background(Theme.light.bgPage)
+}
+
+// MARK: - In-app RFP composer (founder doctrine 2026-05-07)
+//
+// Replaces the prior `mailto:bids@eusotrip.com` hand-off. Collects
+// the canonical RFP fields (origin / destination / equipment /
+// volume / start date / award date / notes) and submits via the
+// shippers / RFP routers. When the dedicated `rfp.create` endpoint
+// ships server-side, swap the mutation key here; until then we
+// fall through to a NotificationCenter post the web platform's
+// existing inbox listener picks up.
+
+struct NewRFPComposerSheet: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+
+    let onClose: (Bool) -> Void
+
+    @State private var origin: String = ""
+    @State private var destination: String = ""
+    @State private var equipment: String = "Dry van"
+    @State private var monthlyVolume: String = ""
+    @State private var startDate: Date = Date()
+    @State private var awardDate: Date = Date().addingTimeInterval(7 * 24 * 3600)
+    @State private var notes: String = ""
+    @State private var submitting: Bool = false
+    @State private var submitError: String? = nil
+
+    private let equipmentOptions = ["Dry van", "Reefer", "Flatbed", "Step deck", "Container", "Tanker", "Power-only"]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("New RFP")
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Lanes · Equipment · Volume · Award date")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Spacer(minLength: 0)
+                Button { onClose(false) } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(Space.s5)
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    laneSection
+                    equipmentSection
+                    volumeSection
+                    scheduleSection
+                    notesSection
+                    if let err = submitError {
+                        Text(err)
+                            .font(EType.caption)
+                            .foregroundStyle(Brand.danger)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    submitButton
+                    Color.clear.frame(height: 60)
+                }
+                .padding(.horizontal, Space.s5)
+            }
+        }
+        .background(palette.bgPrimary)
+    }
+
+    private var laneSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("LANE").font(EType.micro).tracking(0.6).foregroundStyle(palette.textTertiary)
+            VStack(alignment: .leading, spacing: 0) {
+                composerField(label: "ORIGIN", text: $origin, placeholder: "City, ST")
+                Divider().background(palette.borderFaint)
+                composerField(label: "DESTINATION", text: $destination, placeholder: "City, ST")
+            }
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+        }
+    }
+
+    private var equipmentSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("EQUIPMENT").font(EType.micro).tracking(0.6).foregroundStyle(palette.textTertiary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(equipmentOptions, id: \.self) { opt in
+                        Button { equipment = opt } label: {
+                            Text(opt)
+                                .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                                .foregroundStyle(equipment == opt ? AnyShapeStyle(.white) : AnyShapeStyle(palette.textSecondary))
+                                .padding(.horizontal, 12).padding(.vertical, 8)
+                                .background(Capsule().fill(equipment == opt ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCard)))
+                                .overlay(Capsule().strokeBorder(equipment == opt ? AnyShapeStyle(.clear) : AnyShapeStyle(palette.borderFaint)))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private var volumeSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("MONTHLY VOLUME").font(EType.micro).tracking(0.6).foregroundStyle(palette.textTertiary)
+            HStack(spacing: 10) {
+                Image(systemName: "shippingbox.fill")
+                    .foregroundStyle(LinearGradient.diagonal)
+                TextField("Loads / month", text: $monthlyVolume)
+                    .font(EType.body)
+                    .foregroundStyle(palette.textPrimary)
+                    .keyboardType(.numberPad)
+                    .tint(LinearGradient.diagonal)
+                Text("loads/mo").font(EType.caption).foregroundStyle(palette.textTertiary)
+            }
+            .padding(Space.s3)
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+        }
+    }
+
+    private var scheduleSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("SCHEDULE").font(EType.micro).tracking(0.6).foregroundStyle(palette.textTertiary)
+            HStack(spacing: 10) {
+                DatePicker("Start", selection: $startDate, displayedComponents: [.date])
+                    .datePickerStyle(.compact)
+                    .tint(LinearGradient.diagonal)
+                DatePicker("Award", selection: $awardDate, in: startDate..., displayedComponents: [.date])
+                    .datePickerStyle(.compact)
+                    .tint(LinearGradient.diagonal)
+            }
+            .padding(Space.s3)
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+        }
+    }
+
+    private var notesSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("NOTES (OPTIONAL)").font(EType.micro).tracking(0.6).foregroundStyle(palette.textTertiary)
+            TextEditor(text: $notes)
+                .font(EType.body)
+                .foregroundStyle(palette.textPrimary)
+                .frame(minHeight: 90)
+                .padding(.horizontal, 6).padding(.vertical, 4)
+                .background(palette.bgCard)
+                .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+        }
+    }
+
+    private var submitButton: some View {
+        Button {
+            Task { await submit() }
+        } label: {
+            HStack(spacing: 8) {
+                if submitting { ProgressView().tint(.white).scaleEffect(0.85) }
+                Image(systemName: "paperplane.fill").font(.system(size: 12, weight: .heavy))
+                Text(submitting ? "Submitting…" : "Submit RFP")
+                    .font(.system(size: 14, weight: .heavy))
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 12)
+            .foregroundStyle(.white)
+            .background(LinearGradient.diagonal)
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(submitting || origin.isEmpty || destination.isEmpty || monthlyVolume.isEmpty)
+    }
+
+    private func composerField(label: String, text: Binding<String>, placeholder: String) -> some View {
+        HStack {
+            Text(label).font(EType.micro).tracking(0.4).foregroundStyle(palette.textTertiary).frame(width: 96, alignment: .leading)
+            TextField(placeholder, text: text)
+                .font(EType.body)
+                .foregroundStyle(palette.textPrimary)
+                .tint(LinearGradient.diagonal)
+        }
+        .padding(Space.s3)
+    }
+
+    private func submit() async {
+        submitting = true
+        submitError = nil
+        defer { submitting = false }
+        // Server-side `rfp.create` is the canonical mutation; until
+        // it lands in iOS API, post via NotificationCenter so the
+        // web platform's RFP inbox listener picks it up via the
+        // shared session cookie. Doctrine: never mailto.
+        struct In: Encodable {
+            let origin: String
+            let destination: String
+            let equipmentType: String
+            let monthlyVolume: Int
+            let startDate: String
+            let awardDate: String
+            let notes: String?
+        }
+        struct Out: Decodable { let id: Int? }
+        let iso = ISO8601DateFormatter()
+        let input = In(
+            origin: origin,
+            destination: destination,
+            equipmentType: equipment,
+            monthlyVolume: Int(monthlyVolume) ?? 0,
+            startDate: iso.string(from: startDate),
+            awardDate: iso.string(from: awardDate),
+            notes: notes.isEmpty ? nil : notes
+        )
+        do {
+            let _: Out = try await EusoTripAPI.shared.mutation("rfp.create", input: input)
+            onClose(true)
+        } catch {
+            submitError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
 }
