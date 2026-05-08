@@ -499,6 +499,11 @@ private struct ShipperBackOverlay: ViewModifier {
         // here prevents the floating circle from overlapping the
         // screen's own chevron.
         "227", "228", "229", "230", "230b",
+        // Founder back-button audit 2026-05-08 — both 203 (Bids)
+        // and 223 (Agreements) draw their own header chevron AND
+        // were getting the floating overlay on top. Added here so
+        // only the in-screen back renders.
+        "203", "223",
     ]
 
     let currentScreenId: String
@@ -850,6 +855,19 @@ struct CarrierSurface: View {
     @State private var showESang: Bool = false
     private static let tabRoots: Set<String> = ["300", "301", "302", "303"]
 
+    /// Carrier-side suppress list — same purpose as ShipperBackOverlay's
+    /// `screensWithOwnBack`. Tab roots + leaves that draw their own
+    /// header back chevron. Founder back-button audit 2026-05-08:
+    /// 305 (Catalyst Load Detail) + 321 (Catalyst Driver Profile)
+    /// each ship their own < chevron next to the title; without
+    /// them in this set the surface overlay rendered a second back
+    /// circle on top.
+    private static let backSuppress: Set<String> = [
+        "300", "301", "302", "303",   // tab roots
+        "350",                          // CarrierMe (own dismiss)
+        "305", "321",                   // detail screens with own back
+    ]
+
     private var currentScreenId: String { screenStack.last ?? "300" }
 
     private var current: ProductionScreen {
@@ -879,7 +897,7 @@ struct CarrierSurface: View {
             .modifier(RoleNavBackOverlay(
                 stackDepth: screenStack.count,
                 currentScreenId: currentScreenId,
-                screensWithOwnBack: Self.tabRoots
+                screensWithOwnBack: Self.backSuppress
             ))
             .environment(\.driverNavHandler, nil)
             .environment(\.shipperNavHandler, nil)

@@ -67,6 +67,7 @@ final class ShipperAllocationsStore: ObservableObject {
 struct ShipperAllocations: View {
     @Environment(\.palette) private var palette
     @StateObject private var store = ShipperAllocationsStore()
+    @State private var selectedContract: AllocationsAPI.DailyContractRow? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -84,6 +85,11 @@ struct ShipperAllocations: View {
         .task { await store.load() }
         .onChange(of: store.date) { _, _ in Task { await store.load() } }
         .refreshable { await store.load() }
+        .sheet(item: $selectedContract) { c in
+            AllocationContractDetailSheet(contract: c, dateLabel: store.date)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
     }
 
     private var header: some View {
@@ -284,7 +290,9 @@ struct ShipperAllocations: View {
             ? Int((c.deliveredBbl / c.nominatedBbl) * 100.0)
             : 0
         return Button {
-            MeAction.fire("shipper.allocation.detail", userInfo: ["contractId": c.contractId])
+            // Founder doctrine 2026-05-07: tap-to-detail opens an
+            // in-app contract sheet instead of a MeAction stub.
+            selectedContract = c
         } label: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
@@ -444,4 +452,163 @@ private struct ContractStatusStyle {
 
 #Preview("Allocations · Light") {
     ShipperAllocations().preferredColorScheme(.light)
+}
+
+// MARK: - Contract detail sheet (founder doctrine 2026-05-07)
+//
+// Tap-an-allocation now opens this in-app sheet with the full
+// daily-contract context: nominated / loaded / delivered / remaining
+// barrels, completion percent, status, buyer, terminals, rate, and
+// the in-progress loads that ride this contract. Replaces the prior
+// MeAction.fire("shipper.allocation.detail") stub.
+
+struct AllocationContractDetailSheet: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+    let contract: AllocationsAPI.DailyContractRow
+    let dateLabel: String
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: Space.s4) {
+                topBar
+                identityCard
+                completionCard
+                financialCard
+                terminalsCard
+                loadsProgressCard
+                Color.clear.frame(height: 60)
+            }
+            .padding(.horizontal, Space.s5)
+        }
+        .background(palette.bgPrimary)
+        .overlay(alignment: .topTrailing) {
+            Button { dismiss() } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 22, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .padding(Space.s4)
+        }
+    }
+
+    private var topBar: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: "fuelpump.fill")
+                    .font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("ALLOCATION · \(dateLabel)")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(LinearGradient.diagonal)
+            }
+            Text(contract.contractName ?? "Contract #\(contract.contractId)")
+                .font(.system(size: 22, weight: .heavy))
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(2)
+                .padding(.top, Space.s4)
+        }
+    }
+
+    private var identityCard: some View {
+        LifecycleCard {
+            LifecycleSection(label: "IDENTITY", icon: "doc.text")
+            LifecycleRow(label: "Contract ID", value: "#\(contract.contractId)")
+            if let buyer = contract.buyerName, !buyer.isEmpty {
+                LifecycleRow(label: "Buyer", value: buyer)
+            }
+            if let product = contract.product, !product.isEmpty {
+                LifecycleRow(label: "Product", value: product)
+            }
+            if let status = contract.status, !status.isEmpty {
+                LifecycleRow(label: "Status", value: status.uppercased())
+            }
+        }
+    }
+
+    private var completionCard: some View {
+        let pct = contract.nominatedBbl > 0
+            ? min(1.0, contract.deliveredBbl / contract.nominatedBbl)
+            : 0
+        return LifecycleCard(accentGradient: pct >= 0.95) {
+            LifecycleSection(label: "COMPLETION", icon: "chart.pie.fill")
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("\(Int(pct * 100))%")
+                    .font(.system(size: 36, weight: .heavy, design: .rounded))
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .monospacedDigit()
+                Text("delivered vs nominated")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+            ZStack(alignment: .leading) {
+                Capsule().fill(palette.bgCardSoft).frame(height: 8)
+                Capsule().fill(LinearGradient.diagonal)
+                    .frame(width: max(8, CGFloat(pct) * 280), height: 8)
+            }
+            LifecycleRow(label: "Nominated", value: barrelsLabel(contract.nominatedBbl))
+            LifecycleRow(label: "Loaded",    value: barrelsLabel(contract.loadedBbl))
+            LifecycleRow(label: "Delivered", value: barrelsLabel(contract.deliveredBbl))
+            LifecycleRow(label: "Remaining", value: barrelsLabel(contract.remainingBbl))
+        }
+    }
+
+    @ViewBuilder
+    private var financialCard: some View {
+        if let rate = contract.ratePerBbl, !rate.isEmpty {
+            LifecycleCard {
+                LifecycleSection(label: "FINANCIAL", icon: "dollarsign.circle")
+                LifecycleRow(label: "Rate / bbl", value: "$\(rate)")
+                if let r = Double(rate) {
+                    LifecycleRow(label: "Nominated value",
+                                 value: dollars(r * contract.nominatedBbl))
+                    LifecycleRow(label: "Delivered value",
+                                 value: dollars(r * contract.deliveredBbl))
+                    LifecycleRow(label: "Remaining value",
+                                 value: dollars(r * contract.remainingBbl))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var terminalsCard: some View {
+        if contract.originTerminalId != nil || contract.destinationTerminalId != nil {
+            LifecycleCard {
+                LifecycleSection(label: "TERMINALS", icon: "building.2")
+                if let o = contract.originTerminalId {
+                    LifecycleRow(label: "Origin terminal", value: "#\(o)")
+                }
+                if let d = contract.destinationTerminalId {
+                    LifecycleRow(label: "Destination terminal", value: "#\(d)")
+                }
+            }
+        }
+    }
+
+    private var loadsProgressCard: some View {
+        LifecycleCard {
+            LifecycleSection(label: "LOADS", icon: "shippingbox.fill")
+            LifecycleRow(label: "Needed",    value: "\(contract.loadsNeeded)")
+            LifecycleRow(label: "Created",   value: "\(contract.loadsCreated)")
+            LifecycleRow(label: "Completed", value: "\(contract.loadsCompleted)")
+        }
+    }
+
+    private func barrelsLabel(_ b: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 0
+        let n = f.string(from: NSNumber(value: b)) ?? "\(Int(b))"
+        return "\(n) bbl"
+    }
+
+    private func dollars(_ v: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.maximumFractionDigits = 0
+        f.currencyCode = "USD"
+        return f.string(from: NSNumber(value: v)) ?? "$\(Int(v))"
+    }
 }
