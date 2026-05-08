@@ -1623,6 +1623,21 @@ struct HardwareCapabilitiesView: View {
     @State private var trailer: CapabilitiesAPI.TrailerCapabilities?
     @State private var oauthSheetUrl: IdentifiableURL? = nil
 
+    @State private var newAnchorDoor: String = ""
+    @State private var newAnchorVendor: String = "qorvo"
+    @State private var newAnchorBlob: String = ""
+    @State private var newAnchorBT: String = ""
+
+    @State private var newFeedDoor: String = ""
+    @State private var newFeedVendor: String = "rtsp"
+    @State private var newFeedLabel: String = ""
+    @State private var newFeedURL: String = ""
+
+    @State private var newMarkerDoor: String = ""
+    @State private var newMarkerId: String = ""
+    @State private var newMarkerOffsetX: String = "0.0"
+    @State private var newMarkerOffsetY: String = "0.0"
+
     /// Identifiable wrapper so .sheet(item:) re-presents per-tap when
     /// the URL changes.
     struct IdentifiableURL: Identifiable, Hashable {
@@ -1804,13 +1819,57 @@ struct HardwareCapabilitiesView: View {
                         .foregroundStyle(palette.textSecondary)
                 }
                 ForEach(caps.uwbAnchors, id: \.self) { a in
-                    Text("· Door \(a.doorNumber) — \(a.vendor) (\(a.accessoryConfigData.prefix(8))…)")
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textSecondary)
+                    HStack(alignment: .top, spacing: 6) {
+                        Text("· Door \(a.doorNumber) — \(a.vendor) (\(a.accessoryConfigData.prefix(8))…)")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                        Spacer(minLength: 0)
+                        Button {
+                            removeAnchor(a)
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .foregroundStyle(Brand.danger)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                Text("Add new anchor via the admin web console — paste config blob, set door number. Coming inline soon.")
-                    .font(.system(size: 10))
+                Divider().padding(.vertical, 4)
+                Text("ADD ANCHOR")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.7)
                     .foregroundStyle(palette.textTertiary)
+                HStack(spacing: 6) {
+                    TextField("Door #", text: $newAnchorDoor)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 80)
+                    Picker("Vendor", selection: $newAnchorVendor) {
+                        Text("Qorvo").tag("qorvo")
+                        Text("NXP").tag("nxp")
+                        Text("Find My").tag("applefindmy")
+                    }
+                    .pickerStyle(.menu)
+                }
+                TextField("Accessory config blob (base64)", text: $newAnchorBlob)
+                    .textFieldStyle(.roundedBorder)
+                    .autocorrectionDisabled()
+                    .font(EType.mono(.caption))
+                TextField("BT peer identifier (optional)", text: $newAnchorBT)
+                    .textFieldStyle(.roundedBorder)
+                    .autocorrectionDisabled()
+                Button {
+                    addAnchor()
+                } label: {
+                    Label("Add anchor", systemImage: "plus.circle.fill")
+                        .font(EType.caption.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .foregroundStyle(.white)
+                        .background(canAddAnchor
+                                    ? AnyShapeStyle(LinearGradient.diagonal)
+                                    : AnyShapeStyle(Brand.neutral))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(!canAddAnchor)
             }
         }
 
@@ -1822,10 +1881,57 @@ struct HardwareCapabilitiesView: View {
                         .foregroundStyle(palette.textSecondary)
                 }
                 ForEach(caps.cameraFeeds, id: \.self) { f in
-                    Text("· Door \(f.doorNumber) — \(f.vendor)\(f.label.map { " · \($0)" } ?? "")")
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textSecondary)
+                    HStack(alignment: .top, spacing: 6) {
+                        Text("· Door \(f.doorNumber) — \(f.vendor)\(f.label.map { " · \($0)" } ?? "")")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                        Spacer(minLength: 0)
+                        Button {
+                            removeFeed(f)
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .foregroundStyle(Brand.danger)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
+                Divider().padding(.vertical, 4)
+                Text("ADD FEED")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.7)
+                    .foregroundStyle(palette.textTertiary)
+                HStack(spacing: 6) {
+                    TextField("Door #", text: $newFeedDoor)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 80)
+                    Picker("Vendor", selection: $newFeedVendor) {
+                        Text("RTSP").tag("rtsp")
+                        Text("Genetec").tag("genetec")
+                        Text("Avigilon").tag("avigilon")
+                        Text("Milestone").tag("milestone")
+                    }
+                    .pickerStyle(.menu)
+                }
+                TextField("Label (optional)", text: $newFeedLabel)
+                    .textFieldStyle(.roundedBorder)
+                TextField("Stream URL (rtsp:// or signaling endpoint)", text: $newFeedURL)
+                    .textFieldStyle(.roundedBorder)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                Button {
+                    addFeed()
+                } label: {
+                    Label("Add feed", systemImage: "plus.circle.fill")
+                        .font(EType.caption.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .foregroundStyle(.white)
+                        .background(canAddFeed
+                                    ? AnyShapeStyle(LinearGradient.diagonal)
+                                    : AnyShapeStyle(Brand.neutral))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(!canAddFeed)
             }
         }
 
@@ -1837,10 +1943,55 @@ struct HardwareCapabilitiesView: View {
                         .foregroundStyle(palette.textSecondary)
                 }
                 ForEach(caps.doorMarkers, id: \.self) { m in
-                    Text("· Door \(m.doorNumber) — marker \(m.markerId) (offset \(m.offsetX, specifier: "%.2f")m, \(m.offsetY, specifier: "%.2f")m)")
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textSecondary)
+                    HStack(alignment: .top, spacing: 6) {
+                        Text("· Door \(m.doorNumber) — marker \(m.markerId) (offset \(m.offsetX, specifier: "%.2f")m, \(m.offsetY, specifier: "%.2f")m)")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                        Spacer(minLength: 0)
+                        Button {
+                            removeMarker(m)
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .foregroundStyle(Brand.danger)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
+                Divider().padding(.vertical, 4)
+                Text("ADD MARKER")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.7)
+                    .foregroundStyle(palette.textTertiary)
+                HStack(spacing: 6) {
+                    TextField("Door #", text: $newMarkerDoor)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 80)
+                    TextField("Marker id", text: $newMarkerId)
+                        .textFieldStyle(.roundedBorder)
+                        .autocorrectionDisabled()
+                }
+                HStack(spacing: 6) {
+                    TextField("Offset X (m)", text: $newMarkerOffsetX)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.decimalPad)
+                    TextField("Offset Y (m)", text: $newMarkerOffsetY)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.decimalPad)
+                }
+                Button {
+                    addMarker()
+                } label: {
+                    Label("Add marker", systemImage: "plus.circle.fill")
+                        .font(EType.caption.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .foregroundStyle(.white)
+                        .background(canAddMarker
+                                    ? AnyShapeStyle(LinearGradient.diagonal)
+                                    : AnyShapeStyle(Brand.neutral))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(!canAddMarker)
             }
         }
 
@@ -2035,6 +2186,138 @@ struct HardwareCapabilitiesView: View {
                 .strokeBorder(palette.borderFaint)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    // MARK: Inline-add helpers (anchors / camera feeds / door markers)
+
+    private var canAddAnchor: Bool {
+        !newAnchorDoor.trimmingCharacters(in: .whitespaces).isEmpty &&
+        !newAnchorBlob.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+    private var canAddFeed: Bool {
+        !newFeedDoor.trimmingCharacters(in: .whitespaces).isEmpty &&
+        !newFeedURL.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+    private var canAddMarker: Bool {
+        !newMarkerDoor.trimmingCharacters(in: .whitespaces).isEmpty &&
+        !newMarkerId.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private func currentTerminal() -> CapabilitiesAPI.TerminalCapabilities {
+        terminal ?? CapabilitiesAPI.TerminalCapabilities(
+            terminalId: activeTerminalId,
+            uwbAnchors: [],
+            cameraFeeds: [],
+            doorMarkers: [],
+            yardLayoutGeoJson: nil
+        )
+    }
+
+    private func addAnchor() {
+        let cur = currentTerminal()
+        let door = newAnchorDoor.trimmingCharacters(in: .whitespaces)
+        let blob = newAnchorBlob.trimmingCharacters(in: .whitespaces)
+        let bt = newAnchorBT.trimmingCharacters(in: .whitespaces)
+        var next = cur.uwbAnchors.filter { $0.doorNumber != door }
+        next.append(CapabilitiesAPI.UwbAnchor(
+            doorNumber: door,
+            vendor: newAnchorVendor,
+            accessoryConfigData: blob,
+            bluetoothPeerIdentifier: bt.isEmpty ? nil : bt
+        ))
+        terminal = CapabilitiesAPI.TerminalCapabilities(
+            terminalId: cur.terminalId,
+            uwbAnchors: next,
+            cameraFeeds: cur.cameraFeeds,
+            doorMarkers: cur.doorMarkers,
+            yardLayoutGeoJson: cur.yardLayoutGeoJson
+        )
+        newAnchorDoor = ""; newAnchorBlob = ""; newAnchorBT = ""
+        Task { await saveTerminal() }
+    }
+
+    private func removeAnchor(_ a: CapabilitiesAPI.UwbAnchor) {
+        let cur = currentTerminal()
+        terminal = CapabilitiesAPI.TerminalCapabilities(
+            terminalId: cur.terminalId,
+            uwbAnchors: cur.uwbAnchors.filter { $0 != a },
+            cameraFeeds: cur.cameraFeeds,
+            doorMarkers: cur.doorMarkers,
+            yardLayoutGeoJson: cur.yardLayoutGeoJson
+        )
+        Task { await saveTerminal() }
+    }
+
+    private func addFeed() {
+        let cur = currentTerminal()
+        let door = newFeedDoor.trimmingCharacters(in: .whitespaces)
+        let url = newFeedURL.trimmingCharacters(in: .whitespaces)
+        let label = newFeedLabel.trimmingCharacters(in: .whitespaces)
+        var next = cur.cameraFeeds.filter { $0.doorNumber != door }
+        next.append(CapabilitiesAPI.CameraFeed(
+            doorNumber: door,
+            vendor: newFeedVendor,
+            label: label.isEmpty ? nil : label,
+            streamUrl: url,
+            signalingToken: nil
+        ))
+        terminal = CapabilitiesAPI.TerminalCapabilities(
+            terminalId: cur.terminalId,
+            uwbAnchors: cur.uwbAnchors,
+            cameraFeeds: next,
+            doorMarkers: cur.doorMarkers,
+            yardLayoutGeoJson: cur.yardLayoutGeoJson
+        )
+        newFeedDoor = ""; newFeedURL = ""; newFeedLabel = ""
+        Task { await saveTerminal() }
+    }
+
+    private func removeFeed(_ f: CapabilitiesAPI.CameraFeed) {
+        let cur = currentTerminal()
+        terminal = CapabilitiesAPI.TerminalCapabilities(
+            terminalId: cur.terminalId,
+            uwbAnchors: cur.uwbAnchors,
+            cameraFeeds: cur.cameraFeeds.filter { $0 != f },
+            doorMarkers: cur.doorMarkers,
+            yardLayoutGeoJson: cur.yardLayoutGeoJson
+        )
+        Task { await saveTerminal() }
+    }
+
+    private func addMarker() {
+        let cur = currentTerminal()
+        let door = newMarkerDoor.trimmingCharacters(in: .whitespaces)
+        let mid = newMarkerId.trimmingCharacters(in: .whitespaces)
+        let ox = Double(newMarkerOffsetX.trimmingCharacters(in: .whitespaces)) ?? 0.0
+        let oy = Double(newMarkerOffsetY.trimmingCharacters(in: .whitespaces)) ?? 0.0
+        var next = cur.doorMarkers.filter { $0.doorNumber != door }
+        next.append(CapabilitiesAPI.DoorMarker(
+            doorNumber: door,
+            markerId: mid,
+            offsetX: ox,
+            offsetY: oy
+        ))
+        terminal = CapabilitiesAPI.TerminalCapabilities(
+            terminalId: cur.terminalId,
+            uwbAnchors: cur.uwbAnchors,
+            cameraFeeds: cur.cameraFeeds,
+            doorMarkers: next,
+            yardLayoutGeoJson: cur.yardLayoutGeoJson
+        )
+        newMarkerDoor = ""; newMarkerId = ""; newMarkerOffsetX = "0.0"; newMarkerOffsetY = "0.0"
+        Task { await saveTerminal() }
+    }
+
+    private func removeMarker(_ m: CapabilitiesAPI.DoorMarker) {
+        let cur = currentTerminal()
+        terminal = CapabilitiesAPI.TerminalCapabilities(
+            terminalId: cur.terminalId,
+            uwbAnchors: cur.uwbAnchors,
+            cameraFeeds: cur.cameraFeeds,
+            doorMarkers: cur.doorMarkers.filter { $0 != m },
+            yardLayoutGeoJson: cur.yardLayoutGeoJson
+        )
+        Task { await saveTerminal() }
     }
 
     // MARK: Hydrate + save

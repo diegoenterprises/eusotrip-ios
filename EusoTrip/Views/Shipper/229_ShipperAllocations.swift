@@ -68,6 +68,7 @@ struct ShipperAllocations: View {
     @Environment(\.palette) private var palette
     @StateObject private var store = ShipperAllocationsStore()
     @State private var selectedContract: AllocationsAPI.DailyContractRow? = nil
+    @State private var presentingCreate: Bool = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -89,6 +90,13 @@ struct ShipperAllocations: View {
             AllocationContractDetailSheet(contract: c, dateLabel: store.date)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $presentingCreate) {
+            NewAllocationContractSheet { _ in
+                Task { await store.load() }
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
     }
 
@@ -113,7 +121,7 @@ struct ShipperAllocations: View {
             }
             Spacer(minLength: 0)
             Button {
-                MeAction.fire("shipper.allocation.create")
+                presentingCreate = true
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "plus.circle.fill").font(.system(size: 11, weight: .heavy))
@@ -610,5 +618,240 @@ struct AllocationContractDetailSheet: View {
         f.maximumFractionDigits = 0
         f.currencyCode = "USD"
         return f.string(from: NSNumber(value: v)) ?? "$\(Int(v))"
+    }
+}
+
+// MARK: - NewAllocationContractSheet
+//
+// Inline composer that posts to `allocationTracker.createContract`
+// (mirrors `frontend/server/routers/allocationTracker.ts:55`). Replaces
+// the prior `MeAction.fire("shipper.allocation.create")` stub. Petroleum
+// shippers use this to start a new daily-nomination contract with a buyer
+// terminal pair, daily barrel commitment, effective + expiration window,
+// and an optional rate per barrel.
+//
+// Required: shipperId (the buyer company), contract name, origin terminal
+// id, destination terminal id, product, daily barrels, effective date,
+// expiration date. Optional: buyer name, rate per bbl. Server enforces
+// `expirationDate >= effectiveDate` + RBAC + companyId scoping.
+struct NewAllocationContractSheet: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+
+    let onCreated: (AllocationsAPI.CreatedContract) -> Void
+
+    @State private var shipperIdText: String = ""
+    @State private var contractName: String = ""
+    @State private var buyerName: String = ""
+    @State private var originTerminalIdText: String = ""
+    @State private var destTerminalIdText: String = ""
+    @State private var product: String = ""
+    @State private var cargoType: String = "petroleum"
+    @State private var unit: String = "bbl"
+    @State private var dailyBblText: String = ""
+    @State private var ratePerBblText: String = ""
+    @State private var effectiveDate: Date = Date()
+    @State private var expirationDate: Date = Calendar.current.date(byAdding: .day, value: 30, to: Date()) ?? Date()
+    @State private var submitting: Bool = false
+    @State private var errorMsg: String? = nil
+
+    private static let isoDate: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC")
+        return f
+    }()
+
+    private var shipperId: Int? { Int(shipperIdText.trimmingCharacters(in: .whitespaces)) }
+    private var originTerminalId: Int? { Int(originTerminalIdText.trimmingCharacters(in: .whitespaces)) }
+    private var destTerminalId: Int? { Int(destTerminalIdText.trimmingCharacters(in: .whitespaces)) }
+    private var dailyBbl: Double? { Double(dailyBblText.trimmingCharacters(in: .whitespaces)) }
+    private var ratePerBbl: Double? { Double(ratePerBblText.trimmingCharacters(in: .whitespaces)) }
+
+    private var canSubmit: Bool {
+        guard let s = shipperId, s > 0,
+              !contractName.trimmingCharacters(in: .whitespaces).isEmpty,
+              let o = originTerminalId, o > 0,
+              let d = destTerminalId, d > 0,
+              !product.trimmingCharacters(in: .whitespaces).isEmpty,
+              let bbl = dailyBbl, bbl > 0,
+              expirationDate >= effectiveDate
+        else { return false }
+        return true
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 14) {
+                    headerCard
+                    section("CONTRACT PARTIES") {
+                        labeledField("Shipper / buyer company id", text: $shipperIdText, keyboard: .numberPad)
+                        labeledField("Buyer name (optional)", text: $buyerName)
+                        labeledField("Contract name", text: $contractName)
+                    }
+                    section("PRODUCT") {
+                        labeledField("Product (e.g. 87 unleaded, ULSD)", text: $product)
+                        labeledField("Cargo type", text: $cargoType)
+                        labeledField("Unit", text: $unit)
+                    }
+                    section("VOLUME · TERMINALS") {
+                        labeledField("Daily nomination (bbl)", text: $dailyBblText, keyboard: .decimalPad)
+                        labeledField("Rate per bbl (USD, optional)", text: $ratePerBblText, keyboard: .decimalPad)
+                        labeledField("Origin terminal id", text: $originTerminalIdText, keyboard: .numberPad)
+                        labeledField("Destination terminal id", text: $destTerminalIdText, keyboard: .numberPad)
+                    }
+                    section("WINDOW") {
+                        DatePicker("Effective", selection: $effectiveDate, displayedComponents: .date)
+                            .datePickerStyle(.compact)
+                        DatePicker("Expiration", selection: $expirationDate, in: effectiveDate..., displayedComponents: .date)
+                            .datePickerStyle(.compact)
+                    }
+
+                    if let err = errorMsg {
+                        Text(err)
+                            .font(EType.caption.weight(.semibold))
+                            .foregroundStyle(Brand.danger)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Brand.danger.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+
+                    submitButton
+                    Color.clear.frame(height: 24)
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 10)
+            }
+            .background(palette.bgPrimary.ignoresSafeArea())
+            .navigationTitle("New allocation")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private var headerCard: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("ALLOCATION CONTRACT")
+                .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                .foregroundStyle(LinearGradient.diagonal)
+            Text("Daily nomination + take-or-pay")
+                .font(EType.body.weight(.bold))
+                .foregroundStyle(palette.textPrimary)
+            Text("Petroleum + refined products. Posts to allocationTracker.createContract; the resulting contract id powers the daily fulfillment dashboard.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func section<Inner: View>(
+        _ title: String,
+        @ViewBuilder content: () -> Inner
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                .foregroundStyle(LinearGradient.diagonal)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    private func labeledField(_ label: String, text: Binding<String>, keyboard: UIKeyboardType = .default) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label.uppercased())
+                .font(.system(size: 9, weight: .heavy)).tracking(0.7)
+                .foregroundStyle(palette.textTertiary)
+            TextField(label, text: text)
+                .keyboardType(keyboard)
+                .autocorrectionDisabled()
+                .textFieldStyle(.roundedBorder)
+        }
+    }
+
+    private var submitButton: some View {
+        Button {
+            submit()
+        } label: {
+            HStack(spacing: 6) {
+                if submitting {
+                    ProgressView().tint(.white)
+                } else {
+                    Image(systemName: "checkmark.seal.fill")
+                }
+                Text(submitting ? "Creating…" : "Create contract")
+                    .font(EType.body.weight(.heavy))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .foregroundStyle(.white)
+            .background(canSubmit && !submitting
+                        ? AnyShapeStyle(LinearGradient.diagonal)
+                        : AnyShapeStyle(Brand.neutral))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(!canSubmit || submitting)
+    }
+
+    private func submit() {
+        guard let s = shipperId, let o = originTerminalId, let d = destTerminalId, let bbl = dailyBbl else { return }
+        submitting = true
+        errorMsg = nil
+        let eff = Self.isoDate.string(from: effectiveDate)
+        let exp = Self.isoDate.string(from: expirationDate)
+        let trimmedBuyer = buyerName.trimmingCharacters(in: .whitespaces)
+        let trimmedCargo = cargoType.trimmingCharacters(in: .whitespaces)
+        let trimmedUnit = unit.trimmingCharacters(in: .whitespaces)
+        Task {
+            do {
+                let resp = try await EusoTripAPI.shared.allocations.createContract(
+                    shipperId: s,
+                    contractName: contractName.trimmingCharacters(in: .whitespaces),
+                    buyerName: trimmedBuyer.isEmpty ? nil : trimmedBuyer,
+                    originTerminalId: o,
+                    destinationTerminalId: d,
+                    product: product.trimmingCharacters(in: .whitespaces),
+                    cargoType: trimmedCargo.isEmpty ? "petroleum" : trimmedCargo,
+                    unit: trimmedUnit.isEmpty ? "bbl" : trimmedUnit,
+                    dailyNominationBbl: bbl,
+                    effectiveDate: eff,
+                    expirationDate: exp,
+                    ratePerBbl: ratePerBbl
+                )
+                await MainActor.run {
+                    submitting = false
+                    onCreated(resp)
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    submitting = false
+                    errorMsg = "Couldn't create contract: \(error.localizedDescription)"
+                }
+            }
+        }
     }
 }

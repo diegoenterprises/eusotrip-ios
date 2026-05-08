@@ -16563,6 +16563,59 @@ struct AllocationsAPI {
             input: Input(date: date)
         )
     }
+
+    struct CreatedContract: Decodable {
+        let id: Int?
+        let contractName: String?
+        let status: String?
+    }
+
+    func createContract(
+        shipperId: Int,
+        contractName: String,
+        buyerName: String?,
+        originTerminalId: Int,
+        destinationTerminalId: Int,
+        product: String,
+        cargoType: String = "petroleum",
+        unit: String = "bbl",
+        dailyNominationBbl: Double,
+        effectiveDate: String,
+        expirationDate: String,
+        ratePerBbl: Double?
+    ) async throws -> CreatedContract {
+        struct Input: Encodable {
+            let shipperId: Int
+            let contractName: String
+            let buyerName: String?
+            let originTerminalId: Int
+            let destinationTerminalId: Int
+            let product: String
+            let cargoType: String
+            let unit: String
+            let dailyNominationBbl: Double
+            let effectiveDate: String
+            let expirationDate: String
+            let ratePerBbl: Double?
+        }
+        return try await api.mutation(
+            "allocationTracker.createContract",
+            input: Input(
+                shipperId: shipperId,
+                contractName: contractName,
+                buyerName: buyerName,
+                originTerminalId: originTerminalId,
+                destinationTerminalId: destinationTerminalId,
+                product: product,
+                cargoType: cargoType,
+                unit: unit,
+                dailyNominationBbl: dailyNominationBbl,
+                effectiveDate: effectiveDate,
+                expirationDate: expirationDate,
+                ratePerBbl: ratePerBbl
+            )
+        )
+    }
 }
 
 // MARK: - LoadBoardAPI
