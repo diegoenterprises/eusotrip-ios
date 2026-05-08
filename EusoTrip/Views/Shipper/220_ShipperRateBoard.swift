@@ -80,10 +80,16 @@ final class ShipperRateBoardStore: ObservableObject {
                 equipment: "tanker", period: "week"
             )
             featuredSpot = r
+            featuredError = nil
         } catch {
             featuredSpot = nil
+            featuredError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
     }
+
+    /// Surface to the UI when the featured lane fetch fails — was
+    /// silently nil'd before so the screen looked static.
+    @Published private(set) var featuredError: String? = nil
 
     func calculate(origin: String, destination: String, equipment: String?, period: String) async {
         state = .loading
@@ -118,7 +124,7 @@ private enum DeltaTone {
         switch self {
         case .success: return Brand.success
         case .warning: return Brand.warning
-        case .neutral: return .gray
+        case .neutral: return Brand.neutral
         }
     }
 }

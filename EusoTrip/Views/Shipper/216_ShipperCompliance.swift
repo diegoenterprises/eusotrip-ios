@@ -865,16 +865,17 @@ struct ShipperCompliance: View {
 
     private func errorBanner(_ msg: String) -> some View {
         VStack(spacing: Space.s2) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(palette.textSecondary)
-            Text("Compliance offline")
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 28, weight: .heavy))
+                .foregroundStyle(LinearGradient.diagonal)
+            Text(friendlyComplianceTitle(msg))
                 .font(EType.title)
                 .foregroundStyle(palette.textPrimary)
             Text(msg)
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
             Button {
                 Task { await store.refresh() }
             } label: {
@@ -895,6 +896,20 @@ struct ShipperCompliance: View {
                 .strokeBorder(palette.borderFaint, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    private func friendlyComplianceTitle(_ raw: String) -> String {
+        let lower = raw.lowercased()
+        if lower.contains("auth") || lower.contains("unauthorized") || lower.contains("401") {
+            return "Sign in again to view compliance"
+        }
+        if lower.contains("404") || lower.contains("not found") {
+            return "No compliance records yet"
+        }
+        if lower.contains("offline") || lower.contains("network") {
+            return "Compliance service is offline"
+        }
+        return "Couldn't load compliance"
     }
 
     private func formatMoney(_ value: Double) -> String {

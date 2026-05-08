@@ -899,10 +899,10 @@ struct ShipperFreightClaims: View {
     // MARK: Notification posts (§20.4)
 
     private func tapFileClaim() {
-        // Real action: compose a mail to the claims desk with the
-        // claim metadata pre-filled. The dedicated in-app intake
-        // wizard ships in a follow-up; until then the founder gets
-        // a real reachable channel instead of a 404 web link.
+        // Founder doctrine 2026-05-07: route to in-app composer
+        // (386 FreightClaimComposer) instead of mailto:claims.
+        // The composer handles photo uploads, load lookup, damage
+        // description, and POSTs to freightClaims.create.
         NotificationCenter.default.post(
             name: .eusoShipperClaimFile,
             object: nil,
@@ -911,11 +911,11 @@ struct ShipperFreightClaims: View {
                 "shipperCompanyId": 1
             ]
         )
-        let body = "I'd like to file a freight claim. Load number / damage description / photos / carrier are below."
-            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        if let url = URL(string: "mailto:claims@eusotrip.com?subject=New%20freight%20claim&body=\(body)") {
-            openURL(url)
-        }
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap,
+            object: nil,
+            userInfo: ["screenId": "386"]
+        )
     }
 
     private func tapSeeFullHistory() {
