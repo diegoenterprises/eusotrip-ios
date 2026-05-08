@@ -667,16 +667,11 @@ struct ShipperAgreements: View {
         .contextMenu { agreementRowMenu(row) }
     }
 
-    /// Long-press context menu shared by both row variants. Three
+    /// Long-press context menu shared by both row variants. Two
     /// actions:
     ///   • Open in app           — same as default tap; presents the
     ///                             native iOS detail sheet (signature
     ///                             pad + counter / activate flow).
-    ///   • Open on web           — Continuity / Handoff hand-off to
-    ///                             the canonical `/agreements/:id`
-    ///                             surface; lands the same view in
-    ///                             Safari on the same Apple ID's
-    ///                             Mac if continuity is configured.
     ///   • Download PDF          — renders the row to a PDF on-
     ///                             device and presents the system
     ///                             share sheet so AirDrop / Save-to-
@@ -689,26 +684,10 @@ struct ShipperAgreements: View {
             Label("Open in app", systemImage: "iphone")
         }
         Button {
-            openOnWeb(row)
-        } label: {
-            Label("Open on web · Continuity", systemImage: "safari")
-        }
-        Button {
             downloadPDF(row)
         } label: {
             Label("Download PDF", systemImage: "arrow.down.doc")
         }
-    }
-
-    /// Hand off the agreement to the web surface. Uses
-    /// `app.eusotrip.com` as the canonical host so deep-link
-    /// re-routing in `ShipperWebToNativeMap` skips it (we
-    /// explicitly want the web surface here, not the native
-    /// route). On iPad / Mac with the same Apple ID this hands
-    /// off via Universal Links + Handoff to Safari.
-    private func openOnWeb(_ row: ShipperAgreementsAPI.Agreement) {
-        guard let url = URL(string: "https://eusotrip.com/agreements/\(row.id)") else { return }
-        openURL(url)
     }
 
     /// Render the row to a PDF and present the system share sheet.

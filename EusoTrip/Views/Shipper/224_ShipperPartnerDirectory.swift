@@ -846,22 +846,14 @@ struct ShipperPartnerDirectory: View {
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
             Button {
-                // Real action: compose a mail to ops to broker a
-                // partner introduction. Replaces openURL stub. The
-                // dedicated in-app invite form ships in a follow-up.
+                // Real action: navigate to 289 InviteCatalyst, which
+                // posts shipper.inviteCatalyst with email + DOT + note.
+                // No mailto bounce.
                 NotificationCenter.default.post(
-                    name: .eusoShipperPartnerInvite,
+                    name: .eusoShipperNavSwap,
                     object: nil,
-                    userInfo: [
-                        "source": "224_ShipperPartnerDirectory",
-                        "shipperCompanyId": 1
-                    ]
+                    userInfo: ["screenId": "289"]
                 )
-                let body = "I'd like to invite a partner. Carrier name / MC# / lanes / hazmat capability are below."
-                    .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-                if let url = URL(string: "mailto:ops@eusotrip.com?subject=Partner%20invite&body=\(body)") {
-                    openURL(url)
-                }
             } label: {
                 Text("Invite a partner")
                     .font(.system(size: 13, weight: .heavy))

@@ -26,7 +26,48 @@ private struct AtDockBody: View {
             statusCard
             facilityCard
             cargoCard
+            commsRow
         }
+    }
+
+    private var commsRow: some View {
+        HStack(spacing: 8) {
+            commsButton(icon: "phone.fill", label: "Facility", phone: live.pickup?.contactPhone)
+            commsButton(icon: "phone.fill", label: "Driver",   phone: live.driver?.phone)
+            commsButton(icon: "map.fill",   label: "Map",      phone: nil)
+        }
+    }
+
+    private func commsButton(icon: String, label: String, phone: String?) -> some View {
+        let mapDeepLink: URL? = {
+            guard icon == "map.fill" else { return nil }
+            if let lat = live.pickup?.lat, let lng = live.pickup?.lng {
+                return URL(string: "maps://?ll=\(lat),\(lng)&q=\(label)")
+            }
+            if let addr = live.pickup?.address, !addr.isEmpty {
+                let q = addr.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+                return URL(string: "maps://?q=\(q)")
+            }
+            return nil
+        }()
+        let enabled = (phone?.isEmpty == false) || (icon == "map.fill" && mapDeepLink != nil)
+        return Button {
+            if let p = phone, let url = URL(string: "tel://\(p.filter(\.isNumber))") {
+                UIApplication.shared.open(url)
+            } else if let url = mapDeepLink {
+                UIApplication.shared.open(url)
+            }
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(enabled ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
+                Text(label).font(.system(size: 9, weight: .heavy)).tracking(0.4).foregroundStyle(palette.textPrimary)
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 12).background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }.buttonStyle(.plain).disabled(!enabled)
     }
 
     private var statusCard: some View {

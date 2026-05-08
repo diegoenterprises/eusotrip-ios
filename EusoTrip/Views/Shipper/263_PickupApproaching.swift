@@ -73,9 +73,22 @@ private struct ApproachingBody: View {
     }
 
     private func commsButton(icon: String, label: String, phone: String?) -> some View {
-        let enabled = (phone?.isEmpty == false) || icon == "map.fill"
+        let mapDeepLink: URL? = {
+            guard icon == "map.fill" else { return nil }
+            if let lat = live.pickup?.lat, let lng = live.pickup?.lng {
+                return URL(string: "maps://?ll=\(lat),\(lng)&q=\(label)")
+            }
+            if let addr = live.pickup?.address, !addr.isEmpty {
+                let q = addr.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+                return URL(string: "maps://?q=\(q)")
+            }
+            return nil
+        }()
+        let enabled = (phone?.isEmpty == false) || (icon == "map.fill" && mapDeepLink != nil)
         return Button {
             if let p = phone, let url = URL(string: "tel://\(p.filter(\.isNumber))") {
+                UIApplication.shared.open(url)
+            } else if let url = mapDeepLink {
                 UIApplication.shared.open(url)
             }
         } label: {

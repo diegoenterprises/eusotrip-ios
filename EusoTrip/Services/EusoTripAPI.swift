@@ -1287,6 +1287,56 @@ struct LoadsAPI {
         )
     }
 
+    /// `loads.update` — partial-update the load record. Used by the
+    /// Shipper 205 in-app "Edit load" sheet (replaces the prior
+    /// "Open on web" continuation). Server enforces shipper ownership
+    /// + delivery-date >= pickup-date. Pass only the fields you want
+    /// to change; the server merges into the existing row.
+    struct UpdateLoadAck: Decodable, Hashable {
+        let success: Bool?
+        let id: String?
+    }
+
+    func updateLoad(
+        loadId: String,
+        rate: Double? = nil,
+        specialInstructions: String? = nil,
+        dispatchNotes: String? = nil,
+        pickupLocation: String? = nil,
+        deliveryLocation: String? = nil,
+        pickupDate: String? = nil,
+        deliveryDate: String? = nil
+    ) async throws -> UpdateLoadAck {
+        struct Data: Encodable {
+            let rate: Double?
+            let specialInstructions: String?
+            let dispatchNotes: String?
+            let pickupLocation: String?
+            let deliveryLocation: String?
+            let pickupDate: String?
+            let deliveryDate: String?
+        }
+        struct Input: Encodable {
+            let id: String
+            let data: Data
+        }
+        return try await api.mutation(
+            "loads.update",
+            input: Input(
+                id: loadId,
+                data: Data(
+                    rate: rate,
+                    specialInstructions: specialInstructions,
+                    dispatchNotes: dispatchNotes,
+                    pickupLocation: pickupLocation,
+                    deliveryLocation: deliveryLocation,
+                    pickupDate: pickupDate,
+                    deliveryDate: deliveryDate
+                )
+            )
+        )
+    }
+
     /// Mirrors `loads.getShipperSummary` (loads.ts:769). Topline counts
     /// for the 201 Shipper Loads filter chips + the 200 Home stat strip.
     /// Server returns a 7-key envelope; we project all of them so screens

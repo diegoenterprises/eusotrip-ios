@@ -67,6 +67,17 @@ struct ShipperLoadDetail: View {
     @State private var cancelError: String? = nil
     @State private var cancelToast: String? = nil
 
+    /// In-app edit-load sheet — replaces the prior "Open on web"
+    /// continuation. Posts to `loads.update` with the changed fields
+    /// only (rate / specialInstructions / dispatchNotes for now).
+    @State private var showEditSheet: Bool = false
+    @State private var editRateText: String = ""
+    @State private var editSpecialInstructions: String = ""
+    @State private var editDispatchNotes: String = ""
+    @State private var editInFlight: Bool = false
+    @State private var editError: String? = nil
+    @State private var editToast: String? = nil
+
     /// In-app POD review sheet (no web fallback). Opened from the
     /// kebab menu when the load status is `pod_pending`. The sheet
     /// renders the driver-submitted photo + signature + receiver
@@ -208,24 +219,19 @@ struct ShipperLoadDetail: View {
                 showCancelSheet = true
             }
             Button("Edit load") {
-                // No backend mutation for in-place edit yet — open
-                // the load on the web where the full edit form
-                // ships. Honest production fallback per the
-                // [feedback_no_dead_buttons] doctrine.
-                NotificationCenter.default.post(
-                    name: .eusoShipperLoadOpenOnWeb,
-                    object: nil,
-                    userInfo: ["loadId": loadId]
-                )
-            }
-            Button("Open on web") {
-                NotificationCenter.default.post(
-                    name: .eusoShipperLoadOpenOnWeb,
-                    object: nil,
-                    userInfo: ["loadId": loadId]
-                )
+                editError = nil
+                editRateText = ""
+                editSpecialInstructions = ""
+                editDispatchNotes = ""
+                showEditSheet = true
             }
             Button("Cancel", role: .cancel) { }
+        }
+        .sheet(isPresented: $showEditSheet) {
+            editSheet
+                .environment(\.palette, palette)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showCancelSheet) {
             cancelSheet
@@ -669,6 +675,140 @@ struct ShipperLoadDetail: View {
             showDockAssign = false
         } catch {
             dockAssignError = (error as NSError).localizedDescription
+        }
+    }
+
+    // MARK: - Edit-load sheet (real mutation)
+
+    /// Composer for `loads.update`. Three editable fields: rate,
+    /// special instructions, dispatch notes. The server merges into
+    /// the existing row — anything left blank stays unchanged.
+    /// Replaces the prior "Open on web" continuation.
+    @ViewBuilder
+    private var editSheet: some View {
+        VStack(alignment: .leading, spacing: Space.s4) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("EDIT LOAD")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                Text(displayLoadId)
+                    .font(EType.title)
+                    .foregroundStyle(palette.textPrimary)
+                Text("Update rate, instructions, or a dispatch note. Pickup / delivery edits route through Reroute. Carrier sees changes the moment you save.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Rate (USD)")
+                    .font(EType.caption).tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+                TextField("e.g. 2850.00", text: $editRateText)
+                    .keyboardType(.decimalPad)
+                    .padding(Space.s3)
+                    .background(palette.bgCardSoft, in: RoundedRectangle(cornerRadius: Radius.md))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Special instructions")
+                    .font(EType.caption).tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+                TextField("e.g. Driver must call 30 min out", text: $editSpecialInstructions, axis: .vertical)
+                    .lineLimit(3, reservesSpace: true)
+                    .padding(Space.s3)
+                    .background(palette.bgCardSoft, in: RoundedRectangle(cornerRadius: Radius.md))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Dispatch note (timestamped)")
+                    .font(EType.caption).tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+                TextField("Append a one-liner the carrier sees on the dashboard", text: $editDispatchNotes, axis: .vertical)
+                    .lineLimit(2, reservesSpace: true)
+                    .padding(Space.s3)
+                    .background(palette.bgCardSoft, in: RoundedRectangle(cornerRadius: Radius.md))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+            }
+            if let err = editError {
+                Text(err)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+            }
+            HStack(spacing: Space.s3) {
+                Button {
+                    showEditSheet = false
+                } label: {
+                    Text("Discard")
+                        .font(EType.body).fontWeight(.semibold)
+                        .foregroundStyle(palette.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Space.s3)
+                        .background(palette.bgCardSoft, in: RoundedRectangle(cornerRadius: Radius.md))
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+                }
+                .buttonStyle(.plain)
+                .disabled(editInFlight)
+
+                Button {
+                    Task { await submitEdit() }
+                } label: {
+                    HStack(spacing: 6) {
+                        if editInFlight {
+                            ProgressView().tint(palette.textOnGradient)
+                        }
+                        Text(editInFlight ? "Saving…" : "Save changes")
+                            .font(EType.body).fontWeight(.semibold)
+                    }
+                    .foregroundStyle(palette.textOnGradient)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Space.s3)
+                    .background(LinearGradient.diagonal, in: RoundedRectangle(cornerRadius: Radius.md))
+                    .opacity(editCanSubmit && !editInFlight ? 1 : 0.6)
+                }
+                .buttonStyle(.plain)
+                .disabled(!editCanSubmit || editInFlight)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s5)
+        .background(palette.bgPrimary)
+    }
+
+    private var editCanSubmit: Bool {
+        let hasRate = Double(editRateText.trimmingCharacters(in: .whitespaces)).map { $0 > 0 } ?? false
+        let hasSI = !editSpecialInstructions.trimmingCharacters(in: .whitespaces).isEmpty
+        let hasDN = !editDispatchNotes.trimmingCharacters(in: .whitespaces).isEmpty
+        return hasRate || hasSI || hasDN
+    }
+
+    private func submitEdit() async {
+        guard editCanSubmit else { return }
+        editInFlight = true
+        editError = nil
+        defer { editInFlight = false }
+        let rate = Double(editRateText.trimmingCharacters(in: .whitespaces))
+        let si = editSpecialInstructions.trimmingCharacters(in: .whitespaces)
+        let dn = editDispatchNotes.trimmingCharacters(in: .whitespaces)
+        do {
+            _ = try await EusoTripAPI.shared.loads.updateLoad(
+                loadId: loadId,
+                rate: rate,
+                specialInstructions: si.isEmpty ? nil : si,
+                dispatchNotes: dn.isEmpty ? nil : dn
+            )
+            await MainActor.run {
+                showEditSheet = false
+                editToast = "Load updated"
+                editRateText = ""
+                editSpecialInstructions = ""
+                editDispatchNotes = ""
+            }
+            await refreshAll()
+            try? await Task.sleep(nanoseconds: 1_800_000_000)
+            await MainActor.run { editToast = nil }
+        } catch {
+            await MainActor.run {
+                editError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            }
         }
     }
 

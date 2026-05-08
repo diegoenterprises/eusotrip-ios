@@ -66,9 +66,27 @@ private struct InTransitBody: View {
     }
 
     private func commsButton(icon: String, label: String, phone: String?) -> some View {
-        let enabled = (phone?.isEmpty == false) || icon == "map.fill"
+        let mapDeepLink: URL? = {
+            guard icon == "map.fill" else { return nil }
+            // Truck's current pin first; fall back to delivery
+            // facility coords; finally the destination address.
+            if let g = live.lastGeofence {
+                return URL(string: "maps://?ll=\(g.latitude),\(g.longitude)&q=Truck")
+            }
+            if let lat = live.delivery?.lat, let lng = live.delivery?.lng {
+                return URL(string: "maps://?ll=\(lat),\(lng)&q=Delivery")
+            }
+            if let addr = live.delivery?.address, !addr.isEmpty {
+                let q = addr.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+                return URL(string: "maps://?q=\(q)")
+            }
+            return nil
+        }()
+        let enabled = (phone?.isEmpty == false) || (icon == "map.fill" && mapDeepLink != nil)
         return Button {
             if let p = phone, let url = URL(string: "tel://\(p.filter(\.isNumber))") {
+                UIApplication.shared.open(url)
+            } else if let url = mapDeepLink {
                 UIApplication.shared.open(url)
             }
         } label: {
