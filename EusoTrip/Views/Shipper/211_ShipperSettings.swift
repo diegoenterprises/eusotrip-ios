@@ -985,11 +985,14 @@ struct ShipperSettings: View {
                 "shipperCompanyId": 1
             ]
         )
-        let body = "I'd like to enrol in 2-factor authentication on my Eusorone Technologies account. Please reach out with the next step."
-            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        if let url = URL(string: "mailto:security@eusotrip.com?subject=2FA%20enrolment&body=\(body)") {
-            openURL(url)
-        }
+        // Founder doctrine 2026-05-07: Settings rows route to the
+        // in-app management screens, never mailto. 345 is the
+        // canonical 2FA management surface (TwoFactorManageScreen).
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap,
+            object: nil,
+            userInfo: ["screenId": "345"]
+        )
     }
 
     private func tapViewSessions() {
@@ -1005,11 +1008,14 @@ struct ShipperSettings: View {
                 "shipperCompanyId": 1
             ]
         )
-        let body = "Please send me the active-sessions audit for my Eusorone Technologies account."
-            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        if let url = URL(string: "mailto:security@eusotrip.com?subject=Active%20sessions%20audit&body=\(body)") {
-            openURL(url)
-        }
+        // 344 is the in-app SecuritySessionsScreen — lists active
+        // sessions, lets the user revoke any. Same canonical
+        // surface the web platform shows.
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap,
+            object: nil,
+            userInfo: ["screenId": "344"]
+        )
     }
 
     private func tapAbout() {

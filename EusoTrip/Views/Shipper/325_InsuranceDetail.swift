@@ -55,9 +55,41 @@ private struct InsuranceBody: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
                 scanCOIRibbon
-                if loading { LifecycleCard { Text("Loading insurance…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
-                else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
-                else if let c = cert { coiCard(c); ctaRow(c) }
+                if loading {
+                    LifecycleCard {
+                        HStack(spacing: 8) {
+                            ProgressView().tint(LinearGradient.diagonal).scaleEffect(0.8)
+                            Text("Loading insurance certificate…").font(EType.caption).foregroundStyle(palette.textSecondary)
+                        }
+                    }
+                } else if let err = loadError {
+                    // Friendly error + retry. Maps common server
+                    // strings ('UNAUTHORIZED' / 'authentication
+                    // required') into actionable copy.
+                    LifecycleCard(accentDanger: true) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(Brand.danger)
+                                Text(friendlyInsuranceError(err))
+                                    .font(EType.bodyStrong)
+                                    .foregroundStyle(palette.textPrimary)
+                            }
+                            Text(err)
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textTertiary)
+                                .lineLimit(2)
+                            Button { Task { await load() } } label: {
+                                Text("Retry")
+                                    .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .background(Capsule().fill(LinearGradient.diagonal))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                } else if let c = cert { coiCard(c); ctaRow(c) }
                 else { LifecycleCard { Text("No insurance certificate on file.").font(EType.caption).foregroundStyle(palette.textSecondary) } }
                 if let s = scanResult { scanResultCard(s) }
                 Color.clear.frame(height: 96)
@@ -269,6 +301,24 @@ private struct InsuranceBody: View {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
+    }
+
+    /// Convert raw backend error strings into friendly heading copy.
+    /// 'authentication required' / 'UNAUTHORIZED' → re-auth hint.
+    /// Everything else → 'Couldn't load insurance' with the raw
+    /// string surfaced underneath as detail.
+    private func friendlyInsuranceError(_ raw: String) -> String {
+        let lower = raw.lowercased()
+        if lower.contains("auth") || lower.contains("unauthorized") || lower.contains("401") {
+            return "Sign in again to view this certificate"
+        }
+        if lower.contains("404") || lower.contains("not found") {
+            return "No insurance certificate on file"
+        }
+        if lower.contains("offline") || lower.contains("network") {
+            return "Insurance service is offline — try again"
+        }
+        return "Couldn't load insurance"
     }
 }
 

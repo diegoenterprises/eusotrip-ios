@@ -55,8 +55,31 @@ private struct HazmatAuditBody: View {
 
     @ViewBuilder
     private var content: some View {
-        if loading { LifecycleCard { Text("Loading hazmat history…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
-        else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
+        if loading {
+            LifecycleCard {
+                HStack(spacing: 8) {
+                    ProgressView().tint(LinearGradient.diagonal).scaleEffect(0.8)
+                    Text("Loading hazmat history…").font(EType.caption).foregroundStyle(palette.textSecondary)
+                }
+            }
+        } else if let err = loadError {
+            LifecycleCard(accentDanger: true) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Brand.danger)
+                        Text("Couldn't load hazmat audit").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                    }
+                    Text(err).font(EType.caption).foregroundStyle(palette.textTertiary).lineLimit(2)
+                    Button { Task { await load() } } label: {
+                        Text("Retry").font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(Capsule().fill(LinearGradient.diagonal))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
         else if rows.isEmpty { EusoEmptyState(systemImage: "triangle", title: "No hazmat history", subtitle: "Hazmat loads aren't on file in the audit window.") }
         else {
             ForEach(rows) { r in

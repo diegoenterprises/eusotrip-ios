@@ -118,21 +118,32 @@ private struct MarketIntelligenceBody: View {
     @State private var diesel: [DieselRow] = []
 
     @State private var loading = true
+    @State private var loadError: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
-                if loading && commodities.isEmpty {
+                if loading && commodities.isEmpty && macro == nil && diesel.isEmpty {
                     LifecycleCard {
-                        Text("Loading live commodity feed…")
-                            .font(EType.caption)
-                            .foregroundStyle(palette.textSecondary)
+                        HStack(spacing: 8) {
+                            ProgressView().tint(LinearGradient.diagonal).scaleEffect(0.8)
+                            Text("Loading live commodity feed…")
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                        }
                     }
                 } else {
-                    breadthBar
-                    if !categories.isEmpty { categoryChips }
-                    commodityGrid
+                    if !commodities.isEmpty {
+                        breadthBar
+                        if !categories.isEmpty { categoryChips }
+                        commodityGrid
+                    } else if !loading {
+                        // Honest empty state when the canonical feed
+                        // returns no rows. Surfaces the error if any
+                        // (was silently swallowed before) + retry.
+                        commodityFallbackCard
+                    }
                     if let m = macro { macroCard(m) }
                     if !diesel.isEmpty { dieselCard(diesel) }
                 }
@@ -381,10 +392,54 @@ private struct MarketIntelligenceBody: View {
                 if let s = r.source, !s.isEmpty {
                     sourceLine = s
                 }
+                loadError = nil
             }
         } catch {
-            // Silent — keeps prior data on failure so a transient
-            // outage doesn't blank the board.
+            // Founder bug 2026-05-07: silent catch hid the failure
+            // so the screen sat on 'Loading live commodity feed…'
+            // forever. Capture the error for the fallback card so
+            // the user gets a real signal + retry action.
+            await MainActor.run {
+                loadError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+        }
+    }
+
+    /// Empty-state / error card surfaced when marketPricing.getCommodities
+    /// returns nothing or errors. Macro + diesel cards still render
+    /// independently when they DO load — this card only covers the
+    /// commodities slot.
+    private var commodityFallbackCard: some View {
+        LifecycleCard(accentWarning: loadError != nil) {
+            HStack(spacing: 8) {
+                Image(systemName: loadError == nil
+                      ? "chart.line.flattrend.xyaxis"
+                      : "exclamationmark.triangle.fill")
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(loadError == nil
+                                     ? AnyShapeStyle(palette.textTertiary)
+                                     : AnyShapeStyle(Brand.warning))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(loadError == nil
+                         ? "Live commodity feed is empty"
+                         : "Commodity feed unavailable")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text(loadError ?? "FRED + EIA + BLS sources may be in a maintenance window. Pull to refresh in a few minutes.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                Button { Task { await loadCommodities() } } label: {
+                    Text("Retry")
+                        .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(Capsule().fill(LinearGradient.diagonal))
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
