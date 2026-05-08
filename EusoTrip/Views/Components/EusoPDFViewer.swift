@@ -34,6 +34,31 @@ enum EusoPDFSource {
     case data(Data)
 }
 
+/// Identifiable URL wrapper for `.sheet(item:)` / `.fullScreenCover(item:)`
+/// presentation across all the in-app PDF surfaces (BOL, run ticket,
+/// settlement, statement, hazmat manifest, partner agreement,
+/// insurance certificate, etc.). Re-presents per-tap when the URL
+/// changes — the UUID id ensures SwiftUI doesn't dedupe identical
+/// repeat presentations.
+struct EusoPDFPresentation: Identifiable, Hashable {
+    let id: UUID
+    let url: URL
+    let title: String
+    let subtitle: String?
+    let loadIdForWalletPass: String?
+
+    init(url: URL,
+         title: String,
+         subtitle: String? = nil,
+         loadIdForWalletPass: String? = nil) {
+        self.id = UUID()
+        self.url = url
+        self.title = title
+        self.subtitle = subtitle
+        self.loadIdForWalletPass = loadIdForWalletPass
+    }
+}
+
 struct EusoPDFViewer: View {
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss

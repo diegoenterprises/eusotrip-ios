@@ -32,6 +32,7 @@ private struct SettlementDetailBody: View {
     @State private var detail: SettlementDetail? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
+    @State private var presentedPDF: EusoPDFPresentation? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -45,6 +46,9 @@ private struct SettlementDetailBody: View {
             .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
+        .fullScreenCover(item: $presentedPDF) { p in
+            EusoPDFViewer(title: p.title, subtitle: p.subtitle, source: .url(p.url))
+        }
     }
 
     private var header: some View {
@@ -84,7 +88,13 @@ private struct SettlementDetailBody: View {
         HStack(spacing: 10) {
             if let u = d.invoiceUrl, !u.isEmpty {
                 Button {
-                    if let url = URL(string: u) { UIApplication.shared.open(url) }
+                    if let url = URL(string: u) {
+                        presentedPDF = EusoPDFPresentation(
+                            url: url,
+                            title: "Settlement invoice",
+                            subtitle: "Settlement \(d.id)"
+                        )
+                    }
                 } label: {
                     Text("Open invoice")
                         .font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)

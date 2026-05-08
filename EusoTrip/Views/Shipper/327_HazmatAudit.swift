@@ -29,6 +29,7 @@ private struct HazmatAuditBody: View {
     @State private var rows: [HazmatRow] = []
     @State private var loading = true
     @State private var loadError: String? = nil
+    @State private var presentedPDF: EusoPDFPresentation? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -40,6 +41,9 @@ private struct HazmatAuditBody: View {
             .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
+        .fullScreenCover(item: $presentedPDF) { p in
+            EusoPDFViewer(title: p.title, subtitle: p.subtitle, source: .url(p.url))
+        }
     }
 
     private var header: some View {
@@ -84,7 +88,13 @@ private struct HazmatAuditBody: View {
         else {
             ForEach(rows) { r in
                 Button {
-                    if let url = r.manifestUrl, let u = URL(string: url) { UIApplication.shared.open(u) }
+                    if let url = r.manifestUrl, let u = URL(string: url) {
+                        presentedPDF = EusoPDFPresentation(
+                            url: u,
+                            title: "Hazmat manifest",
+                            subtitle: r.loadNumber
+                        )
+                    }
                     else if let lid = r.loadId {
                         NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "205", "loadId": lid])
                     }

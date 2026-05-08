@@ -866,19 +866,6 @@ struct ShipperSettlementDetail: View {
                     .clipShape(Capsule())
                 }.buttonStyle(.plain)
             }
-            Button {
-                MeAction.fire("shipper.settlement.openOnWeb", userInfo: ["settlementId": s.id])
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .font(.system(size: 11, weight: .heavy))
-                    Text("Open full ledger on web").font(.system(size: 11, weight: .heavy))
-                }
-                .frame(maxWidth: .infinity).padding(.vertical, 10)
-                .foregroundStyle(palette.textPrimary).background(palette.bgCard)
-                .overlay(Capsule().strokeBorder(palette.borderFaint))
-                .clipShape(Capsule())
-            }.buttonStyle(.plain)
             if let e = store.lastError {
                 Text(e).font(EType.caption).foregroundStyle(Brand.danger)
             }

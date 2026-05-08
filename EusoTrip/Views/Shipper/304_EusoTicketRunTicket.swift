@@ -41,6 +41,7 @@ private struct ShipperEusoTicketRunTicketBody: View {
     @State private var loadError: String? = nil
     @State private var dispatching: Bool = false
     @State private var dispatchError: String? = nil
+    @State private var presentedPDF: EusoPDFPresentation? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -84,6 +85,14 @@ private struct ShipperEusoTicketRunTicketBody: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
             Task { await fetch() }
+        }
+        .fullScreenCover(item: $presentedPDF) { p in
+            EusoPDFViewer(
+                title: p.title,
+                subtitle: p.subtitle,
+                source: .url(p.url),
+                loadIdForWalletPass: p.loadIdForWalletPass
+            )
         }
     }
 
@@ -250,7 +259,14 @@ private struct ShipperEusoTicketRunTicketBody: View {
         do {
             let res = try await EusoTripAPI.shared.eusoTicket.generateRunTicketPDF(ticketNumber: canvasTicketNumber)
             if let url = URL(string: res.documentUrl) {
-                await MainActor.run { UIApplication.shared.open(url) }
+                await MainActor.run {
+                    presentedPDF = EusoPDFPresentation(
+                        url: url,
+                        title: "Run ticket",
+                        subtitle: canvasTicketNumber,
+                        loadIdForWalletPass: loadId
+                    )
+                }
             }
         } catch {
             self.dispatchError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

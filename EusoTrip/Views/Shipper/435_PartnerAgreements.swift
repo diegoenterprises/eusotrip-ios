@@ -34,6 +34,7 @@ private struct PartnerAgreementsBody: View {
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var signing: String? = nil
+    @State private var presentedPDF: EusoPDFPresentation? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -45,6 +46,9 @@ private struct PartnerAgreementsBody: View {
             .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
+        .fullScreenCover(item: $presentedPDF) { p in
+            EusoPDFViewer(title: p.title, subtitle: p.subtitle, source: .url(p.url))
+        }
     }
 
     private var header: some View {
@@ -71,7 +75,15 @@ private struct PartnerAgreementsBody: View {
                     LifecycleRow(label: "Signed",   value: humanISO(a.signedAt))
                     HStack(spacing: 8) {
                         if let pdf = a.pdfUrl, !pdf.isEmpty {
-                            Button { if let u = URL(string: pdf) { UIApplication.shared.open(u) } } label: {
+                            Button {
+                                if let u = URL(string: pdf) {
+                                    presentedPDF = EusoPDFPresentation(
+                                        url: u,
+                                        title: "Partner agreement",
+                                        subtitle: a.agreementNumber
+                                    )
+                                }
+                            } label: {
                                 Text("PDF").font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(palette.textPrimary)
                                     .padding(.horizontal, 12).padding(.vertical, 6)
                                     .background(palette.tintNeutral).clipShape(Capsule())

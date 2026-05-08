@@ -32,6 +32,7 @@ private struct MonthlyStatementBody: View {
     @State private var statement: PayStatement? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
+    @State private var presentedPDF: EusoPDFPresentation? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -45,6 +46,9 @@ private struct MonthlyStatementBody: View {
             .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
+        .fullScreenCover(item: $presentedPDF) { p in
+            EusoPDFViewer(title: p.title, subtitle: p.subtitle, source: .url(p.url))
+        }
     }
 
     private var header: some View {
@@ -80,9 +84,15 @@ private struct MonthlyStatementBody: View {
     private func pdfCard(_ s: PayStatement) -> some View {
         if let u = s.pdfUrl, !u.isEmpty {
             return AnyView(Button {
-                if let url = URL(string: u) { UIApplication.shared.open(url) }
+                if let url = URL(string: u) {
+                    presentedPDF = EusoPDFPresentation(
+                        url: url,
+                        title: "Monthly statement",
+                        subtitle: s.period
+                    )
+                }
             } label: {
-                Text("Download PDF").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
+                Text("Open statement PDF").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
                     .frame(maxWidth: .infinity).padding(.vertical, 12)
                     .background(LinearGradient.diagonal)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))

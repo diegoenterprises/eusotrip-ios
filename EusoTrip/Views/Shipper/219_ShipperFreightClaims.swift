@@ -1065,6 +1065,9 @@ extension Notification.Name {
 private struct ClaimDetailSheet: View {
     let claim: ShipperFreightClaimsAPI.ClaimRow
     @Environment(\.palette) private var palette
+    @State private var presentingEvidence: Bool = false
+    @State private var presentingDispute: Bool = false
+    @State private var actionToast: String? = nil
 
     var body: some View {
         ScrollView {
@@ -1084,6 +1087,38 @@ private struct ClaimDetailSheet: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(palette.bgPage.ignoresSafeArea())
+        .sheet(isPresented: $presentingEvidence) {
+            AddEvidenceSheet(claim: claim) { msg in
+                actionToast = msg
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $presentingDispute) {
+            OpenDisputeSheet(claim: claim) { msg in
+                actionToast = msg
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+        .overlay(alignment: .bottom) {
+            if let msg = actionToast {
+                Text(msg)
+                    .font(EType.caption.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(palette.bgCard)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    .padding(.bottom, 24)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .task {
+                        try? await Task.sleep(nanoseconds: 1_800_000_000)
+                        actionToast = nil
+                    }
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: actionToast)
     }
 
     private var heroCard: some View {
@@ -1170,28 +1205,21 @@ private struct ClaimDetailSheet: View {
                 actionRow(
                     icon: "doc.badge.arrow.up",
                     title: "Add evidence",
-                    subtitle: "Photos, BOL, POD, repair invoices.",
-                    key: "claims.add-evidence"
-                )
+                    subtitle: "Photos, BOL, POD, repair invoices."
+                ) { presentingEvidence = true }
+
                 actionRow(
                     icon: "person.2.wave.2.fill",
                     title: "Open dispute",
-                    subtitle: "Escalate to mediator if the carrier denies the claim.",
-                    key: "claims.open-dispute"
-                )
-                actionRow(
-                    icon: "arrow.up.right.square",
-                    title: "View on web",
-                    subtitle: "Full claim file lives at eusotrip.com/freight-claims",
-                    key: "claims.open-web"
-                )
+                    subtitle: "Escalate to mediator if the carrier denies the claim."
+                ) { presentingDispute = true }
             }
         }
     }
 
-    private func actionRow(icon: String, title: String, subtitle: String, key: String) -> some View {
+    private func actionRow(icon: String, title: String, subtitle: String, action: @escaping () -> Void) -> some View {
         Button {
-            MeAction.fire(key, userInfo: ["claimId": claim.id, "claimNumber": claim.claimNumber])
+            action()
         } label: {
             HStack(spacing: Space.s3) {
                 ZStack {
@@ -1285,4 +1313,377 @@ private struct ClaimDetailSheet: View {
         .environment(\.palette, Theme.light)
         .preferredColorScheme(.light)
         .background(Theme.light.bgPage)
+}
+
+// MARK: - AddEvidenceSheet
+//
+// Inline composer that posts to `freightClaims.addClaimEvidence`. Replaces
+// the prior `MeAction.fire("claims.add-evidence")` stub. Server returns an
+// uploadUrl iOS can later POST the binary blob to — for now we ship the
+// metadata record (type + name + optional description + URL) which is the
+// authoritative claim-trail entry.
+private struct AddEvidenceSheet: View {
+    let claim: ShipperFreightClaimsAPI.ClaimRow
+    let onResult: (String) -> Void
+
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var evidenceType: String = "photo"
+    @State private var evidenceName: String = ""
+    @State private var evidenceDescription: String = ""
+    @State private var evidenceURL: String = ""
+    @State private var submitting: Bool = false
+    @State private var errorMsg: String? = nil
+
+    private let evidenceTypes: [(String, String)] = [
+        ("photo", "Photo"),
+        ("document", "Document"),
+        ("bol", "BOL"),
+        ("pod", "POD"),
+        ("inspection_report", "Inspection report"),
+        ("repair_invoice", "Repair invoice"),
+        ("statement", "Statement"),
+        ("other", "Other")
+    ]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    headerCard
+                    section("EVIDENCE") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("TYPE")
+                                .font(.system(size: 9, weight: .heavy)).tracking(0.7)
+                                .foregroundStyle(palette.textTertiary)
+                            Picker("Type", selection: $evidenceType) {
+                                ForEach(evidenceTypes, id: \.0) { e in
+                                    Text(e.1).tag(e.0)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                        }
+                        labeledField("Name (e.g. damage_photo_left.jpg)", text: $evidenceName)
+                        labeledField("Description (optional)", text: $evidenceDescription)
+                        labeledField("Hosted URL (optional, https://…)", text: $evidenceURL, keyboard: .URL)
+                    }
+                    if let err = errorMsg {
+                        Text(err)
+                            .font(EType.caption.weight(.semibold))
+                            .foregroundStyle(Brand.danger)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Brand.danger.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    submit
+                    Color.clear.frame(height: 24)
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 10)
+            }
+            .background(palette.bgPrimary.ignoresSafeArea())
+            .navigationTitle("Add evidence")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private var headerCard: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("CLAIM \(claim.claimNumber)")
+                .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                .foregroundStyle(LinearGradient.diagonal)
+            Text("Add evidence to the claim file")
+                .font(EType.body.weight(.bold))
+                .foregroundStyle(palette.textPrimary)
+            Text("Posts directly to freightClaims.addClaimEvidence. The server returns a signed upload URL — paste a hosted link or open the upload sheet (coming next).")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func section<Inner: View>(_ title: String, @ViewBuilder content: () -> Inner) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                .foregroundStyle(LinearGradient.diagonal)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    private func labeledField(_ label: String, text: Binding<String>, keyboard: UIKeyboardType = .default) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label.uppercased())
+                .font(.system(size: 9, weight: .heavy)).tracking(0.7)
+                .foregroundStyle(palette.textTertiary)
+            TextField(label, text: text)
+                .keyboardType(keyboard)
+                .autocorrectionDisabled()
+                .textFieldStyle(.roundedBorder)
+        }
+    }
+
+    private var canSubmit: Bool {
+        !evidenceName.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private var submit: some View {
+        Button {
+            doSubmit()
+        } label: {
+            HStack {
+                if submitting { ProgressView().tint(.white) }
+                else { Image(systemName: "paperclip") }
+                Text(submitting ? "Saving…" : "Add evidence")
+                    .font(EType.body.weight(.heavy))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .foregroundStyle(.white)
+            .background(canSubmit && !submitting
+                        ? AnyShapeStyle(LinearGradient.diagonal)
+                        : AnyShapeStyle(Brand.neutral))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(!canSubmit || submitting)
+    }
+
+    private func doSubmit() {
+        submitting = true
+        errorMsg = nil
+        let trimmedDesc = evidenceDescription.trimmingCharacters(in: .whitespaces)
+        let trimmedURL = evidenceURL.trimmingCharacters(in: .whitespaces)
+        Task {
+            do {
+                _ = try await EusoTripAPI.shared.shipperFreightClaims.addClaimEvidence(
+                    claimId: claim.id,
+                    type: evidenceType,
+                    name: evidenceName.trimmingCharacters(in: .whitespaces),
+                    description: trimmedDesc.isEmpty ? nil : trimmedDesc,
+                    url: trimmedURL.isEmpty ? nil : trimmedURL
+                )
+                await MainActor.run {
+                    submitting = false
+                    onResult("Evidence added")
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    submitting = false
+                    errorMsg = "Couldn't add evidence: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+}
+
+// MARK: - OpenDisputeSheet
+//
+// Inline composer that posts to `freightClaims.fileDispute`. Replaces the
+// prior `MeAction.fire("claims.open-dispute")` stub. The dispute surface is
+// distinct from the claim itself — disputes are mediator-routed; claims are
+// damage / loss / shortage / delay records.
+private struct OpenDisputeSheet: View {
+    let claim: ShipperFreightClaimsAPI.ClaimRow
+    let onResult: (String) -> Void
+
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var disputeType: String = "billing_error"
+    @State private var invoiceNumber: String = ""
+    @State private var amountText: String = ""
+    @State private var description: String = ""
+    @State private var submitting: Bool = false
+    @State private var errorMsg: String? = nil
+
+    private let disputeTypes: [(String, String)] = [
+        ("billing_error", "Billing error"),
+        ("duplicate_charge", "Duplicate charge"),
+        ("rate_disagreement", "Rate disagreement"),
+        ("damage_claim_dispute", "Damage claim dispute"),
+        ("delivery_issue", "Delivery issue"),
+        ("contract_violation", "Contract violation"),
+        ("other", "Other")
+    ]
+
+    private var amount: Double? {
+        Double(amountText.trimmingCharacters(in: .whitespaces))
+    }
+
+    private var canSubmit: Bool {
+        !invoiceNumber.trimmingCharacters(in: .whitespaces).isEmpty &&
+        (amount ?? 0) > 0 &&
+        description.trimmingCharacters(in: .whitespaces).count >= 10
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    headerCard
+                    section("DISPUTE") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("TYPE")
+                                .font(.system(size: 9, weight: .heavy)).tracking(0.7)
+                                .foregroundStyle(palette.textTertiary)
+                            Picker("Type", selection: $disputeType) {
+                                ForEach(disputeTypes, id: \.0) { d in
+                                    Text(d.1).tag(d.0)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                        }
+                        labeledField("Invoice number", text: $invoiceNumber)
+                        labeledField("Amount (USD)", text: $amountText, keyboard: .decimalPad)
+                    }
+                    section("DESCRIPTION") {
+                        Text("MIN 10 CHARS")
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.7)
+                            .foregroundStyle(palette.textTertiary)
+                        TextEditor(text: $description)
+                            .frame(minHeight: 110)
+                            .padding(8)
+                            .background(palette.bgCardSoft)
+                            .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                    }
+                    if let err = errorMsg {
+                        Text(err)
+                            .font(EType.caption.weight(.semibold))
+                            .foregroundStyle(Brand.danger)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Brand.danger.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    submit
+                    Color.clear.frame(height: 24)
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 10)
+            }
+            .background(palette.bgPrimary.ignoresSafeArea())
+            .navigationTitle("Open dispute")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private var headerCard: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("CLAIM \(claim.claimNumber)")
+                .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                .foregroundStyle(LinearGradient.diagonal)
+            Text("File a formal dispute")
+                .font(EType.body.weight(.bold))
+                .foregroundStyle(palette.textPrimary)
+            Text("Disputes route to a mediator. Posts to freightClaims.fileDispute and creates a DSP-prefixed file you can track from the Disputes board.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func section<Inner: View>(_ title: String, @ViewBuilder content: () -> Inner) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                .foregroundStyle(LinearGradient.diagonal)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    private func labeledField(_ label: String, text: Binding<String>, keyboard: UIKeyboardType = .default) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label.uppercased())
+                .font(.system(size: 9, weight: .heavy)).tracking(0.7)
+                .foregroundStyle(palette.textTertiary)
+            TextField(label, text: text)
+                .keyboardType(keyboard)
+                .autocorrectionDisabled()
+                .textFieldStyle(.roundedBorder)
+        }
+    }
+
+    private var submit: some View {
+        Button {
+            doSubmit()
+        } label: {
+            HStack {
+                if submitting { ProgressView().tint(.white) }
+                else { Image(systemName: "person.2.wave.2.fill") }
+                Text(submitting ? "Filing…" : "File dispute")
+                    .font(EType.body.weight(.heavy))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .foregroundStyle(.white)
+            .background(canSubmit && !submitting
+                        ? AnyShapeStyle(LinearGradient.diagonal)
+                        : AnyShapeStyle(Brand.neutral))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(!canSubmit || submitting)
+    }
+
+    private func doSubmit() {
+        guard let amt = amount, amt > 0 else { return }
+        submitting = true
+        errorMsg = nil
+        Task {
+            do {
+                let resp = try await EusoTripAPI.shared.shipperFreightClaims.fileDispute(
+                    type: disputeType,
+                    invoiceNumber: invoiceNumber.trimmingCharacters(in: .whitespaces),
+                    amount: amt,
+                    description: description.trimmingCharacters(in: .whitespaces),
+                    loadId: nil,
+                    carrierId: nil
+                )
+                await MainActor.run {
+                    submitting = false
+                    onResult("Dispute \(resp.disputeNumber) filed")
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    submitting = false
+                    errorMsg = "Couldn't file dispute: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
 }

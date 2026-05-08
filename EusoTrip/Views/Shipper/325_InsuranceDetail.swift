@@ -49,6 +49,7 @@ private struct InsuranceBody: View {
     @State private var scanInflight: Bool = false
     @State private var scanResult: COIScanResult? = nil
     @State private var scanError: String? = nil
+    @State private var presentedPDF: EusoPDFPresentation? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -97,6 +98,9 @@ private struct InsuranceBody: View {
             .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
+        .fullScreenCover(item: $presentedPDF) { p in
+            EusoPDFViewer(title: p.title, subtitle: p.subtitle, source: .url(p.url))
+        }
         .fileImporter(
             isPresented: $showCOIPicker,
             allowedContentTypes: [.pdf, .image],
@@ -281,7 +285,13 @@ private struct InsuranceBody: View {
     private func ctaRow(_ c: InsuranceCert) -> some View {
         if let pdf = c.pdfUrl, !pdf.isEmpty {
             return AnyView(Button {
-                if let u = URL(string: pdf) { UIApplication.shared.open(u) }
+                if let u = URL(string: pdf) {
+                    presentedPDF = EusoPDFPresentation(
+                        url: u,
+                        title: "Certificate of insurance",
+                        subtitle: c.carrier
+                    )
+                }
             } label: {
                 Text("Open COI PDF").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
                     .frame(maxWidth: .infinity).padding(.vertical, 12)

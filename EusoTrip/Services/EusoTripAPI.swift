@@ -16068,6 +16068,87 @@ struct ShipperFreightClaimsAPI {
             )
         )
     }
+
+    // MARK: Mutations
+
+    /// `freightClaims.addClaimEvidence` — attaches a metadata-only
+    /// evidence record to a filed claim. Server returns the evidence
+    /// id + a server-side upload URL the iOS layer can later POST
+    /// the binary blob to (see `addClaimEvidence` server signature).
+    struct EvidenceRecord: Decodable, Hashable {
+        let id: String
+        let claimId: String
+        let type: String
+        let name: String
+        let uploadUrl: String?
+        let uploadedAt: String?
+    }
+
+    func addClaimEvidence(
+        claimId: String,
+        type: String,
+        name: String,
+        description: String? = nil,
+        url: String? = nil
+    ) async throws -> EvidenceRecord {
+        struct Input: Encodable {
+            let claimId: String
+            let type: String
+            let name: String
+            let description: String?
+            let url: String?
+        }
+        return try await api.mutation(
+            "freightClaims.addClaimEvidence",
+            input: Input(
+                claimId: claimId,
+                type: type,
+                name: name,
+                description: description,
+                url: url
+            )
+        )
+    }
+
+    /// `freightClaims.fileDispute` — opens a formal dispute on a
+    /// claim or invoice. Different surface from a claim — disputes
+    /// are mediated via mediator user, claims are damage / loss /
+    /// shortage records.
+    struct FiledDispute: Decodable, Hashable {
+        let id: String
+        let disputeNumber: String
+        let status: String
+        let filedAt: String?
+    }
+
+    func fileDispute(
+        type: String,
+        invoiceNumber: String,
+        amount: Double,
+        description: String,
+        loadId: String? = nil,
+        carrierId: String? = nil
+    ) async throws -> FiledDispute {
+        struct Input: Encodable {
+            let type: String
+            let invoiceNumber: String
+            let amount: Double
+            let description: String
+            let loadId: String?
+            let carrierId: String?
+        }
+        return try await api.mutation(
+            "freightClaims.fileDispute",
+            input: Input(
+                type: type,
+                invoiceNumber: invoiceNumber,
+                amount: amount,
+                description: description,
+                loadId: loadId,
+                carrierId: carrierId
+            )
+        )
+    }
 }
 
 // MARK: - ShipperRatesAPI
