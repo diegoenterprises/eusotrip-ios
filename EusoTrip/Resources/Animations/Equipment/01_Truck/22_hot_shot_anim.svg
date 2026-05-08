@@ -1,0 +1,328 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600">
+  <style><![CDATA[
+    /* ========== CHASSIS BOB — the body floats on suspension ========== */
+    .chassis-bob   { animation: chassis-bob 0.5s ease-in-out infinite; }
+    @keyframes chassis-bob {
+      0%, 100% { transform: translateY(0); }
+      50%      { transform: translateY(-1.5px); }
+    }
+    .cab-sway      { animation: cab-sway 0.5s ease-in-out infinite -0.12s; }
+    @keyframes cab-sway {
+      0%, 100% { transform: translateY(0)    rotate(0deg); }
+      50%      { transform: translateY(-0.8px) rotate(-0.15deg); }
+    }
+    .mudflap       { transform-origin: 1075px 440px;
+                      animation: mudflap-flutter 0.42s ease-in-out infinite; }
+    @keyframes mudflap-flutter {
+      0%, 100% { transform: rotate(0deg)   translateX(0); }
+      50%      { transform: rotate(-4deg)  translateX(0.4px); }
+    }
+    .streak        { animation: streak-drift 1.2s linear infinite; opacity: 0; }
+    .streak.s2     { animation-delay: -0.4s; }
+    .streak.s3     { animation-delay: -0.8s; }
+    @keyframes streak-drift {
+      0%   { transform: translateX(0);    opacity: 0; }
+      15%  { opacity: 0.45; }
+      85%  { opacity: 0.45; }
+      100% { transform: translateX(180px); opacity: 0; }
+    }
+    .bow-air       { animation: bow-air-pulse 1.4s ease-in-out infinite;
+                      transform-origin: 180px 410px; }
+    @keyframes bow-air-pulse {
+      0%, 100% { transform: scale(1)   translateX(0);   opacity: 0.18; }
+      50%      { transform: scale(1.1) translateX(-3px); opacity: 0.32; }
+    }
+    .tire-dust     { animation: tire-dust 1.6s ease-out infinite; }
+    @keyframes tire-dust {
+      0%, 80%, 100% { opacity: 0; transform: translateX(0) scale(0.4); }
+      8%, 18%       { opacity: 0.45; transform: translateX(0) scale(0.4); }
+      35%           { opacity: 0;    transform: translateX(14px) scale(1); }
+    }
+
+    /* ========== ORIGINAL MOTION VOCAB ========== */
+    .sheen        { animation: sheen-sweep 5s ease-in-out infinite;
+                      transform-box: fill-box; }
+    @keyframes sheen-sweep {
+      0%   { transform: translateX(-220px); opacity: 0; }
+      30%  { opacity: 0.5; }
+      70%  { opacity: 0.5; }
+      100% { transform: translateX(220px); opacity: 0; }
+    }
+    .wordmark     { animation: wordmark-breath 6s ease-in-out infinite; }
+    @keyframes wordmark-breath {
+      0%, 100% { opacity: 0.14; }
+      50%      { opacity: 0.24; }
+    }
+    .badge-e      { transform-box: fill-box; transform-origin: center;
+                      animation: badge-pulse 3.2s ease-in-out infinite; }
+    @keyframes badge-pulse {
+      0%, 100% { transform: scale(1);    opacity: 0.85; }
+      50%      { transform: scale(1.06); opacity: 1; }
+    }
+    .headlight-glow { animation: headlight-pulse 4s ease-in-out infinite; }
+    @keyframes headlight-pulse {
+      0%, 100% { opacity: 0.85; }
+      50%      { opacity: 1; }
+    }
+    .airlines     { animation: airlines-vibrate 0.55s ease-in-out infinite;
+                      transform-box: fill-box; }
+    @keyframes airlines-vibrate {
+      0%, 100% { transform: translateY(0); }
+      50%      { transform: translateY(0.6px); }
+    }
+    .chevron      { animation: chevron-pulse 2.2s ease-in-out infinite; }
+    @keyframes chevron-pulse {
+      0%, 100% { opacity: 0.3; }
+      50%      { opacity: 0.65; }
+    }
+    .sky-shimmer  { animation: sky-drift 14s linear infinite;
+                      transform-box: fill-box; }
+    @keyframes sky-drift {
+      from { transform: translateX(-40px); opacity: 0.12; }
+      50%  { opacity: 0.22; }
+      to   { transform: translateX(40px); opacity: 0.12; }
+    }
+    .ground-line  { stroke-dasharray: 14 9;
+                      animation: ground-dash 1.6s linear infinite; }
+    @keyframes ground-dash {
+      from { stroke-dashoffset: 0; }
+      to   { stroke-dashoffset: -46; }
+    }
+    /* ========== BRAND LOCKUP ========== */
+    .brand-mark {
+      transform-box: fill-box; transform-origin: center;
+      animation: brand-pulse 3.6s ease-in-out infinite;
+    }
+    @keyframes brand-pulse {
+      0%, 100% { transform: scale(1);    opacity: 0.92; }
+      50%      { transform: scale(1.05); opacity: 1; }
+    }
+    .brand-word { animation: brand-word-breath 6s ease-in-out infinite; }
+    @keyframes brand-word-breath {
+      0%, 100% { opacity: 0.78; }
+      50%      { opacity: 1; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .chassis-bob, .cab-sway, .mudflap, .streak, .bow-air, .tire-dust,
+      .sheen, .wordmark, .badge-e, .headlight-glow, .airlines, .chevron,
+      .sky-shimmer, .ground-line, .brand-mark, .brand-word { animation: none !important; }
+    }
+  ]]></style>
+
+  <!-- 22 · Hot Shot · Idle silhouette · TRUCK / LBS
+       Medium-duty pickup (3500/4500/5500) pulling a gooseneck flatbed.
+       Smaller scale than Class-8 — different vehicle class entirely.
+       Used for: expedited freight, smaller loads, oilfield. -->
+  <defs>
+    <linearGradient id="brandIridescent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1473FF"/>
+      <stop offset="50%" stop-color="#6E4DFF"/>
+      <stop offset="100%" stop-color="#BE01FF"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#EEF1FA"/><stop offset="55%" stop-color="#F5EEFC"/><stop offset="100%" stop-color="#EFF8FA"/></linearGradient>
+    <linearGradient id="pickup" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#2B85FF"/><stop offset="55%" stop-color="#6E4DFF"/><stop offset="100%" stop-color="#A726E8"/></linearGradient>
+    <linearGradient id="pickupRoof" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.55"/><stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient>
+    <linearGradient id="windowGlass" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#BFD3FF"/><stop offset="100%" stop-color="#7E9DDB"/></linearGradient>
+    <linearGradient id="bedDeck" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#6A707A"/><stop offset="50%" stop-color="#4A4F58"/><stop offset="100%" stop-color="#3A3F4A"/></linearGradient>
+    <radialGradient id="rim" cx="0.5" cy="0.5" r="0.5"><stop offset="0%" stop-color="#5A606D"/><stop offset="80%" stop-color="#3A3F4A"/><stop offset="100%" stop-color="#1F2330"/></radialGradient>
+    <filter id="rigShadow" x="-10%" y="-10%" width="120%" height="130%"><feGaussianBlur in="SourceAlpha" stdDeviation="6"/><feOffset dx="0" dy="4" result="offsetBlur"/><feComponentTransfer><feFuncA type="linear" slope="0.18"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      <linearGradient id="bowHazeGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.75"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="bowHaze" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.75"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="dustCloud" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#C8B89A" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#C8B89A" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="softBlur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+  </defs>
+  <g class="chassis-bob">
+
+  <rect width="1200" height="600" fill="url(#sky)"/>
+  <rect x="0" y="380" width="1200" height="70" fill="#FFFFFF" opacity="0.18"/>
+  <line x1="60" y1="475" x2="1140" y2="475" stroke="#9B7FD9" stroke-width="4" stroke-dasharray="14 9" stroke-linecap="round" opacity="0.55"/>
+  <ellipse cx="640" cy="486" rx="430" ry="6" fill="#1A1F2E" opacity="0.13"/>
+
+  <!-- ========== MEDIUM-DUTY PICKUP TRUCK (smaller scale than Class-8) ========== -->
+  <g filter="url(#rigShadow)">
+    <!-- Cab — crew cab style (4 doors visible in profile via window proportions) -->
+    <path d="M 250 360 L 250 460 L 460 460 L 460 350 Q 460 340 450 340 L 260 340 Q 250 340 250 350 Z" fill="url(#pickup)"/>
+    <!-- Pickup hood (sloped front) -->
+    <path d="M 460 350 L 460 460 L 540 460 L 540 380 Q 540 370 530 370 L 470 370 Q 460 370 460 380 Z" fill="url(#pickup)"/>
+    <!-- Roof highlight -->
+    <rect x="255" y="342" width="200" height="5" rx="2" fill="url(#pickupRoof)"/>
+    <!-- Front windshield (sloped) -->
+    <path d="M 462 352 L 470 372 L 528 372 L 528 352 Z" fill="url(#windowGlass)" opacity="0.92"/>
+    <!-- Crew cab side windows (double window — front and rear seat) -->
+    <rect x="265" y="358" width="80" height="40" rx="3" fill="url(#windowGlass)" opacity="0.85"/>
+    <rect x="350" y="358" width="80" height="40" rx="3" fill="url(#windowGlass)" opacity="0.85"/>
+    <line x1="345" y1="358" x2="345" y2="398" stroke="#0A1F3F" stroke-width="1.5" opacity="0.4"/>
+    <!-- Door handles -->
+    <rect x="320" y="412" width="10" height="3" rx="1" fill="#1A1F2E"/>
+    <rect x="405" y="412" width="10" height="3" rx="1" fill="#1A1F2E"/>
+    <!-- Headlight -->
+    <ellipse cx="535" cy="395" rx="6" ry="5" fill="#FFE680"/>
+    <ellipse cx="535" cy="395" rx="3" ry="2.5" fill="#FFFFFF"/>
+    <!-- Front grille -->
+    <rect x="528" y="405" width="14" height="35" rx="2" fill="#0A1F3F" opacity="0.85"/>
+    <g stroke="#3A3F4A" stroke-width="1"><line x1="530" y1="412" x2="540" y2="412"/><line x1="530" y1="420" x2="540" y2="420"/><line x1="530" y1="428" x2="540" y2="428"/></g>
+    <!-- Front bumper -->
+    <rect x="525" y="442" width="20" height="14" rx="2" fill="#1A1F2E"/>
+    <!-- Side mirror (small, more pickup-style) -->
+    <rect x="246" y="358" width="6" height="22" rx="1" fill="#1A1F2E"/>
+    <line x1="252" y1="365" x2="262" y2="362" stroke="#1A1F2E" stroke-width="2"/>
+    <!-- Pickup bed (the rear cargo bed of the truck itself, not the trailer) -->
+    <!-- Note: in hot-shot config, the bed contains the gooseneck hitch -->
+    <rect x="120" y="395" width="130" height="65" rx="3" fill="#3A3F4A"/>
+    <rect x="120" y="395" width="130" height="3" fill="#FFFFFF" opacity="0.4"/>
+    <!-- Tailgate -->
+    <rect x="116" y="395" width="6" height="65" fill="#1A1F2E"/>
+    <!-- Bed plank lines -->
+    <g stroke="#1A1F2E" stroke-width="0.6" opacity="0.5">
+      <line x1="125" y1="408" x2="245" y2="408"/>
+      <line x1="125" y1="420" x2="245" y2="420"/>
+      <line x1="125" y1="432" x2="245" y2="432"/>
+    </g>
+    <!-- Gooseneck hitch ball mount in bed -->
+    <circle cx="195" cy="395" r="6" fill="#1A1F2E"/>
+    <circle cx="195" cy="392" r="3" fill="#5A606D"/>
+    <!-- Pickup brand badge -->
+    <circle cx="358" cy="425" r="7" fill="#FFFFFF" opacity="0.85"/>
+    <text x="358" y="429" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="8" fill="#5B3FBF">E</text>
+  </g>
+
+  <!-- ========== GOOSENECK FLATBED TRAILER ========== -->
+  <g filter="url(#rigShadow)">
+    <!-- Gooseneck section (rises up to hitch over pickup bed) -->
+    <path d="M 300 430 L 300 410 L 250 395 L 230 395 L 230 408 L 280 425 L 280 430 Z" fill="url(#bedDeck)"/>
+    <!-- Main flatbed deck -->
+    <rect x="300" y="410" width="780" height="50" rx="3" fill="url(#bedDeck)"/>
+    <rect x="300" y="410" width="780" height="3" fill="#FFFFFF" opacity="0.4"/>
+    <!-- Wood plank lines -->
+    <g stroke="#2A2F38" stroke-width="0.8" opacity="0.6">
+      <line x1="300" y1="423" x2="1080" y2="423"/>
+      <line x1="300" y1="435" x2="1080" y2="435"/>
+      <line x1="300" y1="447" x2="1080" y2="447"/>
+    </g>
+    <!-- Stake pockets along sides -->
+    <g fill="#0F1118">
+      <rect x="350" y="453" width="6" height="7"/><rect x="450" y="453" width="6" height="7"/>
+      <rect x="550" y="453" width="6" height="7"/><rect x="650" y="453" width="6" height="7"/>
+      <rect x="750" y="453" width="6" height="7"/><rect x="850" y="453" width="6" height="7"/>
+      <rect x="950" y="453" width="6" height="7"/><rect x="1050" y="453" width="6" height="7"/>
+    </g>
+    <!-- Bottom chassis -->
+    <rect x="300" y="460" width="780" height="6" rx="1" fill="#1A1F2E"/>
+    <!-- Tie-down rings -->
+    <g fill="#FFE680" opacity="0.85">
+      <circle cx="370" cy="416" r="3"/><circle cx="470" cy="416" r="3"/><circle cx="570" cy="416" r="3"/>
+      <circle cx="670" cy="416" r="3"/><circle cx="770" cy="416" r="3"/><circle cx="870" cy="416" r="3"/>
+      <circle cx="970" cy="416" r="3"/><circle cx="1050" cy="416" r="3"/>
+    </g>
+    <!-- "HOT SHOT" stencil on gooseneck side -->
+    <text x="700" y="450" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="11" fill="#FFFFFF" opacity="0.7" letter-spacing="3">EXPEDITED · 40' GOOSENECK</text>
+    <!-- DOT reflectors -->
+    <g><rect x="303" y="461" width="20" height="5" fill="#E5350D"/><rect x="323" y="461" width="20" height="5" fill="#FFFFFF"/>
+       <rect x="1010" y="461" width="20" height="5" fill="#FFFFFF"/><rect x="1030" y="461" width="20" height="5" fill="#E5350D"/><rect x="1050" y="461" width="20" height="5" fill="#FFFFFF"/></g>
+  </g>
+
+  <!-- Wheels — pickup has 4 visible wheels (dual rear), trailer has 4 -->
+  
+  </g>
+  <g id="wheelMed">
+    <circle cx="0" cy="0" r="26" fill="#1A1A1A"/>
+    <circle cx="0" cy="0" r="17" fill="url(#rim)"/>
+    <circle cx="0" cy="0" r="6" fill="#7A7F88"/>
+    <g stroke="#3A3F4A" stroke-width="2" stroke-linecap="round">
+      <line x1="0" y1="-15" x2="0" y2="-7"/><line x1="14" y1="-5" x2="7" y2="-2"/>
+      <line x1="9" y1="13" x2="5" y2="6"/><line x1="-9" y1="13" x2="-5" y2="6"/>
+      <line x1="-14" y1="-5" x2="-7" y2="-2"/>
+    </g>
+    <ellipse cx="-4" cy="-9" rx="4" ry="2" fill="#FFFFFF" opacity="0.35"/>
+  </g>
+  <!-- Pickup front wheel -->
+  <g transform="translate(495 460)">
+    <g><use href="#wheelMed"/><animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.6s" repeatCount="indefinite"/></g>
+  </g>
+  <!-- Pickup rear wheel (dual rear axle) -->
+  <g transform="translate(180 460)">
+    <g><use href="#wheelMed"/><animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.6s" repeatCount="indefinite"/></g>
+  </g>
+  <!-- Trailer wheels -->
+  <g transform="translate(940 460)">
+    <g><use href="#wheelMed"/><animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.6s" repeatCount="indefinite"/></g>
+  </g>
+  <g transform="translate(1010 460)">
+    <g><use href="#wheelMed"/><animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.6s" repeatCount="indefinite"/></g>
+  </g>
+
+  <g><rect x="1052" y="58" width="100" height="32" rx="16" ry="16" fill="#1473FF"/>
+    <g transform="translate(1066 70)" fill="#FFFFFF"><rect x="0" y="2" width="8" height="6" rx="1"/><rect x="9" y="0" width="6" height="8" rx="1"/><circle cx="3" cy="10" r="1.5"/><circle cx="12" cy="10" r="1.5"/></g>
+    <text x="1115" y="79" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="14" letter-spacing="1.8" fill="#FFFFFF">TRUCK</text></g>
+  <g><rect x="1062" y="100" width="80" height="28" rx="14" ry="14" fill="#FFFFFF" stroke="#9B7FD9" stroke-width="1.5"/>
+    <text x="1102" y="119" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="13" letter-spacing="1.8" fill="#5B3FBF">LBS</text></g>
+  <g opacity="0.75">
+    <text x="60" y="78" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="13" letter-spacing="2" fill="#5B3FBF">HOT SHOT</text>
+    <line x1="60" y1="86" x2="160" y2="86" stroke="#9B7FD9" stroke-width="2" stroke-linecap="round"/>
+    <text x="60" y="106" font-family="Inter, system-ui, sans-serif" font-weight="500" font-size="11" letter-spacing="1" fill="#5B3FBF" opacity="0.7">EXPEDITED · 1-TON · GOOSENECK</text>
+  </g>
+  <g opacity="0.4"><path d="M 70 540 L 55 525 L 55 555 Z" fill="#9B7FD9"/></g>
+  <!-- ========== SPEED STREAKS ========== -->
+  <g stroke="#9B7FD9" stroke-width="2.5" stroke-linecap="round" opacity="0.5">
+    <line class="streak"    x1="1090" y1="445" x2="1145" y2="445"/>
+    <line class="streak s2" x1="1085" y1="455" x2="1150" y2="455"/>
+    <line class="streak s3" x1="1095" y1="468" x2="1145" y2="468"/>
+  </g>
+  <!-- ========== BOW AIR DISPLACEMENT ========== -->
+  <ellipse class="bow-air" cx="180" cy="410" rx="38" ry="55" fill="url(#bowHaze)"/>
+  <!-- ========== EXHAUST PUFFS ========== -->
+  <g filter="url(#softBlur)" opacity="0.5">
+    <circle cx="292" cy="200" r="6" fill="#C8CDD8">
+      <animate attributeName="cy" from="200" to="120" dur="2.6s" repeatCount="indefinite"/>
+      <animate attributeName="r"  from="6" to="14" dur="2.6s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;0.55;0.55;0" keyTimes="0;0.15;0.7;1" dur="2.6s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="294" cy="200" r="5" fill="#C8CDD8">
+      <animate attributeName="cy" from="200" to="120" dur="2.6s" begin="-0.9s" repeatCount="indefinite"/>
+      <animate attributeName="r"  from="5" to="12" dur="2.6s" begin="-0.9s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;0.55;0.55;0" keyTimes="0;0.15;0.7;1" dur="2.6s" begin="-0.9s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="290" cy="200" r="4" fill="#C8CDD8">
+      <animate attributeName="cy" from="200" to="120" dur="2.6s" begin="-1.7s" repeatCount="indefinite"/>
+      <animate attributeName="r"  from="4" to="10" dur="2.6s" begin="-1.7s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;0.55;0.55;0" keyTimes="0;0.15;0.7;1" dur="2.6s" begin="-1.7s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+  <!-- ========== TIRE CONTACT DUST ========== -->
+  <g filter="url(#softBlur)">
+    <ellipse class="tire-dust" cx="495.0" cy="492.0" rx="14" ry="5" fill="url(#dustCloud)"/>
+    <ellipse class="tire-dust" cx="180.0" cy="492.0" rx="14" ry="5" fill="url(#dustCloud)" style="animation-delay:-0.4s"/>
+    <ellipse class="tire-dust" cx="940.0" cy="492.0" rx="14" ry="5" fill="url(#dustCloud)" style="animation-delay:-0.7s"/>
+    <ellipse class="tire-dust" cx="1010.0" cy="492.0" rx="14" ry="5" fill="url(#dustCloud)" style="animation-delay:-1.1s"/>
+  </g>
+
+  <!-- ========== EUSOTRIP BRAND LOCKUP ========== -->
+  <g class="brand-lockup" filter="url(#rigShadow)" transform="translate(490 26)">
+    <!-- Iridescent E mark -->
+    <g class="brand-mark">
+      <circle cx="19" cy="19" r="18" fill="url(#brandIridescent)"/>
+      <circle cx="19" cy="19" r="18" fill="none" stroke="#FFFFFF" stroke-width="1.5" opacity="0.4"/>
+      <text x="19" y="26" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="20" fill="#FFFFFF" letter-spacing="-1">E</text>
+    </g>
+    <!-- Wordmark -->
+    <text class="brand-word" x="48" y="22" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="18" letter-spacing="2.5" fill="#5B3FBF">EUSOTRIP</text>
+    <!-- Tagline -->
+    <text x="48" y="36" font-family="Inter, system-ui, sans-serif"
+          font-weight="500" font-size="8" letter-spacing="3" fill="#9B7FD9" opacity="0.55">BY EUSORONE</text>
+  </g>
+</svg>

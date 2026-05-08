@@ -1,0 +1,289 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600">
+  <style><![CDATA[
+    /* ========== RAIL JOINT CLACK-CLACK ========== */
+    .rail-clack    { animation: rail-clack 0.6s ease-in-out infinite; }
+    @keyframes rail-clack {
+      0%,  50%, 100% { transform: translateY(0); }
+      25%            { transform: translateY(-1px); }
+      75%            { transform: translateY(-0.6px); }
+    }
+    .rail-yaw      { transform-origin: 600px 470px;
+                      animation: rail-yaw 2.8s ease-in-out infinite; }
+    @keyframes rail-yaw {
+      0%, 100% { transform: rotate(0deg); }
+      50%      { transform: rotate(-0.35deg); }
+    }
+    .container-settle { animation: container-settle 0.6s ease-in-out infinite -0.08s; }
+    @keyframes container-settle {
+      0%, 50%, 100% { transform: translateY(0); }
+      25%           { transform: translateY(-0.6px); }
+      75%           { transform: translateY(-0.3px); }
+    }
+    .spray         { animation: spray-kick 0.7s ease-out infinite; }
+    .spray.b       { animation-delay: -0.3s; }
+    .spray.c       { animation-delay: -0.5s; }
+    @keyframes spray-kick {
+      0%   { opacity: 0;    transform: translate(0,0)    scale(0.4); }
+      20%  { opacity: 0.55; }
+      100% { opacity: 0;    transform: translate(28px,-6px) scale(1.1); }
+    }
+
+    /* ========== ORIGINAL VOCAB ========== */
+    .sheen { animation: sheen-sweep 5s ease-in-out infinite; transform-box: fill-box; }
+    @keyframes sheen-sweep {
+      0%   { transform: translateX(-300px); opacity: 0; }
+      30%  { opacity: 0.5; }
+      70%  { opacity: 0.5; }
+      100% { transform: translateX(300px); opacity: 0; }
+    }
+    .wordmark { animation: wordmark-breath 6s ease-in-out infinite; }
+    @keyframes wordmark-breath {
+      0%, 100% { opacity: 0.85; }
+      50%      { opacity: 1; }
+    }
+    .twist-lock { animation: twist-pulse 2.4s ease-in-out infinite; }
+    @keyframes twist-pulse {
+      0%, 100% { opacity: 0.85; }
+      50%      { opacity: 1; }
+    }
+    .reporting { animation: reporting-fade 7s ease-in-out infinite; }
+    @keyframes reporting-fade {
+      0%, 100% { opacity: 0.78; }
+      50%      { opacity: 0.95; }
+    }
+    .iso-code { animation: iso-fade 5s ease-in-out infinite; }
+    @keyframes iso-fade {
+      0%, 100% { opacity: 0.7; }
+      50%      { opacity: 0.9; }
+    }
+    .chevron { animation: chevron-pulse 2.2s ease-in-out infinite; }
+    @keyframes chevron-pulse {
+      0%, 100% { opacity: 0.3; }
+      50%      { opacity: 0.65; }
+    }
+    .sky-shimmer { animation: sky-drift 14s linear infinite; transform-box: fill-box; }
+    @keyframes sky-drift {
+      from { transform: translateX(-40px); opacity: 0.12; }
+      50%  { opacity: 0.22; }
+      to   { transform: translateX(40px); opacity: 0.12; }
+    }
+    .rail-line { stroke-dasharray: 40 0;
+                  animation: rail-scroll 1.2s linear infinite; }
+    @keyframes rail-scroll {
+      from { stroke-dashoffset: 0; }
+      to   { stroke-dashoffset: -100; }
+    }
+    .ballast { animation: ballast-drift 3s ease-in-out infinite; transform-box: fill-box; }
+    @keyframes ballast-drift {
+      0%, 100% { transform: translateX(0); opacity: 0.25; }
+      50%      { transform: translateX(-8px); opacity: 0.32; }
+    }
+    /* ========== BRAND LOCKUP ========== */
+    .brand-mark {
+      transform-box: fill-box; transform-origin: center;
+      animation: brand-pulse 3.6s ease-in-out infinite;
+    }
+    @keyframes brand-pulse {
+      0%, 100% { transform: scale(1);    opacity: 0.92; }
+      50%      { transform: scale(1.05); opacity: 1; }
+    }
+    .brand-word { animation: brand-word-breath 6s ease-in-out infinite; }
+    @keyframes brand-word-breath {
+      0%, 100% { opacity: 0.78; }
+      50%      { opacity: 1; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .rail-clack, .rail-yaw, .container-settle, .spray,
+      .sheen, .wordmark, .twist-lock, .reporting, .iso-code,
+      .chevron, .sky-shimmer, .rail-line, .ballast, .brand-mark, .brand-word { animation: none !important; }
+    }
+  ]]></style>
+
+  <!-- 28 · Rail · Refrigerated Boxcar · RAIL / PLT
+       Insulated boxcar with end-mounted refrigeration unit. Cold chain over rail. -->
+  <defs>
+    <linearGradient id="brandIridescent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1473FF"/>
+      <stop offset="50%" stop-color="#6E4DFF"/>
+      <stop offset="100%" stop-color="#BE01FF"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#EEF1FA"/><stop offset="55%" stop-color="#F5EEFC"/><stop offset="100%" stop-color="#EFF8FA"/></linearGradient>
+    <linearGradient id="reeferBox" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F5FBFD"/>
+      <stop offset="65%" stop-color="#E6F4FB"/>
+      <stop offset="100%" stop-color="#A8C8D8"/>
+    </linearGradient>
+    <linearGradient id="reeferBoxSheen" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="40%" stop-color="#FFFFFF" stop-opacity="0.45"/><stop offset="60%" stop-color="#FFFFFF" stop-opacity="0.45"/><stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient>
+    <linearGradient id="reeferUnit" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3DD4D4"/>
+      <stop offset="100%" stop-color="#0AC2C2"/>
+    </linearGradient>
+    <linearGradient id="tie" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#7A5A40"/><stop offset="100%" stop-color="#3F2F22"/></linearGradient>
+    <radialGradient id="rim" cx="0.5" cy="0.5" r="0.5"><stop offset="0%" stop-color="#5A606D"/><stop offset="80%" stop-color="#3A3F4A"/><stop offset="100%" stop-color="#1F2330"/></radialGradient>
+    <filter id="rigShadow" x="-10%" y="-10%" width="120%" height="130%"><feGaussianBlur in="SourceAlpha" stdDeviation="6"/><feOffset dx="0" dy="4" result="offsetBlur"/><feComponentTransfer><feFuncA type="linear" slope="0.18"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      <radialGradient id="dustCloud" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#C8B89A" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#C8B89A" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="softBlur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+  </defs>
+  <g class="rail-yaw">
+    <g class="rail-clack">
+
+  <rect width="1200" height="600" fill="url(#sky)"/>
+  <rect x="0" y="380" width="1200" height="70" fill="#FFFFFF" opacity="0.18"/>
+  <rect x="40" y="510" width="1120" height="20" fill="#9B7FD9" opacity="0.18"/>
+  <g fill="#5B3FBF" opacity="0.25"><circle cx="80" cy="518" r="1.5"/><circle cx="160" cy="522" r="1.5"/><circle cx="240" cy="516" r="1.5"/><circle cx="320" cy="524" r="1.5"/><circle cx="400" cy="518" r="1.5"/><circle cx="480" cy="522" r="1.5"/><circle cx="560" cy="516" r="1.5"/><circle cx="640" cy="524" r="1.5"/><circle cx="720" cy="518" r="1.5"/><circle cx="800" cy="522" r="1.5"/><circle cx="880" cy="516" r="1.5"/><circle cx="960" cy="524" r="1.5"/><circle cx="1040" cy="518" r="1.5"/><circle cx="1120" cy="522" r="1.5"/></g>
+  <g><rect x="80" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="140" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="200" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="260" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="320" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="380" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="440" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="500" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="560" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="620" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="680" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="740" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="800" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="860" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="920" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="980" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="1040" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="1100" y="498" width="40" height="14" rx="1" fill="url(#tie)"/></g>
+  <rect x="40" y="492" width="1120" height="6" rx="1" fill="#7A7F88"/><rect x="40" y="492" width="1120" height="2" fill="#C0C5CD"/>
+  <ellipse cx="600" cy="488" rx="490" ry="6" fill="#1A1F2E" opacity="0.13"/>
+
+  <!-- ========== REEFER UNIT (left end of car — the refrigeration nose) ========== -->
+  <g filter="url(#rigShadow)">
+    <rect x="120" y="220" width="100" height="245" rx="5" fill="url(#reeferUnit)"/>
+    <rect x="120" y="220" width="100" height="4" rx="2" fill="#FFFFFF" opacity="0.5"/>
+    <!-- Vent grille -->
+    <g stroke="#FFFFFF" stroke-width="1.5" opacity="0.7">
+      <line x1="135" y1="245" x2="205" y2="245"/>
+      <line x1="135" y1="258" x2="205" y2="258"/>
+      <line x1="135" y1="271" x2="205" y2="271"/>
+      <line x1="135" y1="284" x2="205" y2="284"/>
+      <line x1="135" y1="297" x2="205" y2="297"/>
+    </g>
+    <!-- Snowflake -->
+    <g transform="translate(170 332)" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round" fill="none" opacity="0.9">
+      <line x1="0" y1="-10" x2="0" y2="10"/>
+      <line x1="-10" y1="0" x2="10" y2="0"/>
+      <line x1="-7" y1="-7" x2="7" y2="7"/>
+      <line x1="-7" y1="7" x2="7" y2="-7"/>
+    </g>
+    <!-- Temperature display -->
+    <rect x="135" y="365" width="70" height="36" rx="4" fill="#FFFFFF" stroke="#0AC2C2" stroke-width="1.5"/>
+    <text x="170" y="388" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="18" fill="#0AC2C2">7°F</text>
+    <text x="170" y="397" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="6" fill="#5B3FBF" letter-spacing="1">SETPOINT</text>
+    <!-- Fuel tank indicator -->
+    <rect x="135" y="415" width="70" height="14" rx="2" fill="#1A1F2E"/>
+    <rect x="138" y="418" width="55" height="8" rx="1" fill="#0AC2C2" opacity="0.6"/>
+    <text x="170" y="425" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="6" fill="#FFFFFF">FUEL · 80%</text>
+  </g>
+
+  <!-- ========== INSULATED BOXCAR BODY ========== -->
+  <g filter="url(#rigShadow)">
+    <rect x="220" y="220" width="860" height="245" rx="6" fill="url(#reeferBox)"/>
+    <rect x="220" y="220" width="860" height="6" rx="3" fill="#FFFFFF" opacity="0.55"/>
+    <rect x="222" y="222" width="856" height="241" rx="5" fill="url(#reeferBoxSheen)" opacity="0.4"/>
+    <!-- Insulation seams (less than dry boxcar) -->
+    <g stroke="#A8C8D8" stroke-width="1" opacity="0.6">
+      <line x1="370" y1="228" x2="370" y2="460"/><line x1="500" y1="228" x2="500" y2="460"/>
+      <line x1="630" y1="228" x2="630" y2="460"/><line x1="780" y1="228" x2="780" y2="460"/>
+      <line x1="920" y1="228" x2="920" y2="460"/>
+    </g>
+    <!-- Sliding door -->
+    <rect x="500" y="240" width="220" height="205" rx="2" fill="#BFE0EE"/>
+    <rect x="500" y="240" width="220" height="3" fill="#FFFFFF" opacity="0.4"/>
+    <rect x="470" y="236" width="280" height="6" fill="#1A1F2E"/>
+    <rect x="470" y="445" width="280" height="6" fill="#1A1F2E"/>
+    <rect x="695" y="320" width="6" height="50" rx="1" fill="#1A1F2E"/>
+    <rect x="688" y="340" width="20" height="8" rx="1" fill="#3A3F4A"/>
+    <!-- Snowflake watermark on door -->
+    <g transform="translate(610 342)" stroke="#0AC2C2" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.3">
+      <line x1="0" y1="-26" x2="0" y2="26"/><line x1="-26" y1="0" x2="26" y2="0"/>
+      <line x1="-18" y1="-18" x2="18" y2="18"/><line x1="-18" y1="18" x2="18" y2="-18"/>
+    </g>
+    <!-- Reporting marks -->
+    <text x="290" y="295" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="20" fill="#5B3FBF" opacity="0.9" letter-spacing="2">EUSO REEFER</text>
+    <text x="290" y="325" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="28" fill="#5B3FBF" opacity="0.9" letter-spacing="3">552 117</text>
+    <!-- Drifting snow particles -->
+    <g fill="#0AC2C2" opacity="0.4">
+      <circle cx="320" cy="395" r="2.5"/><circle cx="365" cy="425" r="2"/><circle cx="395" cy="380" r="2.5"/>
+      <circle cx="800" cy="280" r="2.5"/><circle cx="830" cy="320" r="2"/><circle cx="870" cy="360" r="2.5"/>
+      <circle cx="900" cy="420" r="2"/><circle cx="950" cy="395" r="2.5"/>
+    </g>
+    <!-- 53' label -->
+    <text x="900" y="295" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="32" fill="#5B3FBF" opacity="0.18" letter-spacing="2">53'</text>
+  </g>
+
+  <!-- Couplers + bogies -->
+  <rect x="90" y="450" width="22" height="14" rx="2" fill="#3A3F4A"/><rect x="82" y="453" width="14" height="8" rx="1" fill="#1A1F2E"/>
+  <rect x="1088" y="450" width="22" height="14" rx="2" fill="#3A3F4A"/><rect x="1104" y="453" width="14" height="8" rx="1" fill="#1A1F2E"/>
+  
+    </g>
+  </g>
+  <g filter="url(#rigShadow)"><rect x="160" y="468" width="100" height="22" rx="3" fill="#3A3F4A"/><rect x="160" y="468" width="100" height="3" fill="#FFFFFF" opacity="0.35"/></g>
+  <g transform="translate(180 498)">
+    <g>
+      <circle cx="0" cy="0" r="22" fill="#1A1A1A"/>
+      <circle cx="0" cy="0" r="14" fill="url(#rim)"/>
+      <circle cx="0" cy="0" r="5" fill="#7A7F88"/>
+      <ellipse cx="-4" cy="-7" rx="4" ry="2" fill="#FFFFFF" opacity="0.35"/>
+      <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.4s" repeatCount="indefinite"/>
+    </g>
+  </g>
+  <g transform="translate(240 498)">
+    <g>
+      <circle cx="0" cy="0" r="22" fill="#1A1A1A"/>
+      <circle cx="0" cy="0" r="14" fill="url(#rim)"/>
+      <circle cx="0" cy="0" r="5" fill="#7A7F88"/>
+      <ellipse cx="-4" cy="-7" rx="4" ry="2" fill="#FFFFFF" opacity="0.35"/>
+      <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.4s" repeatCount="indefinite"/>
+    </g>
+  </g>
+  <g filter="url(#rigShadow)"><rect x="940" y="468" width="100" height="22" rx="3" fill="#3A3F4A"/><rect x="940" y="468" width="100" height="3" fill="#FFFFFF" opacity="0.35"/></g>
+  <g transform="translate(960 498)">
+    <g>
+      <circle cx="0" cy="0" r="22" fill="#1A1A1A"/>
+      <circle cx="0" cy="0" r="14" fill="url(#rim)"/>
+      <circle cx="0" cy="0" r="5" fill="#7A7F88"/>
+      <ellipse cx="-4" cy="-7" rx="4" ry="2" fill="#FFFFFF" opacity="0.35"/>
+      <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.4s" repeatCount="indefinite"/>
+    </g>
+  </g>
+  <g transform="translate(1020 498)">
+    <g>
+      <circle cx="0" cy="0" r="22" fill="#1A1A1A"/>
+      <circle cx="0" cy="0" r="14" fill="url(#rim)"/>
+      <circle cx="0" cy="0" r="5" fill="#7A7F88"/>
+      <ellipse cx="-4" cy="-7" rx="4" ry="2" fill="#FFFFFF" opacity="0.35"/>
+      <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.4s" repeatCount="indefinite"/>
+    </g>
+  </g>
+
+  <g><rect x="1052" y="58" width="100" height="32" rx="16" ry="16" fill="#3A3A3A"/>
+    <g transform="translate(1066 70)" fill="#FFFFFF"><rect x="0" y="2" width="14" height="6" rx="1"/><rect x="2" y="0" width="3" height="3"/><rect x="9" y="0" width="3" height="3"/><circle cx="3" cy="9" r="1.2"/><circle cx="11" cy="9" r="1.2"/></g>
+    <text x="1115" y="79" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="14" letter-spacing="1.8" fill="#FFFFFF">RAIL</text></g>
+  <g><rect x="1062" y="100" width="80" height="28" rx="14" ry="14" fill="#FFFFFF" stroke="#9B7FD9" stroke-width="1.5"/>
+    <text x="1102" y="119" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="13" letter-spacing="1.8" fill="#5B3FBF">PLT</text></g>
+  <g opacity="0.75">
+    <text x="60" y="78" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="13" letter-spacing="2" fill="#5B3FBF">RAIL · REEFER BOXCAR</text>
+    <line x1="60" y1="86" x2="220" y2="86" stroke="#9B7FD9" stroke-width="2" stroke-linecap="round"/>
+    <text x="60" y="106" font-family="Inter, system-ui, sans-serif" font-weight="500" font-size="11" letter-spacing="1" fill="#0AC2C2" opacity="0.95">INSULATED · COLD CHAIN · MECH REEFER</text>
+  </g>
+  <g opacity="0.4"><path d="M 70 540 L 55 525 L 55 555 Z" fill="#9B7FD9"/></g>
+  <!-- ========== BALLAST SPRAY behind trailing bogie ========== -->
+  <g filter="url(#softBlur)">
+    <ellipse class="spray"   cx="1030" cy="500" rx="6" ry="3" fill="url(#dustCloud)"/>
+    <ellipse class="spray b" cx="1030" cy="500" rx="5" ry="2.5" fill="url(#dustCloud)"/>
+    <ellipse class="spray c" cx="1030" cy="500" rx="4" ry="2" fill="url(#dustCloud)"/>
+  </g>
+
+  <!-- ========== EUSOTRIP BRAND LOCKUP ========== -->
+  <g class="brand-lockup" filter="url(#rigShadow)" transform="translate(490 26)">
+    <!-- Iridescent E mark -->
+    <g class="brand-mark">
+      <circle cx="19" cy="19" r="18" fill="url(#brandIridescent)"/>
+      <circle cx="19" cy="19" r="18" fill="none" stroke="#FFFFFF" stroke-width="1.5" opacity="0.4"/>
+      <text x="19" y="26" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="20" fill="#FFFFFF" letter-spacing="-1">E</text>
+    </g>
+    <!-- Wordmark -->
+    <text class="brand-word" x="48" y="22" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="18" letter-spacing="2.5" fill="#5B3FBF">EUSOTRIP</text>
+    <!-- Tagline -->
+    <text x="48" y="36" font-family="Inter, system-ui, sans-serif"
+          font-weight="500" font-size="8" letter-spacing="3" fill="#9B7FD9" opacity="0.55">BY EUSORONE</text>
+  </g>
+</svg>

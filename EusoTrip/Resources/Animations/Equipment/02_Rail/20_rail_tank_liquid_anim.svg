@@ -1,0 +1,350 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600">
+  <style><![CDATA[
+    /* ========== RAIL JOINT CLACK-CLACK ========== */
+    .rail-clack    { animation: rail-clack 0.6s ease-in-out infinite; }
+    @keyframes rail-clack {
+      0%,  50%, 100% { transform: translateY(0); }
+      25%            { transform: translateY(-1px); }
+      75%            { transform: translateY(-0.6px); }
+    }
+    .rail-yaw      { transform-origin: 600px 470px;
+                      animation: rail-yaw 2.8s ease-in-out infinite; }
+    @keyframes rail-yaw {
+      0%, 100% { transform: rotate(0deg); }
+      50%      { transform: rotate(-0.35deg); }
+    }
+    .container-settle { animation: container-settle 0.6s ease-in-out infinite -0.08s; }
+    @keyframes container-settle {
+      0%, 50%, 100% { transform: translateY(0); }
+      25%           { transform: translateY(-0.6px); }
+      75%           { transform: translateY(-0.3px); }
+    }
+    .spray         { animation: spray-kick 0.7s ease-out infinite; }
+    .spray.b       { animation-delay: -0.3s; }
+    .spray.c       { animation-delay: -0.5s; }
+    @keyframes spray-kick {
+      0%   { opacity: 0;    transform: translate(0,0)    scale(0.4); }
+      20%  { opacity: 0.55; }
+      100% { opacity: 0;    transform: translate(28px,-6px) scale(1.1); }
+    }
+
+    /* ========== ORIGINAL VOCAB ========== */
+    .sheen { animation: sheen-sweep 5s ease-in-out infinite; transform-box: fill-box; }
+    @keyframes sheen-sweep {
+      0%   { transform: translateX(-300px); opacity: 0; }
+      30%  { opacity: 0.5; }
+      70%  { opacity: 0.5; }
+      100% { transform: translateX(300px); opacity: 0; }
+    }
+    .wordmark { animation: wordmark-breath 6s ease-in-out infinite; }
+    @keyframes wordmark-breath {
+      0%, 100% { opacity: 0.85; }
+      50%      { opacity: 1; }
+    }
+    .twist-lock { animation: twist-pulse 2.4s ease-in-out infinite; }
+    @keyframes twist-pulse {
+      0%, 100% { opacity: 0.85; }
+      50%      { opacity: 1; }
+    }
+    .reporting { animation: reporting-fade 7s ease-in-out infinite; }
+    @keyframes reporting-fade {
+      0%, 100% { opacity: 0.78; }
+      50%      { opacity: 0.95; }
+    }
+    .iso-code { animation: iso-fade 5s ease-in-out infinite; }
+    @keyframes iso-fade {
+      0%, 100% { opacity: 0.7; }
+      50%      { opacity: 0.9; }
+    }
+    .chevron { animation: chevron-pulse 2.2s ease-in-out infinite; }
+    @keyframes chevron-pulse {
+      0%, 100% { opacity: 0.3; }
+      50%      { opacity: 0.65; }
+    }
+    .sky-shimmer { animation: sky-drift 14s linear infinite; transform-box: fill-box; }
+    @keyframes sky-drift {
+      from { transform: translateX(-40px); opacity: 0.12; }
+      50%  { opacity: 0.22; }
+      to   { transform: translateX(40px); opacity: 0.12; }
+    }
+    .rail-line { stroke-dasharray: 40 0;
+                  animation: rail-scroll 1.2s linear infinite; }
+    @keyframes rail-scroll {
+      from { stroke-dashoffset: 0; }
+      to   { stroke-dashoffset: -100; }
+    }
+    .ballast { animation: ballast-drift 3s ease-in-out infinite; transform-box: fill-box; }
+    @keyframes ballast-drift {
+      0%, 100% { transform: translateX(0); opacity: 0.25; }
+      50%      { transform: translateX(-8px); opacity: 0.32; }
+    }
+    /* ========== BRAND LOCKUP ========== */
+    .brand-mark {
+      transform-box: fill-box; transform-origin: center;
+      animation: brand-pulse 3.6s ease-in-out infinite;
+    }
+    @keyframes brand-pulse {
+      0%, 100% { transform: scale(1);    opacity: 0.92; }
+      50%      { transform: scale(1.05); opacity: 1; }
+    }
+    .brand-word { animation: brand-word-breath 6s ease-in-out infinite; }
+    @keyframes brand-word-breath {
+      0%, 100% { opacity: 0.78; }
+      50%      { opacity: 1; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .rail-clack, .rail-yaw, .container-settle, .spray,
+      .sheen, .wordmark, .twist-lock, .reporting, .iso-code,
+      .chevron, .sky-shimmer, .rail-line, .ballast, .brand-mark, .brand-word { animation: none !important; }
+    }
+  ]]></style>
+
+  <!-- 20 · Rail · General Purpose Tank Car (DOT-111 / UTLX) · Idle silhouette · RAIL / GAL
+       Non-pressure rail tank car for liquid bulk:
+       crude oil, ethanol, food-grade liquids, vegetable oil.
+       Single barrel with single dome (manway) on top center.
+       Bow direction implied LEFT. -->
+  <defs>
+    <linearGradient id="brandIridescent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1473FF"/>
+      <stop offset="50%" stop-color="#6E4DFF"/>
+      <stop offset="100%" stop-color="#BE01FF"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#EEF1FA"/><stop offset="55%" stop-color="#F5EEFC"/><stop offset="100%" stop-color="#EFF8FA"/></linearGradient>
+    <!-- Stainless / aluminum body — silver with subtle iridescent shift -->
+    <linearGradient id="liquidTank" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FAFBFD"/>
+      <stop offset="40%" stop-color="#E0E4EA"/>
+      <stop offset="100%" stop-color="#A8AEB8"/>
+    </linearGradient>
+    <linearGradient id="liquidSheen" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#BFD3FF" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="capLeft" cx="0.3" cy="0.4" r="0.7"><stop offset="0%" stop-color="#FFFFFF"/><stop offset="60%" stop-color="#D5DAE3"/><stop offset="100%" stop-color="#7A7F88"/></radialGradient>
+    <radialGradient id="capRight" cx="0.7" cy="0.4" r="0.7"><stop offset="0%" stop-color="#FFFFFF"/><stop offset="60%" stop-color="#D5DAE3"/><stop offset="100%" stop-color="#7A7F88"/></radialGradient>
+    <linearGradient id="tie" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#7A5A40"/><stop offset="100%" stop-color="#3F2F22"/></linearGradient>
+    <radialGradient id="rim" cx="0.5" cy="0.5" r="0.5"><stop offset="0%" stop-color="#5A606D"/><stop offset="80%" stop-color="#3A3F4A"/><stop offset="100%" stop-color="#1F2330"/></radialGradient>
+    <filter id="rigShadow" x="-10%" y="-10%" width="120%" height="130%"><feGaussianBlur in="SourceAlpha" stdDeviation="6"/><feOffset dx="0" dy="4" result="offsetBlur"/><feComponentTransfer><feFuncA type="linear" slope="0.18"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      <radialGradient id="dustCloud" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#C8B89A" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#C8B89A" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="softBlur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+  </defs>
+  <g class="rail-yaw">
+    <g class="rail-clack">
+
+  <rect width="1200" height="600" fill="url(#sky)"/>
+  <rect x="0" y="380" width="1200" height="70" fill="#FFFFFF" opacity="0.18"/>
+
+  <!-- ROADBED + TIES + RAILS -->
+  <rect x="40" y="510" width="1120" height="20" fill="#9B7FD9" opacity="0.18"/>
+  <g fill="#5B3FBF" opacity="0.25">
+    <circle cx="80" cy="518" r="1.5"/><circle cx="160" cy="522" r="1.5"/><circle cx="240" cy="516" r="1.5"/><circle cx="320" cy="524" r="1.5"/>
+    <circle cx="400" cy="518" r="1.5"/><circle cx="480" cy="522" r="1.5"/><circle cx="560" cy="516" r="1.5"/><circle cx="640" cy="524" r="1.5"/>
+    <circle cx="720" cy="518" r="1.5"/><circle cx="800" cy="522" r="1.5"/><circle cx="880" cy="516" r="1.5"/><circle cx="960" cy="524" r="1.5"/>
+    <circle cx="1040" cy="518" r="1.5"/><circle cx="1120" cy="522" r="1.5"/>
+  </g>
+  <g>
+    <rect x="80" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="140" y="498" width="40" height="14" rx="1" fill="url(#tie)"/>
+    <rect x="200" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="260" y="498" width="40" height="14" rx="1" fill="url(#tie)"/>
+    <rect x="320" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="380" y="498" width="40" height="14" rx="1" fill="url(#tie)"/>
+    <rect x="440" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="500" y="498" width="40" height="14" rx="1" fill="url(#tie)"/>
+    <rect x="560" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="620" y="498" width="40" height="14" rx="1" fill="url(#tie)"/>
+    <rect x="680" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="740" y="498" width="40" height="14" rx="1" fill="url(#tie)"/>
+    <rect x="800" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="860" y="498" width="40" height="14" rx="1" fill="url(#tie)"/>
+    <rect x="920" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="980" y="498" width="40" height="14" rx="1" fill="url(#tie)"/>
+    <rect x="1040" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="1100" y="498" width="40" height="14" rx="1" fill="url(#tie)"/>
+  </g>
+  <rect x="40" y="492" width="1120" height="6" rx="1" fill="#7A7F88"/>
+  <rect x="40" y="492" width="1120" height="2" fill="#C0C5CD"/>
+  <ellipse cx="600" cy="488" rx="490" ry="6" fill="#1A1F2E" opacity="0.13"/>
+
+  <!-- ========== TANK BARREL — long stainless cylinder ========== -->
+  <g filter="url(#rigShadow)">
+    <!-- Tank body -->
+    <path d="M 175 295 Q 175 280 195 280 L 1005 280 Q 1025 280 1025 295 L 1025 445 Q 1025 460 1005 460 L 195 460 Q 175 460 175 445 Z"
+          fill="url(#liquidTank)"/>
+    <!-- Hemispherical heads -->
+    <path d="M 175 295 Q 110 300 110 370 Q 110 440 175 445 L 175 295 Z" fill="url(#capLeft)"/>
+    <path d="M 1025 295 Q 1090 300 1090 370 Q 1090 440 1025 445 L 1025 295 Z" fill="url(#capRight)"/>
+    <!-- Iridescent stainless sheen across center -->
+    <rect x="120" y="290" width="970" height="160" fill="url(#liquidSheen)" opacity="0.55"/>
+
+    <!-- Reinforcing rings on barrel (typical of tank cars) -->
+    <g stroke="#7A7F88" stroke-width="2.5" opacity="0.55">
+      <ellipse cx="280" cy="370" rx="3" ry="80"/>
+      <ellipse cx="380" cy="370" rx="3" ry="80"/>
+      <ellipse cx="480" cy="370" rx="3" ry="80"/>
+      <ellipse cx="600" cy="370" rx="3" ry="80"/>
+      <ellipse cx="720" cy="370" rx="3" ry="80"/>
+      <ellipse cx="820" cy="370" rx="3" ry="80"/>
+      <ellipse cx="920" cy="370" rx="3" ry="80"/>
+    </g>
+
+    <!-- ========== SINGLE DOME / MANWAY (signature DOT-111 — one dome, no protective housing) ========== -->
+    <g>
+      <!-- Dome base (the small raised cylinder housing the manway) -->
+      <ellipse cx="600" cy="280" rx="28" ry="6" fill="#3A3F4A"/>
+      <rect x="572" y="258" width="56" height="22" rx="2" fill="#7A7F88"/>
+      <rect x="572" y="258" width="56" height="3" fill="#C0C5CD"/>
+      <!-- Manhole cover on top of dome -->
+      <ellipse cx="600" cy="258" rx="22" ry="5" fill="#3A3F4A"/>
+      <ellipse cx="600" cy="256" rx="18" ry="3" fill="#5A606D"/>
+      <!-- Small vent / pressure relief on top -->
+      <rect x="595" y="244" width="10" height="14" fill="#1A1F2E"/>
+      <circle cx="600" cy="242" r="5" fill="#7A7F88"/>
+    </g>
+
+    <!-- Catwalk along the top of barrel -->
+    <rect x="190" y="277" width="382" height="5" fill="#3A3F4A"/>
+    <rect x="628" y="277" width="382" height="5" fill="#3A3F4A"/>
+
+    <!-- Bottom outlet valve (under center of tank, between trucks) -->
+    <g>
+      <rect x="592" y="458" width="16" height="14" fill="#3A3F4A"/>
+      <rect x="595" y="470" width="10" height="6" fill="#1A1F2E"/>
+      <rect x="589" y="465" width="22" height="3" fill="#5A606D"/>
+    </g>
+
+    <!-- ========== HAZMAT PLACARDS (Class 3 Flammable — typical for crude oil / ethanol) ========== -->
+    <g transform="translate(320 380) rotate(45)">
+      <rect x="-25" y="-25" width="50" height="50" fill="#E5350D" stroke="#000000" stroke-width="2"/>
+      <g transform="rotate(-45)">
+        <text y="-3" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="16" fill="#FFFFFF">3</text>
+        <text y="11" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="7" fill="#FFFFFF">FLAMMABLE</text>
+      </g>
+    </g>
+    <g transform="translate(880 380) rotate(45)">
+      <rect x="-25" y="-25" width="50" height="50" fill="#E5350D" stroke="#000000" stroke-width="2"/>
+      <g transform="rotate(-45)">
+        <text y="-3" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="16" fill="#FFFFFF">3</text>
+        <text y="11" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="7" fill="#FFFFFF">FLAMMABLE</text>
+      </g>
+    </g>
+
+    <!-- UN number plates -->
+    <g>
+      <rect x="430" y="395" width="80" height="22" rx="2" fill="#FFFFFF" stroke="#000000" stroke-width="1.5"/>
+      <text x="470" y="410" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="13" fill="#000000" letter-spacing="1">UN 1267</text>
+    </g>
+    <g>
+      <rect x="690" y="395" width="80" height="22" rx="2" fill="#FFFFFF" stroke="#000000" stroke-width="1.5"/>
+      <text x="730" y="410" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="13" fill="#000000" letter-spacing="1">UN 1267</text>
+    </g>
+
+    <!-- DOT-111 specification stencil -->
+    <text x="600" y="345" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="11" fill="#5B3FBF" opacity="0.85" letter-spacing="3">DOT-111A100W1 · 30,500 GAL</text>
+
+    <!-- Reporting marks (UTLX = Union Tank Car Company) -->
+    <text x="240" y="345" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="13" fill="#5B3FBF" opacity="0.95" letter-spacing="2">UTLX 207415</text>
+    <text x="960" y="345" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="13" fill="#5B3FBF" opacity="0.95" letter-spacing="2">UTLX 207415</text>
+
+    <!-- Stainless stamp -->
+    <text x="600" y="425" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="9" fill="#5B3FBF" opacity="0.65" letter-spacing="3">316L STAINLESS · NON-COILED</text>
+  </g>
+
+  <!-- Tank cradle / center sill -->
+  <rect x="180" y="460" width="840" height="10" fill="#1A1F2E"/>
+
+  <!-- Couplers -->
+  <rect x="90" y="450" width="22" height="14" rx="2" fill="#3A3F4A"/>
+  <rect x="82" y="453" width="14" height="8" rx="1" fill="#1A1F2E"/>
+  <rect x="1088" y="450" width="22" height="14" rx="2" fill="#3A3F4A"/>
+  <rect x="1104" y="453" width="14" height="8" rx="1" fill="#1A1F2E"/>
+
+  <!-- BOGIES -->
+  
+    </g>
+  </g>
+  <g filter="url(#rigShadow)">
+    <rect x="160" y="468" width="100" height="22" rx="3" fill="#3A3F4A"/>
+    <rect x="160" y="468" width="100" height="3" fill="#FFFFFF" opacity="0.35"/>
+  </g>
+  <g transform="translate(180 498)">
+    <g>
+      <circle cx="0" cy="0" r="22" fill="#1A1A1A"/>
+      <circle cx="0" cy="0" r="14" fill="url(#rim)"/>
+      <circle cx="0" cy="0" r="5" fill="#7A7F88"/>
+      <ellipse cx="-4" cy="-7" rx="4" ry="2" fill="#FFFFFF" opacity="0.35"/>
+      <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.4s" repeatCount="indefinite"/>
+    </g>
+  </g>
+  <g transform="translate(240 498)">
+    <g>
+      <circle cx="0" cy="0" r="22" fill="#1A1A1A"/>
+      <circle cx="0" cy="0" r="14" fill="url(#rim)"/>
+      <circle cx="0" cy="0" r="5" fill="#7A7F88"/>
+      <ellipse cx="-4" cy="-7" rx="4" ry="2" fill="#FFFFFF" opacity="0.35"/>
+      <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.4s" repeatCount="indefinite"/>
+    </g>
+  </g>
+
+  <g filter="url(#rigShadow)">
+    <rect x="940" y="468" width="100" height="22" rx="3" fill="#3A3F4A"/>
+    <rect x="940" y="468" width="100" height="3" fill="#FFFFFF" opacity="0.35"/>
+  </g>
+  <g transform="translate(960 498)">
+    <g>
+      <circle cx="0" cy="0" r="22" fill="#1A1A1A"/>
+      <circle cx="0" cy="0" r="14" fill="url(#rim)"/>
+      <circle cx="0" cy="0" r="5" fill="#7A7F88"/>
+      <ellipse cx="-4" cy="-7" rx="4" ry="2" fill="#FFFFFF" opacity="0.35"/>
+      <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.4s" repeatCount="indefinite"/>
+    </g>
+  </g>
+  <g transform="translate(1020 498)">
+    <g>
+      <circle cx="0" cy="0" r="22" fill="#1A1A1A"/>
+      <circle cx="0" cy="0" r="14" fill="url(#rim)"/>
+      <circle cx="0" cy="0" r="5" fill="#7A7F88"/>
+      <ellipse cx="-4" cy="-7" rx="4" ry="2" fill="#FFFFFF" opacity="0.35"/>
+      <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.4s" repeatCount="indefinite"/>
+    </g>
+  </g>
+
+  <!-- MODE BADGE (RAIL) -->
+  <g><rect x="1052" y="58" width="100" height="32" rx="16" ry="16" fill="#3A3A3A"/>
+    <g transform="translate(1066 70)" fill="#FFFFFF"><rect x="0" y="2" width="14" height="6" rx="1"/><rect x="2" y="0" width="3" height="3"/><rect x="9" y="0" width="3" height="3"/><circle cx="3" cy="9" r="1.2"/><circle cx="11" cy="9" r="1.2"/></g>
+    <text x="1115" y="79" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="14" letter-spacing="1.8" fill="#FFFFFF">RAIL</text></g>
+
+  <!-- UNIT BADGE (GAL) -->
+  <g><rect x="1062" y="100" width="80" height="28" rx="14" ry="14" fill="#FFFFFF" stroke="#9B7FD9" stroke-width="1.5"/>
+    <text x="1102" y="119" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="13" letter-spacing="1.8" fill="#5B3FBF">GAL</text></g>
+
+  <g opacity="0.75">
+    <text x="60" y="78" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="13" letter-spacing="2" fill="#5B3FBF">RAIL · TANK CAR · LIQUID</text>
+    <line x1="60" y1="86" x2="240" y2="86" stroke="#9B7FD9" stroke-width="2" stroke-linecap="round"/>
+    <text x="60" y="106" font-family="Inter, system-ui, sans-serif" font-weight="500" font-size="11" letter-spacing="1" fill="#5B3FBF" opacity="0.8">DOT-111 GENERAL · CRUDE · ETHANOL · F.G.</text>
+  </g>
+  <g opacity="0.4"><path d="M 70 540 L 55 525 L 55 555 Z" fill="#9B7FD9"/></g>
+  <!-- ========== BALLAST SPRAY behind trailing bogie ========== -->
+  <g filter="url(#softBlur)">
+    <ellipse class="spray"   cx="1030" cy="500" rx="6" ry="3" fill="url(#dustCloud)"/>
+    <ellipse class="spray b" cx="1030" cy="500" rx="5" ry="2.5" fill="url(#dustCloud)"/>
+    <ellipse class="spray c" cx="1030" cy="500" rx="4" ry="2" fill="url(#dustCloud)"/>
+  </g>
+
+  <!-- ========== EUSOTRIP BRAND LOCKUP ========== -->
+  <g class="brand-lockup" filter="url(#rigShadow)" transform="translate(490 26)">
+    <!-- Iridescent E mark -->
+    <g class="brand-mark">
+      <circle cx="19" cy="19" r="18" fill="url(#brandIridescent)"/>
+      <circle cx="19" cy="19" r="18" fill="none" stroke="#FFFFFF" stroke-width="1.5" opacity="0.4"/>
+      <text x="19" y="26" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="20" fill="#FFFFFF" letter-spacing="-1">E</text>
+    </g>
+    <!-- Wordmark -->
+    <text class="brand-word" x="48" y="22" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="18" letter-spacing="2.5" fill="#5B3FBF">EUSOTRIP</text>
+    <!-- Tagline -->
+    <text x="48" y="36" font-family="Inter, system-ui, sans-serif"
+          font-weight="500" font-size="8" letter-spacing="3" fill="#9B7FD9" opacity="0.55">BY EUSORONE</text>
+  </g>
+</svg>

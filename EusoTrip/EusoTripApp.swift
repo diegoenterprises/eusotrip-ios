@@ -61,6 +61,14 @@ struct EusoTripApp: App {
                         }
                     })
                     .transition(.opacity)
+                    .task {
+                        // Preload the 33 EusoTrip Animation Design
+                        // System SVGs while the splash is up so
+                        // wizard tile selection + scroll feel
+                        // instant the first time the user opens
+                        // Post a Load.
+                        EquipmentAnimationCache.shared.preload()
+                    }
                 }
 
                 // Privacy blur — overlays a brand-tinted veil on top of

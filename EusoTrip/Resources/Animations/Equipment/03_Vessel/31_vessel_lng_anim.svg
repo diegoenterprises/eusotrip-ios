@@ -1,0 +1,350 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600">
+  <style><![CDATA[
+    /* ========== HULL PITCH — ocean swell, bow rises and falls ========== */
+    .hull-pitch {
+      transform-origin: 600px 470px;
+      animation: hull-pitch 7s ease-in-out infinite;
+    }
+    @keyframes hull-pitch {
+      0%, 100% { transform: rotate(0deg);     }
+      25%      { transform: rotate(-0.4deg);  }
+      50%      { transform: rotate(0deg);     }
+      75%      { transform: rotate(0.35deg);  }
+    }
+    .hull-roll {
+      transform-origin: 600px 470px;
+      animation: hull-roll 5.6s ease-in-out infinite;
+    }
+    @keyframes hull-roll {
+      0%, 100% { transform: translateY(0)    skewX(0deg);   }
+      50%      { transform: translateY(-1px) skewX(0.3deg); }
+    }
+    .stack-settle {
+      animation: stack-settle 7s ease-in-out infinite -0.4s;
+    }
+    @keyframes stack-settle {
+      0%, 100% { transform: translateY(0); }
+      25%      { transform: translateY(0.6px); }
+      75%      { transform: translateY(-0.6px); }
+    }
+    .antenna-arc {
+      animation: antenna-arc 7s ease-in-out infinite;
+    }
+    @keyframes antenna-arc {
+      0%, 100% { transform: translate(0,0); }
+      25%      { transform: translate(-0.8px, 1px); }
+      50%      { transform: translate(0,0); }
+      75%      { transform: translate(0.8px, -1px); }
+    }
+    .bow-wave-1 { animation: bow-wave 2.4s ease-out infinite; }
+    .bow-wave-2 { animation: bow-wave 2.4s ease-out infinite -0.8s; }
+    .bow-wave-3 { animation: bow-wave 2.4s ease-out infinite -1.6s; }
+    @keyframes bow-wave {
+      0%   { opacity: 0;    transform: translateX(0)    scale(0.5); }
+      15%  { opacity: 0.85; }
+      100% { opacity: 0;    transform: translateX(-32px) scale(1.6); }
+    }
+    .bow-spray {
+      animation: bow-spray 1.6s ease-out infinite;
+    }
+    @keyframes bow-spray {
+      0%   { opacity: 0;   transform: translate(0,0)      scale(0.5); }
+      20%  { opacity: 0.6; }
+      100% { opacity: 0;   transform: translate(-22px,-14px) scale(1.3); }
+    }
+    .wake-1 { animation: wake-drift 3.2s linear infinite; }
+    .wake-2 { animation: wake-drift 3.2s linear infinite -0.7s; }
+    .wake-3 { animation: wake-drift 3.2s linear infinite -1.4s; }
+    .wake-4 { animation: wake-drift 3.2s linear infinite -2.1s; }
+    @keyframes wake-drift {
+      0%   { opacity: 0;    transform: translateX(0)   scale(0.6); }
+      15%  { opacity: 0.7;  }
+      85%  { opacity: 0.3;  }
+      100% { opacity: 0;    transform: translateX(85px) scale(1.4); }
+    }
+
+    /* ========== ORIGINAL VOCAB ========== */
+    .sheen-band { animation: sheen-sweep 5s ease-in-out infinite; }
+    @keyframes sheen-sweep {
+      0%   { transform: translateX(-740px); }
+      60%  { transform: translateX(740px); }
+      100% { transform: translateX(740px); }
+    }
+    .wordmark-breath { animation: wordmark-breath 6s ease-in-out infinite; }
+    @keyframes wordmark-breath {
+      0%, 100% { opacity: 0.55; }
+      50%      { opacity: 0.85; }
+    }
+    .badge-pulse {
+      transform-box: fill-box; transform-origin: center;
+      animation: badge-pulse 3.2s ease-in-out infinite;
+    }
+    @keyframes badge-pulse {
+      0%, 100% { transform: scale(1);    opacity: 0.95; }
+      50%      { transform: scale(1.04); opacity: 1; }
+    }
+    .chevron-pulse { animation: chevron-pulse 2.2s ease-in-out infinite; }
+    @keyframes chevron-pulse {
+      0%, 100% { opacity: 0.30; transform: translateX(0); }
+      50%      { opacity: 0.65; transform: translateX(-4px); }
+    }
+    .sky-drift { animation: sky-drift 14s ease-in-out infinite; }
+    @keyframes sky-drift {
+      0%   { transform: translateX(-200px); }
+      100% { transform: translateX(1400px); }
+    }
+    .bridge-window-pulse { animation: bridge-window-pulse 4s ease-in-out infinite; }
+    @keyframes bridge-window-pulse {
+      0%, 100% { opacity: 0.78; }
+      50%      { opacity: 0.95; }
+    }
+    .antenna-blink {
+      animation: antenna-blink 1.4s ease-in-out infinite;
+      transform-box: fill-box; transform-origin: center;
+    }
+    @keyframes antenna-blink {
+      0%, 65%, 100% { opacity: 0.35; transform: scale(1); }
+      70%, 80%      { opacity: 1;    transform: scale(1.25); }
+    }
+    .bow-pulse { animation: bow-pulse 2.6s ease-in-out infinite; }
+    @keyframes bow-pulse {
+      0%, 100% { opacity: 0.55; }
+      50%      { opacity: 0.95; }
+    }
+    .draft-fade { animation: draft-fade 7s ease-in-out infinite; }
+    @keyframes draft-fade {
+      0%, 100% { opacity: 0.55; }
+      50%      { opacity: 0.78; }
+    }
+    /* ========== BRAND LOCKUP ========== */
+    .brand-mark {
+      transform-box: fill-box; transform-origin: center;
+      animation: brand-pulse 3.6s ease-in-out infinite;
+    }
+    @keyframes brand-pulse {
+      0%, 100% { transform: scale(1);    opacity: 0.92; }
+      50%      { transform: scale(1.05); opacity: 1; }
+    }
+    .brand-word { animation: brand-word-breath 6s ease-in-out infinite; }
+    @keyframes brand-word-breath {
+      0%, 100% { opacity: 0.78; }
+      50%      { opacity: 1; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .hull-pitch, .hull-roll, .stack-settle, .antenna-arc,
+      .bow-wave-1, .bow-wave-2, .bow-wave-3, .bow-spray,
+      .wake-1, .wake-2, .wake-3, .wake-4,
+      .sheen-band, .wordmark-breath, .badge-pulse, .chevron-pulse,
+      .sky-drift, .bridge-window-pulse, .antenna-blink,
+      .bow-pulse, .draft-fade, .brand-mark, .brand-word { animation: none !important; }
+    }
+  ]]></style>
+
+  <!-- 31 · Vessel · LNG Carrier · VESSEL / M³
+       Distinctive Moss-type spherical tanks visible above deck. Bow LEFT.
+       Used for: liquefied natural gas at -162°C, cryogenic insulated. -->
+  <defs>
+    <linearGradient id="brandIridescent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1473FF"/>
+      <stop offset="50%" stop-color="#6E4DFF"/>
+      <stop offset="100%" stop-color="#BE01FF"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#EEF1FA"/><stop offset="55%" stop-color="#F5EEFC"/><stop offset="100%" stop-color="#EFF8FA"/></linearGradient>
+    <linearGradient id="hull" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#2A3045"/><stop offset="100%" stop-color="#0F1320"/></linearGradient>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0AC2C2" stop-opacity="0.35"/><stop offset="100%" stop-color="#1473FF" stop-opacity="0.08"/></linearGradient>
+    <linearGradient id="bridge" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FAFBFD"/><stop offset="100%" stop-color="#C8CDD8"/></linearGradient>
+    <linearGradient id="windowGlass" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#BFD3FF"/><stop offset="100%" stop-color="#7E9DDB"/></linearGradient>
+    <!-- Spherical LNG tank — chrome/metallic with cyan highlight -->
+    <radialGradient id="lngSphere" cx="0.35" cy="0.35" r="0.7">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="35%" stop-color="#E0E4EA"/>
+      <stop offset="70%" stop-color="#A8AEB8"/>
+      <stop offset="100%" stop-color="#5A606D"/>
+    </radialGradient>
+    <radialGradient id="lngCyan" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#0AC2C2" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#0AC2C2" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="rigShadow" x="-10%" y="-10%" width="120%" height="130%"><feGaussianBlur in="SourceAlpha" stdDeviation="6"/><feOffset dx="0" dy="4" result="offsetBlur"/><feComponentTransfer><feFuncA type="linear" slope="0.18"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      <radialGradient id="foam" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%"   stop-color="#FFFFFF" stop-opacity="0.85"/>
+      <stop offset="60%"  stop-color="#FFFFFF" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="foamBlur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2"/>
+    </filter>
+    <filter id="smokeBlur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+  </defs>
+  <g class="hull-pitch">
+    <g class="hull-roll">
+
+  <rect width="1200" height="600" fill="url(#sky)"/>
+  <rect x="0" y="380" width="1200" height="70" fill="#FFFFFF" opacity="0.18"/>
+  <rect x="0" y="470" width="1200" height="80" fill="url(#water)"/>
+  <g stroke="#0AC2C2" stroke-width="3" stroke-linecap="round" opacity="0.55">
+    <line x1="60" y1="490" x2="160" y2="490" stroke-dasharray="14 9"/><line x1="200" y1="510" x2="320" y2="510" stroke-dasharray="14 9"/><line x1="380" y1="495" x2="490" y2="495" stroke-dasharray="14 9"/><line x1="540" y1="515" x2="660" y2="515" stroke-dasharray="14 9"/><line x1="710" y1="500" x2="820" y2="500" stroke-dasharray="14 9"/><line x1="870" y1="520" x2="980" y2="520" stroke-dasharray="14 9"/><line x1="1020" y1="495" x2="1140" y2="495" stroke-dasharray="14 9"/>
+  </g>
+
+  <!-- HULL -->
+  <g filter="url(#rigShadow)">
+    <ellipse cx="92" cy="487" rx="28" ry="9" fill="url(#hull)"/>
+    <path d="M 100 470 L 110 408 Q 120 395 145 392 L 1090 392 Q 1110 392 1110 410 L 1110 470 Z" fill="url(#hull)"/>
+    <path d="M 110 408 Q 120 395 145 392 L 1090 392 Q 1110 392 1110 410" stroke="#3A4258" stroke-width="2" fill="none" opacity="0.7"/>
+    <line x1="120" y1="430" x2="1108" y2="430" stroke="#3A4258" stroke-width="1.5" opacity="0.5"/>
+    <line x1="118" y1="395" x2="125" y2="465" stroke="#0AC2C2" stroke-width="2" opacity="0.7"/>
+    <g transform="translate(135 425)"><line x1="0" y1="0" x2="0" y2="14" stroke="#0AC2C2" stroke-width="1.5"/><path d="M -4 12 L 4 12 L 0 18 Z" fill="#0AC2C2" opacity="0.9"/></g>
+    <circle cx="148" cy="448" r="5" fill="#0F1320" stroke="#3A4258" stroke-width="1"/>
+    <text x="500" y="447" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="16" fill="#0AC2C2" opacity="0.8" letter-spacing="3">EUSO POLARIS</text>
+  </g>
+
+  <!-- Deck strip -->
+  <g filter="url(#rigShadow)">
+    <rect x="160" y="380" width="730" height="14" fill="#1A1F2E"/>
+    <rect x="160" y="380" width="730" height="3" fill="#FFFFFF" opacity="0.35"/>
+    <!-- Forward catwalk between spheres -->
+    <rect x="180" y="370" width="690" height="10" rx="2" fill="#3A4258"/>
+  </g>
+
+  <!-- ========== MOSS-TYPE SPHERICAL LNG TANKS (signature LNG carrier feature — 4 spheres) ========== -->
+  <g filter="url(#rigShadow)">
+    <!-- Sphere 1 -->
+    <g>
+      <!-- Base ring (the cylindrical "skirt" the sphere sits on) -->
+      <ellipse cx="290" cy="385" rx="100" ry="14" fill="#3A4258"/>
+      <rect x="190" y="370" width="200" height="20" fill="#3A4258"/>
+      <!-- Sphere -->
+      <circle cx="290" cy="280" r="105" fill="url(#lngSphere)"/>
+      <!-- Cyan cryogenic glow -->
+      <circle cx="290" cy="280" r="115" fill="url(#lngCyan)" opacity="0.6"/>
+      <!-- Equatorial seam -->
+      <ellipse cx="290" cy="280" rx="105" ry="6" fill="none" stroke="#5A606D" stroke-width="1" opacity="0.55"/>
+      <!-- Top dome opening -->
+      <ellipse cx="290" cy="180" rx="22" ry="5" fill="#3A4258"/>
+      <ellipse cx="290" cy="178" rx="18" ry="3" fill="#5A606D"/>
+      <!-- Vertical orange peel seams -->
+      <path d="M 290 175 Q 230 280 290 385" stroke="#5A606D" stroke-width="1" fill="none" opacity="0.4"/>
+      <path d="M 290 175 Q 350 280 290 385" stroke="#5A606D" stroke-width="1" fill="none" opacity="0.4"/>
+      <!-- Tank number -->
+      <text x="290" y="288" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="32" fill="#5A606D" opacity="0.5" letter-spacing="2">1</text>
+    </g>
+    <!-- Sphere 2 -->
+    <g>
+      <ellipse cx="500" cy="385" rx="100" ry="14" fill="#3A4258"/>
+      <rect x="400" y="370" width="200" height="20" fill="#3A4258"/>
+      <circle cx="500" cy="280" r="105" fill="url(#lngSphere)"/>
+      <circle cx="500" cy="280" r="115" fill="url(#lngCyan)" opacity="0.6"/>
+      <ellipse cx="500" cy="280" rx="105" ry="6" fill="none" stroke="#5A606D" stroke-width="1" opacity="0.55"/>
+      <ellipse cx="500" cy="180" rx="22" ry="5" fill="#3A4258"/>
+      <ellipse cx="500" cy="178" rx="18" ry="3" fill="#5A606D"/>
+      <path d="M 500 175 Q 440 280 500 385" stroke="#5A606D" stroke-width="1" fill="none" opacity="0.4"/>
+      <path d="M 500 175 Q 560 280 500 385" stroke="#5A606D" stroke-width="1" fill="none" opacity="0.4"/>
+      <text x="500" y="288" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="32" fill="#5A606D" opacity="0.5" letter-spacing="2">2</text>
+    </g>
+    <!-- Sphere 3 -->
+    <g>
+      <ellipse cx="710" cy="385" rx="100" ry="14" fill="#3A4258"/>
+      <rect x="610" y="370" width="200" height="20" fill="#3A4258"/>
+      <circle cx="710" cy="280" r="105" fill="url(#lngSphere)"/>
+      <circle cx="710" cy="280" r="115" fill="url(#lngCyan)" opacity="0.6"/>
+      <ellipse cx="710" cy="280" rx="105" ry="6" fill="none" stroke="#5A606D" stroke-width="1" opacity="0.55"/>
+      <ellipse cx="710" cy="180" rx="22" ry="5" fill="#3A4258"/>
+      <ellipse cx="710" cy="178" rx="18" ry="3" fill="#5A606D"/>
+      <path d="M 710 175 Q 650 280 710 385" stroke="#5A606D" stroke-width="1" fill="none" opacity="0.4"/>
+      <path d="M 710 175 Q 770 280 710 385" stroke="#5A606D" stroke-width="1" fill="none" opacity="0.4"/>
+      <text x="710" y="288" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="32" fill="#5A606D" opacity="0.5" letter-spacing="2">3</text>
+    </g>
+    <!-- Sphere 4 (smaller — partial overlap with bridge) -->
+    <g>
+      <ellipse cx="850" cy="385" rx="80" ry="11" fill="#3A4258"/>
+      <rect x="775" y="370" width="155" height="20" fill="#3A4258"/>
+      <circle cx="850" cy="305" r="80" fill="url(#lngSphere)"/>
+      <circle cx="850" cy="305" r="88" fill="url(#lngCyan)" opacity="0.6"/>
+      <ellipse cx="850" cy="305" rx="80" ry="5" fill="none" stroke="#5A606D" stroke-width="1" opacity="0.55"/>
+      <ellipse cx="850" cy="225" rx="18" ry="4" fill="#3A4258"/>
+      <text x="850" y="313" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="26" fill="#5A606D" opacity="0.5" letter-spacing="2">4</text>
+    </g>
+  </g>
+
+  <!-- BRIDGE — aft -->
+  <g filter="url(#rigShadow)">
+    <rect x="900" y="240" width="120" height="150" rx="3" fill="url(#bridge)"/>
+    <rect x="900" y="240" width="120" height="3" fill="#FFFFFF" opacity="0.6"/>
+    <g fill="url(#windowGlass)" opacity="0.85">
+      <rect x="908" y="252" width="104" height="14" rx="1.5"/><rect x="908" y="272" width="104" height="14" rx="1.5"/><rect x="908" y="292" width="104" height="14" rx="1.5"/>
+      <rect x="908" y="312" width="104" height="14" rx="1.5"/><rect x="908" y="332" width="104" height="14" rx="1.5"/><rect x="908" y="352" width="104" height="14" rx="1.5"/>
+    </g>
+    <g stroke="#5A6378" stroke-width="0.6" opacity="0.65"><line x1="940" y1="252" x2="940" y2="366"/><line x1="980" y1="252" x2="980" y2="366"/></g>
+    <rect x="950" y="195" width="32" height="50" rx="3" fill="#1A1F2E"/>
+    <rect x="950" y="195" width="32" height="6" rx="3" fill="#3A3F4A"/>
+    <rect x="950" y="213" width="32" height="6" fill="#0AC2C2" opacity="0.85"/>
+    <line x1="996" y1="240" x2="996" y2="180" stroke="#1A1F2E" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="996" cy="180" r="3.5" fill="#FFE680"/>
+  </g>
+
+  <line x1="113" y1="396" x2="100" y2="468" stroke="#0AC2C2" stroke-width="2" opacity="0.7"/>
+
+  
+    </g>
+  </g>
+  <!-- Cryogenic frost particles around spheres (suggesting LNG vapor) -->
+  <g fill="#0AC2C2" opacity="0.4">
+    <circle cx="180" cy="240" r="2.5"/><circle cx="395" cy="220" r="2"/><circle cx="605" cy="240" r="2.5"/>
+    <circle cx="800" cy="265" r="2"/><circle cx="220" cy="180" r="2"/><circle cx="430" cy="170" r="2.5"/>
+    <circle cx="640" cy="190" r="2"/><circle cx="780" cy="200" r="2"/>
+  </g>
+
+  <g><rect x="1052" y="58" width="100" height="32" rx="16" ry="16" fill="#0AC2C2"/>
+    <g transform="translate(1066 70)" fill="#FFFFFF"><path d="M 0 8 L 2 4 L 16 4 L 18 8 Z"/><rect x="6" y="0" width="8" height="4"/></g>
+    <text x="1115" y="79" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="14" letter-spacing="1.8" fill="#FFFFFF">VESSEL</text></g>
+  <g><rect x="1062" y="100" width="80" height="28" rx="14" ry="14" fill="#FFFFFF" stroke="#9B7FD9" stroke-width="1.5"/>
+    <text x="1102" y="119" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="13" letter-spacing="1.8" fill="#5B3FBF">M³</text></g>
+  <g opacity="0.75">
+    <text x="60" y="78" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="13" letter-spacing="2" fill="#5B3FBF">LNG CARRIER</text>
+    <line x1="60" y1="86" x2="180" y2="86" stroke="#9B7FD9" stroke-width="2" stroke-linecap="round"/>
+    <text x="60" y="106" font-family="Inter, system-ui, sans-serif" font-weight="500" font-size="11" letter-spacing="1" fill="#0AC2C2" opacity="0.95">MOSS-TYPE · -162°C · 174,000 M³</text>
+  </g>
+  <g opacity="0.4"><path d="M 70 540 L 55 525 L 55 555 Z" fill="#9B7FD9"/></g>
+  <!-- ========== WAKE TRAIL (aft, drifts right) ========== -->
+  <g filter="url(#foamBlur)">
+    <ellipse class="wake-1" cx="1108" cy="488" rx="14" ry="4" fill="url(#foam)"/>
+    <ellipse class="wake-2" cx="1108" cy="494" rx="12" ry="3" fill="url(#foam)"/>
+    <ellipse class="wake-3" cx="1108" cy="482" rx="10" ry="3" fill="url(#foam)"/>
+    <ellipse class="wake-4" cx="1108" cy="498" rx="13" ry="3" fill="url(#foam)"/>
+  </g>
+
+  <!-- ========== BOW WAVE (cutwater foam) ========== -->
+  <g filter="url(#foamBlur)">
+    <ellipse class="bow-wave-1" cx="100" cy="475" rx="22" ry="6" fill="url(#foam)"/>
+    <ellipse class="bow-wave-2" cx="100" cy="482" rx="18" ry="5" fill="url(#foam)"/>
+    <ellipse class="bow-wave-3" cx="100" cy="488" rx="16" ry="4" fill="url(#foam)"/>
+  </g>
+
+  <!-- ========== BOW SPRAY MIST ========== -->
+  <g filter="url(#foamBlur)" opacity="0.6">
+    <circle class="bow-spray" cx="115" cy="455" r="5" fill="#FFFFFF"/>
+    <circle class="bow-spray" cx="118" cy="450" r="4" fill="#FFFFFF" style="animation-delay:-0.5s"/>
+    <circle class="bow-spray" cx="112" cy="458" r="3" fill="#FFFFFF" style="animation-delay:-1s"/>
+  </g>
+
+  <!-- ========== EUSOTRIP BRAND LOCKUP ========== -->
+  <g class="brand-lockup" filter="url(#rigShadow)" transform="translate(490 26)">
+    <!-- Iridescent E mark -->
+    <g class="brand-mark">
+      <circle cx="19" cy="19" r="18" fill="url(#brandIridescent)"/>
+      <circle cx="19" cy="19" r="18" fill="none" stroke="#FFFFFF" stroke-width="1.5" opacity="0.4"/>
+      <text x="19" y="26" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="20" fill="#FFFFFF" letter-spacing="-1">E</text>
+    </g>
+    <!-- Wordmark -->
+    <text class="brand-word" x="48" y="22" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="18" letter-spacing="2.5" fill="#5B3FBF">EUSOTRIP</text>
+    <!-- Tagline -->
+    <text x="48" y="36" font-family="Inter, system-ui, sans-serif"
+          font-weight="500" font-size="8" letter-spacing="3" fill="#9B7FD9" opacity="0.55">BY EUSORONE</text>
+  </g>
+</svg>

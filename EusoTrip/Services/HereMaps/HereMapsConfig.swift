@@ -149,12 +149,47 @@ enum HereMapsError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingAPIKey:
-            return "HERE credentials are missing. Add HERE_ACCESS_KEY_ID / HERE_ACCESS_KEY_SECRET / HERE_TOKEN_ENDPOINT_URL to your xcconfig."
-        case .badURL:                  return "Invalid HERE Maps URL."
-        case .http(let c, let m):      return "HERE Maps HTTP \(c): \(m)"
-        case .decoding(let m):         return "HERE decoding failed: \(m)"
-        case .emptyResponse:           return "HERE returned an empty response."
-        case .providerError(let m):    return "HERE provider error: \(m)"
+            // Internal — never user-facing; founder branding doctrine
+            // strips 'HERE' from visible copy but the diagnostic
+            // string stays explicit so dev can fix the xcconfig.
+            return "Routing credentials missing — check xcconfig."
+        case .badURL:                  return "Invalid routing URL."
+        case .http(let c, let m):
+            // HERE returns a JSON body on 4xx like
+            //   {"title":"Malformed request","status":400,"cause":"...","action":"..."}
+            // Default error path was concatenating the whole body
+            // verbatim into the UI ('title malfor...'). Parse out
+            // just the title / cause and surface a clean string.
+            return Self.humanReadable(http: c, rawBody: m)
+        case .decoding:                return "Couldn't read routing response — try again."
+        case .emptyResponse:           return "Routing returned no result."
+        case .providerError(let m):    return m
+        }
+    }
+
+    /// Parse HERE's JSON error body and return a clean human string.
+    /// Falls back to a status-coded fallback if the body isn't JSON.
+    private static func humanReadable(http code: Int, rawBody body: String) -> String {
+        if let data = body.data(using: .utf8),
+           let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            // Prefer cause + action when present; fall back to title.
+            let title  = (dict["title"]  as? String) ?? ""
+            let cause  = (dict["cause"]  as? String) ?? ""
+            let action = (dict["action"] as? String) ?? ""
+            let parts = [title, cause, action].filter { !$0.isEmpty }
+            if !parts.isEmpty {
+                return parts.joined(separator: " · ")
+            }
+        }
+        // Status-coded fallbacks for the common cases users hit.
+        switch code {
+        case 400: return "Couldn't resolve that lane — try refining the addresses."
+        case 401: return "Routing auth expired — pull to refresh."
+        case 403: return "Routing forbidden for this lane (plan tier or region restriction)."
+        case 404: return "Lane not found in routing graph."
+        case 429: return "Too many routing requests right now — try again in a moment."
+        case 500...599: return "Routing service is having issues — try again."
+        default:        return "Routing failed (status \(code))."
         }
     }
 }
