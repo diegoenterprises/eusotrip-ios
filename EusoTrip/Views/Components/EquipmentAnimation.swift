@@ -209,7 +209,11 @@ private struct EquipmentAnimationWebView: UIViewRepresentable {
         let config = WKWebViewConfiguration()
         // No JS bridge needed; the SVG runs SMIL natively. Block
         // navigation entirely — taps stay with the SwiftUI host.
-        config.preferences.javaScriptEnabled = false
+        // iOS 14+ uses WKWebpagePreferences.allowsContentJavaScript;
+        // the older WKPreferences.javaScriptEnabled was deprecated.
+        let pagePrefs = WKWebpagePreferences()
+        pagePrefs.allowsContentJavaScript = false
+        config.defaultWebpagePreferences = pagePrefs
         config.suppressesIncrementalRendering = true
 
         let view = WKWebView(frame: .zero, configuration: config)
