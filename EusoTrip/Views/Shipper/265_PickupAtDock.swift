@@ -25,6 +25,7 @@ private struct AtDockBody: View {
         VStack(alignment: .leading, spacing: Space.s4) {
             statusCard
             LifecycleMapCard(live: live, label: "AT DOCK", mode: .truckAtPickup, height: 200)
+            LifecycleAnimationStrip(live: live, label: "LOADING", height: 200)
             facilityCard
             cargoCard
             commsRow

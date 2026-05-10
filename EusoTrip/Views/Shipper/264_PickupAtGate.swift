@@ -25,6 +25,7 @@ private struct AtGateBody: View {
         VStack(alignment: .leading, spacing: Space.s4) {
             arrivalCard
             LifecycleMapCard(live: live, label: "AT GATE", mode: .truckAtPickup, height: 200)
+            LifecycleAnimationStrip(live: live, label: "AT THE DOCK", height: 180)
             facilityCard
             if (live.load.hazmatClass?.isEmpty == false) { hazmatCard }
             commsRow

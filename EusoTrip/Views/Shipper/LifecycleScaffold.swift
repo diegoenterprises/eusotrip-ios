@@ -541,3 +541,149 @@ struct LifecycleMapCard: View {
         return [truck]
     }
 }
+
+/// LifecycleAnimationStrip — renders the right EquipmentKind animation
+/// for the load's modality + cargo, with every `[data-bind]` text node
+/// in the SVG substituted from the live LifecycleSnapshot via
+/// `BindableEquipmentAnimation`.
+///
+/// Founder ask 2026-05-10: ship the universal animation surface across
+/// every shipper / driver lifecycle screen so the freight reads as a
+/// real load (real UN number, real reporting marks, real ETA, real
+/// dock id) instead of the SVG's baked default sample.
+///
+/// This view is the iOS counterpart to the web `<AnimationView>` that
+/// the bundle's `RUNTIME_INTEGRATION_GUIDE.md` documents. Same binding
+/// contract, same data-bind keys, same fallback-to-baked-default
+/// behavior when the snapshot doesn't carry a value.
+struct LifecycleAnimationStrip: View {
+    @Environment(\.palette) private var palette
+    let live: ShipperAPI.LifecycleSnapshot
+    var label: String = "EQUIPMENT"
+    var height: CGFloat = 200
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: equipmentKind.iconName)
+                    .font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text(label)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 0)
+                Text(stateLabel)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.7)
+                    .foregroundStyle(palette.textTertiary)
+                    .padding(.horizontal, 5).padding(.vertical, 1.5)
+                    .overlay(Capsule().strokeBorder(palette.borderFaint))
+            }
+
+            if let svg = EquipmentAnimationCache.shared.svg(for: equipmentKind) {
+                BindableEquipmentAnimation(
+                    svgString: svg,
+                    context: animationContext
+                )
+                .frame(height: height)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint, lineWidth: 1)
+                )
+            } else {
+                emptyAnimation
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    private var animationContext: LoadAnimationContext {
+        LoadAnimationContext.from(snapshot: live)
+    }
+
+    private var stateLabel: String {
+        live.load.status.uppercased().replacingOccurrences(of: "_", with: " ")
+    }
+
+    /// Maps the snapshot's equipmentType + cargoType to one of the 33
+    /// `EquipmentKind` cases the iOS bundle ships SVGs for. Falls back
+    /// to `dryVan` for anything not recognized — the SVG is still the
+    /// honest brand surface, just the most generic option.
+    private var equipmentKind: EquipmentKind {
+        let e = (live.load.equipmentType ?? "").lowercased()
+        // Truck explicit
+        if e.contains("dry van") || e.contains("van")           { return .dryVan }
+        if e.contains("reefer") || e.contains("refrigerated")   { return .reefer }
+        if e.contains("flatbed")                                 { return .flatbed }
+        if e.contains("step deck") || e.contains("stepdeck")     { return .stepDeck }
+        if e.contains("conestoga")                               { return .conestoga }
+        if e.contains("container") && !e.contains("ship")        { return .container }
+        if e.contains("tanker hazmat") || e.contains("mc-331") || e.contains("mc331") { return .tankerHazmat }
+        if e.contains("tanker petro") || e.contains("dot 406") || e.contains("mc-306") { return .tankerPetro }
+        if e.contains("tanker liquid") || e.contains("dot 407") { return .tankerLiquid }
+        if e.contains("tanker gas") || e.contains("mc-338")     { return .tankerGas }
+        if e.contains("power only") || e.contains("bobtail")    { return .powerOnly }
+        if e.contains("oversize") || e.contains("rgn") || e.contains("schnabel") { return .oversized }
+        if e.contains("lowboy")                                  { return .lowboy }
+        if e.contains("hot shot") || e.contains("hotshot")       { return .hotShot }
+
+        // Rail
+        if e.contains("rail tofc") || e.contains("tofc")         { return .railTOFC }
+        if e.contains("rail cofc") || e.contains("cofc")         { return .railCOFC }
+        if e.contains("rail intermodal") || e.contains("well car") { return .railIntermodal }
+        if e.contains("dot-105") || e.contains("rail tank gas")  { return .railTankGas }
+        if e.contains("dot-117") || e.contains("dot-111") || e.contains("rail tank") { return .railTankLiquid }
+        if e.contains("rail boxcar") || e.contains("boxcar")     { return .railBoxcar }
+        if e.contains("rail hopper") || e.contains("hopper")     { return .railHopper }
+        if e.contains("rail centerbeam") || e.contains("centerbeam") { return .railCenterbeam }
+        if e.contains("rail gondola") || e.contains("gondola")   { return .railGondola }
+        if e.contains("rail auto rack") || e.contains("autorack") { return .railAutoRack }
+        if e.contains("rail reefer") || e.contains("reefer boxcar") { return .railReeferBoxcar }
+        if e.contains("rail flatcar") || e.contains("flatcar")   { return .railFlatcar }
+
+        // Vessel
+        if e.contains("vessel reefer") || e.contains("reefer container") { return .vesselReeferContainer }
+        if e.contains("vessel iso tank") || e.contains("iso tank")        { return .vesselISOTank }
+        if e.contains("vessel container") || e.contains("container ship") { return .vesselContainer }
+        if e.contains("vessel bulk") || e.contains("bulk carrier")        { return .vesselBulk }
+        if e.contains("vessel tanker") || e.contains("vlcc")              { return .vesselTanker }
+        if e.contains("ro/ro") || e.contains("roro")                      { return .vesselRoRo }
+        if e.contains("lng")                                              { return .vesselLNG }
+
+        // Hazmat-aware fallback
+        if (live.load.hazmatClass?.isEmpty == false) { return .tankerHazmat }
+        return .dryVan
+    }
+
+    private var emptyAnimation: some View {
+        VStack(spacing: 6) {
+            Image(systemName: equipmentKind.iconName)
+                .font(.system(size: 22, weight: .heavy))
+                .foregroundStyle(palette.textTertiary)
+            Text("Equipment animation not bundled yet")
+                .font(EType.caption.weight(.semibold))
+                .foregroundStyle(palette.textPrimary)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: height)
+        .background(palette.bgCardSoft)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+}
+
+/// SF Symbol icon for each `EquipmentKind` — used in the
+/// LifecycleAnimationStrip header label and any future surface that
+/// needs a glyph alongside the rendered animation.
+extension EquipmentKind {
+    var iconName: String {
+        switch vertical {
+        case .truck:  return "truck.box.fill"
+        case .rail:   return "tram.fill"
+        case .vessel: return "ferry.fill"
+        }
+    }
+}

@@ -25,6 +25,7 @@ private struct DeliveryApproachingBody: View {
         VStack(alignment: .leading, spacing: Space.s4) {
             geofenceCard
             LifecycleMapCard(live: live, label: "TRUCK → RECEIVER", mode: .truckAtDelivery)
+            LifecycleAnimationStrip(live: live, label: "EQUIPMENT", height: 180)
             receiverCard
             etaStrip
             commsRow
