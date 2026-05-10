@@ -133,6 +133,21 @@ final class HereTileOverlay: MKTileOverlay {
                     await HEREAuthService.shared.invalidate()
                     (data, http) = try await attempt()
                 }
+                // 403 on an `explore.night` tile = HERE plan tier rejects
+                // the night style. Mark the process-wide flag so all
+                // subsequent dark tiles request `explore.day` and the
+                // TintingTileOverlayRenderer applies the blue-slate dark
+                // overlay on top instead. Then transparently re-fetch
+                // this single tile with the day style so the user
+                // doesn't see a one-tile blank flash during the swap.
+                if http.statusCode == 403 && HereTileStyle.nightStyleAvailable {
+                    HereTileStyle.nightStyleAvailable = false
+                    NotificationCenter.default.post(
+                        name: Notification.Name("eusoHereNightTileBlocked"),
+                        object: nil
+                    )
+                    (data, http) = try await attempt()
+                }
                 guard (200..<300).contains(http.statusCode) else {
                     result(nil, HereMapsError.http(http.statusCode, "tile fetch"))
                     return

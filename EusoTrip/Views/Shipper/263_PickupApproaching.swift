@@ -24,6 +24,7 @@ private struct ApproachingBody: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             geofenceCard
+            LifecycleMapCard(live: live, label: "TRUCK → PICKUP", mode: .truckAtPickup)
             facilityCard
             etaStrip
             commsRow

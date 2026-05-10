@@ -24,6 +24,7 @@ private struct InTransitBody: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             etaStrip
+            LifecycleMapCard(live: live, label: "LIVE TRACK", mode: .full, height: 260)
             telemetryCard
             commsRow
         }

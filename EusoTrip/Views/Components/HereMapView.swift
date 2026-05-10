@@ -144,6 +144,16 @@ struct HereMapView: UIViewRepresentable {
         var tileOverlay: HereTileOverlay?
         weak var mapView: MKMapView?
 
+        /// NotificationCenter observer for `eusoHereNightTileBlocked`.
+        /// Stored so the observer can be removed in `deinit` to avoid
+        /// leaking after the SwiftUI view is dismantled.
+        var nightBlockedObserver: NSObjectProtocol?
+        deinit {
+            if let obs = nightBlockedObserver {
+                NotificationCenter.default.removeObserver(obs)
+            }
+        }
+
         /// Cached selection callback — refreshed on every `updateUIView` so
         /// we never hold a stale struct's closure.
         var onSelectMarker: ((String) -> Void)?
@@ -169,15 +179,21 @@ struct HereMapView: UIViewRepresentable {
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             if let tile = overlay as? HereTileOverlay {
-                // Tinting renderer: draws the HERE tile, then in dark
-                // mode lays a translucent blue-slate fill on top of it.
-                // Tints ONLY the basemap pixels — pins and polylines are
-                // drawn by MKMapView's own renderers above this layer
-                // and stay vivid.
+                // Tinting renderer: draws the HERE tile, then — only when
+                // dark mode is rendering the `explore.day` *fallback*
+                // (HERE plan tier rejected `explore.night`) — lays a
+                // translucent blue-slate fill on top to give the
+                // appearance of a night basemap. When `explore.night`
+                // does serve, the tile is already dark and the tint is
+                // omitted so the night raster reads with full saturation
+                // (matching the Apple-Maps-Standard-night look the
+                // founder asked for via the 2026-05-10 reference shot).
+                let needsFallbackTint = tile.style == .dark
+                                     && !tile.style.isRenderingNightRaster
                 return TintingTileOverlayRenderer(
                     tileOverlay: tile,
-                    tint: tile.style == .dark
-                        ? UIColor(red: 0.10, green: 0.14, blue: 0.20, alpha: 0.55)
+                    tint: needsFallbackTint
+                        ? UIColor(red: 0.08, green: 0.11, blue: 0.18, alpha: 0.62)
                         : nil
                 )
             }
@@ -278,6 +294,24 @@ struct HereMapView: UIViewRepresentable {
         map.pointOfInterestFilter = .excludingAll       // we render our own POIs
         context.coordinator.mapView = map
         context.coordinator.onSelectMarker = onSelectMarker
+
+        // When the HERE tile pipeline learns the plan tier doesn't
+        // serve `explore.night`, the next dark-mode tile request
+        // automatically uses `explore.day`. The visible tiles already
+        // on screen need to be re-rendered through the renderer one
+        // more time so the new fallback tint paints. Listening once
+        // per HereMapView instance ensures every map flips together.
+        context.coordinator.nightBlockedObserver = NotificationCenter.default
+            .addObserver(forName: Notification.Name("eusoHereNightTileBlocked"),
+                         object: nil,
+                         queue: .main) { [weak map, weak coordinator = context.coordinator] _ in
+                guard let map, let coordinator else { return }
+                guard let old = coordinator.tileOverlay, old.style == .dark else { return }
+                map.removeOverlay(old)
+                let fresh = HereTileOverlay(style: .dark)
+                map.addOverlay(fresh, level: .aboveLabels)
+                coordinator.tileOverlay = fresh
+            }
 
         // Apply the brand basemap (muted + no POIs) so land reads near-white
         // / deep-slate instead of Apple's default beige / green.

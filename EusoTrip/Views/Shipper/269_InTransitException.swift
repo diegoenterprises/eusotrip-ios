@@ -28,6 +28,7 @@ private struct ExceptionBody: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             statusCard
+            LifecycleMapCard(live: live, label: "EXCEPTION LOCATION", icon: "exclamationmark.triangle.fill", mode: .full)
             timelineCard
             ctaRow
             if let err = actionError { errorBanner(err) }

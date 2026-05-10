@@ -25,6 +25,7 @@ private struct CancelInTransitBody: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             statusCard
+            LifecycleMapCard(live: live, label: "LAST KNOWN POSITION", icon: "exclamationmark.triangle.fill", mode: .full)
             telemetryCard
             ctaRow
         }

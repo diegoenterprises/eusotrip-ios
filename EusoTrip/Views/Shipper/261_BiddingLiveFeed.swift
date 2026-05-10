@@ -40,6 +40,7 @@ private struct BiddingBody: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             summaryStrip
+            LifecycleMapCard(live: live, label: "LANE PREVIEW", mode: .lane)
             bidFeedCard
             if let err = actionError { errorBanner(err) }
         }

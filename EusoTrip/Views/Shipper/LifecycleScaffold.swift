@@ -329,3 +329,158 @@ struct LifecycleScaffold<Body: View>: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 }
+
+import MapKit
+
+/// LifecycleMapCard — drops a HERE basemap onto every lifecycle stage
+/// (260–279) so the founder-doctrine "make sure HERE Maps is visual in
+/// every place it is located" mandate is honored across the Shipper
+/// post-load → settled flow. Each stage feeds the snapshot in; the card
+/// renders pickup, truck-pin (lastGeofence), and delivery as appropriate.
+///
+/// Pin selection rules (mirrors what a dispatcher actually wants to see
+/// at each stage):
+///   • Stage 5  (BIDDING / AWARDED / PRE-PICKUP) — pickup + delivery
+///   • Stage 6  (APPROACHING / AT GATE / AT DOCK) — truck + pickup
+///   • Stage 6.5 (IN TRANSIT / HOS / EXCEPTION)   — pickup + truck + delivery
+///   • Stage 7  (DELIVERY APPROACHING)            — truck + delivery
+///   • Stage 8  (CANCELLED / EXCURSION)           — pickup + truck + delivery
+///
+/// The card auto-collapses to an empty-state caption when none of the
+/// three coords are present on the snapshot — no fabricated lat/lngs,
+/// no fake pins.
+struct LifecycleMapCard: View {
+    @Environment(\.palette) private var palette
+    let live: ShipperAPI.LifecycleSnapshot
+    var label: String = "LIVE MAP"
+    var icon: String = "map.fill"
+    /// Which pin set to render. See doc comment above.
+    var mode: Mode = .full
+    /// Override the rendered card height (default 220 pt — enough to read
+    /// the basemap, small enough that the lifecycle card stack scrolls
+    /// naturally on a 6.1" iPhone).
+    var height: CGFloat = 220
+
+    enum Mode {
+        /// pickup + delivery only (no truck pin yet — Stage 5).
+        case lane
+        /// truck + pickup (Stages 6 / on-site).
+        case truckAtPickup
+        /// truck + delivery (Stage 7 — delivery approaching).
+        case truckAtDelivery
+        /// pickup + truck + delivery (full active route).
+        case full
+    }
+
+    var body: some View {
+        let stops = computeStops()
+
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text(label)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 0)
+                if HereMapsConfig.hasBearerCredentials {
+                    Text("HERE")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.7)
+                        .foregroundStyle(palette.textTertiary)
+                        .padding(.horizontal, 5).padding(.vertical, 1.5)
+                        .overlay(Capsule().strokeBorder(palette.borderFaint))
+                }
+            }
+
+            if stops.isEmpty {
+                emptyMap
+            } else {
+                HereMapView(
+                    stops: stops,
+                    extraAnnotations: extraTruckAnnotation(),
+                    showsUserLocation: false,
+                    showsCompass: false
+                )
+                .frame(height: height)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint, lineWidth: 1)
+                )
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    private var emptyMap: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "mappin.slash")
+                .font(.system(size: 18, weight: .heavy))
+                .foregroundStyle(palette.textTertiary)
+            Text("No GPS coordinates yet")
+                .font(EType.caption.weight(.semibold))
+                .foregroundStyle(palette.textPrimary)
+            Text("Map fills in once the carrier accepts and the driver pings.")
+                .font(.system(size: 10))
+                .foregroundStyle(palette.textTertiary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: height)
+        .background(palette.bgCardSoft)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    /// Builds the `LoadLocation` array HereMapView consumes — first =
+    /// pickup, last = delivery. Only includes coords that are actually
+    /// present on the snapshot (no fabricated lat/lng).
+    private func computeStops() -> [LoadLocation] {
+        var out: [LoadLocation] = []
+        let wantPickup = mode == .lane || mode == .truckAtPickup || mode == .full
+        let wantDelivery = mode == .lane || mode == .truckAtDelivery || mode == .full
+        if wantPickup,
+           let lat = live.pickup?.lat,
+           let lng = live.pickup?.lng {
+            out.append(LoadLocation(
+                address: live.pickup?.address ?? "",
+                city:    live.pickup?.city ?? "",
+                state:   live.pickup?.state ?? "",
+                zipCode: "",
+                lat: lat,
+                lng: lng
+            ))
+        }
+        if wantDelivery,
+           let lat = live.delivery?.lat,
+           let lng = live.delivery?.lng {
+            out.append(LoadLocation(
+                address: live.delivery?.address ?? "",
+                city:    live.delivery?.city ?? "",
+                state:   live.delivery?.state ?? "",
+                zipCode: "",
+                lat: lat,
+                lng: lng
+            ))
+        }
+        return out
+    }
+
+    /// Builds an `MKPointAnnotation` for the truck pin (lastGeofence)
+    /// when the mode includes one. HereMapView paints these via
+    /// `extraAnnotations` so they don't get tagged with pickup/delivery
+    /// roles in the marker view delegate.
+    private func extraTruckAnnotation() -> [MKPointAnnotation] {
+        guard mode == .truckAtPickup || mode == .truckAtDelivery || mode == .full else { return [] }
+        guard let g = live.lastGeofence else { return [] }
+        let truck = MKPointAnnotation()
+        truck.coordinate = CLLocationCoordinate2D(latitude: g.latitude, longitude: g.longitude)
+        truck.title = "Truck"
+        truck.subtitle = "truck · \(g.type)"
+        return [truck]
+    }
+}

@@ -24,6 +24,7 @@ private struct HosPauseBody: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             driverCard
+            LifecycleMapCard(live: live, label: "PARKED", mode: .full, height: 220)
             scheduleCard
             telemetryCard
             commsRow

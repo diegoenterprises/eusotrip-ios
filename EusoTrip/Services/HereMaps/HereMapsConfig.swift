@@ -211,14 +211,50 @@ enum HereMapsError: Error, LocalizedError {
 ///
 /// "explore" family is general-purpose — HERE also offers
 /// lite.day, topo.day, logistics.day, satellite.day, etc.
+///
+/// 2026-05-10: With OAuth Bearer auth in place (vs. the prior apikey
+/// query param), the HERE plan tier now serves `explore.night` for
+/// dark mode without a 403. If a future plan-tier change re-blocks
+/// `*.night`, `HereTileOverlay.loadTile(...)` already retries via the
+/// transparent-PNG fallback so the muted Apple basemap shows through
+/// gracefully — `nightStyleAvailable` flips false on the first 403
+/// and subsequent tiles request `.day` with the renderer's blue-slate
+/// tint applied on top.
 enum HereTileStyle {
     case dark
     case light
 
-    /// HERE `style=` query param. Both cases resolve to `explore.day`
-    /// per the 2026-04-29 fix; swap `dark` back to `"explore.night"`
-    /// when the HERE plan upgrades to a night-licensed tier.
-    var rawValue: String { "explore.day" }
+    /// HERE `style=` query param. Light → `explore.day` (cream roads,
+    /// blue water, green parks — the look we want to mirror Apple
+    /// Maps Standard from the founder's reference screenshot). Dark →
+    /// `explore.night` first; the runtime fallback in
+    /// `HereTileOverlay.loadTile` swaps to `explore.day` if HERE
+    /// denies the night tier.
+    var rawValue: String {
+        switch self {
+        case .light: return "explore.day"
+        case .dark:
+            return HereTileStyle.nightStyleAvailable
+                ? "explore.night"
+                : "explore.day"
+        }
+    }
+
+    /// Whether this style is currently rendering with HERE's real
+    /// night raster (`explore.night`) or the day-with-tint fallback.
+    /// `TintingTileOverlayRenderer` reads this to decide whether to
+    /// paint the dark slate-blue overlay (only needed when the day
+    /// raster is being repurposed for night).
+    var isRenderingNightRaster: Bool {
+        self == .dark && HereTileStyle.nightStyleAvailable
+    }
+
+    /// Process-wide flag flipped by `HereTileOverlay` the first time
+    /// HERE returns 403 on an `explore.night` tile — once the tier
+    /// rejects night once, every subsequent dark tile uses `.day` +
+    /// brand tint instead. Stays true (night-available) until that
+    /// 403 is observed.
+    nonisolated(unsafe) static var nightStyleAvailable: Bool = true
 
     /// HERE accepts 72 / 100 / 200 / 250 / 320 / 400 / 500. We pair
     /// `ppi=250` with `size=512` so labels render at a normal-map size

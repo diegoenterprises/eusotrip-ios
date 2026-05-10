@@ -39,6 +39,7 @@ private struct ReeferBody: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             cargoCard
+            LifecycleMapCard(live: live, label: "TRUCK POSITION", icon: "thermometer.high", mode: .full)
             tempCard
             ctaRow
         }

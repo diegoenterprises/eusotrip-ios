@@ -31,6 +31,7 @@ private struct AwardedBody: View {
         VStack(alignment: .leading, spacing: Space.s4) {
             carrierCard
             driverCard
+            LifecycleMapCard(live: live, label: "PICKUP LANE", mode: .lane)
             etaCard
             commsRow
         }
