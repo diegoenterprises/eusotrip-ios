@@ -2121,9 +2121,14 @@ struct ContentView: View {
             GeofenceService.shared.bind(to: trip)
             HOSClockService.shared.bind(to: trip)
             // If the driver already has an active load (e.g. warm
-            // launch into mid-trip), arm the geofences immediately.
+            // launch into mid-trip), arm the geofences immediately
+            // and start the continuous-GPS push so the shipper sees
+            // the truck pin update on every map surface (lifecycle
+            // 263–279, ControlTower, LiveTracking) without waiting
+            // on the next coarse geofence transition.
             if let load = trip.currentLoad {
                 GeofenceService.shared.monitor(load: load)
+                DriverGPSPushService.shared.start(loadId: load.id)
             }
         }
         .onChange(of: systemColorScheme) { _, newScheme in
@@ -2137,8 +2142,10 @@ struct ContentView: View {
         .onChange(of: trip.currentLoad?.id) { _, _ in
             if let load = trip.currentLoad {
                 GeofenceService.shared.monitor(load: load)
+                DriverGPSPushService.shared.start(loadId: load.id)
             } else {
                 GeofenceService.shared.clearAll()
+                DriverGPSPushService.shared.stop()
             }
         }
         // Cross-surface "Start pre-trip DVIR" — fired by the MeDvirView +

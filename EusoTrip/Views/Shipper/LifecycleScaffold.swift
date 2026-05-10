@@ -351,7 +351,14 @@ import MapKit
 /// no fake pins.
 struct LifecycleMapCard: View {
     @Environment(\.palette) private var palette
+    @ObservedObject private var geocodeStore = LifecycleGeocodeStore.shared
     let live: ShipperAPI.LifecycleSnapshot
+    /// Stable load identifier — used as the geocode-cache key so the
+    /// fallback HERE Geocoding round-trip only fires once per load+side
+    /// across a session (and survives app relaunches via UserDefaults).
+    /// Defaults to the snapshot's load id so existing call sites that
+    /// pass `live: live` keep working without an explicit loadId.
+    var loadId: String? = nil
     var label: String = "LIVE MAP"
     var icon: String = "map.fill"
     /// Which pin set to render. See doc comment above.
@@ -437,37 +444,87 @@ struct LifecycleMapCard: View {
     }
 
     /// Builds the `LoadLocation` array HereMapView consumes — first =
-    /// pickup, last = delivery. Only includes coords that are actually
-    /// present on the snapshot (no fabricated lat/lng).
+    /// pickup, last = delivery. Coords resolution priority:
+    ///   1. Snapshot's lat/lng (server-side geocode already ran)
+    ///   2. LifecycleGeocodeStore cache (HERE-resolved, persisted)
+    ///   3. Fire HERE Geocoding async + return [] for now (the store's
+    ///      `objectWillChange` will trigger a re-render when coords land)
+    ///
+    /// No fabricated lat/lng. The empty-state caption only renders if
+    /// step 3 also produced nothing (no address on the snapshot).
     private func computeStops() -> [LoadLocation] {
         var out: [LoadLocation] = []
         let wantPickup = mode == .lane || mode == .truckAtPickup || mode == .full
         let wantDelivery = mode == .lane || mode == .truckAtDelivery || mode == .full
-        if wantPickup,
-           let lat = live.pickup?.lat,
-           let lng = live.pickup?.lng {
-            out.append(LoadLocation(
-                address: live.pickup?.address ?? "",
-                city:    live.pickup?.city ?? "",
-                state:   live.pickup?.state ?? "",
-                zipCode: "",
-                lat: lat,
-                lng: lng
-            ))
+        let resolvedLoadId = loadId ?? "load-\(live.load.id)"
+
+        if wantPickup, let pickup = live.pickup {
+            let addressLine = synthesizeAddressLine(
+                facilityName: pickup.facilityName,
+                address: pickup.address,
+                city: pickup.city,
+                state: pickup.state
+            )
+            if let coord = geocodeStore.coords(
+                loadId: resolvedLoadId,
+                side: .pickup,
+                lat: pickup.lat,
+                lng: pickup.lng,
+                addressLine: addressLine
+            ) {
+                out.append(LoadLocation(
+                    address: pickup.address ?? "",
+                    city:    pickup.city ?? "",
+                    state:   pickup.state ?? "",
+                    zipCode: "",
+                    lat: coord.latitude,
+                    lng: coord.longitude
+                ))
+            }
         }
-        if wantDelivery,
-           let lat = live.delivery?.lat,
-           let lng = live.delivery?.lng {
-            out.append(LoadLocation(
-                address: live.delivery?.address ?? "",
-                city:    live.delivery?.city ?? "",
-                state:   live.delivery?.state ?? "",
-                zipCode: "",
-                lat: lat,
-                lng: lng
-            ))
+        if wantDelivery, let delivery = live.delivery {
+            let addressLine = synthesizeAddressLine(
+                facilityName: delivery.facilityName,
+                address: delivery.address,
+                city: delivery.city,
+                state: delivery.state
+            )
+            if let coord = geocodeStore.coords(
+                loadId: resolvedLoadId,
+                side: .delivery,
+                lat: delivery.lat,
+                lng: delivery.lng,
+                addressLine: addressLine
+            ) {
+                out.append(LoadLocation(
+                    address: delivery.address ?? "",
+                    city:    delivery.city ?? "",
+                    state:   delivery.state ?? "",
+                    zipCode: "",
+                    lat: coord.latitude,
+                    lng: coord.longitude
+                ))
+            }
         }
         return out
+    }
+
+    /// Synthesize a single-line address suitable for HERE Geocoding.
+    /// Prefer the most specific available components — facility name +
+    /// street + city + state — falling back to whatever's present.
+    /// HERE's geocoder tolerates loose strings well.
+    private func synthesizeAddressLine(
+        facilityName: String?,
+        address: String?,
+        city: String?,
+        state: String?
+    ) -> String {
+        var parts: [String] = []
+        if let f = facilityName, !f.isEmpty { parts.append(f) }
+        if let a = address, !a.isEmpty, a != facilityName { parts.append(a) }
+        if let c = city, !c.isEmpty { parts.append(c) }
+        if let s = state, !s.isEmpty { parts.append(s) }
+        return parts.joined(separator: ", ")
     }
 
     /// Builds an `MKPointAnnotation` for the truck pin (lastGeofence)

@@ -19,6 +19,7 @@
 		A12E1A1C0010CE0FF1000007 /* HereFlexiblePolyline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000008 /* HereFlexiblePolyline.swift */; };
 		A12E1A1C0010CE0FF1000009 /* HereRoutingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100000A /* HereRoutingClient.swift */; };
 		A12E1A1C0010CE0FF100000B /* HereGeocodingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100000C /* HereGeocodingClient.swift */; };
+		LCGCSTORE0010CE0FF1A1B2C3 /* LifecycleGeocodeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = LCGCSTORE0010CE0FF1A1B2C4 /* LifecycleGeocodeStore.swift */; };
 		A12E1A1C0010CE0FF100000D /* HereMatrixClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100000E /* HereMatrixClient.swift */; };
 		A12E1A1C0010CE0FF100000F /* HereTileOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000010 /* HereTileOverlay.swift */; };
 		A12E1A1C0010CE0FF1000011 /* HereMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000012 /* HereMapView.swift */; };
@@ -65,6 +66,7 @@
 		A1A11111111111111111SHE1 /* ShipperHapticEscalation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111SHE2 /* ShipperHapticEscalation.swift */; };
 		A1A11111111111111111F002 /* RealtimeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F006 /* RealtimeService.swift */; };
 		A1A11111111111111111F003 /* GeofenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F007 /* GeofenceService.swift */; };
+		GPSPUSH001A1B2C3D4E5F0001 /* DriverGPSPushService.swift in Sources */ = {isa = PBXBuildFile; fileRef = GPSPUSH001A1B2C3D4E5F0002 /* DriverGPSPushService.swift */; };
 		A1A11111111111111111F004 /* HOSClockService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F008 /* HOSClockService.swift */; };
 		A1A11111111111111111F010 /* UnreadMessageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F009 /* UnreadMessageStore.swift */; };
 		A1B1903E9CD06CDB06E71174 /* EusoTripSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A13B8109FC394A8921DF752F /* EusoTripSession.swift */; };
@@ -596,6 +598,7 @@
 		A12E1A1C0010CE0FF1000008 /* HereFlexiblePolyline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereFlexiblePolyline.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF100000A /* HereRoutingClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereRoutingClient.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF100000C /* HereGeocodingClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereGeocodingClient.swift; sourceTree = "<group>"; };
+		LCGCSTORE0010CE0FF1A1B2C4 /* LifecycleGeocodeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifecycleGeocodeStore.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF100000E /* HereMatrixClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereMatrixClient.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000010 /* HereTileOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereTileOverlay.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000012 /* HereMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereMapView.swift; sourceTree = "<group>"; };
@@ -631,6 +634,7 @@
 		A1A11111111111111111SHE2 /* ShipperHapticEscalation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShipperHapticEscalation.swift; sourceTree = "<group>"; };
 		A1A11111111111111111F006 /* RealtimeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeService.swift; sourceTree = "<group>"; };
 		A1A11111111111111111F007 /* GeofenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeofenceService.swift; sourceTree = "<group>"; };
+		GPSPUSH001A1B2C3D4E5F0002 /* DriverGPSPushService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverGPSPushService.swift; sourceTree = "<group>"; };
 		A1A11111111111111111F008 /* HOSClockService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HOSClockService.swift; sourceTree = "<group>"; };
 		A1A11111111111111111F009 /* UnreadMessageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnreadMessageStore.swift; sourceTree = "<group>"; };
 		A1A34909AFFDFF756FF363F3 /* 011_PretripDVIR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 011_PretripDVIR.swift; sourceTree = "<group>"; };
@@ -1667,6 +1671,7 @@
 				A1A11111111111111111SHE2 /* ShipperHapticEscalation.swift */,
 				A1A11111111111111111F006 /* RealtimeService.swift */,
 				A1A11111111111111111F007 /* GeofenceService.swift */,
+				GPSPUSH001A1B2C3D4E5F0002 /* DriverGPSPushService.swift */,
 				A1A11111111111111111F008 /* HOSClockService.swift */,
 				A1A11111111111111111F009 /* UnreadMessageStore.swift */,
 				E1E1055200000001AA000001 /* HOSLiveStore.swift */,
@@ -1719,6 +1724,7 @@
 				A12E1A1C0010CE0FF1000008 /* HereFlexiblePolyline.swift */,
 				A12E1A1C0010CE0FF100000A /* HereRoutingClient.swift */,
 				A12E1A1C0010CE0FF100000C /* HereGeocodingClient.swift */,
+				LCGCSTORE0010CE0FF1A1B2C4 /* LifecycleGeocodeStore.swift */,
 				A12E1A1C0010CE0FF100000E /* HereMatrixClient.swift */,
 				A12E1A1C0010CE0FF1000010 /* HereTileOverlay.swift */,
 				A12E1A1C0010CE0FF1000016 /* HEREAuthService.swift */,
@@ -2007,7 +2013,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Auto-bump CFBundleVersion. Uses git commit count as the floor,\n# but raises to BUILD_FLOOR when the count regresses below the\n# highest build number already accepted on TestFlight (otherwise\n# a squash/rebase that drops the commit count produces an\n# upload that Apple rejects with `non-monotonic build number`).\n# 2026-05-06: floor raised to 230 after the count fell from 209\n# (TestFlight 209 was the HereMapView crash that this fix supersedes).\nset -e\nBUILD_FLOOR=252\nINFO_PLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\nif [ ! -f \"$INFO_PLIST\" ]; then\n  echo \"[auto-bump] Info.plist not found at $INFO_PLIST — skipping\"\n  exit 0\nfi\ncd \"$SRCROOT\" || exit 0\nif ! command -v git >/dev/null 2>&1; then\n  echo \"[auto-bump] git not on PATH — using floor $BUILD_FLOOR\"\n  /usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $BUILD_FLOOR\" \"$INFO_PLIST\"\n  exit 0\nfi\nGIT_COUNT=$(git rev-list HEAD --count 2>/dev/null || echo \"0\")\nif [ -z \"$GIT_COUNT\" ] || [ \"$GIT_COUNT\" -le 0 ]; then\n  GIT_COUNT=0\nfi\nif [ \"$GIT_COUNT\" -gt \"$BUILD_FLOOR\" ]; then\n  BUILD=$GIT_COUNT\nelse\n  BUILD=$BUILD_FLOOR\nfi\n/usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $BUILD\" \"$INFO_PLIST\"\necho \"[auto-bump] CFBundleVersion → $BUILD (git=$GIT_COUNT, floor=$BUILD_FLOOR)\"\n";
+			shellScript = "# Auto-bump CFBundleVersion. Uses git commit count as the floor,\n# but raises to BUILD_FLOOR when the count regresses below the\n# highest build number already accepted on TestFlight (otherwise\n# a squash/rebase that drops the commit count produces an\n# upload that Apple rejects with `non-monotonic build number`).\n# 2026-05-06: floor raised to 230 after the count fell from 209\n# (TestFlight 209 was the HereMapView crash that this fix supersedes).\nset -e\nBUILD_FLOOR=253\nINFO_PLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\nif [ ! -f \"$INFO_PLIST\" ]; then\n  echo \"[auto-bump] Info.plist not found at $INFO_PLIST — skipping\"\n  exit 0\nfi\ncd \"$SRCROOT\" || exit 0\nif ! command -v git >/dev/null 2>&1; then\n  echo \"[auto-bump] git not on PATH — using floor $BUILD_FLOOR\"\n  /usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $BUILD_FLOOR\" \"$INFO_PLIST\"\n  exit 0\nfi\nGIT_COUNT=$(git rev-list HEAD --count 2>/dev/null || echo \"0\")\nif [ -z \"$GIT_COUNT\" ] || [ \"$GIT_COUNT\" -le 0 ]; then\n  GIT_COUNT=0\nfi\nif [ \"$GIT_COUNT\" -gt \"$BUILD_FLOOR\" ]; then\n  BUILD=$GIT_COUNT\nelse\n  BUILD=$BUILD_FLOOR\nfi\n/usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $BUILD\" \"$INFO_PLIST\"\necho \"[auto-bump] CFBundleVersion → $BUILD (git=$GIT_COUNT, floor=$BUILD_FLOOR)\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -2205,6 +2211,7 @@
 				A12E1A1C0010CE0FF1000007 /* HereFlexiblePolyline.swift in Sources */,
 				A12E1A1C0010CE0FF1000009 /* HereRoutingClient.swift in Sources */,
 				A12E1A1C0010CE0FF100000B /* HereGeocodingClient.swift in Sources */,
+				LCGCSTORE0010CE0FF1A1B2C3 /* LifecycleGeocodeStore.swift in Sources */,
 				A12E1A1C0010CE0FF100000D /* HereMatrixClient.swift in Sources */,
 				A12E1A1C0010CE0FF100000F /* HereTileOverlay.swift in Sources */,
 				A12E1A1C0010CE0FF1000011 /* HereMapView.swift in Sources */,
@@ -2550,6 +2557,7 @@
 				A1A11111111111111111SHE1 /* ShipperHapticEscalation.swift in Sources */,
 				A1A11111111111111111F002 /* RealtimeService.swift in Sources */,
 				A1A11111111111111111F003 /* GeofenceService.swift in Sources */,
+				GPSPUSH001A1B2C3D4E5F0001 /* DriverGPSPushService.swift in Sources */,
 				A1A11111111111111111F004 /* HOSClockService.swift in Sources */,
 				A1A11111111111111111F010 /* UnreadMessageStore.swift in Sources */,
 				C1A2B3C4D5E6F78901234501 /* WatchAuthBridge.swift in Sources */,
@@ -2757,7 +2765,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = EusoTrip/EusoTrip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 252;
+				CURRENT_PROJECT_VERSION = 253;
 				DEVELOPMENT_ASSET_PATHS = "\"EusoTrip/Preview Content\"";
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				ENABLE_PREVIEWS = YES;
@@ -2798,7 +2806,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = EusoTrip/EusoTrip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 252;
+				CURRENT_PROJECT_VERSION = 253;
 				DEVELOPMENT_ASSET_PATHS = "\"EusoTrip/Preview Content\"";
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				ENABLE_PREVIEWS = YES;
@@ -2838,7 +2846,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = EusoTripPulseWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 252;
+				CURRENT_PROJECT_VERSION = 253;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -2871,7 +2879,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = EusoTripPulseWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 252;
+				CURRENT_PROJECT_VERSION = 253;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -2901,7 +2909,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 252;
+				CURRENT_PROJECT_VERSION = 253;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -2925,7 +2933,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 252;
+				CURRENT_PROJECT_VERSION = 253;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -2947,7 +2955,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 252;
+				CURRENT_PROJECT_VERSION = 253;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -2970,7 +2978,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 252;
+				CURRENT_PROJECT_VERSION = 253;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -3000,7 +3008,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				CURRENT_PROJECT_VERSION = 252;
+				CURRENT_PROJECT_VERSION = 253;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = EusoTripiOSWidgets/Info.plist;
@@ -3033,7 +3041,7 @@
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
-				CURRENT_PROJECT_VERSION = 252;
+				CURRENT_PROJECT_VERSION = 253;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = EusoTripiOSWidgets/Info.plist;
