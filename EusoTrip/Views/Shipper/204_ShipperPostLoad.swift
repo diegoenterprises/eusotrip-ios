@@ -182,7 +182,7 @@ struct ShipperPostLoad: View {
     /// the raw string sent to `shippers.create` so the catalyst's
     /// dispatcher / driver knows what physical asset to roll.
     enum EquipmentChoice: String, CaseIterable, Identifiable {
-        // Truck verticals
+        // ── Truck (12) ─────────────────────────────────────────────
         case dryVan        = "dry_van"
         case reefer        = "reefer"
         case flatbed       = "flatbed"
@@ -195,82 +195,152 @@ struct ShipperPostLoad: View {
         case tankerGas     = "tanker_gas"
         case powerOnly     = "power_only"
         case oversized     = "oversized"
-        // Rail vertical
-        case railTOFC      = "rail_tofc"
-        case railCOFC      = "rail_cofc"
-        case railIntermodal = "rail_intermodal"
-        // Vessel vertical
-        case vesselContainer = "vessel_container"
-        case vesselBulk      = "vessel_bulk"
-        case vesselTanker    = "vessel_tanker"
+        // ── Truck extended (2) ────────────────────────────────────
+        case lowboy        = "lowboy"
+        case hotShot       = "hot_shot"
+        // ── Rail (12) ──────────────────────────────────────────────
+        // 2026-05-18 — expanded from 3 to 12 to match the rail SVGs
+        // already on disk. Founder firing: hazmat tank cars, hoppers,
+        // boxcars, autoracks, centerbeam flatcars, well cars, gondolas,
+        // reefer boxcars must all be selectable so cargo↔equipment
+        // auto-snap can land on a rail-accurate type.
+        case railTOFC          = "rail_tofc"
+        case railCOFC          = "rail_cofc"
+        case railIntermodal    = "rail_intermodal"
+        case railTankGas       = "rail_tank_gas"
+        case railTankLiquid    = "rail_tank_liquid"
+        case railBoxcar        = "rail_boxcar"
+        case railReeferBoxcar  = "rail_reefer_boxcar"
+        case railHopper        = "rail_hopper"
+        case railCenterbeam    = "rail_centerbeam"
+        case railGondola       = "rail_gondola"
+        case railAutoRack      = "rail_auto_rack"
+        case railFlatcar       = "rail_flatcar"
+        // ── Vessel (7) ─────────────────────────────────────────────
+        // Same expansion — adds RoRo (autos), LNG carrier, reefer
+        // container ship, and ISO-tank ship so vessel shippers get
+        // an honest list instead of "container / bulk / tanker".
+        case vesselContainer        = "vessel_container"
+        case vesselBulk             = "vessel_bulk"
+        case vesselTanker           = "vessel_tanker"
+        case vesselRoRo             = "vessel_roro"
+        case vesselLNG              = "vessel_lng"
+        case vesselReeferContainer  = "vessel_reefer_container"
+        case vesselISOTank          = "vessel_iso_tank"
 
         var id: String { rawValue }
+
         var label: String {
             switch self {
-            case .dryVan:           return "Dry van"
-            case .reefer:           return "Reefer"
-            case .flatbed:          return "Flatbed"
-            case .stepDeck:         return "Step deck"
-            case .conestoga:        return "Conestoga"
-            case .container:        return "Container"
-            case .tankerHazmat:     return "Tanker · Hazmat"
-            case .tankerPetro:      return "Tanker · Petroleum"
-            case .tankerLiquid:     return "Tanker · Liquid bulk"
-            case .tankerGas:        return "Tanker · Gas"
-            case .powerOnly:        return "Power only"
-            case .oversized:        return "Oversized"
-            case .railTOFC:         return "Rail · TOFC"
-            case .railCOFC:         return "Rail · COFC"
-            case .railIntermodal:   return "Rail · Intermodal"
-            case .vesselContainer:  return "Vessel · Container"
-            case .vesselBulk:       return "Vessel · Bulk"
-            case .vesselTanker:     return "Vessel · Tanker"
+            case .dryVan:                return "Dry van"
+            case .reefer:                return "Reefer"
+            case .flatbed:               return "Flatbed"
+            case .stepDeck:              return "Step deck"
+            case .conestoga:             return "Conestoga"
+            case .container:             return "Container"
+            case .tankerHazmat:          return "Tanker · Hazmat"
+            case .tankerPetro:           return "Tanker · Petroleum"
+            case .tankerLiquid:          return "Tanker · Liquid bulk"
+            case .tankerGas:             return "Tanker · Gas"
+            case .powerOnly:             return "Power only"
+            case .oversized:             return "Oversized"
+            case .lowboy:                return "Lowboy"
+            case .hotShot:               return "Hot shot"
+            case .railTOFC:              return "Rail · TOFC"
+            case .railCOFC:              return "Rail · COFC"
+            case .railIntermodal:        return "Rail · Intermodal"
+            case .railTankGas:           return "Rail · Tank · Gas"
+            case .railTankLiquid:        return "Rail · Tank · Liquid"
+            case .railBoxcar:            return "Rail · Boxcar"
+            case .railReeferBoxcar:      return "Rail · Reefer boxcar"
+            case .railHopper:            return "Rail · Hopper"
+            case .railCenterbeam:        return "Rail · Centerbeam"
+            case .railGondola:           return "Rail · Gondola"
+            case .railAutoRack:          return "Rail · Autorack"
+            case .railFlatcar:           return "Rail · Flatcar"
+            case .vesselContainer:       return "Vessel · Container"
+            case .vesselBulk:            return "Vessel · Bulk"
+            case .vesselTanker:          return "Vessel · Tanker"
+            case .vesselRoRo:            return "Vessel · RoRo"
+            case .vesselLNG:             return "Vessel · LNG"
+            case .vesselReeferContainer: return "Vessel · Reefer container"
+            case .vesselISOTank:         return "Vessel · ISO tank"
             }
         }
+
         var systemImage: String {
             switch self {
-            case .dryVan:           return "shippingbox.fill"
-            case .reefer:           return "thermometer.snowflake"
-            case .flatbed:          return "rectangle.expand.vertical"
-            case .stepDeck:         return "rectangle.split.2x1"
-            case .conestoga:        return "shippingbox.and.arrow.backward"
-            case .container:        return "cube.box.fill"
-            case .tankerHazmat:     return "exclamationmark.triangle.fill"
-            case .tankerPetro:      return "fuelpump.fill"
-            case .tankerLiquid:     return "drop.triangle.fill"
-            case .tankerGas:        return "wind"
-            case .powerOnly:        return "bolt.car.fill"
-            case .oversized:        return "arrow.up.left.and.arrow.down.right"
-            case .railTOFC:         return "tram.fill"
-            case .railCOFC:         return "tram"
-            case .railIntermodal:   return "cube.transparent.fill"
-            case .vesselContainer:  return "ferry.fill"
-            case .vesselBulk:       return "ferry"
-            case .vesselTanker:     return "drop.fill"
+            case .dryVan:                return "shippingbox.fill"
+            case .reefer:                return "thermometer.snowflake"
+            case .flatbed:               return "rectangle.expand.vertical"
+            case .stepDeck:              return "rectangle.split.2x1"
+            case .conestoga:             return "shippingbox.and.arrow.backward"
+            case .container:             return "cube.box.fill"
+            case .tankerHazmat:          return "exclamationmark.triangle.fill"
+            case .tankerPetro:           return "fuelpump.fill"
+            case .tankerLiquid:          return "drop.triangle.fill"
+            case .tankerGas:             return "wind"
+            case .powerOnly:             return "bolt.car.fill"
+            case .oversized:             return "arrow.up.left.and.arrow.down.right"
+            case .lowboy:                return "rectangle.bottomthird.inset.filled"
+            case .hotShot:               return "bolt.fill"
+            case .railTOFC:              return "tram.fill"
+            case .railCOFC:              return "tram"
+            case .railIntermodal:        return "cube.transparent.fill"
+            case .railTankGas:           return "wind"
+            case .railTankLiquid:        return "drop.triangle.fill"
+            case .railBoxcar:            return "shippingbox.fill"
+            case .railReeferBoxcar:      return "thermometer.snowflake"
+            case .railHopper:            return "leaf.fill"
+            case .railCenterbeam:        return "rectangle.split.3x1"
+            case .railGondola:           return "rectangle"
+            case .railAutoRack:          return "car.2.fill"
+            case .railFlatcar:           return "rectangle.expand.vertical"
+            case .vesselContainer:       return "ferry.fill"
+            case .vesselBulk:            return "ferry"
+            case .vesselTanker:          return "drop.fill"
+            case .vesselRoRo:            return "car.fill"
+            case .vesselLNG:             return "flame.fill"
+            case .vesselReeferContainer: return "snowflake"
+            case .vesselISOTank:         return "drop.circle.fill"
             }
         }
+
         var vertical: String {
             switch self {
-            case .railTOFC, .railCOFC, .railIntermodal: return "rail"
-            case .vesselContainer, .vesselBulk, .vesselTanker: return "vessel"
-            default: return "truck"
+            case .railTOFC, .railCOFC, .railIntermodal,
+                 .railTankGas, .railTankLiquid,
+                 .railBoxcar, .railReeferBoxcar,
+                 .railHopper, .railCenterbeam, .railGondola,
+                 .railAutoRack, .railFlatcar:
+                return "rail"
+            case .vesselContainer, .vesselBulk, .vesselTanker,
+                 .vesselRoRo, .vesselLNG,
+                 .vesselReeferContainer, .vesselISOTank:
+                return "vessel"
+            default:
+                return "truck"
             }
         }
 
         /// Mode-compatibility filter for the Step 2 chip strip. Rail
         /// equipment only surfaces when the shipper picked Rail mode,
-        /// vessel equipment only when Vessel. Barge falls back to the
-        /// truck list for now — there is no dedicated barge equipment
-        /// case in the iOS enum, and barge shipments practically
-        /// continue on truck for first/last-mile. Founder firing
-        /// 2026-05-17: "the equipment list should reflect what mode
-        /// they picked." Doctrine: full-parity, no half-built modes.
+        /// vessel equipment only when Vessel. Barge maps to the
+        /// vessel surface for now (purpose-built barge animations
+        /// not yet on disk — vesselBulk/vesselTanker render the
+        /// closest equivalent for inland-waterway flows).
+        ///
+        /// Founder firing 2026-05-18: rail/vessel pickers were
+        /// returning only 3 types each, forcing the wizard to
+        /// auto-snap to a truck when the cargo was incompatible
+        /// with the 3 surfaced rail / vessel types. Now the full
+        /// SVG set ships through.
         func compatible(with mode: TransportMode) -> Bool {
             switch mode {
             case .truck:  return vertical == "truck"
             case .rail:   return vertical == "rail"
             case .vessel: return vertical == "vessel"
-            case .barge:  return vertical == "truck"
+            case .barge:  return vertical == "vessel"
             }
         }
     }
@@ -1664,8 +1734,38 @@ struct ShipperPostLoad: View {
         }
         if let meters = routeDistanceMeters, let secs = routeDurationSeconds {
             let miles = Double(meters) / 1609.34
-            let hours = Double(secs) / 3600.0
-            return String(format: "%.0f mi · %.1f hr · standard US semi · ESANG-routed", miles, hours)
+            // Mode-aware ETA + profile label. HERE Routing v8 only
+            // serves the truck path; for rail / vessel / barge we
+            // re-derive transit time from a mode-appropriate avg
+            // speed because there's no national multi-modal router.
+            // Numbers come from industry rule-of-thumbs that the
+            // founder can override per-load in Step 3 pricing.
+            //   • Rail intermodal: 28 mph avg incl. ramp dwell
+            //     (BNSF / UP cross-country mainline)
+            //   • Vessel feeder: 15 knots ≈ 17.3 mph
+            //   • ATB barge tow: 7 knots ≈ 8.1 mph
+            // HERE's `secs` value is reused as the truck-equivalent
+            // hours; for the other modes we recompute from `miles`.
+            let hours: Double = {
+                switch transportMode {
+                case .truck:  return Double(secs) / 3600.0
+                case .rail:   return miles / 28.0
+                case .vessel: return miles / 17.3
+                case .barge:  return miles / 8.1
+                }
+            }()
+            let profile: String = {
+                switch transportMode {
+                case .truck:  return "standard US semi"
+                case .rail:   return "UP / BNSF intermodal (28 mph avg)"
+                case .vessel: return "feeder vessel (15 kn)"
+                case .barge:  return "ATB barge tow (7 kn)"
+                }
+            }()
+            let etaStr: String = hours > 48
+                ? String(format: "%.1f days", hours / 24.0)
+                : String(format: "%.1f hr", hours)
+            return String(format: "%.0f mi · %@ · %@ · ESANG-routed", miles, etaStr, profile)
         }
         // Both addresses present and `recomputeETAIfReady` is in flight.
         return "Estimating distance · ETA · best-route via ESANG"
@@ -3029,16 +3129,30 @@ struct ShipperPostLoad: View {
 
     private var cargoTypePicker: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("CARGO TYPE")
-                .font(EType.micro).tracking(0.6)
-                .foregroundStyle(palette.textTertiary)
+            HStack(spacing: 6) {
+                Text("CARGO TYPE")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 0)
+                // Mirror the EQUIPMENT TYPE eyebrow — show the active
+                // mode so the user understands why this chip strip
+                // shrank from 8 to whatever subset rail / vessel /
+                // barge accept.
+                Text(transportMode.displayName.uppercased())
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(LinearGradient.diagonal)
+            }
             // ScrollViewReader so the selected cargo chip auto-centers
             // on equipment-driven auto-snap (Reefer picked → cargo
             // jumps to refrigerated → chip scrolls into view).
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(ShipperAPI.CargoType.allCases) { type in
+                        // 2026-05-18 — mode-filtered cargo strip. Rail
+                        // surfaces all 8, vessel drops oversized (RoRo
+                        // covers it under General), barge drops reefer
+                        // + gas + oversized. Truck keeps the full set.
+                        ForEach(ShipperAPI.CargoType.allCases.filter { transportMode.acceptsCargo($0) }) { type in
                             Button {
                                 withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
                                     cargoType = type
@@ -3133,6 +3247,21 @@ struct ShipperPostLoad: View {
             resyncWeightUnit()
             autoSnapEquipmentForCargo(newValue)
             clearHazmatFieldsIfNoLongerHazmat(newValue)
+        }
+        .onChange(of: transportMode) { _, newMode in
+            // Mode flip on Step 1 must propagate into Step 2: the
+            // equipment chip strip already filters by mode (line 2416),
+            // but if the user had already selected a truck-tanker on
+            // Step 2 then switched to RAIL on Step 1, the "TRUCK"
+            // eyebrow + truck animation would persist until they
+            // manually picked a rail chip. Auto-snap closes the loop.
+            autoSnapEquipmentForMode(newMode)
+            // Cargo set may also need pruning — if the previously
+            // chosen cargo isn't compatible with the new mode, snap
+            // it to General which all modes accept.
+            if !newMode.acceptsCargo(cargoType) {
+                cargoType = .general
+            }
         }
     }
 
@@ -3241,7 +3370,28 @@ struct ShipperPostLoad: View {
     /// cargo selection (founder bug 2026-05-16: refrigerated chosen
     /// but vessel-tanker animation kept painting).
     private func autoSnapEquipmentForCargo(_ ct: ShipperAPI.CargoType) {
-        guard let proposed = ct.defaultEquipment(currentEquipment: equipmentType) else { return }
+        guard let proposed = ct.defaultEquipment(currentEquipment: equipmentType, mode: transportMode) else { return }
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
+            equipmentType = proposed
+        }
+    }
+
+    /// Companion to autoSnapEquipmentForCargo — fires when the
+    /// shipper flips TransportMode on Step 1 and Step 2 already had
+    /// an equipment selection. Without this, a Truck-tanker
+    /// selection stays on screen after switching to Rail (with the
+    /// "TRUCK" eyebrow label) until the user manually picks a rail
+    /// chip. Now the wizard auto-snaps to a mode-compatible
+    /// equipment that still serves the active cargo type.
+    /// Founder firing 2026-05-18.
+    private func autoSnapEquipmentForMode(_ mode: TransportMode) {
+        // If the current equipment is already compatible with the
+        // new mode, nothing to do.
+        if equipmentType.compatible(with: mode) { return }
+        // Otherwise pick a mode-coherent default using the active
+        // cargo type's mapping table.
+        let proposed = cargoType.defaultEquipment(currentEquipment: equipmentType, mode: mode)
+            ?? cargoType.defaultEquipmentFallback(mode: mode)
         withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
             equipmentType = proposed
         }
@@ -4566,6 +4716,50 @@ extension Notification.Name {
     static let eusoShipperPostLoadDismiss = Notification.Name("eusoShipperPostLoadDismiss")
 }
 
+// MARK: - Mode → Cargo compatibility
+//
+// File-local extension that documents which cargo types a given
+// transport mode accepts in this wizard. Single source of truth used
+// by the cargo-chip filter (Step 2) and the mode-flip auto-snap.
+// Truck accepts everything; rail can't carry oversized in the same
+// sense as truck (heavy-haul oversize is a specialty surface); etc.
+//
+// Founder firing 2026-05-18: the cargo picker was rendering all 8
+// cargo types regardless of mode. Now rail/vessel/barge prune to
+// the cargos those modes practically serve.
+
+extension TransportMode {
+    /// Cargo types this mode actually serves. The wizard filters
+    /// the chip strip by this set; the mode-flip auto-snap uses it
+    /// to decide whether to also reset the cargoType to `.general`.
+    var acceptedCargoTypes: Set<ShipperAPI.CargoType> {
+        switch self {
+        case .truck:
+            // Truck does everything — historical default.
+            return Set(ShipperAPI.CargoType.allCases)
+        case .rail:
+            // Rail moves all eight categories at scale (bulk + intermodal
+            // + tank cars + autoracks + flatcars). Even oversized has a
+            // rail equivalent (centerbeam / depressed-center flatcars).
+            return Set(ShipperAPI.CargoType.allCases)
+        case .vessel:
+            // Vessel: container, bulk, tanker, RoRo cover everything
+            // except the truck-shaped "oversized" category which on
+            // vessel becomes RoRo or break-bulk under General.
+            return [.general, .hazmat, .refrigerated, .liquid, .gas, .chemicals, .petroleum]
+        case .barge:
+            // Inland barge: bulk + tank + dry cargo. No reefer, no
+            // gas (gas barges exist but aren't on EusoTrip's barge
+            // shipper flow yet), no oversized.
+            return [.general, .hazmat, .liquid, .chemicals, .petroleum]
+        }
+    }
+
+    func acceptsCargo(_ cargo: ShipperAPI.CargoType) -> Bool {
+        acceptedCargoTypes.contains(cargo)
+    }
+}
+
 // MARK: - Wizard → EquipmentAnimation taxonomy bridges
 //
 // EquipmentChoice + ShipperAPI.CargoType are wizard-internal enums;
@@ -4577,24 +4771,39 @@ extension Notification.Name {
 fileprivate extension ShipperPostLoad.EquipmentChoice {
     var animationKind: EquipmentKind {
         switch self {
-        case .dryVan:           return .dryVan
-        case .reefer:           return .reefer
-        case .flatbed:          return .flatbed
-        case .stepDeck:         return .stepDeck
-        case .conestoga:        return .conestoga
-        case .container:        return .container
-        case .tankerHazmat:     return .tankerHazmat
-        case .tankerPetro:      return .tankerPetro
-        case .tankerLiquid:     return .tankerLiquid
-        case .tankerGas:        return .tankerGas
-        case .powerOnly:        return .powerOnly
-        case .oversized:        return .oversized
-        case .railTOFC:         return .railTOFC
-        case .railCOFC:         return .railCOFC
-        case .railIntermodal:   return .railIntermodal
-        case .vesselContainer:  return .vesselContainer
-        case .vesselBulk:       return .vesselBulk
-        case .vesselTanker:     return .vesselTanker
+        case .dryVan:                return .dryVan
+        case .reefer:                return .reefer
+        case .flatbed:               return .flatbed
+        case .stepDeck:              return .stepDeck
+        case .conestoga:             return .conestoga
+        case .container:             return .container
+        case .tankerHazmat:          return .tankerHazmat
+        case .tankerPetro:           return .tankerPetro
+        case .tankerLiquid:          return .tankerLiquid
+        case .tankerGas:             return .tankerGas
+        case .powerOnly:             return .powerOnly
+        case .oversized:             return .oversized
+        case .lowboy:                return .lowboy
+        case .hotShot:               return .hotShot
+        case .railTOFC:              return .railTOFC
+        case .railCOFC:              return .railCOFC
+        case .railIntermodal:        return .railIntermodal
+        case .railTankGas:           return .railTankGas
+        case .railTankLiquid:        return .railTankLiquid
+        case .railBoxcar:            return .railBoxcar
+        case .railReeferBoxcar:      return .railReeferBoxcar
+        case .railHopper:            return .railHopper
+        case .railCenterbeam:        return .railCenterbeam
+        case .railGondola:           return .railGondola
+        case .railAutoRack:          return .railAutoRack
+        case .railFlatcar:           return .railFlatcar
+        case .vesselContainer:       return .vesselContainer
+        case .vesselBulk:            return .vesselBulk
+        case .vesselTanker:          return .vesselTanker
+        case .vesselRoRo:            return .vesselRoRo
+        case .vesselLNG:             return .vesselLNG
+        case .vesselReeferContainer: return .vesselReeferContainer
+        case .vesselISOTank:         return .vesselISOTank
         }
     }
 }
@@ -4633,32 +4842,140 @@ fileprivate extension ShipperAPI.CargoType {
     /// cargo type. Drives the auto-coherence between cargo and
     /// equipment so the animation + preview + requirements subform
     /// stay in sync. Returns nil when the current equipment is already
-    /// compatible.
-    func defaultEquipment(currentEquipment: ShipperPostLoad.EquipmentChoice) -> ShipperPostLoad.EquipmentChoice? {
-        switch self {
-        case .refrigerated:
-            // Reefer surfaces: truck reefer, vessel reefer-container,
-            // rail reefer-boxcar. Stay on the current vertical if
-            // user already picked one of those.
-            let okEq: Set<ShipperPostLoad.EquipmentChoice> = [.reefer]
-            return okEq.contains(currentEquipment) ? nil : .reefer
-        case .hazmat, .chemicals:
-            let okEq: Set<ShipperPostLoad.EquipmentChoice> = [.tankerHazmat, .vesselTanker]
-            return okEq.contains(currentEquipment) ? nil : .tankerHazmat
-        case .petroleum:
-            let okEq: Set<ShipperPostLoad.EquipmentChoice> = [.tankerPetro, .tankerHazmat, .vesselTanker]
-            return okEq.contains(currentEquipment) ? nil : .tankerPetro
-        case .liquid:
-            let okEq: Set<ShipperPostLoad.EquipmentChoice> = [.tankerLiquid, .tankerPetro, .vesselTanker]
-            return okEq.contains(currentEquipment) ? nil : .tankerLiquid
-        case .gas:
-            let okEq: Set<ShipperPostLoad.EquipmentChoice> = [.tankerGas, .vesselTanker]
-            return okEq.contains(currentEquipment) ? nil : .tankerGas
-        case .oversized:
-            let okEq: Set<ShipperPostLoad.EquipmentChoice> = [.oversized, .flatbed, .stepDeck]
-            return okEq.contains(currentEquipment) ? nil : .oversized
-        case .general:
-            return nil // any equipment is fine for general freight
+    /// compatible for the active mode.
+    ///
+    /// Founder firing 2026-05-18: was previously mode-blind — Hazmat
+    /// + Rail always landed on `tankerHazmat` (a truck silhouette) and
+    /// Refrigerated + Vessel always landed on `reefer` (also truck).
+    /// The mode parameter forces the snap onto a vertical-coherent
+    /// equipment so the animation paints correctly the first time.
+    func defaultEquipment(
+        currentEquipment: ShipperPostLoad.EquipmentChoice,
+        mode: ShipperPostLoad.TransportMode
+    ) -> ShipperPostLoad.EquipmentChoice? {
+        // Compute the canonical target for this (cargo, mode) tuple,
+        // then return nil if the user's existing equipment already
+        // serves the cargo on the active mode.
+        let target = canonicalEquipment(mode: mode)
+        let acceptable = acceptableEquipment(mode: mode)
+        return acceptable.contains(currentEquipment) ? nil : target
+    }
+
+    /// Non-optional variant — always returns a sensible equipment for
+    /// the (cargo, mode) pair. Used by the mode-flip auto-snap where
+    /// we need a guaranteed value even when the current selection
+    /// happens to already be in the acceptable set (because it isn't
+    /// — that's why we're snapping).
+    func defaultEquipmentFallback(mode: ShipperPostLoad.TransportMode) -> ShipperPostLoad.EquipmentChoice {
+        canonicalEquipment(mode: mode)
+    }
+
+    /// Single canonical equipment per (cargo, mode). The "if I had
+    /// to pick one" choice — used when the user's current selection
+    /// isn't acceptable.
+    private func canonicalEquipment(mode: ShipperPostLoad.TransportMode) -> ShipperPostLoad.EquipmentChoice {
+        switch (self, mode) {
+        // Refrigerated
+        case (.refrigerated, .truck):  return .reefer
+        case (.refrigerated, .rail):   return .railReeferBoxcar
+        case (.refrigerated, .vessel): return .vesselReeferContainer
+        case (.refrigerated, .barge):  return .vesselReeferContainer
+
+        // Hazmat / Chemicals
+        case (.hazmat, .truck), (.chemicals, .truck):  return .tankerHazmat
+        case (.hazmat, .rail), (.chemicals, .rail):    return .railTankLiquid
+        case (.hazmat, .vessel), (.chemicals, .vessel):return .vesselISOTank
+        case (.hazmat, .barge), (.chemicals, .barge):  return .vesselTanker
+
+        // Petroleum
+        case (.petroleum, .truck):  return .tankerPetro
+        case (.petroleum, .rail):   return .railTankLiquid
+        case (.petroleum, .vessel): return .vesselTanker
+        case (.petroleum, .barge):  return .vesselTanker
+
+        // Liquid bulk
+        case (.liquid, .truck):  return .tankerLiquid
+        case (.liquid, .rail):   return .railTankLiquid
+        case (.liquid, .vessel): return .vesselTanker
+        case (.liquid, .barge):  return .vesselTanker
+
+        // Gas
+        case (.gas, .truck):  return .tankerGas
+        case (.gas, .rail):   return .railTankGas
+        case (.gas, .vessel): return .vesselLNG
+        case (.gas, .barge):  return .vesselLNG
+
+        // Oversized
+        case (.oversized, .truck):  return .oversized
+        case (.oversized, .rail):   return .railFlatcar
+        case (.oversized, .vessel): return .vesselRoRo
+        case (.oversized, .barge):  return .vesselBulk
+
+        // General
+        case (.general, .truck):  return .dryVan
+        case (.general, .rail):   return .railBoxcar
+        case (.general, .vessel): return .vesselContainer
+        case (.general, .barge):  return .vesselContainer
+        }
+    }
+
+    /// Equipment that's considered "good enough" for this cargo on
+    /// this mode — auto-snap only fires when the user's current pick
+    /// falls outside this set.
+    private func acceptableEquipment(mode: ShipperPostLoad.TransportMode) -> Set<ShipperPostLoad.EquipmentChoice> {
+        switch (self, mode) {
+        case (.refrigerated, .truck):  return [.reefer]
+        case (.refrigerated, .rail):   return [.railReeferBoxcar, .railBoxcar]
+        case (.refrigerated, .vessel): return [.vesselReeferContainer, .vesselContainer]
+        case (.refrigerated, .barge):  return [.vesselReeferContainer, .vesselContainer]
+
+        case (.hazmat, .truck), (.chemicals, .truck):
+            return [.tankerHazmat, .tankerLiquid, .tankerGas]
+        case (.hazmat, .rail), (.chemicals, .rail):
+            return [.railTankLiquid, .railTankGas]
+        case (.hazmat, .vessel), (.chemicals, .vessel):
+            return [.vesselISOTank, .vesselTanker, .vesselLNG]
+        case (.hazmat, .barge), (.chemicals, .barge):
+            return [.vesselTanker, .vesselISOTank]
+
+        case (.petroleum, .truck):
+            return [.tankerPetro, .tankerHazmat, .tankerLiquid]
+        case (.petroleum, .rail):
+            return [.railTankLiquid]
+        case (.petroleum, .vessel), (.petroleum, .barge):
+            return [.vesselTanker, .vesselISOTank]
+
+        case (.liquid, .truck):
+            return [.tankerLiquid, .tankerPetro, .tankerHazmat]
+        case (.liquid, .rail):
+            return [.railTankLiquid]
+        case (.liquid, .vessel), (.liquid, .barge):
+            return [.vesselTanker, .vesselISOTank]
+
+        case (.gas, .truck):
+            return [.tankerGas, .tankerHazmat]
+        case (.gas, .rail):
+            return [.railTankGas]
+        case (.gas, .vessel), (.gas, .barge):
+            return [.vesselLNG, .vesselTanker]
+
+        case (.oversized, .truck):
+            return [.oversized, .flatbed, .stepDeck, .lowboy, .hotShot]
+        case (.oversized, .rail):
+            return [.railFlatcar, .railCenterbeam, .railGondola]
+        case (.oversized, .vessel):
+            return [.vesselRoRo, .vesselBulk]
+        case (.oversized, .barge):
+            return [.vesselBulk]
+
+        case (.general, .truck):
+            return [.dryVan, .reefer, .flatbed, .stepDeck, .conestoga, .container, .powerOnly, .hotShot]
+        case (.general, .rail):
+            return [.railBoxcar, .railTOFC, .railCOFC, .railIntermodal, .railGondola, .railCenterbeam, .railHopper, .railAutoRack, .railFlatcar]
+        case (.general, .vessel):
+            return [.vesselContainer, .vesselBulk, .vesselRoRo, .vesselReeferContainer]
+        case (.general, .barge):
+            return [.vesselContainer, .vesselBulk]
         }
     }
 }
