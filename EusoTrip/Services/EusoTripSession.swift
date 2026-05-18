@@ -205,6 +205,103 @@ final class EusoTripSession: ObservableObject {
         return resp
     }
 
+    // MARK: Sign in with Apple
+
+    /// Drives the full Sign in with Apple flow end-to-end:
+    /// presents the system sheet, ships the identity token to the
+    /// server, persists the session in keychain + cached profile.
+    /// Returns the same `LoginResponse` shape as `signIn(email:…)`.
+    func signInWithApple() async throws -> LoginResponse {
+        let payload = try await AppleAuthProvider.shared.signInWithApple()
+        let resp = try await api.auth.signInWithApple(
+            identityToken: payload.identityToken,
+            authorizationCode: payload.authorizationCode,
+            givenName: payload.givenName,
+            familyName: payload.familyName,
+            email: payload.email,
+            nonce: payload.nonce
+        )
+        if resp.success, let user = resp.user {
+            await applySignIn(user: user)
+        }
+        return resp
+    }
+
+    // MARK: Passkey sign-in
+
+    /// Drives passkey assertion end-to-end. Pass `email` to constrain
+    /// the credential list to a specific account; nil = let iOS
+    /// surface any platform passkey for the RP.
+    func signInWithPasskey(email: String? = nil, preferImmediately: Bool = false) async throws -> LoginResponse {
+        let start = try await api.auth.passkeyAuthStart(email: email)
+        let result = try await AppleAuthProvider.shared.assertPasskey(
+            options: AppleAuthProvider.PasskeyAssertionStartOptions(
+                challengeB64URL: start.challenge,
+                allowedCredentialIdsB64URL: start.allowCredentials.map { $0.credentialId }
+            ),
+            preferImmediately: preferImmediately
+        )
+        let resp = try await api.auth.passkeyAuthFinish(
+            challenge: start.challenge,
+            credentialId: result.credentialId,
+            authenticatorData: result.authenticatorData,
+            clientDataJSON: result.clientDataJSON,
+            signature: result.signature,
+            userHandle: result.userHandle
+        )
+        if resp.success, let user = resp.user {
+            await applySignIn(user: user)
+        }
+        return resp
+    }
+
+    /// Post-sign-in passkey registration — Settings → Passkeys uses
+    /// this to bind the current iPhone for future Face-ID logins.
+    func registerPasskey(label: String? = nil) async throws {
+        let start = try await api.auth.passkeyRegisterStart(label: label)
+        let result = try await AppleAuthProvider.shared.registerPasskey(
+            options: AppleAuthProvider.PasskeyRegistrationStartOptions(
+                challengeB64URL: start.challenge,
+                userHandleB64URL: start.userHandle,
+                userName: start.userName,
+                userDisplayName: start.userDisplayName
+            )
+        )
+        _ = try await api.auth.passkeyRegisterFinish(
+            challenge: start.challenge,
+            credentialId: result.credentialId,
+            attestationObject: result.attestationObject,
+            clientDataJSON: result.clientDataJSON,
+            label: label,
+            transports: ["internal", "hybrid"]
+        )
+    }
+
+    /// Common post-sign-in plumbing shared by Apple Sign In and
+    /// passkey assertion. Mirrors the work in `signIn(...)`'s success
+    /// branch — token / cookie / cached user persistence, watch
+    /// bridge, strike-counter reset, phase flip.
+    private func applySignIn(user: AuthUser) async {
+        self.user = user
+        if let token = api.authToken {
+            keychain.save(key: kAuthToken, value: token)
+        }
+        saveCachedUser(user)
+        if let cookieJSON = api.authCookieSnapshotJSON() {
+            keychain.save(key: kAuthCookies, value: cookieJSON)
+        }
+        keychain.delete(key: kUnauthStrikes)
+        self.phase = .signedIn
+        if let token = api.authToken {
+            WatchAuthBridge.shared.push(
+                token: token,
+                userId: user.id,
+                userName: user.name,
+                role: user.role
+            )
+        }
+    }
+
     // MARK: Sign-out
 
     func signOut() async {

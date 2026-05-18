@@ -32,5 +32,28 @@
 	<array>
 		<string>$(AppIdentifierPrefix)com.app.eusotrip.shared</string>
 	</array>
+	<!--
+	  Sign in with Apple. The bundle ID is registered with the
+	  "Sign in with Apple" capability in the Apple developer portal;
+	  the iOS client uses ASAuthorizationAppleIDProvider to request
+	  an identity token which the server verifies against Apple's
+	  JWKS.
+	-->
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
+	<!--
+	  Passkeys (WebAuthn) — the `webcredentials:` entry scopes
+	  passkeys created on this device to `eusotrip.com` so iOS will
+	  only release them to a verified Apple App Site Association
+	  (AASA) at https://eusotrip.com/.well-known/apple-app-site-
+	  association. The server's RP_ID must match.
+	-->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>webcredentials:eusotrip.com</string>
+		<string>webcredentials:app.eusotrip.com</string>
+	</array>
 </dict>
 </plist>

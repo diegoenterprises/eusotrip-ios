@@ -51,6 +51,12 @@ ENTRIES = [
     ("FLCD2026051800000011A1", "FLCD2026051800000012A1",
      "FMCSALookupCard.swift",
      "EusoTrip/Views/Components/FMCSALookupCard.swift"),
+    ("AAPR2026051900000011A1", "AAPR2026051900000012A1",
+     "AppleAuthProvider.swift",
+     "EusoTrip/Services/AppleAuthProvider.swift"),
+    ("AABT2026051900000011A1", "AABT2026051900000012A1",
+     "AppleAuthButtons.swift",
+     "EusoTrip/Views/Auth/AppleAuthButtons.swift"),
 ]
 
 

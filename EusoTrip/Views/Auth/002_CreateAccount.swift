@@ -215,6 +215,23 @@ struct CreateAccountView: View {
 
     private var countryStep: some View {
         VStack(spacing: Space.s4) {
+            // Apple Sign In as the fast-path. New users without a
+            // password get an account created on first tap — server
+            // assigns role=DRIVER (recoverable from a settings sheet)
+            // and lights the verifyEmail card if Apple withheld the
+            // address. Passkeys aren't shown here because the user
+            // has no credential on file yet.
+            AppleAuthButtons(prefilledEmail: nil, axis: .vertical, showsPasskey: false)
+                .padding(.bottom, Space.s2)
+
+            HStack(spacing: Space.s2) {
+                Capsule().fill(palette.borderSoft.opacity(0.5)).frame(height: 1)
+                Text("OR PICK YOUR COUNTRY")
+                    .font(EType.micro).tracking(0.9)
+                    .foregroundStyle(palette.textTertiary)
+                Capsule().fill(palette.borderSoft.opacity(0.5)).frame(height: 1)
+            }
+
             VStack(spacing: Space.s3) {
                 ForEach(RegistrationCountry.allCases) { c in
                     countryCard(c)

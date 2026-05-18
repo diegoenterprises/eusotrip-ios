@@ -146,6 +146,16 @@ struct SignInView: View {
             .opacity(vm.canSubmit && !phaseIsSubmitting ? 1 : 0.55)
             .disabled(!vm.canSubmit || phaseIsSubmitting)
 
+            // Sign in with Apple + Passkey row. Both routes call
+            // through `session.signInWithApple()` / .signInWithPasskey()
+            // which hit the verified server endpoints and flip the
+            // session phase to .signedIn on success.
+            AppleAuthButtons(
+                prefilledEmail: vm.email,
+                axis: .vertical,
+                showsPasskey: true
+            )
+
             orDivider
 
             Button {

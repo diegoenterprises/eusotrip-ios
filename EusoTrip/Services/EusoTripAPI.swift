@@ -1824,6 +1824,172 @@ struct AuthAPI {
         return try await api.mutation("auth.forgotPassword", input: Input(email: email))
     }
 
+    // MARK: — Sign in with Apple
+
+    /// `auth.appleSignIn` — verifies the Apple identityToken against
+    /// the JWKS at appleid.apple.com, finds or creates a user, and
+    /// returns the same `{success, user}` envelope as `auth.login`.
+    func signInWithApple(
+        identityToken: String,
+        authorizationCode: String? = nil,
+        givenName: String? = nil,
+        familyName: String? = nil,
+        email: String? = nil,
+        nonce: String? = nil
+    ) async throws -> LoginResponse {
+        struct FullName: Encodable {
+            let givenName: String?
+            let familyName: String?
+        }
+        struct Input: Encodable {
+            let identityToken: String
+            let authorizationCode: String?
+            let fullName: FullName?
+            let email: String?
+            let nonce: String?
+        }
+        let fullName: FullName? = (givenName == nil && familyName == nil)
+            ? nil
+            : FullName(givenName: givenName, familyName: familyName)
+        return try await api.mutation(
+            "auth.appleSignIn",
+            input: Input(
+                identityToken: identityToken,
+                authorizationCode: authorizationCode,
+                fullName: fullName,
+                email: email,
+                nonce: nonce
+            )
+        )
+    }
+
+    // MARK: — Passkeys
+
+    struct PasskeyRegisterStartResponse: Decodable {
+        struct RP: Decodable { let id: String; let name: String }
+        let rp: RP
+        let userHandle: String          // base64url
+        let userName: String
+        let userDisplayName: String
+        let challenge: String           // base64url
+        let algorithms: [Int]
+    }
+    /// `auth.passkeyRegisterStart` — protected. Returns RP + challenge
+    /// + user handle for the iOS WebAuthn registration request.
+    func passkeyRegisterStart(label: String? = nil) async throws -> PasskeyRegisterStartResponse {
+        struct Input: Encodable { let label: String? }
+        return try await api.mutation("auth.passkeyRegisterStart", input: Input(label: label))
+    }
+
+    struct PasskeyRegisterFinishAck: Decodable {
+        let success: Bool
+        let credentialId: String
+    }
+    /// `auth.passkeyRegisterFinish` — protected. Verifies attestation
+    /// and persists the credential. Pass the same `challenge` the
+    /// start step minted so the server can consume it.
+    func passkeyRegisterFinish(
+        challenge: String,
+        credentialId: String,
+        attestationObject: String,
+        clientDataJSON: String,
+        label: String? = nil,
+        transports: [String]? = nil
+    ) async throws -> PasskeyRegisterFinishAck {
+        struct Input: Encodable {
+            let challenge: String
+            let credentialId: String
+            let attestationObject: String
+            let clientDataJSON: String
+            let label: String?
+            let transports: [String]?
+        }
+        return try await api.mutation(
+            "auth.passkeyRegisterFinish",
+            input: Input(
+                challenge: challenge,
+                credentialId: credentialId,
+                attestationObject: attestationObject,
+                clientDataJSON: clientDataJSON,
+                label: label,
+                transports: transports
+            )
+        )
+    }
+
+    struct PasskeyAuthStartResponse: Decodable {
+        struct RP: Decodable { let id: String; let name: String }
+        struct AllowedCredential: Decodable {
+            let credentialId: String
+            let transports: [String]?
+        }
+        let rp: RP
+        let challenge: String
+        let allowCredentials: [AllowedCredential]
+    }
+    /// `auth.passkeyAuthStart` — public. Optionally pass `email` to
+    /// constrain the credential list to that account; omitting it
+    /// lets iOS surface any platform-stored passkey for the RP.
+    func passkeyAuthStart(email: String? = nil) async throws -> PasskeyAuthStartResponse {
+        struct Input: Encodable { let email: String? }
+        return try await api.mutation("auth.passkeyAuthStart", input: Input(email: email))
+    }
+
+    /// `auth.passkeyAuthFinish` — public. Verifies the assertion and
+    /// returns the standard `{success, user}` login envelope.
+    func passkeyAuthFinish(
+        challenge: String,
+        credentialId: String,
+        authenticatorData: String,
+        clientDataJSON: String,
+        signature: String,
+        userHandle: String?
+    ) async throws -> LoginResponse {
+        struct Input: Encodable {
+            let challenge: String
+            let credentialId: String
+            let authenticatorData: String
+            let clientDataJSON: String
+            let signature: String
+            let userHandle: String?
+        }
+        return try await api.mutation(
+            "auth.passkeyAuthFinish",
+            input: Input(
+                challenge: challenge,
+                credentialId: credentialId,
+                authenticatorData: authenticatorData,
+                clientDataJSON: clientDataJSON,
+                signature: signature,
+                userHandle: userHandle
+            )
+        )
+    }
+
+    struct PasskeyListRow: Decodable, Hashable, Identifiable {
+        let id: Int
+        let credentialId: String
+        let label: String?
+        let rpId: String
+        let createdAt: String?
+        let lastUsedAt: String?
+    }
+    /// `auth.passkeyList` — protected. Renders the Settings list.
+    func passkeyList() async throws -> [PasskeyListRow] {
+        try await api.queryNoInput("auth.passkeyList")
+    }
+
+    /// `auth.passkeyRevoke` — protected. Soft-revoke by id.
+    func passkeyRevoke(id: Int) async throws -> GenericSuccessResponse {
+        struct Input: Encodable { let id: Int }
+        return try await api.mutation("auth.passkeyRevoke", input: Input(id: id))
+    }
+}
+
+/// Minimal `{success}` envelope used by passkey revoke + similar
+/// "side-effect, no payload" mutations.
+struct GenericSuccessResponse: Decodable { let success: Bool }
+
     /// `auth.resetPassword` — POST mutation.
     func resetPassword(token: String, newPassword: String) async throws -> GenericMessageResponse {
         struct Input: Encodable {
