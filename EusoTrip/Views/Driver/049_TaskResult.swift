@@ -84,6 +84,10 @@ struct TaskResult: View {
                 Text("\(ctx.headerKicker) · \(fallbackElapsed) walkaround elapsed")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
+                    // EUSOTRIP-MODE-BADGE-2026-05-17 — mode chip on lifecycle screen
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
             }
             Spacer(minLength: 0)
             Text(fallbackClock)

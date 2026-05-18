@@ -336,6 +336,14 @@ struct ActiveEnrouteLoaded: View {
                         .font(EType.micro).tracking(0.6)
                         .fontWeight(.semibold)
                         .foregroundStyle(palette.textSecondary)
+                    // 2026-05-17 — Mode chip on the en-route-loaded
+                    // floating bar. The "loaded" state is when the
+                    // wrong-mode error is most expensive (truck driver
+                    // dispatched a rail leg, vessel charter accidentally
+                    // routed to a truck). Hidden for default truck case.
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
                     Text("· En route · Delivery")
                         .font(EType.body).fontWeight(.semibold)
                         .foregroundStyle(palette.textPrimary)

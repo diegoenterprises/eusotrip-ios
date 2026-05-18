@@ -171,6 +171,13 @@ struct ApproachingPickup: View {
                     Text(ctx.headerKicker)
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(LinearGradient.diagonal)
+                    // 2026-05-17 — Mode chip on approach. Hidden for
+                    // default truck-single-vehicle. Rail engineers
+                    // approaching a yard or vessel operators approaching
+                    // a berth read distinctly from truck drivers.
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
                 }
                 Text("Approaching \(ctx.vertical.pickupWord.lowercased())")
                     .font(.system(size: 26, weight: .heavy))

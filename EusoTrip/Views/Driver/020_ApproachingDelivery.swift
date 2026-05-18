@@ -115,6 +115,11 @@ struct ApproachingDelivery: View {
                         Text("APPROACHING DELIVERY")
                             .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                             .foregroundStyle(LinearGradient.diagonal)
+                        // 2026-05-17 — Mode chip on approach-delivery
+                        // header. Same chrome as approach-pickup (014).
+                        LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                      multiVehicleCount: activeLoad?.multiVehicleCount,
+                                      compact: true)
                     }
                     Text("\(fallbackTurnWord) \(fallbackTurnIn) mi · \(fallbackTurnRoad)")
                         .font(.system(size: 20, weight: .heavy))

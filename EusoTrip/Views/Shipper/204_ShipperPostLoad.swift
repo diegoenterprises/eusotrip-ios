@@ -85,6 +85,12 @@ struct ShipperPostLoad: View {
     @State private var rateText: String = ""
     @State private var notes: String = ""
 
+    // 2026-05-17 — Multi-modal transport-mode picker on Step 1. Cascades
+    // to the Step 2 equipment chip filter so the user sees rail chips
+    // when they pick rail, vessel chips when they pick vessel, etc.
+    // Persists onto loads.transport_mode via shippers.create.
+    @State private var transportMode: TransportMode = .truck
+
     // Equipment type picker — all verticals + product types per the
     // founder's "all verticals" doctrine. The selected type is sent
     // as `equipmentType` on `shippers.create`. Default = dry van.
@@ -128,6 +134,7 @@ struct ShipperPostLoad: View {
     @State private var oversizeWidthText:      String = ""
     @State private var oversizeHeightText:     String = ""
     @State private var oversizePermits:        Bool = false
+    @State private var permitType:             PermitType = .none
 
     /// Quantity-unit choice — auto-defaults from equipment + cargo
     /// type but the user can override. Carriers measure freight in
@@ -249,6 +256,23 @@ struct ShipperPostLoad: View {
             default: return "truck"
             }
         }
+
+        /// Mode-compatibility filter for the Step 2 chip strip. Rail
+        /// equipment only surfaces when the shipper picked Rail mode,
+        /// vessel equipment only when Vessel. Barge falls back to the
+        /// truck list for now — there is no dedicated barge equipment
+        /// case in the iOS enum, and barge shipments practically
+        /// continue on truck for first/last-mile. Founder firing
+        /// 2026-05-17: "the equipment list should reflect what mode
+        /// they picked." Doctrine: full-parity, no half-built modes.
+        func compatible(with mode: TransportMode) -> Bool {
+            switch mode {
+            case .truck:  return vertical == "truck"
+            case .rail:   return vertical == "rail"
+            case .vessel: return vertical == "vessel"
+            case .barge:  return vertical == "truck"
+            }
+        }
     }
 
     /// Quantity-measurement unit. The wizard surfaces a dynamic
@@ -299,6 +323,63 @@ struct ShipperPostLoad: View {
             case .feu:         return "FEU (40' container)"
             case .teu:         return "TEU (20' container)"
             case .pieces:      return "Pieces"
+            }
+        }
+    }
+
+    /// Permit type — surfaced inside the flatbed/oversized subform
+    /// when the load needs DOT/state oversize/superload authorization.
+    /// Mirrors the four real permit families a US oversized carrier
+    /// books against state DOTs:
+    ///   • `.tripPermit` — single-trip oversize/overweight, most
+    ///     common, state-by-state filing
+    ///   • `.annualOversize` — fleet annual oversize, repeat lanes
+    ///   • `.superload` — > legal annual oversize bounds, requires
+    ///     route survey + escort + utility coordination
+    ///   • `.overweightOnly` — within oversize dimensions but axle/
+    ///     gross weight exceeds 80k lb (e.g., 90k lb intermodal)
+    ///   • `.hazmatRoute` — hazmat-routed corridor permit
+    ///   • `.none` — no special permit (default)
+    /// Serialized as the raw string into the `notes` field on
+    /// `shippers.create` until the backend ships a structured permit
+    /// type column.
+    enum PermitType: String, CaseIterable, Identifiable {
+        case none           = "none"
+        case tripPermit     = "trip_permit"
+        case annualOversize = "annual_oversize"
+        case superload      = "superload"
+        case overweightOnly = "overweight_only"
+        case hazmatRoute    = "hazmat_route"
+
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .none:           return "No permit"
+            case .tripPermit:     return "Trip permit"
+            case .annualOversize: return "Annual oversize"
+            case .superload:      return "Superload"
+            case .overweightOnly: return "Overweight-only"
+            case .hazmatRoute:    return "Hazmat route"
+            }
+        }
+        var systemImage: String {
+            switch self {
+            case .none:           return "minus.circle"
+            case .tripPermit:     return "doc.text.fill"
+            case .annualOversize: return "calendar.badge.clock"
+            case .superload:      return "truck.box.badge.clock"
+            case .overweightOnly: return "scalemass.fill"
+            case .hazmatRoute:    return "exclamationmark.triangle.fill"
+            }
+        }
+        var hint: String {
+            switch self {
+            case .none:           return "Within legal limits · no DOT filing"
+            case .tripPermit:     return "Single trip · state-by-state filing"
+            case .annualOversize: return "Annual fleet authorization · repeat lanes"
+            case .superload:      return "Route survey + escort + utility coordination"
+            case .overweightOnly: return "> 80k lb gross / axle exceedance"
+            case .hazmatRoute:    return "Hazmat-routed corridor per 49 CFR 397"
             }
         }
     }
@@ -944,6 +1025,7 @@ struct ShipperPostLoad: View {
         var oversizeWidthText: String = ""
         var oversizeHeightText: String = ""
         var oversizePermits: Bool = false
+        var permitTypeRaw: String = "none"
         var weightUnitRaw: String = "lbs"
         var savedAt: Double = 0
     }
@@ -985,6 +1067,7 @@ struct ShipperPostLoad: View {
         s += oversizeWidthText; s += "|"
         s += oversizeHeightText; s += "|"
         s += String(oversizePermits); s += "|"
+        s += permitType.rawValue; s += "|"
         s += weightUnit.rawValue
         return s
     }
@@ -1030,6 +1113,7 @@ struct ShipperPostLoad: View {
             oversizeWidthText: oversizeWidthText,
             oversizeHeightText: oversizeHeightText,
             oversizePermits: oversizePermits,
+            permitTypeRaw: permitType.rawValue,
             weightUnitRaw: weightUnit.rawValue,
             savedAt: Date().timeIntervalSince1970
         )
@@ -1094,6 +1178,9 @@ struct ShipperPostLoad: View {
         oversizeWidthText = snap.oversizeWidthText
         oversizeHeightText = snap.oversizeHeightText
         oversizePermits = snap.oversizePermits
+        if let pt = PermitType(rawValue: snap.permitTypeRaw) {
+            permitType = pt
+        }
         if let unit = MeasurementUnit(rawValue: snap.weightUnitRaw) {
             weightUnit = unit
         }
@@ -1286,7 +1373,129 @@ struct ShipperPostLoad: View {
         VStack(alignment: .leading, spacing: Space.s5) {
             laneSection
             routeMetaPill
+            modePickerSection      // 2026-05-17 — Google-Maps-style picker
             scheduleSection
+        }
+    }
+
+    /// Multi-modal transport-mode picker. Replaces the implicit
+    /// truck-only assumption with an honest 4-mode row (truck / rail /
+    /// vessel / barge). Selection cascades to Step 2's equipment chip
+    /// filter — picking Rail surfaces rail equipment chips, Vessel
+    /// surfaces vessel chips. Founder firing 2026-05-17: "look at the
+    /// timing for each accessible transportation method... in our case
+    /// it would embody the vessel, truck, rail."
+    @ViewBuilder
+    private var modePickerSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "shippingbox.and.arrow.backward")
+                    .font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("MODE")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 0)
+                Text(transportMode.nativeRateUnit)
+                    .font(.system(size: 8, weight: .heavy, design: .monospaced)).tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            VStack(spacing: 6) {
+                ForEach(TransportMode.allCases) { mode in
+                    modeRow(mode)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func modeRow(_ mode: TransportMode) -> some View {
+        let selected = transportMode == mode
+        Button {
+            withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
+                transportMode = mode
+                autoSnapEquipmentForMode(mode)
+            }
+        } label: {
+            HStack(spacing: 10) {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(selected ? AnyShapeStyle(LinearGradient.diagonal)
+                                   : AnyShapeStyle(Color.clear))
+                    .frame(width: 3, height: 28)
+                Image(systemName: mode.sfSymbol)
+                    .font(.system(size: 16, weight: .heavy))
+                    .frame(width: 24)
+                    .foregroundStyle(palette.textPrimary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(mode.displayName.uppercased())
+                        .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                        .foregroundStyle(palette.textPrimary)
+                    Text(modeSubtitle(mode))
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                }
+                Spacer(minLength: 0)
+                if selected {
+                    Text("SELECTED")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(LinearGradient.diagonal))
+                }
+            }
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            .background(
+                selected ? AnyShapeStyle(LinearGradient.diagonal.opacity(0.12))
+                         : AnyShapeStyle(palette.bgCard.opacity(0.5))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(
+                        selected ? Brand.blue.opacity(0.55) : palette.borderFaint,
+                        lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(isSubmitting)
+    }
+
+    private func modeSubtitle(_ mode: TransportMode) -> String {
+        switch mode {
+        case .truck:  return "Door-to-door · 1–3 days · highest cost/ton"
+        case .rail:   return "Carload + intermodal · 3–7 days · ¼ of truck cost"
+        case .vessel: return "Port-to-port · 5–40 days · cheapest per ton-mile"
+        case .barge:  return "Inland waterway · 5–14 days · lowest $/ton bulk"
+        }
+    }
+
+    /// Snap equipment to a mode-compatible default when the user picks
+    /// a new transport mode. Truck stays on dryVan; rail → railTOFC;
+    /// vessel → vesselContainer; barge falls back to truck for the
+    /// equipment list (no dedicated barge equipment in EquipmentChoice
+    /// yet — that's a follow-up ship).
+    private func autoSnapEquipmentForMode(_ mode: TransportMode) {
+        switch mode {
+        case .truck:
+            if ![.dryVan, .reefer, .flatbed, .stepDeck, .conestoga, .container,
+                 .tankerHazmat, .tankerPetro, .tankerLiquid, .tankerGas,
+                 .powerOnly, .oversized].contains(equipmentType) {
+                equipmentType = .dryVan
+            }
+        case .rail:
+            if ![.railTOFC, .railCOFC, .railIntermodal].contains(equipmentType) {
+                equipmentType = .railTOFC
+            }
+        case .vessel:
+            if ![.vesselContainer, .vesselBulk, .vesselTanker].contains(equipmentType) {
+                equipmentType = .vesselContainer
+            }
+        case .barge:
+            // Barge equipment list ships in a follow-up. For now keep
+            // the user on a sensible truck default but surface the
+            // mode label so downstream rendering is honest.
+            if equipmentType == .dryVan { equipmentType = .dryVan }
         }
     }
 
@@ -1295,7 +1504,12 @@ struct ShipperPostLoad: View {
             Text("LANE")
                 .font(EType.micro).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
-            ZStack(alignment: .topTrailing) {
+            // Swap-arrows is vertically centered so it sits at the
+            // connector dot row — between the Origin clear-X and the
+            // Destination clear-X (each HereAddressField renders its
+            // own xmark.circle.fill). Anchoring it .topTrailing would
+            // overlap the Origin X.
+            ZStack(alignment: .trailing) {
                 VStack(alignment: .leading, spacing: 0) {
                     laneField(label: "ORIGIN",
                               text: $origin,
@@ -1319,7 +1533,7 @@ struct ShipperPostLoad: View {
                     swapButton
                 }
                 .buttonStyle(.plain)
-                .padding(Space.s4)
+                .padding(.trailing, Space.s4)
                 .accessibilityLabel("Swap origin and destination")
             }
         }
@@ -1403,14 +1617,30 @@ struct ShipperPostLoad: View {
     }
 
     private var routeMetaPill: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "arrow.triangle.swap")
+        // When routing is healthy / pending, the pill is a single-line
+        // status. When HERE rejects with a parse error, we expand to
+        // multi-line + smaller font so the founder can READ the full
+        // server response (founder bug 2026-05-17: three rounds of
+        // guessing failed because the pill truncated HERE's `cause`
+        // mid-sentence; only "Malformed request · Error while parsin…"
+        // was visible).
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: routingError != nil
+                  ? "exclamationmark.triangle.fill"
+                  : "arrow.triangle.swap")
                 .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(LinearGradient.primary)
+                .foregroundStyle(routingError != nil
+                                 ? AnyShapeStyle(Brand.warning)
+                                 : AnyShapeStyle(LinearGradient.primary))
+                .padding(.top, routingError != nil ? 2 : 0)
             Text(routeMetaText)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: routingError != nil ? 10 : 12,
+                              weight: .semibold))
                 .foregroundStyle(palette.textPrimary)
-                .lineLimit(1)
+                .lineLimit(routingError != nil ? 6 : 1)
+                .multilineTextAlignment(.leading)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, Space.s4).padding(.vertical, 10)
@@ -1802,7 +2032,351 @@ struct ShipperPostLoad: View {
             weightField
             equipmentPreviewSection
             equipmentSubform
+            // 2026-05-17 — Pre-submit hazmat compliance gates.
+            // Mirrors the server-side checks in loads.create
+            // (TRAILER_HAZMAT_ALLOWED + SEGREGATION_TABLE per
+            // 49 CFR 173 / 177.848) so the user sees the violation
+            // BEFORE the wizard fires the mutation. Hidden when
+            // hazmatClass is empty.
+            hazmatComplianceCard
+            // 2026-05-17 — State-overweight pre-flight. Server-side
+            // loads.create enforces STATE_WEIGHT_LIMITS (federal 80k
+            // baseline, MI=164k, MT=131.06k, ND=105.5k, SD/NV=129k).
+            // Catching it client-side gives the user the same
+            // amber-pill remediation pattern as the hazmat card
+            // (suggest permit type or splitting into multiple loads).
+            overweightComplianceCard
         }
+    }
+
+    /// State-overweight pre-flight. Renders nothing when the typed
+    /// weight is empty / under both state limits. Surfaces amber when
+    /// the load exceeds either origin or destination state limit, with
+    /// the specific remediation: oversized permit, or split into the
+    /// computed N-vehicle minimum.
+    @ViewBuilder
+    private var overweightComplianceCard: some View {
+        let weightLbs = parseWeightLbs(weightText, unit: weightUnit)
+        let oState = originStateCode ?? Self.stateFromLane(origin)
+        let dState = destStateCode ?? Self.stateFromLane(destination)
+        let oLimit = Self.stateWeightLimit(oState)
+        let dLimit = Self.stateWeightLimit(dState)
+        let oOver = !oState.isEmpty && weightLbs > oLimit
+        let dOver = !dState.isEmpty && weightLbs > dLimit
+        let anyOver = oOver || dOver
+        if weightLbs > 0 && (oOver || dOver) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "scalemass.fill")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(Brand.warning)
+                    Text("OVERWEIGHT LANE")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(Brand.warning)
+                    Spacer(minLength: 0)
+                    Text("Federal 80k · State-specific exceptions")
+                        .font(.system(size: 8, weight: .heavy, design: .monospaced)).tracking(0.4)
+                        .foregroundStyle(palette.textTertiary)
+                }
+                Text(overweightCopy(weightLbs: weightLbs, oState: oState, oLimit: oLimit, oOver: oOver, dState: dState, dLimit: dLimit, dOver: dOver))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                // Remediation row: tap-to-set the most appropriate permit.
+                HStack(spacing: 8) {
+                    Button {
+                        withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
+                            permitType = .overweightOnly
+                            oversizePermits = true
+                        }
+                    } label: {
+                        Text("Set Overweight-only permit")
+                            .font(.system(size: 10, weight: .heavy)).tracking(0.4)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(Capsule().fill(LinearGradient.diagonal))
+                    }.buttonStyle(.plain)
+                    if let split = suggestedSplit(weightLbs: weightLbs, limit: min(oLimit, dLimit)) {
+                        Text("or split into \(split) loads")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                }
+            }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(Brand.warning.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(Brand.warning.opacity(0.35), lineWidth: 1)
+            )
+        } else if weightLbs > 0 && !anyOver && !oState.isEmpty && !dState.isEmpty {
+            // Subtle green confirmation so the wizard tells the user
+            // the lane passes the gate — silence is ambiguous.
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(Brand.success)
+                Text("\(Int(weightLbs).formatted()) lb within \(oState)/\(dState) gross-weight limits")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(palette.textSecondary)
+            }
+        }
+    }
+
+    /// Parse the user's typed weight + unit and convert to pounds.
+    /// Returns 0 for unparseable input or units with no mass meaning
+    /// (TEU/FEU/pallets etc.).
+    private func parseWeightLbs(_ text: String, unit: MeasurementUnit) -> Double {
+        guard let v = Double(text.replacingOccurrences(of: ",", with: "")) else { return 0 }
+        switch unit {
+        case .pounds:     return v
+        case .kilograms:  return v * 2.20462
+        case .shortTons:  return v * 2000
+        case .metricTons: return v * 2204.62
+        case .gallons:    return v * 7  // ~7 lb/gal for refined product (rough)
+        case .barrels:    return v * 294 // 42 gal × 7 lb/gal
+        case .liters:     return v * 1.85
+        case .cubicMeters: return v * 1850
+        default:          return 0
+        }
+    }
+
+    /// Suggested split — how many vehicles needed so each falls
+    /// under the binding state limit. Returns nil for limits ≤ 0
+    /// or single-vehicle loads.
+    private func suggestedSplit(weightLbs: Double, limit: Int) -> Int? {
+        guard limit > 0, weightLbs > Double(limit) else { return nil }
+        return Int((weightLbs / Double(limit)).rounded(.up))
+    }
+
+    private func overweightCopy(weightLbs: Double, oState: String, oLimit: Int, oOver: Bool, dState: String, dLimit: Int, dOver: Bool) -> String {
+        let wInt = Int(weightLbs)
+        if oOver && dOver {
+            return "\(wInt.formatted()) lb exceeds both \(oState) (\(oLimit.formatted())) and \(dState) (\(dLimit.formatted())) state limits. Requires an overweight permit or load split."
+        }
+        if oOver {
+            return "\(wInt.formatted()) lb exceeds the \(oState) origin limit of \(oLimit.formatted()) lb. Requires an overweight permit or load split."
+        }
+        return "\(wInt.formatted()) lb exceeds the \(dState) destination limit of \(dLimit.formatted()) lb. Requires an overweight permit or load split."
+    }
+
+    /// State-specific gross-weight ceiling (lbs). Mirrors
+    /// `STATE_WEIGHT_LIMITS` in loads.ts:279. Defaults to the
+    /// federal 80,000 lb limit when the state isn't in the override
+    /// list (which covers most of the 50 states).
+    fileprivate static func stateWeightLimit(_ state: String) -> Int {
+        switch state.uppercased() {
+        case "MI": return 164_000
+        case "MT": return 131_060
+        case "ND": return 105_500
+        case "SD": return 129_000
+        case "NV": return 129_000
+        default:   return 80_000
+        }
+    }
+
+    /// Best-effort state extraction from a free-form address line.
+    /// "Houston, TX, United States" → "TX".
+    fileprivate static func stateFromLane(_ raw: String) -> String {
+        let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: ",")
+        guard parts.count >= 2 else { return "" }
+        let candidate = String(parts[1]).trimmingCharacters(in: .whitespaces).prefix(2).uppercased()
+        return String(candidate)
+    }
+
+    /// 49 CFR 177.848 hazmat compliance card. Renders nothing for
+    /// non-hazmat loads, a green confirmation pill for compatible
+    /// combinations, and a tinted-amber warning card with the
+    /// specific regulatory citation for incompatible combos.
+    /// Doctrine reference: "Hazmat is the most stringent lens"
+    /// (memory: feedback_doctrine_parity).
+    @ViewBuilder
+    private var hazmatComplianceCard: some View {
+        if !hazmatClass.isEmpty {
+            let trailerCode = trailerHazmatCode(for: equipmentType)
+            let allowedClasses = Self.trailerHazmatAllowed[trailerCode] ?? []
+            let trailerOk = allowedClasses.contains(hazmatClass)
+            let cdlEndorsements = Self.requiredCdlEndorsements(
+                hazmatClass: hazmatClass,
+                trailerCode: trailerCode
+            )
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: trailerOk ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(trailerOk ? Brand.success : Brand.warning)
+                    Text(trailerOk ? "HAZMAT COMPATIBLE" : "HAZMAT INCOMPATIBLE")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(trailerOk ? Brand.success : Brand.warning)
+                    Spacer(minLength: 0)
+                    Text("49 CFR 173")
+                        .font(.system(size: 8, weight: .heavy, design: .monospaced)).tracking(0.4)
+                        .foregroundStyle(palette.textTertiary)
+                }
+                if trailerOk {
+                    Text("Class \(hazmatClass) is approved for \(equipmentType.label). CDL endorsements required: \(cdlEndorsements.joined(separator: " + "))")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Class \(hazmatClass) cannot be transported on \(equipmentType.label). Permitted equipment: \(Self.equipmentLabels(forHazmatClass: hazmatClass).joined(separator: ", ")).")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                // 2026-05-17 — 49 CFR 177.848 co-load segregation
+                // advisory. Surfaces the list of hazmat classes that
+                // ARE allowed adjacent to the primary class on the
+                // same vehicle. Future-compat for when compartment
+                // UI lands: the same `compatibleHazmatClasses` /
+                // `firstSegregationViolation` helpers will gate the
+                // compartment picker.
+                if trailerOk {
+                    let compatible = Self.compatibleHazmatClasses(for: hazmatClass)
+                    if !compatible.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("49 CFR 177.848 · CO-LOAD COMPATIBILITY")
+                                .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                                .foregroundStyle(palette.textTertiary)
+                            Text("Compatible adjacent classes: \(compatible.joined(separator: ", "))")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(palette.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(.top, 4)
+                    }
+                }
+            }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill((trailerOk ? Brand.success : Brand.warning).opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder((trailerOk ? Brand.success : Brand.warning).opacity(0.35), lineWidth: 1)
+            )
+        }
+    }
+
+    /// Map the wizard's EquipmentChoice enum onto the server's
+    /// trailer-code dictionary (`liquid_tank`, `gas_tank`,
+    /// `hazmat_van`, etc.) so the same allow-list table works
+    /// for both client + server.
+    private func trailerHazmatCode(for choice: EquipmentChoice) -> String {
+        switch choice {
+        case .tankerHazmat, .tankerPetro, .tankerLiquid, .vesselTanker: return "liquid_tank"
+        case .tankerGas:        return "gas_tank"
+        case .dryVan, .powerOnly: return "dry_van"
+        case .reefer:           return "reefer"
+        case .flatbed, .stepDeck, .conestoga, .oversized: return "flatbed"
+        case .container, .railCOFC, .railIntermodal:      return "hazmat_van"
+        case .railTOFC:         return "flatbed"
+        case .vesselContainer, .vesselBulk: return "hazmat_van"
+        }
+    }
+
+    // MARK: - 49 CFR hazmat tables (mirror of server _core/hazmatConstants.ts)
+
+    /// Trailer code → allowed hazmat classes. Mirrors
+    /// `TRAILER_HAZMAT_ALLOWED` server-side; both sides must agree
+    /// or the wizard's pre-flight check and the server's create
+    /// check will disagree.
+    fileprivate static let trailerHazmatAllowed: [String: [String]] = [
+        "liquid_tank": ["3", "5.1", "5.2", "6.1", "8"],
+        "gas_tank":    ["2.1", "2.2", "2.3"],
+        "hazmat_van":  ["1", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6",
+                        "2.1", "2.2", "2.3", "3", "4.1", "4.2", "4.3",
+                        "5.1", "5.2", "6.1", "6.2", "7", "8", "9"],
+        "dry_van":     ["9"],
+        "reefer":      ["9"],
+        "flatbed":     ["9"],
+    ]
+
+    /// 49 CFR 177.848 — for each hazmat class, the list of classes
+    /// it CANNOT be co-loaded with on the same vehicle. Mirrors the
+    /// `SEGREGATION_TABLE` in server _core/hazmatConstants.ts so the
+    /// wizard's pre-flight and the server's compartment check use
+    /// the same truth table.
+    fileprivate static let hazmatSegregationTable: [String: [String]] = [
+        "1":   ["2.1","2.2","2.3","3","4.1","4.2","4.3","5.1","5.2","6.1","7","8"],
+        "1.1": ["2.1","2.3","3","4.1","4.2","4.3","5.1","5.2","6.1","7","8"],
+        "2.1": ["1","1.1","2.3","3","4.1","4.2","4.3","5.1","5.2","6.1","7","8"],
+        "2.3": ["1.1","2.1","3","4.1","4.2","4.3","5.1","5.2","6.1","8"],
+        "3":   ["1","1.1","2.1","2.3","4.1","4.3","5.1","5.2","6.1","7","8"],
+        "4.1": ["1","1.1","2.1","2.3","3","4.3","5.1","5.2","6.1","7","8"],
+        "4.2": ["1","1.1","2.1","2.3","3","5.1","5.2","7","8"],
+        "4.3": ["1","1.1","2.1","2.3","3","4.1","5.1","5.2","6.1","7","8"],
+        "5.1": ["1","1.1","2.1","2.3","3","4.1","4.2","4.3","6.1","7","8"],
+        "5.2": ["1","1.1","2.1","2.3","3","4.1","4.2","4.3","6.1","7"],
+        "6.1": ["1","1.1","2.1","2.3","3","4.1","4.3","5.1","5.2","7","8"],
+        "7":   ["1","1.1","2.1","3","4.1","4.2","4.3","5.1","5.2","6.1","8"],
+        "8":   ["1","1.1","2.1","2.3","3","4.1","4.2","4.3","5.1","6.1","7"],
+    ]
+
+    /// Given a primary hazmat class, return the list of all known
+    /// classes that ARE allowed to be co-loaded. Used by the hazmat
+    /// compliance card to surface the "Compatible co-loads" advisory
+    /// when the user is shipping a hazmat tanker (single-compartment
+    /// today; multi-compartment when that UI lands).
+    fileprivate static func compatibleHazmatClasses(for cls: String) -> [String] {
+        let allKnown = ["1","1.1","2.1","2.2","2.3","3","4.1","4.2","4.3","5.1","5.2","6.1","6.2","7","8","9"]
+        let forbidden = Set(hazmatSegregationTable[cls] ?? [])
+        return allKnown.filter { $0 != cls && !forbidden.contains($0) }
+    }
+
+    /// Multi-compartment check, ready for when compartment UI lands.
+    /// Returns the first incompatible pair found, or nil when every
+    /// pair in the list is mutually compatible. Pass `(class, label)`
+    /// tuples so the caller can format the violation with cargo names.
+    fileprivate static func firstSegregationViolation(
+        _ compartments: [(hazmatClass: String, label: String)]
+    ) -> (a: String, b: String, aLabel: String, bLabel: String)? {
+        for i in 0..<compartments.count {
+            for j in (i + 1)..<compartments.count {
+                let a = compartments[i].hazmatClass
+                let b = compartments[j].hazmatClass
+                if let forbidden = hazmatSegregationTable[a], forbidden.contains(b) {
+                    return (a, b, compartments[i].label, compartments[j].label)
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Compute CDL endorsement letters for the lane: H (hazmat),
+    /// N (tanker), X (combined H+N).
+    fileprivate static func requiredCdlEndorsements(hazmatClass: String, trailerCode: String) -> [String] {
+        let isTank = trailerCode.contains("tank")
+        if !hazmatClass.isEmpty && isTank { return ["X"] }
+        var out: [String] = []
+        if !hazmatClass.isEmpty { out.append("H") }
+        if isTank { out.append("N") }
+        return out.isEmpty ? ["—"] : out
+    }
+
+    /// Human-readable list of equipment labels that accept the
+    /// given hazmat class. Used to recommend a compatible trailer
+    /// when the user picked an incompatible one.
+    fileprivate static func equipmentLabels(forHazmatClass cls: String) -> [String] {
+        var matches: [String] = []
+        for (code, allowed) in trailerHazmatAllowed where allowed.contains(cls) {
+            switch code {
+            case "liquid_tank": matches.append("Tanker · Petroleum / Liquid")
+            case "gas_tank":    matches.append("Tanker · Gas")
+            case "hazmat_van":  matches.append("Hazmat van / Container")
+            case "dry_van":     matches.append("Dry van")
+            case "reefer":      matches.append("Reefer")
+            case "flatbed":     matches.append("Flatbed / Step deck")
+            default:            break
+            }
+        }
+        return matches.isEmpty ? ["—"] : matches
     }
 
     /// Equipment-type picker — covers truck / rail / vessel
@@ -1822,21 +2396,54 @@ struct ShipperPostLoad: View {
                     .font(.system(size: 8, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(LinearGradient.diagonal)
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(EquipmentChoice.allCases) { choice in
-                        Button {
-                            withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
-                                equipmentType = choice
+            // ScrollViewReader wraps the horizontal chip strip so we
+            // can `scrollTo` the selected equipment chip whenever
+            // `equipmentType` changes — including the cascade from a
+            // cargo-driven auto-snap. Without this, picking Vessel
+            // Tanker from `autoSnapEquipmentForCargo(.petroleum)`
+            // leaves the visible chips on Dry Van / Reefer / Flatbed
+            // and the user can't see why VESSEL lit up in the corner
+            // label.
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        // 2026-05-17 — mode-filtered chip set. Picking
+                        // Rail on Step 1 collapses the chip strip to
+                        // rail equipment only; Vessel → vessel; Truck/
+                        // Barge → truck. Keeps the user inside a
+                        // coherent mental model and forces autoSnap
+                        // to do the right thing if they change modes.
+                        ForEach(EquipmentChoice.allCases.filter { $0.compatible(with: transportMode) }) { choice in
+                            Button {
+                                withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
+                                    equipmentType = choice
+                                }
+                            } label: {
+                                equipmentChip(for: choice)
                             }
-                        } label: {
-                            equipmentChip(for: choice)
+                            .buttonStyle(.plain)
+                            .disabled(isSubmitting)
+                            .id(choice)
                         }
-                        .buttonStyle(.plain)
-                        .disabled(isSubmitting)
+                    }
+                    .padding(.vertical, 2)
+                }
+                .onAppear {
+                    // Bring the active chip into view on first render
+                    // so the user immediately sees their hydrated
+                    // draft selection (e.g., a Vessel Tanker draft
+                    // restored from iCloud).
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        withAnimation(.easeOut(duration: 0.18)) {
+                            proxy.scrollTo(equipmentType, anchor: .center)
+                        }
                     }
                 }
-                .padding(.vertical, 2)
+                .onChange(of: equipmentType) { _, newValue in
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        proxy.scrollTo(newValue, anchor: .center)
+                    }
+                }
             }
         }
     }
@@ -1920,9 +2527,7 @@ struct ShipperPostLoad: View {
                 Image(systemName: "drop.triangle.fill")
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
-                Text(cargoType == .hazmat || cargoType == .petroleum
-                     ? "TANKER · HAZMAT REQUIREMENTS"
-                     : "TANKER REQUIREMENTS")
+                Text(tankerSubformLabel)
                     .font(EType.micro).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
             }
@@ -2078,6 +2683,25 @@ struct ShipperPostLoad: View {
         .buttonStyle(.plain)
     }
 
+    /// Header label for the tanker subform — distinguishes the four
+    /// real tanker contexts so the user doesn't see "TANKER · HAZMAT
+    /// REQUIREMENTS" on a Vessel-Tanker with food-grade petroleum or
+    /// on a tanker_gas/tanker_liquid pull. The label drives the
+    /// catalyst's dispatcher to the right paperwork pack (MC-306 truck
+    /// vs IMO 2/IMO 3 vessel cert vs MC-331 cryo gas).
+    private var tankerSubformLabel: String {
+        switch (equipmentType, cargoType.isHazmatFlavored) {
+        case (.vesselTanker, true):  return "VESSEL TANKER · HAZMAT REQUIREMENTS"
+        case (.vesselTanker, false): return "VESSEL TANKER REQUIREMENTS"
+        case (.tankerHazmat, _):     return "TANKER · HAZMAT (MC-306) REQUIREMENTS"
+        case (.tankerPetro, _):      return "TANKER · PETROLEUM (MC-306) REQUIREMENTS"
+        case (.tankerLiquid, true):  return "TANKER · LIQUID BULK (MC-307) · HAZMAT"
+        case (.tankerLiquid, false): return "TANKER · LIQUID BULK (MC-307) REQUIREMENTS"
+        case (.tankerGas, _):        return "TANKER · GAS/CRYO (MC-331) REQUIREMENTS"
+        default:                     return "TANKER REQUIREMENTS"
+        }
+    }
+
     private func toggleTankerSpec(label: String) {
         let key: String
         switch label {
@@ -2133,10 +2757,48 @@ struct ShipperPostLoad: View {
                 Text("REEFER REQUIREMENTS")
                     .font(EType.micro).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 0)
+                // 2026-05-17 — Surface the expected commodity band
+                // (frozen / chilled / ambient) so the user sees the
+                // target temp window for the cargo they're shipping
+                // before they type the actual range.
+                if let band = reeferTargetBand {
+                    Text(band.label)
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(band.tint))
+                }
             }
             HStack(spacing: 8) {
                 reeferTempField(label: "LOW °F",  binding: $reeferTempLowText,  placeholder: "33")
                 reeferTempField(label: "HIGH °F", binding: $reeferTempHighText, placeholder: "40")
+            }
+            // 2026-05-17 — Inline validation card. Renders only when
+            // the typed range has something wrong: low ≥ high, range
+            // exceeds reefer hardware (-30°F to 80°F), or range doesn't
+            // overlap the cargo's expected commodity band. Doctrine:
+            // catch the error here, not at delivery when a frozen load
+            // melted because the user typed 50°F.
+            if let issue = reeferRangeIssue {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(Brand.warning)
+                    Text(issue)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 8).padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                        .fill(Brand.warning.opacity(0.10))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                        .strokeBorder(Brand.warning.opacity(0.35), lineWidth: 1)
+                )
             }
             Toggle("Pre-cool required",
                    isOn: $preCoolRequired.animation(.spring(response: 0.22, dampingFraction: 0.85)))
@@ -2154,6 +2816,67 @@ struct ShipperPostLoad: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.lg)
                     .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    /// One of three FDA-aligned reefer bands. Renders as a small pill
+    /// in the reefer subform header so the user knows which window
+    /// applies to their cargo before they type.
+    private struct ReeferBand {
+        let label: String
+        let lowF: Double
+        let highF: Double
+        let tint: Color
+    }
+
+    /// Pick a temperature band from the selected cargo + commodity.
+    /// Frozen for proteins / ice cream / frozen fish, chilled for
+    /// fresh produce + dairy, ambient for shelf-stable. Returns nil
+    /// for non-refrigerated cargo so the pill doesn't render.
+    private var reeferTargetBand: ReeferBand? {
+        guard equipmentType == .reefer else { return nil }
+        let commodity = properShippingName.lowercased()
+        let frozenKeywords  = ["frozen", "ice cream", "ice-cream", "icecream"]
+        let chilledKeywords = ["produce", "fresh", "dairy", "milk", "berries", "lettuce", "fish", "seafood", "poultry", "beef", "pork"]
+        let ambientKeywords = ["pharma", "wine", "chocolate", "ambient"]
+        if frozenKeywords.contains(where: commodity.contains) {
+            return ReeferBand(label: "FROZEN -20 to 0 °F", lowF: -20, highF: 0, tint: Brand.blue)
+        }
+        if chilledKeywords.contains(where: commodity.contains) {
+            return ReeferBand(label: "CHILLED 32 to 40 °F", lowF: 32, highF: 40, tint: Brand.info)
+        }
+        if ambientKeywords.contains(where: commodity.contains) {
+            return ReeferBand(label: "AMBIENT 50 to 70 °F", lowF: 50, highF: 70, tint: Brand.success)
+        }
+        // Cargo type alone: refrigerated → chilled by default.
+        if cargoType == .refrigerated {
+            return ReeferBand(label: "CHILLED 32 to 40 °F", lowF: 32, highF: 40, tint: Brand.info)
+        }
+        return nil
+    }
+
+    /// Return a one-line issue string when the typed range is wrong,
+    /// or nil when everything is fine (including the no-input case).
+    /// Order of checks: parseability → hardware range → low<high →
+    /// band overlap.
+    private var reeferRangeIssue: String? {
+        let lowStr  = reeferTempLowText.trimmingCharacters(in: .whitespaces)
+        let highStr = reeferTempHighText.trimmingCharacters(in: .whitespaces)
+        if lowStr.isEmpty && highStr.isEmpty { return nil }
+        guard let low = Double(lowStr), let high = Double(highStr) else {
+            return "Enter numeric °F values for both LOW and HIGH."
+        }
+        // Reefer trailer hardware envelope (Carrier / Thermo King
+        // standard units operate ~-30°F to ~80°F).
+        if low < -30 { return "Low temp \(Int(low))°F is below the reefer hardware floor (-30°F)." }
+        if high > 80 { return "High temp \(Int(high))°F exceeds the reefer hardware ceiling (80°F)." }
+        if low > high { return "Low temp must be less than or equal to high temp." }
+        if let band = reeferTargetBand {
+            // No overlap = the range is wrong for the commodity.
+            if high < band.lowF || low > band.highF {
+                return "\(Int(low))–\(Int(high))°F does not overlap the \(band.label) window. Verify cargo + temp."
+            }
+        }
+        return nil
     }
 
     @ViewBuilder
@@ -2218,12 +2941,75 @@ struct ShipperPostLoad: View {
                     .font(.system(size: 12, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
             }
+            // Permit Type — only shows when `oversizePermits` is on.
+            // Wired to permitType state so the catalyst's dispatcher
+            // knows which DOT filing to book against (trip / annual /
+            // superload / overweight-only / hazmat-routed). Default
+            // .none = no permit needed.
+            if oversizePermits {
+                permitTypePicker
+            }
         }
         .padding(Space.s3)
         .background(palette.bgCard)
         .overlay(RoundedRectangle(cornerRadius: Radius.lg)
                     .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    /// Permit-type chip strip. Surfaces the four real permit families
+    /// a US oversized carrier books against state DOTs plus the
+    /// hazmat-route corridor permit. Drives the eventual filing
+    /// downstream of `shippers.create`.
+    @ViewBuilder
+    private var permitTypePicker: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "doc.badge.gearshape")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("PERMIT TYPE")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 0)
+                Text(permitType.hint)
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(PermitType.allCases) { type in
+                        Button {
+                            withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
+                                permitType = type
+                            }
+                        } label: {
+                            permitChip(for: type)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isSubmitting)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func permitChip(for type: PermitType) -> some View {
+        let on = (permitType == type)
+        HStack(spacing: 5) {
+            Image(systemName: type.systemImage)
+                .font(.system(size: 9, weight: .heavy))
+            Text(type.label)
+                .font(.system(size: 10, weight: .heavy)).tracking(0.4)
+        }
+        .foregroundStyle(on ? AnyShapeStyle(.white) : AnyShapeStyle(palette.textSecondary))
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(Capsule().fill(on ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCardSoft)))
+        .overlay(Capsule().strokeBorder(on ? AnyShapeStyle(.clear) : AnyShapeStyle(palette.borderFaint), lineWidth: 1))
     }
 
     @ViewBuilder
@@ -2246,21 +3032,39 @@ struct ShipperPostLoad: View {
             Text("CARGO TYPE")
                 .font(EType.micro).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(ShipperAPI.CargoType.allCases) { type in
-                        Button {
-                            withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
-                                cargoType = type
+            // ScrollViewReader so the selected cargo chip auto-centers
+            // on equipment-driven auto-snap (Reefer picked → cargo
+            // jumps to refrigerated → chip scrolls into view).
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(ShipperAPI.CargoType.allCases) { type in
+                            Button {
+                                withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
+                                    cargoType = type
+                                }
+                            } label: {
+                                cargoChip(for: type)
                             }
-                        } label: {
-                            cargoChip(for: type)
+                            .buttonStyle(.plain)
+                            .disabled(isSubmitting)
+                            .id(type)
                         }
-                        .buttonStyle(.plain)
-                        .disabled(isSubmitting)
+                    }
+                    .padding(.vertical, 2)
+                }
+                .onAppear {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        withAnimation(.easeOut(duration: 0.18)) {
+                            proxy.scrollTo(cargoType, anchor: .center)
+                        }
                     }
                 }
-                .padding(.vertical, 2)
+                .onChange(of: cargoType) { _, newValue in
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        proxy.scrollTo(newValue, anchor: .center)
+                    }
+                }
             }
         }
     }
@@ -2309,9 +3113,157 @@ struct ShipperPostLoad: View {
             .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                         .strokeBorder(palette.borderFaint))
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+
+            // 2026-05-17 — multi-vehicle calculator advisory. Fires the
+            // moment we have a parseable barrel quantity and a mode +
+            // equipment. Symbiotic "how many vehicles do you need?" line
+            // — answers the founder ask "[platform] symbiotic to user's
+            // mind ... like a glove". Surfaced only for liquid bulk (bbl/
+            // mt) flows; non-petroleum cargo (palletized / TEU) follow
+            // in the next ship.
+            if let estimate = multiVehicleEstimate {
+                multiVehicleAdvisory(estimate)
+            }
         }
-        .onChange(of: equipmentType) { _, _ in resyncWeightUnit() }
-        .onChange(of: cargoType)     { _, _ in resyncWeightUnit() }
+        .onChange(of: equipmentType) { _, newValue in
+            resyncWeightUnit()
+            autoSnapCargoForEquipment(newValue)
+        }
+        .onChange(of: cargoType)     { _, newValue in
+            resyncWeightUnit()
+            autoSnapEquipmentForCargo(newValue)
+            clearHazmatFieldsIfNoLongerHazmat(newValue)
+        }
+    }
+
+    /// Compute the multi-vehicle estimate when we have a parseable
+    /// barrel quantity (or convert from gallons → bbl) and a tanker-
+    /// flavored equipment + mode. Returns nil when the inputs don't
+    /// support an honest estimate — never fabricate a count.
+    private var multiVehicleEstimate: LoadCapacityEstimate? {
+        guard let qty = parseDouble(weightText), qty > 0 else { return nil }
+        // Convert to barrels if the user typed gallons (42 gal = 1 bbl).
+        let barrels: Double
+        switch weightUnit {
+        case .barrels: barrels = qty
+        case .gallons: barrels = qty / 42.0
+        case .liters:  barrels = qty / 158.987  // 1 bbl = 158.987 L
+        default: return nil // weight-only / pallet-only / TEU flows — skip
+        }
+        // Only run for tanker-flavored equipment.
+        let key: String
+        switch equipmentType {
+        case .tankerPetro:    key = "mc306_petroleum"
+        case .tankerHazmat:   key = "mc307_chemical"
+        case .tankerLiquid:   key = "mc306_petroleum"
+        case .tankerGas:      key = "mc331_pressure"
+        case .railTOFC, .railCOFC, .railIntermodal: key = "dot117_crude"
+        case .vesselTanker:   key = "dot117_crude"  // unused for vessel branch
+        default: return nil
+        }
+        return LoadCapacityCalculator.estimateCrude(
+            barrels: barrels,
+            mode: transportMode,
+            equipmentKey: key,
+            vesselClass: nil
+        )
+    }
+
+    /// Symbiotic advisory card — surfaces vehicle count + utilization +
+    /// (when impractical) suggested alt-mode. Tap-to-adopt the alt mode
+    /// when ESANG suggests one (e.g. 1,870 trucks → switch to rail).
+    @ViewBuilder
+    private func multiVehicleAdvisory(_ est: LoadCapacityEstimate) -> some View {
+        let tint: Color = est.sensible ? Brand.success : Brand.warning
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: est.sensible ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(tint)
+                Text(est.sensible ? "VEHICLES NEEDED" : "MODE MISMATCH")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(tint)
+                Spacer(minLength: 0)
+                Text("\(est.vehicleCount) × \(transportMode.displayName.lowercased())")
+                    .font(.system(size: 10, weight: .heavy, design: .monospaced)).tracking(0.4)
+                    .foregroundStyle(palette.textPrimary)
+            }
+            Text(est.advisory)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let alt = est.suggestedAltMode {
+                Button {
+                    withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
+                        transportMode = alt
+                        autoSnapEquipmentForMode(alt)
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: alt.sfSymbol)
+                        Text("Switch to \(alt.displayName)")
+                            .font(.system(size: 10, weight: .heavy)).tracking(0.4)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(Capsule().fill(LinearGradient.diagonal))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .fill(tint.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(tint.opacity(0.35), lineWidth: 1)
+        )
+    }
+
+    /// When the user picks an equipment type, propose the matching
+    /// cargo type if the current one doesn't fit. Animated so the
+    /// chip strip shifts visibly — telegraphs the cross-coupling so
+    /// the user knows the change cascaded. No-ops for equipment that
+    /// accepts any cargo (dry van, container, power-only, etc.).
+    private func autoSnapCargoForEquipment(_ eq: EquipmentChoice) {
+        guard let proposed = eq.defaultCargoType(currentCargo: cargoType) else { return }
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
+            cargoType = proposed
+        }
+    }
+
+    /// When the user picks a cargo type, propose the matching
+    /// equipment type if the current one is incompatible. Refrigerated
+    /// → reefer, petroleum → MC-306 tanker, etc. Keeps the equipment
+    /// preview + animation + requirements subform aligned with the
+    /// cargo selection (founder bug 2026-05-16: refrigerated chosen
+    /// but vessel-tanker animation kept painting).
+    private func autoSnapEquipmentForCargo(_ ct: ShipperAPI.CargoType) {
+        guard let proposed = ct.defaultEquipment(currentEquipment: equipmentType) else { return }
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
+            equipmentType = proposed
+        }
+    }
+
+    /// Reset UN / hazard class / packing group / ERG match / hose
+    /// configuration when the user pivots cargo away from a hazmat-
+    /// flavored type. Without this, a UN1267 lookup from a previous
+    /// petroleum draft stays cached on the wizard state and leaks
+    /// into the equipment preview + the eventual `shippers.create`
+    /// payload — exactly what showed up in the 2026-05-16 screenshot.
+    private func clearHazmatFieldsIfNoLongerHazmat(_ ct: ShipperAPI.CargoType) {
+        guard !ct.isHazmatFlavored else { return }
+        unNumber = ""
+        hazmatClass = ""
+        packingGroup = ""
+        properShippingName = ""
+        tankerHoseSpec = ""
+        tankerFitting = ""
+        ergMatch = nil
+        ergLookupError = nil
+        lastErgQueryKey = ""
     }
 
     /// Menu picker — surfaces the suggested unit list at the top
@@ -2454,26 +3406,35 @@ struct ShipperPostLoad: View {
     }
 
     /// Equipment spec hint — DYNAMIC. Reads the live ERG match and
-    /// user-entered UN/Class/PG when present; falls back to the
-    /// equipment-type default + cargo-type default. Founder bug
-    /// 2026-05-07 (screenshot): preview was hardcoded to "MC-306 ·
-    /// UN1203 · PG II" while the user had typed UN1267 / Crude Oil
-    /// — preview now reflects what the user actually entered.
+    /// user-entered UN/Class/PG when the cargo type is hazmat-flavored;
+    /// falls back to the equipment-type default otherwise. Founder bug
+    /// 2026-05-16 (screenshot): selecting Refrigerated + Reefer still
+    /// painted "UN1267 · Class 3 · 2\" cam-lock · Petroleum Crude Oil"
+    /// because an ERG match cached from an earlier petroleum lookup
+    /// leaked across the cargo-type switch. The cargo-type gate below
+    /// keeps the hazmat-derived spec confined to hazmat/petroleum/
+    /// chemicals/gas cargo, exactly the surfaces where UN + ERG + hose
+    /// configuration are actually meaningful.
     private var equipmentSpecText: String {
-        // 1. Hazmat case → derive from ERG match + user fields.
-        if let m = ergMatch, m.found, let un = m.unNumber {
-            let cls = (m.hazardClass ?? hazmatClass).isEmpty ? "—" : (m.hazardClass ?? hazmatClass)
-            let pg  = packingGroup.isEmpty ? "" : " · PG \(packingGroup)"
-            let hose = tankerHoseSpec.isEmpty ? "" : " · \(hoseLabel(tankerHoseSpec))"
-            return "UN\(un) · Class \(cls)\(pg)\(hose)"
-        }
-        // 2. User has typed a UN but ERG hasn't matched yet — show
-        //    what they typed honestly.
-        let typedUN = unNumber.uppercased().replacingOccurrences(of: "UN", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if !typedUN.isEmpty {
-            let cls = hazmatClass.isEmpty ? "—" : hazmatClass
-            let pg  = packingGroup.isEmpty ? "" : " · PG \(packingGroup)"
-            return "UN\(typedUN) · Class \(cls)\(pg)\(isLookingUpERG ? " · looking up…" : "")"
+        // Only consider ERG/UN-derived spec when the user has chosen a
+        // hazmat-flavored cargo. Refrigerated/general/intermodal etc.
+        // skip straight to the equipment-type default.
+        if cargoType.isHazmatFlavored {
+            // 1. Hazmat case → derive from ERG match + user fields.
+            if let m = ergMatch, m.found, let un = m.unNumber {
+                let cls = (m.hazardClass ?? hazmatClass).isEmpty ? "—" : (m.hazardClass ?? hazmatClass)
+                let pg  = packingGroup.isEmpty ? "" : " · PG \(packingGroup)"
+                let hose = tankerHoseSpec.isEmpty ? "" : " · \(hoseLabel(tankerHoseSpec))"
+                return "UN\(un) · Class \(cls)\(pg)\(hose)"
+            }
+            // 2. User has typed a UN but ERG hasn't matched yet — show
+            //    what they typed honestly.
+            let typedUN = unNumber.uppercased().replacingOccurrences(of: "UN", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !typedUN.isEmpty {
+                let cls = hazmatClass.isEmpty ? "—" : hazmatClass
+                let pg  = packingGroup.isEmpty ? "" : " · PG \(packingGroup)"
+                return "UN\(typedUN) · Class \(cls)\(pg)\(isLookingUpERG ? " · looking up…" : "")"
+            }
         }
         // 3. Equipment type drives the spec when no UN entered yet.
         switch equipmentType {
@@ -2501,17 +3462,22 @@ struct ShipperPostLoad: View {
     }
 
     private var equipmentNoteText: String {
-        // ERG match drives the safety-note line when present.
-        if let m = ergMatch, m.found {
-            var bits: [String] = []
-            if let g = m.guideNumber { bits.append("ERG Guide \(g)") }
-            if m.isTIH == true        { bits.append("⚠ Toxic-by-inhalation") }
-            if m.isWR  == true        { bits.append("⚠ Water-reactive") }
-            if let n = m.name, !n.isEmpty { bits.append(n.capitalized) }
-            return bits.isEmpty ? "CHEMTREC +1-800-424-9300" : bits.joined(separator: " · ")
-        }
-        if let err = ergLookupError, !err.isEmpty {
-            return err
+        // ERG match drives the safety-note line ONLY when cargo is
+        // hazmat-flavored. Cargo-type gate prevents Crude-Oil ERG names
+        // from contaminating a Refrigerated preview after the user
+        // pivots cargo (2026-05-16 founder bug).
+        if cargoType.isHazmatFlavored {
+            if let m = ergMatch, m.found {
+                var bits: [String] = []
+                if let g = m.guideNumber { bits.append("ERG Guide \(g)") }
+                if m.isTIH == true        { bits.append("⚠ Toxic-by-inhalation") }
+                if m.isWR  == true        { bits.append("⚠ Water-reactive") }
+                if let n = m.name, !n.isEmpty { bits.append(n.capitalized) }
+                return bits.isEmpty ? "CHEMTREC +1-800-424-9300" : bits.joined(separator: " · ")
+            }
+            if let err = ergLookupError, !err.isEmpty {
+                return err
+            }
         }
         switch cargoType.label.lowercased() {
         case "hazmat", "petroleum", "chemicals", "gas", "cryogenic":
@@ -2538,11 +3504,24 @@ struct ShipperPostLoad: View {
 
     private var rateField: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("POSTED RATE")
-                .font(EType.micro).tracking(0.6)
-                .foregroundStyle(palette.textTertiary)
+            HStack(spacing: 6) {
+                Text("POSTED RATE")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 0)
+                // 2026-05-17 — Mode-native rate unit pill. Truck loads
+                // read "$/mile", rail "$/ton-mile", vessel container
+                // "$/FEU", vessel tanker "WS", vessel bulk "$/MT", barge
+                // "$/ton-mile". Replaces the silent USD-only chrome that
+                // implied every load was rated like a dry van.
+                Text(rateUnitLabel)
+                    .font(.system(size: 8, weight: .heavy, design: .monospaced)).tracking(0.4)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Capsule().fill(LinearGradient.diagonal))
+            }
             HStack(alignment: .center, spacing: Space.s3) {
-                Image(systemName: "dollarsign.circle")
+                Image(systemName: rateUnitIcon)
                     .font(.system(size: 13, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                     .frame(width: 18)
@@ -2552,7 +3531,7 @@ struct ShipperPostLoad: View {
                     .tint(LinearGradient.diagonal)
                     .keyboardType(.decimalPad)
                     .disabled(isSubmitting)
-                Text("USD")
+                Text(rateUnitSuffix)
                     .font(EType.mono(.micro)).tracking(0.4)
                     .foregroundStyle(palette.textTertiary)
             }
@@ -2561,6 +3540,65 @@ struct ShipperPostLoad: View {
             .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                         .strokeBorder(palette.borderFaint))
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            // Mode-aware hint copy. Tanker vessel loads read in WS, dry
+            // vessel containers in $/FEU — the user shouldn't have to
+            // remember which axis they're pricing on.
+            Text(rateUnitHint)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// Short pill label for the rate unit. Mode + equipment driven.
+    private var rateUnitLabel: String {
+        switch transportMode {
+        case .truck:  return "$/MILE"
+        case .rail:   return "$/TON-MILE"
+        case .vessel:
+            switch equipmentType {
+            case .vesselTanker:    return "WORLDSCALE"
+            case .vesselContainer: return "$/FEU"
+            case .vesselBulk:      return "$/MT"
+            default:               return "USD"
+            }
+        case .barge:  return "$/TON-MILE"
+        }
+    }
+
+    /// Trailing suffix shown inside the field next to the typed value.
+    /// Reads as "USD" for fiat amounts and "WS" for Worldscale.
+    private var rateUnitSuffix: String {
+        transportMode == .vessel && equipmentType == .vesselTanker ? "WS" : "USD"
+    }
+
+    /// SF Symbol leading the rate input. Money for fiat-priced modes,
+    /// percent for Worldscale (because WS is a percent-of-flat-rate).
+    private var rateUnitIcon: String {
+        transportMode == .vessel && equipmentType == .vesselTanker
+            ? "percent" : "dollarsign.circle"
+    }
+
+    /// Mode-aware explainer copy under the input.
+    private var rateUnitHint: String {
+        switch transportMode {
+        case .truck:
+            return "Linehaul total — divided by route miles for the $/mile market compare."
+        case .rail:
+            return "Posted in $ per ton-mile; rail freight industry standard for unit/manifest traffic."
+        case .vessel:
+            switch equipmentType {
+            case .vesselTanker:
+                return "Worldscale percent vs the published flat rate (e.g. WS 75 = 75% of WS 100 flat for the lane). Tanker market norm."
+            case .vesselContainer:
+                return "$ per Forty-foot Equivalent Unit (FEU). Liner trade-lane benchmark."
+            case .vesselBulk:
+                return "$ per Metric Tonne for the full voyage charter (Capesize / Panamax dry bulk)."
+            default:
+                return "Posted rate in USD for the full voyage."
+            }
+        case .barge:
+            return "Posted in $ per ton-mile; inland waterway industry standard."
         }
     }
 
@@ -3017,6 +4055,10 @@ struct ShipperPostLoad: View {
             reviewRow(label: "Dimensions",  value: oversizeDimsText)
             Divider().overlay(palette.borderFaint)
             reviewRow(label: "Permits",     value: oversizePermits ? "Required" : "Not required")
+            if oversizePermits {
+                Divider().overlay(palette.borderFaint)
+                reviewRow(label: "Permit type", value: permitType.label)
+            }
         }
         .background(palette.bgCard)
         .overlay(RoundedRectangle(cornerRadius: Radius.lg)
@@ -3261,7 +4303,40 @@ struct ShipperPostLoad: View {
             let oTrim = origin.trimmingCharacters(in: .whitespacesAndNewlines)
             let dTrim = destination.trimmingCharacters(in: .whitespacesAndNewlines)
             return !oTrim.isEmpty && !dTrim.isEmpty
-        case .equipment, .pricing, .review:
+        case .equipment:
+            // 2026-05-17 — Gate the equipment step on hazmat compliance
+            // (49 CFR 173). If the user picked a hazmat class that's
+            // not allowed on the selected trailer code, block continue
+            // and surface the warning inline. Non-hazmat loads pass.
+            if !hazmatClass.isEmpty {
+                let code = trailerHazmatCode(for: equipmentType)
+                let allowed = Self.trailerHazmatAllowed[code] ?? []
+                if !allowed.contains(hazmatClass) { return false }
+            }
+            // 2026-05-17 — Gate on the state-overweight check too.
+            // Allow advance when the user has acknowledged the
+            // overweight scenario via an overweight or superload
+            // permit; block when the weight exceeds the binding
+            // state limit and no permit is set.
+            let wLbs = parseWeightLbs(weightText, unit: weightUnit)
+            if wLbs > 0 {
+                let oState = originStateCode ?? Self.stateFromLane(origin)
+                let dState = destStateCode ?? Self.stateFromLane(destination)
+                let oLimit = Self.stateWeightLimit(oState)
+                let dLimit = Self.stateWeightLimit(dState)
+                let oOver  = !oState.isEmpty && wLbs > Double(oLimit)
+                let dOver  = !dState.isEmpty && wLbs > Double(dLimit)
+                let permitsOK = oversizePermits && (permitType == .overweightOnly || permitType == .superload || permitType == .annualOversize || permitType == .tripPermit)
+                if (oOver || dOver) && !permitsOK { return false }
+            }
+            // 2026-05-17 — Gate on the reefer temp-range validation.
+            // When the user typed any temp value, an issue string is
+            // returned by `reeferRangeIssue` and we block until they
+            // either clear / correct the range or pick a different
+            // equipment that doesn't need a temp window.
+            if equipmentType == .reefer && reeferRangeIssue != nil { return false }
+            return true
+        case .pricing, .review:
             return true
         }
     }
@@ -3299,18 +4374,58 @@ struct ShipperPostLoad: View {
         // have structured tanker / reefer / flatbed columns; web
         // parity at the application layer.
         let composedNotes = composeSubmissionNotes()
+        // 2026-05-17 — wire the Step-1 multi-modal picker + Step-2
+        // equipment + permit fields through to `shippers.create` so
+        // the load row carries the full picker context (mode →
+        // vesselClass / permitType / equipmentType / rateUnit). The
+        // server resolves defaults for any nil field, so submission
+        // remains valid even when the user keeps the wizard on Truck +
+        // dry van.
+        let permitRaw: String? = (equipmentType == .oversized || equipmentType == .flatbed
+                                  || equipmentType == .stepDeck || equipmentType == .conestoga)
+            ? permitType.rawValue
+            : nil
+        let rateUnitWire: String = {
+            switch transportMode {
+            case .truck:  return "usd_per_mile"
+            case .rail:   return "usd_per_ton_mile"
+            case .vessel:
+                switch equipmentType {
+                case .vesselTanker:    return "worldscale"
+                case .vesselContainer: return "usd_per_feu"
+                case .vesselBulk:      return "usd_per_metric_ton"
+                default:               return "flat"
+                }
+            case .barge:  return "usd_per_ton_mile"
+            }
+        }()
+        // When the user posts a vessel tanker load, the value typed in
+        // the rate field is a Worldscale percent — capture it on the
+        // dedicated `worldscalePct` column for downstream tanker market
+        // compares, and zero out the plain dollar rate so the rate-vs-
+        // market server query doesn't misread it as a truck $/mile.
+        let worldscaleWire: Double? = (transportMode == .vessel && equipmentType == .vesselTanker)
+            ? parseDouble(rateText)
+            : nil
+        let rateForWire: Double? = worldscaleWire == nil ? rate : nil
         await store.submit(
             origin: origin,
             destination: destination,
             cargoType: cargoType,
-            rate: rate,
+            rate: rateForWire,
             weight: weight,
             notes: composedNotes,
             pickupDate: pickupISO,
             originLat: originLat,
             originLng: originLng,
             destLat: destLat,
-            destLng: destLng
+            destLng: destLng,
+            transportMode: transportMode,
+            multiVehicleCount: multiVehicleEstimate?.vehicleCount,
+            permitType: permitRaw,
+            worldscalePct: worldscaleWire,
+            rateUnit: rateUnitWire,
+            equipmentType: equipmentType.rawValue
         )
         if case .success(let ack) = store.phase {
             self.lastSuccess = ack
@@ -3325,6 +4440,11 @@ struct ShipperPostLoad: View {
     private func composeSubmissionNotes() -> String {
         var lines: [String] = []
         if !notes.isEmpty { lines.append(notes) }
+        // 2026-05-17 — Mode line is the first machine-readable token in
+        // the notes block. Catalyst + dispatch parse this until the
+        // server `shippers.create` input carries transport_mode
+        // natively (migration 0307 + tRPC input extension).
+        lines.append("Mode: \(transportMode.displayName) [\(transportMode.rawValue)] · rate-unit=\(transportMode.nativeRateUnit)")
         lines.append("Equipment: \(equipmentType.label) [\(equipmentType.rawValue)] · vertical=\(equipmentType.vertical)")
         if !weightText.isEmpty {
             lines.append("Quantity: \(weightText) \(weightUnit.rawValue) (\(weightUnit.longLabel))")
@@ -3352,7 +4472,9 @@ struct ShipperPostLoad: View {
             if !oversizeLengthText.isEmpty || !oversizeWidthText.isEmpty || !oversizeHeightText.isEmpty {
                 lines.append("Dimensions: L=\(oversizeLengthText) W=\(oversizeWidthText) H=\(oversizeHeightText) ft")
             }
-            if oversizePermits { lines.append("Permits required") }
+            if oversizePermits {
+                lines.append("Permits required: \(permitType.label) · \(permitType.hint)")
+            }
         default:
             break
         }
@@ -3390,6 +4512,7 @@ struct ShipperPostLoad: View {
         oversizeWidthText = ""
         oversizeHeightText = ""
         oversizePermits = false
+        permitType = .none
         ergMatch = nil
         ergLookupError = nil
         rateComparison = nil
@@ -3487,6 +4610,82 @@ fileprivate extension ShipperAPI.CargoType {
         case .gas:          return .gas
         case .chemicals:    return .chemicals
         case .petroleum:    return .petroleum
+        }
+    }
+
+    /// True for cargo types where 49 CFR 172 hazmat metadata (UN
+    /// number, hazard class, ERG guide, packing group, CHEMTREC) is
+    /// meaningful. Used to gate hazmat-derived text in the equipment
+    /// preview so ERG matches don't leak across a cargo-type switch.
+    /// `liquid` and `gas` count as hazmat-flavored because food-grade
+    /// liquids are the exception, not the rule — most non-water bulk
+    /// liquids carry a UN number.
+    var isHazmatFlavored: Bool {
+        switch self {
+        case .hazmat, .petroleum, .chemicals, .gas, .liquid:
+            return true
+        case .general, .refrigerated, .oversized:
+            return false
+        }
+    }
+
+    /// The default equipment type to snap to when the user picks this
+    /// cargo type. Drives the auto-coherence between cargo and
+    /// equipment so the animation + preview + requirements subform
+    /// stay in sync. Returns nil when the current equipment is already
+    /// compatible.
+    func defaultEquipment(currentEquipment: ShipperPostLoad.EquipmentChoice) -> ShipperPostLoad.EquipmentChoice? {
+        switch self {
+        case .refrigerated:
+            // Reefer surfaces: truck reefer, vessel reefer-container,
+            // rail reefer-boxcar. Stay on the current vertical if
+            // user already picked one of those.
+            let okEq: Set<ShipperPostLoad.EquipmentChoice> = [.reefer]
+            return okEq.contains(currentEquipment) ? nil : .reefer
+        case .hazmat, .chemicals:
+            let okEq: Set<ShipperPostLoad.EquipmentChoice> = [.tankerHazmat, .vesselTanker]
+            return okEq.contains(currentEquipment) ? nil : .tankerHazmat
+        case .petroleum:
+            let okEq: Set<ShipperPostLoad.EquipmentChoice> = [.tankerPetro, .tankerHazmat, .vesselTanker]
+            return okEq.contains(currentEquipment) ? nil : .tankerPetro
+        case .liquid:
+            let okEq: Set<ShipperPostLoad.EquipmentChoice> = [.tankerLiquid, .tankerPetro, .vesselTanker]
+            return okEq.contains(currentEquipment) ? nil : .tankerLiquid
+        case .gas:
+            let okEq: Set<ShipperPostLoad.EquipmentChoice> = [.tankerGas, .vesselTanker]
+            return okEq.contains(currentEquipment) ? nil : .tankerGas
+        case .oversized:
+            let okEq: Set<ShipperPostLoad.EquipmentChoice> = [.oversized, .flatbed, .stepDeck]
+            return okEq.contains(currentEquipment) ? nil : .oversized
+        case .general:
+            return nil // any equipment is fine for general freight
+        }
+    }
+}
+
+fileprivate extension ShipperPostLoad.EquipmentChoice {
+    /// The default cargo type to snap to when the user picks this
+    /// equipment type. Reefer equipment implies refrigerated cargo;
+    /// hazmat tanker implies hazmat. Mirror of `defaultEquipment`.
+    func defaultCargoType(currentCargo: ShipperAPI.CargoType) -> ShipperAPI.CargoType? {
+        switch self {
+        case .reefer:
+            return currentCargo == .refrigerated ? nil : .refrigerated
+        case .tankerHazmat:
+            return currentCargo == .hazmat ? nil : .hazmat
+        case .tankerPetro:
+            return currentCargo == .petroleum ? nil : .petroleum
+        case .tankerLiquid:
+            return currentCargo == .liquid ? nil : .liquid
+        case .tankerGas:
+            return currentCargo == .gas ? nil : .gas
+        case .oversized:
+            return currentCargo == .oversized ? nil : .oversized
+        case .dryVan, .flatbed, .stepDeck, .conestoga, .container,
+             .powerOnly,
+             .railTOFC, .railCOFC, .railIntermodal,
+             .vesselContainer, .vesselBulk, .vesselTanker:
+            return nil // any cargo type can ride
         }
     }
 }

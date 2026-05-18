@@ -46,7 +46,7 @@ struct ApproachingReceiver: View {
     private let fallbackBay         = "Dock 3"
     private let fallbackContact     = "Reg Hammond"
     private let fallbackPhone       = "+1 (717) 854-2010"
-    private let fallbackEsangNote   = "ESANG — EARLIER TONIGHT · FIT FOR 21:11 · WEATHER HOLD CLEARED · AMMONIA SENSORS WARM"
+    private let fallbackeSangNote   = "ESANG — EARLIER TONIGHT · FIT FOR 21:11 · WEATHER HOLD CLEARED · AMMONIA SENSORS WARM"
 
     private var receiverTitle: String {
         if let loc = activeLoad?.deliveryLocation, !loc.cityState.isEmpty {
@@ -102,6 +102,10 @@ struct ApproachingReceiver: View {
                     Text("· \(ctx.headerKicker)")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(palette.textSecondary)
+                    // EUSOTRIP-MODE-BADGE-2026-05-17 — mode chip on lifecycle screen
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
                 }
                 Text("Arriving at \(receiverCityLine) by \(fallbackArriveBy)")
                     .font(.system(size: 20, weight: .heavy))
@@ -322,7 +326,7 @@ struct ApproachingReceiver: View {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
                 Image(systemName: "sparkles").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
             }
-            Text(fallbackEsangNote)
+            Text(fallbackeSangNote)
                 .font(.system(size: 10, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)

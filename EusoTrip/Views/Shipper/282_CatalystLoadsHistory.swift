@@ -56,7 +56,17 @@ private struct CatalystLoadsHistoryBody: View {
                     NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "205", "loadId": ld.id])
                 } label: {
                     LifecycleCard {
-                        LifecycleSection(label: ld.loadNumber.uppercased(), icon: "doc.text")
+                        HStack(spacing: 8) {
+                            LifecycleSection(label: ld.loadNumber.uppercased(), icon: "doc.text")
+                            Spacer(minLength: 0)
+                            // 2026-05-17 — mode badge on the tendered-
+                            // load history row so the shipper sees the
+                            // mode pick on every awarded load. Hidden
+                            // for the default truck-single-vehicle case.
+                            LoadModeBadge(modeRaw: ld.transportMode,
+                                          multiVehicleCount: ld.multiVehicleCount,
+                                          compact: true)
+                        }
                         LifecycleRow(label: "Status",      value: ld.status.uppercased())
                         LifecycleRow(label: "Origin",      value: dashIfEmpty(ld.origin))
                         LifecycleRow(label: "Destination", value: dashIfEmpty(ld.destination))

@@ -215,6 +215,30 @@ struct ActiveEnroute: View {
         if isHazmat || alwaysShowHazmat {
             out.append(EnrouteChip(label: "HAZMAT ROUTE LOCKED", tint: Brand.info, icon: "lock.shield"))
         }
+        // 2026-05-17 — Mode chip on the driver en-route header. Hidden
+        // for default truck-single-vehicle. Renders MODE × Nx so a rail
+        // engineer hauling a 100-tank-car unit train sees the count
+        // up-front during transit, distinguishable from a single-truck
+        // load even though they look identical in plain text.
+        if let load = activeLoad {
+            let mode = (load.transportMode ?? "truck").lowercased()
+            let count = load.multiVehicleCount ?? 1
+            if mode != "truck" || count > 1 {
+                let label: String = {
+                    let m = mode.uppercased()
+                    return count > 1 ? "\(count)× \(m)" : m
+                }()
+                let tint: Color = {
+                    switch mode {
+                    case "rail":   return Brand.rail
+                    case "vessel": return Brand.vessel
+                    case "barge":  return Brand.info
+                    default:       return Brand.blue
+                    }
+                }()
+                out.append(EnrouteChip(label: label, tint: tint, icon: nil))
+            }
+        }
         // Commodity chip — UN + class + cargoType.
         if let load = activeLoad {
             var pieces: [String] = []

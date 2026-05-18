@@ -319,6 +319,24 @@ struct CarrierLoadDetail: View {
             if let equip = d.equipmentType, !equip.isEmpty {
                 scheduleRow(label: "Equipment", value: equip)
             }
+            // 2026-05-17 — Carrier counter-party multi-modal payload.
+            // Same shape as 205/305/402/502 so every load surfacing
+            // role sees the same field set.
+            if let mode = d.transportMode, !mode.isEmpty, mode != "truck" {
+                scheduleRow(label: "Mode", value: mode.uppercased())
+            }
+            if let vc = d.vesselClass, !vc.isEmpty {
+                scheduleRow(label: "Vessel class", value: vc)
+            }
+            if let count = d.multiVehicleCount, count > 1 {
+                scheduleRow(label: "Vehicles", value: "\(count) ×")
+            }
+            if let perm = d.permitType, !perm.isEmpty, perm != "none" {
+                scheduleRow(label: "Permit", value: perm.replacingOccurrences(of: "_", with: " ").uppercased())
+            }
+            if let ws = d.worldscalePct, !ws.isEmpty, let n = Double(ws), n > 0 {
+                scheduleRow(label: "Worldscale", value: "WS \(Int(n.rounded()))")
+            }
             if let hz = d.hazmatClass, !hz.isEmpty {
                 scheduleRow(label: "Hazmat class", value: hz)
                 if let un = d.unNumber, !un.isEmpty {

@@ -101,7 +101,7 @@ struct DriverHome: View {
                         if vm.isOffline { offlineBanner }
                         // ESANG Morning Brief — top coaching card from
                         // the driver's role+vertical+hazmat-aware feed.
-                        EsangMorningBriefCard()
+                        eSangMorningBriefCard()
                         // 75th firing (2026-04-24, hygiene + fallback C):
                         // render live WeatherCard ONLY when WeatherKit
                         // resolved a real snapshot for the driver's real
@@ -628,6 +628,16 @@ struct DriverHome: View {
                         if vm.cargoWeightPill != "—" {
                             StatusPill(text: vm.cargoWeightPill, kind: .neutral)
                         }
+                        // 2026-05-17 — Driver Home active-load mode
+                        // badge. Hidden for the default truck-single-
+                        // vehicle case so the home screen stays clean.
+                        // The driver is the role most likely to be
+                        // *wrong* about mode (a rail engineer assigned
+                        // a vessel charter is a disaster), so a single
+                        // glance on Home surfaces the truth.
+                        LoadModeBadge(modeRaw: vm.activeLoadSummary?.transportMode,
+                                      multiVehicleCount: vm.activeLoadSummary?.multiVehicleCount,
+                                      compact: true)
                     }
                     Spacer()
                     Text(vm.loadIDDisplay)
@@ -997,13 +1007,13 @@ struct DriverHomeScreen: View {
     let theme: Theme.Palette
 
     @State private var currentTab: DriverTab = .home
-    @State private var orbState: OrbESang.State = .idle
+    @State private var orbState: OrbeSang.State = .idle
     /// The ESANG coach is presented as a custom overlay (not a system sheet)
     /// so we can drive a unified dissolve-to-orb transform on close — the
     /// sheet shrinks + blurs toward the orb while a single particle field
     /// converges on the same point. Web-parity behavior from the
-    /// EsangChatWidget dissolve pattern.
-    @State private var showESang: Bool = false
+    /// eSangChatWidget dissolve pattern.
+    @State private var showeSang: Bool = false
     /// Drives the dissolve animation on close. While true, the sheet is
     /// scaling + blurring toward the orb anchor and particles are flying
     /// inward. Flips back to false after the burst clears.
@@ -1068,13 +1078,13 @@ struct DriverHomeScreen: View {
                 BottomNav(leading: leadingSlots(),
                           trailing: trailingSlots(),
                           orbState: orbState,
-                          onTapOrb: { openESang() })
+                          onTapOrb: { openeSang() })
             }
 
             // ESANG coach sheet — presented as a custom overlay so we can
             // animate the sheet itself shrinking + blurring toward the orb
             // on close, with particles that converge on the same point.
-            if showESang {
+            if showeSang {
                 esangBackdrop
                     .transition(.opacity)
                     .zIndex(90)
@@ -1090,7 +1100,7 @@ struct DriverHomeScreen: View {
             // view fades in while particles are already mid-flight and
             // the burst reads as empty.
             if esangBurstActive {
-                ESangParticleBurst(
+                eSangParticleBurst(
                     sourceRect: esangSheetRect,
                     anchor: orbAnchor,
                     duration: 0.65,
@@ -1115,12 +1125,12 @@ struct DriverHomeScreen: View {
 
     // MARK: - ESANG orchestration
 
-    private func openESang() {
+    private func openeSang() {
         let impact = UIImpactFeedbackGenerator(style: .soft)
         impact.impactOccurred()
         orbState = .thinking
         withAnimation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.35)) {
-            showESang = true
+            showeSang = true
         }
     }
 
@@ -1128,8 +1138,8 @@ struct DriverHomeScreen: View {
     /// the particle burst start on the SAME frame so the motion reads as
     /// one graceful transform. Matches the web twin's 0.5s collapse with a
     /// 0.15s particle tail (total 0.65s window).
-    private func dissolveESang() {
-        guard showESang, !esangDissolving else { return }
+    private func dissolveeSang() {
+        guard showeSang, !esangDissolving else { return }
         let impact = UIImpactFeedbackGenerator(style: .light)
         impact.impactOccurred()
         // Recapture the anchor + sheet rect right now so the burst is
@@ -1147,7 +1157,7 @@ struct DriverHomeScreen: View {
         }
         // Unmount the sheet after the particle tail lands.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
-            showESang = false
+            showeSang = false
             esangDissolving = false
             orbState = .idle
         }
@@ -1182,18 +1192,18 @@ struct DriverHomeScreen: View {
         Color.black
             .opacity(esangDissolving ? 0 : 0.45)
             .frame(width: Device.width, height: Device.height)
-            .onTapGesture { dissolveESang() }
+            .onTapGesture { dissolveeSang() }
             .animation(.easeOut(duration: 0.5), value: esangDissolving)
     }
 
     private var esangSheet: some View {
-        // Match the web twin (EsangChatWidget.tsx line 717–720):
+        // Match the web twin (eSangChatWidget.tsx line 717–720):
         //   animate: { opacity: 0, scale: 0.15, filter: 'blur(12px)', y: 0 }
         //
         // The sheet shrinks + blurs in place — it does NOT translate toward
         // the orb. The particle burst carries the visual motion so there's
         // one coherent transform, not two competing motions.
-        return DriverESangCoachSheet(onClose: dissolveESang)
+        return DrivereSangCoachSheet(onClose: dissolveeSang)
             .environment(\.palette, theme)
             .frame(width: Device.width, height: Device.height)
             .background(theme.bgPage)

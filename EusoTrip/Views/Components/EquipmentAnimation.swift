@@ -118,11 +118,66 @@ enum EquipmentKind: String, Hashable, CaseIterable {
         case .vessel: return "Animations/Equipment/03_Vessel"
         }
     }
+
+    /// Short user-facing label used by the reactive top-left equipment
+    /// badge inside `EquipmentAnimation`. Replaces the SVG-baked text
+    /// stripped 2026-05-17 to fix viewBox clipping.
+    var shortLabel: String {
+        switch self {
+        case .dryVan:                return "53′ DRY VAN"
+        case .reefer:                return "53′ REEFER"
+        case .flatbed:               return "FLATBED 48′"
+        case .stepDeck:              return "STEP-DECK"
+        case .conestoga:             return "CONESTOGA"
+        case .container:             return "CONTAINER"
+        case .tankerHazmat:          return "MC-306 HAZMAT"
+        case .tankerPetro:           return "MC-306 PETROLEUM"
+        case .tankerLiquid:          return "MC-307 LIQUID BULK"
+        case .tankerGas:             return "MC-331 GAS / CRYO"
+        case .powerOnly:             return "POWER-ONLY"
+        case .oversized:             return "OVERSIZE"
+        case .railTOFC:              return "TOFC TRAILER-ON-FLATCAR"
+        case .railCOFC:              return "COFC CONTAINER-ON-FLATCAR"
+        case .railIntermodal:        return "INTERMODAL"
+        case .railTankGas:           return "TANK CAR · GAS"
+        case .railTankLiquid:        return "TANK CAR · LIQUID"
+        case .railBoxcar:            return "BOXCAR"
+        case .railHopper:            return "COVERED HOPPER"
+        case .railCenterbeam:        return "CENTERBEAM"
+        case .railGondola:           return "GONDOLA"
+        case .railAutoRack:          return "AUTO-RACK"
+        case .railReeferBoxcar:      return "REEFER BOXCAR"
+        case .railFlatcar:           return "FLATCAR"
+        case .vesselContainer:       return "CONTAINER VESSEL"
+        case .vesselBulk:            return "BULK CARRIER"
+        case .vesselTanker:          return "TANKER"
+        case .vesselRoRo:            return "RoRo / PCC"
+        case .vesselLNG:             return "LNG CARRIER"
+        case .vesselReeferContainer: return "REEFER VESSEL"
+        case .vesselISOTank:         return "ISO-TANK VESSEL"
+        case .lowboy:                return "LOWBOY / RGN"
+        case .hotShot:               return "HOT-SHOT"
+        }
+    }
 }
 
 enum CargoKind: String, Hashable {
     case general, hazmat, refrigerated, oversized
     case liquid, gas, chemicals, petroleum
+
+    /// User-facing label used by the EquipmentAnimation overlay.
+    var label: String {
+        switch self {
+        case .general:      return "General"
+        case .hazmat:       return "Hazmat"
+        case .refrigerated: return "Refrigerated"
+        case .oversized:    return "Oversized"
+        case .liquid:       return "Liquid bulk"
+        case .gas:          return "Gas / cryo"
+        case .chemicals:    return "Chemicals"
+        case .petroleum:    return "Petroleum"
+        }
+    }
 }
 
 enum AnimVertical: Hashable {
@@ -204,6 +259,7 @@ final class EquipmentAnimationCache {
 /// disabled so the document never moves inside its tile.
 private struct EquipmentAnimationWebView: UIViewRepresentable {
     let svgString: String
+    let colorScheme: ColorScheme
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -230,6 +286,13 @@ private struct EquipmentAnimationWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ view: WKWebView, context: Context) {
+        // Forward the SwiftUI color scheme to WebKit so the SVG's
+        // `@media (prefers-color-scheme: dark)` rules actually fire.
+        // Without this, WKWebView inherits the system trait, which on
+        // a dark-themed app screen with light system style produces a
+        // light-mode SVG rendering — exactly the "sticks out like a
+        // sore thumb" mismatch the founder flagged 2026-05-16.
+        view.overrideUserInterfaceStyle = (colorScheme == .dark) ? .dark : .light
         // Wrap the bare SVG markup in an HTML document with a
         // transparent body so the rendered surface composites
         // cleanly under SwiftUI's hierarchy. width=device-width
@@ -271,6 +334,7 @@ private struct EquipmentAnimationWebView: UIViewRepresentable {
 struct EquipmentAnimation: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var colorScheme
 
     let equipment: EquipmentKind
     let cargo: CargoKind
@@ -293,10 +357,16 @@ struct EquipmentAnimation: View {
         ZStack {
             backgroundFill
             content
+            // Reactive label layer: top-left equipment label (e.g.
+            // "RAIL · TOFC / TRAILER ON FLATCAR") + top-right vertical
+            // and unit badges + bottom-right brand wordmark. All text
+            // lives in SwiftUI now — SVGs are pure artwork. Founder
+            // firing 2026-05-17: baked SVG labels were clipping at the
+            // tightened viewBox; reactive overlay never clips and
+            // always reflects live wizard selections.
+            topLeftEquipmentLabel
             topRightBadgeStack
-            // Hazmat radial pulse layered above the SVG so it
-            // composites against any equipment background. Reduce-
-            // motion zeroes the pulse intensity to a static low.
+            bottomRightBrandWordmark
             if isHazmat {
                 hazmatPulseLayer
             }
@@ -307,6 +377,80 @@ struct EquipmentAnimation: View {
             RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                 .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1)
         )
+    }
+
+    /// Top-left equipment label — derives the headline + subhead from
+    /// the live equipment + cargo selection. Replaces the baked SVG
+    /// "53' REEFER · REFRIGERATED · COLD CHAIN" group that used to
+    /// clip at the viewBox.
+    private var topLeftEquipmentLabel: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 4) {
+                Text(equipmentHeadline)
+                    .font(.system(size: 10, weight: .heavy)).tracking(1.2)
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
+            Rectangle()
+                .fill(LinearGradient.diagonal.opacity(0.55))
+                .frame(width: 36, height: 1.5)
+            Text(equipmentSubhead)
+                .font(.system(size: 8, weight: .semibold)).tracking(0.6)
+                .foregroundStyle(palette.textSecondary)
+                .lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .allowsHitTesting(false)
+    }
+
+    /// Bottom-right brand wordmark — replaces the SVG-baked "EUSOTRIP
+    /// by Eusorone" lockup that lived at the top-center and clipped.
+    private var bottomRightBrandWordmark: some View {
+        HStack(spacing: 4) {
+            Text("EUSOTRIP")
+                .font(.system(size: 8, weight: .heavy)).tracking(2.0)
+                .foregroundStyle(palette.textSecondary.opacity(0.6))
+            Circle()
+                .fill(LinearGradient.diagonal)
+                .frame(width: 3, height: 3)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        .allowsHitTesting(false)
+    }
+
+    /// Headline line — derived from equipment vertical + product
+    /// subtype. Example outputs:
+    ///   TRUCK · 53' REEFER
+    ///   RAIL · TOFC TRAILER-ON-FLATCAR
+    ///   VESSEL · TANKER (CRUDE)
+    private var equipmentHeadline: String {
+        let v = equipment.vertical.label.uppercased()
+        return "\(v) · \(equipment.shortLabel)"
+    }
+
+    /// Subhead — cargo descriptor + any active flags.
+    private var equipmentSubhead: String {
+        var bits: [String] = [cargo.label.uppercased()]
+        if isHazmat { bits.append("HAZMAT") }
+        switch equipment {
+        case .reefer, .vesselReeferContainer, .railReeferBoxcar:
+            if !reeferLowText.isEmpty, !reeferHighText.isEmpty {
+                bits.append("\(reeferLowText)–\(reeferHighText)°F")
+            } else if preCoolRequired {
+                bits.append("PRE-COOL")
+            } else if continuousMode {
+                bits.append("CONT. MODE")
+            }
+        case .oversized, .lowboy:
+            if oversizePermits { bits.append("PERMIT") }
+        case .tankerHazmat, .tankerPetro, .tankerLiquid, .tankerGas, .vesselTanker:
+            if ergMatched { bits.append("ERG MATCHED") }
+            if !tankerHose.isEmpty { bits.append(tankerHose.uppercased()) }
+        default: break
+        }
+        return bits.joined(separator: " · ")
     }
 
     @ViewBuilder
@@ -336,7 +480,7 @@ struct EquipmentAnimation: View {
     @ViewBuilder
     private var content: some View {
         if let svg = EquipmentAnimationCache.shared.svg(for: equipment) {
-            EquipmentAnimationWebView(svgString: svg)
+            EquipmentAnimationWebView(svgString: svg, colorScheme: colorScheme)
                 .padding(2)
         } else {
             // Honest fallback — never a fabricated silhouette.

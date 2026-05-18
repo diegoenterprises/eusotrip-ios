@@ -262,6 +262,15 @@ struct PickupBolSigning: View {
                 Text(bolNumberText)
                     .font(EType.mono(.micro)).tracking(0.4)
                     .foregroundStyle(palette.textSecondary)
+                // 2026-05-17 — Mode chip on BOL kicker. BOL forms
+                // legally differ across modes (truck = straight BOL,
+                // rail = waybill, vessel = bill of lading + mate's
+                // receipt). Surfacing mode here cues the driver that
+                // the document they're about to sign carries
+                // mode-specific obligations.
+                LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                              multiVehicleCount: activeLoad?.multiVehicleCount,
+                              compact: true)
             }
 
             // Title

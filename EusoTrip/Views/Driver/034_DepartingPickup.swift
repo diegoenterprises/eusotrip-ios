@@ -97,6 +97,10 @@ struct DepartingPickup: View {
                     Text(ctx.headerKicker)
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(LinearGradient.diagonal)
+                    // EUSOTRIP-MODE-BADGE-2026-05-17 — mode chip on lifecycle screen
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
                 }
                 Text("Rolling to \(fallbackDestName)")
                     .font(.system(size: 22, weight: .heavy))

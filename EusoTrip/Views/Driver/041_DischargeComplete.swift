@@ -84,6 +84,10 @@ struct DischargeComplete: View {
                     Text("· \(ctx.headerKicker)")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(palette.textSecondary)
+                    // EUSOTRIP-MODE-BADGE-2026-05-17 — mode chip on lifecycle screen
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
                 }
                 Text("Discharge complete · \(ctx.dischargeFacilityLine)")
                     .font(.system(size: 18, weight: .heavy))

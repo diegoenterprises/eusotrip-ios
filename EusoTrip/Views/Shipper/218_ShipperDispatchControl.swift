@@ -174,7 +174,7 @@ struct ShipperDispatchControl: View {
                  sub:   "UN1005 NH₃ · UN1203 PG II · UN1267 crude",
                  enabled: false),
         AutoRule(id: "esang_counter_assist",
-                 title: "ESang counter-offer assist",
+                 title: "eSang counter-offer assist",
                  sub:   "AI suggests counter price within ±2% of spot avg",
                  enabled: false)
     ]
@@ -660,6 +660,14 @@ struct ShipperDispatchControl: View {
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
+                    // 2026-05-17 — Shipper Dispatch Control row badge.
+                    // ActiveLoad now decodes transportMode +
+                    // multiVehicleCount from `shippers.getActiveLoads`
+                    // (server projection extended this firing). Hidden
+                    // on default truck-single-vehicle rows.
+                    LoadModeBadge(modeRaw: row.transportMode,
+                                  multiVehicleCount: row.multiVehicleCount,
+                                  compact: true)
                     Spacer(minLength: 0)
                     stageBadge(stage)
                 }
@@ -980,7 +988,7 @@ private struct DispatchDetailSheet: View {
         }
     }
 
-    /// Real action: jump to 310 EsangThreadList so the shipper can
+    /// Real action: jump to 310 eSangThreadList so the shipper can
     /// pick up the load conversation immediately. Replaces the prior
     /// MeAction.fire("dispatch.open-thread") observability stub.
     private func openLoadThread() {

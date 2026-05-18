@@ -488,6 +488,14 @@ private struct CatalystLoadDetail: View {
                 if let eq = l.equipmentType, !eq.isEmpty {
                     pillTag(text: eq.uppercased(), tint: palette.textPrimary, neutral: true)
                 }
+                // 2026-05-17 — Catalyst counter-party badge. Surfaces
+                // the shipper's mode pick + multi-vehicle count BEFORE
+                // the catalyst commits the dispatch, so a rail unit-
+                // train or a vessel charter never lands on a Catalyst
+                // expecting a single dry-van.
+                LoadModeBadge(modeRaw: l.transportMode,
+                              multiVehicleCount: l.multiVehicleCount,
+                              compact: true)
                 pillTag(text: receivableLabel(l), tint: Brand.success)
             }
             HStack(alignment: .firstTextBaseline, spacing: 14) {
@@ -907,7 +915,7 @@ private struct CatalystLoadDetail: View {
 
             Button {
                 // Route to the existing ESANG dispatch chat surface for
-                // this load. ESang is the canonical voice/messaging
+                // this load. eSang is the canonical voice/messaging
                 // funnel per `feedback_esang_canonical_voice`.
                 NotificationCenter.default.post(
                     name: .esangOpenMeDetail,
@@ -915,7 +923,7 @@ private struct CatalystLoadDetail: View {
                     userInfo: ["loadId": l.id]
                 )
             } label: {
-                Text("Message ESang")
+                Text("Message eSang")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 40)

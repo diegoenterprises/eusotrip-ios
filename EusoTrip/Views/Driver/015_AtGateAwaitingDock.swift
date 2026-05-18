@@ -171,6 +171,14 @@ struct AtGateAwaitingDock: View {
                     Text(ctx.headerKicker)
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(LinearGradient.diagonal)
+                    // 2026-05-17 — Mode chip at the gate. Hidden for
+                    // default truck-single-vehicle; a rail engineer
+                    // waiting on siding clearance vs a vessel captain
+                    // waiting on tide reads differently from a truck
+                    // driver waiting on a dock door.
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
                 }
                 Text("At the \(ctx.vertical.gateWord)")
                     .font(.system(size: 28, weight: .heavy))

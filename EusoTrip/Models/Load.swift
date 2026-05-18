@@ -49,6 +49,17 @@ struct LoadSummary: Codable, Identifiable, Hashable {
     let rate: Double
     let pickupDate: String
     let createdAt: String
+    // 2026-05-17 — Multi-modal payload on every load row. Nullable on
+    // the wire so older deploys decode cleanly; UI defaults `mode` to
+    // "truck" when nil so the row always reads honestly. Powers the
+    // mode badge on every load list across all 24 role surfaces
+    // (shipper loads, catalyst board, broker board, dispatch, driver
+    // available-loads).
+    let transportMode: String?
+    let multiVehicleCount: Int?
+    let permitType: String?
+    let rateUnit: String?
+    let worldscalePct: String?
 }
 
 // MARK: - Load  (full record — from get_load_details / loads.getById)
@@ -90,6 +101,17 @@ struct Load: Codable, Identifiable, Hashable {
 
     let brokerChainDepth: Int?
     let version: Int?
+
+    // 2026-05-17 — Multi-modal columns (migration 0307).
+    let transportMode: String?
+    let vesselClass: String?
+    let multiVehicleCount: Int?
+    let permitType: String?
+    let originPort: String?
+    let destPort: String?
+    let worldscalePct: String?
+    let worldscaleFlat: String?
+    let rateUnit: String?
 
     // MARK: Derived
 
@@ -188,7 +210,16 @@ extension Load {
             originState: "LA",
             destState: "TX",
             brokerChainDepth: 0,
-            version: 1
+            version: 1,
+            transportMode: "truck",
+            vesselClass: nil,
+            multiVehicleCount: 1,
+            permitType: "none",
+            originPort: nil,
+            destPort: nil,
+            worldscalePct: nil,
+            worldscaleFlat: nil,
+            rateUnit: "usd_per_mile"
         )
     }
 }
@@ -211,7 +242,12 @@ extension LoadSummary {
             destination: "Dallas, TX",
             rate: 2440,
             pickupDate: pickupISO,
-            createdAt: createdISO
+            createdAt: createdISO,
+            transportMode: "truck",
+            multiVehicleCount: 1,
+            permitType: "none",
+            rateUnit: "usd_per_mile",
+            worldscalePct: nil
         )
     }
 }

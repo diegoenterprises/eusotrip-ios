@@ -284,7 +284,7 @@ final class EusoTripAPI: ObservableObject {
     lazy var availability: AvailabilityAPI = AvailabilityAPI(api: self)
     lazy var registration: RegistrationAPI = RegistrationAPI(api: self)
     lazy var inspections: InspectionsAPI = InspectionsAPI(api: self)
-    lazy var esang: ESangAPI = ESangAPI(api: self)
+    lazy var esang: eSangAPI = eSangAPI(api: self)
     lazy var wallet: WalletAPI = WalletAPI(api: self)
     // NOTE: `loadLifecycle` is declared once below near `agreements` (96th
     // firing — canonical). Removed the duplicate declaration here that
@@ -414,7 +414,7 @@ final class EusoTripAPI: ObservableObject {
     /// `frontend/server/routers/esangCoach.ts:510` (proc `forDriver`),
     /// namespace mounted in `frontend/server/routers.ts:1597`. Added
     /// in the 79th firing (brick port 087 Me · Safety Coach).
-    lazy var esangCoach: EsangCoachAPI = EsangCoachAPI(api: self)
+    lazy var esangCoach: eSangCoachAPI = eSangCoachAPI(api: self)
 
     /// `referralsRouter` — driver-scoped referral code + attribution.
     /// MCP-verified at `frontend/server/routers/referrals.ts:82`
@@ -1139,6 +1139,22 @@ struct LoadsAPI {
         let currency: String?
         let suggestedRateMin: Double?
         let suggestedRateMax: Double?
+
+        // ─── 2026-05-17 · Multi-modal payload (migration 0307) ───
+        // Optional on the wire so older deploys (missing columns)
+        // decode cleanly via nil. Every read surface that surfaces a
+        // load now branches on these — the load row mode badge, the
+        // detail screen pricing card (WS vs $/mile), the Catalyst /
+        // Broker / Driver downstream views all consume them.
+        let transportMode: String?
+        let vesselClass: String?
+        let multiVehicleCount: Int?
+        let permitType: String?
+        let originPort: String?
+        let destPort: String?
+        let worldscalePct: String?    // DECIMAL → String on the wire
+        let worldscaleFlat: String?
+        let rateUnit: String?
 
         // Misc
         let notes: String?
@@ -2443,9 +2459,9 @@ struct DVIRDefectInput: Encodable {
 // matching the backend `ESANGResponse` type (message + optional
 // suggestions/actions). The backend is powered by Google Gemini via
 // esangAI.chat(); this Swift client is the same entry point the web app
-// uses, so driver replies match what the web ESang would return.
+// uses, so driver replies match what the web eSang would return.
 
-struct ESangAPI {
+struct eSangAPI {
     unowned let api: EusoTripAPI
 
     /// Shape of `esang.chat` context field — both keys are optional on the
@@ -2456,7 +2472,7 @@ struct ESangAPI {
         /// the system prompt so replies stay on-topic.
         let currentPage: String?
         /// Active load id when the question pertains to a specific
-        /// dispatch. Passed through so ESang can pull live load + HOS
+        /// dispatch. Passed through so eSang can pull live load + HOS
         /// context server-side.
         let loadId: String?
     }
@@ -2473,7 +2489,7 @@ struct ESangAPI {
     }
 
     /// `esang.chat` — POST mutation. Sends the driver's message to the
-    /// production ESang (Gemini-backed) and returns the assistant reply.
+    /// production eSang (Gemini-backed) and returns the assistant reply.
     /// `currentPage` / `loadId` are optional context hints; pass them when
     /// available so replies factor in the caller's surface.
     func chat(
@@ -7871,7 +7887,7 @@ struct CsaScoresAPI {
 // down; the iOS client treats both identically — we render whatever
 // items the server returned.
 
-struct EsangCoachAPI {
+struct eSangCoachAPI {
     unowned let api: EusoTripAPI
 
     // MARK: Server-shaped input / output
@@ -10962,6 +10978,17 @@ struct ShipperAPI {
         // 2026-05-06: "i see alot of loads with 0 miles."
         let distance: Double?
         let miles: Double?
+        // ─── 2026-05-17 · Multi-modal payload ───
+        // Powers LoadModeBadge on every Shipper Dispatch Control row
+        // + Shipper Home active-loads card. Server projection ticket:
+        // shippers.getActiveLoads — append transportMode /
+        // multiVehicleCount / permitType / rateUnit / worldscalePct to
+        // the SELECT.
+        let transportMode: String?
+        let multiVehicleCount: Int?
+        let permitType: String?
+        let rateUnit: String?
+        let worldscalePct: String?
     }
 
     struct GetActiveLoadsInput: Encodable { let limit: Int }
@@ -11053,6 +11080,18 @@ struct ShipperAPI {
         let distance: Double?
         let miles: Double?
 
+        // ─── 2026-05-17 · Multi-modal projection ───
+        // Surfaced on every "My Loads" row so the shipper sees the mode
+        // badge + vehicle count on each card. Optional on the wire so
+        // pre-0307 deploys decode cleanly. Server projection ticket:
+        // shippers.getMyLoads — append transportMode / multiVehicleCount
+        // / permitType / rateUnit / worldscalePct to the SELECT.
+        let transportMode: String?
+        let multiVehicleCount: Int?
+        let permitType: String?
+        let rateUnit: String?
+        let worldscalePct: String?
+
         // Map server JSON to the struct above. The server emits
         // `origin` / `destination` as `{city,state}` — Swift can't bind
         // those to non-conflicting names without explicit CodingKeys.
@@ -11061,6 +11100,7 @@ struct ShipperAPI {
             case equipment, weight, hazmat, hazmatClass, product
             case catalyst, driver, rate, eta, bidsReceived, deliveredAt, createdAt
             case distance, miles
+            case transportMode, multiVehicleCount, permitType, rateUnit, worldscalePct
             case originRef = "origin"
             case destinationRef = "destination"
         }
@@ -11502,7 +11542,12 @@ struct ShipperAPI {
     /// `.optional()` defaults apply. `cargoType` carries the raw
     /// enum string (`"general"`, `"hazmat"`, …) — the screen never
     /// sends free-form strings.
-    struct PostLoadInput: Encodable, Hashable {
+    // PostLoadInput intentionally drops `Hashable` because the
+    // multi-modal `modeRoutePayload` is a type-erased `AnyEncodable`,
+    // which has no value semantics for hashing. PostLoadInput is only
+    // used as a one-shot mutation payload, so Hashable was never
+    // referenced — removing it has no call-site impact.
+    struct PostLoadInput: Encodable {
         let origin: String
         let destination: String
         let cargoType: CargoType
@@ -11521,6 +11566,25 @@ struct ShipperAPI {
         let originLng: Double?
         let destLat: Double?
         let destLng: Double?
+        // ─── 2026-05-17 · Multi-modal payload ─────────────────────────
+        // Lands the Step-1 mode picker + Step-2/3 multi-modal payload
+        // into `loads.transport_mode` + the columns added in migration
+        // 0307_loads_multimodal_fields.sql. All optional so older clients
+        // omit them and the server defaults to the truck-only behavior.
+        let transportMode: String?
+        let vesselClass: String?
+        let multiVehicleCount: Int?
+        let permitType: String?
+        let originPort: String?
+        let destPort: String?
+        let worldscalePct: Double?
+        let worldscaleFlat: Double?
+        let rateUnit: String?
+        /// Snapshot of the ModeRoute the shipper accepted (distance,
+        /// transit-range, cost-range, feasibility). Round-trips as
+        /// arbitrary JSON; backend stores in `mode_route_payload`.
+        let modeRoutePayload: AnyEncodable?
+        let equipmentType: String?
     }
 
     /// Acknowledgement envelope returned by `shippers.create`.
@@ -11563,9 +11627,25 @@ struct ShipperAPI {
         originLat: Double? = nil,
         originLng: Double? = nil,
         destLat: Double? = nil,
-        destLng: Double? = nil
+        destLng: Double? = nil,
+        // ─── 2026-05-17 · Multi-modal payload ───
+        transportMode: String? = nil,
+        vesselClass: String? = nil,
+        multiVehicleCount: Int? = nil,
+        permitType: String? = nil,
+        originPort: String? = nil,
+        destPort: String? = nil,
+        worldscalePct: Double? = nil,
+        worldscaleFlat: Double? = nil,
+        rateUnit: String? = nil,
+        modeRoutePayload: [String: Any]? = nil,
+        equipmentType: String? = nil
     ) async throws -> PostLoadAck {
-        try await api.mutation(
+        let encodablePayload = modeRoutePayload.map { dict -> AnyEncodable in
+            let mapped = dict.mapValues { AnyEncodable($0) }
+            return AnyEncodable(mapped)
+        }
+        return try await api.mutation(
             "shippers.create",
             input: PostLoadInput(
                 origin: origin,
@@ -11578,7 +11658,18 @@ struct ShipperAPI {
                 originLat: originLat,
                 originLng: originLng,
                 destLat: destLat,
-                destLng: destLng
+                destLng: destLng,
+                transportMode: transportMode,
+                vesselClass: vesselClass,
+                multiVehicleCount: multiVehicleCount,
+                permitType: permitType,
+                originPort: originPort,
+                destPort: destPort,
+                worldscalePct: worldscalePct,
+                worldscaleFlat: worldscaleFlat,
+                rateUnit: rateUnit,
+                modeRoutePayload: encodablePayload,
+                equipmentType: equipmentType
             )
         )
     }
@@ -12253,6 +12344,13 @@ struct CatalystAPI {
         /// this match (0.0…1.0). Zero when no carrier has been
         /// scored yet.
         let bestFitScore: Double
+        // ─── 2026-05-17 · Multi-modal payload ───
+        // Powers LoadModeBadge on every catalyst match row so a rail
+        // unit-train or vessel charter never gets carrier-matched as
+        // a single dry-van. Optional on the wire so older deploys
+        // decode cleanly.
+        let transportMode: String?
+        let multiVehicleCount: Int?
     }
 
     struct GetActiveMatchesInput: Encodable { let limit: Int }
@@ -16787,6 +16885,15 @@ struct LoadBoardAPI {
         let laneContractRate: Double?
         let laneContractRateType: String?
         let laneContractMiles: Double?
+
+        // ─── 2026-05-17 · Multi-modal payload on every search row ───
+        // Powers LoadModeBadge in every driver / catalyst / broker
+        // load row. Optional on the wire so older deploys decode.
+        let transportMode: String?
+        let multiVehicleCount: Int?
+        let permitType: String?
+        let rateUnit: String?
+        let worldscalePct: String?
 
         struct CityState: Decodable, Hashable {
             let city: String?

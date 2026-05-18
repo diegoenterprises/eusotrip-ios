@@ -117,7 +117,7 @@ struct CatalystMatchDetail: View {
         }
         // "Open full load detail" CTA → 305 Catalyst Load Detail with
         // the resolved loadId so the catalyst can update status,
-        // reassign carrier, or message ESang from the load surface.
+        // reassign carrier, or message eSang from the load surface.
         .sheet(isPresented: $presentingFullLoadDetail) {
             CatalystLoadDetailScreen(theme: palette, loadId: resolvedLoadId)
                 .presentationDetents([.large])
@@ -369,6 +369,23 @@ struct CatalystMatchDetail: View {
             if let equip = d.equipmentType, !equip.isEmpty {
                 scheduleRow(label: "Equipment", value: equip)
             }
+            // 2026-05-17 — Multi-modal payload on Catalyst Match Detail.
+            // Same shape as the Shipper detail (205) cargo card.
+            if let mode = d.transportMode, !mode.isEmpty, mode != "truck" {
+                scheduleRow(label: "Mode", value: mode.uppercased())
+            }
+            if let vc = d.vesselClass, !vc.isEmpty {
+                scheduleRow(label: "Vessel class", value: vc)
+            }
+            if let count = d.multiVehicleCount, count > 1 {
+                scheduleRow(label: "Vehicles", value: "\(count) ×")
+            }
+            if let perm = d.permitType, !perm.isEmpty, perm != "none" {
+                scheduleRow(label: "Permit", value: perm.replacingOccurrences(of: "_", with: " ").uppercased())
+            }
+            if let ws = d.worldscalePct, !ws.isEmpty, let n = Double(ws), n > 0 {
+                scheduleRow(label: "Worldscale", value: "WS \(Int(n.rounded()))")
+            }
             if let w = d.weightDisplay as String?, w != "—" {
                 scheduleRow(label: "Weight", value: w)
             }
@@ -563,7 +580,7 @@ struct CatalystMatchDetail: View {
                             .font(.system(size: 12, weight: .heavy))
                             .foregroundStyle(LinearGradient.diagonal)
                     }
-                    Text("Open the full Load Detail surface to assign or reassign a carrier (manual override), update status, send to ESang, or message the driver. Manual override pulls the match out of SpectraMatch.")
+                    Text("Open the full Load Detail surface to assign or reassign a carrier (manual override), update status, send to eSang, or message the driver. Manual override pulls the match out of SpectraMatch.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)

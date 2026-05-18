@@ -84,6 +84,10 @@ struct ArrivalGateTaskActive: View {
                 Text("\(ctx.headerKicker) · \(fallbackStepIndex)")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
+                    // EUSOTRIP-MODE-BADGE-2026-05-17 — mode chip on lifecycle screen
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
             }
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 0) {

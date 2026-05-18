@@ -296,6 +296,13 @@ struct DriverWeeklyPlan: View {
                         .foregroundColor(palette.textPrimary)
                         .lineLimit(1)
                     loadStatusPill(status: l.status)
+                    // 2026-05-17 — Weekly plan row mode badge so the
+                    // driver sees mode + multi-vehicle count for every
+                    // scheduled load. Hidden on default truck-single-
+                    // vehicle rows.
+                    LoadModeBadge(modeRaw: l.transportMode,
+                                  multiVehicleCount: l.multiVehicleCount,
+                                  compact: true)
                 }
                 Text(routeLine(origin: l.origin, destination: l.destination))
                     .font(EType.caption)

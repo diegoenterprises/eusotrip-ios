@@ -3231,7 +3231,7 @@ final class HaulStore: ObservableObject, DynamicStore {
 // 79th firing.
 
 @MainActor
-final class SafetyCoachStore: BaseDynamicStore<EsangCoachAPI.ForDriverResponse> {
+final class SafetyCoachStore: BaseDynamicStore<eSangCoachAPI.ForDriverResponse> {
     /// Driver's free-text focus ("what's on my mind"). Sent to the
     /// server to colour the coaching items, cleared on manual reset.
     @Published var focus: String = ""
@@ -3242,7 +3242,7 @@ final class SafetyCoachStore: BaseDynamicStore<EsangCoachAPI.ForDriverResponse> 
     /// without requiring the user to scroll on first glance.
     @Published var limit: Int = 6
 
-    override func fetch() async throws -> EsangCoachAPI.ForDriverResponse {
+    override func fetch() async throws -> eSangCoachAPI.ForDriverResponse {
         try await EusoTripAPI.shared.esangCoach.forDriver(
             focus: focus,
             limit: limit
@@ -3250,8 +3250,8 @@ final class SafetyCoachStore: BaseDynamicStore<EsangCoachAPI.ForDriverResponse> 
     }
 
     override func foldState(
-        _ value: EsangCoachAPI.ForDriverResponse
-    ) -> RemoteState<EsangCoachAPI.ForDriverResponse> {
+        _ value: eSangCoachAPI.ForDriverResponse
+    ) -> RemoteState<eSangCoachAPI.ForDriverResponse> {
         // Server contract: we always get at least the deterministic
         // fallback items when Gemini is down, so a truly empty
         // response is a real API surface bug rather than a normal
@@ -3575,7 +3575,21 @@ final class ShipperPostLoadStore: ObservableObject {
         originLat: Double? = nil,
         originLng: Double? = nil,
         destLat: Double? = nil,
-        destLng: Double? = nil
+        destLng: Double? = nil,
+        // 2026-05-17 — multi-modal payload. All optional with
+        // pre-multi-modal defaults so the existing callers keep
+        // working unchanged.
+        transportMode: TransportMode? = nil,
+        vesselClass: String? = nil,
+        multiVehicleCount: Int? = nil,
+        permitType: String? = nil,
+        originPort: String? = nil,
+        destPort: String? = nil,
+        worldscalePct: Double? = nil,
+        worldscaleFlat: Double? = nil,
+        rateUnit: String? = nil,
+        modeRoutePayload: [String: Any]? = nil,
+        equipmentType: String? = nil
     ) async {
         let trimOrigin = origin.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimDest   = destination.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -3600,7 +3614,18 @@ final class ShipperPostLoadStore: ObservableObject {
                 originLat: originLat,
                 originLng: originLng,
                 destLat: destLat,
-                destLng: destLng
+                destLng: destLng,
+                transportMode: transportMode?.rawValue,
+                vesselClass: vesselClass,
+                multiVehicleCount: multiVehicleCount,
+                permitType: permitType,
+                originPort: originPort,
+                destPort: destPort,
+                worldscalePct: worldscalePct,
+                worldscaleFlat: worldscaleFlat,
+                rateUnit: rateUnit,
+                modeRoutePayload: modeRoutePayload,
+                equipmentType: equipmentType
             )
             self.phase = .success(ack)
         } catch let api as EusoTripAPIError {

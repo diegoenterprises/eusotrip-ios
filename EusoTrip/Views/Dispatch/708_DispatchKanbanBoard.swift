@@ -44,6 +44,12 @@ private struct KanbanLoad: Decodable, Identifiable, Hashable {
     let deliveryDate: String?
     let driverId: Int?
     let driverName: String?
+    // 2026-05-17 — Multi-modal payload mirrored from loads schema.
+    // Optional on the wire so older deploys still decode. Powers
+    // LoadModeBadge on every kanban card.
+    let transportMode: String?
+    let multiVehicleCount: Int?
+    let permitType: String?
 }
 
 private struct UnifiedLoadsResponse: Decodable, Hashable {
@@ -185,6 +191,13 @@ private struct KanbanBody: View {
             HStack {
                 LifecycleSection(label: l.loadNumber.uppercased(), icon: hazmatIcon(l))
                 Spacer(minLength: 0)
+                // 2026-05-17 — Dispatch kanban card mode badge so the
+                // dispatcher sees mode + vehicle count BEFORE deciding
+                // which lane / driver to assign. Hidden for default
+                // truck-single-vehicle so common loads don't add chrome.
+                LoadModeBadge(modeRaw: l.transportMode,
+                              multiVehicleCount: l.multiVehicleCount,
+                              compact: true)
                 if let h = l.hazmatClass, !h.isEmpty {
                     Text("HAZ \(h)").font(.system(size: 9, weight: .heavy)).tracking(0.6).foregroundStyle(.white)
                         .padding(.horizontal, 6).padding(.vertical, 2)

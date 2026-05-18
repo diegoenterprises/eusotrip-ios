@@ -10,7 +10,7 @@
 //  pins + ETA + distance pills), gradient-rim money card with hazmat
 //  pills + amount + rate-line + progress %, carrier card with gradient
 //  avatar + ON TIME pill, documents row (BOL · Rate-con · Insurance),
-//  bottom CTA pair (View on map · Message ESang).
+//  bottom CTA pair (View on map · Message eSang).
 //
 //  Real data preserved: ShipperLoadDetailStore (loads.getById) +
 //  ShipperBidsStore (shippers.getBidsForLoad) + ShipperLoadCycleView
@@ -28,7 +28,7 @@
 //  Web peer: ShipperLoads.tsx row → /shipper/loads/:id.
 //  tRPC: loads.getById + shippers.getBidsForLoad
 //        (+ telemetry.getLiveLocation for live truck pin — pending).
-//  Notification names: eusoShipperLoadOpenMap, eusoShipperLoadMessageEsang,
+//  Notification names: eusoShipperLoadOpenMap, eusoShipperLoadMessageeSang,
 //                      eusoShipperLoadActionMenu.
 //
 //  BottomNav: Loads slot stays current — out of scope per parity
@@ -1612,6 +1612,26 @@ struct ShipperLoadDetail: View {
             if let equip = d.equipmentType, !equip.isEmpty {
                 scheduleRow(label: "Equipment", value: equip)
             }
+            // 2026-05-17 — Multi-modal payload surfacing. Mode is always
+            // present (server defaults to "truck"); the rest only render
+            // when present. Keeps the detail screen honest about what
+            // the shipper actually posted (vessel-tanker @ WS 75 reads
+            // differently than a $/mile truck load).
+            if let mode = d.transportMode, !mode.isEmpty, mode != "truck" {
+                scheduleRow(label: "Mode", value: mode.uppercased())
+            }
+            if let vc = d.vesselClass, !vc.isEmpty {
+                scheduleRow(label: "Vessel class", value: vc)
+            }
+            if let count = d.multiVehicleCount, count > 1 {
+                scheduleRow(label: "Vehicles", value: "\(count) ×")
+            }
+            if let perm = d.permitType, !perm.isEmpty, perm != "none" {
+                scheduleRow(label: "Permit", value: perm.replacingOccurrences(of: "_", with: " ").uppercased())
+            }
+            if let ws = d.worldscalePct, !ws.isEmpty, let n = Double(ws), n > 0 {
+                scheduleRow(label: "Worldscale", value: "WS \(Int(n.rounded()))")
+            }
             if let hz = d.hazmatClass, !hz.isEmpty {
                 scheduleRow(label: "Hazmat class", value: hz)
                 if let un = d.unNumber, !un.isEmpty {
@@ -1755,10 +1775,10 @@ struct ShipperLoadDetail: View {
             .accessibilityLabel("Open live map view")
 
             Button {
-                NotificationCenter.default.post(name: .eusoShipperLoadMessageEsang, object: nil,
+                NotificationCenter.default.post(name: .eusoShipperLoadMessageeSang, object: nil,
                                                 userInfo: ["loadId": loadId])
             } label: {
-                Text("Message ESang")
+                Text("Message eSang")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
                     .frame(maxWidth: .infinity, minHeight: 48)
@@ -1767,7 +1787,7 @@ struct ShipperLoadDetail: View {
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Ask ESang about this load")
+            .accessibilityLabel("Ask eSang about this load")
         }
         .padding(.top, Space.s2)
     }
@@ -2081,7 +2101,7 @@ struct ShipperLoadDetail: View {
 
 extension Notification.Name {
     static let eusoShipperLoadOpenMap         = Notification.Name("eusoShipperLoadOpenMap")
-    static let eusoShipperLoadMessageEsang    = Notification.Name("eusoShipperLoadMessageEsang")
+    static let eusoShipperLoadMessageeSang    = Notification.Name("eusoShipperLoadMessageeSang")
     static let eusoShipperLoadActionMenu      = Notification.Name("eusoShipperLoadActionMenu")
     /// Fired by the action-menu "Cancel load" choice. Listened by
     /// `ShipperLoadDetail` itself (calls `loads.cancel` once the

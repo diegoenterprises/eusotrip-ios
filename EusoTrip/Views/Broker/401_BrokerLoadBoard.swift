@@ -34,6 +34,10 @@ private struct BoardLoad: Decodable, Identifiable, Hashable {
     let mileage: Int?
     let pickupISO: String?
     let estimatedMargin: Double?
+    // 2026-05-17 — Multi-modal payload (optional on the wire so older
+    // server builds decode cleanly; UI defaults to truck when nil).
+    let transportMode: String?
+    let multiVehicleCount: Int?
 }
 
 private struct LoadBoardBody: View {
@@ -76,7 +80,17 @@ private struct LoadBoardBody: View {
                     NotificationCenter.default.post(name: .eusoBrokerNavSwap, object: nil, userInfo: ["screenId": "402", "loadId": ld.id])
                 } label: {
                     LifecycleCard(accentGradient: (ld.estimatedMargin ?? 0) > 200) {
-                        LifecycleSection(label: ld.loadNumber.uppercased(), icon: "doc.text")
+                        HStack(spacing: 8) {
+                            LifecycleSection(label: ld.loadNumber.uppercased(), icon: "doc.text")
+                            Spacer(minLength: 0)
+                            // 2026-05-17 — Broker board mode badge so
+                            // brokers triage rail / vessel / barge
+                            // before they read mileage (which doesn't
+                            // apply to a Worldscale tanker).
+                            LoadModeBadge(modeRaw: ld.transportMode,
+                                          multiVehicleCount: ld.multiVehicleCount,
+                                          compact: true)
+                        }
                         LifecycleRow(label: "Shipper",  value: dashIfEmpty(ld.shipperName))
                         LifecycleRow(label: "Lane",     value: dashIfEmpty(ld.lane))
                         LifecycleRow(label: "Cargo",    value: dashIfEmpty(ld.cargoType))

@@ -7,7 +7,7 @@
 //  applied: TopBar greeting ("Hey, Diego" + DU avatar w/ unread dot),
 //  IridescentHairline, gradient-rim attention card, 4-stat strip
 //  (Active · Bids · Rate/mi · On-time), 8-stage lifecycle strip per
-//  active row, ESang strip.
+//  active row, eSang strip.
 //
 //  Real data preserved: every store wiring kept — `shippers.{getDashboardStats,
 //  getLoadsRequiringAttention, getActiveLoads, getRecentLoads}` via the
@@ -777,10 +777,19 @@ struct ShipperHome: View {
         HStack(alignment: .top, spacing: Space.s3) {
             modeGlyph(for: row)
             VStack(alignment: .leading, spacing: 4) {
-                Text("\(row.origin) → \(row.destination)")
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text("\(row.origin) → \(row.destination)")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    // 2026-05-17 — Shipper Home active-load row mode
+                    // badge. Sibling adoption to 218 Dispatch Control —
+                    // both consume the same ShipperAPI.ActiveLoad
+                    // projection so they light up together.
+                    LoadModeBadge(modeRaw: row.transportMode,
+                                  multiVehicleCount: row.multiVehicleCount,
+                                  compact: true)
+                }
                 Text("\(row.loadNumber) · \(cargoLabel(for: row))")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
@@ -903,14 +912,14 @@ struct ShipperHome: View {
         }
     }
 
-    // MARK: - ESang strip
+    // MARK: - eSang strip
 
     private var esangStrip: some View {
         Button(action: {
-            NotificationCenter.default.post(name: .eusoShipperEsangOpen, object: nil)
+            NotificationCenter.default.post(name: .eusoShippereSangOpen, object: nil)
         }) {
             HStack(spacing: Space.s3) {
-                OrbESang(state: .idle, diameter: 32)
+                OrbeSang(state: .idle, diameter: 32)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(esangHeadline)
                         .font(EType.bodyStrong)
@@ -938,9 +947,9 @@ struct ShipperHome: View {
     private var esangHeadline: String {
         if let s = dashboard.state.value ?? nil {
             let target = dollarsPerMile(s.ratePerMile)
-            return "ESang found 3 carriers under your \(target) target"
+            return "eSang found 3 carriers under your \(target) target"
         }
-        return "ESang found 3 carriers under your $2.84/mi target"
+        return "eSang found 3 carriers under your $2.84/mi target"
     }
     private var esangSubline: String {
         if case .loaded(let rows) = active.state, let first = rows.first {
@@ -1122,8 +1131,8 @@ extension Notification.Name {
     static let eusoShipperLoadOpen      = Notification.Name("eusoShipperLoadOpen")
     /// Fired by "See all (N)" → 201 Shipper Loads.
     static let eusoShipperLoadListOpen  = Notification.Name("eusoShipperLoadListOpen")
-    /// Fired by tapping the ESang strip → ESang sheet over Home.
-    static let eusoShipperEsangOpen     = Notification.Name("eusoShipperEsangOpen")
+    /// Fired by tapping the eSang strip → eSang sheet over Home.
+    static let eusoShippereSangOpen     = Notification.Name("eusoShippereSangOpen")
 }
 
 // MARK: - Screen wrapper

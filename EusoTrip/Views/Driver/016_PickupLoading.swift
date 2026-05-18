@@ -146,6 +146,15 @@ struct PickupLoading: View {
                 .font(.system(size: 28, weight: .heavy))
                 .foregroundStyle(palette.textPrimary)
 
+            // 2026-05-17 — Mode badge on the loading-dock header. The
+            // dock crew's procedure differs sharply by mode (vessel
+            // requires tide window + tug coordination, rail needs
+            // siding alignment, truck is dock-door). Hidden for the
+            // default truck-single-vehicle case.
+            LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                          multiVehicleCount: activeLoad?.multiVehicleCount,
+                          compact: true)
+
             Spacer(minLength: 0)
 
             VStack(alignment: .trailing, spacing: 2) {

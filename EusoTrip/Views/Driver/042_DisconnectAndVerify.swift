@@ -82,6 +82,10 @@ struct DisconnectAndVerify: View {
                     Text("STEP 2 OF 4 · \(ctx.headerKicker)")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(LinearGradient.diagonal)
+                    // EUSOTRIP-MODE-BADGE-2026-05-17 — mode chip on lifecycle screen
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
                 }
                 Text("Disconnecting \(ctx.isHazmat ? "NH3 line" : "trailer") · Dock 3")
                     .font(.system(size: 18, weight: .heavy))

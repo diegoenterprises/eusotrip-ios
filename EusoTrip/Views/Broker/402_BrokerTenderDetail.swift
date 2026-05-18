@@ -306,6 +306,26 @@ struct BrokerTenderDetail: View {
             if let equip = d.equipmentType, !equip.isEmpty {
                 scheduleRow(label: "Equipment", value: equip)
             }
+            // 2026-05-17 — Broker counter-party multi-modal payload.
+            // Same surfacing as 205 / 305 / 502 so the broker sees the
+            // shipper's mode pick BEFORE quoting / re-tendering. A WS
+            // tanker tender quoted as $/mile is the kind of mistake
+            // this badge prevents.
+            if let mode = d.transportMode, !mode.isEmpty, mode != "truck" {
+                scheduleRow(label: "Mode", value: mode.uppercased())
+            }
+            if let vc = d.vesselClass, !vc.isEmpty {
+                scheduleRow(label: "Vessel class", value: vc)
+            }
+            if let count = d.multiVehicleCount, count > 1 {
+                scheduleRow(label: "Vehicles", value: "\(count) ×")
+            }
+            if let perm = d.permitType, !perm.isEmpty, perm != "none" {
+                scheduleRow(label: "Permit", value: perm.replacingOccurrences(of: "_", with: " ").uppercased())
+            }
+            if let ws = d.worldscalePct, !ws.isEmpty, let n = Double(ws), n > 0 {
+                scheduleRow(label: "Worldscale", value: "WS \(Int(n.rounded()))")
+            }
             if let w = d.weightDisplay as String?, w != "—" {
                 scheduleRow(label: "Weight", value: w)
             }
