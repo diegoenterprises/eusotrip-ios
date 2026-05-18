@@ -21,16 +21,16 @@ import AVFoundation
 /// What the sheet reports back when the user confirms a scan. The
 /// host pushes this into its pending-vehicles list (or calls the
 /// fleet-register endpoint directly).
-public struct VINScanResult: Hashable, Identifiable {
-    public let vin: String
-    public let decoded: FleetRegistrationAPI.VinDecoded?
-    public let suggestedVehicleType: String?
-    public let gvwrClassNumber: Int?
-    public var id: String { vin }
+struct VINScanResult: Hashable, Identifiable {
+    let vin: String
+    let decoded: FleetRegistrationAPI.VinDecoded?
+    let suggestedVehicleType: String?
+    let gvwrClassNumber: Int?
+    var id: String { vin }
 }
 
-public struct VINScannerSheet: View {
-    public let onConfirm: (VINScanResult) -> Void
+struct VINScannerSheet: View {
+    let onConfirm: (VINScanResult) -> Void
 
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
@@ -41,11 +41,11 @@ public struct VINScannerSheet: View {
     @State private var decodeError: String? = nil
     @State private var preview: VINScanResult? = nil
 
-    public init(onConfirm: @escaping (VINScanResult) -> Void) {
+    init(onConfirm: @escaping (VINScanResult) -> Void) {
         self.onConfirm = onConfirm
     }
 
-    public var body: some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             if scannedVIN == nil && preview == nil {

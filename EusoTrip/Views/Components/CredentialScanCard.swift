@@ -34,21 +34,21 @@ extension CredentialScannerAPI.ScannedField {
     var needsReview: Bool { confidence < 0.85 }
 }
 
-public struct CredentialScanCard: View {
+struct CredentialScanCard: View {
     /// Server credential-type code (e.g. "us_cdl", "us_medical_card",
     /// "uscg_mmc"). Matches `credentialScannerRouter.CredentialTypes`.
-    public let credentialType: String
+    let credentialType: String
 
     /// Human-facing label for the card header (e.g. "Scan your CDL").
-    public let title: String
+    let title: String
 
     /// Sub-line under the title explaining the value to the user.
-    public let subtitle: String
+    let subtitle: String
 
     /// Callback fired with the normalized envelope when the scan
     /// completes (even on AI failure — the host should check
     /// `overallConfidence` and `warnings`).
-    public let onResult: (CredentialScannerAPI.ScannedCredential) -> Void
+    let onResult: (CredentialScannerAPI.ScannedCredential) -> Void
 
     @Environment(\.palette) private var palette
 
@@ -58,7 +58,7 @@ public struct CredentialScanCard: View {
     @State private var error: String? = nil
     @State private var lastResult: CredentialScannerAPI.ScannedCredential? = nil
 
-    public init(
+    init(
         credentialType: String,
         title: String,
         subtitle: String,
@@ -70,7 +70,7 @@ public struct CredentialScanCard: View {
         self.onResult = onResult
     }
 
-    public var body: some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
             header
             ctaRow

@@ -14,18 +14,18 @@
 import SwiftUI
 import AuthenticationServices
 
-public struct AppleAuthButtons: View {
+struct AppleAuthButtons: View {
     /// Optional email to constrain the passkey assertion to a
     /// specific account. Pass the SignIn screen's email field
     /// when known; the Create-Account screen leaves it nil.
-    public let prefilledEmail: String?
+    let prefilledEmail: String?
     /// Layout — vertical on the SignIn screen, horizontal on
     /// compact contexts like sheets.
-    public var axis: Axis = .vertical
+    var axis: Axis = .vertical
     /// Whether to render the "Sign in with passkey" button. Disabled
     /// on the Create-Account screen since a new user can't have a
     /// passkey on file yet.
-    public var showsPasskey: Bool = true
+    var showsPasskey: Bool = true
 
     @Environment(\.palette) private var palette
     @Environment(\.colorScheme) private var colorScheme
@@ -34,7 +34,7 @@ public struct AppleAuthButtons: View {
     @State private var inflightApple = false
     @State private var inflightPasskey = false
 
-    public init(prefilledEmail: String? = nil,
+    init(prefilledEmail: String? = nil,
                 axis: Axis = .vertical,
                 showsPasskey: Bool = true) {
         self.prefilledEmail = prefilledEmail
@@ -42,7 +42,7 @@ public struct AppleAuthButtons: View {
         self.showsPasskey = showsPasskey
     }
 
-    public var body: some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if axis == .vertical {
                 appleButton
@@ -168,7 +168,7 @@ public struct AppleAuthButtons: View {
 // MARK: - EusoAuthError equality helper for the canceled fast-path
 
 extension EusoAuthError: Equatable {
-    public static func == (lhs: EusoAuthError, rhs: EusoAuthError) -> Bool {
+    static func == (lhs: EusoAuthError, rhs: EusoAuthError) -> Bool {
         switch (lhs, rhs) {
         case (.malformedAppleCredential, .malformedAppleCredential),
              (.malformedPasskeyOptions, .malformedPasskeyOptions),

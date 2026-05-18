@@ -19,16 +19,16 @@
 
 import SwiftUI
 
-public struct FMCSALookupCard: View {
-    public enum Mode: String { case dot, mc, both }
+struct FMCSALookupCard: View {
+    enum Mode: String { case dot, mc, both }
 
-    public let mode: Mode
-    @Binding public var dotNumber: String
-    @Binding public var mcNumber: String
-    public let onDataLoaded: (FMCSACarrierLookup) -> Void
+    let mode: Mode
+    @Binding var dotNumber: String
+    @Binding var mcNumber: String
+    let onDataLoaded: (FMCSACarrierLookup) -> Void
     /// Compact rendering for forms that already have their own
     /// section header. Hides the eyebrow + tip card.
-    public var compact: Bool = false
+    var compact: Bool = false
 
     @Environment(\.palette) private var palette
 
@@ -39,7 +39,7 @@ public struct FMCSALookupCard: View {
         case idle, loading, success, error(String), notFound
     }
 
-    public init(
+    init(
         mode: Mode,
         dotNumber: Binding<String>,
         mcNumber: Binding<String>,
@@ -53,7 +53,7 @@ public struct FMCSALookupCard: View {
         self.onDataLoaded = onDataLoaded
     }
 
-    public var body: some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
             if !compact { header }
             inputRow

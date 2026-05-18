@@ -23,10 +23,10 @@ struct PendingInvitee: Identifiable, Hashable {
     var vertical: String = "truck"   // "truck" | "rail" | "vessel"
 }
 
-public struct DriverInviteBulkStep: View {
-    public let vertical: String
-    public let onContinue: () -> Void
-    public let onSkip: (() -> Void)?
+struct DriverInviteBulkStep: View {
+    let vertical: String
+    let onContinue: () -> Void
+    let onSkip: (() -> Void)?
 
     @Environment(\.palette) private var palette
 
@@ -36,7 +36,7 @@ public struct DriverInviteBulkStep: View {
     @State private var result: ResultSummary? = nil
     @State private var errorBanner: String? = nil
 
-    public init(
+    init(
         vertical: String = "truck",
         onContinue: @escaping () -> Void,
         onSkip: (() -> Void)? = nil
@@ -46,7 +46,7 @@ public struct DriverInviteBulkStep: View {
         self.onSkip = onSkip
     }
 
-    public var body: some View {
+    var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header

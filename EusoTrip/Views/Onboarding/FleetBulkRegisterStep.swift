@@ -31,10 +31,10 @@ struct PendingFleetVehicle: Identifiable, Hashable {
     var mileage: Int? = nil
 }
 
-public struct FleetBulkRegisterStep: View {
-    public let vertical: String          // "truck" | "rail" | "vessel"
-    public let onContinue: () -> Void
-    public let onSkip: (() -> Void)?
+struct FleetBulkRegisterStep: View {
+    let vertical: String          // "truck" | "rail" | "vessel"
+    let onContinue: () -> Void
+    let onSkip: (() -> Void)?
 
     @Environment(\.palette) private var palette
 
@@ -44,7 +44,7 @@ public struct FleetBulkRegisterStep: View {
     @State private var result: ResultSummary? = nil
     @State private var errorBanner: String? = nil
 
-    public init(
+    init(
         vertical: String = "truck",
         onContinue: @escaping () -> Void,
         onSkip: (() -> Void)? = nil
@@ -54,7 +54,7 @@ public struct FleetBulkRegisterStep: View {
         self.onSkip = onSkip
     }
 
-    public var body: some View {
+    var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
