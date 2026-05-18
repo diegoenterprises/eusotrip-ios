@@ -72,67 +72,35 @@ struct ShipperApplePayWallet: View {
 
     enum WalletBannerKind { case success, info, error }
 
-    private let counterEyebrow = "3 PASSES · 1 ACTIVE"
+    // ── Live wallet state — fetched from the server at .task ──────
+    // Backed by wallet.shipperPassesSnapshot (active + 3 passes) and
+    // wallet.listPaymentMethods (Stripe Customer cards). The hardcoded
+    // demo arrays that used to live here are gone — every row on this
+    // screen now reflects the signed-in shipper's actual loads + cards.
 
-    private let activePass = ActiveWalletPass(
-        id:                "pass_LD-260427-A38FB12C7E",
-        issuerLine:        "EUSORONE TECHNOLOGIES",
-        title:             "Pickup Credential",
-        loadId:            "LD-260427-A38FB12C7E",
-        lane:              "Houston \u{2192} Dallas",
-        eta:               "Apr 30 · in 4h 12m",
-        equipment:         "MC-306 · UN1203 · Gas",
-        carrierLine:       "Bulk Logistics · MC-1485",
-        escrowLine:        "Escrow funded · $1,900",
-        carrierTier:       "A",
-        ctaLabel:          "Add to Wallet"
-    )
+    @State private var activePass: ActiveWalletPass? = nil
+    @State private var passes: [WalletPass] = []
+    @State private var paymentMethods: [PaymentMethod] = []
+    @State private var snapshotPhase: SnapshotPhase = .loading
+    @State private var settingDefaultMethodId: String? = nil
 
-    private let passes: [WalletPass] = [
-        WalletPass(
-            id:           "LD-260427-A38FB12C7E",
-            tilePrefix:   "A3",
-            lane:         "Houston \u{2192} Dallas",
-            spec:         "MC-306 Gasoline UN1203 · 47k lb · $1,900",
-            installedNote:"in Wallet",
-            status:       .active
-        ),
-        WalletPass(
-            id:           "LD-260427-7C3A09F18B",
-            tilePrefix:   "7C",
-            lane:         "Los Angeles \u{2192} Phoenix",
-            spec:         "53' Reefer · fresh berries 33-38°F · $2,200",
-            installedNote:"in Wallet",
-            status:       .inTransit
-        ),
-        WalletPass(
-            id:           "LD-260427-B41782FF02",
-            tilePrefix:   "B4",
-            lane:         "Kansas City \u{2192} Omaha",
-            spec:         "MC-331 NH\u{2083} UN1005 · escort · $3,200",
-            installedNote:"in Wallet",
-            status:       .escort
-        )
-    ]
+    enum SnapshotPhase: Equatable {
+        case loading
+        case loaded
+        case empty       // no live loads on file
+        case error(String)
+    }
 
-    private let activePassId: String = "LD-260427-A38FB12C7E"
+    private var activePassId: String { activePass?.id ?? "" }
 
-    private let paymentMethods: [PaymentMethod] = [
-        PaymentMethod(
-            id:        "card_visa_4737",
-            brand:     .visa,
-            maskedPAN: "Visa \u{2022}\u{2022}\u{2022}\u{2022} 4737",
-            spec:      "Eusorone Technologies · default · expires 09/28",
-            tag:       .defaultMethod
-        ),
-        PaymentMethod(
-            id:        "card_amex_7211",
-            brand:     .amex,
-            maskedPAN: "Amex \u{2022}\u{2022}\u{2022}\u{2022} 7211",
-            spec:      "Eusorone Technologies · backup · expires 03/29",
-            tag:       .backup
-        )
-    ]
+    /// Eyebrow counter — recomputes from live state instead of a
+    /// hardcoded "3 PASSES · 1 ACTIVE" string. When there are no
+    /// passes the screen still reads "0 PASSES · 0 ACTIVE" instead
+    /// of lying about installed Wallet bundles.
+    private var counterEyebrow: String {
+        let activeCount = activePass != nil ? 1 : 0
+        return "\(passes.count) PASSES · \(activeCount) ACTIVE"
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -144,23 +112,57 @@ struct ShipperApplePayWallet: View {
             IridescentHairline()
                 .padding(.top, Space.s3)
 
-            sectionLabel("ACTIVE PASS · MATRIX-50 ROW 1")
-                .padding(.top, Space.s5)
-            heroPassCard
-                .padding(.horizontal, Space.s5)
-                .padding(.top, Space.s2)
+            // ── Active pass hero ───────────────────────────────────
+            // Renders the gradient pickup-credential card with QR +
+            // Add-to-Wallet CTA when the shipper has a live load.
+            // Empty state when none — never a fake hardcoded pass.
+            if let pass = activePass {
+                sectionLabel(pass.matrixRowLabel ?? "ACTIVE PASS")
+                    .padding(.top, Space.s5)
+                heroPassCard(for: pass)
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s2)
+            } else if snapshotPhase == .empty {
+                sectionLabel("ACTIVE PASS")
+                    .padding(.top, Space.s5)
+                emptyHeroCard
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s2)
+            } else if snapshotPhase == .loading {
+                sectionLabel("ACTIVE PASS")
+                    .padding(.top, Space.s5)
+                loadingHeroCard
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s2)
+            } else if case .error(let msg) = snapshotPhase {
+                sectionLabel("ACTIVE PASS")
+                    .padding(.top, Space.s5)
+                errorHeroCard(message: msg)
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s2)
+            }
 
-            sectionLabel("PASSES · 3 IN WALLET")
-                .padding(.top, Space.s5)
-            passesCard
-                .padding(.horizontal, Space.s5)
-                .padding(.top, Space.s2)
+            // ── Pass list ──────────────────────────────────────────
+            if !passes.isEmpty {
+                sectionLabel("PASSES · \(passes.count) IN WALLET")
+                    .padding(.top, Space.s5)
+                passesCard
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s2)
+            }
 
-            sectionLabel("APPLE PAY · 2 METHODS")
+            // ── Apple Pay methods ──────────────────────────────────
+            sectionLabel("APPLE PAY · \(paymentMethods.count) METHODS")
                 .padding(.top, Space.s5)
-            paymentMethodsCard
-                .padding(.horizontal, Space.s5)
-                .padding(.top, Space.s2)
+            if paymentMethods.isEmpty {
+                emptyPaymentMethodsCard
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s2)
+            } else {
+                paymentMethodsCard
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s2)
+            }
 
             settingsPointerLink
                 .padding(.horizontal, Space.s5)
@@ -170,6 +172,202 @@ struct ShipperApplePayWallet: View {
                 .padding(.top, Space.s4)
                 .padding(.bottom, Space.s5)
         }
+        .task { await loadAll() }
+        .refreshable { await loadAll() }
+    }
+
+    // MARK: — Empty / loading / error hero states
+
+    private var loadingHeroCard: some View {
+        VStack(spacing: 10) {
+            ProgressView().scaleEffect(0.9).tint(palette.textPrimary)
+            Text("Loading your active pickup credential…")
+                .font(EType.caption).foregroundStyle(palette.textTertiary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 160)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    private var emptyHeroCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "wallet.pass")
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(LinearGradient.primary)
+                Text("No active pickup credential")
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+            }
+            Text("Post a load and accept a carrier's bid — we'll mint a signed .pkpass for your gate scanner the moment the load goes in-transit.")
+                .font(EType.caption).foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "204"])
+            } label: {
+                GradientCapsuleCTA(label: "Post a load", width: 140)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    private func errorHeroCard(message: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(Brand.danger)
+                Text("Couldn't load wallet").font(.system(size: 14, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            }
+            Text(message).font(EType.caption).foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button { Task { await loadAll() } } label: {
+                Text("Retry")
+                    .font(.system(size: 12, weight: .heavy))
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .foregroundStyle(.white)
+                    .background(LinearGradient.primary)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    private var emptyPaymentMethodsCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("No payment methods on file")
+                .font(.system(size: 13, weight: .heavy))
+                .foregroundStyle(palette.textPrimary)
+            Text("Add a card via Apple Pay or Plaid to fund escrow + accept settlements.")
+                .font(EType.caption).foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    // MARK: — Data loading
+
+    @MainActor
+    private func loadAll() async {
+        snapshotPhase = .loading
+        async let snapshot = (try? await EusoTripAPI.shared.wallet.shipperPassesSnapshot())
+            ?? EusoTripAPI.WalletAPI.ShipperPassesSnapshot(active: nil, passes: [])
+        async let methods = (try? await EusoTripAPI.shared.wallet.listPaymentMethods()) ?? []
+        let snap = await snapshot
+        let mts = await methods
+
+        passes = snap.passes.map { row in
+            WalletPass(
+                id: row.id,
+                tilePrefix: row.tilePrefix,
+                lane: row.lane,
+                spec: row.spec,
+                installedNote: row.installedNote,
+                status: WalletPassStatus.fromServer(row.status)
+            )
+        }
+        activePass = snap.active.map(Self.heroFromRow)
+        paymentMethods = mts.map(Self.methodFromRow)
+        snapshotPhase = (snap.active == nil && snap.passes.isEmpty) ? .empty : .loaded
+    }
+
+    /// Translate a server `ShipperPassRow` into the hero card's
+    /// ActiveWalletPass shape. Adds the human-formatted ETA + the
+    /// "MATRIX-50" eyebrow (server doesn't know about the cohort).
+    private static func heroFromRow(_ row: EusoTripAPI.WalletAPI.ShipperPassRow) -> ActiveWalletPass {
+        let etaText: String = {
+            guard let iso = row.deliveryDate ?? row.pickupDate else { return "TBD" }
+            let f = ISO8601DateFormatter()
+            f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let d = f.date(from: iso) ?? {
+                f.formatOptions = [.withInternetDateTime]
+                return f.date(from: iso)
+            }() ?? Date()
+            let date = DateFormatter()
+            date.dateFormat = "MMM d"
+            let rel = RelativeDateTimeFormatter()
+            rel.unitsStyle = .short
+            return "\(date.string(from: d)) · \(rel.localizedString(for: d, relativeTo: Date()))"
+        }()
+
+        let equipmentLine: String = {
+            let parts: [String?] = [
+                row.equipmentType?.replacingOccurrences(of: "_", with: " "),
+                row.unNumber.map { "UN\($0)" },
+                row.cargoType,
+            ]
+            return parts.compactMap { $0 }.joined(separator: " · ")
+        }()
+
+        let carrierLine: String = {
+            switch (row.carrierName, row.carrierMc) {
+            case let (n?, mc?): return "\(n) · MC-\(mc)"
+            case let (n?, nil): return n
+            case (nil, let mc?): return "MC-\(mc)"
+            default: return "Carrier pending"
+            }
+        }()
+
+        let escrowLine: String = row.rate.map { "Escrow funded · $\($0)" } ?? "Escrow pending"
+
+        return ActiveWalletPass(
+            id: "pass_\(row.id)",
+            issuerLine: "EUSORONE TECHNOLOGIES",
+            title: "Pickup Credential",
+            loadId: row.id,
+            lane: row.lane,
+            eta: etaText,
+            equipment: equipmentLine.isEmpty ? "Equipment pending" : equipmentLine,
+            carrierLine: carrierLine,
+            escrowLine: escrowLine,
+            carrierTier: String(row.id.suffix(2)).first.map(String.init) ?? "A",
+            ctaLabel: "Add to Wallet",
+            matrixRowLabel: nil
+        )
+    }
+
+    private static func methodFromRow(_ row: EusoTripAPI.WalletAPI.PaymentMethodRow) -> PaymentMethod {
+        let brand = PaymentBrand.from(row.brand)
+        let mm = String(format: "%02d", row.expMonth)
+        let yy = String(format: "%02d", row.expYear % 100)
+        let nameLine = row.billingName ?? "EusoTrip Member"
+        let tag: PaymentTag = row.isDefault ? .defaultMethod : .backup
+        return PaymentMethod(
+            id: row.id,
+            brand: brand,
+            maskedPAN: "\(brand.displayName) \u{2022}\u{2022}\u{2022}\u{2022} \(row.last4)",
+            spec: "\(nameLine) · \(row.isDefault ? "default" : "backup") · expires \(mm)/\(yy)",
+            tag: tag
+        )
     }
 
     private var topBar: some View {
@@ -216,7 +414,9 @@ struct ShipperApplePayWallet: View {
 
     // MARK: - HERO PASS CARD (active Wallet pass)
 
-    private var heroPassCard: some View {
+    private func heroPassCard(for pass: ActiveWalletPass) -> some View {
+        let activePass = pass     // alias so the existing body code keeps working unchanged
+        return
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                 .fill(palette.bgCard)
@@ -528,7 +728,16 @@ struct ShipperApplePayWallet: View {
         }
     }
 
+    /// Tapping a card row sets it as the Stripe Customer's default
+    /// payment method. The web redirect was removed — real platform
+    /// state lives in Stripe, and the iOS row should be the editor.
     private func tapPaymentMethod(_ method: PaymentMethod) {
+        // No-op if already default — the row tap shouldn't waste a
+        // round-trip on a write that does nothing.
+        guard method.tag != .defaultMethod else { return }
+        // Disable concurrent taps while a default-flip is in flight.
+        guard settingDefaultMethodId == nil else { return }
+
         NotificationCenter.default.post(
             name: .eusoShipperWalletPaymentMethod,
             object: nil,
@@ -536,28 +745,60 @@ struct ShipperApplePayWallet: View {
                 "source": "239_ShipperApplePayWallet",
                 "paymentMethodId": method.id,
                 "brand": method.brand.rawValue,
-                "isDefault": method.tag == .defaultMethod,
-                "shipperCompanyId": 1
+                "isDefault": false,
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/wallet/method/\(method.id)") {
-            openURL(url)
+
+        settingDefaultMethodId = method.id
+        Task {
+            do {
+                _ = try await EusoTripAPI.shared.wallet.setDefaultPaymentMethod(method.id)
+                // Optimistic re-render — flip the tag locally then
+                // re-fetch so the rest of the wallet (default-method-
+                // dependent settlements) stays in sync.
+                await MainActor.run {
+                    paymentMethods = paymentMethods.map {
+                        PaymentMethod(
+                            id: $0.id,
+                            brand: $0.brand,
+                            maskedPAN: $0.maskedPAN,
+                            spec: $0.spec.replacingOccurrences(of: " · default ·", with: " · backup ·")
+                                       .replacingOccurrences(of: " · backup ·", with: $0.id == method.id ? " · default ·" : " · backup ·"),
+                            tag: $0.id == method.id ? .defaultMethod : .backup
+                        )
+                    }
+                    passBannerKind = .success
+                    passBannerText = "Default card → \(method.maskedPAN)"
+                }
+                await loadAll()
+            } catch {
+                await MainActor.run {
+                    passBannerKind = .error
+                    passBannerText = "Couldn't change default card."
+                }
+            }
+            await MainActor.run { settingDefaultMethodId = nil }
+            Task {
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                await MainActor.run { passBannerText = nil }
+            }
         }
     }
 
+    /// Tapping the footer routes natively to 211 Settings via the
+    /// shipper nav-swap notification. No more web-Safari hop — the
+    /// per-card / per-pass controls live in the native settings
+    /// surface that's already on screen 211.
     private func tapManageApplePay() {
         NotificationCenter.default.post(
-            name: .eusoShipperWalletManage,
+            name: .eusoShipperNavSwap,
             object: nil,
             userInfo: [
+                "screenId": "211",
                 "source": "239_ShipperApplePayWallet",
-                "targetScreen": "211 Settings",
-                "shipperCompanyId": 1
+                "deeplinkSection": "wallet",
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/settings/wallet") {
-            openURL(url)
-        }
     }
 }
 
@@ -576,18 +817,23 @@ private struct ActiveWalletPass {
     let escrowLine:  String
     let carrierTier: String
     let ctaLabel:    String
+    /// Optional eyebrow ("ACTIVE PASS · MATRIX-50 ROW 1" etc.). nil
+    /// when the server didn't tag the load with a cohort label.
+    let matrixRowLabel: String?
 }
 
 private enum WalletPassStatus {
     case active
     case inTransit
     case escort
+    case pending
 
     var label: String {
         switch self {
         case .active:    return "ACTIVE"
         case .inTransit: return "IN TRANSIT"
         case .escort:    return "ESCORT"
+        case .pending:   return "PENDING"
         }
     }
 
@@ -596,6 +842,16 @@ private enum WalletPassStatus {
         case .active:    return 60
         case .inTransit: return 78
         case .escort:    return 60
+        case .pending:   return 68
+        }
+    }
+
+    static func fromServer(_ raw: String) -> WalletPassStatus {
+        switch raw.uppercased() {
+        case "ACTIVE":       return .active
+        case "IN_TRANSIT":   return .inTransit
+        case "ESCORT":       return .escort
+        default:             return .pending
         }
     }
 }
@@ -611,7 +867,44 @@ private struct WalletPass: Identifiable {
 
 private enum PaymentBrand: String {
     case visa = "VISA"
+    case mastercard = "MC"
     case amex = "AMEX"
+    case discover = "DISC"
+    case jcb = "JCB"
+    case dinersclub = "DC"
+    case unionpay = "UPI"
+    case unknown = "CARD"
+
+    var displayName: String {
+        switch self {
+        case .visa:        return "Visa"
+        case .mastercard:  return "Mastercard"
+        case .amex:        return "Amex"
+        case .discover:    return "Discover"
+        case .jcb:         return "JCB"
+        case .dinersclub:  return "Diners"
+        case .unionpay:    return "UnionPay"
+        case .unknown:     return "Card"
+        }
+    }
+
+    /// Map Stripe's lowercased brand string into the iOS enum.
+    /// Stripe emits: visa, mastercard, amex, discover, jcb,
+    /// diners, unionpay, unknown.
+    static func from(_ raw: String) -> PaymentBrand {
+        switch raw.lowercased() {
+        case "visa":        return .visa
+        case "mastercard":  return .mastercard
+        case "amex", "american express", "american_express":
+            return .amex
+        case "discover":    return .discover
+        case "jcb":         return .jcb
+        case "diners", "dinersclub", "diners_club":
+            return .dinersclub
+        case "unionpay":    return .unionpay
+        default:            return .unknown
+        }
+    }
 }
 
 private enum PaymentTag: Equatable {

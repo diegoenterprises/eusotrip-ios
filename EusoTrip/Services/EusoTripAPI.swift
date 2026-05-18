@@ -2713,6 +2713,75 @@ struct eSangAPI {
 struct WalletAPI {
     unowned let api: EusoTripAPI
 
+    // MARK: — Shipper Apple-Pay / PassKit surface (239 Wallet)
+
+    /// One row in `wallet.listPaymentMethods`. Mirrors the server's
+    /// projection of a Stripe Customer payment method.
+    struct PaymentMethodRow: Decodable, Hashable, Identifiable {
+        let id: String           // pm_xxx
+        let brand: String        // "visa" / "mastercard" / "amex" / "discover" / "jcb" / "unknown"
+        let last4: String
+        let expMonth: Int
+        let expYear: Int
+        let isDefault: Bool
+        let billingName: String?
+    }
+
+    /// `wallet.listPaymentMethods` — GET query, protected.
+    /// Returns the signed-in user's Stripe Customer cards.
+    func listPaymentMethods() async throws -> [PaymentMethodRow] {
+        try await api.queryNoInput("wallet.listPaymentMethods")
+    }
+
+    struct SetDefaultAck: Decodable, Hashable {
+        let success: Bool
+        let defaultPaymentMethodId: String
+    }
+    /// `wallet.setDefaultPaymentMethod` — POST mutation. Backend
+    /// updates the Stripe Customer's `invoice_settings.default_payment_method`.
+    func setDefaultPaymentMethod(_ paymentMethodId: String) async throws -> SetDefaultAck {
+        struct Input: Encodable { let paymentMethodId: String }
+        return try await api.mutation("wallet.setDefaultPaymentMethod",
+                                      input: Input(paymentMethodId: paymentMethodId))
+    }
+
+    /// One row in `wallet.shipperPassesSnapshot.passes`, also reused
+    /// for the active pass on the hero card (carries the richer fields
+    /// the hero needs: carrier name, rate, UN number, etc.).
+    struct ShipperPassRow: Decodable, Hashable, Identifiable {
+        let id: String           // "LD-<dbId>"
+        let loadId: Int
+        let loadNumber: String?
+        let tilePrefix: String
+        let lane: String
+        let spec: String
+        let installedNote: String
+        let status: String       // "ACTIVE" / "IN_TRANSIT" / "ESCORT" / "PENDING"
+        // Hero-only fields (nil on list rows when the server doesn't
+        // populate them).
+        let cargoType: String?
+        let equipmentType: String?
+        let unNumber: String?
+        let rate: String?
+        let pickupDate: String?
+        let deliveryDate: String?
+        let carrierName: String?
+        let carrierMc: String?
+    }
+
+    struct ShipperPassesSnapshot: Decodable, Hashable {
+        let active: ShipperPassRow?
+        let passes: [ShipperPassRow]
+    }
+
+    /// `wallet.shipperPassesSnapshot` — GET query. Returns the active
+    /// pickup credential + the 3 most-recent installable passes for
+    /// the signed-in shipper. `active` is null when the shipper has
+    /// no live loads (iOS renders an empty-state hero in that case).
+    func shipperPassesSnapshot() async throws -> ShipperPassesSnapshot {
+        try await api.queryNoInput("wallet.shipperPassesSnapshot")
+    }
+
     // MARK: Plaid
 
     struct PlaidLinkToken: Decodable {

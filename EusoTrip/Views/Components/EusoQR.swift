@@ -29,15 +29,29 @@ import CoreImage.CIFilterBuiltins
 /// Pure-CoreImage QR renderer. Returns a square monochrome bitmap; the
 /// SwiftUI wrapper composites the brand gradient on top via mask.
 enum EusoQRGenerator {
-    /// Generates a `UIImage` for `text`. Caches by (text, scale) so
-    /// re-renders during scroll don't re-run the filter pipeline.
-    static func image(for text: String, scale: CGFloat = 10) -> UIImage? {
-        let key = NSString(string: "\(text)|\(scale)")
+    /// Generates a `UIImage` for `text`. Caches by (text, scale,
+    /// invert) so re-renders during scroll don't re-run the filter
+    /// pipeline.
+    ///
+    /// When `invertForMask` is true, the QR data modules paint white
+    /// and the background paints black — the shape required for
+    /// SwiftUI's `.mask()` to render gradient *on the data*, not
+    /// on the background (which is the inverse of what raw QR
+    /// luminance produces). Used by `EusoQRView` to brand-tint the
+    /// QR with the EusoTrip diagonal gradient.
+    static func image(for text: String, scale: CGFloat = 10, invertForMask: Bool = false) -> UIImage? {
+        let key = NSString(string: "\(text)|\(scale)|\(invertForMask ? "inv" : "raw")")
         if let hit = cache.object(forKey: key) { return hit }
         let filter = CIFilter.qrCodeGenerator()
         filter.message = Data(text.utf8)
         filter.correctionLevel = "H"
-        guard let ci = filter.outputImage else { return nil }
+        guard var ci = filter.outputImage else { return nil }
+        if invertForMask {
+            let inv = CIFilter.colorInvert()
+            inv.inputImage = ci
+            guard let invOut = inv.outputImage else { return nil }
+            ci = invOut
+        }
         let up = ci.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         let ctx = CIContext()
         guard let cg = ctx.createCGImage(up, from: up.extent) else { return nil }
@@ -67,12 +81,23 @@ struct EusoQRView: View {
     var body: some View {
         ZStack {
             Color.white
-            if let qr = EusoQRGenerator.image(for: payload) {
+            // CIFilter's QR output is black-on-white. SwiftUI's
+            // `.mask()` reads the underlay luminance as alpha, so
+            // masking the gradient by the raw QR image would paint
+            // gradient on the WHITE background and leave the data
+            // modules transparent — the inverse of what we want.
+            // We invert the image once at generation time so the
+            // data modules are white (alpha = 1, gradient visible)
+            // and the background is black (alpha = 0, hides
+            // gradient). Net result: a real, scannable QR painted
+            // in the EusoTrip diagonal gradient with a white field.
+            if let qr = EusoQRGenerator.image(for: payload, invertForMask: true) {
                 LinearGradient.diagonal
                     .mask(
                         Image(uiImage: qr)
                             .interpolation(.none)
                             .resizable()
+                            .aspectRatio(contentMode: .fit)
                     )
             }
         }
