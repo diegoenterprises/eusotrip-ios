@@ -384,51 +384,221 @@ struct ShipperBOLs: View {
     }
 
     private var generateSheet: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                Text("GENERATE BOL").font(.system(size: 9, weight: .heavy)).tracking(0.9)
-                    .foregroundStyle(LinearGradient.diagonal)
-                Text("From a load").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-                Text("Type the load ID — server resolves shipper / consignee / commodity / hazmat fields automatically. Shape varies by cargo type (tanker / hazmat / reefer).")
-                    .font(EType.body).foregroundStyle(palette.textSecondary)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("LOAD ID").font(.system(size: 8, weight: .heavy)).tracking(0.7).foregroundStyle(palette.textTertiary)
-                    TextField("e.g. 12345", text: $generateLoadId)
-                        .keyboardType(.numberPad)
-                        .textFieldStyle(.plain).padding(.horizontal, Space.s3).padding(.vertical, Space.s2)
-                        .font(.system(size: 18, weight: .heavy, design: .monospaced))
-                        .background(palette.bgCardSoft)
-                        .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).strokeBorder(palette.borderFaint))
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+        ShipperBOLGeneratePicker(
+            generatingFor: store.generatingFor,
+            onPick: { loadId in
+                Task {
+                    await store.generate(loadId: loadId)
+                    showGenerateSheet = false
                 }
-                Button {
-                    if let id = Int(generateLoadId) {
-                        Task {
-                            await store.generate(loadId: id)
-                            showGenerateSheet = false
-                            generateLoadId = ""
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        if store.generatingFor != nil {
-                            ProgressView().scaleEffect(0.6).tint(.white)
-                        } else {
-                            Image(systemName: "doc.badge.plus").font(.system(size: 13, weight: .heavy))
-                        }
-                        Text(store.generatingFor != nil ? "Generating…" : "Generate BOL")
-                            .font(.system(size: 14, weight: .heavy))
-                    }
-                    .frame(maxWidth: .infinity).padding(.vertical, 13)
-                    .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(Capsule())
+            },
+            onUpload: {
+                // Hand off to the existing 229 BOL upload screen via
+                // the shipper nav swap; 229 already handles file pick
+                // + bol.uploadDocument mutation.
+                NotificationCenter.default.post(
+                    name: .eusoShipperNavSwap, object: nil,
+                    userInfo: ["screenId": "229"]
+                )
+                showGenerateSheet = false
+            }
+        )
+    }
+}
+
+/// Load picker sheet for BOL generation. Reads shippers.getMyLoads
+/// via the existing ShipperMyLoadsStore (no new endpoint), free-text
+/// search across load number + origin + destination + commodity,
+/// real tap-to-select with loading state and Upload-BOL escape hatch.
+/// 2026-05-18 — replaces the prior "type the load ID" stub which
+/// founder rightly flagged as broken (no list, no search, no upload).
+private struct ShipperBOLGeneratePicker: View {
+    @Environment(\.palette) private var palette
+    let generatingFor: Int?
+    let onPick: (Int) -> Void
+    let onUpload: () -> Void
+
+    @StateObject private var loadsStore = ShipperMyLoadsStore()
+    @State private var search: String = ""
+
+    private var filteredLoads: [ShipperAPI.MyLoad] {
+        let rows = loadsStore.state.value ?? []
+        let q = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return rows }
+        return rows.filter { l in
+            l.loadNumber.lowercased().contains(q)
+                || l.origin.lowercased().contains(q)
+                || l.destination.lowercased().contains(q)
+                || l.product.lowercased().contains(q)
+                || l.equipment.lowercased().contains(q)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Kicker + title
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: "doc.richtext.fill")
+                        .font(.system(size: 9, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text("GENERATE BOL")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                        .foregroundStyle(LinearGradient.diagonal)
                 }
-                .buttonStyle(.plain)
-                .disabled(Int(generateLoadId) == nil || store.generatingFor != nil)
+                Text("Pick a load")
+                    .font(.system(size: 22, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                Text("Server resolves shipper / consignee / commodity / hazmat from the load.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
             }
             .padding(.horizontal, 14)
-            .padding(.top, 12)
+            .padding(.top, 14)
+
+            // Search
+            HStack(spacing: Space.s2) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
+                TextField("Search loads, lane, commodity…", text: $search)
+                    .textFieldStyle(.plain)
+                    .font(EType.body)
+                    .foregroundStyle(palette.textPrimary)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                if !search.isEmpty {
+                    Button { search = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(Space.s3)
+            .background(palette.bgCardSoft)
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .padding(.horizontal, 14)
+            .padding(.top, 14)
+
+            // List of loads
+            ScrollView {
+                LazyVStack(spacing: 8) {
+                    if let rows = loadsStore.state.value {
+                        if rows.isEmpty {
+                            VStack(spacing: 6) {
+                                Text("No loads yet")
+                                    .font(EType.bodyStrong)
+                                    .foregroundStyle(palette.textPrimary)
+                                Text("Post a load first — then generate a BOL from it.")
+                                    .font(EType.caption)
+                                    .foregroundStyle(palette.textSecondary)
+                            }
+                            .padding(Space.s4)
+                        } else if filteredLoads.isEmpty {
+                            Text("No loads match '\(search)'")
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                                .padding(Space.s4)
+                        } else {
+                            ForEach(filteredLoads) { l in
+                                loadRow(l)
+                            }
+                        }
+                    } else {
+                        ForEach(0..<5, id: \.self) { _ in skeletonRow }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 12)
+                .padding(.bottom, 100)
+            }
+
+            // Upload BOL escape hatch
+            Button(action: onUpload) {
+                HStack(spacing: 8) {
+                    Image(systemName: "square.and.arrow.up.fill")
+                        .font(.system(size: 13, weight: .heavy))
+                    Text("Upload a BOL instead")
+                        .font(.system(size: 14, weight: .heavy))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 13)
+                .foregroundStyle(palette.textPrimary)
+                .background(palette.bgCard)
+                .overlay(Capsule().strokeBorder(LinearGradient.diagonal, lineWidth: 1))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 14)
         }
         .background(palette.bgPage)
+        .task {
+            // First-load hydration — ShipperMyLoadsStore.bucket.didSet
+            // drives a refresh on bucket change but not on first appear.
+            if loadsStore.state.value == nil {
+                await loadsStore.refresh()
+            }
+        }
+    }
+
+    private func loadRow(_ l: ShipperAPI.MyLoad) -> some View {
+        let id = Int(l.id.replacingOccurrences(of: "load_", with: "")) ?? 0
+        let isThis = (generatingFor != nil) && generatingFor == id
+        return Button { onPick(id) } label: {
+            HStack(alignment: .top, spacing: Space.s3) {
+                Image(systemName: "shippingbox.fill")
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .frame(width: 28, height: 28)
+                    .background(palette.bgCardSoft)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(l.loadNumber)
+                        .font(EType.mono(.caption)).tracking(0.3)
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    Text("\(l.origin) → \(l.destination)")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    let cargo = (l.product.isEmpty ? l.equipment : l.product)
+                    if !cargo.isEmpty {
+                        Text(cargo.uppercased())
+                            .font(EType.micro).tracking(0.5)
+                            .foregroundStyle(palette.textSecondary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: Space.s2)
+                if isThis {
+                    ProgressView().scaleEffect(0.7)
+                } else if generatingFor == nil {
+                    Image(systemName: "doc.badge.plus")
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                }
+            }
+            .padding(Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(generatingFor != nil)
+    }
+
+    private var skeletonRow: some View {
+        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+            .fill(palette.bgCardSoft)
+            .frame(height: 76)
+            .redacted(reason: .placeholder)
     }
 }
 
