@@ -491,6 +491,30 @@ struct ShipperPostLoad: View {
             case .liquid, .gas, .chemicals, .petroleum:
                 return [.gallons, .pounds, .barrels, .liters]
             }
+        // New cases from the 2026-05-18 enum expansion — sensible
+        // defaults that match the equipment's cargo affordances.
+        case .lowboy, .hotShot:
+            return [.pounds, .kilograms, .shortTons, .pieces]
+        case .railTankGas:
+            return [.gallons, .cubicMeters, .pounds, .kilograms]
+        case .railTankLiquid:
+            return [.gallons, .liters, .barrels, .pounds]
+        case .railBoxcar, .railReeferBoxcar:
+            return [.pallets, .pounds, .kilograms, .cases]
+        case .railHopper, .railGondola:
+            return [.bushels, .shortTons, .metricTons, .pounds]
+        case .railCenterbeam, .railFlatcar:
+            return [.pounds, .kilograms, .shortTons, .pieces]
+        case .railAutoRack:
+            return [.pieces, .pounds, .kilograms]
+        case .vesselRoRo:
+            return [.pieces, .metricTons, .pounds]
+        case .vesselLNG:
+            return [.cubicMeters, .metricTons, .pounds, .kilograms]
+        case .vesselReeferContainer:
+            return [.teu, .feu, .pallets, .metricTons]
+        case .vesselISOTank:
+            return [.gallons, .liters, .metricTons, .barrels]
         }
     }
 
@@ -2361,14 +2385,25 @@ struct ShipperPostLoad: View {
     /// for both client + server.
     private func trailerHazmatCode(for choice: EquipmentChoice) -> String {
         switch choice {
-        case .tankerHazmat, .tankerPetro, .tankerLiquid, .vesselTanker: return "liquid_tank"
-        case .tankerGas:        return "gas_tank"
-        case .dryVan, .powerOnly: return "dry_van"
-        case .reefer:           return "reefer"
-        case .flatbed, .stepDeck, .conestoga, .oversized: return "flatbed"
-        case .container, .railCOFC, .railIntermodal:      return "hazmat_van"
-        case .railTOFC:         return "flatbed"
-        case .vesselContainer, .vesselBulk: return "hazmat_van"
+        case .tankerHazmat, .tankerPetro, .tankerLiquid, .vesselTanker,
+             .railTankLiquid, .vesselISOTank:
+            return "liquid_tank"
+        case .tankerGas, .railTankGas, .vesselLNG:
+            return "gas_tank"
+        case .dryVan, .powerOnly, .hotShot,
+             .railBoxcar, .railReeferBoxcar:
+            return "dry_van"
+        case .reefer, .vesselReeferContainer:
+            return "reefer"
+        case .flatbed, .stepDeck, .conestoga, .oversized, .lowboy,
+             .railFlatcar, .railCenterbeam, .railGondola, .railHopper,
+             .railAutoRack, .vesselRoRo:
+            return "flatbed"
+        case .container, .railCOFC, .railIntermodal,
+             .vesselContainer, .vesselBulk:
+            return "hazmat_van"
+        case .railTOFC:
+            return "flatbed"
         }
     }
 
@@ -3579,6 +3614,24 @@ struct ShipperPostLoad: View {
         case .vesselBulk:      return "Vessel · bulk hold"
         case .vesselTanker:    return "Vessel · tanker"
         case .dryVan:          return "53′ Dry Van · standard"
+        // New equipment cases — surface honest one-liners so the
+        // preview header reflects the picked equipment instead of
+        // hitting the switch's missing-case error.
+        case .lowboy:                return "Lowboy · 53′ heavy-haul deck"
+        case .hotShot:               return "Hot shot · gooseneck flatbed"
+        case .railTankGas:           return "Rail tank car · pressure (gas)"
+        case .railTankLiquid:        return "Rail tank car · non-pressure (liquid)"
+        case .railBoxcar:            return "Rail boxcar · 50′ / 60′ standard"
+        case .railReeferBoxcar:      return "Rail reefer boxcar · mech refrigeration"
+        case .railHopper:            return "Rail hopper · covered grain / plastic"
+        case .railCenterbeam:        return "Rail centerbeam flatcar · lumber / pipe"
+        case .railGondola:           return "Rail gondola · scrap / aggregate"
+        case .railAutoRack:          return "Rail autorack · multi-level"
+        case .railFlatcar:           return "Rail flatcar · machinery / heavy haul"
+        case .vesselRoRo:            return "Vessel · RoRo (autos / project cargo)"
+        case .vesselLNG:             return "Vessel · LNG carrier"
+        case .vesselReeferContainer: return "Vessel · reefer container ship"
+        case .vesselISOTank:         return "Vessel · ISO tank container"
         }
     }
 
@@ -4988,10 +5041,18 @@ fileprivate extension ShipperPostLoad.EquipmentChoice {
         case .oversized:
             return currentCargo == .oversized ? nil : .oversized
         case .dryVan, .flatbed, .stepDeck, .conestoga, .container,
-             .powerOnly,
+             .powerOnly, .lowboy, .hotShot,
              .railTOFC, .railCOFC, .railIntermodal,
-             .vesselContainer, .vesselBulk, .vesselTanker:
+             .railBoxcar, .railReeferBoxcar, .railHopper,
+             .railCenterbeam, .railGondola, .railAutoRack, .railFlatcar,
+             .vesselContainer, .vesselBulk, .vesselTanker,
+             .vesselRoRo, .vesselLNG, .vesselReeferContainer, .vesselISOTank:
             return nil // any cargo type can ride
+        // Mode-specific tanker equipment maps to its native cargo.
+        case .railTankGas:
+            return currentCargo == .gas ? nil : .gas
+        case .railTankLiquid:
+            return currentCargo == .liquid ? nil : .liquid
         }
     }
 }
