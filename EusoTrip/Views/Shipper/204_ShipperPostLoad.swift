@@ -1546,26 +1546,17 @@ struct ShipperPostLoad: View {
     /// equipment list (no dedicated barge equipment in EquipmentChoice
     /// yet — that's a follow-up ship).
     private func autoSnapEquipmentForMode(_ mode: TransportMode) {
-        switch mode {
-        case .truck:
-            if ![.dryVan, .reefer, .flatbed, .stepDeck, .conestoga, .container,
-                 .tankerHazmat, .tankerPetro, .tankerLiquid, .tankerGas,
-                 .powerOnly, .oversized].contains(equipmentType) {
-                equipmentType = .dryVan
-            }
-        case .rail:
-            if ![.railTOFC, .railCOFC, .railIntermodal].contains(equipmentType) {
-                equipmentType = .railTOFC
-            }
-        case .vessel:
-            if ![.vesselContainer, .vesselBulk, .vesselTanker].contains(equipmentType) {
-                equipmentType = .vesselContainer
-            }
-        case .barge:
-            // Barge equipment list ships in a follow-up. For now keep
-            // the user on a sensible truck default but surface the
-            // mode label so downstream rendering is honest.
-            if equipmentType == .dryVan { equipmentType = .dryVan }
+        // Skip if current equipment is already mode-compatible.
+        if equipmentType.compatible(with: mode) { return }
+        // Otherwise pick a (cargo × mode)-coherent equipment from the
+        // canonical mapping table so a Hazmat + Rail flip lands on a
+        // tank car, not a generic railTOFC. Falls back to the mode's
+        // first canonical equipment when the cargo type has no
+        // mode-specific snap (general / any cargo).
+        let proposed = cargoType.defaultEquipment(currentEquipment: equipmentType, mode: mode)
+            ?? cargoType.defaultEquipmentFallback(mode: mode)
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
+            equipmentType = proposed
         }
     }
 
@@ -3377,26 +3368,6 @@ struct ShipperPostLoad: View {
     }
 
     /// Companion to autoSnapEquipmentForCargo — fires when the
-    /// shipper flips TransportMode on Step 1 and Step 2 already had
-    /// an equipment selection. Without this, a Truck-tanker
-    /// selection stays on screen after switching to Rail (with the
-    /// "TRUCK" eyebrow label) until the user manually picks a rail
-    /// chip. Now the wizard auto-snaps to a mode-compatible
-    /// equipment that still serves the active cargo type.
-    /// Founder firing 2026-05-18.
-    private func autoSnapEquipmentForMode(_ mode: TransportMode) {
-        // If the current equipment is already compatible with the
-        // new mode, nothing to do.
-        if equipmentType.compatible(with: mode) { return }
-        // Otherwise pick a mode-coherent default using the active
-        // cargo type's mapping table.
-        let proposed = cargoType.defaultEquipment(currentEquipment: equipmentType, mode: mode)
-            ?? cargoType.defaultEquipmentFallback(mode: mode)
-        withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
-            equipmentType = proposed
-        }
-    }
-
     /// Reset UN / hazard class / packing group / ERG match / hose
     /// configuration when the user pivots cargo away from a hazmat-
     /// flavored type. Without this, a UN1267 lookup from a previous
@@ -4851,7 +4822,7 @@ fileprivate extension ShipperAPI.CargoType {
     /// equipment so the animation paints correctly the first time.
     func defaultEquipment(
         currentEquipment: ShipperPostLoad.EquipmentChoice,
-        mode: ShipperPostLoad.TransportMode
+        mode: TransportMode
     ) -> ShipperPostLoad.EquipmentChoice? {
         // Compute the canonical target for this (cargo, mode) tuple,
         // then return nil if the user's existing equipment already
@@ -4866,14 +4837,14 @@ fileprivate extension ShipperAPI.CargoType {
     /// we need a guaranteed value even when the current selection
     /// happens to already be in the acceptable set (because it isn't
     /// — that's why we're snapping).
-    func defaultEquipmentFallback(mode: ShipperPostLoad.TransportMode) -> ShipperPostLoad.EquipmentChoice {
+    func defaultEquipmentFallback(mode: TransportMode) -> ShipperPostLoad.EquipmentChoice {
         canonicalEquipment(mode: mode)
     }
 
     /// Single canonical equipment per (cargo, mode). The "if I had
     /// to pick one" choice — used when the user's current selection
     /// isn't acceptable.
-    private func canonicalEquipment(mode: ShipperPostLoad.TransportMode) -> ShipperPostLoad.EquipmentChoice {
+    private func canonicalEquipment(mode: TransportMode) -> ShipperPostLoad.EquipmentChoice {
         switch (self, mode) {
         // Refrigerated
         case (.refrigerated, .truck):  return .reefer
@@ -4922,7 +4893,7 @@ fileprivate extension ShipperAPI.CargoType {
     /// Equipment that's considered "good enough" for this cargo on
     /// this mode — auto-snap only fires when the user's current pick
     /// falls outside this set.
-    private func acceptableEquipment(mode: ShipperPostLoad.TransportMode) -> Set<ShipperPostLoad.EquipmentChoice> {
+    private func acceptableEquipment(mode: TransportMode) -> Set<ShipperPostLoad.EquipmentChoice> {
         switch (self, mode) {
         case (.refrigerated, .truck):  return [.reefer]
         case (.refrigerated, .rail):   return [.railReeferBoxcar, .railBoxcar]
