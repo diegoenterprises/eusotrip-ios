@@ -117,9 +117,20 @@ struct DockAssigned: View {
             .accessibilityLabel("Back")
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("DOCK ASSIGNED")
-                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                    .foregroundStyle(LinearGradient.diagonal)
+                HStack(spacing: 6) {
+                    Text("DOCK ASSIGNED")
+                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                        .foregroundStyle(LinearGradient.diagonal)
+                    // 2026-05-17 — Mode chip on dock-assigned header.
+                    // The dock crew on the receiving end has different
+                    // procedures by mode (vessel berthing vs rail
+                    // siding vs truck dock) — surface mode so the
+                    // driver knows which dock-side workflow they're
+                    // walking into.
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
+                }
                 Text(deliveryTitle)
                     .font(.system(size: 20, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)

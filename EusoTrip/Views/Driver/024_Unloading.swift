@@ -98,6 +98,14 @@ struct Unloading: View {
                     Text("· PAID TIME")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(palette.textSecondary)
+                    // 2026-05-17 — Mode chip on unloading header. The
+                    // unloading procedure differs by mode (vessel
+                    // hatch discharge, rail tank-car offloading, truck
+                    // dock unload). Hidden on default truck-single-
+                    // vehicle.
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
                 }
                 Text("Door \(fallbackDoor) · \(fallbackOff) of \(fallbackTotal) \(ctx.unloadUnitLabel) off")
                     .font(.system(size: 20, weight: .heavy))

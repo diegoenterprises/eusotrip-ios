@@ -136,6 +136,13 @@ struct Paperwork: View {
                     Text("· DETENTION BILLED")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(palette.textSecondary)
+                    // 2026-05-17 — Mode chip on paperwork close-out
+                    // header. POD / BOL / mate's-receipt close-out
+                    // differs by mode; the chip surfaces which legal
+                    // shape applies to the documents being filed.
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
                 }
                 Text("\(fallbackTotal) of \(fallbackTotal) delivered · door \(fallbackDoor)")
                     .font(.system(size: 20, weight: .heavy))
