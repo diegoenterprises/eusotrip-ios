@@ -34,6 +34,8 @@ ENTRIES = [
      "EusoTrip/Services/RoleIntegrationRegistry.swift"),
     ("PRIM2026051700000011A1", "PRIM2026051700000012A1",
      "Primitives.swift",        "EusoTrip/Views/Primitives/Primitives.swift"),
+    ("QRIV2026051800000011A1", "QRIV2026051800000012A1",
+     "QRImageView.swift",       "EusoTrip/Views/Components/QRImageView.swift"),
 ]
 
 

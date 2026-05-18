@@ -33,6 +33,7 @@
 		HAFD00010CE0FF10000011A1 /* HereAddressField.swift in Sources */ = {isa = PBXBuildFile; fileRef = HAFD00010CE0FF10000012A1 /* HereAddressField.swift */; };
 		LTBD00010CE0FF10000011A1 /* ListingTrustBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */; };
 		LMBD2026051700000011A1 /* LoadModeBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = LMBD2026051700000012A1 /* LoadModeBadge.swift */; };
+		QRIV2026051800000011A1 /* QRImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = QRIV2026051800000012A1 /* QRImageView.swift */; };
 		PRIM2026051700000011A1 /* Primitives.swift in Sources */ = {isa = PBXBuildFile; fileRef = PRIM2026051700000012A1 /* Primitives.swift */; };
 		RIRG2026051700000011A1 /* RoleIntegrationRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = RIRG2026051700000012A1 /* RoleIntegrationRegistry.swift */; };
 		EWAP2026051700000011A1 /* EusoWalletApplePayProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = EWAP2026051700000012A1 /* EusoWalletApplePayProvider.swift */; };
@@ -626,6 +627,7 @@
 		HAFD00010CE0FF10000012A1 /* HereAddressField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereAddressField.swift; sourceTree = "<group>"; };
 		LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListingTrustBadge.swift; sourceTree = "<group>"; };
 		LMBD2026051700000012A1 /* LoadModeBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadModeBadge.swift; sourceTree = "<group>"; };
+		QRIV2026051800000012A1 /* QRImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = QRImageView.swift; path = EusoTrip/Views/Components/QRImageView.swift; sourceTree = SOURCE_ROOT; };
 		PRIM2026051700000012A1 /* Primitives.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Primitives.swift; path = EusoTrip/Views/Primitives/Primitives.swift; sourceTree = SOURCE_ROOT; };
 		RIRG2026051700000012A1 /* RoleIntegrationRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RoleIntegrationRegistry.swift; path = EusoTrip/Services/RoleIntegrationRegistry.swift; sourceTree = SOURCE_ROOT; };
 		EWAP2026051700000012A1 /* EusoWalletApplePayProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EusoWalletApplePayProvider.swift; path = EusoTrip/Services/EusoWalletApplePayProvider.swift; sourceTree = SOURCE_ROOT; };
@@ -1779,6 +1781,7 @@
 				HAFD00010CE0FF10000012A1 /* HereAddressField.swift */,
 				LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */,
 				LMBD2026051700000012A1 /* LoadModeBadge.swift */,
+				QRIV2026051800000012A1 /* QRImageView.swift */,
 				PRIM2026051700000012A1 /* Primitives.swift */,
 				RIRG2026051700000012A1 /* RoleIntegrationRegistry.swift */,
 				EWAP2026051700000012A1 /* EusoWalletApplePayProvider.swift */,
@@ -2260,6 +2263,7 @@
 				HAFD00010CE0FF10000011A1 /* HereAddressField.swift in Sources */,
 				LTBD00010CE0FF10000011A1 /* ListingTrustBadge.swift in Sources */,
 				LMBD2026051700000011A1 /* LoadModeBadge.swift in Sources */,
+				QRIV2026051800000011A1 /* QRImageView.swift in Sources */,
 				PRIM2026051700000011A1 /* Primitives.swift in Sources */,
 				RIRG2026051700000011A1 /* RoleIntegrationRegistry.swift in Sources */,
 				EWAP2026051700000011A1 /* EusoWalletApplePayProvider.swift in Sources */,
