@@ -12203,6 +12203,11 @@ struct BrokerAPI {
         /// Zero when the broker has not set a target (open
         /// tender, market price).
         let targetRate: Double
+        // 2026-05-17 — Multi-modal payload. Optional on the wire so
+        // older deploys decode cleanly; UI defaults to truck when nil.
+        // Powers the LoadModeBadge on every Broker tender row.
+        let transportMode: String?
+        let multiVehicleCount: Int?
     }
 
     struct GetOpenTendersInput: Encodable { let limit: Int }

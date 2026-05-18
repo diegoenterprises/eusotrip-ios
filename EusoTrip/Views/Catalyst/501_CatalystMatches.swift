@@ -375,9 +375,18 @@ struct CatalystMatches: View {
                     .frame(width: 8, height: 8)
                     .padding(.top, 5)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(row.loadNumber)
-                        .font(EType.bodyStrong)
-                        .foregroundStyle(palette.textPrimary)
+                    HStack(spacing: 6) {
+                        Text(row.loadNumber)
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(palette.textPrimary)
+                        // 2026-05-17 — Mode badge on Catalyst match row.
+                        // ActiveMatch wire shape already decodes the field;
+                        // server projection landing in a future firing
+                        // will light up rail / vessel / barge matches.
+                        LoadModeBadge(modeRaw: row.transportMode,
+                                      multiVehicleCount: row.multiVehicleCount,
+                                      compact: true)
+                    }
                     Text("\(row.origin) → \(row.destination)")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)

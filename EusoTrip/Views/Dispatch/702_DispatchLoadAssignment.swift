@@ -28,6 +28,9 @@ private struct UnassignedLoad: Decodable, Identifiable, Hashable {
     let pickupDate: String?
     let rate: Double?
     let mode: String?
+    // 2026-05-17 — Multi-modal payload from the server.
+    let transportMode: String?
+    let multiVehicleCount: Int?
 }
 
 private struct DriverPick: Decodable, Identifiable, Hashable {
@@ -85,12 +88,23 @@ private struct LoadAssignBody: View {
             ForEach(loads) { l in
                 Button { pickFor = l } label: {
                     LifecycleCard {
-                        LifecycleSection(label: l.loadNumber.uppercased(), icon: "shippingbox")
+                        HStack(spacing: 8) {
+                            LifecycleSection(label: l.loadNumber.uppercased(), icon: "shippingbox")
+                            Spacer(minLength: 0)
+                            // 2026-05-17 — Dispatch load-assignment row
+                            // mode badge. Surfaces rail / vessel / barge
+                            // BEFORE the dispatcher picks a driver — a
+                            // truck driver should not be assigned a rail
+                            // unit train.
+                            LoadModeBadge(modeRaw: l.transportMode ?? l.mode,
+                                          multiVehicleCount: l.multiVehicleCount,
+                                          compact: true)
+                        }
                         LifecycleRow(label: "Origin",       value: dashIfEmpty(l.origin))
                         LifecycleRow(label: "Destination",  value: dashIfEmpty(l.destination))
                         LifecycleRow(label: "Pickup",       value: humanISO(l.pickupDate))
                         LifecycleRow(label: "Rate",         value: usd(l.rate))
-                        LifecycleRow(label: "Mode",         value: dashIfEmpty(l.mode))
+                        LifecycleRow(label: "Mode",         value: dashIfEmpty(l.transportMode ?? l.mode))
                     }
                 }.buttonStyle(.plain)
             }
