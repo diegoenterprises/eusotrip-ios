@@ -139,8 +139,12 @@ public final class EusoWalletApplePayProvider: NSObject {
             let controller = PKPaymentAuthorizationController(paymentRequest: request)
             controller.delegate = self
             controller.present { presented in
+                // controller.present completion is nonisolated; hop back
+                // to the main actor before touching `resume(_:)`.
                 if !presented {
-                    self.resume(.failed(error: "Apple Pay sheet refused to present."))
+                    Task { @MainActor [weak self] in
+                        self?.resume(.failed(error: "Apple Pay sheet refused to present."))
+                    }
                 }
             }
         }
@@ -157,28 +161,35 @@ public final class EusoWalletApplePayProvider: NSObject {
 
 extension EusoWalletApplePayProvider: PKPaymentAuthorizationControllerDelegate {
 
-    public func paymentAuthorizationControllerDidFinish(_ controller: PKPaymentAuthorizationController) {
+    // 2026-05-17 — PKPaymentAuthorizationControllerDelegate methods are
+    // declared `nonisolated` by the protocol but PassKit calls them on
+    // the main thread (UIKit contract). Hopping back to @MainActor via
+    // `Task { @MainActor in … }` lets us call the actor-isolated
+    // `resume(_:)` without the Swift 6 strict-concurrency warning.
+
+    nonisolated public func paymentAuthorizationControllerDidFinish(_ controller: PKPaymentAuthorizationController) {
         controller.dismiss { [weak self] in
             // If `resume(_:)` already fired (success or backend
             // failure), this is a no-op. Cancellation lands here
             // when the user dismissed without authorizing.
-            self?.resume(.cancelled)
+            Task { @MainActor [weak self] in
+                self?.resume(.cancelled)
+            }
         }
     }
 
-    public func paymentAuthorizationController(
+    nonisolated public func paymentAuthorizationController(
         _ controller: PKPaymentAuthorizationController,
         didAuthorizePayment payment: PKPayment,
         handler completion: @escaping (PKPaymentAuthorizationResult) -> Void
     ) {
-        guard let publishable = publishableKey else {
-            completion(.init(status: .failure, errors: nil))
-            resume(.failed(error: "EusoWallet returned no publishable key."))
-            return
-        }
-
-        Task { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self else { return }
+            guard let publishable = self.publishableKey else {
+                completion(.init(status: .failure, errors: nil))
+                self.resume(.failed(error: "EusoWallet returned no publishable key."))
+                return
+            }
             do {
                 let pm = try await Self.createStripePaymentMethod(
                     publishableKey: publishable,
