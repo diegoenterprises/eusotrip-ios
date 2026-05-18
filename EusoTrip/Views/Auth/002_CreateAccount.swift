@@ -1437,6 +1437,17 @@ struct CreateAccountView: View {
                 subtitle: "Auto-fills DOT, MC, legal name, and hazmat authorization."
             ) { applyCarrierAuthority($0) }
 
+            // FMCSA SAFER live verification — typing a DOT or MC and
+            // tapping Verify pulls the authoritative SAFER record:
+            // legal name, addresses, fleet size, authority status,
+            // hazmat, insurance posture, safety rating, and warnings.
+            // Parity with web `FMCSALookup`.
+            FMCSALookupCard(
+                mode: .both,
+                dotNumber: $vm.dotNumber,
+                mcNumber: $vm.mcNumber
+            ) { applyFMCSALookup($0) }
+
             HStack(spacing: Space.s3) {
                 GlassField(label: "MC number", placeholder: "MC-123456", icon: "number",
                            text: $vm.mcNumber, autocapitalization: .characters)
@@ -1471,6 +1482,15 @@ struct CreateAccountView: View {
                 title: "Scan your MC authority letter",
                 subtitle: "Auto-fills MC number, legal entity, and operating status."
             ) { applyBrokerAuthority($0) }
+
+            // FMCSA SAFER live verification. Brokers register with MC
+            // primarily so the card defaults to .mc mode but the
+            // user can switch fields if they only know their DOT.
+            FMCSALookupCard(
+                mode: .both,
+                dotNumber: $vm.dotNumber,
+                mcNumber: $vm.brokerMcNumber
+            ) { applyFMCSALookup($0) }
 
             GlassField(label: "Broker MC #", placeholder: "MC-123456",
                        icon: "number",
@@ -1527,6 +1547,30 @@ struct CreateAccountView: View {
     private func applyBrokerBond(_ r: CredentialScannerAPI.ScannedCredential) {
         if let s = r.additional?["suretyName"] { vm.bondProvider = s }
         if let s = r.additional?["bondAmount"] { vm.bondAmount = s }
+    }
+
+    /// Apply a FMCSA SAFER verified envelope to the registration
+    /// view-model. The card already updates `dotNumber` / `mcNumber`
+    /// in place (they're bindings on the input row); this fills the
+    /// rest: companyName, ein placeholder, address, city, state, zip.
+    /// Brokers' `brokerMcNumber` is also kept in sync.
+    private func applyFMCSALookup(_ l: FMCSACarrierLookup) {
+        guard l.verified, l.isBlocked != true else { return }
+        if let p = l.companyProfile {
+            if vm.companyName.isEmpty { vm.companyName = p.legalName }
+            // Physical address takes priority — many carriers' mailing
+            // address is a PO box that won't satisfy compliance.
+            let addr = p.physicalAddress
+            if vm.address.isEmpty { vm.address = addr.street }
+            if vm.city.isEmpty { vm.city = addr.city }
+            if vm.state.isEmpty { vm.state = addr.state }
+            if vm.zip.isEmpty { vm.zip = addr.zip }
+        }
+        if let a = l.authority {
+            // Echo the canonical DOT back so the form matches SAFER's
+            // spelling (zero-padding, etc.).
+            if !a.dotNumber.isEmpty { vm.dotNumber = a.dotNumber }
+        }
     }
 
     // MARK: — Rail / vessel / customs scan appliers

@@ -48,6 +48,9 @@ ENTRIES = [
     ("DIBS2026051800000011A1", "DIBS2026051800000012A1",
      "DriverInviteBulkStep.swift",
      "EusoTrip/Views/Onboarding/DriverInviteBulkStep.swift"),
+    ("FLCD2026051800000011A1", "FLCD2026051800000012A1",
+     "FMCSALookupCard.swift",
+     "EusoTrip/Views/Components/FMCSALookupCard.swift"),
 ]
 
 

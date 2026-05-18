@@ -33,6 +33,7 @@
 		HAFD00010CE0FF10000011A1 /* HereAddressField.swift in Sources */ = {isa = PBXBuildFile; fileRef = HAFD00010CE0FF10000012A1 /* HereAddressField.swift */; };
 		LTBD00010CE0FF10000011A1 /* ListingTrustBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */; };
 		LMBD2026051700000011A1 /* LoadModeBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = LMBD2026051700000012A1 /* LoadModeBadge.swift */; };
+		FLCD2026051800000011A1 /* FMCSALookupCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FLCD2026051800000012A1 /* FMCSALookupCard.swift */; };
 		DIBS2026051800000011A1 /* DriverInviteBulkStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = DIBS2026051800000012A1 /* DriverInviteBulkStep.swift */; };
 		FBRS2026051800000011A1 /* FleetBulkRegisterStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBRS2026051800000012A1 /* FleetBulkRegisterStep.swift */; };
 		VINS2026051800000011A1 /* VINScannerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = VINS2026051800000012A1 /* VINScannerSheet.swift */; };
@@ -631,6 +632,7 @@
 		HAFD00010CE0FF10000012A1 /* HereAddressField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereAddressField.swift; sourceTree = "<group>"; };
 		LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListingTrustBadge.swift; sourceTree = "<group>"; };
 		LMBD2026051700000012A1 /* LoadModeBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadModeBadge.swift; sourceTree = "<group>"; };
+		FLCD2026051800000012A1 /* FMCSALookupCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FMCSALookupCard.swift; path = EusoTrip/Views/Components/FMCSALookupCard.swift; sourceTree = SOURCE_ROOT; };
 		DIBS2026051800000012A1 /* DriverInviteBulkStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DriverInviteBulkStep.swift; path = EusoTrip/Views/Onboarding/DriverInviteBulkStep.swift; sourceTree = SOURCE_ROOT; };
 		FBRS2026051800000012A1 /* FleetBulkRegisterStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FleetBulkRegisterStep.swift; path = EusoTrip/Views/Onboarding/FleetBulkRegisterStep.swift; sourceTree = SOURCE_ROOT; };
 		VINS2026051800000012A1 /* VINScannerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VINScannerSheet.swift; path = EusoTrip/Views/Components/VINScannerSheet.swift; sourceTree = SOURCE_ROOT; };
@@ -1789,6 +1791,7 @@
 				HAFD00010CE0FF10000012A1 /* HereAddressField.swift */,
 				LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */,
 				LMBD2026051700000012A1 /* LoadModeBadge.swift */,
+				FLCD2026051800000012A1 /* FMCSALookupCard.swift */,
 				DIBS2026051800000012A1 /* DriverInviteBulkStep.swift */,
 				FBRS2026051800000012A1 /* FleetBulkRegisterStep.swift */,
 				VINS2026051800000012A1 /* VINScannerSheet.swift */,
@@ -2275,6 +2278,7 @@
 				HAFD00010CE0FF10000011A1 /* HereAddressField.swift in Sources */,
 				LTBD00010CE0FF10000011A1 /* ListingTrustBadge.swift in Sources */,
 				LMBD2026051700000011A1 /* LoadModeBadge.swift in Sources */,
+				FLCD2026051800000011A1 /* FMCSALookupCard.swift in Sources */,
 				DIBS2026051800000011A1 /* DriverInviteBulkStep.swift in Sources */,
 				FBRS2026051800000011A1 /* FleetBulkRegisterStep.swift in Sources */,
 				VINS2026051800000011A1 /* VINScannerSheet.swift in Sources */,
@@ -2841,7 +2845,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = EusoTrip/EusoTrip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 268;
+				CURRENT_PROJECT_VERSION = 269;
 				DEVELOPMENT_ASSET_PATHS = "\"EusoTrip/Preview Content\"";
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				ENABLE_PREVIEWS = YES;
@@ -2882,7 +2886,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = EusoTrip/EusoTrip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 268;
+				CURRENT_PROJECT_VERSION = 269;
 				DEVELOPMENT_ASSET_PATHS = "\"EusoTrip/Preview Content\"";
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				ENABLE_PREVIEWS = YES;
@@ -2922,7 +2926,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = EusoTripPulseWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 268;
+				CURRENT_PROJECT_VERSION = 269;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -2955,7 +2959,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = EusoTripPulseWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 268;
+				CURRENT_PROJECT_VERSION = 269;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -2985,7 +2989,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 268;
+				CURRENT_PROJECT_VERSION = 269;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -3009,7 +3013,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 268;
+				CURRENT_PROJECT_VERSION = 269;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -3031,7 +3035,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 268;
+				CURRENT_PROJECT_VERSION = 269;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -3054,7 +3058,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 268;
+				CURRENT_PROJECT_VERSION = 269;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -3084,7 +3088,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				CURRENT_PROJECT_VERSION = 268;
+				CURRENT_PROJECT_VERSION = 269;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = EusoTripiOSWidgets/Info.plist;
@@ -3117,7 +3121,7 @@
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
-				CURRENT_PROJECT_VERSION = 268;
+				CURRENT_PROJECT_VERSION = 269;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = EusoTripiOSWidgets/Info.plist;

@@ -7798,6 +7798,130 @@ struct FMCSAAPI {
     func lookupSelf() async throws -> FMCSASelfLookup {
         try await api.queryNoInput("fmcsa.lookupSelf")
     }
+
+    // MARK: — Registration-time SAFER autofill
+    //
+    // Mirrors the web `FMCSALookup` component's two queries (the
+    // canonical view of these endpoints lives at
+    // `frontend/server/routers/fmcsa.ts:131` and `:415`). Used by the
+    // catalyst / broker registration forms to verify a DOT or MC
+    // number and pre-fill 30+ company / authority / insurance
+    // fields in one round-trip.
+
+    func lookupByDOT(_ dotNumber: String) async throws -> FMCSACarrierLookup {
+        struct Input: Encodable { let dotNumber: String }
+        return try await api.query("fmcsa.lookupByDOT", input: Input(dotNumber: dotNumber))
+    }
+
+    func lookupByMC(_ mcNumber: String) async throws -> FMCSACarrierLookup {
+        struct Input: Encodable { let mcNumber: String }
+        return try await api.query("fmcsa.lookupByMC", input: Input(mcNumber: mcNumber))
+    }
+}
+
+// MARK: - FMCSACarrierLookup
+//
+// The full SAFER autofill envelope returned by `fmcsa.lookupByDOT` /
+// `lookupByMC`. Mirrors `parseCatalystResponse()` at
+// `frontend/server/routers/fmcsa.ts:44` plus the error / warning
+// envelope wrapping it.
+
+struct FMCSACarrierLookup: Decodable, Hashable {
+    /// `true` when SAFER resolved a carrier for the input number.
+    /// When `false`, `error` carries the human-facing reason and the
+    /// rest of the envelope is empty.
+    let verified: Bool
+    let error: String?
+    /// FMCSA web-key wasn't set on the server — UI surfaces a
+    /// "register manually" hint in this case rather than an error
+    /// toast.
+    let noApiKey: Bool?
+    /// SAFER marks the carrier `allowedToOperate = N`. The UI blocks
+    /// the Submit button when this fires.
+    let isBlocked: Bool?
+    let blockReason: String?
+    /// Non-fatal warnings — out-of-service rates above the national
+    /// average, missing BIPD insurance, conditional safety rating.
+    let warnings: [String]?
+    /// Raw cache freshness — when the lookup hit the Redis or MySQL
+    /// cache layer, the server stamps the original fetch time so the
+    /// UI can show "verified 14 days ago".
+    let fetchedAt: String?
+    let fromCache: Bool?
+
+    let companyProfile: CompanyProfile?
+    let authority: Authority?
+    let safety: Safety?
+    let insurance: Insurance?
+    let hazmat: Hazmat?
+
+    struct CompanyProfile: Decodable, Hashable {
+        let legalName: String
+        let dba: String?
+        let phone: String?
+        let email: String?
+        let physicalAddress: Address
+        let mailingAddress: Address?
+        let fleetSize: Int
+        let driverCount: Int
+    }
+
+    struct Address: Decodable, Hashable {
+        let street: String
+        let city: String
+        let state: String
+        let zip: String
+        let country: String?
+    }
+
+    struct Authority: Decodable, Hashable {
+        let dotNumber: String
+        let allowedToOperate: Bool
+        /// "ACTIVE" | "INACTIVE"
+        let operatingStatus: String
+        /// "Y" / "N" / "P" (pending) per FMCSA dictionary
+        let commonAuthority: String
+        let contractAuthority: String
+        let brokerAuthority: String
+        let catalystOperation: String?
+        let catalystOperationCode: String?
+    }
+
+    struct Safety: Decodable, Hashable {
+        /// "SATISFACTORY" | "CONDITIONAL" | "UNSATISFACTORY" | "NOT RATED"
+        let rating: String
+        let ratingDate: String?
+        let crashTotal: Int
+        let fatalCrash: Int
+        let injCrash: Int
+        let towCrash: Int
+        let inspections: Inspections
+
+        struct Inspections: Decodable, Hashable {
+            let driver: Cell
+            let vehicle: Cell
+            let hazmat: Cell
+            struct Cell: Decodable, Hashable {
+                let total: Int
+                let oos: Int
+                let rate: Double
+            }
+        }
+    }
+
+    struct Insurance: Decodable, Hashable {
+        let bipdOnFile: Bool
+        let bipdRequired: Bool
+        let bipdAmount: Double?
+        let cargoOnFile: Bool
+        let cargoRequired: Bool
+        let bondOnFile: Bool
+        let bondRequired: Bool
+    }
+
+    struct Hazmat: Decodable, Hashable {
+        let authorized: Bool
+    }
 }
 
 // MARK: - CsaScoresAPI
