@@ -36,6 +36,18 @@ ENTRIES = [
      "Primitives.swift",        "EusoTrip/Views/Primitives/Primitives.swift"),
     ("QRIV2026051800000011A1", "QRIV2026051800000012A1",
      "QRImageView.swift",       "EusoTrip/Views/Components/QRImageView.swift"),
+    ("CSCD2026051800000011A1", "CSCD2026051800000012A1",
+     "CredentialScanCard.swift",
+     "EusoTrip/Views/Components/CredentialScanCard.swift"),
+    ("VINS2026051800000011A1", "VINS2026051800000012A1",
+     "VINScannerSheet.swift",
+     "EusoTrip/Views/Components/VINScannerSheet.swift"),
+    ("FBRS2026051800000011A1", "FBRS2026051800000012A1",
+     "FleetBulkRegisterStep.swift",
+     "EusoTrip/Views/Onboarding/FleetBulkRegisterStep.swift"),
+    ("DIBS2026051800000011A1", "DIBS2026051800000012A1",
+     "DriverInviteBulkStep.swift",
+     "EusoTrip/Views/Onboarding/DriverInviteBulkStep.swift"),
 ]
 
 

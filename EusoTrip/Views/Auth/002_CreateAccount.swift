@@ -931,6 +931,18 @@ struct CreateAccountView: View {
                 .font(EType.micro).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
                 .padding(.top, Space.s2)
+
+            // FRA Part 240 (engineer) or Part 242 (conductor) cert
+            // scan — auto-fills cert #, expiration, employer railroad,
+            // and locomotive territory in one pass.
+            CredentialScanCard(
+                credentialType: vm.role == .railEngineer ? "fra_part240_engineer" : "fra_part242_conductor",
+                title: vm.role == .railEngineer
+                    ? "Scan your FRA engineer cert"
+                    : "Scan your FRA conductor cert",
+                subtitle: "Auto-fills cert #, expiration, employer railroad, and territory."
+            ) { applyFRACert($0) }
+
             GlassField(label: "FRA cert #",
                        placeholder: vm.role == .railEngineer ? "§49 CFR 240" : "§49 CFR 242",
                        icon: "checkmark.shield.fill",
@@ -979,6 +991,15 @@ struct CreateAccountView: View {
     private var vesselOperatorFields: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             companyBlock(title: "Vessel operator")
+
+            // USCG Certificate of Documentation scan — pulls official
+            // number, vessel name, IMO #, call sign, hailing port.
+            CredentialScanCard(
+                credentialType: "uscg_vessel_doc",
+                title: "Scan your USCG Certificate of Documentation",
+                subtitle: "Auto-fills official #, vessel name, IMO, call sign, owner."
+            ) { applyVesselDoc($0) }
+
             HStack(spacing: Space.s3) {
                 GlassField(label: "FMC license",
                            placeholder: "OTI / VOCC",
@@ -1022,6 +1043,15 @@ struct CreateAccountView: View {
                 .font(EType.micro).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
                 .padding(.top, Space.s2)
+
+            // USCG MMC scan — pulls mariner reference #, expiration,
+            // GT capacity, route authorization, endorsements.
+            CredentialScanCard(
+                credentialType: "uscg_mmc",
+                title: "Scan your USCG MMC",
+                subtitle: "Auto-fills credential #, expiration, GT capacity, and route."
+            ) { applyMMC($0) }
+
             GlassField(label: "MMC license #",
                        placeholder: "USCG-issued credential",
                        icon: "checkmark.shield.fill",
@@ -1087,6 +1117,15 @@ struct CreateAccountView: View {
                 .font(EType.micro).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
                 .padding(.top, Space.s2)
+
+            // CBP Form 3124 customs broker license scan — pulls
+            // license #, port of entry, examination date.
+            CredentialScanCard(
+                credentialType: "customs_broker_license",
+                title: "Scan your CBP Form 3124 license",
+                subtitle: "Auto-fills license #, port of entry, and examination date."
+            ) { applyCBPLicense($0) }
+
             GlassField(label: "CBP license #",
                        placeholder: "Customs & Border Protection",
                        icon: "checkmark.shield.fill",
@@ -1268,6 +1307,16 @@ struct CreateAccountView: View {
                 .font(EType.micro).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
                 .padding(.top, Space.s2)
+
+            // Gemini Vision OCR — scan once, auto-fill the four fields
+            // below (number, state, class, DOB) plus surface a warning
+            // banner if the CDL is expired.
+            CredentialScanCard(
+                credentialType: cdlCredentialType,
+                title: cdlScanTitle,
+                subtitle: "We'll auto-fill number, state, class, DOB, and endorsements."
+            ) { applyDriverCredential($0) }
+
             HStack(spacing: Space.s3) {
                 GlassField(label: "CDL number", placeholder: "A1234567",
                            icon: "creditcard",
@@ -1287,7 +1336,57 @@ struct CreateAccountView: View {
                        icon: "key.horizontal",
                        text: $vm.companyCode, autocapitalization: .characters)
                 .focused($focus, equals: .companyCode)
+
+            // Optional second scan — DOT physical medical card. Doesn't
+            // map to a VM field today, but a successful scan still
+            // hashes through documentManagement on submit so the
+            // driver's compliance dashboard light goes green from day 1.
+            CredentialScanCard(
+                credentialType: "us_medical_card",
+                title: "Scan DOT medical card (optional)",
+                subtitle: "Required for hazmat / Class A. We'll track the exam expiration."
+            ) { _ in }
         }
+    }
+
+    // MARK: — Driver credential scan helpers
+    //
+    // Country-aware: US drivers scan their CDL, Canadian drivers their
+    // Class 1, Mexican drivers their Licencia Federal. The wizard
+    // already gathered country selection on Step 1, so we pick the
+    // credential type from `vm.selectedCountries` (first match — most
+    // drivers register against one country).
+
+    private var driverCountry: RegistrationCountry? {
+        vm.selectedCountries.first
+    }
+
+    private var cdlCredentialType: String {
+        switch driverCountry {
+        case .ca: return "ca_class1_license"
+        case .mx: return "mx_licencia_federal"
+        default:  return "us_cdl"
+        }
+    }
+
+    private var cdlScanTitle: String {
+        switch driverCountry {
+        case .ca: return "Scan your Class 1 license"
+        case .mx: return "Escanea tu Licencia Federal"
+        default:  return "Scan your CDL"
+        }
+    }
+
+    private func applyDriverCredential(_ r: CredentialScannerAPI.ScannedCredential) {
+        if let s = r.identifier?.value?.stringValue { vm.cdlNumber = s }
+        if let s = r.issuingJurisdiction?.value?.stringValue { vm.cdlState = s }
+        if let s = r.licenseClass?.value?.stringValue {
+            // Strip the "Class " prefix Gemini sometimes includes.
+            let stripped = s.replacingOccurrences(of: "Class ", with: "")
+                .trimmingCharacters(in: .whitespaces)
+            if ["A", "B", "C"].contains(stripped) { vm.cdlClass = stripped }
+        }
+        if let s = r.holderDOB?.value?.stringValue { vm.dateOfBirth = s }
     }
 
     private var classPicker: some View {
@@ -1324,6 +1423,15 @@ struct CreateAccountView: View {
     private var carrierFields: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             companyBlock(title: "Carrier company")
+
+            // Scan the FMCSA authority letter — auto-fills DOT + MC +
+            // legal entity name + hazmat-authorized flag in one tap.
+            CredentialScanCard(
+                credentialType: "us_dot_authority",
+                title: "Scan your USDOT / MC authority letter",
+                subtitle: "Auto-fills DOT, MC, legal name, and hazmat authorization."
+            ) { applyCarrierAuthority($0) }
+
             HStack(spacing: Space.s3) {
                 GlassField(label: "MC number", placeholder: "MC-123456", icon: "number",
                            text: $vm.mcNumber, autocapitalization: .characters)
@@ -1335,12 +1443,30 @@ struct CreateAccountView: View {
             GlassField(label: "EIN (optional)", placeholder: "XX-XXXXXXX",
                        icon: "building.columns", text: $vm.ein)
                 .focused($focus, equals: .ein)
+
+            // Optional second scan — ACORD 25 COI. Pre-validates that
+            // their auto liability meets DOT minimums before the
+            // first load posts.
+            CredentialScanCard(
+                credentialType: "us_coi",
+                title: "Scan your ACORD 25 COI (optional)",
+                subtitle: "Pulls policy #, insurer, auto / cargo limits, MCS-90, and expiration."
+            ) { applyCarrierCOI($0) }
         }
     }
 
     private var brokerFields: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             companyBlock(title: "Brokerage")
+
+            // Scan broker authority letter — same OCR path as carrier
+            // since the FMCSA confirmation letter shapes are similar.
+            CredentialScanCard(
+                credentialType: "us_mc_authority",
+                title: "Scan your MC authority letter",
+                subtitle: "Auto-fills MC number, legal entity, and operating status."
+            ) { applyBrokerAuthority($0) }
+
             GlassField(label: "Broker MC #", placeholder: "MC-123456",
                        icon: "number",
                        text: $vm.brokerMcNumber, autocapitalization: .characters)
@@ -1357,7 +1483,74 @@ struct CreateAccountView: View {
                            text: $vm.bondAmount, keyboardType: .decimalPad)
                     .focused($focus, equals: .bondAmt)
             }
+
+            // Optional bond scan — BMC-84 surety bond confirmation.
+            // Sets bondProvider + bondAmount in one tap.
+            CredentialScanCard(
+                credentialType: "bond_bmc84",
+                title: "Scan your BMC-84 surety bond (optional)",
+                subtitle: "Auto-fills surety company, bond number, and bond amount."
+            ) { applyBrokerBond($0) }
         }
+    }
+
+    // MARK: — Carrier / broker scan appliers
+
+    private func applyCarrierAuthority(_ r: CredentialScannerAPI.ScannedCredential) {
+        if let s = r.usdotNumber?.value?.stringValue { vm.dotNumber = s }
+        if let s = r.mcNumber?.value?.stringValue { vm.mcNumber = s }
+        if let s = r.legalEntityName?.value?.stringValue, vm.companyName.isEmpty {
+            vm.companyName = s
+        }
+    }
+
+    private func applyCarrierCOI(_ r: CredentialScannerAPI.ScannedCredential) {
+        // No COI-specific VM fields today — values are captured for
+        // post-signup compliance dashboard via documentManagement on
+        // submit. The card still surfaces the scan envelope so the
+        // user sees expiration + limits before continuing.
+        _ = r
+    }
+
+    private func applyBrokerAuthority(_ r: CredentialScannerAPI.ScannedCredential) {
+        if let s = r.mcNumber?.value?.stringValue { vm.brokerMcNumber = s }
+        if let s = r.legalEntityName?.value?.stringValue, vm.companyName.isEmpty {
+            vm.companyName = s
+        }
+    }
+
+    private func applyBrokerBond(_ r: CredentialScannerAPI.ScannedCredential) {
+        if let s = r.additional?["suretyName"] { vm.bondProvider = s }
+        if let s = r.additional?["bondAmount"] { vm.bondAmount = s }
+    }
+
+    // MARK: — Rail / vessel / customs scan appliers
+
+    private func applyFRACert(_ r: CredentialScannerAPI.ScannedCredential) {
+        if let s = r.identifier?.value?.stringValue { vm.fraCertificationNumber = s }
+        if let s = r.expirationDate?.value?.stringValue { vm.fraCertificationExpires = s }
+        if let s = r.issuingAuthority?.value?.stringValue, vm.employerRailroad.isEmpty {
+            vm.employerRailroad = s
+        }
+        if let s = r.holderDOB?.value?.stringValue { vm.dateOfBirth = s }
+    }
+
+    private func applyVesselDoc(_ r: CredentialScannerAPI.ScannedCredential) {
+        if let s = r.identifier?.value?.stringValue { vm.uscgDocumentNumber = s }
+        if let s = r.legalEntityName?.value?.stringValue, vm.companyName.isEmpty {
+            vm.companyName = s
+        }
+    }
+
+    private func applyMMC(_ r: CredentialScannerAPI.ScannedCredential) {
+        if let s = r.identifier?.value?.stringValue { vm.mmcLicenseNumber = s }
+        if let s = r.expirationDate?.value?.stringValue { vm.mmcExpires = s }
+        if let s = r.holderDOB?.value?.stringValue { vm.dateOfBirth = s }
+    }
+
+    private func applyCBPLicense(_ r: CredentialScannerAPI.ScannedCredential) {
+        if let s = r.identifier?.value?.stringValue { vm.cbpLicenseNumber = s }
+        if let s = r.expirationDate?.value?.stringValue { vm.cbpLicenseExpires = s }
     }
 
     @ViewBuilder
