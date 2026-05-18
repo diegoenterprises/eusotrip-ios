@@ -46,6 +46,11 @@ struct CreateAccountView: View {
     @State private var showTerms = false
     @State private var showPrivacy = false
 
+    // Carrier-only post-signup "While you wait" kickstart sheets.
+    // Solo roles don't see the row so these stay false for them.
+    @State private var showFleetSetup = false
+    @State private var showInviteTeam = false
+
     // MARK: Body
 
     var body: some View {
@@ -1616,6 +1621,16 @@ struct CreateAccountView: View {
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .multilineTextAlignment(.center)
+
+                // Carrier roles get an additional "While you wait…"
+                // shortcut to fleet + driver setup. Submitting these
+                // before email verification is fine — the server
+                // accepts the calls under the freshly-issued bearer
+                // and the rows file under the new company immediately.
+                if showsCarrierKickstart {
+                    carrierKickstart
+                }
+
                 CTAButton(title: "Back to sign in") { dismiss() }
                 Button("Resend email") {
                     Task { _ = try? await EusoTripAPI.shared.registration.resendVerification(email: vm.email) }
@@ -1624,6 +1639,87 @@ struct CreateAccountView: View {
                 .foregroundStyle(palette.textSecondary)
             }
         }
+        .sheet(isPresented: $showFleetSetup) {
+            FleetBulkRegisterStep(
+                vertical: kickstartVertical,
+                onContinue: { showFleetSetup = false },
+                onSkip: { showFleetSetup = false }
+            )
+            .environment(\.palette, palette)
+        }
+        .sheet(isPresented: $showInviteTeam) {
+            DriverInviteBulkStep(
+                vertical: kickstartVertical,
+                onContinue: { showInviteTeam = false },
+                onSkip: { showInviteTeam = false }
+            )
+            .environment(\.palette, palette)
+        }
+    }
+
+    /// Show the "While you wait" carrier kickstart row for company-
+    /// owning roles. Solo drivers / shippers / staff don't need it.
+    private var showsCarrierKickstart: Bool {
+        switch vm.role {
+        case .catalyst, .broker, .railCatalyst, .railBroker, .vesselOperator, .vesselBroker:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private var kickstartVertical: String {
+        switch vm.role {
+        case .railCatalyst, .railBroker: return "rail"
+        case .vesselOperator, .vesselBroker: return "vessel"
+        default: return "truck"
+        }
+    }
+
+    private var carrierKickstart: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("WHILE YOU WAIT")
+                .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                .foregroundStyle(palette.textTertiary)
+            HStack(spacing: 8) {
+                Button { showFleetSetup = true } label: {
+                    kickstartTile(icon: "truck.box.fill",
+                                  title: "Add your fleet",
+                                  subtitle: "Scan VINs · seed maintenance + DVIR")
+                }
+                .buttonStyle(.plain)
+                Button { showInviteTeam = true } label: {
+                    kickstartTile(icon: "person.2.fill",
+                                  title: "Invite your team",
+                                  subtitle: "One email per teammate · deep-link signup")
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func kickstartTile(icon: String, title: String, subtitle: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .heavy))
+                .foregroundStyle(LinearGradient.diagonal)
+            Text(title)
+                .font(.system(size: 13, weight: .heavy))
+                .foregroundStyle(palette.textPrimary)
+            Text(subtitle)
+                .font(.system(size: 10))
+                .foregroundStyle(palette.textSecondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCardSoft.opacity(0.65))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(LinearGradient.diagonal.opacity(0.35))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     // MARK: Shared chrome
