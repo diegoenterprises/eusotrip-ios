@@ -314,37 +314,45 @@ enum RegistrationCountry: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-/// Transport mode options on the multi-modal registration wizard.
-enum TransportMode: String, CaseIterable, Identifiable, Hashable {
-    case truck  = "TRUCK"
-    case rail   = "RAIL"
-    case vessel = "VESSEL"
-
-    var id: String { rawValue }
-
-    var displayName: String {
+// 2026-05-17 — The registration-wizard `TransportMode` enum was
+// merged into the canonical 4-case enum in
+// `Models/Multimodal/MultiModalCore.swift`. Registration-specific
+// surfaces (longform displayName / tagline / iconSystemName) live in
+// the extension below so the auth flow keeps its copy unchanged.
+extension TransportMode {
+    /// Long-form registration-wizard display name (vs the terser
+    /// `displayName` used in the Post-a-Load picker).
+    var registrationDisplayName: String {
         switch self {
         case .truck:  return "Trucking"
         case .rail:   return "Rail"
         case .vessel: return "Vessel / Maritime"
+        case .barge:  return "Barge / Inland Waterway"
         }
     }
 
+    /// Marketing-grade tagline shown under each mode on the
+    /// registration screen.
     var tagline: String {
         switch self {
         case .truck:  return "Highway freight & hazmat transport"
         case .rail:   return "Railroad freight & intermodal operations"
-        case .vessel: return "Ocean, barge & inland waterway freight"
+        case .vessel: return "Ocean & inland waterway freight"
+        case .barge:  return "Inland barge transport & inland tow"
         }
     }
 
-    var iconSystemName: String {
-        switch self {
-        case .truck:  return "truck.box.fill"
-        case .rail:   return "tram.fill"
-        case .vessel: return "ferry.fill"
-        }
-    }
+    /// Backwards-compat alias for the older `iconSystemName` property.
+    /// New call sites should prefer `sfSymbol` defined on the
+    /// canonical enum.
+    var iconSystemName: String { sfSymbol }
+
+    /// Backwards-compat alias matching the uppercase raw value the
+    /// registration backend expects (TRUCK / RAIL / VESSEL / BARGE).
+    /// Server-side `users.transportModes` JSON column stores uppercase
+    /// canonical strings; this property emits in that form. New
+    /// load-side serializations use the lowercase `rawValue`.
+    var apiUppercase: String { rawValue.uppercased() }
 }
 
 // MARK: - AuthUser

@@ -26,16 +26,16 @@ import Foundation
 import SwiftUI
 
 @MainActor
-public final class EusoWalletStore: ObservableObject {
+final class EusoWalletStore: ObservableObject {
 
-    public enum Phase: Equatable {
+    enum Phase: Equatable {
         case idle
         case loading
         case loaded([PaymentsAPI.PaymentMethod])
         case error(String)
     }
 
-    public enum AddPhase: Equatable {
+    enum AddPhase: Equatable {
         /// CTA visible, no flow in progress.
         case idle
         /// Apple Pay sheet is showing OR Stripe REST call is in flight.
@@ -48,17 +48,17 @@ public final class EusoWalletStore: ObservableObject {
         case failed(String)
     }
 
-    @Published public private(set) var phase: Phase = .idle
-    @Published public private(set) var addPhase: AddPhase = .idle
+    @Published private(set) var phase: Phase = .idle
+    @Published private(set) var addPhase: AddPhase = .idle
 
     /// Convenience for screens that just need the array. Returns the
     /// loaded list or an empty list during loading/error.
-    public var paymentMethods: [PaymentsAPI.PaymentMethod] {
+    var paymentMethods: [PaymentsAPI.PaymentMethod] {
         if case .loaded(let m) = phase { return m }
         return []
     }
 
-    public var isAdding: Bool {
+    var isAdding: Bool {
         if case .adding = addPhase { return true }
         return false
     }
@@ -67,11 +67,11 @@ public final class EusoWalletStore: ObservableObject {
     /// Pay. Used by the screen layer to gate the "Add via Apple Pay"
     /// CTA. Falls back to false when the merchant ID isn't yet
     /// provisioned so we don't surface a CTA that throws.
-    public var applePaySupported: Bool {
+    var applePaySupported: Bool {
         EusoWalletApplePayProvider.shared.canMakePayments
     }
 
-    public init() {}
+    init() {}
 
     // MARK: - Refresh
 
@@ -80,7 +80,7 @@ public final class EusoWalletStore: ObservableObject {
     /// Keeps the previous list visible during a refresh transition
     /// (no flicker on pull-to-refresh) by deferring the
     /// `phase = .loading` flip when we already have a `.loaded` list.
-    public func refresh(silent: Bool = false) async {
+    func refresh(silent: Bool = false) async {
         if !silent || (phase != .idle && {
             if case .loaded = phase { return false } else { return true }
         }()) {
@@ -99,7 +99,7 @@ public final class EusoWalletStore: ObservableObject {
     /// Top-level entry point for the "+ Add via Apple Pay" CTA.
     /// Drives `addPhase` so the surrounding UI can disable the
     /// button, swap to a spinner, and render success/failure inline.
-    public func addCardViaApplePay() async {
+    func addCardViaApplePay() async {
         guard applePaySupported else {
             addPhase = .failed("Apple Pay isn't available on this device.")
             return
@@ -126,7 +126,7 @@ public final class EusoWalletStore: ObservableObject {
     /// Promote a method to the default (Stripe Customer invoice
     /// default). On success the local list is invalidated so the
     /// `isDefault` star moves to the new row.
-    public func setDefault(_ method: PaymentsAPI.PaymentMethod) async {
+    func setDefault(_ method: PaymentsAPI.PaymentMethod) async {
         do {
             _ = try await EusoTripAPI.shared.payments.setDefaultMethod(
                 paymentMethodId: method.id
@@ -138,7 +138,7 @@ public final class EusoWalletStore: ObservableObject {
     }
 
     /// Detach a card. Irreversible.
-    public func delete(_ method: PaymentsAPI.PaymentMethod) async {
+    func delete(_ method: PaymentsAPI.PaymentMethod) async {
         do {
             _ = try await EusoTripAPI.shared.payments.deletePaymentMethod(
                 paymentMethodId: method.id

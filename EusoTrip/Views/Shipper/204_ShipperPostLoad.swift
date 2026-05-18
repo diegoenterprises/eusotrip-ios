@@ -2061,8 +2061,8 @@ struct ShipperPostLoad: View {
         let dState = destStateCode ?? Self.stateFromLane(destination)
         let oLimit = Self.stateWeightLimit(oState)
         let dLimit = Self.stateWeightLimit(dState)
-        let oOver = !oState.isEmpty && weightLbs > oLimit
-        let dOver = !dState.isEmpty && weightLbs > dLimit
+        let oOver = !oState.isEmpty && weightLbs > Double(oLimit)
+        let dOver = !dState.isEmpty && weightLbs > Double(dLimit)
         let anyOver = oOver || dOver
         if weightLbs > 0 && (oOver || dOver) {
             VStack(alignment: .leading, spacing: 8) {

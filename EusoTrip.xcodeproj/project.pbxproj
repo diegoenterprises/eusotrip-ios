@@ -33,6 +33,12 @@
 		HAFD00010CE0FF10000011A1 /* HereAddressField.swift in Sources */ = {isa = PBXBuildFile; fileRef = HAFD00010CE0FF10000012A1 /* HereAddressField.swift */; };
 		LTBD00010CE0FF10000011A1 /* ListingTrustBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */; };
 		LMBD2026051700000011A1 /* LoadModeBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = LMBD2026051700000012A1 /* LoadModeBadge.swift */; };
+		PRIM2026051700000011A1 /* Primitives.swift in Sources */ = {isa = PBXBuildFile; fileRef = PRIM2026051700000012A1 /* Primitives.swift */; };
+		RIRG2026051700000011A1 /* RoleIntegrationRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = RIRG2026051700000012A1 /* RoleIntegrationRegistry.swift */; };
+		EWAP2026051700000011A1 /* EusoWalletApplePayProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = EWAP2026051700000012A1 /* EusoWalletApplePayProvider.swift */; };
+		EWST2026051700000011A1 /* EusoWalletStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EWST2026051700000012A1 /* EusoWalletStore.swift */; };
+		RLLN2026051700000011A1 /* RailLane.swift in Sources */ = {isa = PBXBuildFile; fileRef = RLLN2026051700000012A1 /* RailLane.swift */; };
+		MMCO2026051700000011A1 /* MultiModalCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = MMCO2026051700000012A1 /* MultiModalCore.swift */; };
 		GSPD00010CE0FF10000011A1 /* GradientSignaturePad.swift in Sources */ = {isa = PBXBuildFile; fileRef = GSPD00010CE0FF10000012A1 /* GradientSignaturePad.swift */; };
 		AVSB00010CE0FF10000011A1 /* AIVisualScanButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = AVSB00010CE0FF10000012A1 /* AIVisualScanButton.swift */; };
 		MSGS00010CE0FF10000011A1 /* MessagesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = MSGS00010CE0FF10000012A1 /* MessagesScreen.swift */; };
@@ -620,6 +626,12 @@
 		HAFD00010CE0FF10000012A1 /* HereAddressField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereAddressField.swift; sourceTree = "<group>"; };
 		LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListingTrustBadge.swift; sourceTree = "<group>"; };
 		LMBD2026051700000012A1 /* LoadModeBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadModeBadge.swift; sourceTree = "<group>"; };
+		PRIM2026051700000012A1 /* Primitives.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Primitives.swift; path = EusoTrip/Views/Primitives/Primitives.swift; sourceTree = SOURCE_ROOT; };
+		RIRG2026051700000012A1 /* RoleIntegrationRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RoleIntegrationRegistry.swift; path = EusoTrip/Services/RoleIntegrationRegistry.swift; sourceTree = SOURCE_ROOT; };
+		EWAP2026051700000012A1 /* EusoWalletApplePayProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EusoWalletApplePayProvider.swift; path = EusoTrip/Services/EusoWalletApplePayProvider.swift; sourceTree = SOURCE_ROOT; };
+		EWST2026051700000012A1 /* EusoWalletStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EusoWalletStore.swift; path = EusoTrip/ViewModels/EusoWalletStore.swift; sourceTree = SOURCE_ROOT; };
+		RLLN2026051700000012A1 /* RailLane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RailLane.swift; path = EusoTrip/Models/RailLane.swift; sourceTree = SOURCE_ROOT; };
+		MMCO2026051700000012A1 /* MultiModalCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MultiModalCore.swift; path = EusoTrip/Models/Multimodal/MultiModalCore.swift; sourceTree = SOURCE_ROOT; };
 		GSPD00010CE0FF10000012A1 /* GradientSignaturePad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradientSignaturePad.swift; sourceTree = "<group>"; };
 		AVSB00010CE0FF10000012A1 /* AIVisualScanButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIVisualScanButton.swift; sourceTree = "<group>"; };
 		MSGS00010CE0FF10000012A1 /* MessagesScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagesScreen.swift; sourceTree = "<group>"; };
@@ -1767,6 +1779,12 @@
 				HAFD00010CE0FF10000012A1 /* HereAddressField.swift */,
 				LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */,
 				LMBD2026051700000012A1 /* LoadModeBadge.swift */,
+				PRIM2026051700000012A1 /* Primitives.swift */,
+				RIRG2026051700000012A1 /* RoleIntegrationRegistry.swift */,
+				EWAP2026051700000012A1 /* EusoWalletApplePayProvider.swift */,
+				EWST2026051700000012A1 /* EusoWalletStore.swift */,
+				RLLN2026051700000012A1 /* RailLane.swift */,
+				MMCO2026051700000012A1 /* MultiModalCore.swift */,
 				GSPD00010CE0FF10000012A1 /* GradientSignaturePad.swift */,
 				AVSB00010CE0FF10000012A1 /* AIVisualScanButton.swift */,
 				MSGS00010CE0FF10000012A1 /* MessagesScreen.swift */,
@@ -2242,6 +2260,12 @@
 				HAFD00010CE0FF10000011A1 /* HereAddressField.swift in Sources */,
 				LTBD00010CE0FF10000011A1 /* ListingTrustBadge.swift in Sources */,
 				LMBD2026051700000011A1 /* LoadModeBadge.swift in Sources */,
+				PRIM2026051700000011A1 /* Primitives.swift in Sources */,
+				RIRG2026051700000011A1 /* RoleIntegrationRegistry.swift in Sources */,
+				EWAP2026051700000011A1 /* EusoWalletApplePayProvider.swift in Sources */,
+				EWST2026051700000011A1 /* EusoWalletStore.swift in Sources */,
+				RLLN2026051700000011A1 /* RailLane.swift in Sources */,
+				MMCO2026051700000011A1 /* MultiModalCore.swift in Sources */,
 				GSPD00010CE0FF10000011A1 /* GradientSignaturePad.swift in Sources */,
 				AVSB00010CE0FF10000011A1 /* AIVisualScanButton.swift in Sources */,
 				MSGS00010CE0FF10000011A1 /* MessagesScreen.swift in Sources */,

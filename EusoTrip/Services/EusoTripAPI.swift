@@ -3974,6 +3974,62 @@ struct AnyEncodable: Encodable {
     }
 }
 
+/// Wraps an already-serialized JSON `Data` payload so it can be
+/// re-encoded verbatim by the outer JSONEncoder. Used by
+/// `ShipperAPI.create` to forward heterogenous `[String: Any]`
+/// dictionaries (e.g. `modeRoutePayload`) that can't satisfy
+/// Swift's `Encodable` existential constraints directly.
+struct JSONRawEncodable: Encodable {
+    let data: Data
+    func encode(to encoder: Encoder) throws {
+        // Decode into a generic AnyDecodable-ish shape and re-encode
+        // so the result is a real JSON object in the parent envelope
+        // rather than a string-escaped blob.
+        let json = try JSONSerialization.jsonObject(with: data)
+        try encodeJSONValue(json, to: encoder)
+    }
+
+    private func encodeJSONValue(_ value: Any, to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch value {
+        case let v as String: try container.encode(v)
+        case let v as Bool:   try container.encode(v)
+        case let v as Int:    try container.encode(v)
+        case let v as Double: try container.encode(v)
+        case is NSNull:       try container.encodeNil()
+        case let v as [Any]:
+            try container.encode(v.map { JSONRawElement(value: $0) })
+        case let v as [String: Any]:
+            try container.encode(v.mapValues { JSONRawElement(value: $0) })
+        default:
+            // Best-effort fallback — stringify so the field isn't lost.
+            try container.encode(String(describing: value))
+        }
+    }
+}
+
+/// Single JSON value wrapper used by `JSONRawEncodable.encode` so the
+/// nested encoding into arrays/dicts goes through the same switch.
+private struct JSONRawElement: Encodable {
+    let value: Any
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch value {
+        case let v as String: try container.encode(v)
+        case let v as Bool:   try container.encode(v)
+        case let v as Int:    try container.encode(v)
+        case let v as Double: try container.encode(v)
+        case is NSNull:       try container.encodeNil()
+        case let v as [Any]:
+            try container.encode(v.map { JSONRawElement(value: $0) })
+        case let v as [String: Any]:
+            try container.encode(v.mapValues { JSONRawElement(value: $0) })
+        default:
+            try container.encode(String(describing: value))
+        }
+    }
+}
+
 // MARK: - newsRouter
 //
 // Mirrors frontend/server/routers/news.ts. The server fans out to ~100
@@ -11641,10 +11697,21 @@ struct ShipperAPI {
         modeRoutePayload: [String: Any]? = nil,
         equipmentType: String? = nil
     ) async throws -> PostLoadAck {
-        let encodablePayload = modeRoutePayload.map { dict -> AnyEncodable in
-            let mapped = dict.mapValues { AnyEncodable($0) }
-            return AnyEncodable(mapped)
-        }
+        // Wrap the heterogenous [String: Any] payload into an
+        // AnyEncodable that round-trips through JSONSerialization —
+        // direct `AnyEncodable($0)` won't compile because Swift's
+        // existential `Encodable` has Self requirements that bar
+        // casting from `Any`. The JSON path narrows the input to
+        // JSON-compatible primitives + arrays + dicts, then re-emits
+        // as Data the encoder can pass through verbatim.
+        let encodablePayload: AnyEncodable? = {
+            guard let dict = modeRoutePayload else { return nil }
+            guard JSONSerialization.isValidJSONObject(dict),
+                  let data = try? JSONSerialization.data(withJSONObject: dict) else {
+                return nil
+            }
+            return AnyEncodable(JSONRawEncodable(data: data))
+        }()
         return try await api.mutation(
             "shippers.create",
             input: PostLoadInput(

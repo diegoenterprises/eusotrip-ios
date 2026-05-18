@@ -303,7 +303,7 @@ struct CreateAccountView: View {
                 }
                 .frame(width: 52, height: 52)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(m.displayName)
+                    Text(m.registrationDisplayName)
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                     Text(m.tagline)
@@ -343,7 +343,7 @@ struct CreateAccountView: View {
                     gradientTagPill(text: "\(c.flagEmoji) \(c.displayName)")
                 }
                 ForEach(Array(vm.selectedModes)) { m in
-                    gradientTagPill(text: m.displayName)
+                    gradientTagPill(text: m.registrationDisplayName)
                 }
             }
 
@@ -517,6 +517,7 @@ struct CreateAccountView: View {
         case .truck:  return Color(red: 0.976, green: 0.451, blue: 0.086)
         case .rail:   return Brand.blue
         case .vessel: return Color(red: 0.024, green: 0.714, blue: 0.831)
+        case .barge:  return Brand.info
         }
     }
 
