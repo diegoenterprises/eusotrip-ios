@@ -77,6 +77,9 @@ struct BeatComplete: View {
                     Text("SUNDAY · RESET RETURNED")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(LinearGradient.diagonal)
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
                 }
             }
             Spacer(minLength: 0)

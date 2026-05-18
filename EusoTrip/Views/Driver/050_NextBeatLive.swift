@@ -77,6 +77,9 @@ struct NextBeatLive: View {
                     .clipShape(Circle())
             }
             Spacer()
+            LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                          multiVehicleCount: activeLoad?.multiVehicleCount,
+                          compact: true)
             HStack(spacing: 4) {
                 Circle().fill(Brand.success).frame(width: 6, height: 6)
                 Text("LIVE RESET")
