@@ -128,6 +128,9 @@ struct NextLoadBrief: View {
                         Text("· NEW LOAD")
                             .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                             .foregroundStyle(palette.textSecondary)
+                        LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                      multiVehicleCount: activeLoad?.multiVehicleCount,
+                                      compact: true)
                     }
                     HStack(spacing: 4) {
                         Text(fallbackOrigin)

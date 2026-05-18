@@ -283,6 +283,9 @@ struct LoadLockedPrehaul: View {
                     Text("· \(activeLoad?.loadNumber ?? fallbackLoadID)")
                         .font(EType.mono(.micro)).tracking(0.4)
                         .foregroundStyle(palette.textSecondary)
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
                 }
                 Text("\(prehaulHeading) · \(checklist.count) checks")
                     .font(.system(size: 22, weight: .heavy))
