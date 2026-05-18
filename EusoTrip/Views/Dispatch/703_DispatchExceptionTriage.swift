@@ -30,6 +30,9 @@ private struct ExceptionRow: Decodable, Identifiable, Hashable {
     let description: String?
     let createdAt: String?
     let status: String?
+    // 2026-05-17 — Multi-modal payload from server projection.
+    let transportMode: String?
+    let multiVehicleCount: Int?
 }
 
 private struct ExceptionBody: View {
@@ -93,7 +96,17 @@ private struct ExceptionBody: View {
         } else {
             ForEach(rows) { e in
                 LifecycleCard(accentDanger: (e.severity?.lowercased() == "high" || e.severity?.lowercased() == "critical")) {
-                    LifecycleSection(label: (e.type ?? "INCIDENT").uppercased(), icon: "exclamationmark.triangle")
+                    HStack(spacing: 8) {
+                        LifecycleSection(label: (e.type ?? "INCIDENT").uppercased(), icon: "exclamationmark.triangle")
+                        Spacer(minLength: 0)
+                        // 2026-05-17 — Mode chip on exception triage row.
+                        // A rail unit-train derailment reads urgently
+                        // differently than a single-truck breakdown;
+                        // the chip surfaces blast-radius at first glance.
+                        LoadModeBadge(modeRaw: e.transportMode,
+                                      multiVehicleCount: e.multiVehicleCount,
+                                      compact: true)
+                    }
                     LifecycleRow(label: "Severity", value: (e.severity ?? "—").uppercased())
                     LifecycleRow(label: "Driver",    value: dashIfEmpty(e.driverName))
                     LifecycleRow(label: "Load",      value: dashIfEmpty(e.loadNumber))

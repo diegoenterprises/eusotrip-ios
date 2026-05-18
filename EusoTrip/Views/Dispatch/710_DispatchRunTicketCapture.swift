@@ -40,6 +40,12 @@ private struct RunTicketRow: Decodable, Identifiable, Hashable {
     let totalTolls: Double?
     let totalExpenses: Double?
     let createdAt: String?
+    // 2026-05-17 — Multi-modal payload. Run-ticket forms differ by
+    // mode (truck miles + fuel + tolls vs vessel charter expenses vs
+    // rail haulage); badge tells the dispatcher which expense column
+    // set applies before they open the ticket.
+    let transportMode: String?
+    let multiVehicleCount: Int?
     let completedAt: String?
 }
 
@@ -134,7 +140,13 @@ private struct TicketBody: View {
         } else {
             ForEach(rows) { t in
                 LifecycleCard(accentGradient: t.status == "active") {
-                    LifecycleSection(label: t.ticketNumber, icon: "ticket.fill")
+                    HStack(spacing: 8) {
+                        LifecycleSection(label: t.ticketNumber, icon: "ticket.fill")
+                        Spacer(minLength: 0)
+                        LoadModeBadge(modeRaw: t.transportMode,
+                                      multiVehicleCount: t.multiVehicleCount,
+                                      compact: true)
+                    }
                     LifecycleRow(label: "Load",        value: dashIfEmpty(t.loadNumber))
                     LifecycleRow(label: "Origin",      value: dashIfEmpty(t.origin))
                     LifecycleRow(label: "Destination", value: dashIfEmpty(t.destination))

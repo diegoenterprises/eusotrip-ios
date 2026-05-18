@@ -42,6 +42,9 @@ private struct PriorityException: Decodable, Identifiable, Hashable {
     let driverName: String?
     let loadNumber: String?
     let createdAt: String?
+    // 2026-05-17 — Mode payload from server projection.
+    let transportMode: String?
+    let multiVehicleCount: Int?
 }
 
 private struct PriorityHOSDriver: Decodable, Identifiable, Hashable {
@@ -124,7 +127,16 @@ private struct DispatchHomeBody: View {
             LifecycleCard(accentDanger: true) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("TRIAGE NOW").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(Brand.danger)
+                        HStack(spacing: 6) {
+                            Text("TRIAGE NOW").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(Brand.danger)
+                            // 2026-05-17 — Mode chip on triage widget.
+                            // Dispatcher needs to know if the open
+                            // exception is on a rail unit train (high
+                            // blast radius) vs a single truck.
+                            LoadModeBadge(modeRaw: e.transportMode,
+                                          multiVehicleCount: e.multiVehicleCount,
+                                          compact: true)
+                        }
                         Text(e.type ?? "Open exception").font(.system(size: 18, weight: .heavy)).foregroundStyle(palette.textPrimary).lineLimit(1)
                         Text("\(e.driverName ?? "—") · \(e.loadNumber ?? "—")").font(EType.caption).foregroundStyle(palette.textSecondary)
                         if let s = e.severity {
