@@ -98,9 +98,14 @@ struct AtReceiverGate: View {
             .accessibilityLabel("Back")
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("AT RECEIVER GATE")
-                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                    .foregroundStyle(LinearGradient.diagonal)
+                HStack(spacing: 6) {
+                    Text("AT RECEIVER GATE")
+                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                        .foregroundStyle(LinearGradient.diagonal)
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
+                }
                 Text(deliveryTitle)
                     .font(.system(size: 22, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)

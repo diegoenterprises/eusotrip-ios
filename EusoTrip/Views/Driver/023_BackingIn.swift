@@ -239,6 +239,9 @@ struct BackingIn: View {
                     Text("· DOOR \(fallbackDoor)")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(palette.textSecondary)
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
                 }
                 Text("\(ctx.defaultApproach) · \(fallbackAisle)")
                     .font(.system(size: 20, weight: .heavy))

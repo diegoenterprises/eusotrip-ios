@@ -128,6 +128,9 @@ struct OffDuty: View {
                     Text("· SLEEPER BERTH")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(palette.textSecondary)
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
                 }
                 Text(resetHoursLabel)
                     .font(.system(size: 22, weight: .heavy))

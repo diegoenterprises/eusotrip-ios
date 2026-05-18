@@ -84,6 +84,9 @@ struct AtReceiverGateFull: View {
                     Text("AT RECEIVER \(ctx.vertical.gateWord.uppercased())")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(LinearGradient.diagonal)
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
                 }
                 Text(fallbackArrivalLine)
                     .font(.system(size: 18, weight: .heavy))
