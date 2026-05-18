@@ -335,7 +335,7 @@ private struct DataScannerHostView: UIViewControllerRepresentable {
         )
         scanner.delegate = context.coordinator
         DispatchQueue.main.async {
-            scanner.startScanning()
+            try? scanner.startScanning()
         }
         return scanner
     }
