@@ -173,23 +173,40 @@ enum HereMapsError: Error, LocalizedError {
         if let data = body.data(using: .utf8),
            let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             // Prefer cause + action when present; fall back to title.
-            let title  = (dict["title"]  as? String) ?? ""
-            let cause  = (dict["cause"]  as? String) ?? ""
-            let action = (dict["action"] as? String) ?? ""
-            let parts = [title, cause, action].filter { !$0.isEmpty }
+            // HERE Routing v8 also returns `detail` and a per-param
+            // `parameter` field on 400-class rejections — those name
+            // the EXACT param that failed parsing, which is the only
+            // piece useful for debugging. Surface them all.
+            let title     = (dict["title"]     as? String) ?? ""
+            let cause     = (dict["cause"]     as? String) ?? ""
+            let action    = (dict["action"]    as? String) ?? ""
+            let detail    = (dict["detail"]    as? String) ?? ""
+            let parameter = (dict["parameter"] as? String) ?? ""
+            var parts = [title, cause, action, detail].filter { !$0.isEmpty }
+            if !parameter.isEmpty {
+                parts.append("param=\(parameter)")
+            }
             if !parts.isEmpty {
                 return parts.joined(separator: " · ")
             }
         }
         // Status-coded fallbacks for the common cases users hit.
+        // When the body isn't recognizable JSON, append the first 200
+        // chars of the raw body so we can diagnose unexpected error
+        // shapes without re-instrumenting and re-shipping.
+        let trimmedBody = body
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "  ", with: " ")
+            .prefix(200)
+        let bodyTail = trimmedBody.isEmpty ? "" : " · raw: \(trimmedBody)"
         switch code {
-        case 400: return "Couldn't resolve that lane — try refining the addresses."
+        case 400: return "HTTP 400 — bad request\(bodyTail)"
         case 401: return "Routing auth expired — pull to refresh."
         case 403: return "Routing forbidden for this lane (plan tier or region restriction)."
         case 404: return "Lane not found in routing graph."
         case 429: return "Too many routing requests right now — try again in a moment."
         case 500...599: return "Routing service is having issues — try again."
-        default:        return "Routing failed (status \(code))."
+        default:        return "Routing failed (status \(code))\(bodyTail)"
         }
     }
 }

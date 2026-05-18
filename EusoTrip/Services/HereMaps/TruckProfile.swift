@@ -225,8 +225,27 @@ struct TruckProfile: Hashable {
     // MARK: - Query-param serialization
 
     /// Serializes this profile into the flat `URLQueryItem` form used by the
-    /// HERE Routing v8 API. HERE spec: `vehicle[<field>]=<value>` — each on
-    /// its own query item.
+    /// HERE Routing v8 API. v8 spec: `vehicle[<field>]=<value>` bracket form
+    /// — the canonical v8 truck-mode namespace.
+    ///
+    /// 2026-05-17 — narrow set after the "Malformed request · Error while
+    /// parsing" rejections traced to two specific bad params on the
+    /// original 2026-05-07 ship:
+    ///   • `vehicle[type]=semiTrailer` — v8 `vehicle[type]` only accepts
+    ///     `straightTruck` or `tractor`; `semiTrailer` is rejected. Field
+    ///     dropped entirely — truck dimensions + axles already drive the
+    ///     routing constraints HERE needs.
+    ///   • `vehicle[emissionType]=epa` — v8 only accepts euro1–6. US
+    ///     fleets don't carry Euro classifications, so this field is
+    ///     dropped entirely.
+    ///
+    /// Earlier 2026-05-16 attempt swapped namespace to `truck.<field>`
+    /// (legacy v7) which v8 rejects outright. That regression is now
+    /// reverted to the v8-canonical `vehicle[<field>]` form with only
+    /// the unambiguously-documented dimensional / weight / hazmat /
+    /// tunnel fields. Optional `trailerType` is skipped — it's not
+    /// canonical v8 and any uncertainty would re-introduce the parser
+    /// rejection.
     func asRoutingQueryItems() -> [URLQueryItem] {
         var items: [URLQueryItem] = []
 
@@ -237,16 +256,14 @@ struct TruckProfile: Hashable {
             if let v = value, !v.isEmpty { items.append(URLQueryItem(name: name, value: v)) }
         }
 
-        item("vehicle[grossWeight]",        grossWeightKg)
-        item("vehicle[weightPerAxle]",      weightPerAxleKg)
-        item("vehicle[height]",             heightCm)
-        item("vehicle[width]",              widthCm)
-        item("vehicle[length]",             lengthCm)
-        item("vehicle[axleCount]",          axleCount)
-        item("vehicle[trailerCount]",       trailerCount)
-        item("vehicle[type]",               trailerType?.hereValue)
-        item("vehicle[emissionType]",       emissionType?.rawValue)
-        item("vehicle[tunnelCategory]",     tunnelCategory?.hereValue)
+        item("vehicle[grossWeight]",     grossWeightKg)
+        item("vehicle[weightPerAxle]",   weightPerAxleKg)
+        item("vehicle[height]",          heightCm)
+        item("vehicle[width]",           widthCm)
+        item("vehicle[length]",          lengthCm)
+        item("vehicle[axleCount]",       axleCount)
+        item("vehicle[trailerCount]",    trailerCount)
+        item("vehicle[tunnelCategory]",  tunnelCategory?.hereValue)
 
         if !shippedHazardousGoods.isEmpty {
             let csv = shippedHazardousGoods.map(\.hereValue).sorted().joined(separator: ",")

@@ -54,10 +54,24 @@ struct HereStops {
 struct HereRoutingOptions {
     /// ISO-8601 (e.g. "2026-04-18T09:00:00-04:00"). Nil = depart now.
     var departureTime: String? = nil
-    /// Fields to include. `polyline,summary,actions` is the typical set for
-    /// a driver-nav use case; add `spans,tolls,incidents` for richer detail.
-    var returnFields: [String] = ["polyline", "summary", "actions", "spans", "tolls", "notices"]
-    /// Span columns to return — only respected when `returnFields` contains "spans".
+    /// Fields to include. `polyline,summary,actions` is the proven
+    /// minimal set for a driver-nav use case.
+    ///
+    /// 2026-05-17 — TestFlight 262 captured HERE's verbatim rejection:
+    /// "Invalid return type at 'spans'" and "Invalid value for
+    /// parameter 'return' at 'polyline,summary,actions,spans,tolls'".
+    /// Even though `spans` is documented as a v8 return value, this
+    /// deployment / plan tier rejects it. `tolls` is in the same
+    /// rejection list — dropped together. Earlier `notices` add was
+    /// also bad. Reverted to the original three documented in the
+    /// historical code comment.
+    ///
+    /// If/when richer detail is needed (turn-by-turn span attributes,
+    /// toll fares), validate each additional return value with a curl
+    /// against our HERE plan first.
+    var returnFields: [String] = ["polyline", "summary", "actions"]
+    /// Span columns — kept for future re-enablement; not currently
+    /// used because `spans` was dropped from returnFields.
     var spanFields: [String] = ["names", "speedLimit", "countryCode", "functionalClass", "truckAttributes"]
     /// Number of alternative routes to compute (0–6). HERE's default is 0.
     var alternatives: Int = 0
@@ -90,8 +104,6 @@ actor HereRoutingClient {
         profile: TruckProfile,
         options: HereRoutingOptions = HereRoutingOptions()
     ) async throws -> HereRoutesResponse {
-        var comps = URLComponents(url: HereMapsConfig.routingBaseURL, resolvingAgainstBaseURL: false)!
-
         var items: [URLQueryItem] = [
             URLQueryItem(name: "transportMode",    value: "truck"),
             URLQueryItem(name: "origin",           value: Self.fmt(stops.origin)),
@@ -123,14 +135,42 @@ actor HereRoutingClient {
 
         items += profile.asRoutingQueryItems()
 
+        // HERE Routing v8 accepts percent-encoded `%5B`/`%5D` for
+        // bracket params — confirmed by re-reading 2026-05-16
+        // logs: the original "Malformed request · Error while
+        // parsing" rejections were caused by two bad VALUES
+        // (`vehicle[type]=semiTrailer` not in the v8 enum, and
+        // `vehicle[emissionType]=epa` not in the euro1–6 enum),
+        // NOT by bracket encoding. Both bad fields are now dropped
+        // in `TruckProfile.asRoutingQueryItems()`.
+        //
+        // Earlier in-flight 2026-05-17 attempt used
+        // `URLComponents.percentEncodedQuery` with raw brackets to
+        // preserve them — that crashed TestFlight 259 with
+        // EXC_BREAKPOINT (the setter fatalErrors on RFC-3986-invalid
+        // chars). Reverted to the simple, proven `queryItems` path.
+        var comps = URLComponents(url: HereMapsConfig.routingBaseURL, resolvingAgainstBaseURL: false)!
         comps.queryItems = items
-
         guard let url = comps.url else { throw HereMapsError.badURL }
 
         // Bearer-authenticated fetch with a single 401 retry: if the
         // cached token was revoked mid-session, drop it and re-exchange
         // once before surfacing the error.
-        let data = try await authorizedData(for: url)
+        let data: Data
+        do {
+            data = try await authorizedData(for: url)
+        } catch {
+            // Founder-flagged 2026-05-17: surface the full failing URL
+            // to the console so the next round of HERE-rejection
+            // debugging doesn't require re-instrumenting. Only fires
+            // in DEBUG so we don't leak Bearer tokens (URL has none —
+            // token rides in the Authorization header — but keeping
+            // the gate in case the contract changes).
+            #if DEBUG
+            print("[HereRouting] request failed for url=\(url.absoluteString) — \(error)")
+            #endif
+            throw error
+        }
         do {
             return try decoder.decode(HereRoutesResponse.self, from: data)
         } catch {
