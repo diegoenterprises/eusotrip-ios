@@ -3264,6 +3264,7 @@ struct MeSettingsView: View {
     /// keeps the outer drag-to-dismiss behavior intact while giving the
     /// driver a focused surface for editing avatar + identity + contact.
     @State private var showEditProfile = false
+    @State private var showPasskeys = false
 
     // ── Pulse (Apple Watch) settings ──────────────────────────────
     //
@@ -3348,8 +3349,21 @@ struct MeSettingsView: View {
                 linkRow(title: "Change password", sub: "Last rotated 42 days ago")
                 Divider().overlay(palette.borderFaint).padding(.leading, 56)
                 linkRow(title: "Sessions + devices", sub: "2 trusted devices")
+                Divider().overlay(palette.borderFaint).padding(.leading, 56)
+                // Passkeys — Settings management surface for the
+                // WebAuthn credentials shipped in bb237cc. Tap opens
+                // the full list (add / revoke / lastUsedAt).
+                Button { showPasskeys = true } label: {
+                    linkRow(title: "Passkeys", sub: "Face ID sign-in · iCloud Keychain")
+                }
+                .buttonStyle(.plain)
             }
             .eusoCard(radius: Radius.lg)
+        }
+        .sheet(isPresented: $showPasskeys) {
+            PasskeysManagementView()
+                .environment(\.palette, palette)
+                .environmentObject(session)
         }
 
         // ── PULSE · APPLE WATCH ──────────────────────────────────

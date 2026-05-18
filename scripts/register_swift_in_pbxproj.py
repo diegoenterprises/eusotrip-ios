@@ -57,6 +57,9 @@ ENTRIES = [
     ("AABT2026051900000011A1", "AABT2026051900000012A1",
      "AppleAuthButtons.swift",
      "EusoTrip/Views/Auth/AppleAuthButtons.swift"),
+    ("PKMV2026051900000011A1", "PKMV2026051900000012A1",
+     "PasskeysManagementView.swift",
+     "EusoTrip/Views/Auth/PasskeysManagementView.swift"),
 ]
 
 
