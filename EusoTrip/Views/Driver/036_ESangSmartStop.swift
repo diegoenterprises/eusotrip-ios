@@ -1,5 +1,5 @@
 //
-//  036_ESangSmartStop.swift
+//  036_eSangSmartStop.swift
 //  EusoTrip 2027 UI — Wave 2 (main haul · ESANG suggested stop overlay)
 //
 //  Screen 036 · ESANG Smart Stop — mid-haul (after 035 En Route Drive),
@@ -83,7 +83,7 @@ private struct AmenityIcon: Identifiable {
 
 // MARK: - Screen body
 
-struct ESangSmartStop: View {
+struct eSangSmartStop: View {
     @Environment(\.driverNavBack) private var navBack
     @Environment(\.lifecycleAdvance) private var advance
 
@@ -289,9 +289,14 @@ struct ESangSmartStop: View {
             Spacer()
 
             // Centered ESANG kicker — gradient text
-            Text("ESANG SUGGESTS · \(clockTime)")
-                .font(EType.micro).tracking(0.8)
-                .foregroundStyle(LinearGradient.diagonal)
+            HStack(spacing: 6) {
+                Text("ESANG SUGGESTS · \(clockTime)")
+                    .font(EType.micro).tracking(0.8)
+                    .foregroundStyle(LinearGradient.diagonal)
+                LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                              multiVehicleCount: activeLoad?.multiVehicleCount,
+                              compact: true)
+            }
 
             Spacer()
 
@@ -513,14 +518,14 @@ struct ESangSmartStop: View {
 
 // MARK: - Wrapper
 
-struct ESangSmartStopScreen: View {
+struct eSangSmartStopScreen: View {
     let theme: Theme.Palette
     var body: some View {
         Shell(theme: theme) {
             // 92nd-firing M2 retrofit: register no longer drives visible
             // copy. The screen is identical in both registers; the palette
             // makes register-aware visual decisions.
-            ESangSmartStop()
+            eSangSmartStop()
         } nav: {
             BottomNav(leading: driverNavLeading_036(),
                       trailing: driverNavTrailing_036(),
@@ -547,11 +552,11 @@ private func driverNavTrailing_036() -> [NavSlot] {
 // strips below the card render live ranked candidates.
 
 #Preview("036 · ESANG Smart Stop · Night") {
-    ESangSmartStopScreen(theme: Theme.dark)
+    eSangSmartStopScreen(theme: Theme.dark)
         .preferredColorScheme(.dark)
 }
 
 #Preview("036 · ESANG Smart Stop · Afternoon") {
-    ESangSmartStopScreen(theme: Theme.light)
+    eSangSmartStopScreen(theme: Theme.light)
         .preferredColorScheme(.light)
 }

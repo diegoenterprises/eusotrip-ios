@@ -282,6 +282,9 @@ struct EnRouteDrive: View {
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(Color.white.opacity(0.18))
                         .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
                     Image(systemName: "arrow.down")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(Color.white.opacity(0.85))

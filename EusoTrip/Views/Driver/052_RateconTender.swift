@@ -66,7 +66,7 @@ struct RateconTender: View {
     private let fallbackBroker     = "—"
     private let fallbackBrokerNote = "BROKER · — · —"
     private let fallbackBrokerGrade = "A+"
-    private let fallbackEsangCopy  = "—"
+    private let fallbackeSangCopy  = "—"
 
     /// Counter-offer button label. When a real load is loaded, suggests
     /// a counter at +5% of the offered rate (rounded to nearest dollar).
@@ -215,6 +215,9 @@ struct RateconTender: View {
                     Text("SUNDAY · DAY-2 TENDER · UNIVAR / YARA")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(LinearGradient.diagonal)
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
                 }
             }
             Spacer(minLength: 0)
@@ -518,7 +521,7 @@ struct RateconTender: View {
             Image(systemName: "sparkles")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(LinearGradient.diagonal)
-            Text(fallbackEsangCopy)
+            Text(fallbackeSangCopy)
                 .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                 .foregroundStyle(palette.textSecondary)
                 .lineLimit(2)
