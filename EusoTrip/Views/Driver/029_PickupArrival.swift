@@ -84,6 +84,9 @@ struct PickupArrival: View {
                     Text("· \(activeLoad?.loadNumber ?? fallbackLoadID)")
                         .font(EType.mono(.micro)).tracking(0.4)
                         .foregroundStyle(palette.textSecondary)
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
                 }
                 Text("\(ctx.vertical.pickupWord) · ESANG leading")
                     .font(.system(size: 22, weight: .heavy))

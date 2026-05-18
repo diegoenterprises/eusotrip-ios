@@ -100,6 +100,9 @@ struct DetachSequence: View {
                     Text("· DETACH SEQUENCE")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(palette.textSecondary)
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
                 }
                 Text("NH3 detach in progress")
                     .font(.system(size: 22, weight: .heavy))

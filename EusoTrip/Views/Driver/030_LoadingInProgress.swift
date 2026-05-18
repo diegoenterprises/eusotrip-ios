@@ -132,6 +132,9 @@ struct LoadingInProgress: View {
                     Text("· \(activeLoad?.loadNumber ?? fallbackLoadID)")
                         .font(EType.mono(.micro)).tracking(0.4)
                         .foregroundStyle(palette.textSecondary)
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
                 }
                 Text(fallbackBay)
                     .font(.system(size: 22, weight: .heavy))

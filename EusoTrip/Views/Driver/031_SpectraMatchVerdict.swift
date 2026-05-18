@@ -167,6 +167,9 @@ struct SpectraMatchVerdict: View {
                     Text("· VERDICT IN")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(Brand.success)
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
                 }
                 Text(liveTitle)
                     .font(.system(size: 22, weight: .heavy))
