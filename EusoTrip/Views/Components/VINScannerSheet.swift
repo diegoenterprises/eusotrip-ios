@@ -335,7 +335,7 @@ private struct DataScannerHostView: UIViewControllerRepresentable {
         )
         scanner.delegate = context.coordinator
         DispatchQueue.main.async {
-            try? scanner.startScanning()
+            scanner.startScanning()
         }
         return scanner
     }
@@ -369,7 +369,7 @@ private struct DataScannerHostView: UIViewControllerRepresentable {
                 let candidate = t.transcript.uppercased().filter { $0.isLetter || $0.isNumber }
                 if candidate.count == 17 {
                     fired = true
-                    try? scanner.stopScanning()
+                    scanner.stopScanning()
                     onCode(candidate)
                     return true
                 }
@@ -378,7 +378,7 @@ private struct DataScannerHostView: UIViewControllerRepresentable {
                     let candidate = payload.uppercased().filter { $0.isLetter || $0.isNumber }
                     if candidate.count == 17 {
                         fired = true
-                        try? scanner.stopScanning()
+                        scanner.stopScanning()
                         onCode(candidate)
                         return true
                     }
