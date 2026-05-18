@@ -16564,6 +16564,168 @@ struct ShipperAgreementsAPI {
             )
         )
     }
+
+    // MARK: — State-transition mutations (DRAFT → REVIEW → SENT)
+    //
+    // The web `agreementsRouter` exposes a discrete mutation for each
+    // step of the negotiation arc; the previous iOS surface only
+    // exposed `sign`, so a draft agreement had no way to advance.
+    // These three wrappers close the gap and back the
+    // ShipperAgreementDetailSheet action rail.
+
+    struct StatusAck: Decodable, Hashable {
+        let success: Bool?
+        let status: String?
+    }
+
+    /// Move a draft agreement into pending_review.
+    /// Maps to `agreements.sendForReview` (agreements.ts:1061).
+    func sendForReview(agreementId: Int) async throws -> StatusAck {
+        struct Input: Encodable { let id: Int }
+        return try await api.mutation("agreements.sendForReview", input: Input(id: agreementId))
+    }
+
+    /// Move an agreement into pending_signature (notifies counter-party).
+    /// Maps to `agreements.sendForSignature` (agreements.ts:1075).
+    func sendForSignature(agreementId: Int) async throws -> StatusAck {
+        struct Input: Encodable { let id: Int }
+        return try await api.mutation("agreements.sendForSignature", input: Input(id: agreementId))
+    }
+
+    // MARK: — Counter-proposal (pre-signature negotiation)
+    //
+    // Maps to `agreements.counterPropose` / `agreements.respondToCounter`.
+    // Distinct from `proposeAmendment` which targets active agreements.
+
+    struct CounterAck: Decodable, Hashable {
+        let success: Bool?
+        let amendmentId: Int?
+        let status: String?
+    }
+
+    /// Push back on terms before signing. At least one of the proposed*
+    /// fields must be non-nil; the server rejects empty counters.
+    func counterPropose(
+        agreementId: Int,
+        title: String = "Counter-proposal",
+        message: String? = nil,
+        proposedBaseRate: Double? = nil,
+        proposedPaymentTermDays: Int? = nil,
+        proposedEffectiveDate: String? = nil,
+        proposedExpirationDate: String? = nil,
+        proposedNotes: String? = nil
+    ) async throws -> CounterAck {
+        struct Input: Encodable {
+            let agreementId: Int
+            let title: String
+            let message: String?
+            let proposedBaseRate: Double?
+            let proposedPaymentTermDays: Int?
+            let proposedEffectiveDate: String?
+            let proposedExpirationDate: String?
+            let proposedNotes: String?
+        }
+        return try await api.mutation(
+            "agreements.counterPropose",
+            input: Input(
+                agreementId: agreementId,
+                title: title,
+                message: message,
+                proposedBaseRate: proposedBaseRate,
+                proposedPaymentTermDays: proposedPaymentTermDays,
+                proposedEffectiveDate: proposedEffectiveDate,
+                proposedExpirationDate: proposedExpirationDate,
+                proposedNotes: proposedNotes
+            )
+        )
+    }
+
+    struct CounterResponseAck: Decodable, Hashable {
+        let success: Bool?
+        let status: String?
+        let agreementStatus: String?
+    }
+
+    /// Accept or reject a counter-proposal. Accepting applies the
+    /// proposed changes and resets signatures so both parties re-sign.
+    func respondToCounter(amendmentId: Int, action: String) async throws -> CounterResponseAck {
+        struct Input: Encodable { let amendmentId: Int; let action: String }
+        return try await api.mutation(
+            "agreements.respondToCounter",
+            input: Input(amendmentId: amendmentId, action: action)
+        )
+    }
+
+    // MARK: — Amendments (counter + active-period)
+
+    /// Row in `agreement_amendments`. Used by the detail-sheet counter
+    /// card to show the latest open counter-proposal.
+    struct Amendment: Decodable, Hashable, Identifiable {
+        let id: Int
+        let agreementId: Int
+        let amendmentNumber: Int?
+        let title: String?
+        let description: String?
+        let status: String?
+        let proposedBy: Int?
+        let acceptedBy: Int?
+        let acceptedAt: String?
+        let effectiveDate: String?
+        let createdAt: String?
+        let changes: [Change]?
+
+        /// Single proposed delta. `oldValue` / `newValue` come back as
+        /// heterogeneous JSON (string, number, bool, or null), so we
+        /// decode them into a small JSON envelope and expose a
+        /// human-readable `display` for the UI.
+        struct Change: Decodable, Hashable {
+            let field: String
+            let oldValue: JSONScalar?
+            let newValue: JSONScalar?
+
+            var oldDisplay: String { oldValue?.display ?? "—" }
+            var newDisplay: String { newValue?.display ?? "—" }
+        }
+    }
+
+    /// Heterogeneous JSON scalar — string / number / bool / null.
+    /// Used by amendment changes where the server stores `oldValue` /
+    /// `newValue` in their original types inside a JSON column.
+    enum JSONScalar: Decodable, Hashable {
+        case string(String)
+        case int(Int)
+        case double(Double)
+        case bool(Bool)
+        case null
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.singleValueContainer()
+            if c.decodeNil() { self = .null; return }
+            if let v = try? c.decode(Bool.self) { self = .bool(v); return }
+            if let v = try? c.decode(Int.self) { self = .int(v); return }
+            if let v = try? c.decode(Double.self) { self = .double(v); return }
+            if let v = try? c.decode(String.self) { self = .string(v); return }
+            self = .null
+        }
+
+        var display: String {
+            switch self {
+            case .string(let s): return s.isEmpty ? "—" : s
+            case .int(let i): return "\(i)"
+            case .double(let d):
+                // Trim trailing .0 for integer-valued doubles.
+                return d == d.rounded() ? String(format: "%.0f", d) : String(format: "%g", d)
+            case .bool(let b): return b ? "Yes" : "No"
+            case .null: return "—"
+            }
+        }
+    }
+
+    /// `agreements.listAmendments` — pull the chain for one row.
+    func listAmendments(agreementId: Int) async throws -> [Amendment] {
+        struct Input: Encodable { let agreementId: Int }
+        return try await api.query("agreements.listAmendments", input: Input(agreementId: agreementId))
+    }
 }
 
 // MARK: - SupplyChainAPI

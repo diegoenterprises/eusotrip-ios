@@ -178,6 +178,80 @@ final class ShipperAgreementsStore: ObservableObject {
             lastError = "Couldn't sign agreement."
         }
     }
+
+    // MARK: — State-transition actions (DRAFT → REVIEW → SENT → COUNTER)
+
+    /// Move a draft into pending_review.
+    func sendForReview(_ row: ShipperAgreementsAPI.Agreement) async {
+        do {
+            _ = try await api.shipperAgreements.sendForReview(agreementId: row.id)
+            lastSigned = (row.agreementNumber ?? "#\(row.id)") + " · SENT FOR REVIEW"
+            lastError = nil
+            await load()
+        } catch {
+            lastError = "Couldn't send for review."
+        }
+    }
+
+    /// Move a draft / pending_review row into pending_signature.
+    func sendForSignature(_ row: ShipperAgreementsAPI.Agreement) async {
+        do {
+            _ = try await api.shipperAgreements.sendForSignature(agreementId: row.id)
+            lastSigned = (row.agreementNumber ?? "#\(row.id)") + " · SENT FOR SIGNATURE"
+            lastError = nil
+            await load()
+        } catch {
+            lastError = "Couldn't send for signature."
+        }
+    }
+
+    /// Push back on terms before signing.
+    func counterPropose(
+        _ row: ShipperAgreementsAPI.Agreement,
+        message: String,
+        baseRate: Double?,
+        paymentTermDays: Int?,
+        notes: String?
+    ) async -> Bool {
+        do {
+            _ = try await api.shipperAgreements.counterPropose(
+                agreementId: row.id,
+                title: "Counter-proposal",
+                message: message.isEmpty ? nil : message,
+                proposedBaseRate: baseRate,
+                proposedPaymentTermDays: paymentTermDays,
+                proposedNotes: notes?.isEmpty == true ? nil : notes
+            )
+            lastSigned = (row.agreementNumber ?? "#\(row.id)") + " · COUNTER PROPOSED"
+            lastError = nil
+            await load()
+            return true
+        } catch let err {
+            let msg = (err as NSError).localizedDescription
+            lastError = msg.contains("at least one") ? "Set at least one term to counter." : "Couldn't send counter-proposal."
+            return false
+        }
+    }
+
+    /// Accept or reject the most recent counter-proposal.
+    func respondToCounter(amendmentId: Int, accept: Bool, on row: ShipperAgreementsAPI.Agreement) async {
+        do {
+            _ = try await api.shipperAgreements.respondToCounter(
+                amendmentId: amendmentId,
+                action: accept ? "accept" : "reject"
+            )
+            lastSigned = (row.agreementNumber ?? "#\(row.id)") + (accept ? " · COUNTER ACCEPTED" : " · COUNTER REJECTED")
+            lastError = nil
+            await load()
+        } catch {
+            lastError = "Couldn't respond to counter."
+        }
+    }
+
+    func amendments(for agreementId: Int) async -> [ShipperAgreementsAPI.Amendment] {
+        do { return try await api.shipperAgreements.listAmendments(agreementId: agreementId) }
+        catch { return [] }
+    }
 }
 
 // MARK: - Screen root
@@ -186,6 +260,7 @@ struct ShipperAgreements: View {
     @Environment(\.palette) private var palette
     @Environment(\.openURL) private var openURL
     @StateObject private var store = ShipperAgreementsStore()
+    @EnvironmentObject private var session: EusoTripSession
     @State private var detail: ShipperAgreementsAPI.Agreement? = nil
     @State private var showSignedToast: Bool = false
     /// PDF share-sheet payload — set when the user taps "Download PDF"
@@ -214,7 +289,9 @@ struct ShipperAgreements: View {
         .task { await store.load() }
         .onChange(of: store.lastSigned ?? "") { _, v in if !v.isEmpty { showSignedToast = true } }
         .sheet(item: $detail) {
-            ShipperAgreementDetailSheet(row: $0).environmentObject(store)
+            ShipperAgreementDetailSheet(row: $0)
+                .environmentObject(store)
+                .environmentObject(session)
         }
         .sheet(item: $shareItem) { item in
             // Wraps UIActivityViewController so AirDrop / Files / Mail
@@ -1054,12 +1131,27 @@ struct ShipperAgreementDetailSheet: View {
     @State private var signerTitle: String = ""
     @State private var signing: Bool = false
 
+    @State private var sendingForReview: Bool = false
+    @State private var sendingForSignature: Bool = false
+    @State private var showCounterForm: Bool = false
+    @State private var amendments: [ShipperAgreementsAPI.Amendment] = []
+    @State private var respondingAmendmentId: Int? = nil
+
+    @EnvironmentObject private var session: EusoTripSession
+
+    private var statusLower: String { (row.status ?? "").lowercased() }
+    private var openCounter: ShipperAgreementsAPI.Amendment? {
+        amendments.first(where: { ($0.status ?? "") == "proposed" && ($0.title ?? "").hasPrefix("[COUNTER]") })
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.s4) {
                 hero
                 fields
-                if (row.status ?? "").lowercased() == "pending_signature" {
+                actionRail
+                if let c = openCounter { counterCard(c) }
+                if statusLower == "pending_signature" {
                     signCard
                 }
                 viewOnWeb
@@ -1069,6 +1161,21 @@ struct ShipperAgreementDetailSheet: View {
             .padding(.top, 12)
         }
         .background(palette.bgPage)
+        .task { amendments = await store.amendments(for: row.id) }
+        .sheet(isPresented: $showCounterForm) {
+            ShipperAgreementCounterForm(row: row) { didSend in
+                showCounterForm = false
+                if didSend {
+                    Task {
+                        amendments = await store.amendments(for: row.id)
+                        dismiss()
+                    }
+                }
+            }
+            .environmentObject(store)
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
     }
 
     private var hero: some View {
@@ -1131,6 +1238,254 @@ struct ShipperAgreementDetailSheet: View {
             Text(v).font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    // MARK: — State-aware action rail
+    //
+    // The rail's contents depend on the agreement's current status:
+    //
+    //   draft             → "Send for review", "Send for signature"
+    //   pending_review    → "Send for signature", "Counter terms"
+    //   pending_signature → "Counter terms" (the sign card lives below)
+    //   negotiating       → counter card with Accept / Reject (other party)
+    //                       or "Awaiting response" (proposer)
+    //   active / expired / terminated → no rail (read-only)
+
+    @ViewBuilder
+    private var actionRail: some View {
+        switch statusLower {
+        case "draft":
+            railCard(label: "WORKFLOW") {
+                VStack(spacing: 8) {
+                    primaryButton(title: sendingForReview ? "Sending…" : "Send for review",
+                                  systemImage: "paperplane.fill",
+                                  loading: sendingForReview,
+                                  disabled: sendingForReview || sendingForSignature) {
+                        sendingForReview = true
+                        Task {
+                            await store.sendForReview(row)
+                            sendingForReview = false
+                            dismiss()
+                        }
+                    }
+                    primaryButton(title: sendingForSignature ? "Sending…" : "Skip review · Send for signature",
+                                  systemImage: "signature",
+                                  variant: .outline,
+                                  loading: sendingForSignature,
+                                  disabled: sendingForReview || sendingForSignature) {
+                        sendingForSignature = true
+                        Task {
+                            await store.sendForSignature(row)
+                            sendingForSignature = false
+                            dismiss()
+                        }
+                    }
+                }
+            }
+        case "pending_review":
+            railCard(label: "REVIEW") {
+                VStack(spacing: 8) {
+                    primaryButton(title: sendingForSignature ? "Sending…" : "Send for signature",
+                                  systemImage: "paperplane.fill",
+                                  loading: sendingForSignature,
+                                  disabled: sendingForSignature) {
+                        sendingForSignature = true
+                        Task {
+                            await store.sendForSignature(row)
+                            sendingForSignature = false
+                            dismiss()
+                        }
+                    }
+                    primaryButton(title: "Counter terms",
+                                  systemImage: "arrow.uturn.backward.circle",
+                                  variant: .outline) {
+                        showCounterForm = true
+                    }
+                }
+            }
+        case "pending_signature":
+            railCard(label: "DECISION") {
+                primaryButton(title: "Counter terms instead of signing",
+                              systemImage: "arrow.uturn.backward.circle",
+                              variant: .outline) {
+                    showCounterForm = true
+                }
+            }
+        case "negotiating":
+            // Rail content lives in `counterCard(_:)` directly so the
+            // proposed deltas render alongside the action buttons.
+            EmptyView()
+        default:
+            EmptyView()
+        }
+    }
+
+    private func counterCard(_ a: ShipperAgreementsAPI.Amendment) -> some View {
+        // Display the open counter-proposal. The party who DIDN'T
+        // propose sees Accept / Reject; the proposer sees an
+        // "Awaiting response" affordance.
+        let mine = currentUserIsProposer(a)
+        return VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.left.arrow.right")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(Brand.warning)
+                Text("COUNTER-PROPOSAL · #\(a.amendmentNumber ?? 0)")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            if let d = a.description, !d.isEmpty {
+                Text(d).font(EType.body).foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach((a.changes ?? []), id: \.field) { c in
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(humanField(c.field))
+                            .font(.system(size: 10, weight: .heavy)).tracking(0.6)
+                            .foregroundStyle(palette.textTertiary)
+                            .frame(width: 110, alignment: .leading)
+                        Text(c.oldDisplay)
+                            .font(EType.caption).foregroundStyle(palette.textSecondary)
+                            .strikethrough()
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 9, weight: .heavy))
+                            .foregroundStyle(palette.textTertiary)
+                        Text(c.newDisplay)
+                            .font(EType.bodyStrong).foregroundStyle(Brand.warning)
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+            if mine {
+                Text("Waiting on the other party to accept or reject your counter.")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+            } else {
+                HStack(spacing: 8) {
+                    Button {
+                        respondingAmendmentId = a.id
+                        Task {
+                            await store.respondToCounter(amendmentId: a.id, accept: true, on: row)
+                            respondingAmendmentId = nil
+                            dismiss()
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            if respondingAmendmentId == a.id {
+                                ProgressView().scaleEffect(0.6).tint(.white)
+                            } else {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 13, weight: .heavy))
+                            }
+                            Text("Accept counter")
+                                .font(.system(size: 13, weight: .heavy))
+                        }
+                        .frame(maxWidth: .infinity).padding(.vertical, 11)
+                        .foregroundStyle(.white)
+                        .background(LinearGradient.diagonal)
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(respondingAmendmentId != nil)
+
+                    Button {
+                        respondingAmendmentId = a.id
+                        Task {
+                            await store.respondToCounter(amendmentId: a.id, accept: false, on: row)
+                            respondingAmendmentId = nil
+                            dismiss()
+                        }
+                    } label: {
+                        Text("Reject")
+                            .font(.system(size: 13, weight: .heavy))
+                            .frame(maxWidth: .infinity).padding(.vertical, 11)
+                            .foregroundStyle(palette.textPrimary)
+                            .background(palette.bgCardSoft)
+                            .overlay(Capsule().strokeBorder(palette.borderFaint))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(respondingAmendmentId != nil)
+                }
+            }
+        }
+        .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(Brand.warning.opacity(0.5), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    private func currentUserIsProposer(_ a: ShipperAgreementsAPI.Amendment) -> Bool {
+        // Compare the proposer userId from the amendment against the
+        // signed-in session user. The server still enforces "the
+        // proposer cannot respond to their own counter" — this check
+        // only controls which copy / buttons the UI shows.
+        guard let proposedBy = a.proposedBy,
+              let me = session.user?.id,
+              let meInt = Int(me) else { return false }
+        return proposedBy == meInt
+    }
+
+    private func humanField(_ raw: String) -> String {
+        switch raw {
+        case "baseRate": return "BASE RATE"
+        case "paymentTermDays": return "NET DAYS"
+        case "effectiveDate": return "EFFECTIVE"
+        case "expirationDate": return "EXPIRES"
+        case "notes": return "NOTES"
+        default: return raw.uppercased()
+        }
+    }
+
+    // MARK: — Rail primitives
+
+    private enum ButtonVariant { case filled, outline }
+
+    @ViewBuilder
+    private func primaryButton(title: String, systemImage: String,
+                               variant: ButtonVariant = .filled,
+                               loading: Bool = false,
+                               disabled: Bool = false,
+                               action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                if loading {
+                    ProgressView().scaleEffect(0.6).tint(variant == .filled ? .white : palette.textPrimary)
+                } else {
+                    Image(systemName: systemImage).font(.system(size: 13, weight: .heavy))
+                }
+                Text(title).font(.system(size: 14, weight: .heavy))
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 12)
+            .foregroundStyle(variant == .filled ? .white : palette.textPrimary)
+            .background(variant == .filled ? AnyView(LinearGradient.diagonal) : AnyView(palette.bgCardSoft))
+            .overlay(variant == .outline
+                     ? AnyView(Capsule().strokeBorder(palette.borderFaint))
+                     : AnyView(EmptyView()))
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.55 : 1.0)
+    }
+
+    @ViewBuilder
+    private func railCard<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            Text(label).font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                .foregroundStyle(palette.textTertiary)
+            content()
+        }
+        .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
     private var signCard: some View {
@@ -1274,13 +1629,189 @@ private struct AgreementStatusStyle {
     static func from(_ raw: String?) -> AgreementStatusStyle {
         switch (raw ?? "").lowercased() {
         case "active":             return .init(label: "Active",   color: Brand.success)
+        case "pending_review":     return .init(label: "Review",   color: Brand.info)
         case "pending_signature":  return .init(label: "To sign",  color: Brand.warning)
         case "draft":              return .init(label: "Draft",    color: Brand.info)
-        case "negotiating":        return .init(label: "Negotiating", color: Brand.info)
+        case "negotiating":        return .init(label: "Counter open", color: Brand.warning)
         case "expired":            return .init(label: "Expired",  color: Brand.danger)
         case "terminated":         return .init(label: "Terminated", color: Brand.danger)
         default:                   return .init(label: (raw ?? "Unknown").capitalized, color: Brand.neutral)
         }
+    }
+}
+
+// MARK: - Counter-proposal form
+//
+// Surface the negotiable terms (base rate, payment net days, notes) so
+// the receiving party can push back on the agreement without signing.
+// At least one field must be touched — the server enforces this too.
+
+struct ShipperAgreementCounterForm: View {
+    let row: ShipperAgreementsAPI.Agreement
+    let onClose: (_ didSend: Bool) -> Void
+
+    @EnvironmentObject private var store: ShipperAgreementsStore
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var message: String = ""
+    @State private var baseRateText: String = ""
+    @State private var paymentTermDaysText: String = ""
+    @State private var notes: String = ""
+    @State private var sending: Bool = false
+    @State private var formError: String? = nil
+
+    private var trimmedRate: Double? {
+        let s = baseRateText.trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: "$", with: "")
+            .replacingOccurrences(of: ",", with: "")
+        return s.isEmpty ? nil : Double(s)
+    }
+    private var trimmedDays: Int? {
+        let s = paymentTermDaysText.trimmingCharacters(in: .whitespaces)
+        return s.isEmpty ? nil : Int(s)
+    }
+    private var hasAtLeastOneChange: Bool {
+        trimmedRate != nil
+            || trimmedDays != nil
+            || !notes.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Space.s4) {
+                header
+                messageBlock
+                termsBlock
+                if let e = formError {
+                    Text(e).font(EType.caption).foregroundStyle(Brand.danger)
+                        .padding(.horizontal, 14)
+                }
+                sendButton
+                Color.clear.frame(height: 60)
+            }
+            .padding(.top, 12)
+        }
+        .background(palette.bgPage)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("COUNTER-PROPOSAL").font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                .foregroundStyle(LinearGradient.diagonal)
+            Text(row.agreementNumber ?? "#\(row.id)")
+                .font(.system(size: 24, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            Text("Push back on terms before signing. The other party gets notified and can Accept or Reject your counter — both parties re-sign once accepted.")
+                .font(EType.caption).foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 14)
+    }
+
+    private var messageBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("MESSAGE (OPTIONAL)").font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                .foregroundStyle(palette.textTertiary)
+            TextEditor(text: $message)
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: 80)
+                .padding(8)
+                .background(palette.bgCardSoft)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
+        .padding(.horizontal, 14)
+    }
+
+    private var termsBlock: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("PROPOSED TERMS").font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                .foregroundStyle(palette.textTertiary)
+
+            field(label: "BASE RATE (USD)",
+                  placeholder: row.baseRate.map { "Current: $\($0)" } ?? "e.g. 2750.00",
+                  text: $baseRateText, keyboard: .decimalPad)
+
+            field(label: "PAYMENT NET DAYS",
+                  placeholder: "Current: 30",
+                  text: $paymentTermDaysText, keyboard: .numberPad)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("NOTES / TERMS CHANGE").font(.system(size: 8, weight: .heavy)).tracking(0.7)
+                    .foregroundStyle(palette.textTertiary)
+                TextEditor(text: $notes)
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 60)
+                    .padding(8)
+                    .background(palette.bgCardSoft)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(palette.borderFaint)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+        }
+        .padding(.horizontal, 14)
+    }
+
+    private func field(label: String, placeholder: String,
+                       text: Binding<String>, keyboard: UIKeyboardType) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label).font(.system(size: 8, weight: .heavy)).tracking(0.7)
+                .foregroundStyle(palette.textTertiary)
+            TextField(placeholder, text: text)
+                .keyboardType(keyboard)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 12).padding(.vertical, 10)
+                .background(palette.bgCardSoft)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                        .strokeBorder(palette.borderFaint)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+        }
+    }
+
+    private var sendButton: some View {
+        Button {
+            guard hasAtLeastOneChange else {
+                formError = "Set at least one term to counter."
+                return
+            }
+            formError = nil
+            sending = true
+            Task {
+                let ok = await store.counterPropose(
+                    row,
+                    message: message,
+                    baseRate: trimmedRate,
+                    paymentTermDays: trimmedDays,
+                    notes: notes.isEmpty ? nil : notes
+                )
+                sending = false
+                if ok { onClose(true) } else { formError = store.lastError }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                if sending {
+                    ProgressView().scaleEffect(0.6).tint(.white)
+                } else {
+                    Image(systemName: "arrow.uturn.backward.circle.fill")
+                        .font(.system(size: 14, weight: .heavy))
+                }
+                Text(sending ? "Sending…" : "Send counter-proposal")
+                    .font(.system(size: 14, weight: .heavy))
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 13)
+            .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 14)
+        .disabled(sending || !hasAtLeastOneChange)
+        .opacity((sending || !hasAtLeastOneChange) ? 0.6 : 1.0)
     }
 }
 
@@ -1289,6 +1820,7 @@ private struct AgreementStatusStyle {
 #Preview("223 · Agreements · Dark") {
     ShipperAgreements()
         .environment(\.palette, Theme.dark)
+        .environmentObject(EusoTripSession())
         .preferredColorScheme(.dark)
         .background(Theme.dark.bgPage)
 }
@@ -1296,6 +1828,7 @@ private struct AgreementStatusStyle {
 #Preview("223 · Agreements · Light") {
     ShipperAgreements()
         .environment(\.palette, Theme.light)
+        .environmentObject(EusoTripSession())
         .preferredColorScheme(.light)
         .background(Theme.light.bgPage)
 }
