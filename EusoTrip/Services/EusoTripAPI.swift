@@ -802,6 +802,19 @@ final class EusoTripAPI: ObservableObject {
     /// signatures, contracts are the volume-commitment lifecycle).
     lazy var shipperAgreements: ShipperAgreementsAPI = ShipperAgreementsAPI(api: self)
 
+    /// `credentialScannerRouter` — Gemini-powered structured OCR for
+    /// every credential in the registration wizard (CDL, COI, medical
+    /// examiner cert, USDOT cert, TWIC, FRA Part 240/242, USCG MMC,
+    /// SCT permit, NSC cert, EIN letter, CRA business, RFC).
+    /// Covers all 3 verticals × 3 countries.
+    lazy var credentialScanner: CredentialScannerAPI = CredentialScannerAPI(api: self)
+
+    /// `fleetRegistrationRouter` — NHTSA VIN decode + bulk vehicle
+    /// + driver intake during carrier onboarding. Seeds Zeun
+    /// maintenance schedules and DVIR baseline rows so the fleet
+    /// is operationally ready the moment the wizard finishes.
+    lazy var fleetRegistration: FleetRegistrationAPI = FleetRegistrationAPI(api: self)
+
     /// `supplyChain.getMyPartners` — partner directory backing 224
     /// ShipperPartnerDirectory (mirror of web `MyPartners.tsx`).
     /// Companion to `agreements` (signed-contract layer above raw
@@ -17872,5 +17885,368 @@ struct ReportsAPI {
             "reports.composeCustom",
             input: ComposeInput(metric: metric, groupBy: groupBy)
         )
+    }
+}
+
+// MARK: - CredentialScannerAPI
+//
+// Backs the registration / onboarding wizard's "Scan a document"
+// affordance. Posts a base64 image / PDF to the server's
+// `credentialScannerRouter` which runs Gemini Vision against a
+// type-specific prompt and returns a normalized envelope the
+// wizard pre-fills its form with.
+//
+// Supports every credential the platform accepts across all three
+// verticals (truck / rail / vessel) and all three countries (US /
+// CA / MX) — see `credentialScannerRouter.CredentialTypes`.
+
+struct CredentialScannerAPI {
+    unowned let api: EusoTripAPI
+
+    /// Heterogeneous JSON scalar (string / int / double / bool /
+    /// null / string array) — Gemini returns each field's `value`
+    /// in its native JSON type so the wizard can preserve the
+    /// distinction between e.g. "1000000" (string) and 1000000
+    /// (number).
+    enum ScalarValue: Decodable, Hashable {
+        case string(String)
+        case int(Int)
+        case double(Double)
+        case bool(Bool)
+        case stringArray([String])
+        case null
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.singleValueContainer()
+            if c.decodeNil() { self = .null; return }
+            if let arr = try? c.decode([String].self) { self = .stringArray(arr); return }
+            if let v = try? c.decode(Bool.self) { self = .bool(v); return }
+            if let v = try? c.decode(Int.self) { self = .int(v); return }
+            if let v = try? c.decode(Double.self) { self = .double(v); return }
+            if let v = try? c.decode(String.self) { self = .string(v); return }
+            self = .null
+        }
+
+        var stringValue: String? {
+            switch self {
+            case .string(let s): return s
+            case .int(let i): return "\(i)"
+            case .double(let d): return d == d.rounded() ? String(format: "%.0f", d) : String(format: "%g", d)
+            case .bool(let b): return b ? "true" : "false"
+            case .stringArray(let arr): return arr.joined(separator: ", ")
+            case .null: return nil
+            }
+        }
+
+        var arrayValue: [String]? {
+            if case .stringArray(let arr) = self { return arr }
+            return nil
+        }
+    }
+
+    /// One extracted field. `confidence` is 0..1; UI typically
+    /// highlights anything under 0.85 for human review.
+    struct ScannedField: Decodable, Hashable {
+        let value: ScalarValue?
+        let confidence: Double
+        let rawText: String?
+    }
+
+    struct ScannedCredential: Decodable, Hashable {
+        let credentialType: String
+        let identifier: ScannedField?
+        let holderName: ScannedField?
+        let holderDOB: ScannedField?
+        let issuingAuthority: ScannedField?
+        let issuingJurisdiction: ScannedField?
+        let issueDate: ScannedField?
+        let expirationDate: ScannedField?
+        let licenseClass: ScannedField?
+        let endorsements: ScannedField?
+        let restrictions: ScannedField?
+        let medicalExaminerName: ScannedField?
+        let medicalNationalRegistryNumber: ScannedField?
+        let insuranceCarrier: ScannedField?
+        let policyNumber: ScannedField?
+        let autoLiabilityLimit: ScannedField?
+        let cargoLiabilityLimit: ScannedField?
+        let generalLiabilityLimit: ScannedField?
+        let hasMCS90: ScannedField?
+        let insuredEntities: ScannedField?
+        let usdotNumber: ScannedField?
+        let mcNumber: ScannedField?
+        let operatingStatus: ScannedField?
+        let hazmatAuthorized: ScannedField?
+        let vesselName: ScannedField?
+        let imoNumber: ScannedField?
+        let callSign: ScannedField?
+        let locomotiveTerritory: ScannedField?
+        let einNumber: ScannedField?
+        let rfcNumber: ScannedField?
+        let craBusinessNumber: ScannedField?
+        let legalEntityName: ScannedField?
+        let additional: [String: String]?
+        let overallConfidence: Double
+        let warnings: [String]
+    }
+
+    enum MimeType: String, Encodable {
+        case jpeg = "image/jpeg"
+        case png = "image/png"
+        case webp = "image/webp"
+        case heic = "image/heic"
+        case pdf = "application/pdf"
+    }
+
+    /// Submit a single credential image / PDF for OCR. `documentBase64`
+    /// must NOT include the `data:image/...;base64,` prefix — pass
+    /// raw base64. The server strips an accidental prefix anyway as
+    /// a courtesy.
+    func scan(credentialType: String, documentBase64: String, mimeType: MimeType) async throws -> ScannedCredential {
+        struct Input: Encodable {
+            let credentialType: String
+            let documentBase64: String
+            let mimeType: String
+        }
+        return try await api.mutation(
+            "credentialScanner.scan",
+            input: Input(
+                credentialType: credentialType,
+                documentBase64: documentBase64,
+                mimeType: mimeType.rawValue
+            )
+        )
+    }
+
+    struct BatchInputItem: Encodable {
+        let credentialType: String
+        let documentBase64: String
+        let mimeType: String
+        let clientRef: String?
+    }
+
+    struct BatchResultItem: Decodable, Hashable {
+        let credentialType: String
+        let identifier: ScannedField?
+        let holderName: ScannedField?
+        let expirationDate: ScannedField?
+        let overallConfidence: Double
+        let warnings: [String]
+        let clientRef: String?
+    }
+
+    struct BatchResponse: Decodable, Hashable {
+        let items: [BatchResultItem]
+    }
+
+    /// Batch up to 25 credentials in one request. Server fans out to
+    /// Gemini with a small concurrency cap; results are order-
+    /// preserving and carry the wizard's `clientRef` so each row
+    /// lands back at the right form section.
+    func scanBatch(_ items: [BatchInputItem]) async throws -> BatchResponse {
+        struct Input: Encodable { let items: [BatchInputItem] }
+        return try await api.mutation(
+            "credentialScanner.scanBatch",
+            input: Input(items: items)
+        )
+    }
+
+    struct SupportedType: Decodable, Hashable, Identifiable {
+        let type: String
+        let vertical: String     // "truck" | "rail" | "vessel" | "any"
+        let country: String      // "US" | "CA" | "MX" | "INT" | "ANY"
+        let label: String
+        var id: String { type }
+    }
+    struct SupportedTypesResponse: Decodable, Hashable {
+        let types: [SupportedType]
+    }
+
+    /// Render the wizard's "Pick a document type" picker from the
+    /// server's authoritative list so iOS doesn't drift out of sync.
+    func listSupportedTypes() async throws -> SupportedTypesResponse {
+        struct Empty: Encodable {}
+        return try await api.query("credentialScanner.listSupportedTypes", input: Empty())
+    }
+}
+
+// MARK: - FleetRegistrationAPI
+//
+// Onboarding-time bulk fleet + driver intake. Wraps the server's
+// `fleetRegistrationRouter`. Used by:
+//   • Carrier (CATALYST / BROKER) registration step 3 — "register
+//     your fleet" — VIN scan or CSV upload, seeds vehicles + Zeun
+//     maintenance schedules + DVIR baseline.
+//   • Carrier registration step 4 — "invite your team" — bulk
+//     driver invites via email + deep link.
+//   • Rail catalyst — vehicle records hold the company's
+//     locomotive / car / chassis VINs and AAR marks.
+//   • Vessel operator — the platform-level vehicles row is created
+//     with `specialized` type while the USCG vessel doc lives in
+//     the vessels table (separate path).
+
+struct FleetRegistrationAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: VIN decode
+
+    struct VinDecoded: Decodable, Hashable {
+        let vin: String
+        let make: String?
+        let model: String?
+        let year: Int?
+        let manufacturer: String?
+        let bodyClass: String?
+        let vehicleType: String?
+        let gvwrClass: String?
+        let fuelType: String?
+        let driveType: String?
+        let engineCylinders: String?
+        let engineDisplacement: String?
+        let plant: String?
+        let plantCountry: String?
+        let brakeSystem: String?
+        let axleConfiguration: String?
+    }
+
+    struct DecodeVinResponse: Decodable, Hashable {
+        let ok: Bool
+        let reason: String?
+        let decoded: VinDecoded?
+        let suggestedVehicleType: String?
+        let gvwrClassNumber: Int?
+    }
+
+    /// Decode a VIN via NHTSA vPIC without persisting. Use this
+    /// behind the iOS DataScannerViewController to confirm
+    /// make/model/year before the user taps "Add to fleet".
+    func decodeVin(_ vin: String) async throws -> DecodeVinResponse {
+        struct Input: Encodable { let vin: String }
+        return try await api.mutation("fleetRegistration.decodeVin", input: Input(vin: vin))
+    }
+
+    // MARK: Vehicle fleet bulk-register
+
+    struct VehicleInput: Encodable, Hashable {
+        let vin: String
+        let unitNumber: String?
+        let licensePlate: String?
+        let mileage: Int?
+        let vehicleType: String?
+        let make: String?
+        let model: String?
+        let year: Int?
+        let capacity: Double?
+        let assignedDriverEmail: String?
+    }
+
+    struct AcceptedVehicle: Decodable, Hashable {
+        let vin: String
+        let vehicleId: Int
+        let make: String?
+        let model: String?
+        let year: Int?
+        let vehicleType: String
+    }
+    struct RejectedVehicle: Decodable, Hashable {
+        let vin: String
+        let reason: String
+    }
+    struct FleetRegisterSummary: Decodable, Hashable {
+        let totalSubmitted: Int
+        let accepted: Int
+        let rejected: Int
+        let zeunSchedulesSeeded: Int
+        let dvirBaselinesSeeded: Int
+    }
+    struct FleetRegisterResponse: Decodable, Hashable {
+        let success: Bool
+        let accepted: [AcceptedVehicle]
+        let rejected: [RejectedVehicle]
+        let summary: FleetRegisterSummary
+    }
+
+    func registerVehicleFleet(
+        _ vehicles: [VehicleInput],
+        seedDvirBaseline: Bool = true,
+        seedZeunSchedule: Bool = true
+    ) async throws -> FleetRegisterResponse {
+        struct Input: Encodable {
+            let vehicles: [VehicleInput]
+            let seedDvirBaseline: Bool
+            let seedZeunSchedule: Bool
+        }
+        return try await api.mutation(
+            "fleetRegistration.registerVehicleFleet",
+            input: Input(vehicles: vehicles, seedDvirBaseline: seedDvirBaseline, seedZeunSchedule: seedZeunSchedule)
+        )
+    }
+
+    // MARK: Driver bulk-invite
+
+    enum InviteVertical: String, Encodable {
+        case truck, rail, vessel
+    }
+
+    struct DriverInviteInput: Encodable, Hashable {
+        let firstName: String
+        let lastName: String
+        let email: String
+        let phone: String?
+        let cdlNumber: String?
+        let cdlState: String?
+        let hireDate: String?     // ISO yyyy-mm-dd
+        let vertical: String      // one of InviteVertical.rawValue
+        let notes: String?
+    }
+
+    struct InviteSent: Decodable, Hashable {
+        let email: String
+        let code: String
+        let signupUrl: String
+    }
+    struct InviteFailed: Decodable, Hashable {
+        let email: String
+        let reason: String
+    }
+    struct InviteSummary: Decodable, Hashable {
+        let totalSubmitted: Int
+        let sent: Int
+        let failed: Int
+    }
+    struct InviteResponse: Decodable, Hashable {
+        let success: Bool
+        let sent: [InviteSent]
+        let failed: [InviteFailed]
+        let summary: InviteSummary
+    }
+
+    func bulkInviteDrivers(_ invitees: [DriverInviteInput], message: String? = nil) async throws -> InviteResponse {
+        struct Input: Encodable {
+            let invitees: [DriverInviteInput]
+            let message: String?
+        }
+        return try await api.mutation(
+            "fleetRegistration.bulkInviteDrivers",
+            input: Input(invitees: invitees, message: message)
+        )
+    }
+
+    // MARK: Onboarding progress
+
+    struct OnboardingFleetSummary: Decodable, Hashable {
+        let vehicleCount: Int
+        let driverCount: Int
+        let pendingDvirCount: Int
+        let zeunScheduleCount: Int
+    }
+
+    /// Backs the wizard's "Fleet ready" progress card. Render the
+    /// summary alongside Continue/Skip so the user sees the
+    /// platform-side side-effects of their upload (vehicles + DVIR
+    /// baselines + Zeun schedule rows).
+    func getOnboardingFleetSummary() async throws -> OnboardingFleetSummary {
+        struct Empty: Encodable {}
+        return try await api.query("fleetRegistration.getOnboardingFleetSummary", input: Empty())
     }
 }
