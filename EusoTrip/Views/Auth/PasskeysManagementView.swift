@@ -21,7 +21,7 @@ struct PasskeysManagementView: View {
     @EnvironmentObject private var session: EusoTripSession
 
     @State private var phase: Phase = .loading
-    @State private var passkeys: [EusoTripAPI.AuthAPI.PasskeyListRow] = []
+    @State private var passkeys: [AuthAPI.PasskeyListRow] = []
     @State private var registering: Bool = false
     @State private var revokingId: Int? = nil
     @State private var error: String? = nil
@@ -175,7 +175,7 @@ struct PasskeysManagementView: View {
         }
     }
 
-    private func passkeyRow(_ row: EusoTripAPI.AuthAPI.PasskeyListRow) -> some View {
+    private func passkeyRow(_ row: AuthAPI.PasskeyListRow) -> some View {
         HStack(alignment: .top, spacing: 12) {
             ZStack {
                 Circle().fill(LinearGradient.diagonal.opacity(0.15))
@@ -299,7 +299,7 @@ struct PasskeysManagementView: View {
     }
 
     @MainActor
-    private func revoke(_ row: EusoTripAPI.AuthAPI.PasskeyListRow) async {
+    private func revoke(_ row: AuthAPI.PasskeyListRow) async {
         guard revokingId == nil else { return }
         revokingId = row.id
         defer { revokingId = nil }
