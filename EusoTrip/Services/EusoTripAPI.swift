@@ -1984,11 +1984,6 @@ struct AuthAPI {
         struct Input: Encodable { let id: Int }
         return try await api.mutation("auth.passkeyRevoke", input: Input(id: id))
     }
-}
-
-/// Minimal `{success}` envelope used by passkey revoke + similar
-/// "side-effect, no payload" mutations.
-struct GenericSuccessResponse: Decodable { let success: Bool }
 
     /// `auth.resetPassword` — POST mutation.
     func resetPassword(token: String, newPassword: String) async throws -> GenericMessageResponse {
@@ -2002,6 +1997,10 @@ struct GenericSuccessResponse: Decodable { let success: Bool }
         )
     }
 }
+
+/// Minimal `{success}` envelope used by passkey revoke + similar
+/// "side-effect, no payload" mutations.
+struct GenericSuccessResponse: Decodable { let success: Bool }
 
 // MARK: - availabilityRouter
 //
