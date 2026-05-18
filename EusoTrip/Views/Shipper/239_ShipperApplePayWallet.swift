@@ -280,7 +280,7 @@ struct ShipperApplePayWallet: View {
     private func loadAll() async {
         snapshotPhase = .loading
         async let snapshot = (try? await EusoTripAPI.shared.wallet.shipperPassesSnapshot())
-            ?? EusoTripAPI.WalletAPI.ShipperPassesSnapshot(active: nil, passes: [])
+            ?? WalletAPI.ShipperPassesSnapshot(active: nil, passes: [])
         async let methods = (try? await EusoTripAPI.shared.wallet.listPaymentMethods()) ?? []
         let snap = await snapshot
         let mts = await methods
@@ -303,7 +303,7 @@ struct ShipperApplePayWallet: View {
     /// Translate a server `ShipperPassRow` into the hero card's
     /// ActiveWalletPass shape. Adds the human-formatted ETA + the
     /// "MATRIX-50" eyebrow (server doesn't know about the cohort).
-    private static func heroFromRow(_ row: EusoTripAPI.WalletAPI.ShipperPassRow) -> ActiveWalletPass {
+    private static func heroFromRow(_ row: WalletAPI.ShipperPassRow) -> ActiveWalletPass {
         let etaText: String = {
             guard let iso = row.deliveryDate ?? row.pickupDate else { return "TBD" }
             let f = ISO8601DateFormatter()
@@ -355,7 +355,7 @@ struct ShipperApplePayWallet: View {
         )
     }
 
-    private static func methodFromRow(_ row: EusoTripAPI.WalletAPI.PaymentMethodRow) -> PaymentMethod {
+    private static func methodFromRow(_ row: WalletAPI.PaymentMethodRow) -> PaymentMethod {
         let brand = PaymentBrand.from(row.brand)
         let mm = String(format: "%02d", row.expMonth)
         let yy = String(format: "%02d", row.expYear % 100)
@@ -415,9 +415,12 @@ struct ShipperApplePayWallet: View {
     // MARK: - HERO PASS CARD (active Wallet pass)
 
     private func heroPassCard(for pass: ActiveWalletPass) -> some View {
-        let activePass = pass     // alias so the existing body code keeps working unchanged
-        return
-        ZStack(alignment: .topLeading) {
+        // Local alias so the (large) body below keeps referring to
+        // `activePass` exactly as it did when this was a computed
+        // var off the @State property. The optional unwrap happens
+        // at the call site (`if let pass = activePass`).
+        let activePass = pass
+        return ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                 .fill(palette.bgCard)
                 .overlay(
@@ -652,27 +655,27 @@ struct ShipperApplePayWallet: View {
     // MARK: - Tap handlers (§20.4 no dead buttons)
 
     private func tapAddToWallet() {
+        // Guard against the empty / loading hero state — the button
+        // shouldn't be reachable there but defensive nil-check keeps
+        // the no-active-pass path from crashing if the binding leaks.
+        guard let pass = activePass else { return }
+
         NotificationCenter.default.post(
             name: .eusoShipperWalletAddPass,
             object: nil,
             userInfo: [
                 "source": "239_ShipperApplePayWallet",
-                "passId": activePass.id,
-                "loadId": activePass.loadId,
-                "carrierMC": "MC-1485",
-                "shipperCompanyId": 1
+                "passId": pass.id,
+                "loadId": pass.loadId,
+                "carrierLine": pass.carrierLine,
             ]
         )
-        // Hand off to PassKit instead of openURL'ing Safari at a
-        // dead web URL. The service handles the
+        // Hand off to PassKit. The service handles the
         //   server credential mint → .pkpass fetch → PKPass parse →
         //   PKAddPassesViewController present
         // chain, plus a graceful fallback to the inline QR + 5-digit
-        // shortCode card when the .pkpass signing pipeline is offline
-        // (founder report 2026-05-06 — "clicking on passes opens up
-        // web browser and error screen instead of connecting to the
-        // apple wallet").
-        let loadId = activePass.loadId
+        // shortCode card when the .pkpass signing pipeline is offline.
+        let loadId = pass.loadId
         Task {
             let result = await EusoWalletPassService.shared.addPass(forLoadId: loadId)
             await MainActor.run { applyPassResult(result) }
