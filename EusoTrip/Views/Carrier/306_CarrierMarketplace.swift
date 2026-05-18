@@ -33,6 +33,11 @@ private struct CarrierAvailableLoad: Decodable, Identifiable, Hashable {
     let postedRate: Double?
     let pickupISO: String?
     let mileage: Int?
+    // 2026-05-17 — Multi-modal payload. Optional on the wire so older
+    // server builds (pre-getCarrierAvailableLoads projection update)
+    // still decode cleanly; UI defaults to truck when nil.
+    let transportMode: String?
+    let multiVehicleCount: Int?
 }
 
 private struct MarketplaceBody: View {
@@ -74,7 +79,16 @@ private struct MarketplaceBody: View {
                     NotificationCenter.default.post(name: .eusoCarrierNavSwap, object: nil, userInfo: ["screenId": "307", "loadId": ld.id])
                 } label: {
                     LifecycleCard {
-                        LifecycleSection(label: ld.loadNumber.uppercased(), icon: "doc.text")
+                        HStack(spacing: 8) {
+                            LifecycleSection(label: ld.loadNumber.uppercased(), icon: "doc.text")
+                            Spacer(minLength: 0)
+                            // 2026-05-17 — Mode badge on Carrier marketplace
+                            // row. Carriers triage rail / vessel / barge
+                            // before clicking through to bid.
+                            LoadModeBadge(modeRaw: ld.transportMode,
+                                          multiVehicleCount: ld.multiVehicleCount,
+                                          compact: true)
+                        }
                         LifecycleRow(label: "Lane",       value: "\(dashIfEmpty(ld.origin)) → \(dashIfEmpty(ld.destination))")
                         LifecycleRow(label: "Equipment",  value: dashIfEmpty(ld.equipment))
                         LifecycleRow(label: "Cargo",      value: dashIfEmpty(ld.cargoType))
