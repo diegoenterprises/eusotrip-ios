@@ -152,15 +152,55 @@ final class ShipperComplianceStore: ObservableObject {
 
     func refresh() async {
         if case .loaded = state {} else { state = .loading }
-        do {
-            async let s = api.shipperCompliance.getShipperCompliance()
-            async let d = api.shipperCompliance.getShipperDocuments()
-            let (summary, documents) = try await (s, d)
+        // 2026-05-18 — fetch the summary + documents independently
+        // so a documents-side failure doesn't blank out the whole
+        // screen, and surface the actual error class to the user
+        // rather than a catch-all "Couldn't reach compliance service."
+        // toast that masked auth / decode / 500 distinctions.
+        async let summaryTask:   ShipperComplianceAPI.Summary?   = fetchSummarySafe()
+        async let documentsTask: [ShipperComplianceAPI.Document] = fetchDocumentsSafe()
+        let summary   = await summaryTask
+        let documents = await documentsTask
+
+        if let summary = summary {
             state = .loaded(summary: summary, documents: documents)
-        } catch {
-            state = .error("Couldn't reach compliance service.")
+        } else {
+            state = .error(lastSummaryError ?? "Couldn't reach compliance service.")
         }
     }
+
+    /// Independent summary fetch — never re-throws. Stores a
+    /// human-readable reason on `lastSummaryError` for the error toast.
+    private func fetchSummarySafe() async -> ShipperComplianceAPI.Summary? {
+        do {
+            let s = try await api.shipperCompliance.getShipperCompliance()
+            lastSummaryError = nil
+            return s
+        } catch let api as EusoTripAPIError {
+            switch api {
+            case .unauthenticated:
+                lastSummaryError = "Sign in again to view compliance status."
+            case .trpcError(let msg):
+                lastSummaryError = "Compliance service: \(msg)"
+            case .httpStatus(let code, _):
+                lastSummaryError = "Compliance service returned \(code). Try again."
+            default:
+                lastSummaryError = api.errorDescription ?? "Couldn't reach compliance service."
+            }
+            return nil
+        } catch {
+            lastSummaryError = "Compliance fetch failed: \(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    /// Independent documents fetch — returns an empty array on
+    /// failure so the summary card still renders.
+    private func fetchDocumentsSafe() async -> [ShipperComplianceAPI.Document] {
+        (try? await api.shipperCompliance.getShipperDocuments()) ?? []
+    }
+
+    private var lastSummaryError: String? = nil
 }
 
 // MARK: - Screen root
