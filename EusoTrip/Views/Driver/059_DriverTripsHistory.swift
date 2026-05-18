@@ -306,6 +306,9 @@ struct DriverTripsHistory: View {
                         .foregroundColor(palette.textPrimary)
                         .lineLimit(1)
                     tripStatusPill(status: l.status)
+                    LoadModeBadge(modeRaw: l.transportMode,
+                                  multiVehicleCount: l.multiVehicleCount,
+                                  compact: true)
                 }
                 Text(routeLine(origin: l.origin, destination: l.destination))
                     .font(EType.caption)

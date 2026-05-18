@@ -1,5 +1,5 @@
 //
-//  053_ESangDispatchChat.swift
+//  053_eSangDispatchChat.swift
 //  EusoTrip — Lifecycle screen 053 · ESANG Dispatch Chat.
 //
 //  Pixel-matched to the 2026-04-24 Figma frame
@@ -13,7 +13,7 @@
 
 import SwiftUI
 
-struct ESangDispatchChat: View {
+struct eSangDispatchChat: View {
     @Environment(\.palette) private var palette
     @Environment(\.lifecycleAdvance) private var advance
     @Environment(\.driverNavBack) private var navBack
@@ -218,6 +218,9 @@ struct ESangDispatchChat: View {
                             .foregroundStyle(LinearGradient.diagonal)
                             .padding(.horizontal, 4).padding(.vertical, 1)
                             .overlay(Capsule().stroke(LinearGradient.diagonal.opacity(0.5), lineWidth: 1))
+                        LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                      multiVehicleCount: activeLoad?.multiVehicleCount,
+                                      compact: true)
                     }
                     Text("MORNING BRIEF · JUST NOW")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
@@ -532,11 +535,11 @@ struct ESangDispatchChat: View {
     }
 }
 
-struct ESangDispatchChatScreen: View {
+struct eSangDispatchChatScreen: View {
     let theme: Theme.Palette
     var body: some View {
         Shell(theme: theme) {
-            ESangDispatchChat(register: .afternoon)
+            eSangDispatchChat(register: .afternoon)
         } nav: {
             BottomNav(leading: driverNavLeading_053(),
                       trailing: driverNavTrailing_053(),
@@ -555,8 +558,8 @@ private func driverNavTrailing_053() -> [NavSlot] {
 }
 
 #Preview("053 · ESANG Dispatch Chat · Dark") {
-    ESangDispatchChatScreen(theme: Theme.dark).preferredColorScheme(.dark)
+    eSangDispatchChatScreen(theme: Theme.dark).preferredColorScheme(.dark)
 }
 #Preview("053 · ESANG Dispatch Chat · Light") {
-    ESangDispatchChatScreen(theme: Theme.light).preferredColorScheme(.light)
+    eSangDispatchChatScreen(theme: Theme.light).preferredColorScheme(.light)
 }

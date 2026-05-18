@@ -61,7 +61,7 @@ struct HaulPaySettlement: View {
     private let fallback24hSub       = "FREE"
     private let fallbackPreCheck     = "—"
     private let fallbackPreCheckSub  = "AUTO · FREE"
-    private let fallbackEsang        = "ESANG will narrate the cadence the moment your settlement clears."
+    private let fallbackeSang        = "ESANG will narrate the cadence the moment your settlement clears."
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -163,6 +163,9 @@ struct HaulPaySettlement: View {
                     Text("HAULPAY · \(fallbackLoadTag)")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(LinearGradient.diagonal)
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
                 }
             }
             Spacer(minLength: 0)
@@ -382,7 +385,7 @@ struct HaulPaySettlement: View {
             Image(systemName: "sparkles")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(LinearGradient.diagonal)
-            Text(fallbackEsang)
+            Text(fallbackeSang)
                 .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                 .foregroundStyle(palette.textSecondary)
                 .lineLimit(2)

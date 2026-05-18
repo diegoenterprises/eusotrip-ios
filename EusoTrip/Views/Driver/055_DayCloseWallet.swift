@@ -49,7 +49,7 @@ struct DayCloseWallet: View {
     private let fallbackWkNetSub     = "62 SAL DIESEL EQ. SUL"
     private let fallbackWkMiles      = "—"
     private let fallbackWkMilesSub   = "MILES WK"
-    private let fallbackEsang        = "—"
+    private let fallbackeSang        = "—"
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -82,9 +82,14 @@ struct DayCloseWallet: View {
                     .clipShape(Circle())
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(fallbackSatLabel)
-                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                    .foregroundStyle(LinearGradient.diagonal)
+                HStack(spacing: 6) {
+                    Text(fallbackSatLabel)
+                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                        .foregroundStyle(LinearGradient.diagonal)
+                    LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                                  multiVehicleCount: activeLoad?.multiVehicleCount,
+                                  compact: true)
+                }
             }
             Spacer(minLength: 0)
             HStack(spacing: 4) {
@@ -298,7 +303,7 @@ struct DayCloseWallet: View {
             Image(systemName: "sparkles")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(LinearGradient.diagonal)
-            Text(fallbackEsang)
+            Text(fallbackeSang)
                 .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                 .foregroundStyle(palette.textSecondary)
                 .lineLimit(2)
