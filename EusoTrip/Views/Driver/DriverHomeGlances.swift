@@ -2,7 +2,7 @@
 //  DriverHomeGlances.swift
 //  EusoTrip — Four glance widgets added to 010 Driver Home:
 //
-//    1) EsangMorningBriefCard     — esangCoach.forDriver top item
+//    1) eSangMorningBriefCard     — esangCoach.forDriver top item
 //    2) PreTripDVIRStatusPill     — inspections.getDVIRHistory (today's pre-trip)
 //    3) TheHaulWeeklyTile         — gamification.getProfile + missions.listMine
 //    4) ComplianceCountdownStrip  — driverQualification.getExpiringItems (≤60d)
@@ -24,7 +24,7 @@ import UIKit
 /// signed-in driver's role+vertical+hazmat-aware feed and renders it
 /// as a breathing gradient card directly under the top bar. Tapping
 /// opens the full 087 Safety Coach sheet.
-struct EsangMorningBriefCard: View {
+struct eSangMorningBriefCard: View {
     @Environment(\.palette) private var palette
     @Environment(\.colorScheme) private var scheme
     @StateObject private var coach: SafetyCoachStore
@@ -92,7 +92,7 @@ struct EsangMorningBriefCard: View {
 
     // MARK: Pieces
 
-    private var topItem: EsangCoachAPI.CoachingItem? {
+    private var topItem: eSangCoachAPI.CoachingItem? {
         switch coach.state {
         case .loaded(let resp): return resp.items.first
         default: return nil

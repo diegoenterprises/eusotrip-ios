@@ -19,7 +19,7 @@
 //    LD-260427-B41782FF02 · Eusorone Technologies (companyId 1) · Kansas
 //    City MO → Omaha NE · MC-331 anhydrous-ammonia UN1005 · Driver
 //    Michael Eusorone (Eusotrans LLC USDOT 3 194 882) · stage 5 In
-//    transit · advanced 38m ago · Carrier ESang AB grade A.
+//    transit · advanced 38m ago · Carrier eSang AB grade A.
 //  §11.2 next-bid stat tile cites MATRIX-50 row 2: LA → PHX reefer
 //  $2,200 verbatim.
 //

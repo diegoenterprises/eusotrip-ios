@@ -3,8 +3,8 @@
 //  EusoTrip — Compliance Officer · Recent violations + resolve mutation.
 //
 //  RESURRECTED 2026-05-01 — was previously shelved behind `#if false`
-//  due to a reference to `OrbESang.State.alert`, which doesn't exist
-//  in the canonical 3-case `OrbESang.State` enum. Mapped to `.idle`;
+//  due to a reference to `OrbeSang.State.alert`, which doesn't exist
+//  in the canonical 3-case `OrbeSang.State` enum. Mapped to `.idle`;
 //  the violation severity chips inside `ViolationsBody` carry the
 //  visual urgency.
 //

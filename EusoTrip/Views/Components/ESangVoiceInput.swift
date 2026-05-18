@@ -1,5 +1,5 @@
 //
-//  ESangVoiceInput.swift
+//  eSangVoiceInput.swift
 //  EusoTrip — Push-and-hold voice input for the ESANG chat composer.
 //
 //  Wraps `Speech.framework` + `AVAudioEngine` behind a tiny observable
@@ -34,7 +34,7 @@ import Speech
 /// The ESANG composer owns one instance per sheet-mount via `@StateObject`
 /// so permission state + audio engine lifetime stay tied to the sheet.
 @MainActor
-final class ESangVoiceInputController: ObservableObject {
+final class eSangVoiceInputController: ObservableObject {
 
     enum Status: Equatable {
         /// No recording in progress.
@@ -227,9 +227,9 @@ final class ESangVoiceInputController: ObservableObject {
 /// Mic button sized to sit beside the send arrow. Shows a pulsing gradient
 /// ring while recording so the driver can tell at a glance that the mic is
 /// hot. Tap to start; tap again (or tap send) to stop.
-struct ESangVoiceInputButton: View {
+struct eSangVoiceInputButton: View {
 
-    @ObservedObject var controller: ESangVoiceInputController
+    @ObservedObject var controller: eSangVoiceInputController
     @Environment(\.palette) private var palette
 
     var body: some View {

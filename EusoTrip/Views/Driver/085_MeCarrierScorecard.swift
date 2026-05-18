@@ -104,7 +104,7 @@ struct MeCarrierScorecard: View {
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer()
-            OrbESang(state: store.isLoading ? .thinking : .idle, diameter: 40)
+            OrbeSang(state: store.isLoading ? .thinking : .idle, diameter: 40)
         }
     }
 

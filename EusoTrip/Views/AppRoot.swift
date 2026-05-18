@@ -75,7 +75,7 @@ private struct BootSplash: View {
         ZStack {
             AuroraBackground()
             VStack(spacing: Space.s4) {
-                OrbESang(state: .idle, diameter: 88)
+                OrbeSang(state: .idle, diameter: 88)
                     .scaleEffect(pulse ? 1.06 : 1.0)
                     .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true),
                                value: pulse)

@@ -1,11 +1,11 @@
 //
-//  315_EsangAssistRankBids.swift
-//  EusoTrip — Shipper · ESang · Rank bids (Arc I).
+//  315_eSangAssistRankBids.swift
+//  EusoTrip — Shipper · eSang · Rank bids (Arc I).
 //
 
 import SwiftUI
 
-struct EsangAssistRankBidsScreen: View {
+struct eSangAssistRankBidsScreen: View {
     let theme: Theme.Palette
     let loadId: String
     var body: some View {
@@ -37,7 +37,7 @@ private struct RankBidsBody: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
-                if loading { LifecycleCard { Text("ESang ranking bids…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
+                if loading { LifecycleCard { Text("eSang ranking bids…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
                 else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
                 else if let r = result { picksCard(r) }
                 else { LifecycleCard { Text("No bids on this load yet — nothing to rank.").font(EType.caption).foregroundStyle(palette.textSecondary) } }
@@ -91,5 +91,5 @@ private struct RankBidsBody: View {
     }
 }
 
-#Preview("315 · Rank bids · Night") { EsangAssistRankBidsScreen(theme: Theme.dark, loadId: "1").environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
-#Preview("315 · Rank bids · Afternoon") { EsangAssistRankBidsScreen(theme: Theme.light, loadId: "1").environmentObject(EusoTripSession()).preferredColorScheme(.light) }
+#Preview("315 · Rank bids · Night") { eSangAssistRankBidsScreen(theme: Theme.dark, loadId: "1").environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
+#Preview("315 · Rank bids · Afternoon") { eSangAssistRankBidsScreen(theme: Theme.light, loadId: "1").environmentObject(EusoTripSession()).preferredColorScheme(.light) }

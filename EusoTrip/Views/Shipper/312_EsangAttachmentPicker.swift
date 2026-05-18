@@ -1,11 +1,11 @@
 //
-//  312_EsangAttachmentPicker.swift
-//  EusoTrip — Shipper · ESang · Attachment picker (Arc I).
+//  312_eSangAttachmentPicker.swift
+//  EusoTrip — Shipper · eSang · Attachment picker (Arc I).
 //
 
 import SwiftUI
 
-struct EsangAttachmentPickerScreen: View {
+struct eSangAttachmentPickerScreen: View {
     let theme: Theme.Palette
     var body: some View {
         Shell(theme: theme) { AttachmentPickerBody() } nav: { shipperLifecycleNav() }
@@ -62,5 +62,5 @@ private struct AttachmentPickerBody: View {
     }
 }
 
-#Preview("312 · Attach · Night") { EsangAttachmentPickerScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
-#Preview("312 · Attach · Afternoon") { EsangAttachmentPickerScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
+#Preview("312 · Attach · Night") { eSangAttachmentPickerScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
+#Preview("312 · Attach · Afternoon") { eSangAttachmentPickerScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }

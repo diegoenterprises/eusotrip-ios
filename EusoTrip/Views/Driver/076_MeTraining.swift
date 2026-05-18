@@ -144,7 +144,7 @@ struct MeTraining: View {
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer()
-            OrbESang(
+            OrbeSang(
                 state: (assignments.isLoading || pending.isLoading || certs.isLoading) ? .thinking : .idle,
                 diameter: 40
             )

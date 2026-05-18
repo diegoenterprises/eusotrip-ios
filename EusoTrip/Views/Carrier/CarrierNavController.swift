@@ -42,7 +42,7 @@ extension EnvironmentValues {
 /// `userInfo["screenId"]`; the orb signal is parameterless.
 extension Notification.Name {
     static let eusoCarrierNavSwap     = Notification.Name("eusoCarrierNavSwap")
-    static let eusoCarrierEsangTapped = Notification.Name("eusoCarrierEsangTapped")
+    static let eusoCarriereSangTapped = Notification.Name("eusoCarriereSangTapped")
 }
 
 /// Slot-label → screen-id map. Keyed off the lowercased label string
@@ -92,7 +92,7 @@ enum CarrierNavDispatcher {
 
         if CarrierNavRoute.orbLabels.contains(key) {
             NotificationCenter.default.post(
-                name: .eusoCarrierEsangTapped,
+                name: .eusoCarriereSangTapped,
                 object: nil
             )
             return

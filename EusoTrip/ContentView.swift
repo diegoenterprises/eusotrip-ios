@@ -100,7 +100,7 @@ enum ScreenRegistry {
             .init(id: "033", title: "BOL Sign-off",               role: .driver) { p in AnyView(BolSignoffScreen(theme: p)) },
             .init(id: "034", title: "Departing Pickup",           role: .driver) { p in AnyView(DepartingPickupScreen(theme: p)) },
             .init(id: "035", title: "En Route Drive",             role: .driver) { p in AnyView(EnRouteDriveScreen(theme: p)) },
-            .init(id: "036", title: "ESANG Smart Stop",           role: .driver) { p in AnyView(ESangSmartStopScreen(theme: p)) },
+            .init(id: "036", title: "ESANG Smart Stop",           role: .driver) { p in AnyView(eSangSmartStopScreen(theme: p)) },
             .init(id: "037", title: "Approaching Receiver",       role: .driver) { p in AnyView(ApproachingReceiverScreen(theme: p)) },
             .init(id: "038", title: "At Receiver Gate · Hazmat",  role: .driver) { p in AnyView(AtReceiverGateFullScreen(theme: p)) },
             .init(id: "039", title: "Backing Assist · Receiver",  role: .driver) { p in AnyView(BackingAssistReceiverScreen(theme: p)) },
@@ -117,7 +117,7 @@ enum ScreenRegistry {
             .init(id: "050", title: "Next Beat Live",             role: .driver) { p in AnyView(NextBeatLiveScreen(theme: p)) },
             .init(id: "051", title: "Beat Complete",              role: .driver) { p in AnyView(BeatCompleteScreen(theme: p)) },
             .init(id: "052", title: "Ratecon Tender",             role: .driver) { p in AnyView(RateconTenderScreen(theme: p)) },
-            .init(id: "053", title: "ESANG Dispatch Chat",         role: .driver) { p in AnyView(ESangDispatchChatScreen(theme: p)) },
+            .init(id: "053", title: "ESANG Dispatch Chat",         role: .driver) { p in AnyView(eSangDispatchChatScreen(theme: p)) },
             .init(id: "054", title: "HaulPay Settlement",          role: .driver) { p in AnyView(HaulPaySettlementScreen(theme: p)) },
             .init(id: "055", title: "Day Close Wallet",            role: .driver) { p in AnyView(DayCloseWalletScreen(theme: p)) },
             .init(id: "056", title: "Driver Profile",              role: .driver) { p in AnyView(DriverProfileScreen(theme: p)) },
@@ -659,7 +659,7 @@ enum ScreenRegistry {
         // remaining 10 surfaces the Me hubs need: ESANG settings,
         // Profile edit, Tier detail, Insurance, FMCSA SAFER, Hazmat
         // audit, Settings home, Notification prefs, Help, Legal.
-        list.append(.init(id: "319", title: "Shipper · ESANG Settings",        role: .shipper) { p in AnyView(EsangSettingsScreen(theme: p)) })
+        list.append(.init(id: "319", title: "Shipper · ESANG Settings",        role: .shipper) { p in AnyView(eSangSettingsScreen(theme: p)) })
         list.append(.init(id: "322", title: "Shipper · Profile Edit",          role: .shipper) { p in AnyView(ProfileEditScreen(theme: p)) })
         list.append(.init(id: "323", title: "Shipper · Tier Detail",           role: .shipper) { p in AnyView(TierDetailScreen(theme: p)) })
         list.append(.init(id: "325", title: "Shipper · Insurance Detail",      role: .shipper) { p in AnyView(InsuranceDetailScreen(theme: p)) })
@@ -678,7 +678,7 @@ enum ScreenRegistry {
         // Skipped intentionally:
         //   • 260 (PostedAwaitingBidsScreen) — `#if false` shelved per
         //     the file header doctrine: references LoadsAPI.cancel and
-        //     OrbESang.State.alert, which don't exist on the iOS
+        //     OrbeSang.State.alert, which don't exist on the iOS
         //     client today. Resurrect once those APIs land.
         //   • 324 (ComplianceDashboardScreen) — superseded by 216
         //     ("Shipper · Compliance"), which Me hub 320e routes to.
@@ -1492,7 +1492,7 @@ enum ScreenRegistry {
 
             // Compliance Officer surface (900-902). Was previously
             // shelved behind `#if false` in the source files due to
-            // an `OrbESang.State.alert` reference (the canonical enum
+            // an `OrbeSang.State.alert` reference (the canonical enum
             // ships `.idle / .listening / .thinking`). Resurrected
             // 2026-05-01; orb cue mapped to `.idle` with the violation
             // severity carried by per-row chips.
@@ -1503,7 +1503,7 @@ enum ScreenRegistry {
             // Dispatch surface (Dpch700-Dpch712). The 13 Dispatch
             // files were previously 10 shelved (#if false wrap due to
             // design-token drift against an older `Theme.Palette` /
-            // `EType` / `OrbESang.State`) + 3 in-build but
+            // `EType` / `OrbeSang.State`) + 3 in-build but
             // unregistered. Tokens normalized 2026-05-01 and all 13
             // landed in the registry with role: .dispatch. The slot
             // numbers (700-712) collide with Terminal 700-702 in the
@@ -1706,7 +1706,7 @@ struct ContentView: View {
     @State private var reportIssueContext: String? = nil
 
     /// Voice-coach mute state — persisted to UserDefaults so it survives app
-    /// launches. Read by `ESangVoiceInput` and the 035 on-screen controls.
+    /// launches. Read by `eSangVoiceInput` and the 035 on-screen controls.
     @AppStorage("com.eusorone.EusoTrip.voice.muted") private var voiceCoachMuted: Bool = false
 
     /// Map layers overlay visibility — persisted. Read by 013 / 018 map
@@ -1802,7 +1802,7 @@ struct ContentView: View {
                 case "me":
                     nav.currentTab = .me
                 case "esang", "orb":
-                    nav.showESang = true
+                    nav.showeSang = true
                 default:
                     break
                 }
@@ -1818,7 +1818,7 @@ struct ContentView: View {
 #if DEBUG
                 let key = label.lowercased()
                 if ShipperNavRoute.orbLabels.contains(key) {
-                    nav.showESang = true
+                    nav.showeSang = true
                     return
                 }
                 guard let screenId = ShipperNavRoute.map[key] else { return }
@@ -1938,14 +1938,14 @@ struct ContentView: View {
             }
             // Open the ESANG coach sheet, passing the context topic so
             // ESANG can tailor the prompt. Routes through the same
-            // `nav.showESang` flag the orb tap uses; we also stash the topic
-            // in a notification so ESangAutopilot can pick it up on open.
+            // `nav.showeSang` flag the orb tap uses; we also stash the topic
+            // in a notification so eSangAutopilot can pick it up on open.
             .environment(\.driverShowHelp) { topic in
                 NotificationCenter.default.post(
                     name: .esangOpenHelp,
                     object: topic
                 )
-                nav.showESang = true
+                nav.showeSang = true
             }
             // Launch the photo-capture flow. Opens iOS PhotosPicker; the
             // selected image is uploaded through `dvir.attachPhoto` when the
@@ -1964,7 +1964,7 @@ struct ContentView: View {
             }
             // Toggle the in-cab voice-coach mute. Persisted to UserDefaults
             // under `com.eusorone.EusoTrip.voice.muted` so the preference
-            // survives cold launches. ESangVoiceInput reads the same key.
+            // survives cold launches. eSangVoiceInput reads the same key.
             .environment(\.driverToggleVoiceMute) {
                 voiceCoachMuted.toggle()
             }
@@ -2100,7 +2100,7 @@ struct ContentView: View {
             // and rewind the trip phase so the next driver walk starts at
             // the dashboard.
             nav.currentTab = .home
-            nav.showESang = false
+            nav.showeSang = false
             trip.reset()
         }
 #endif
@@ -2186,8 +2186,8 @@ struct ContentView: View {
         // ESANG coach sheet — presented as a system sheet from the root so
         // tapping the orb from any Driver surface (lifecycle screen or any
         // of the three panes) slides it in over the current content.
-        .sheet(isPresented: $nav.showESang) {
-            DriverESangCoachSheet()
+        .sheet(isPresented: $nav.showeSang) {
+            DrivereSangCoachSheet()
                 .environment(\.palette, register.palette)
                 // Mirror the root: let the system drive the sheet's
                 // scheme unless the reviewer has pinned a register.
@@ -2204,21 +2204,21 @@ struct ContentView: View {
                 // navigate / open-chat / refresh / select-load actually
                 // affect the app state.
                 .environment(\.esangActionHandler) { action in
-                    handleESangAction(action)
+                    handleeSangAction(action)
                 }
         }
     }
 
     // MARK: - ESANG autopilot dispatcher
 
-    /// Apply an `ESangAction` parsed from the assistant's reply. Routes the
+    /// Apply an `eSangAction` parsed from the assistant's reply. Routes the
     /// intent into the right controller — tab switching goes through
     /// `nav`, refreshes bubble back down via a notification, load-open
     /// surfaces a Load Detail sheet over Home.
     ///
     /// Unknown / no-op intents are swallowed silently — the parser only
     /// emits verbs it recognizes, so there's nothing to fall through to.
-    private func handleESangAction(_ action: ESangAction) {
+    private func handleeSangAction(_ action: eSangAction) {
         switch action {
         case .navigate(let route):
             switch route {
@@ -2246,9 +2246,9 @@ struct ContentView: View {
                 }
             }
         case .openChat:
-            nav.showESang = true
+            nav.showeSang = true
         case .closeChat:
-            nav.showESang = false
+            nav.showeSang = false
         case .selectLoad:
             // The iOS shell doesn't yet expose a generic "open load by
             // id" pathway from the root (the per-surface sheet state is

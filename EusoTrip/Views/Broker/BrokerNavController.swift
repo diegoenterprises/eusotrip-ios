@@ -32,7 +32,7 @@ extension EnvironmentValues {
 
 extension Notification.Name {
     static let eusoBrokerNavSwap     = Notification.Name("eusoBrokerNavSwap")
-    static let eusoBrokerEsangTapped = Notification.Name("eusoBrokerEsangTapped")
+    static let eusoBrokereSangTapped = Notification.Name("eusoBrokereSangTapped")
 }
 
 /// Slot-label → screen-id map. `Loads` resolves to the canonical
@@ -60,7 +60,7 @@ enum BrokerNavDispatcher {
 
         if BrokerNavRoute.orbLabels.contains(key) {
             NotificationCenter.default.post(
-                name: .eusoBrokerEsangTapped,
+                name: .eusoBrokereSangTapped,
                 object: nil
             )
             return

@@ -134,7 +134,7 @@ struct CatalystHome: View {
         // Alert row tap → 305 Load Detail focused on the load that
         // triggered the alert (match-stall, fit-drift, capacity-shortage,
         // etc). The catalyst can then update status / reassign / message
-        // ESang directly from the load surface.
+        // eSang directly from the load surface.
         .sheet(item: $presentingAlert) { alert in
             CatalystLoadDetailScreen(theme: palette, loadId: alert.id)
                 .environmentObject(session)

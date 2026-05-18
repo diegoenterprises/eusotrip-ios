@@ -23,7 +23,7 @@
 //  All transcript state is in-memory for this wave. Wave-6 swaps the
 //  seed messages + `send(_:)` handler for the live `messages.send` tRPC
 //  procedure without touching the UI (same pattern used in
-//  `DriverESangCoachSheet`).
+//  `DrivereSangCoachSheet`).
 //
 
 import SwiftUI

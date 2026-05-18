@@ -222,7 +222,7 @@ struct MeEusoTicketsView: View {
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer()
-            OrbESang(state: store.mutatingId != nil ? .thinking : .idle, diameter: 40)
+            OrbeSang(state: store.mutatingId != nil ? .thinking : .idle, diameter: 40)
         }
     }
 

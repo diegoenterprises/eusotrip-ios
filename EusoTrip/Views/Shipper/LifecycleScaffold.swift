@@ -11,7 +11,7 @@
 //  Doctrine:
 //    • No fabricated runtime data — every field surfaces from the
 //      server. Missing rows render em-dash sentinels via `dashIfEmpty`.
-//    • Shipper bottom nav: Home · Loads · [ESang] · Bids · Me. Lifecycle
+//    • Shipper bottom nav: Home · Loads · [eSang] · Bids · Me. Lifecycle
 //      screens drilled from Loads keep Loads `isCurrent: true`.
 //    • Live updates: socket subscription on
 //      `LOAD_STATUS_CHANGED`/`LOAD_GEOFENCE_ENTER`/`LOAD_BOL_SIGNED`/

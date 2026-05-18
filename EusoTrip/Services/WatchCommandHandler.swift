@@ -4,7 +4,7 @@
 //
 //  Processes watch-side commands sent via WCSession. Three categories:
 //
-//    1. activation  — "open on iPhone" hand-off (opens Maps, Esang chat,
+//    1. activation  — "open on iPhone" hand-off (opens Maps, eSang chat,
 //                     dispatcher view, etc.)
 //    2. voice       — transcribed voice text the watch would like the
 //                     phone to answer (richer Gemini context on phone)
@@ -29,7 +29,7 @@ final class WatchCommandHandler: NSObject, ObservableObject {
     /// app should route to the appropriate destination.
     @Published var pendingDeeplink: WatchDeeplink?
 
-    /// Toast-ish banner the iOS app can show ("Esang is on the wrist…").
+    /// Toast-ish banner the iOS app can show ("eSang is on the wrist…").
     @Published var lastWatchTranscript: String?
 
     private let api: EusoTripAPI
@@ -196,7 +196,7 @@ final class WatchCommandHandler: NSObject, ObservableObject {
 
     /// Pulse sends `esang.exchange` after every wrist conversation round-trip.
     /// We treat it like an activation + surface the transcript so the iOS
-    /// Esang chat has the latest exchange preloaded if the driver taps through.
+    /// eSang chat has the latest exchange preloaded if the driver taps through.
     private func handleExchange(_ message: [String: Any]) async -> [String: Any] {
         lastWatchTranscript = message["transcript"] as? String
         // Don't force a deeplink — the wrist already spoke the reply.
@@ -213,7 +213,7 @@ final class WatchCommandHandler: NSObject, ObservableObject {
 
         // Very lightweight intent routing — the watch gives us a hint in
         // `transcript`, we pick a deeplink. Full Gemini routing happens
-        // only if the user explicitly opens Esang chat on the phone.
+        // only if the user explicitly opens eSang chat on the phone.
         let lower = transcript.lowercased()
         if lower.contains("wallet") {
             pendingDeeplink = .wallet
@@ -305,7 +305,7 @@ final class WatchCommandHandler: NSObject, ObservableObject {
 
         // Forward to backend (fire-and-forget; we still want the phone
         // UI to reflect the emergency state immediately). We bypass the
-        // strongly-typed ESangAPI here because the emergency router is
+        // strongly-typed eSangAPI here because the emergency router is
         // phone-only and only the wrist needs to invoke it.
         Task {
             await WatchCommandHandler.fireEmergencyMutation(

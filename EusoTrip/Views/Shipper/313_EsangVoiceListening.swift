@@ -1,12 +1,12 @@
 //
-//  313_EsangVoiceListening.swift
-//  EusoTrip — Shipper · ESang · Voice listening (Arc I).
+//  313_eSangVoiceListening.swift
+//  EusoTrip — Shipper · eSang · Voice listening (Arc I).
 //
 
 import SwiftUI
 import AVFoundation
 
-struct EsangVoiceListeningScreen: View {
+struct eSangVoiceListeningScreen: View {
     let theme: Theme.Palette
     var body: some View {
         Shell(theme: theme) { VoiceListeningBody() } nav: { shipperLifecycleNav() }
@@ -51,5 +51,5 @@ private struct VoiceListeningBody: View {
     }
 }
 
-#Preview("313 · Listening · Night") { EsangVoiceListeningScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
-#Preview("313 · Listening · Afternoon") { EsangVoiceListeningScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
+#Preview("313 · Listening · Night") { eSangVoiceListeningScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
+#Preview("313 · Listening · Afternoon") { eSangVoiceListeningScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }

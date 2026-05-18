@@ -122,7 +122,7 @@ struct TheHaulBadges: View {
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer()
-            OrbESang(state: .idle, diameter: 40)
+            OrbeSang(state: .idle, diameter: 40)
         }
     }
 

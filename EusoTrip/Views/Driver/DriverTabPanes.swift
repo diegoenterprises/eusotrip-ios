@@ -3354,7 +3354,7 @@ struct DriverMePane: View {
 /// confirmation card so the driver has a visible receipt in-conversation.
 ///
 /// Keeping the payload shape flat here — the same struct is embedded in
-/// `DriverESangCoachSheet.Msg.transfer` and `ChatMessage.transfer` so the
+/// `DrivereSangCoachSheet.Msg.transfer` and `ChatMessage.transfer` so the
 /// card renderer below works unchanged in either surface.
 struct ChatTransferPayload: Equatable {
     let amountCents: Int
@@ -4076,7 +4076,7 @@ struct DriverMessagesSheet: View {
     }
 }
 
-// MARK: - ESang rotating greeting
+// MARK: - eSang rotating greeting
 
 /// Warm, time-aware greeting helper. The old greeting was a static literal
 /// ("Hey — I've got eyes on your HOS…") that the user — rightly — flagged as
@@ -4092,7 +4092,7 @@ struct DriverMessagesSheet: View {
 ///     not a help desk.
 ///   • Always end on an open lane: "what's on your radar?", "what's first?",
 ///     "need me to pull anything up?" — that's what cues drivers to talk.
-enum ESangGreeting {
+enum eSangGreeting {
 
     /// Parts of the day. Cutoffs mirror what most drivers feel in-cab:
     /// earlyMorning is pre-dawn dispatch grind, lateNight is running on the
@@ -4188,7 +4188,7 @@ enum ESangGreeting {
     }
 }
 
-// MARK: - DriverESangCoachSheet (orb tap target)
+// MARK: - DrivereSangCoachSheet (orb tap target)
 
 /// ESANG coach surface presented when the driver taps the center orb in the
 /// BottomNav. ESANG is the in-cab AI copilot — she reads HOS, load state,
@@ -4201,7 +4201,7 @@ enum ESangGreeting {
 /// composer sits at the bottom. All conversation state is in-memory for
 /// this Wave; Wave-5 swaps the send handler for the live esang.chat backend
 /// procedure without touching the UI.
-struct DriverESangCoachSheet: View {
+struct DrivereSangCoachSheet: View {
     /// When the sheet is presented as a custom overlay (not a system sheet),
     /// the parent passes a close handler that runs the dissolve-to-orb
     /// animation before unmounting. Previews leave this `nil` and fall back
@@ -4221,7 +4221,7 @@ struct DriverESangCoachSheet: View {
     /// mic engine's lifetime is tied to the coach sheet mount. On final
     /// transcript we push it straight through `send(_:)` so voice + text
     /// paths converge on the same backend call.
-    @StateObject private var voice = ESangVoiceInputController()
+    @StateObject private var voice = eSangVoiceInputController()
 
     struct Msg: Identifiable, Equatable {
         let id = UUID()
@@ -4242,16 +4242,16 @@ struct DriverESangCoachSheet: View {
     }
 
     @State private var messages: [Msg] = [
-        // Rotating warm opener — pulls from the ESangGreeting bank seeded
+        // Rotating warm opener — pulls from the eSangGreeting bank seeded
         // with a fresh UUID so every coach-sheet launch lands on a
         // different welcome. Replaces the prior static "Hey — I've got
         // eyes on your HOS…" literal the user flagged as too bland for a
         // Gemini-backed copilot.
-        .init(role: .esang, text: ESangGreeting.pick())
+        .init(role: .esang, text: eSangGreeting.pick())
     ]
 
     @State private var draft: String = ""
-    @State private var orbState: OrbESang.State = .idle
+    @State private var orbState: OrbeSang.State = .idle
     /// `+` attach menu state. The composer exposes two affordances through
     /// this menu: photo upload (BOL/DVIR/reefer evidence) and P2P transfer
     /// (EusoWallet-backed driver-to-driver pay). Both write back a typed
@@ -4334,7 +4334,7 @@ struct DriverESangCoachSheet: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: Space.s3) {
-            OrbESang(state: orbState, diameter: 56)
+            OrbeSang(state: orbState, diameter: 56)
             VStack(alignment: .leading, spacing: 2) {
                 Text("ESANG")
                     .font(.system(size: 22, weight: .heavy))
@@ -4652,7 +4652,7 @@ struct DriverESangCoachSheet: View {
                 // Controller requests mic + speech permission on first tap,
                 // streams partial transcripts into `draft`, and hands the
                 // final transcript to `send(_:)` on release.
-                ESangVoiceInputButton(controller: voice)
+                eSangVoiceInputButton(controller: voice)
 
                 Button {
                     let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -4704,7 +4704,7 @@ struct DriverESangCoachSheet: View {
         return hasText || pendingImageData != nil
     }
 
-    // MARK: Send → production ESang (Gemini-backed via tRPC)
+    // MARK: Send → production eSang (Gemini-backed via tRPC)
 
     /// Overload kept for voice pipeline (no image) — forwards to the new
     /// image-aware variant so the ESANG reply logic stays in one place.
@@ -4754,7 +4754,7 @@ struct DriverESangCoachSheet: View {
             // open a load sheet, etc.). Per user direction (2026-04-20):
             //   > can you hide the '<<<action:navigate:/marketplace '
             //   > which i know that is a command. please hide this…
-            let (cleaned, actions) = ESangAutopilot.parse(reply)
+            let (cleaned, actions) = eSangAutopilot.parse(reply)
             await MainActor.run {
                 if !cleaned.isEmpty {
                     messages.append(Msg(role: .esang, text: cleaned))

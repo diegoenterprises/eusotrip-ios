@@ -102,7 +102,7 @@ struct MeTax: View {
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer()
-            OrbESang(
+            OrbeSang(
                 state: (summary.isLoading || doc1099.isLoading) ? .thinking : .idle,
                 diameter: 40
             )

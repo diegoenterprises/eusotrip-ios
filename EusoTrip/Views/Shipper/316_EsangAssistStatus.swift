@@ -1,11 +1,11 @@
 //
-//  316_EsangAssistStatus.swift
-//  EusoTrip — Shipper · ESang · Status query (Arc I).
+//  316_eSangAssistStatus.swift
+//  EusoTrip — Shipper · eSang · Status query (Arc I).
 //
 
 import SwiftUI
 
-struct EsangAssistStatusScreen: View {
+struct eSangAssistStatusScreen: View {
     let theme: Theme.Palette
     var body: some View {
         Shell(theme: theme) { StatusBody() } nav: { shipperLifecycleNav() }
@@ -38,7 +38,7 @@ private struct StatusBody: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
                 inputCard
-                if loading { LifecycleCard { Text("ESang searching loads…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
+                if loading { LifecycleCard { Text("eSang searching loads…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
                 else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
                 else if let e = env { answerCard(e); matchesCard(e) }
                 Color.clear.frame(height: 96)
@@ -112,5 +112,5 @@ private struct StatusBody: View {
     }
 }
 
-#Preview("316 · Status · Night") { EsangAssistStatusScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
-#Preview("316 · Status · Afternoon") { EsangAssistStatusScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
+#Preview("316 · Status · Night") { eSangAssistStatusScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
+#Preview("316 · Status · Afternoon") { eSangAssistStatusScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }

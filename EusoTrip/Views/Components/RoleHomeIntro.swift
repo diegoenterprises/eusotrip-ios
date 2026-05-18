@@ -6,7 +6,7 @@
 //      ESANG Morning Brief  →  Weather  →  role-specific widgets.
 //
 //  This component renders the first two cards as one reusable unit:
-//    • EsangMorningBriefCard  — top coaching card, role/vertical-aware.
+//    • eSangMorningBriefCard  — top coaching card, role/vertical-aware.
 //    • WeatherCard            — live snapshot from WeatherService.shared.
 //                               Falls back to a neutral "Enable location"
 //                               CTA when CoreLocation is denied/restricted.
@@ -34,7 +34,7 @@ struct RoleHomeIntro: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
-            EsangMorningBriefCard()
+            eSangMorningBriefCard()
 
             if let s = snapshot {
                 WeatherCard(snapshot: s)

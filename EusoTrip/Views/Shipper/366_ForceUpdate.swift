@@ -24,7 +24,7 @@ private struct ForceUpdateBody: View {
             Spacer()
             Image(systemName: "arrow.up.circle.fill").font(.system(size: 48, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
             Text("Update required").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("EusoTrip needs the latest build to keep your loads, settlements, and ESang secure.")
+            Text("EusoTrip needs the latest build to keep your loads, settlements, and eSang secure.")
                 .font(EType.body).foregroundStyle(palette.textSecondary).multilineTextAlignment(.center).padding(.horizontal, 32)
             LifecycleCard {
                 LifecycleRow(label: "Installed", value: installed)

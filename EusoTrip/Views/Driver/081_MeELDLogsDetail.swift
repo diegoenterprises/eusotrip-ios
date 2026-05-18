@@ -150,7 +150,7 @@ struct MeELDLogsDetail: View {
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer()
-            OrbESang(state: (store.isLoading || store.isChangingStatus) ? .thinking : .idle, diameter: 40)
+            OrbeSang(state: (store.isLoading || store.isChangingStatus) ? .thinking : .idle, diameter: 40)
         }
     }
 

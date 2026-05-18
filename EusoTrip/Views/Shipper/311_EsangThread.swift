@@ -1,15 +1,15 @@
 //
-//  311_EsangThread.swift
-//  EusoTrip — Shipper · ESang AI · Thread (Arc I).
+//  311_eSangThread.swift
+//  EusoTrip — Shipper · eSang AI · Thread (Arc I).
 //
 
 import SwiftUI
 
-struct EsangThreadScreen: View {
+struct eSangThreadScreen: View {
     let theme: Theme.Palette
     let conversationId: String
     var body: some View {
-        Shell(theme: theme) { EsangThreadBody(conversationId: conversationId) } nav: { shipperLifecycleNav() }
+        Shell(theme: theme) { eSangThreadBody(conversationId: conversationId) } nav: { shipperLifecycleNav() }
     }
 }
 
@@ -20,7 +20,7 @@ struct EsangThreadScreen: View {
 /// (1) `messaging.getMessages` returned `{items:[...]}` (shape mismatch
 /// with the flat-array decoder here); (2) the `body` field name on
 /// the wire was always `content` so decoding was failing silently.
-private struct EsangChatMessage: Decodable, Identifiable, Hashable {
+private struct eSangChatMessage: Decodable, Identifiable, Hashable {
     let id: String
     let senderId: String?
     let senderName: String?
@@ -38,10 +38,10 @@ private struct EsangChatMessage: Decodable, Identifiable, Hashable {
     }
 }
 
-private struct EsangThreadBody: View {
+private struct eSangThreadBody: View {
     @Environment(\.palette) private var palette
     let conversationId: String
-    @State private var messages: [EsangChatMessage] = []
+    @State private var messages: [eSangChatMessage] = []
     @State private var draft: String = ""
     @State private var sending: Bool = false
     @State private var loading = true
@@ -74,7 +74,7 @@ private struct EsangThreadBody: View {
         }
     }
 
-    private func bubble(_ m: EsangChatMessage) -> some View {
+    private func bubble(_ m: eSangChatMessage) -> some View {
         HStack {
             if m.isMine == true { Spacer(minLength: 40) }
             VStack(alignment: m.isMine == true ? .trailing : .leading, spacing: 2) {
@@ -115,7 +115,7 @@ private struct EsangThreadBody: View {
         // server-side, but the procedure marks it required in Zod).
         struct In: Encodable { let conversationId: String; let limit: Int }
         do {
-            let m: [EsangChatMessage] = try await EusoTripAPI.shared.query(
+            let m: [eSangChatMessage] = try await EusoTripAPI.shared.query(
                 "messages.getMessages",
                 input: In(conversationId: conversationId, limit: 50)
             )
@@ -147,8 +147,8 @@ private struct EsangThreadBody: View {
 }
 
 #Preview("311 · Thread · Night") {
-    EsangThreadScreen(theme: Theme.dark, conversationId: "1").environmentObject(EusoTripSession()).preferredColorScheme(.dark)
+    eSangThreadScreen(theme: Theme.dark, conversationId: "1").environmentObject(EusoTripSession()).preferredColorScheme(.dark)
 }
 #Preview("311 · Thread · Afternoon") {
-    EsangThreadScreen(theme: Theme.light, conversationId: "1").environmentObject(EusoTripSession()).preferredColorScheme(.light)
+    eSangThreadScreen(theme: Theme.light, conversationId: "1").environmentObject(EusoTripSession()).preferredColorScheme(.light)
 }

@@ -436,7 +436,7 @@ struct ShipperSettings: View {
                 alertToggle(
                     glyph: "hand.raised.fill",
                     title: "Bid received",
-                    subtitle: "Push · email · in-app · ESang ping",
+                    subtitle: "Push · email · in-app · eSang ping",
                     keyName: "bidAlerts",
                     isOn: prefsStore.matrix.bidAlerts
                 )
@@ -1066,7 +1066,7 @@ struct ShipperSettings: View {
 
 // MARK: - MiniOrb (32pt gradient diagonal + specular highlight overlay
 //          — file-scoped per §19.2; mirrors the SVG About row's
-//          miniature ESang orb composition)
+//          miniature eSang orb composition)
 
 private struct MiniOrb: View {
     var body: some View {

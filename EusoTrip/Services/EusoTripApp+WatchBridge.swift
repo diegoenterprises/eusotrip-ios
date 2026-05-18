@@ -8,7 +8,7 @@
 //
 //    - Activating WCSession at launch so the watch can push context
 //    - Observing WatchCommandHandler.pendingDeeplink and routing to
-//      the appropriate iOS surface (Esang chat, wallet, maps, …)
+//      the appropriate iOS surface (eSang chat, wallet, maps, …)
 //    - Handling NSUserActivity for the watch's `com.eusotrip.esang.activate`
 //      handoff so "Open on iPhone" opens the chat composer with the
 //      watch's transcript seeded.
@@ -27,7 +27,7 @@ extension View {
 private struct EusoTripWatchBridgeModifier: ViewModifier {
     @StateObject private var handler = WatchCommandHandler.shared
     @State private var esangSeed: String?
-    @State private var showEsang = false
+    @State private var showeSang = false
     @State private var showWallet = false
     @State private var showHOS = false
     @State private var showEmergency = false
@@ -45,14 +45,14 @@ private struct EusoTripWatchBridgeModifier: ViewModifier {
             .onContinueUserActivity("com.eusotrip.esang.activate") { activity in
                 let transcript = activity.userInfo?["transcript"] as? String
                 esangSeed = transcript
-                showEsang = true
+                showeSang = true
             }
-            .sheet(isPresented: $showEsang) {
+            .sheet(isPresented: $showeSang) {
                 // Presented as a simple reminder for now — the full
-                // ESang chat surface in ContentView can observe the
+                // eSang chat surface in ContentView can observe the
                 // same seed if the product team prefers to route it
                 // there. Safe default keeps the build clean.
-                EsangWatchHandoffSheet(seed: esangSeed)
+                eSangWatchHandoffSheet(seed: esangSeed)
             }
             .sheet(isPresented: $showWallet) {
                 WatchHandoffPlaceholder(
@@ -85,7 +85,7 @@ private struct EusoTripWatchBridgeModifier: ViewModifier {
             showHOS = true
         case .esangChat(let seed):
             esangSeed = seed
-            showEsang = true
+            showeSang = true
         case .maps(let query):
             openMaps(query: query)
         case .dispatchCall:
@@ -93,7 +93,7 @@ private struct EusoTripWatchBridgeModifier: ViewModifier {
                 UIApplication.shared.open(url)
             }
         case .hazmatEscort:
-            showEsang = true // hazmat escort surface reuses the chat for now
+            showeSang = true // hazmat escort surface reuses the chat for now
         case .emergency:
             showEmergency = true
         }
@@ -124,7 +124,7 @@ private struct EusoTripWatchBridgeModifier: ViewModifier {
 // team wires these into ContentView directly, the sheets below become
 // no-ops.
 
-private struct EsangWatchHandoffSheet: View {
+private struct eSangWatchHandoffSheet: View {
     let seed: String?
     @Environment(\.dismiss) private var dismiss
 
@@ -138,7 +138,7 @@ private struct EsangWatchHandoffSheet: View {
                     VStack(alignment: .leading) {
                         Text("From your watch").font(.caption)
                             .foregroundStyle(.secondary)
-                        Text("Esang handoff").font(.headline)
+                        Text("eSang handoff").font(.headline)
                     }
                     Spacer()
                 }
@@ -148,7 +148,7 @@ private struct EsangWatchHandoffSheet: View {
                         .padding(10)
                         .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
                 }
-                Text("Open the Esang tab to continue the conversation on your iPhone.")
+                Text("Open the eSang tab to continue the conversation on your iPhone.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -162,7 +162,7 @@ private struct EsangWatchHandoffSheet: View {
                 .buttonStyle(.borderedProminent)
             }
             .padding()
-            .navigationTitle("Esang")
+            .navigationTitle("eSang")
             .navigationBarTitleDisplayMode(.inline)
         }
     }

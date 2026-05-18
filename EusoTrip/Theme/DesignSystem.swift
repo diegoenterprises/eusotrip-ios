@@ -265,9 +265,9 @@ enum Device {
     static let navCornerRadius: CGFloat = 24
 }
 
-// MARK: - OrbESang (doctrine §2.2, §2.3)
+// MARK: - OrbeSang (doctrine §2.2, §2.3)
 
-struct OrbESang: View {
+struct OrbeSang: View {
     /// Interaction-state that drives the orb's visual language.
     ///
     ///   .idle       — slow rotation, soft magenta glow, particles drift
@@ -321,7 +321,7 @@ struct OrbESang: View {
         }
     }
 
-    private var particleMotion: EsangParticleField.Motion {
+    private var particleMotion: eSangParticleField.Motion {
         switch state {
         case .idle:      return .idle
         case .listening: return .waving
@@ -349,14 +349,14 @@ struct OrbESang: View {
             // particles bouncing inside the gradient orb. Rendered OUTSIDE
             // the rotating layer so the swarm drifts under its own physics
             // rather than orbiting as a rigid unit.
-            EsangParticleField(diameter: diameter,
+            eSangParticleField(diameter: diameter,
                                motion: particleMotion)
         }
         .frame(width: diameter, height: diameter)
         .clipShape(Circle())
         .shadow(color: glowColor.opacity(glowOpacity),
                 radius: glowRadius, y: 4)
-        .accessibilityLabel("ESang AI")
+        .accessibilityLabel("eSang AI")
         .accessibilityValue(accessibilityState)
         .onAppear {
             withAnimation(.linear(duration: currentPeriod)
@@ -389,13 +389,13 @@ struct OrbESang: View {
     }
 }
 
-// MARK: - EsangFlowerMark (doctrine §2.2 — ESANG AI signifier)
+// MARK: - eSangFlowerMark (doctrine §2.2 — ESANG AI signifier)
 //
 // Six tapered white petals radiating at 60° from a small center hub —
 // this is the mark shown inside the BottomNav center orb in Figma 212:428
 // (026 Off Duty) and 212:444 (010 Driver Home).
 
-struct EsangFlowerMark: View {
+struct eSangFlowerMark: View {
     let diameter: CGFloat
 
     var body: some View {
@@ -415,7 +415,7 @@ struct EsangFlowerMark: View {
     }
 }
 
-// MARK: - EsangParticleField (live particle system in the orb)
+// MARK: - eSangParticleField (live particle system in the orb)
 //
 // Renders ~90 soft-white, additively-blended particles that drift with
 // bounded kinetic motion inside the orb. Each particle has a velocity, a
@@ -434,7 +434,7 @@ struct EsangFlowerMark: View {
 // This is honored by the driving TimelineView — if reduceMotion is on we
 // still render but with a static schedule.
 
-struct EsangParticleField: View {
+struct eSangParticleField: View {
     /// Motion mode the particle field is running in.
     ///
     ///   .idle        — slow reject-sample drift; the default resting swarm
@@ -554,7 +554,7 @@ struct EsangParticleField: View {
     }
 }
 
-// MARK: - ParticleEngine (physics for EsangParticleField)
+// MARK: - ParticleEngine (physics for eSangParticleField)
 
 /// Reference-type physics store held in @State. Each call to `advance(to:)`
 /// integrates one frame using a delta-time derived from the previous tick,
@@ -661,7 +661,7 @@ struct NavSlot: Identifiable {
 struct BottomNav: View {
     let leading: [NavSlot]   // exactly 2
     let trailing: [NavSlot]  // exactly 2
-    var orbState: OrbESang.State = .idle
+    var orbState: OrbeSang.State = .idle
     var onTapOrb: () -> Void = {}
 
     @Environment(\.palette) var palette
@@ -783,7 +783,7 @@ struct BottomNav: View {
                     onTapOrb()
                 }
             }) {
-                OrbESang(state: orbState,
+                OrbeSang(state: orbState,
                          diameter: Device.navOrbDiameter)
             }
             .buttonStyle(.plain)

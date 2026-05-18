@@ -167,7 +167,7 @@ struct MeSafetyCoach: View {
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer()
-            OrbESang(state: store.isLoading ? .thinking : .idle, diameter: 40)
+            OrbeSang(state: store.isLoading ? .thinking : .idle, diameter: 40)
         }
     }
 
@@ -257,7 +257,7 @@ struct MeSafetyCoach: View {
 
     // MARK: Hero summary
 
-    private func heroSummary(_ pack: EsangCoachAPI.ForDriverResponse) -> some View {
+    private func heroSummary(_ pack: eSangCoachAPI.ForDriverResponse) -> some View {
         VStack(spacing: Space.s3) {
             tickCircumference
                 .frame(height: 12)
@@ -319,7 +319,7 @@ struct MeSafetyCoach: View {
 
     // MARK: Coach list
 
-    private func coachList(_ pack: EsangCoachAPI.ForDriverResponse) -> some View {
+    private func coachList(_ pack: eSangCoachAPI.ForDriverResponse) -> some View {
         VStack(spacing: Space.s3) {
             ForEach(pack.items) { item in
                 coachCard(item)
@@ -327,7 +327,7 @@ struct MeSafetyCoach: View {
         }
     }
 
-    private func coachCard(_ item: EsangCoachAPI.CoachingItem) -> some View {
+    private func coachCard(_ item: eSangCoachAPI.CoachingItem) -> some View {
         let severity = CoachSeverity(item.severity)
         return VStack(alignment: .leading, spacing: Space.s2) {
             HStack(alignment: .top, spacing: Space.s3) {

@@ -242,7 +242,7 @@ struct MeVehicle: View {
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer()
-            OrbESang(state: (assigned.isLoading || maintenance.isLoading) ? .thinking : .idle, diameter: 40)
+            OrbeSang(state: (assigned.isLoading || maintenance.isLoading) ? .thinking : .idle, diameter: 40)
         }
     }
 

@@ -1,11 +1,11 @@
 //
-//  318_EsangDispatchEscalation.swift
-//  EusoTrip — Shipper · ESang · Dispatch escalation (Arc I).
+//  318_eSangDispatchEscalation.swift
+//  EusoTrip — Shipper · eSang · Dispatch escalation (Arc I).
 //
 
 import SwiftUI
 
-struct EsangDispatchEscalationScreen: View {
+struct eSangDispatchEscalationScreen: View {
     let theme: Theme.Palette
     var loadId: String? = nil
     var body: some View {
@@ -106,5 +106,5 @@ private struct EscalationBody: View {
     }
 }
 
-#Preview("318 · Escalation · Night") { EsangDispatchEscalationScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
-#Preview("318 · Escalation · Afternoon") { EsangDispatchEscalationScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
+#Preview("318 · Escalation · Night") { eSangDispatchEscalationScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
+#Preview("318 · Escalation · Afternoon") { eSangDispatchEscalationScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }

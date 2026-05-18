@@ -1,5 +1,5 @@
 //
-//  ESangAutopilot.swift
+//  eSangAutopilot.swift
 //  EusoTrip — ESANG autopilot protocol (iOS implementation)
 //
 //  ESANG is EusoTrip's in-cab copilot. In addition to answering questions,
@@ -45,9 +45,9 @@ import SwiftUI
 /// A parsed, client-recognized ESANG action. Unrecognized verbs, or verbs
 /// whose argument doesn't map to an iOS surface, are never constructed —
 /// the parser returns `nil` in that case.
-enum ESangAction: Equatable {
+enum eSangAction: Equatable {
     /// Switch the BottomNav to a top-level tab.
-    case navigate(ESangRoute)
+    case navigate(eSangRoute)
     /// Open the ESANG coach sheet. Web-side only fires this from outside
     /// the sheet; iOS ignores it when the sheet is already up.
     case openChat
@@ -68,7 +68,7 @@ enum ESangAction: Equatable {
 /// to `.me` and then posts a notification so `DriverMePane` opens the right
 /// sub-sheet. Voice commands like "open ELD" or "fleet management" route
 /// here.
-enum ESangRoute: Equatable {
+enum eSangRoute: Equatable {
     case home
     case trips          // Eusoboards (marketplace)
     case myLoads        // "Loads" tab (DriverLoadsPane)
@@ -81,7 +81,7 @@ enum ESangRoute: Equatable {
 /// Parses the raw assistant reply. Returns (cleaned text, actions[]).
 /// The cleaned text has every `<<<ACTION:...>>>` token stripped so the
 /// chat bubble never shows plumbing tokens.
-enum ESangAutopilot {
+enum eSangAutopilot {
 
     /// Regex that matches the full `<<<ACTION:verb:arg>>>` grammar.
     /// Arg is optional for verbs like `refresh` — the parser falls
@@ -99,7 +99,7 @@ enum ESangAutopilot {
 
     /// Split a raw assistant reply into the text the driver should see
     /// and the zero-or-more actions the client should dispatch.
-    static func parse(_ raw: String) -> (cleaned: String, actions: [ESangAction]) {
+    static func parse(_ raw: String) -> (cleaned: String, actions: [eSangAction]) {
         guard !raw.isEmpty else { return ("", []) }
         let ns = raw as NSString
         let matches = regex.matches(
@@ -109,7 +109,7 @@ enum ESangAutopilot {
         )
         guard !matches.isEmpty else { return (tidy(raw), []) }
 
-        var actions: [ESangAction] = []
+        var actions: [eSangAction] = []
         for m in matches {
             guard m.numberOfRanges >= 2 else { continue }
             let verb = ns.substring(with: m.range(at: 1))
@@ -161,10 +161,10 @@ enum ESangAutopilot {
         return out.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Map (verb, arg) onto a typed `ESangAction`. Returns `nil` for any
+    /// Map (verb, arg) onto a typed `eSangAction`. Returns `nil` for any
     /// verb or argument the iOS client doesn't understand — we prefer a
     /// silent skip to a hallucinated side-effect.
-    private static func buildAction(verb: String, arg: String) -> ESangAction? {
+    private static func buildAction(verb: String, arg: String) -> eSangAction? {
         switch verb {
         case "navigate", "goto", "go":
             if let route = route(for: arg) { return .navigate(route) }
@@ -185,7 +185,7 @@ enum ESangAutopilot {
 
     /// Normalize a web-style path onto an iOS top-level tab. Strips query
     /// strings, fragments, and trailing slashes before matching.
-    static func route(for rawPath: String) -> ESangRoute? {
+    static func route(for rawPath: String) -> eSangRoute? {
         var p = rawPath.trimmingCharacters(in: .whitespaces).lowercased()
         if p.isEmpty { return nil }
         // Drop query + fragment.
@@ -266,13 +266,13 @@ enum ESangAutopilot {
 /// Closure the ESANG chat sheet fires for every parsed action. Injected by
 /// `DriverHomeScreen` so the chat sheet doesn't hard-couple to a specific
 /// navigation store — previews and tests can stub it to `nil`.
-struct ESangActionHandlerKey: EnvironmentKey {
-    static let defaultValue: ((ESangAction) -> Void)? = nil
+struct eSangActionHandlerKey: EnvironmentKey {
+    static let defaultValue: ((eSangAction) -> Void)? = nil
 }
 
 extension EnvironmentValues {
-    var esangActionHandler: ((ESangAction) -> Void)? {
-        get { self[ESangActionHandlerKey.self] }
-        set { self[ESangActionHandlerKey.self] = newValue }
+    var esangActionHandler: ((eSangAction) -> Void)? {
+        get { self[eSangActionHandlerKey.self] }
+        set { self[eSangActionHandlerKey.self] = newValue }
     }
 }

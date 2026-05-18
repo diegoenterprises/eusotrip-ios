@@ -1,18 +1,18 @@
 //
-//  319_EsangSettings.swift
-//  EusoTrip — Shipper · ESang · Settings (Arc I).
+//  319_eSangSettings.swift
+//  EusoTrip — Shipper · eSang · Settings (Arc I).
 //
 
 import SwiftUI
 
-struct EsangSettingsScreen: View {
+struct eSangSettingsScreen: View {
     let theme: Theme.Palette
     var body: some View {
-        Shell(theme: theme) { EsangSettingsBody() } nav: { shipperLifecycleNav() }
+        Shell(theme: theme) { eSangSettingsBody() } nav: { shipperLifecycleNav() }
     }
 }
 
-private struct EsangSettingsBody: View {
+private struct eSangSettingsBody: View {
     @Environment(\.palette) private var palette
     @State private var voiceProfile: String = "Diego"
     @State private var language: String = "en-US"
@@ -49,7 +49,7 @@ private struct EsangSettingsBody: View {
                 Image(systemName: "sparkles").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("ESANG · SETTINGS").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
-            Text("ESang preferences").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            Text("eSang preferences").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
         }
     }
 
@@ -130,5 +130,5 @@ private struct EsangSettingsBody: View {
     }
 }
 
-#Preview("319 · ESang settings · Night") { EsangSettingsScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
-#Preview("319 · ESang settings · Afternoon") { EsangSettingsScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
+#Preview("319 · eSang settings · Night") { eSangSettingsScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
+#Preview("319 · eSang settings · Afternoon") { eSangSettingsScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }

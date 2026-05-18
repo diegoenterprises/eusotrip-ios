@@ -1,8 +1,8 @@
 //
-//  ESangParticleBurst.swift
+//  eSangParticleBurst.swift
 //  EusoTrip — pixel-faithful port of the web ESANG chat-sheet dissolve.
 //
-//  WEB REFERENCE (dark mode): EsangFloatingButton.tsx
+//  WEB REFERENCE (dark mode): eSangFloatingButton.tsx
 //    - 30 particles spawned from the chat widget's visual bounds
 //    - Each particle picks from a 5-color gradient palette:
 //        [#1473FF, #BE01FF, #8B5CF6, #6366F1, #A855F7]
@@ -13,14 +13,14 @@
 //    - Total animation window: ~650ms
 //
 //  This view runs in lock-step with the chat-sheet's own in-place scale+blur
-//  collapse (see DriverHome `dissolveESang`). The sheet does NOT translate
+//  collapse (see DriverHome `dissolveeSang`). The sheet does NOT translate
 //  toward the orb — it shrinks in place while these particles carry the
 //  visual motion toward the orb, exactly like the web twin.
 //
 
 import SwiftUI
 
-struct ESangParticleBurst: View {
+struct eSangParticleBurst: View {
     /// The rectangle (in the same coordinate space as `anchor`) from which
     /// particles are seeded — the chat sheet's visible bounds at the
     /// moment the dissolve starts.
@@ -47,7 +47,7 @@ struct ESangParticleBurst: View {
                     let local = (elapsed - p.delay) / p.duration
                     if local <= 0 { continue }
                     let clamped = min(1, local)
-                    let eased = ESangParticleBurst.cubicBezier(
+                    let eased = eSangParticleBurst.cubicBezier(
                         clamped, c1x: 0.6, c1y: 0, c2x: 0.2, c2y: 1
                     )
 
@@ -104,7 +104,7 @@ struct ESangParticleBurst: View {
             let seedRect: CGRect = sourceRect.width > 0 && sourceRect.height > 0
                 ? sourceRect
                 : CGRect(x: 0, y: 60, width: 440, height: 820)
-            particles = ESangParticleBurst.seed(in: seedRect)
+            particles = eSangParticleBurst.seed(in: seedRect)
             startedAt = .now
             #if canImport(UIKit)
             UIImpactFeedbackGenerator(style: .soft).impactOccurred()
@@ -155,7 +155,7 @@ struct ESangParticleBurst: View {
         let duration: Double  // seconds
     }
 
-    /// Dark-mode palette (matches EsangFloatingButton.tsx exactly).
+    /// Dark-mode palette (matches eSangFloatingButton.tsx exactly).
     static let darkPalette: [Color] = [
         Color(.sRGB, red: 0x14 / 255.0, green: 0x73 / 255.0, blue: 0xFF / 255.0, opacity: 1),
         Color(.sRGB, red: 0xBE / 255.0, green: 0x01 / 255.0, blue: 0xFF / 255.0, opacity: 1),
@@ -189,7 +189,7 @@ struct ESangParticleBurst: View {
 #Preview("Dissolve") {
     ZStack {
         Color.black.ignoresSafeArea()
-        ESangParticleBurst(
+        eSangParticleBurst(
             sourceRect: CGRect(x: 40, y: 200, width: 320, height: 480),
             anchor: CGPoint(x: 220, y: 800),
             onDone: {}

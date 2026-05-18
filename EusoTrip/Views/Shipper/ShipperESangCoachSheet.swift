@@ -1,15 +1,15 @@
 //
-//  ShipperESangCoachSheet.swift
+//  ShippereSangCoachSheet.swift
 //  EusoTrip — ESANG copilot sheet for SHIPPER users.
 //
-//  Sister of `DriverESangCoachSheet` (DriverTabPanes.swift:4200) but
+//  Sister of `DrivereSangCoachSheet` (DriverTabPanes.swift:4200) but
 //  with shipper-context greetings, quick-action chips, and prompt
 //  context. Same backend (`esang.chat`) — server-side ESANG reads the
 //  `currentPage` hint and tunes its system prompt accordingly so a
 //  shipper question lands different ESANG knowledge than a driver
 //  question would.
 //
-//  Why a separate sheet (vs. branching `DriverESangCoachSheet`)
+//  Why a separate sheet (vs. branching `DrivereSangCoachSheet`)
 //    The driver sheet ships ~600 lines of HOS / fuel / parking /
 //    detention logic that's specific to the in-cab role. Forking a
 //    leaner shipper-only surface keeps the driver code untouched
@@ -26,7 +26,7 @@
 
 import SwiftUI
 
-struct ShipperESangCoachSheet: View {
+struct ShippereSangCoachSheet: View {
     var onClose: (() -> Void)? = nil
 
     @Environment(\.palette) private var palette
@@ -43,7 +43,7 @@ struct ShipperESangCoachSheet: View {
     }
 
     @State private var messages: [Msg] = [
-        .init(role: .esang, text: ShipperESangGreeting.pick())
+        .init(role: .esang, text: ShippereSangGreeting.pick())
     ]
     @State private var draft: String = ""
     @State private var sending: Bool = false
@@ -82,7 +82,7 @@ struct ShipperESangCoachSheet: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: Space.s3) {
-            OrbESang(state: sending ? .thinking : .idle, diameter: 56)
+            OrbeSang(state: sending ? .thinking : .idle, diameter: 56)
             VStack(alignment: .leading, spacing: 2) {
                 Text("ESANG")
                     .font(.system(size: 22, weight: .heavy))
@@ -262,11 +262,11 @@ struct ShipperESangCoachSheet: View {
 
 // MARK: - Greeting bank (shipper-context)
 
-/// Same shape as the driver-side `ESangGreeting` bank but with
+/// Same shape as the driver-side `eSangGreeting` bank but with
 /// shipper-context openers. Every variant is corridor-agnostic and
 /// references shipper artifacts (lanes, bids, carriers, ledger) —
 /// never driver artifacts (HOS, fuel, parking).
-enum ShipperESangGreeting {
+enum ShippereSangGreeting {
     enum DayPart { case morning, day, evening, night
 
         static func from(_ d: Date = .init()) -> DayPart {

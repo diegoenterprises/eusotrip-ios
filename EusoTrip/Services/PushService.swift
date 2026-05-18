@@ -148,7 +148,7 @@ final class PushService: NSObject, ObservableObject,
             // so tapping the push lands the driver on the right thread.
             PushService.shared.handleIncomingPayload(info)
             if let route {
-                // Reuse the existing ESang Me-tab-detail notification so
+                // Reuse the existing eSang Me-tab-detail notification so
                 // the routing hop for push deep links matches the voice
                 // autopilot path.
                 NotificationCenter.default.post(

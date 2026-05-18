@@ -257,7 +257,7 @@ struct MeDocumentsHub: View {
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer()
-            OrbESang(state: (docs.isLoading || docs.mutatingId != nil) ? .thinking : .idle, diameter: 40)
+            OrbeSang(state: (docs.isLoading || docs.mutatingId != nil) ? .thinking : .idle, diameter: 40)
         }
     }
 

@@ -183,7 +183,7 @@ struct MeDocs: View {
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer()
-            OrbESang(state: (docs.isLoading || expiring.isLoading) ? .thinking : .idle, diameter: 40)
+            OrbeSang(state: (docs.isLoading || expiring.isLoading) ? .thinking : .idle, diameter: 40)
         }
     }
 

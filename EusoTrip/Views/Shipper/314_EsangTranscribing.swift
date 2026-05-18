@@ -1,11 +1,11 @@
 //
-//  314_EsangTranscribing.swift
-//  EusoTrip — Shipper · ESang · Transcribing (Arc I).
+//  314_eSangTranscribing.swift
+//  EusoTrip — Shipper · eSang · Transcribing (Arc I).
 //
 
 import SwiftUI
 
-struct EsangTranscribingScreen: View {
+struct eSangTranscribingScreen: View {
     let theme: Theme.Palette
     /// base64 audio data the prior screen captured. iOS-side recorder
     /// is the producer (313). Empty string surfaces an honest error.
@@ -76,5 +76,5 @@ private struct TranscribingBody: View {
     }
 }
 
-#Preview("314 · Transcribing · Night") { EsangTranscribingScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
-#Preview("314 · Transcribing · Afternoon") { EsangTranscribingScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
+#Preview("314 · Transcribing · Night") { eSangTranscribingScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
+#Preview("314 · Transcribing · Afternoon") { eSangTranscribingScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }

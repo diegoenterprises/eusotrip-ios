@@ -20,7 +20,7 @@ private struct TierDetailBody: View {
     private let tiers: [(name: String, threshold: Int, benefits: [String])] = [
         ("Bronze",  0,    ["Base spot rates", "Standard insurance"]),
         ("Silver",  10,   ["Lane-priority routing", "Faster ACH", "Carrier scorecard access"]),
-        ("Gold",    50,   ["Volume rebates", "Dedicated dispatcher", "ESang AI ranking"]),
+        ("Gold",    50,   ["Volume rebates", "Dedicated dispatcher", "eSang AI ranking"]),
         ("Platinum",250,  ["Net-15 instead of Net-30", "RFP white-label", "Multi-mode rates"]),
         ("Diamond", 1000, ["Bespoke SLAs", "Insurance underwriting", "Founder-line escalation"]),
     ]

@@ -26,7 +26,7 @@ extension EnvironmentValues {
 
 extension Notification.Name {
     static let eusoEscortNavSwap     = Notification.Name("eusoEscortNavSwap")
-    static let eusoEscortEsangTapped = Notification.Name("eusoEscortEsangTapped")
+    static let eusoEscorteSangTapped = Notification.Name("eusoEscorteSangTapped")
 }
 
 /// `Assignments` resolves to 601 Assignment Detail (which boards the
@@ -52,7 +52,7 @@ enum EscortNavDispatcher {
 
         if EscortNavRoute.orbLabels.contains(key) {
             NotificationCenter.default.post(
-                name: .eusoEscortEsangTapped,
+                name: .eusoEscorteSangTapped,
                 object: nil
             )
             return

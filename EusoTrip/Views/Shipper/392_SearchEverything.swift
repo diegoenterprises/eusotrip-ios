@@ -49,7 +49,7 @@ private struct SearchBody: View {
                 }
                 LifecycleCard {
                     LifecycleSection(label: "SUGGESTIONS", icon: "sparkles")
-                    ForEach(["Open RFPs", "Active hazmat loads", "Late settlements", "Carriers · A-grade", "ESang status query"], id: \.self) { s in
+                    ForEach(["Open RFPs", "Active hazmat loads", "Late settlements", "Carriers · A-grade", "eSang status query"], id: \.self) { s in
                         Button { query = s; runSearch() } label: {
                             HStack {
                                 Image(systemName: "sparkles").foregroundStyle(LinearGradient.diagonal)

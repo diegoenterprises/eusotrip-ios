@@ -161,12 +161,12 @@ struct GlassToggleRow: View {
     }
 }
 
-// MARK: - ESangMark (neural-network logo)
+// MARK: - eSangMark (neural-network logo)
 
 /// Canonical EusoTrip / ESANG AI mark — outer iridescent ring plus a neural
 /// constellation on an iridescent inner fill. Ported 1:1 from the web platform
 /// `esang-ai-logo-hires.svg` (1024×1024 viewBox) and sized for any diameter.
-struct ESangMark: View {
+struct eSangMark: View {
     var diameter: CGFloat = 96
 
     /// Scale from the SVG's 1024-unit coordinate system to the target diameter.
@@ -264,7 +264,7 @@ struct ESangMark: View {
             // constellation with the same additively-blended physics field
             // used in the BottomNav orb. Sized to the inner wash so the
             // outer rings frame it exactly as the SVG does.
-            EsangParticleField(diameter: 770 * s)
+            eSangParticleField(diameter: 770 * s)
         }
         .frame(width: diameter, height: diameter)
         .accessibilityLabel("EusoTrip")

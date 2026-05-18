@@ -109,7 +109,7 @@ enum ShipperNavDispatcher {
 
         if ShipperNavRoute.orbLabels.contains(key) {
             NotificationCenter.default.post(
-                name: .eusoShipperEsangTapped,
+                name: .eusoShippereSangTapped,
                 object: nil
             )
             return
@@ -128,8 +128,8 @@ extension Notification.Name {
     /// Fired when the ESANG orb is tapped on a shipper screen.
     /// Listened to by ContentView (or whichever surface owns the
     /// ESANG coach sheet visibility flag) — same role as
-    /// `nav.showESang` on the driver side.
-    static let eusoShipperEsangTapped = Notification.Name("eusoShipperEsangTapped")
+    /// `nav.showeSang` on the driver side.
+    static let eusoShippereSangTapped = Notification.Name("eusoShippereSangTapped")
 }
 
 // MARK: - Slot identity (for canonical Shell+BottomNav wrapping)

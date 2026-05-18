@@ -16,7 +16,7 @@ struct PushPermissionScreen: View {
             icon: "bell.badge",
             message: "We push you the moment a bid lands, your truck crosses a geofence, or a settlement is paid. Without push, you'll miss time-boxed actions.",
             bullets: [
-                "Bid received + ESang recommended",
+                "Bid received + eSang recommended",
                 "Geofence pre-arrival ping (30 min out)",
                 "Load status changes (in transit, delivery, paid)",
                 "Settlement disputes + accessorial approvals",

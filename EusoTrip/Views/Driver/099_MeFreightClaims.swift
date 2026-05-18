@@ -77,7 +77,7 @@ struct MeFreightClaims: View {
                     .foregroundStyle(palette.textTertiary.opacity(0.8))
             }
             Spacer()
-            OrbESang(state: store.isLoading ? .thinking : .idle, diameter: 40)
+            OrbeSang(state: store.isLoading ? .thinking : .idle, diameter: 40)
         }
     }
 

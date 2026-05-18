@@ -222,7 +222,7 @@ private struct CatalystDriverScorecard: View {
                     }
 
                     Button {
-                        // Open ESang chat with digest pre-loaded so the
+                        // Open eSang chat with digest pre-loaded so the
                         // catalyst can send it as a message instead of
                         // sharing through the OS share sheet.
                         NotificationCenter.default.post(
@@ -238,7 +238,7 @@ private struct CatalystDriverScorecard: View {
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "sparkles").font(.system(size: 13, weight: .heavy))
-                            Text("Send via ESang chat").font(.system(size: 14, weight: .heavy))
+                            Text("Send via eSang chat").font(.system(size: 14, weight: .heavy))
                         }
                         .foregroundStyle(LinearGradient.diagonal)
                         .frame(maxWidth: .infinity)

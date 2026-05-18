@@ -30,7 +30,7 @@ private struct NotificationPrefsBody: View {
         ("settlement_disputed", "Settlement disputed"),
         ("doc_uploaded", "Document uploaded"),
         ("compliance_expiring", "Compliance expiring"),
-        ("ai_recommendation", "ESang recommendation"),
+        ("ai_recommendation", "eSang recommendation"),
     ]
 
     var body: some View {

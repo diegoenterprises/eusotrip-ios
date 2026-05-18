@@ -9,18 +9,18 @@
 //  verified ring + name + gradient company line + VERIFIED/HAZMAT
 //  pills + meta rows), 5-medallion tier ladder with gradient
 //  connectors + progress bar, 3-stat horizontal row, 2x2 credentials
-//  grid (FMCSA / INSURANCE / BBB / PAYMENT), ESang promotion strip.
+//  grid (FMCSA / INSURANCE / BBB / PAYMENT), eSang promotion strip.
 //
 //  Real data preserved: ShipperProfileStore (shippers.getProfile) +
 //  ShipperStatsStore (shippers.getStats). Client-side tier resolution
-//  + benefits + ESang copy synthesis kept verbatim — only chrome
+//  + benefits + eSang copy synthesis kept verbatim — only chrome
 //  rewritten to match wireframe recipe.
 //
 //  Persona canon (§11): Diego Usoro · Eusorone Technologies (companyId 1)
 //                        · DU monogram on diagonal gradient.
 //
 //  Web peer: ShipperProfile.tsx (`/shipper/profile`).
-//  Notification names: eusoShipperProfileEdit, eusoShipperEsangOpen.
+//  Notification names: eusoShipperProfileEdit, eusoShippereSangOpen.
 //
 //  BottomNav: Home / Create Load / Loads / Me (current) — out of scope
 //  per parity mandate §1.
@@ -856,14 +856,14 @@ struct ShipperProfile: View {
         return initials[m - 1]
     }
 
-    // MARK: - ESang strip (Orb + headline + sub-line + chevron per wireframe)
+    // MARK: - eSang strip (Orb + headline + sub-line + chevron per wireframe)
 
     private var esangStrip: some View {
         Button(action: {
-            NotificationCenter.default.post(name: .eusoShipperEsangOpen, object: nil)
+            NotificationCenter.default.post(name: .eusoShippereSangOpen, object: nil)
         }) {
             HStack(spacing: Space.s3) {
-                OrbESang(state: .idle, diameter: 32)
+                OrbeSang(state: .idle, diameter: 32)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(esangHeadline)
                         .font(EType.bodyStrong)
@@ -892,7 +892,7 @@ struct ShipperProfile: View {
 
     private var esangHeadline: String {
         guard let next = nextTier else { return "DIAMOND maxed · same-day settle · 24/7 strategic team" }
-        return "Tier \(next.label.capitalized) unlocks ESang priority routing"
+        return "Tier \(next.label.capitalized) unlocks eSang priority routing"
     }
 
     private var esangSubline: String {

@@ -252,7 +252,7 @@ struct MeIncidentReportFiler: View {
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer()
-            OrbESang(state: isSubmitting ? .thinking : .idle, diameter: 40)
+            OrbeSang(state: isSubmitting ? .thinking : .idle, diameter: 40)
         }
     }
 

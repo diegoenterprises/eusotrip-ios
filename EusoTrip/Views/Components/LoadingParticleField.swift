@@ -9,7 +9,7 @@
 //  reads as ambient EusoTrip-identity motion instead of server jargon.
 //
 //  Visual language is the same five-color palette the ESANG dissolve uses
-//  (EsangParticleBurst.darkPalette), at reduced saturation and with a slow
+//  (eSangParticleBurst.darkPalette), at reduced saturation and with a slow
 //  float motion instead of a convergence motion. The effect is:
 //    • dense firefly field (default 120 motes)
 //    • each mote drifts on a unique Lissajous-like path

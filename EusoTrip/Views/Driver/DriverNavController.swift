@@ -16,7 +16,7 @@
 //  Controller owns:
 //    • `currentTab` — which top-level surface is visible (home | trips |
 //      wallet | me).
-//    • `showESang` — whether the ESANG coach sheet is presented over
+//    • `showeSang` — whether the ESANG coach sheet is presented over
 //      whatever surface is current.
 //    • `lifecycleIndex` — when currentTab == .home we render the indexed
 //      Driver-role ScreenRegistry screen, so the nav can still flip between
@@ -38,10 +38,10 @@ final class DriverNavController: ObservableObject {
 
     @Published var currentTab: Tab = .home
 
-    /// When true, `DriverESangCoachSheet` is presented on top of whatever
+    /// When true, `DrivereSangCoachSheet` is presented on top of whatever
     /// surface is currently visible. Tapping the center orb toggles this on;
     /// the sheet's close button toggles it off.
-    @Published var showESang: Bool = false
+    @Published var showeSang: Bool = false
 
     /// Position into `ScreenRegistry.forRole(.driver)` — drives the
     /// "edge-to-edge screen" that renders when `currentTab == .home`. The
@@ -71,7 +71,7 @@ final class DriverNavController: ObservableObject {
         case "me":
             currentTab = .me
         case "esang", "orb":
-            showESang = true
+            showeSang = true
         default:
             break
         }
@@ -1190,7 +1190,7 @@ struct DriverReportIssueContext: Identifiable, Hashable {
 }
 
 extension Notification.Name {
-    /// Posted by `\.driverShowHelp` — ESangAutopilot subscribes and seeds
+    /// Posted by `\.driverShowHelp` — eSangAutopilot subscribes and seeds
     /// the first-turn prompt with the topic string on the next sheet open.
     static let esangOpenHelp = Notification.Name("com.eusorone.EusoTrip.esang.openHelp")
 

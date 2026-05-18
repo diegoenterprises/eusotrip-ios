@@ -944,7 +944,7 @@ struct LoadDetailSheet: View {
         // ESANG with the load id pre-loaded so they can ask "who
         // do I message about this load?" without typing it.
         NotificationCenter.default.post(
-            name: Notification.Name("eusoEsangOpenWithLoadContext"),
+            name: Notification.Name("eusoeSangOpenWithLoadContext"),
             object: nil,
             userInfo: [
                 "loadId": load.backendLoadId.map(String.init) ?? load.id,

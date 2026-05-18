@@ -92,7 +92,7 @@ struct MeProfile: View {
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer()
-            OrbESang(
+            OrbeSang(
                 state: (identity.isLoading || loyalty.isLoading || reputation.isLoading)
                     ? .thinking : .idle,
                 diameter: 40

@@ -85,6 +85,9 @@ private struct ShipperLoadRow: Identifiable, Hashable {
     let amount: Double
     let ratePerMile: String
     let lifecycleStage: Int  // 1...8
+    // 2026-05-17 — multi-modal payload mirrored from MyLoad.
+    let transportMode: String?
+    let multiVehicleCount: Int?
 
     private static func stripLoadPrefix(_ raw: String) -> String {
         raw.hasPrefix("load_") ? String(raw.dropFirst("load_".count)) : raw
@@ -135,7 +138,9 @@ private struct ShipperLoadRow: Identifiable, Hashable {
             metaLine: meta,
             amount: m.rate ?? 0,
             ratePerMile: ratePerMile,
-            lifecycleStage: stage(for: m.status)
+            lifecycleStage: stage(for: m.status),
+            transportMode: m.transportMode,
+            multiVehicleCount: m.multiVehicleCount
         )
     }
 }
@@ -439,10 +444,21 @@ struct ShipperLoads: View {
         HStack(alignment: .top, spacing: Space.s3) {
             modeGlyph(for: r)
             VStack(alignment: .leading, spacing: 4) {
-                Text(r.lane)
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(r.lane)
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    // 2026-05-17 — mode badge on every row. Hidden for
+                    // single-vehicle truck loads so the common case
+                    // doesn't add noise. First role surface adopting
+                    // the shared LoadModeBadge component — same badge
+                    // will land on catalyst board / broker / dispatch
+                    // / driver lists in subsequent firings.
+                    LoadModeBadge(modeRaw: r.transportMode,
+                                  multiVehicleCount: r.multiVehicleCount,
+                                  compact: true)
+                }
                 Text(r.metaLine)
                     .font(EType.mono(.caption)).tracking(0.4)
                     .foregroundStyle(palette.textSecondary)

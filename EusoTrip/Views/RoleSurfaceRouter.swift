@@ -193,7 +193,7 @@ struct ShipperSurface: View {
     /// ("none of the menu items in 'Me' for shipper have a back
     /// button so you get stuck on the screen").
     @State private var screenStack: [String] = ["200"]
-    @State private var showESang: Bool = false
+    @State private var showeSang: Bool = false
 
     /// Top of the navigation stack — the screen currently rendered.
     private var currentScreenId: String { screenStack.last ?? "200" }
@@ -285,7 +285,7 @@ struct ShipperSurface: View {
                 screenStack: $screenStack,
                 activeLoadId: $activeLoadId,
                 avatarPickerOpen: $avatarPickerOpen,
-                showESang: $showESang,
+                showeSang: $showeSang,
                 webContinuationURL: $webContinuationURL,
                 pushOrTab: pushOrTab,
                 popOne: popOne,
@@ -308,8 +308,8 @@ struct ShipperSurface: View {
                 SafariContinuationView(url: ident.url)
                     .ignoresSafeArea()
             }
-            .sheet(isPresented: $showESang) {
-                ShipperESangCoachSheet()
+            .sheet(isPresented: $showeSang) {
+                ShippereSangCoachSheet()
                     .environment(\.palette, palette)
                     .environmentObject(session)
             }
@@ -569,7 +569,7 @@ private struct ShipperNotificationListeners: ViewModifier {
     @Binding var screenStack: [String]
     @Binding var activeLoadId: String?
     @Binding var avatarPickerOpen: Bool
-    @Binding var showESang: Bool
+    @Binding var showeSang: Bool
     @Binding var webContinuationURL: URL?
     let pushOrTab: (String) -> Void
     let popOne: () -> Void
@@ -581,14 +581,14 @@ private struct ShipperNotificationListeners: ViewModifier {
                 screenStack: $screenStack,
                 activeLoadId: $activeLoadId,
                 avatarPickerOpen: $avatarPickerOpen,
-                showESang: $showESang,
+                showeSang: $showeSang,
                 pushOrTab: pushOrTab,
                 popOne: popOne
             ))
             .modifier(ShipperLoadReceivers(
                 screenStack: $screenStack,
                 activeLoadId: $activeLoadId,
-                showESang: $showESang,
+                showeSang: $showeSang,
                 webContinuationURL: $webContinuationURL,
                 pushOrTab: pushOrTab,
                 handleMeAction: handleMeAction
@@ -602,7 +602,7 @@ private struct ShipperNavReceivers: ViewModifier {
     @Binding var screenStack: [String]
     @Binding var activeLoadId: String?
     @Binding var avatarPickerOpen: Bool
-    @Binding var showESang: Bool
+    @Binding var showeSang: Bool
     let pushOrTab: (String) -> Void
     let popOne: () -> Void
 
@@ -633,8 +633,8 @@ private struct ShipperNavReceivers: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .eusoShipperAvatarPickRequested)) { _ in
                 avatarPickerOpen = true
             }
-            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperEsangTapped)) { _ in
-                showESang = true
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShippereSangTapped)) { _ in
+                showeSang = true
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoShipperLoadCreate)) { _ in
                 guard RoleAccess.canRender(role: .shipper, screenId: "204") else { return }
@@ -661,7 +661,7 @@ private struct ShipperNavReceivers: ViewModifier {
 private struct ShipperLoadReceivers: ViewModifier {
     @Binding var screenStack: [String]
     @Binding var activeLoadId: String?
-    @Binding var showESang: Bool
+    @Binding var showeSang: Bool
     @Binding var webContinuationURL: URL?
     let pushOrTab: (String) -> Void
     let handleMeAction: (String, [AnyHashable: Any]) -> Void
@@ -693,11 +693,11 @@ private struct ShipperLoadReceivers: ViewModifier {
                     screenStack = ["200"]
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperEsangOpen)) { _ in
-                showESang = true
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShippereSangOpen)) { _ in
+                showeSang = true
             }
-            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperLoadMessageEsang)) { _ in
-                showESang = true
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperLoadMessageeSang)) { _ in
+                showeSang = true
             }
             .modifier(ShipperWebContReceivers(
                 webContinuationURL: $webContinuationURL,
@@ -852,7 +852,7 @@ struct CarrierSurface: View {
     /// always have a back path. Bottom-nav tabs reset the stack to a
     /// single entry; non-tab screens append.
     @State private var screenStack: [String] = ["300"]
-    @State private var showESang: Bool = false
+    @State private var showeSang: Bool = false
     private static let tabRoots: Set<String> = ["300", "301", "302", "303"]
 
     /// Carrier-side suppress list — same purpose as ShipperBackOverlay's
@@ -914,11 +914,11 @@ struct CarrierSurface: View {
             .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
                 withAnimation(.easeInOut(duration: 0.22)) { popOne() }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .eusoCarrierEsangTapped)) { _ in
-                showESang = true
+            .onReceive(NotificationCenter.default.publisher(for: .eusoCarriereSangTapped)) { _ in
+                showeSang = true
             }
-            .sheet(isPresented: $showESang) {
-                DriverESangCoachSheet().environment(\.palette, palette)
+            .sheet(isPresented: $showeSang) {
+                DrivereSangCoachSheet().environment(\.palette, palette)
             }
     }
 }
@@ -936,7 +936,7 @@ struct BrokerSurface: View {
 
     @EnvironmentObject var session: EusoTripSession
     @State private var screenStack: [String] = ["400"]
-    @State private var showESang: Bool = false
+    @State private var showeSang: Bool = false
     private static let tabRoots: Set<String> = ["400", "401", "402", "403"]
 
     private var currentScreenId: String { screenStack.last ?? "400" }
@@ -983,11 +983,11 @@ struct BrokerSurface: View {
             .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
                 withAnimation(.easeInOut(duration: 0.22)) { popOne() }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .eusoBrokerEsangTapped)) { _ in
-                showESang = true
+            .onReceive(NotificationCenter.default.publisher(for: .eusoBrokereSangTapped)) { _ in
+                showeSang = true
             }
-            .sheet(isPresented: $showESang) {
-                DriverESangCoachSheet().environment(\.palette, palette)
+            .sheet(isPresented: $showeSang) {
+                DrivereSangCoachSheet().environment(\.palette, palette)
             }
     }
 }
@@ -1001,7 +1001,7 @@ struct EscortSurface: View {
 
     @EnvironmentObject var session: EusoTripSession
     @State private var screenStack: [String] = ["600"]
-    @State private var showESang: Bool = false
+    @State private var showeSang: Bool = false
     private static let tabRoots: Set<String> = ["600", "601", "602", "603"]
 
     private var currentScreenId: String { screenStack.last ?? "600" }
@@ -1048,11 +1048,11 @@ struct EscortSurface: View {
             .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
                 withAnimation(.easeInOut(duration: 0.22)) { popOne() }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .eusoEscortEsangTapped)) { _ in
-                showESang = true
+            .onReceive(NotificationCenter.default.publisher(for: .eusoEscorteSangTapped)) { _ in
+                showeSang = true
             }
-            .sheet(isPresented: $showESang) {
-                DriverESangCoachSheet().environment(\.palette, palette)
+            .sheet(isPresented: $showeSang) {
+                DrivereSangCoachSheet().environment(\.palette, palette)
             }
     }
 }
@@ -1066,7 +1066,7 @@ struct TerminalSurface: View {
 
     @EnvironmentObject var session: EusoTripSession
     @State private var screenStack: [String] = ["700"]
-    @State private var showESang: Bool = false
+    @State private var showeSang: Bool = false
     private static let tabRoots: Set<String> = ["700", "701", "702", "703"]
 
     private var currentScreenId: String { screenStack.last ?? "700" }
@@ -1113,11 +1113,11 @@ struct TerminalSurface: View {
             .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
                 withAnimation(.easeInOut(duration: 0.22)) { popOne() }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .eusoTerminalEsangTapped)) { _ in
-                showESang = true
+            .onReceive(NotificationCenter.default.publisher(for: .eusoTerminaleSangTapped)) { _ in
+                showeSang = true
             }
-            .sheet(isPresented: $showESang) {
-                DriverESangCoachSheet().environment(\.palette, palette)
+            .sheet(isPresented: $showeSang) {
+                DrivereSangCoachSheet().environment(\.palette, palette)
             }
     }
 }
@@ -1134,7 +1134,7 @@ struct AdminSurface: View {
 
     @EnvironmentObject var session: EusoTripSession
     @State private var screenStack: [String] = ["800"]
-    @State private var showESang: Bool = false
+    @State private var showeSang: Bool = false
     private static let tabRoots: Set<String> = ["800", "801", "802", "803"]
 
     private var currentScreenId: String { screenStack.last ?? "800" }
@@ -1181,11 +1181,11 @@ struct AdminSurface: View {
             .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
                 withAnimation(.easeInOut(duration: 0.22)) { popOne() }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .eusoAdminEsangTapped)) { _ in
-                showESang = true
+            .onReceive(NotificationCenter.default.publisher(for: .eusoAdmineSangTapped)) { _ in
+                showeSang = true
             }
-            .sheet(isPresented: $showESang) {
-                DriverESangCoachSheet().environment(\.palette, palette)
+            .sheet(isPresented: $showeSang) {
+                DrivereSangCoachSheet().environment(\.palette, palette)
             }
     }
 }
@@ -1200,7 +1200,7 @@ struct DispatchSurface: View {
 
     @EnvironmentObject var session: EusoTripSession
     @State private var screenStack: [String] = ["Dpch700"]
-    @State private var showESang: Bool = false
+    @State private var showeSang: Bool = false
     private static let tabRoots: Set<String> = ["Dpch700", "Dpch701", "Dpch702", "Dpch703"]
 
     private var currentScreenId: String { screenStack.last ?? "Dpch700" }
@@ -1247,11 +1247,11 @@ struct DispatchSurface: View {
             .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
                 withAnimation(.easeInOut(duration: 0.22)) { popOne() }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .eusoDispatchEsangTapped)) { _ in
-                showESang = true
+            .onReceive(NotificationCenter.default.publisher(for: .eusoDispatcheSangTapped)) { _ in
+                showeSang = true
             }
-            .sheet(isPresented: $showESang) {
-                DriverESangCoachSheet().environment(\.palette, palette)
+            .sheet(isPresented: $showeSang) {
+                DrivereSangCoachSheet().environment(\.palette, palette)
             }
     }
 }
@@ -1266,7 +1266,7 @@ struct ComplianceSurface: View {
 
     @EnvironmentObject var session: EusoTripSession
     @State private var screenStack: [String] = ["900"]
-    @State private var showESang: Bool = false
+    @State private var showeSang: Bool = false
     private static let tabRoots: Set<String> = ["900", "901", "902", "903"]
 
     private var currentScreenId: String { screenStack.last ?? "900" }
@@ -1313,11 +1313,11 @@ struct ComplianceSurface: View {
             .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
                 withAnimation(.easeInOut(duration: 0.22)) { popOne() }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .eusoComplianceEsangTapped)) { _ in
-                showESang = true
+            .onReceive(NotificationCenter.default.publisher(for: .eusoComplianceeSangTapped)) { _ in
+                showeSang = true
             }
-            .sheet(isPresented: $showESang) {
-                DriverESangCoachSheet().environment(\.palette, palette)
+            .sheet(isPresented: $showeSang) {
+                DrivereSangCoachSheet().environment(\.palette, palette)
             }
     }
 }

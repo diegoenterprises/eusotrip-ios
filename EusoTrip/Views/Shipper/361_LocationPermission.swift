@@ -27,7 +27,7 @@ struct LocationPermissionScreen: View {
             bullets: [
                 "Live Activity ETA on Lock Screen + Dynamic Island",
                 "Geofence enter/exit alerts (30-min and at-gate)",
-                "Trip-aware ESang recommendations",
+                "Trip-aware eSang recommendations",
                 "Used only when a load is active, never sold or shared",
             ],
             onGrant: { delegate.request() }

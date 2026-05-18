@@ -78,7 +78,7 @@ private struct InboxBody: View {
     private var content: some View {
         if loading { LifecycleCard { Text("Loading inbox…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
         else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
-        else if items.isEmpty { EusoEmptyState(systemImage: "bell.slash", title: "No notifications", subtitle: "Pings from carriers, settlements, and ESang land here.") }
+        else if items.isEmpty { EusoEmptyState(systemImage: "bell.slash", title: "No notifications", subtitle: "Pings from carriers, settlements, and eSang land here.") }
         else {
             ForEach(items) { n in
                 Button {

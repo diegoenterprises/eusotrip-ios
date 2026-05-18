@@ -22,7 +22,7 @@ private struct SettingsHomeBody: View {
                 section(title: "PREFERENCES", cells: [
                     ("bell", "Notification preferences", "343"),
                     ("doc.on.doc", "Lane templates", "341"),
-                    ("sparkles", "ESang preferences", "319"),
+                    ("sparkles", "eSang preferences", "319"),
                 ])
                 section(title: "SECURITY", cells: [
                     ("lock.shield", "Active sessions", "344"),

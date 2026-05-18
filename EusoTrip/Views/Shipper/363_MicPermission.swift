@@ -14,9 +14,9 @@ struct MicPermissionScreen: View {
             title: "Microphone",
             eyebrow: "Shipper · Mic",
             icon: "mic.fill",
-            message: "Microphone access powers ESang voice — ask 'Where's my UN1203 load?' or 'Take Eusotrans LLC at $2,150' from anywhere.",
+            message: "Microphone access powers eSang voice — ask 'Where's my UN1203 load?' or 'Take Eusotrans LLC at $2,150' from anywhere.",
             bullets: [
-                "ESang voice queries on the go",
+                "eSang voice queries on the go",
                 "Hold-to-talk dispatch chat",
                 "Voice rate-confirm read-back",
                 "Audio is transcribed on-device or via secured Gemini channel",

@@ -27,17 +27,17 @@
 //
 //  Surfaces wired (mirrors the 237 doctrine, but every leaf is
 //  ESANG, not a direct mutation):
-//    1. AskEsangIntent              — generic "Ask ESANG ___"
-//    2. EsangPostLoadIntent         — "post a load" → ESANG
-//    3. EsangCheckLoadStatusIntent  — "load status" → ESANG
-//    4. EsangShowExceptionsIntent   — "show exceptions" → ESANG
-//    5. EsangGetBidsIntent          — "get bids" → ESANG
-//    6. OpenEsangIntent             — "Open ESANG" deep-link
+//    1. AskeSangIntent              — generic "Ask ESANG ___"
+//    2. eSangPostLoadIntent         — "post a load" → ESANG
+//    3. eSangCheckLoadStatusIntent  — "load status" → ESANG
+//    4. eSangShowExceptionsIntent   — "show exceptions" → ESANG
+//    5. eSangGetBidsIntent          — "get bids" → ESANG
+//    6. OpeneSangIntent             — "Open ESANG" deep-link
 //    7. OpenLoadsIntent             — "Open Loads" deep-link
 //    8. OpenControlTowerIntent      — "Open Control Tower" deep-link
 //
 //  Deep-link intents (6/7/8) post the canonical
-//  `eusoShipperNavSwap` / `eusoShipperEsangTapped` notifications
+//  `eusoShipperNavSwap` / `eusoShippereSangTapped` notifications
 //  that `RoleSurfaceRouter.ShipperSurface` already listens for. ESANG
 //  intents (1-5) return ESANG's reply text in the Siri dialog so the
 //  user hears what ESANG said.
@@ -46,7 +46,7 @@
 import Foundation
 import AppIntents
 
-// MARK: - 1. AskEsangIntent (the canonical "Ask ESANG ___" entry)
+// MARK: - 1. AskeSangIntent (the canonical "Ask ESANG ___" entry)
 
 /// "Ask ESANG to find me a return load out of Dallas."
 /// "Hey Siri, ask ESANG how many bids are on LD-...".
@@ -54,7 +54,7 @@ import AppIntents
 /// or "tell ESANG" routes here. ESANG's reply comes back as the
 /// Siri dialog so the user hears the same voice they hear in-app.
 @available(iOS 17.0, *)
-struct AskEsangIntent: AppIntent {
+struct AskeSangIntent: AppIntent {
     static var title: LocalizedStringResource = "Ask ESANG"
     static var description = IntentDescription(
         "Sends a question or command to ESANG AI and reads its reply.",
@@ -74,7 +74,7 @@ struct AskEsangIntent: AppIntent {
     }
 }
 
-// MARK: - 2. EsangPostLoadIntent
+// MARK: - 2. eSangPostLoadIntent
 
 /// "Hey Siri, post a load on EusoTrip from Houston to Dallas at 1900 dollars."
 /// Routes to ESANG with a structured prompt so the AI can fill in
@@ -82,7 +82,7 @@ struct AskEsangIntent: AppIntent {
 /// via lane history, pickup-window from the user's calendar) instead
 /// of forcing the user to recite every required parameter to Siri.
 @available(iOS 17.0, *)
-struct EsangPostLoadIntent: AppIntent {
+struct eSangPostLoadIntent: AppIntent {
     static var title: LocalizedStringResource = "Post a Load with ESANG"
     static var description = IntentDescription(
         "Asks ESANG AI to post a load to your shipper board.",
@@ -109,10 +109,10 @@ struct EsangPostLoadIntent: AppIntent {
     }
 }
 
-// MARK: - 3. EsangCheckLoadStatusIntent
+// MARK: - 3. eSangCheckLoadStatusIntent
 
 @available(iOS 17.0, *)
-struct EsangCheckLoadStatusIntent: AppIntent {
+struct eSangCheckLoadStatusIntent: AppIntent {
     static var title: LocalizedStringResource = "Check Load Status with ESANG"
     static var description = IntentDescription(
         "Asks ESANG AI for the current lifecycle stage and ETA of a load.",
@@ -132,13 +132,13 @@ struct EsangCheckLoadStatusIntent: AppIntent {
     }
 }
 
-// MARK: - 4. EsangShowExceptionsIntent
+// MARK: - 4. eSangShowExceptionsIntent
 
 /// "Hey Siri, show me my exceptions on EusoTrip." ESANG narrates the
 /// top open exceptions instead of dumping the user into the control
 /// tower screen — they can ask follow-ups by speaking again.
 @available(iOS 17.0, *)
-struct EsangShowExceptionsIntent: AppIntent {
+struct eSangShowExceptionsIntent: AppIntent {
     static var title: LocalizedStringResource = "Show Exceptions with ESANG"
     static var description = IntentDescription(
         "Asks ESANG AI to summarize your open platform exceptions.",
@@ -156,10 +156,10 @@ struct EsangShowExceptionsIntent: AppIntent {
     }
 }
 
-// MARK: - 5. EsangGetBidsIntent
+// MARK: - 5. eSangGetBidsIntent
 
 @available(iOS 17.0, *)
-struct EsangGetBidsIntent: AppIntent {
+struct eSangGetBidsIntent: AppIntent {
     static var title: LocalizedStringResource = "Get Bids with ESANG"
     static var description = IntentDescription(
         "Asks ESANG AI for the bid count and best price on a posted load.",
@@ -179,13 +179,13 @@ struct EsangGetBidsIntent: AppIntent {
     }
 }
 
-// MARK: - 6. OpenEsangIntent
+// MARK: - 6. OpeneSangIntent
 
 /// "Hey Siri, open ESANG." Brings the app forward and presents the
 /// ESANG coach sheet immediately so the user can keep the
 /// conversation going by voice from inside the app.
 @available(iOS 17.0, *)
-struct OpenEsangIntent: AppIntent {
+struct OpeneSangIntent: AppIntent {
     static var title: LocalizedStringResource = "Open ESANG"
     static var description = IntentDescription(
         "Opens ESANG AI inside the app.",
@@ -196,7 +196,7 @@ struct OpenEsangIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         await MainActor.run {
             NotificationCenter.default.post(
-                name: .eusoShipperEsangTapped,
+                name: .eusoShippereSangTapped,
                 object: nil
             )
         }
@@ -262,7 +262,7 @@ struct OpenControlTowerIntent: AppIntent {
 struct EusoTripAppShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
-            intent: AskEsangIntent(),
+            intent: AskeSangIntent(),
             phrases: [
                 "Ask ESANG on \(.applicationName)",
                 "Tell ESANG on \(.applicationName)",
@@ -271,7 +271,7 @@ struct EusoTripAppShortcuts: AppShortcutsProvider {
             systemImageName: "sparkles"
         )
         AppShortcut(
-            intent: EsangPostLoadIntent(),
+            intent: eSangPostLoadIntent(),
             phrases: [
                 "Post a load with ESANG on \(.applicationName)",
                 "Have ESANG post a load on \(.applicationName)",
@@ -280,7 +280,7 @@ struct EusoTripAppShortcuts: AppShortcutsProvider {
             systemImageName: "plus.rectangle.on.rectangle"
         )
         AppShortcut(
-            intent: EsangCheckLoadStatusIntent(),
+            intent: eSangCheckLoadStatusIntent(),
             phrases: [
                 "Ask ESANG for load status on \(.applicationName)",
             ],
@@ -288,7 +288,7 @@ struct EusoTripAppShortcuts: AppShortcutsProvider {
             systemImageName: "shippingbox.fill"
         )
         AppShortcut(
-            intent: EsangShowExceptionsIntent(),
+            intent: eSangShowExceptionsIntent(),
             phrases: [
                 "Ask ESANG for exceptions on \(.applicationName)",
             ],
@@ -296,7 +296,7 @@ struct EusoTripAppShortcuts: AppShortcutsProvider {
             systemImageName: "exclamationmark.triangle.fill"
         )
         AppShortcut(
-            intent: EsangGetBidsIntent(),
+            intent: eSangGetBidsIntent(),
             phrases: [
                 "Ask ESANG for bids on \(.applicationName)",
             ],
@@ -304,7 +304,7 @@ struct EusoTripAppShortcuts: AppShortcutsProvider {
             systemImageName: "hand.raised.fill"
         )
         AppShortcut(
-            intent: OpenEsangIntent(),
+            intent: OpeneSangIntent(),
             phrases: [
                 "Open ESANG on \(.applicationName)",
             ],

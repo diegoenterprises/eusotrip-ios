@@ -26,7 +26,7 @@ extension EnvironmentValues {
 
 extension Notification.Name {
     static let eusoTerminalNavSwap     = Notification.Name("eusoTerminalNavSwap")
-    static let eusoTerminalEsangTapped = Notification.Name("eusoTerminalEsangTapped")
+    static let eusoTerminaleSangTapped = Notification.Name("eusoTerminaleSangTapped")
 }
 
 /// `Movements` resolves to 701 Gate Queue (the canonical inbound /
@@ -50,7 +50,7 @@ enum TerminalNavDispatcher {
 
         if TerminalNavRoute.orbLabels.contains(key) {
             NotificationCenter.default.post(
-                name: .eusoTerminalEsangTapped,
+                name: .eusoTerminaleSangTapped,
                 object: nil
             )
             return

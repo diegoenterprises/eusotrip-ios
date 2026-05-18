@@ -868,7 +868,7 @@ private struct CatalystFleetDrivers: View {
 
         return Button {
             // Open ESANG chat with this driver's context preloaded.
-            // ESang is the canonical voice/messaging funnel per
+            // eSang is the canonical voice/messaging funnel per
             // `feedback_esang_canonical_voice` — every catalyst-side
             // action that nudges the driver routes through here, not
             // direct tRPC mutations.

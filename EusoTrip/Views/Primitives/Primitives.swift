@@ -38,7 +38,7 @@ import SwiftUI
 //     010_DriverHome.swift, 012_DvirSubmitted.swift,
 //     015_AtGateAwaitingDock.swift, 016_PickupLoading.swift,
 //     017_PickupBolSigning.swift, 018_ActiveEnrouteLoaded.swift,
-//     036_ESangSmartStop.swift,
+//     036_eSangSmartStop.swift,
 //     DriverTabPanes.swift, MeDetailScreens.swift, MeNewsView.swift,
 //     MeNotificationsView.swift, ProfileEditView.swift,
 //     DriverConversationView.swift, ELDIntegrationView.swift,
@@ -53,7 +53,7 @@ import SwiftUI
 //   Canonical: EusoTrip/Theme/DesignSystem.swift (L1104)
 //   Call sites:
 //     010_DriverHome.swift, 012_DvirSubmitted.swift,
-//     036_ESangSmartStop.swift, 048_ArrivalGateTaskActive.swift (local var
+//     036_eSangSmartStop.swift, 048_ArrivalGateTaskActive.swift (local var
 //     shadow — uses its own inline struct; candidate for migration when
 //     Phase 2 lands),
 //     DriverTabPanes.swift, ELDIntegrationView.swift, HotZonesWidget.swift,

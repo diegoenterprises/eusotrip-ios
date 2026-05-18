@@ -31,7 +31,7 @@ extension EnvironmentValues {
 
 extension Notification.Name {
     static let eusoDispatchNavSwap     = Notification.Name("eusoDispatchNavSwap")
-    static let eusoDispatchEsangTapped = Notification.Name("eusoDispatchEsangTapped")
+    static let eusoDispatcheSangTapped = Notification.Name("eusoDispatcheSangTapped")
 }
 
 enum DispatchNavRoute {
@@ -52,7 +52,7 @@ enum DispatchNavDispatcher {
 
         if DispatchNavRoute.orbLabels.contains(key) {
             NotificationCenter.default.post(
-                name: .eusoDispatchEsangTapped,
+                name: .eusoDispatcheSangTapped,
                 object: nil
             )
             return

@@ -371,7 +371,7 @@ struct DriverProfile: View {
             Image(systemName: "sparkles")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(LinearGradient.diagonal)
-            Text(ctx.poolEsangNote)
+            Text(ctx.pooleSangNote)
                 .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                 .foregroundStyle(palette.textSecondary)
                 .lineLimit(2)

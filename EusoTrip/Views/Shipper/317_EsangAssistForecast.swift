@@ -1,11 +1,11 @@
 //
-//  317_EsangAssistForecast.swift
-//  EusoTrip — Shipper · ESang · Forecast (Arc I).
+//  317_eSangAssistForecast.swift
+//  EusoTrip — Shipper · eSang · Forecast (Arc I).
 //
 
 import SwiftUI
 
-struct EsangAssistForecastScreen: View {
+struct eSangAssistForecastScreen: View {
     let theme: Theme.Palette
     var body: some View {
         Shell(theme: theme) { ForecastBody() } nav: { shipperLifecycleNav() }
@@ -31,7 +31,7 @@ private struct ForecastBody: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
                 inputCard
-                if loading { LifecycleCard { Text("ESang forecasting…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
+                if loading { LifecycleCard { Text("eSang forecasting…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
                 else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
                 else if let e = env { answerCard(e); pointsCard(e) }
                 Color.clear.frame(height: 96)
@@ -109,5 +109,5 @@ private struct ForecastBody: View {
     }
 }
 
-#Preview("317 · Forecast · Night") { EsangAssistForecastScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
-#Preview("317 · Forecast · Afternoon") { EsangAssistForecastScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
+#Preview("317 · Forecast · Night") { eSangAssistForecastScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
+#Preview("317 · Forecast · Afternoon") { eSangAssistForecastScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }

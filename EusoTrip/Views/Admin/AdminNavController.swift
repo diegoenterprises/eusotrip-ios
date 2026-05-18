@@ -26,7 +26,7 @@ extension EnvironmentValues {
 
 extension Notification.Name {
     static let eusoAdminNavSwap     = Notification.Name("eusoAdminNavSwap")
-    static let eusoAdminEsangTapped = Notification.Name("eusoAdminEsangTapped")
+    static let eusoAdmineSangTapped = Notification.Name("eusoAdmineSangTapped")
 }
 
 /// `Tickets` resolves to 801 Control Tower (the platform exception /
@@ -53,7 +53,7 @@ enum AdminNavDispatcher {
 
         if AdminNavRoute.orbLabels.contains(key) {
             NotificationCenter.default.post(
-                name: .eusoAdminEsangTapped,
+                name: .eusoAdmineSangTapped,
                 object: nil
             )
             return

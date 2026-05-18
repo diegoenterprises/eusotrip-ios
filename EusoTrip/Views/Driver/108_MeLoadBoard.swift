@@ -352,6 +352,15 @@ struct MeLoadBoardView: View {
                     if l.hazmat == true {
                         hazmatBadge(class: l.hazmatClass)
                     }
+                    // 2026-05-17 — Mode badge on every driver load row.
+                    // Rail / vessel / barge loads now read distinctly,
+                    // and multi-vehicle posts (e.g. 100× rail tank cars)
+                    // show the count up-front so drivers self-select
+                    // bids correctly. Counter-party half of the shipper
+                    // Step-1 mode picker wired the same firing.
+                    LoadModeBadge(modeRaw: l.transportMode,
+                                  multiVehicleCount: l.multiVehicleCount,
+                                  compact: true)
                     // Listing-trust chip — lazy-loads on row appear
                     // via fraud.getLoadTrust(loadId). Drivers see
                     // verified / review / flagged before they bid.

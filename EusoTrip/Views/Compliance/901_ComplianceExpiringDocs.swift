@@ -3,8 +3,8 @@
 //  EusoTrip — Compliance Officer · Expiring documents (30-day window).
 //
 //  RESURRECTED 2026-05-01 — was previously shelved behind `#if false`
-//  due to a reference to `OrbESang.State.alert`, which doesn't exist
-//  in the canonical 3-case `OrbESang.State` enum (`.idle`,
+//  due to a reference to `OrbeSang.State.alert`, which doesn't exist
+//  in the canonical 3-case `OrbeSang.State` enum (`.idle`,
 //  `.listening`, `.thinking`) at `Theme/DesignSystem.swift:273`. Mapped
 //  the alerting cue to `.idle` since the orb's role here is decorative
 //  (the screen's own gradient warning chips carry the visual urgency).

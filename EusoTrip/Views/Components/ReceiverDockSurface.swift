@@ -285,7 +285,7 @@ struct ReceiverDockSurface: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(voice.isListening ? "Stop recording" : "Talk to ESang")
+        .accessibilityLabel(voice.isListening ? "Stop recording" : "Talk to eSang")
         .padding()
     }
 }

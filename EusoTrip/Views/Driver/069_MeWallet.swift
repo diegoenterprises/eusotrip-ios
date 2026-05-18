@@ -180,7 +180,7 @@ struct MeWallet: View {
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer()
-            OrbESang(state: anyLoading ? .thinking : .idle, diameter: 40)
+            OrbeSang(state: anyLoading ? .thinking : .idle, diameter: 40)
         }
     }
 

@@ -1386,7 +1386,7 @@ struct LifecycleProductContext {
 
     /// ESANG strip under the pool card — explains how the tier
     /// promotion shows up on the next tender.
-    var poolEsangNote: String {
+    var pooleSangNote: String {
         switch product {
         case .hazmatTanker, .vesselTanker:
             return "ESANG · TIER 3 PROMOTION APPLIED TO DAY-2 TENDER · +$60 ALREADY PRICED IN"
