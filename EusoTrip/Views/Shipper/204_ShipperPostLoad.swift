@@ -4887,6 +4887,17 @@ fileprivate extension ShipperAPI.CargoType {
         case (.general, .rail):   return .railBoxcar
         case (.general, .vessel): return .vesselContainer
         case (.general, .barge):  return .vesselContainer
+
+        // Swift can't prove tuple exhaustiveness across compound
+        // patterns like (.hazmat, .truck), (.chemicals, .truck) — add
+        // a safe per-mode default for any unhandled (cargo, mode).
+        default:
+            switch mode {
+            case .truck:  return .dryVan
+            case .rail:   return .railBoxcar
+            case .vessel: return .vesselContainer
+            case .barge:  return .vesselContainer
+            }
         }
     }
 
@@ -4947,6 +4958,13 @@ fileprivate extension ShipperAPI.CargoType {
             return [.vesselContainer, .vesselBulk, .vesselRoRo, .vesselReeferContainer]
         case (.general, .barge):
             return [.vesselContainer, .vesselBulk]
+
+        // Mirrors the canonicalEquipment default — Swift can't prove
+        // tuple exhaustiveness across compound `(.hazmat | .chemicals,
+        // mode)` patterns. Empty set forces autoSnap to fall back to
+        // the canonical equipment for the pair.
+        default:
+            return []
         }
     }
 }
