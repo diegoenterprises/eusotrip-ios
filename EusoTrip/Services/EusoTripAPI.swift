@@ -809,6 +809,15 @@ final class EusoTripAPI: ObservableObject {
     /// Covers all 3 verticals × 3 countries.
     lazy var credentialScanner: CredentialScannerAPI = CredentialScannerAPI(api: self)
 
+    /// `documentRouter` — master classifier for every upload /
+    /// bulk-upload surface. Pass any document image / PDF and get
+    /// back a classifiedType (60+ supported) + confidence + summary
+    /// + extractedFields + dispatchTarget (the canonical tRPC proc
+    /// to call next with the extracted fields). Use this whenever a
+    /// shipper / driver / catalyst drops a file into Templates /
+    /// Bulk / Documents.
+    lazy var documentRouter: DocumentRouterAPI = DocumentRouterAPI(api: self)
+
     /// `fleetRegistrationRouter` — NHTSA VIN decode + bulk vehicle
     /// + driver intake during carrier onboarding. Seeds Zeun
     /// maintenance schedules and DVIR baseline rows so the fleet
@@ -18615,5 +18624,142 @@ struct FleetRegistrationAPI {
     func getOnboardingFleetSummary() async throws -> OnboardingFleetSummary {
         struct Empty: Encodable {}
         return try await api.query("fleetRegistration.getOnboardingFleetSummary", input: Empty())
+    }
+}
+
+// MARK: - DocumentRouterAPI
+//
+// Master classifier — every upload / bulk-upload affordance on iOS
+// calls this first. Returns a typed classification + extracted
+// fields + the canonical tRPC procedure to call next. Powered by
+// Gemini Vision against the EusoTrip 60-type document taxonomy.
+//
+// Wherever an iOS surface offers an upload (Shipper Post-Load
+// Templates / Bulk, Driver Me·Docs, Catalyst onboarding bundle drop,
+// Compliance officer renewal, Wallet pickup-credential photo, etc.)
+// route through this first so the user never has to pick a document
+// type from a 60-option dropdown.
+
+struct DocumentRouterAPI {
+    unowned let api: EusoTripAPI
+
+    enum MimeType: String, Encodable {
+        case jpeg = "image/jpeg"
+        case png = "image/png"
+        case webp = "image/webp"
+        case heic = "image/heic"
+        case pdf = "application/pdf"
+    }
+
+    /// Heterogeneous JSON value — extractedFields are typed at the
+    /// document level so we accept whatever the server emits.
+    enum FieldValue: Decodable, Hashable {
+        case string(String)
+        case number(Double)
+        case bool(Bool)
+        case null
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.singleValueContainer()
+            if c.decodeNil() { self = .null; return }
+            if let v = try? c.decode(Bool.self) { self = .bool(v); return }
+            if let v = try? c.decode(Double.self) { self = .number(v); return }
+            if let v = try? c.decode(String.self) { self = .string(v); return }
+            self = .null
+        }
+
+        var asString: String? {
+            switch self {
+            case .string(let s): return s
+            case .number(let d): return d == d.rounded() ? String(format: "%.0f", d) : String(d)
+            case .bool(let b): return b ? "true" : "false"
+            case .null: return nil
+            }
+        }
+    }
+
+    struct ClassifyResponse: Decodable, Hashable {
+        /// One of `documentRouter.DocumentTypes` (60+ values).
+        let classifiedType: String
+        let confidence: Double
+        let summary: String
+        /// Per-document extracted fields. Keys are doc-type-specific
+        /// (e.g. BOL → bolNumber/shipperName/consigneeName, CDL →
+        /// identifier/holderName/expirationDate). Caller dispatches
+        /// these into the type-specific tRPC procedure.
+        let extractedFields: [String: FieldValue]
+        /// The canonical tRPC procedure to call next with the
+        /// extracted fields. Nil for `unknown` or types without a
+        /// platform-side parser.
+        let dispatchTarget: String?
+        let warnings: [String]
+    }
+
+    /// Classify + route a single document. Pass `callerContext`
+    /// (e.g. "shipper Post-Load bulk", "driver post-trip BOL",
+    /// "carrier registration step 3 docs bundle") to help the
+    /// classifier disambiguate when two doc shapes overlap.
+    func classifyAndRoute(
+        documentBase64: String,
+        mimeType: MimeType,
+        callerContext: String? = nil
+    ) async throws -> ClassifyResponse {
+        struct Input: Encodable {
+            let documentBase64: String
+            let mimeType: String
+            let callerContext: String?
+        }
+        return try await api.mutation(
+            "documentRouter.classifyAndRoute",
+            input: Input(
+                documentBase64: documentBase64,
+                mimeType: mimeType.rawValue,
+                callerContext: callerContext
+            )
+        )
+    }
+
+    struct BatchItem: Encodable {
+        let documentBase64: String
+        let mimeType: String
+        let clientRef: String?
+        let callerContext: String?
+    }
+
+    struct BatchResponse: Decodable, Hashable {
+        struct Result: Decodable, Hashable {
+            let classifiedType: String
+            let confidence: Double
+            let summary: String
+            let extractedFields: [String: FieldValue]
+            let dispatchTarget: String?
+            let warnings: [String]
+            let clientRef: String?
+        }
+        let items: [Result]
+    }
+
+    /// Batch classify up to 30 documents in one round-trip. Carrier
+    /// onboarding "drop your full packet" uses this so the user can
+    /// dump 10 PDFs and we sort them server-side.
+    func classifyBatch(_ items: [BatchItem]) async throws -> BatchResponse {
+        struct Input: Encodable { let items: [BatchItem] }
+        return try await api.mutation("documentRouter.classifyBatch", input: Input(items: items))
+    }
+
+    struct SupportedTypesResponse: Decodable, Hashable {
+        struct TypeEntry: Decodable, Hashable, Identifiable {
+            let type: String
+            let dispatchTarget: String?
+            var id: String { type }
+        }
+        let types: [TypeEntry]
+    }
+
+    /// Pulls the full classifier taxonomy from the server so the
+    /// iOS Templates picker doesn't drift out of sync.
+    func listSupportedTypes() async throws -> SupportedTypesResponse {
+        struct Empty: Encodable {}
+        return try await api.query("documentRouter.listSupportedTypes", input: Empty())
     }
 }
