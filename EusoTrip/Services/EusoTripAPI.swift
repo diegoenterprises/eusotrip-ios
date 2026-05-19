@@ -1086,6 +1086,15 @@ struct LoadsAPI {
     struct LoadCityState: Decodable, Hashable {
         let city: String?
         let state: String?
+        /// Coords land here when the server's loads.getById self-heal
+        /// flow hits a successful HERE geocode. The iOS Load Detail
+        /// map renders a real HereMapView lane when both endpoints
+        /// have non-zero lat/lng; otherwise it shows the loading
+        /// skeleton until the next read.
+        let lat: Double?
+        let lng: Double?
+        let address: String?
+        let zipCode: String?
 
         /// "Shreveport, LA" — empty string when both pieces are missing.
         var cityState: String {

@@ -38,6 +38,8 @@
 //
 
 import SwiftUI
+import CoreLocation
+import MapKit
 
 // MARK: - Screen body
 
@@ -1031,69 +1033,87 @@ struct ShipperLoadDetail: View {
     }
 
     // MARK: - Hero map
+    //
+    // 2026-05-18 — replaces the decorative SwiftUI Canvas + Path lane
+    // preview with a real HereMapView. The Canvas version was
+    // hardcoded to a light gradient (0xDDE4EE → 0xC9D2DD) so it stayed
+    // bright against the dark-mode shipper shell, and never actually
+    // connected to HERE — the route was a fake bezier curve. Now it
+    // renders the actual road network around the pickup → delivery
+    // corridor with auto dark/light tile style. ETA + progress pills
+    // overlay on top as a `.overlay` so the live status grammar still
+    // reads at a glance.
 
     private var heroMap: some View {
         ZStack(alignment: .topLeading) {
-            LinearGradient(
-                colors: [Color(hex: 0xDDE4EE), Color(hex: 0xC9D2DD)],
-                startPoint: .top, endPoint: .bottom
-            )
-            // Subtle road-grid overlay
-            Canvas { ctx, size in
-                let gridStroke = Color.white.opacity(0.40)
-                for fy in stride(from: CGFloat(0.32), through: 0.95, by: 0.32) {
-                    ctx.stroke(Path { $0.move(to: .init(x: 0, y: size.height * fy))
-                                       $0.addLine(to: .init(x: size.width, y: size.height * fy)) },
-                               with: .color(gridStroke), lineWidth: 0.8)
-                }
-                for fx in stride(from: CGFloat(0.25), through: 0.85, by: 0.25) {
-                    ctx.stroke(Path { $0.move(to: .init(x: size.width * fx, y: 0))
-                                       $0.addLine(to: .init(x: size.width * fx, y: size.height)) },
-                               with: .color(gridStroke), lineWidth: 0.8)
-                }
+            if let lane = laneForMap {
+                HereMapView(
+                    lanes: [lane],
+                    useHereTiles: true,
+                    showsUserLocation: false,
+                    showsCompass: false
+                )
+            } else {
+                // No coords yet — show a neutral skeleton while the
+                // server's self-healing geocoder fills them in. Mirrors
+                // the rest of the wizard's pending-data tone.
+                Rectangle()
+                    .fill(palette.bgCard)
+                    .overlay(
+                        VStack(spacing: 6) {
+                            Image(systemName: "map")
+                                .font(.system(size: 18, weight: .heavy))
+                                .foregroundStyle(palette.textTertiary)
+                            Text("Route loading…")
+                                .font(.system(size: 11, weight: .heavy))
+                                .tracking(0.8)
+                                .foregroundStyle(palette.textTertiary)
+                        }
+                    )
             }
-            GeometryReader { geo in
-                let w = geo.size.width
-                let h = geo.size.height
-                Path { p in
-                    p.move(to: .init(x: w * 0.12, y: h * 0.66))
-                    p.addCurve(to: .init(x: w * 0.93, y: h * 0.30),
-                               control1: .init(x: w * 0.45, y: h * 0.45),
-                               control2: .init(x: w * 0.78, y: h * 0.20))
+
+            // Status pills layered above the map (top-right ETA,
+            // bottom-left progress). Tile style handles its own dark/
+            // light palette; the pills carry the brand surface.
+            VStack {
+                HStack {
+                    Spacer()
+                    pillCapsule(etaLine)
+                        .padding(.top, 8)
+                        .padding(.trailing, 10)
                 }
-                .stroke(LinearGradient.primary,
-                        style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
-
-                pinDot(gradient: true)
-                    .position(x: w * 0.12, y: h * 0.66)
-                Text(originLabel)
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.4)
-                    .foregroundStyle(palette.textPrimary)
-                    .position(x: w * 0.20, y: h * 0.78)
-
-                truckPin()
-                    .position(x: w * (0.12 + 0.81 * truckProgressFraction),
-                              y: h * (0.66 - 0.36 * truckProgressFraction))
-
-                pinDot(magenta: true)
-                    .position(x: w * 0.93, y: h * 0.30)
-                Text(destinationLabel)
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.4)
-                    .foregroundStyle(palette.textPrimary)
-                    .position(x: w * 0.85, y: h * 0.20)
-
-                pillCapsule(etaLine)
-                    .position(x: w * 0.66, y: h * 0.10)
-
-                pillCapsule(progressMilesLine)
-                    .position(x: w * 0.21, y: h * 0.85)
+                Spacer()
+                HStack {
+                    pillCapsule(progressMilesLine)
+                        .padding(.bottom, 8)
+                        .padding(.leading, 10)
+                    Spacer()
+                }
             }
         }
-        .frame(height: 144)
+        .frame(height: 180)
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Radius.lg)
                     .strokeBorder(palette.borderFaint))
         .accessibilityLabel("Live route, \(originLabel) to \(destinationLabel), \(progressPct)% complete, \(etaLine)")
+    }
+
+    /// Composes a HereMapView Lane from the load's pickup + delivery
+    /// coordinates. Returns nil when either endpoint hasn't been
+    /// geocoded yet (server self-heals on the next read).
+    private var laneForMap: HereMapView.Lane? {
+        guard let p = liveDetail?.pickupLocation,
+              let d = liveDetail?.deliveryLocation,
+              let pLat = p.lat, let pLng = p.lng,
+              let dLat = d.lat, let dLng = d.lng,
+              pLat != 0, pLng != 0, dLat != 0, dLng != 0 else { return nil }
+        return HereMapView.Lane(
+            id: "load_\(loadId)",
+            originTitle: originLabel,
+            destinationTitle: destinationLabel,
+            pickup: CLLocationCoordinate2D(latitude: pLat, longitude: pLng),
+            delivery: CLLocationCoordinate2D(latitude: dLat, longitude: dLng)
+        )
     }
 
     private var originLabel: String {

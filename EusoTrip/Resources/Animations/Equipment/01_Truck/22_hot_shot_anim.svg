@@ -168,92 +168,10 @@
   <line x1="60" y1="475" x2="1140" y2="475" stroke="#9B7FD9" stroke-width="4" stroke-dasharray="14 9" stroke-linecap="round" opacity="0.55"/>
   <ellipse cx="640" cy="486" rx="430" ry="6" fill="#1A1F2E" opacity="0.13"/>
 
-  <!-- ========== MEDIUM-DUTY PICKUP TRUCK (smaller scale than Class-8) ========== -->
-  <g filter="url(#rigShadow)">
-    <!-- Cab — crew cab style (4 doors visible in profile via window proportions) -->
-    <path d="M 250 360 L 250 460 L 460 460 L 460 350 Q 460 340 450 340 L 260 340 Q 250 340 250 350 Z" fill="url(#pickup)"/>
-    <!-- Pickup hood (sloped front) -->
-    <path d="M 460 350 L 460 460 L 540 460 L 540 380 Q 540 370 530 370 L 470 370 Q 460 370 460 380 Z" fill="url(#pickup)"/>
-    <!-- Roof highlight -->
-    <rect x="255" y="342" width="200" height="5" rx="2" fill="url(#pickupRoof)"/>
-    <!-- Front windshield (sloped) -->
-    <path d="M 462 352 L 470 372 L 528 372 L 528 352 Z" fill="url(#windowGlass)" opacity="0.92"/>
-    <!-- Crew cab side windows (double window — front and rear seat) -->
-    <rect x="265" y="358" width="80" height="40" rx="3" fill="url(#windowGlass)" opacity="0.85"/>
-    <rect x="350" y="358" width="80" height="40" rx="3" fill="url(#windowGlass)" opacity="0.85"/>
-    <line x1="345" y1="358" x2="345" y2="398" stroke="#0A1F3F" stroke-width="1.5" opacity="0.4"/>
-    <!-- Door handles -->
-    <rect x="320" y="412" width="10" height="3" rx="1" fill="#1A1F2E"/>
-    <rect x="405" y="412" width="10" height="3" rx="1" fill="#1A1F2E"/>
-    <!-- Headlight -->
-    <ellipse cx="535" cy="395" rx="6" ry="5" fill="#FFE680"/>
-    <ellipse cx="535" cy="395" rx="3" ry="2.5" fill="#FFFFFF"/>
-    <!-- Front grille -->
-    <rect x="528" y="405" width="14" height="35" rx="2" fill="#0A1F3F" opacity="0.85"/>
-    <g stroke="#3A3F4A" stroke-width="1"><line x1="530" y1="412" x2="540" y2="412"/><line x1="530" y1="420" x2="540" y2="420"/><line x1="530" y1="428" x2="540" y2="428"/></g>
-    <!-- Front bumper -->
-    <rect x="525" y="442" width="20" height="14" rx="2" fill="#1A1F2E"/>
-    <!-- Side mirror (small, more pickup-style) -->
-    <rect x="246" y="358" width="6" height="22" rx="1" fill="#1A1F2E"/>
-    <line x1="252" y1="365" x2="262" y2="362" stroke="#1A1F2E" stroke-width="2"/>
-    <!-- Pickup bed (the rear cargo bed of the truck itself, not the trailer) -->
-    <!-- Note: in hot-shot config, the bed contains the gooseneck hitch -->
-    <rect x="120" y="395" width="130" height="65" rx="3" fill="#3A3F4A"/>
-    <rect x="120" y="395" width="130" height="3" fill="#FFFFFF" opacity="0.4"/>
-    <!-- Tailgate -->
-    <rect x="116" y="395" width="6" height="65" fill="#1A1F2E"/>
-    <!-- Bed plank lines -->
-    <g stroke="#1A1F2E" stroke-width="0.6" opacity="0.5">
-      <line x1="125" y1="408" x2="245" y2="408"/>
-      <line x1="125" y1="420" x2="245" y2="420"/>
-      <line x1="125" y1="432" x2="245" y2="432"/>
-    </g>
-    <!-- Gooseneck hitch ball mount in bed -->
-    <circle cx="195" cy="395" r="6" fill="#1A1F2E"/>
-    <circle cx="195" cy="392" r="3" fill="#5A606D"/>
-    <!-- Pickup brand badge -->
-    <circle cx="358" cy="425" r="7" fill="#FFFFFF" opacity="0.85"/>
-    <text x="358" y="429" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="8" fill="#5B3FBF">E</text>
-  </g>
-
-  <!-- ========== GOOSENECK FLATBED TRAILER ========== -->
-  <g filter="url(#rigShadow)">
-    <!-- Gooseneck section (rises up to hitch over pickup bed) -->
-    <path d="M 300 430 L 300 410 L 250 395 L 230 395 L 230 408 L 280 425 L 280 430 Z" fill="url(#bedDeck)"/>
-    <!-- Main flatbed deck -->
-    <rect x="300" y="410" width="780" height="50" rx="3" fill="url(#bedDeck)"/>
-    <rect x="300" y="410" width="780" height="3" fill="#FFFFFF" opacity="0.4"/>
-    <!-- Wood plank lines -->
-    <g stroke="#2A2F38" stroke-width="0.8" opacity="0.6">
-      <line x1="300" y1="423" x2="1080" y2="423"/>
-      <line x1="300" y1="435" x2="1080" y2="435"/>
-      <line x1="300" y1="447" x2="1080" y2="447"/>
-    </g>
-    <!-- Stake pockets along sides -->
-    <g fill="#0F1118">
-      <rect x="350" y="453" width="6" height="7"/><rect x="450" y="453" width="6" height="7"/>
-      <rect x="550" y="453" width="6" height="7"/><rect x="650" y="453" width="6" height="7"/>
-      <rect x="750" y="453" width="6" height="7"/><rect x="850" y="453" width="6" height="7"/>
-      <rect x="950" y="453" width="6" height="7"/><rect x="1050" y="453" width="6" height="7"/>
-    </g>
-    <!-- Bottom chassis -->
-    <rect x="300" y="460" width="780" height="6" rx="1" fill="#1A1F2E"/>
-    <!-- Tie-down rings -->
-    <g fill="#FFE680" opacity="0.85">
-      <circle cx="370" cy="416" r="3"/><circle cx="470" cy="416" r="3"/><circle cx="570" cy="416" r="3"/>
-      <circle cx="670" cy="416" r="3"/><circle cx="770" cy="416" r="3"/><circle cx="870" cy="416" r="3"/>
-      <circle cx="970" cy="416" r="3"/><circle cx="1050" cy="416" r="3"/>
-    </g>
-    <!-- "HOT SHOT" stencil on gooseneck side -->
-    <text x="700" y="450" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="11" fill="#FFFFFF" opacity="0.7" letter-spacing="3">EXPEDITED · 40' GOOSENECK</text>
-    <!-- DOT reflectors -->
-    <g><rect x="303" y="461" width="20" height="5" fill="#E5350D"/><rect x="323" y="461" width="20" height="5" fill="#FFFFFF"/>
-       <rect x="1010" y="461" width="20" height="5" fill="#FFFFFF"/><rect x="1030" y="461" width="20" height="5" fill="#E5350D"/><rect x="1050" y="461" width="20" height="5" fill="#FFFFFF"/></g>
-  </g>
-
-  <!-- Wheels — pickup has 4 visible wheels (dual rear), trailer has 4 -->
-  
-  </g>
+  <!-- Wheel template — defined up-front so both rig groups can `<use>` it
+       without needing forward references. Same template as the
+       Class-8 trucks; pickup just renders at a slightly tighter axle
+       spacing because the rear axle is a dual. -->
   <g id="wheelMed">
     <circle cx="0" cy="0" r="26" fill="#1A1A1A"/>
     <circle cx="0" cy="0" r="17" fill="url(#rim)"/>
@@ -265,19 +183,123 @@
     </g>
     <ellipse cx="-4" cy="-9" rx="4" ry="2" fill="#FFFFFF" opacity="0.35"/>
   </g>
-  <!-- Pickup front wheel -->
-  <g transform="translate(495 460)">
+
+  <!-- ========== MEDIUM-DUTY PICKUP TRUCK (faces LEFT, like every other
+       EusoTrip equipment SVG) ===========================================
+       Layout left-to-right:
+         x=120-200  hood (front of truck)
+         x=200-410  crew cab + windows
+         x=410-540  pickup bed (rear, holds gooseneck hitch)
+       Trailer attaches at the bed (x=410-540) and extends RIGHT. -->
+  <g filter="url(#rigShadow)">
+    <!-- Hood (sloped front, leftmost) -->
+    <path d="M 120 380 L 120 460 L 200 460 L 200 350 Q 200 340 190 340 L 130 340 Q 120 340 120 350 Z" fill="url(#pickup)"/>
+    <!-- Crew cab body — 4-door pickup proportions, ~210 wide -->
+    <path d="M 200 350 L 200 460 L 410 460 L 410 350 Q 410 340 400 340 L 210 340 Q 200 340 200 350 Z" fill="url(#pickup)"/>
+    <!-- Roof highlight -->
+    <rect x="205" y="342" width="200" height="5" rx="2" fill="url(#pickupRoof)"/>
+    <!-- Windshield (sloped, on the LEFT side because the truck faces left) -->
+    <path d="M 132 352 L 198 352 L 198 372 L 140 372 Z" fill="url(#windowGlass)" opacity="0.92"/>
+    <!-- Crew cab side windows (front + rear seat) -->
+    <rect x="220" y="358" width="80" height="40" rx="3" fill="url(#windowGlass)" opacity="0.85"/>
+    <rect x="305" y="358" width="80" height="40" rx="3" fill="url(#windowGlass)" opacity="0.85"/>
+    <line x1="300" y1="358" x2="300" y2="398" stroke="#0A1F3F" stroke-width="1.5" opacity="0.4"/>
+    <!-- Door handles -->
+    <rect x="265" y="412" width="10" height="3" rx="1" fill="#1A1F2E"/>
+    <rect x="355" y="412" width="10" height="3" rx="1" fill="#1A1F2E"/>
+    <!-- Headlight (front-left) -->
+    <ellipse cx="125" cy="395" rx="6" ry="5" fill="#FFE680"/>
+    <ellipse cx="125" cy="395" rx="3" ry="2.5" fill="#FFFFFF"/>
+    <!-- Front grille -->
+    <rect x="118" y="405" width="14" height="35" rx="2" fill="#0A1F3F" opacity="0.85"/>
+    <g stroke="#3A3F4A" stroke-width="1">
+      <line x1="120" y1="412" x2="130" y2="412"/>
+      <line x1="120" y1="420" x2="130" y2="420"/>
+      <line x1="120" y1="428" x2="130" y2="428"/>
+    </g>
+    <!-- Front bumper -->
+    <rect x="115" y="442" width="20" height="14" rx="2" fill="#1A1F2E"/>
+    <!-- Side mirror (driver side, sticking out front-left of cab) -->
+    <rect x="408" y="358" width="6" height="22" rx="1" fill="#1A1F2E"/>
+    <line x1="412" y1="365" x2="402" y2="362" stroke="#1A1F2E" stroke-width="2"/>
+    <!-- Pickup bed (the rear cargo bed, RIGHT of cab, holds gooseneck hitch) -->
+    <rect x="410" y="395" width="130" height="65" rx="3" fill="#3A3F4A"/>
+    <rect x="410" y="395" width="130" height="3" fill="#FFFFFF" opacity="0.4"/>
+    <!-- Tailgate (rightmost edge of pickup bed) -->
+    <rect x="538" y="395" width="6" height="65" fill="#1A1F2E"/>
+    <!-- Bed plank lines -->
+    <g stroke="#1A1F2E" stroke-width="0.6" opacity="0.5">
+      <line x1="415" y1="408" x2="535" y2="408"/>
+      <line x1="415" y1="420" x2="535" y2="420"/>
+      <line x1="415" y1="432" x2="535" y2="432"/>
+    </g>
+    <!-- Gooseneck hitch ball (centered in bed) -->
+    <circle cx="465" cy="395" r="6" fill="#1A1F2E"/>
+    <circle cx="465" cy="392" r="3" fill="#5A606D"/>
+    <!-- Pickup brand badge on cab door -->
+    <circle cx="308" cy="425" r="7" fill="#FFFFFF" opacity="0.85"/>
+    <text x="308" y="429" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="8" fill="#5B3FBF">E</text>
+  </g>
+
+  <!-- ========== GOOSENECK FLATBED TRAILER (40') ======================
+       Trailer hitches at the pickup bed (x~465) and extends right to
+       x=1080. The gooseneck section rises from the deck up onto the
+       pickup bed; main flatbed sits at deck height x=560-1080. -->
+  <g filter="url(#rigShadow)">
+    <!-- Gooseneck section — short ramp from deck up to hitch ball -->
+    <path d="M 560 410 L 560 432 L 540 432 L 470 398 L 470 392 L 540 425 L 560 425 Z" fill="url(#bedDeck)"/>
+    <!-- Main flatbed deck — runs from end of gooseneck to right edge -->
+    <rect x="560" y="410" width="520" height="50" rx="3" fill="url(#bedDeck)"/>
+    <rect x="560" y="410" width="520" height="3" fill="#FFFFFF" opacity="0.4"/>
+    <!-- Wood plank lines -->
+    <g stroke="#2A2F38" stroke-width="0.8" opacity="0.6">
+      <line x1="560" y1="423" x2="1080" y2="423"/>
+      <line x1="560" y1="435" x2="1080" y2="435"/>
+      <line x1="560" y1="447" x2="1080" y2="447"/>
+    </g>
+    <!-- Stake pockets along sides -->
+    <g fill="#0F1118">
+      <rect x="600" y="453" width="6" height="7"/><rect x="680" y="453" width="6" height="7"/>
+      <rect x="760" y="453" width="6" height="7"/><rect x="840" y="453" width="6" height="7"/>
+      <rect x="920" y="453" width="6" height="7"/><rect x="1000" y="453" width="6" height="7"/>
+      <rect x="1060" y="453" width="6" height="7"/>
+    </g>
+    <!-- Bottom chassis rail -->
+    <rect x="560" y="460" width="520" height="6" rx="1" fill="#1A1F2E"/>
+    <!-- Tie-down rings -->
+    <g fill="#FFE680" opacity="0.85">
+      <circle cx="610" cy="416" r="3"/><circle cx="690" cy="416" r="3"/>
+      <circle cx="770" cy="416" r="3"/><circle cx="850" cy="416" r="3"/>
+      <circle cx="930" cy="416" r="3"/><circle cx="1010" cy="416" r="3"/>
+      <circle cx="1070" cy="416" r="3"/>
+    </g>
+    <!-- "EXPEDITED · 40' GOOSENECK" stencil on flatbed side -->
+    <text x="820" y="450" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="11" fill="#FFFFFF" opacity="0.7" letter-spacing="3">EXPEDITED · 40' GOOSENECK</text>
+    <!-- DOT reflectors at deck corners -->
+    <g>
+      <rect x="563" y="461" width="20" height="5" fill="#E5350D"/>
+      <rect x="583" y="461" width="20" height="5" fill="#FFFFFF"/>
+      <rect x="1020" y="461" width="20" height="5" fill="#FFFFFF"/>
+      <rect x="1040" y="461" width="20" height="5" fill="#E5350D"/>
+      <rect x="1060" y="461" width="20" height="5" fill="#FFFFFF"/>
+    </g>
+  </g>
+
+  <!-- Wheels — pickup has 2 visible (front + dual rear under bed),
+       trailer has 2 axles on a tandem at the rear of the deck. -->
+  <!-- Pickup front wheel (under hood, leftmost) -->
+  <g transform="translate(150 460)">
     <g><use href="#wheelMed"/><animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.6s" repeatCount="indefinite"/></g>
   </g>
-  <!-- Pickup rear wheel (dual rear axle) -->
-  <g transform="translate(180 460)">
+  <!-- Pickup rear wheel (under bed) -->
+  <g transform="translate(490 460)">
     <g><use href="#wheelMed"/><animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.6s" repeatCount="indefinite"/></g>
   </g>
-  <!-- Trailer wheels -->
-  <g transform="translate(940 460)">
+  <!-- Trailer rear axles (tandem) -->
+  <g transform="translate(960 460)">
     <g><use href="#wheelMed"/><animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.6s" repeatCount="indefinite"/></g>
   </g>
-  <g transform="translate(1010 460)">
+  <g transform="translate(1030 460)">
     <g><use href="#wheelMed"/><animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.6s" repeatCount="indefinite"/></g>
   </g>
   
