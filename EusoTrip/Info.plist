@@ -125,19 +125,24 @@
 		<string>com.app.eusotrip.BidsActivity</string>
 		<string>com.app.eusotrip.ControlTowerActivity</string>
 	</array>
-	<!-- HERE Maps OAuth + JS credentials. Values flow from EusoTrip.xcconfig
-	     via Xcode's $(VAR) substitution at Info.plist preprocessing time. -->
+	<!-- HERE Maps OAuth + JS credentials. Inlined here because the
+	     project sets GENERATE_INFOPLIST_FILE=NO + INFOPLIST_PREPROCESS=NO,
+	     which means xcconfig $(VAR) substitution does NOT flow into a
+	     literal Info.plist. The xcconfig + INFOPLIST_KEY_* settings are
+	     kept in sync for fallback build paths but the runtime path
+	     reads from this plist. Rotate credentials by updating both
+	     files together. -->
 	<key>HEREAccessKeyId</key>
-	<string>$(HERE_ACCESS_KEY_ID)</string>
+	<string>aFi-kDtCV1dbeQjNR0SKWw</string>
 	<key>HEREAccessKeySecret</key>
-	<string>$(HERE_ACCESS_KEY_SECRET)</string>
+	<string>tu2LygcYLwnqBsPV0sgZ_PfFbZBquNoBrcwcKbaxJuGZIK48APnmLycnYKULfdLVcvBvz9tOpAbWoqIWcxtlNA</string>
 	<key>HEREClientId</key>
-	<string>$(HERE_CLIENT_ID)</string>
+	<string>A8wYxsmwZBEqBIud1Jmc</string>
 	<key>HEREUserId</key>
-	<string>$(HERE_USER_ID)</string>
+	<string>HERE-7239406a-1b48-45b5-9964-fb81d7a73a7a</string>
 	<key>HERETokenEndpointURL</key>
-	<string>$(HERE_TOKEN_ENDPOINT_URL)</string>
+	<string>https://account.api.here.com/oauth2/token</string>
 	<key>HEREJSApiKey</key>
-	<string>$(HERE_JS_API_KEY)</string>
+	<string>9IdICMe90C28r5DOmEoXpRfnFRHnaXf8O8oP57bozkA</string>
 </dict>
 </plist>
