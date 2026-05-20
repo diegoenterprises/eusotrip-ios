@@ -134,14 +134,31 @@ private enum DocCategory: String, CaseIterable, Identifiable {
 
 struct MeDocs: View {
     @Environment(\.palette) var palette
+    @EnvironmentObject private var session: EusoTripSession
     @StateObject private var docs = DriverDocumentsStore()
     @StateObject private var expiring = ExpiringDocumentsStore()
+    /// Doc-router upload sheet. Powered by `DocumentClassifierSheet`
+    /// — same canonical Gemini classifier the shipper Post-Load
+    /// Templates/Bulk pills use. Cross-role parity per founder
+    /// doctrine: every upload affordance routes through the same
+    /// classifier so the user never picks a doc type from a 60-option
+    /// dropdown.
+    @State private var showDocUploadSheet: Bool = false
+    @State private var uploadInflight: Bool = false
+    @State private var uploadAck: String? = nil
+    @State private var uploadError: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: Space.s5) {
                 header
                 expirationBanner
+                if let ack = uploadAck {
+                    ackBanner(ack, isError: false)
+                }
+                if let err = uploadError {
+                    ackBanner(err, isError: true)
+                }
                 switch docs.state {
                 case .loading:
                     loadingSkeleton
@@ -154,7 +171,7 @@ struct MeDocs: View {
                         section(bucket: bucket, rows: all.filter { DocCategory.from(document: $0) == bucket })
                     }
                 }
-                uploadDisclosure
+                uploadCTA
             }
             .padding(.horizontal, Space.s4)
             .padding(.top, Space.s4)
@@ -162,6 +179,48 @@ struct MeDocs: View {
         }
         .task { await reload() }
         .refreshable { await reload() }
+        .sheet(isPresented: $showDocUploadSheet) {
+            DocumentClassifierSheet(
+                mode: .prefillWizard,
+                callerContext: "driver Me Docs upload",
+                onApplySingle: { doc in
+                    Task { await uploadClassified(doc) }
+                },
+                onDispatchBatch: { _ in }
+            )
+        }
+    }
+
+    private func ackBanner(_ msg: String, isError: Bool) -> some View {
+        HStack(spacing: Space.s2) {
+            Image(systemName: isError ? "exclamationmark.triangle.fill" : "checkmark.seal.fill")
+                .font(.system(size: 13, weight: .heavy))
+                .foregroundStyle(isError ? AnyShapeStyle(Brand.danger) : AnyShapeStyle(LinearGradient.diagonal))
+            Text(msg)
+                .font(EType.caption)
+                .foregroundStyle(palette.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button {
+                if isError { uploadError = nil } else { uploadAck = nil }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(
+                    isError
+                        ? AnyShapeStyle(Brand.danger.opacity(0.45))
+                        : AnyShapeStyle(LinearGradient.diagonal.opacity(0.45))
+                )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
     private func reload() async {
@@ -477,25 +536,50 @@ struct MeDocs: View {
         }
     }
 
-    // MARK: Upload-disclosure footer
+    // MARK: Upload CTA
     //
-    // Honest disclosure of the current upload limitation — drivers can
-    // view and download from iOS, uploads happen on the desktop today.
+    // Replaces the prior "uploads live on the desktop dashboard"
+    // disclosure with a real upload affordance powered by the
+    // canonical DocumentClassifierSheet. Cross-role parity with the
+    // shipper Post-Load Templates / Bulk pills: same Gemini classifier
+    // routes the scan into `documentManagement.uploadDocument` keyed
+    // by the classified type.
 
-    private var uploadDisclosure: some View {
-        VStack(alignment: .leading, spacing: Space.s1) {
+    private var uploadCTA: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
             HStack(spacing: Space.s2) {
-                Image(systemName: "arrow.up.doc")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(palette.textTertiary)
-                Text("Uploading new documents")
+                Image(systemName: "sparkles.tv.fill")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("Upload with ESANG AI")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 0)
+                if uploadInflight {
+                    ProgressView().scaleEffect(0.75).tint(palette.textPrimary)
+                }
             }
-            Text("File uploads live on the Eusorone desktop dashboard today. This vault view is kept in sync within seconds of any upload or expiration renewal on the web side.")
+            Text("Snap or pick a doc — Gemini Vision classifies it as CDL, Medical, TWIC, Hazmat, COI, or another credential and files it in the right bucket. No 60-option dropdown.")
                 .font(EType.caption)
-                .foregroundStyle(palette.textTertiary)
+                .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+            Button {
+                uploadError = nil
+                showDocUploadSheet = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.up.doc.fill")
+                        .font(.system(size: 12, weight: .heavy))
+                    Text("Upload a document")
+                        .font(.system(size: 13, weight: .heavy)).tracking(0.4)
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, Space.s4).padding(.vertical, 10)
+                .background(LinearGradient.diagonal)
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(uploadInflight)
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -505,8 +589,101 @@ struct MeDocs: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint.opacity(0.5), lineWidth: 1)
+                .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1)
         )
+    }
+
+    // MARK: Upload pipeline
+    //
+    // The classifier hands back the bytes + classified type +
+    // extracted fields. We map the classified type onto the server's
+    // document-bucket vocabulary, then call
+    // `documentManagement.uploadDocument` with the binary so the
+    // server-side vault row + file land in one round-trip. The
+    // expiration date (when Gemini extracted one) gets stamped onto
+    // the row so the expiration banner immediately picks it up.
+
+    @MainActor
+    private func uploadClassified(_ doc: ClassifiedDocument) async {
+        guard !uploadInflight else { return }
+        guard let userId = session.user?.id else {
+            uploadError = "Sign in before uploading documents."
+            return
+        }
+        uploadInflight = true
+        uploadError = nil
+        defer { uploadInflight = false }
+
+        // Map the documentRouter type onto the server's
+        // documentManagement bucket vocabulary so the vault rows
+        // file under the right tab.
+        let bucket = bucketForClassifiedType(doc.classifiedType)
+        let humanName = humanNameForClassifiedType(doc.classifiedType)
+        // Decode base64 → byte count so the server-side size check
+        // doesn't reject the row. (uploadDocument expects the raw
+        // base64 string in fileData + a byte-count Int.)
+        let bytesEstimate = Int(Double(doc.documentBase64.count) * 0.75)
+
+        // Expiration date — only pass through if Gemini extracted
+        // a parseable ISO date string.
+        let expiresAt: String? = doc.fields["expirationDate"]
+            ?? doc.fields["expirationDateIso"]
+            ?? doc.fields["expiration"]
+
+        do {
+            _ = try await EusoTripAPI.shared.documentManagement.uploadDocument(
+                name: humanName,
+                type: bucket,
+                mimeType: doc.mimeType,
+                size: bytesEstimate,
+                fileData: doc.documentBase64,
+                entityType: "driver",
+                entityId: String(userId),
+                tags: [doc.classifiedType],
+                expiresAt: expiresAt
+            )
+            uploadAck = "Uploaded · \(humanName)"
+            await reload()
+        } catch let apiErr as EusoTripAPIError {
+            uploadError = apiErr.errorDescription ?? "Upload failed"
+        } catch {
+            uploadError = error.localizedDescription
+        }
+    }
+
+    private func bucketForClassifiedType(_ raw: String) -> String {
+        switch raw {
+        case "us_cdl", "ca_cdl", "mx_cdl": return "cdl"
+        case "us_medical_card", "ca_medical_card", "mx_medical_card": return "medical_card"
+        case "us_twic": return "twic"
+        case "us_hazmat_endorsement", "us_hazmat_certificate", "us_tanker_endorsement": return "hazmat"
+        case "us_coi", "ca_coi": return "insurance"
+        case "us_dot_authority", "us_mc_authority": return "fmcsa_authority"
+        case "w9": return "tax"
+        case "form_1099": return "tax"
+        case "us_ein_letter": return "tax"
+        default: return "other"
+        }
+    }
+
+    private func humanNameForClassifiedType(_ raw: String) -> String {
+        switch raw {
+        case "us_cdl": return "CDL"
+        case "us_medical_card": return "Medical Card"
+        case "us_twic": return "TWIC"
+        case "us_hazmat_endorsement": return "Hazmat Endorsement"
+        case "us_hazmat_certificate": return "Hazmat Certificate"
+        case "us_tanker_endorsement": return "Tanker Endorsement"
+        case "us_coi": return "Certificate of Insurance"
+        case "ca_coi": return "CA Certificate of Insurance"
+        case "us_dot_authority": return "DOT Authority"
+        case "us_mc_authority": return "MC Authority"
+        case "w9": return "W-9"
+        case "form_1099": return "1099-NEC"
+        case "us_ein_letter": return "EIN Letter"
+        default:
+            return raw.replacingOccurrences(of: "_", with: " ").capitalized
+        }
     }
 
     // MARK: Helpers

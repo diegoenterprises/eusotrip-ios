@@ -45,6 +45,11 @@ private struct FmcsaBody: View {
     @State private var loadError: String? = nil
     @State private var ai: AISafetyAnalysis? = nil
     @State private var aiInflight: Bool = false
+    /// Inline error surface for the AI safety analysis call. Was
+    /// silent ("card stays prompting tap"), but with no hint the
+    /// user couldn't tell auth/role/network failures apart from
+    /// a slow lookup. The error caption appears under the card.
+    @State private var aiError: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -141,6 +146,12 @@ private struct FmcsaBody: View {
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }
+            if let err = aiError {
+                Text(err)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .onTapGesture {
             if ai == nil && !aiInflight {
@@ -209,6 +220,7 @@ private struct FmcsaBody: View {
     private func loadAI(_ d: FmcsaSelf) async {
         guard !aiInflight, let dot = d.dotNumber, !dot.isEmpty else { return }
         aiInflight = true
+        aiError = nil
         defer { Task { @MainActor in aiInflight = false } }
         struct In: Encodable { let dotNumber: String }
         do {
@@ -217,7 +229,11 @@ private struct FmcsaBody: View {
                 input: In(dotNumber: dot)
             )
             await MainActor.run { ai = r }
-        } catch { /* silent — card stays prompting tap */ }
+        } catch let apiErr as EusoTripAPIError {
+            await MainActor.run { aiError = "AI analysis failed · \(apiErr.errorDescription ?? "tap to retry")" }
+        } catch {
+            await MainActor.run { aiError = "AI analysis failed · \(error.localizedDescription)" }
+        }
     }
 }
 

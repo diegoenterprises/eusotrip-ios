@@ -122,7 +122,11 @@ private struct LaneTemplateEditorBody: View {
             name = t.name; origin = t.origin ?? ""; destination = t.destination ?? ""
             cargoType = t.cargoType ?? "general"; equipmentType = t.equipmentType ?? ""
             rate = t.rate; weight = t.weight
-        } catch { /* tolerate */ }
+        } catch let apiErr as EusoTripAPIError {
+            actionError = "Couldn't load template: \(apiErr.errorDescription ?? "network error")"
+        } catch {
+            actionError = "Couldn't load template: \(error.localizedDescription)"
+        }
         loading = false
     }
 

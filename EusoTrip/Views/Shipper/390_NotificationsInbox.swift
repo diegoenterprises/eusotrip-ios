@@ -36,6 +36,7 @@ private struct InboxBody: View {
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var processing: String? = nil
+    @State private var markAllError: String? = nil
 
     private var unread: Int { items.filter { $0.readAt == nil }.count }
 
@@ -76,6 +77,12 @@ private struct InboxBody: View {
 
     @ViewBuilder
     private var content: some View {
+        if let merr = markAllError {
+            LifecycleCard(accentDanger: true) {
+                Text(merr).font(EType.caption).foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
         if loading { LifecycleCard { Text("Loading inbox…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
         else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
         else if items.isEmpty { EusoEmptyState(systemImage: "bell.slash", title: "No notifications", subtitle: "Pings from carriers, settlements, and eSang land here.") }
@@ -127,11 +134,16 @@ private struct InboxBody: View {
     }
 
     private func markAllRead() async {
+        markAllError = nil
         struct Out: Decodable { let success: Bool }
         do {
             let _ : Out = try await EusoTripAPI.shared.mutation("notifications.markAllAsRead", input: ["": ""] as [String: String])
             await load()
-        } catch { /* surface inline */ }
+        } catch let apiErr as EusoTripAPIError {
+            markAllError = apiErr.errorDescription ?? "Couldn't mark all as read."
+        } catch {
+            markAllError = error.localizedDescription
+        }
     }
 }
 

@@ -102,6 +102,7 @@ struct ShipperBOLUpload: View {
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    @State private var inAppLink: EusoSafariLink? = nil
 
     init(loadId: String = "LD-260427-A38FB12C7E") {
         self.loadId = loadId
@@ -209,6 +210,9 @@ struct ShipperBOLUpload: View {
 
                 Color.clear.frame(height: 96)
             }
+        }
+        .sheet(item: $inAppLink) { link in
+            EusoInAppSafari(url: link.url).ignoresSafeArea()
         }
     }
 
@@ -635,7 +639,7 @@ struct ShipperBOLUpload: View {
             ]
         )
         if let url = URL(string: "https://app.eusotrip.com/shipper/bol/\(bolId)/audit-trail") {
-            openURL(url)
+            inAppLink = EusoSafariLink(url: url)
         }
     }
 }

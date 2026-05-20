@@ -60,6 +60,11 @@ struct MeTax: View {
     /// surface always looks at `year - 1` (1099s are issued for the
     /// prior tax year).
     @State private var selectedYear: Int = Calendar.current.component(.year, from: Date())
+    /// In-app PDF presentation for the 1099-NEC. Replaces the prior
+    /// `UIApplication.shared.open(url)` Safari punt so the driver
+    /// stays inside the EusoTrip app and can save the doc straight
+    /// into Files / AirDrop / Mail via EusoPDFViewer's share sheet.
+    @State private var tax1099Presentation: EusoPDFPresentation? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -78,6 +83,16 @@ struct MeTax: View {
         .refreshable { await reload() }
         .onChange(of: selectedYear) { _, _ in
             Task { await reload() }
+        }
+        .sheet(item: $tax1099Presentation) { pres in
+            EusoPDFViewer(
+                title: pres.title,
+                subtitle: pres.subtitle,
+                source: .url(pres.url),
+                allowSigning: false,
+                onSigned: nil,
+                loadIdForWalletPass: nil
+            )
         }
     }
 
@@ -345,9 +360,11 @@ struct MeTax: View {
     private func trailingDoc(_ d: TaxAPI.Tax1099Document?) -> some View {
         if let d, d.available, let urlString = d.url, let url = absolute(url: urlString) {
             Button {
-                #if canImport(UIKit)
-                UIApplication.shared.open(url)
-                #endif
+                tax1099Presentation = EusoPDFPresentation(
+                    url: url,
+                    title: "1099-NEC · \(selectedYear - 1)",
+                    subtitle: "Eusorone Technologies, Inc."
+                )
             } label: {
                 Text("Download")
                     .font(EType.bodyStrong)

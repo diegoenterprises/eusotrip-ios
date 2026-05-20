@@ -5,6 +5,20 @@
 
 import SwiftUI
 
+/// Shared one-shot prefill bus. 313 Voice Listening writes the
+/// transcribed audio here before posting `eusoShipperNavSwap` to
+/// "311"; 311's body picks it up on `.onAppear` and clears the slot
+/// so a stale prefill never leaks into a future ESANG visit. Avoids
+/// the SwiftUI race where `onReceive(.eusoShipperNavSwap)` inside
+/// 311 misses the post because the view body hasn't run yet by the
+/// time RoleSurfaceRouter swaps the screen in.
+@MainActor
+final class EsangComposerPrefill: ObservableObject {
+    static let shared = EsangComposerPrefill()
+    var pending: String? = nil
+    private init() {}
+}
+
 struct eSangThreadScreen: View {
     let theme: Theme.Palette
     let conversationId: String
@@ -54,6 +68,18 @@ private struct eSangThreadBody: View {
             composer
         }
         .task { await load() }
+        .onAppear {
+            // 313 ESANG Voice Listening writes the Gemini-transcribed
+            // audio into the shared `EsangComposerPrefill` bus before
+            // posting navSwap to 311. The notification fires before
+            // this view exists, so a per-view onReceive misses it —
+            // hence the shared bus. Drain on appear, clear so the
+            // next ESANG visit starts blank.
+            if let p = EsangComposerPrefill.shared.pending, !p.isEmpty {
+                draft = p
+                EsangComposerPrefill.shared.pending = nil
+            }
+        }
     }
 
     private var header: some View {

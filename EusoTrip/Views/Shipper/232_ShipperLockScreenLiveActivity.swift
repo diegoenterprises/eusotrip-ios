@@ -92,6 +92,7 @@ private struct LockScreenActivity {
 struct ShipperLockScreenLiveActivity: View {
     @Environment(\.palette) private var palette
     @Environment(\.openURL) private var openURL
+    @State private var inAppLink: EusoSafariLink? = nil
 
     private let counterEyebrow = "STAGE 5 OF 8 · 38m AGO"
 
@@ -158,6 +159,9 @@ struct ShipperLockScreenLiveActivity: View {
                     .padding(.top, Space.s4)
                     .padding(.bottom, Space.s8)
             }
+        }
+        .sheet(item: $inAppLink) { link in
+            EusoInAppSafari(url: link.url).ignoresSafeArea()
         }
     }
 
@@ -380,7 +384,7 @@ struct ShipperLockScreenLiveActivity: View {
             ]
         )
         if let url = URL(string: "https://app.eusotrip.com/shipper/live-activity/\(activity.id)/open") {
-            openURL(url)
+            inAppLink = EusoSafariLink(url: url)
         }
     }
 
@@ -395,7 +399,7 @@ struct ShipperLockScreenLiveActivity: View {
             ]
         )
         if let url = URL(string: "https://app.eusotrip.com/shipper/settings/live-activity") {
-            openURL(url)
+            inAppLink = EusoSafariLink(url: url)
         }
     }
 }

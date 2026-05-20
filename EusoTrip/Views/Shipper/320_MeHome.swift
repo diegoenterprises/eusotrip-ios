@@ -220,12 +220,44 @@ private struct MeHomeBody: View {
     @State private var profile: ShipperAPI.Profile? = nil
     @State private var stats: ShipperAPI.Stats? = nil
     @State private var loading = true
+    /// Inline load-error surface. Was a `/* tolerate */` no-op that
+    /// left the profile screen blank on network failure with no hint.
+    @State private var loadError: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 if let p = profile { hero(p) }
                 if let s = stats { tierCard(s) }
+                if let err = loadError {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11, weight: .heavy))
+                            .foregroundStyle(Brand.danger)
+                        Text(err)
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                        Button {
+                            Task { await load() }
+                        } label: {
+                            Text("RETRY")
+                                .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 8).padding(.vertical, 3)
+                                .background(Capsule().fill(Brand.danger))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(palette.bgCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(Brand.danger.opacity(0.45))
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
 
                 hubCard(icon: "person.crop.circle.fill",
                         title: "Account & Profile",
@@ -399,12 +431,17 @@ private struct MeHomeBody: View {
     }
 
     private func load() async {
+        loadError = nil
         do {
             async let p: ShipperAPI.Profile = EusoTripAPI.shared.shipper.getProfile()
             async let st: ShipperAPI.Stats   = EusoTripAPI.shared.shipper.getStats()
             profile = try await p
             stats = (try? await st)
-        } catch { /* tolerate */ }
+        } catch let apiErr as EusoTripAPIError {
+            loadError = apiErr.errorDescription ?? "Couldn't load your profile."
+        } catch {
+            loadError = error.localizedDescription
+        }
         loading = false
     }
 }

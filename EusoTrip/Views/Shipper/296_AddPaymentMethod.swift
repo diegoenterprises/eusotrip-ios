@@ -8,6 +8,8 @@
 //
 
 import SwiftUI
+import SafariServices
+import UIKit
 
 struct AddPaymentMethodScreen: View {
     let theme: Theme.Palette
@@ -21,6 +23,17 @@ private struct AddPaymentMethodBody: View {
     @State private var setupUrl: String? = nil
     @State private var loading: Bool = true
     @State private var loadError: String? = nil
+    /// In-app SFSafariViewController presentation for the
+    /// Stripe-hosted secure session. PCI-DSS requires a real
+    /// browser engine for card capture, but we surface it as an
+    /// in-app modal (SFSafariViewController) so the user never
+    /// leaves the EusoTrip app. The session cookie is namespaced
+    /// to Stripe's domain, so no auth handoff is needed.
+    private struct StripeSession: Identifiable, Hashable {
+        let id: UUID
+        let url: URL
+    }
+    @State private var stripeSession: StripeSession? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -32,6 +45,10 @@ private struct AddPaymentMethodBody: View {
             .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
+        .sheet(item: $stripeSession) { sess in
+            StripeSecureSafariView(url: sess.url)
+                .ignoresSafeArea()
+        }
     }
 
     private var header: some View {
@@ -56,7 +73,9 @@ private struct AddPaymentMethodBody: View {
                 Text("Tap to complete card or ACH setup in the Stripe-hosted secure flow. Returns here when the method is attached.")
                     .font(EType.body).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true)
                 Button {
-                    if let u = URL(string: url) { UIApplication.shared.open(u) }
+                    if let u = URL(string: url) {
+                        stripeSession = StripeSession(id: UUID(), url: u)
+                    }
                 } label: {
                     Text("Open secure setup").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
                         .padding(.horizontal, 18).padding(.vertical, 10)
@@ -90,6 +109,28 @@ private struct AddPaymentMethodBody: View {
         }
         loading = false
     }
+}
+
+// MARK: - In-app SFSafariViewController bridge
+
+/// Hosts the Stripe-hosted secure card-capture page in an in-app
+/// SFSafariViewController modal. Mirrors the EusoTrip gradient via
+/// the bar tint so the chrome doesn't feel like a Safari kick-out.
+private struct StripeSecureSafariView: UIViewControllerRepresentable {
+    let url: URL
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        let cfg = SFSafariViewController.Configuration()
+        cfg.entersReaderIfAvailable = false
+        cfg.barCollapsingEnabled = true
+        let vc = SFSafariViewController(url: url, configuration: cfg)
+        // Tint chrome to brand magenta so the in-app browser reads
+        // as part of EusoTrip, not a generic Safari sheet.
+        vc.preferredBarTintColor = nil
+        vc.preferredControlTintColor = UIColor(red: 0.745, green: 0.004, blue: 1.0, alpha: 1)
+        vc.dismissButtonStyle = .done
+        return vc
+    }
+    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
 }
 
 #Preview("296 · Add payment · Night") {

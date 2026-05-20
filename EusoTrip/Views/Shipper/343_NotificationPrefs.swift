@@ -18,6 +18,10 @@ private struct NotificationPrefsBody: View {
     @State private var loading = true
     @State private var sending = false
     @State private var saved = false
+    /// Inline save-error surface. Was a `/* surface inline */` no-op
+    /// — the catch swallowed network failures silently so the user
+    /// thought their toggle changes saved when they didn't.
+    @State private var saveError: String? = nil
 
     private struct ChannelToggle { var push: Bool = true; var email: Bool = true; var sms: Bool = false }
 
@@ -38,6 +42,12 @@ private struct NotificationPrefsBody: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
                 if saved { LifecycleCard(accentGradient: true) { Text("Saved.").font(EType.body).foregroundStyle(palette.textPrimary) } }
+                if let err = saveError {
+                    LifecycleCard(accentDanger: true) {
+                        Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 content
                 ctaRow
                 Color.clear.frame(height: 96)
@@ -120,6 +130,8 @@ private struct NotificationPrefsBody: View {
 
     private func save() async {
         sending = true
+        saveError = nil
+        saved = false
         struct ChannelIn: Encodable { let push: Bool; let email: Bool; let sms: Bool }
         struct In: Encodable { let prefs: [String: ChannelIn] }
         struct Out: Decodable { let success: Bool }
@@ -127,7 +139,11 @@ private struct NotificationPrefsBody: View {
         do {
             let _ : Out = try await EusoTripAPI.shared.mutation("users.setNotificationPreferences", input: In(prefs: payload))
             saved = true
-        } catch { /* surface inline */ }
+        } catch let apiErr as EusoTripAPIError {
+            saveError = apiErr.errorDescription ?? "Couldn't save notification preferences."
+        } catch {
+            saveError = error.localizedDescription
+        }
         sending = false
     }
 }

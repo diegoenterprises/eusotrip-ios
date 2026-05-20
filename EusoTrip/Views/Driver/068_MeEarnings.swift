@@ -73,6 +73,11 @@ struct MeEarnings068: View {
 
     // 1099 download state — `nil` until the CTA fires a URL.
     @State private var pendingTaxURL: URL? = nil
+    /// In-app PDF presentation for the 1099 fired by the earnings
+    /// surface. Replaces the prior Safari hand-off so the driver
+    /// stays inside the EusoTrip app and can save the doc to Files
+    /// or AirDrop it from EusoPDFViewer's share sheet.
+    @State private var taxPdfPresentation: EusoPDFPresentation? = nil
 
     var body: some View {
         // Background explicitly uses the injected `theme` palette — every
@@ -113,10 +118,22 @@ struct MeEarnings068: View {
         }
         .onChange(of: pendingTaxURL) { _, newValue in
             guard let url = newValue else { return }
-            #if canImport(UIKit)
-            UIApplication.shared.open(url, options: [:], completionHandler: nil)
-            #endif
+            taxPdfPresentation = EusoPDFPresentation(
+                url: url,
+                title: "Tax document",
+                subtitle: "Eusorone Technologies, Inc."
+            )
             pendingTaxURL = nil
+        }
+        .sheet(item: $taxPdfPresentation) { pres in
+            EusoPDFViewer(
+                title: pres.title,
+                subtitle: pres.subtitle,
+                source: .url(pres.url),
+                allowSigning: false,
+                onSigned: nil,
+                loadIdForWalletPass: nil
+            )
         }
         .screenTileRoot()
     }

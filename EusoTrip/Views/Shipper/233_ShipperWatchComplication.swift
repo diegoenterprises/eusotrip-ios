@@ -58,6 +58,11 @@ import SwiftUI
 // MARK: - Screen
 
 struct ShipperWatchComplication: View {
+    /// In-app SFSafariViewController for `app.eusotrip.com` deep
+    /// links. Replaces the prior `openURL(url)` Safari kick so the
+    /// shipper stays inside the EusoTrip app while reviewing watch
+    /// surfaces on web.
+    @State private var inAppLink: EusoSafariLink? = nil
     @Environment(\.palette) var palette
     @Environment(\.openURL) private var openURL
 
@@ -134,6 +139,9 @@ struct ShipperWatchComplication: View {
             footer
                 .padding(.top, Space.s4)
                 .padding(.bottom, Space.s5)
+        }
+        .sheet(item: $inAppLink) { link in
+            EusoInAppSafari(url: link.url).ignoresSafeArea()
         }
     }
 
@@ -441,7 +449,7 @@ struct ShipperWatchComplication: View {
             ]
         )
         if let url = URL(string: "https://app.eusotrip.com/shipper/watch/\(watch.id)/open") {
-            openURL(url)
+            inAppLink = EusoSafariLink(url: url)
         }
     }
 
@@ -456,7 +464,7 @@ struct ShipperWatchComplication: View {
             ]
         )
         if let url = URL(string: "https://app.eusotrip.com/shipper/settings/watch") {
-            openURL(url)
+            inAppLink = EusoSafariLink(url: url)
         }
     }
 }

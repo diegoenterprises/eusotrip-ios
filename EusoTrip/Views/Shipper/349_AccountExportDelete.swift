@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct AccountExportDeleteScreen: View {
     let theme: Theme.Palette
@@ -21,6 +22,17 @@ private struct ExportDeleteBody: View {
     @State private var actionError: String? = nil
     @State private var confirmDelete: Bool = false
     @State private var confirmText: String = ""
+    /// In-app share-sheet state for the "Download ZIP" action.
+    /// Replaces the prior `UIApplication.shared.open(url)` Safari
+    /// punt with authed-fetch + UIActivityViewController so the user
+    /// can save the export ZIP straight into Files or AirDrop it.
+    private struct ExportZipShareItem: Identifiable, Hashable {
+        let id: UUID
+        let url: URL
+    }
+    @State private var zipShareItem: ExportZipShareItem? = nil
+    @State private var downloadingZip: Bool = false
+    @State private var zipError: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -33,6 +45,10 @@ private struct ExportDeleteBody: View {
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 56)
+        }
+        .sheet(item: $zipShareItem) { item in
+            ExportZipActivitySheet(url: item.url)
+                .presentationDetents([.medium, .large])
         }
     }
 
@@ -65,11 +81,56 @@ private struct ExportDeleteBody: View {
     private func exportReadyCard(_ url: String) -> some View {
         LifecycleCard(accentGradient: true) {
             LifecycleSection(label: "EXPORT READY", icon: "checkmark.circle")
-            Button { if let u = URL(string: url) { UIApplication.shared.open(u) } } label: {
-                Text("Download ZIP").font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
-                    .padding(.horizontal, 14).padding(.vertical, 8)
-                    .background(LinearGradient.diagonal).clipShape(Capsule())
-            }.buttonStyle(.plain)
+            Button { Task { await downloadExportZip(urlString: url) } } label: {
+                HStack(spacing: 6) {
+                    if downloadingZip {
+                        ProgressView().scaleEffect(0.7).tint(.white)
+                    } else {
+                        Image(systemName: "square.and.arrow.down.fill")
+                            .font(.system(size: 11, weight: .heavy))
+                    }
+                    Text(downloadingZip ? "Fetching…" : "Download ZIP")
+                        .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .background(LinearGradient.diagonal).clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(downloadingZip)
+            if let zerr = zipError {
+                Text(zerr).font(EType.caption).foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @MainActor
+    private func downloadExportZip(urlString: String) async {
+        guard !downloadingZip else { return }
+        downloadingZip = true
+        zipError = nil
+        defer { downloadingZip = false }
+        guard let url = URL(string: urlString) else {
+            zipError = "Couldn't parse the export URL."
+            return
+        }
+        do {
+            let (data, _) = try await EusoTripAPI.shared.fetchAuthenticatedData(url)
+            guard !data.isEmpty else {
+                zipError = "Server returned an empty file."
+                return
+            }
+            let suggested = url.lastPathComponent.isEmpty ? "eusotrip-export.zip" : url.lastPathComponent
+            let safeName = suggested.lowercased().hasSuffix(".zip") ? suggested : "\(suggested).zip"
+            let tmp = FileManager.default.temporaryDirectory
+                .appendingPathComponent(safeName)
+            try data.write(to: tmp, options: .atomic)
+            zipShareItem = ExportZipShareItem(id: UUID(), url: tmp)
+        } catch let apiErr as EusoTripAPIError {
+            zipError = apiErr.errorDescription ?? "Network error"
+        } catch {
+            zipError = error.localizedDescription
         }
     }
 
@@ -127,6 +188,16 @@ private struct ExportDeleteBody: View {
         }
         deleting = false
     }
+}
+
+// MARK: - In-app share sheet for the export ZIP
+
+private struct ExportZipActivitySheet: UIViewControllerRepresentable {
+    let url: URL
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: [url], applicationActivities: nil)
+    }
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 #Preview("349 · Export/Delete · Night") { AccountExportDeleteScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }

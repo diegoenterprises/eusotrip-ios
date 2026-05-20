@@ -25,6 +25,7 @@
 import SwiftUI
 #if canImport(UIKit)
 import UIKit
+import SafariServices
 #endif
 #if canImport(WatchConnectivity)
 import WatchConnectivity
@@ -268,6 +269,14 @@ struct MeTaxView: View {
     @Environment(\.palette) var palette
     @StateObject private var taxStore = TaxSummaryStore()
     @StateObject private var ytdStore = YTDEarningsStore()
+    /// In-app PDF viewer presentation for the 1099-NEC. Replaces the
+    /// prior `MeAction.fire("tax.download-1099")` dead-tap stub —
+    /// the CTA now actually fetches the signed URL and renders the
+    /// PDF in `EusoPDFViewer` with a share sheet for Save to Files
+    /// / AirDrop / Mail.
+    @State private var taxPdfPresentation: EusoPDFPresentation? = nil
+    @State private var taxPdfFetching: Bool = false
+    @State private var taxPdfError: String? = nil
 
     // Live bind order: earnings.getYTDSummary is canonical (confirmed via
     // MCP against frontend/server/routers/earnings.ts). tax.getDriverSummary
@@ -340,8 +349,15 @@ struct MeTaxView: View {
                                    value: formatUSD(t.platformFees))
                     }
                     if t.download1099Available == true {
-                        CTAButton(title: "Download 1099-NEC") {
-                            MeAction.fire("tax.download-1099")
+                        CTAButton(title: taxPdfFetching ? "Fetching 1099-NEC…" : "Download 1099-NEC") {
+                            Task { await fetchAndPresent1099() }
+                        }
+                        .disabled(taxPdfFetching)
+                        if let err = taxPdfError {
+                            Text(err)
+                                .font(EType.caption)
+                                .foregroundStyle(Brand.danger)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     } else {
                         Text("1099 ships each January once your annual total crosses $600.")
@@ -352,6 +368,55 @@ struct MeTaxView: View {
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                 }
             }
+        }
+        .sheet(item: $taxPdfPresentation) { pres in
+            EusoPDFViewer(
+                title: pres.title,
+                subtitle: pres.subtitle,
+                source: .url(pres.url),
+                allowSigning: false,
+                onSigned: nil,
+                loadIdForWalletPass: nil
+            )
+        }
+    }
+
+    @MainActor
+    private func fetchAndPresent1099() async {
+        guard !taxPdfFetching else { return }
+        taxPdfFetching = true
+        taxPdfError = nil
+        defer { taxPdfFetching = false }
+        // 1099-NEC is always for the PRIOR tax year (server only
+        // mints once Jan 31 of year+1 passes). Match the 071 + Wallet
+        // pane behavior.
+        let year = Calendar.current.component(.year, from: Date()) - 1
+        do {
+            let resp = try await EusoTripAPI.shared.tax.get1099(year: year)
+            guard let urlStr = resp.url, !urlStr.isEmpty else {
+                taxPdfError = "Your 1099-NEC isn't available yet."
+                return
+            }
+            let resolved: URL? = {
+                if let u = URL(string: urlStr), u.scheme != nil { return u }
+                if let base = EusoTripAPI.shared.baseURL {
+                    return URL(string: urlStr, relativeTo: base)
+                }
+                return URL(string: urlStr)
+            }()
+            guard let u = resolved else {
+                taxPdfError = "Couldn't resolve the 1099 URL."
+                return
+            }
+            taxPdfPresentation = EusoPDFPresentation(
+                url: u,
+                title: "1099-NEC · \(year)",
+                subtitle: "Eusorone Technologies, Inc."
+            )
+        } catch let apiErr as EusoTripAPIError {
+            taxPdfError = apiErr.errorDescription ?? "Couldn't fetch 1099."
+        } catch {
+            taxPdfError = error.localizedDescription
         }
     }
 
@@ -4094,6 +4159,22 @@ final class DriverCarrierStore: ObservableObject {
 struct MeCarrierView: View {
     @Environment(\.palette) var palette
     @StateObject private var carrierStore = DriverCarrierStore()
+    /// In-app attach-to-carrier composer. Replaces the prior
+    /// `MeAction.fire("carrier.attach-request")` dead-tap with a
+    /// sheet where the driver enters the carrier name + DOT, then
+    /// fires a real mailto to support@eusotrip.com so the platform
+    /// team can link the driver to the right company record. (No
+    /// public server endpoint exists for driver-initiated attach
+    /// yet — this is the honest path until that ships.)
+    @State private var showAttachComposer: Bool = false
+    /// In-app SFSafariViewController for the carrier's website link.
+    /// Stays inside the EusoTrip app — same pattern as the Zeun
+    /// provider detail website row.
+    fileprivate struct MeCarrierWebSession: Identifiable, Hashable {
+        let id: UUID
+        let url: URL
+    }
+    @State private var webSession: MeCarrierWebSession? = nil
 
     var body: some View {
         Group {
@@ -4116,6 +4197,7 @@ struct MeCarrierView: View {
                 )
                 CTAButton(title: "Attach to a carrier") {
                     MeAction.fire("carrier.attach-request")
+                    showAttachComposer = true
                 }
             case .loaded(.some(let c)):
                 identityCard(c)
@@ -4126,6 +4208,7 @@ struct MeCarrierView: View {
                         "carrier.contact-dispatch",
                         userInfo: ["companyId": c.companyId]
                     )
+                    contactDispatch(c)
                 }
             case .error(let msg):
                 EusoEmptyState(
@@ -4139,6 +4222,46 @@ struct MeCarrierView: View {
             }
         }
         .task { await carrierStore.refresh() }
+        .sheet(isPresented: $showAttachComposer) {
+            AttachToCarrierComposer()
+                .presentationDetents([.medium, .large])
+        }
+        .sheet(item: $webSession) { sess in
+            MeCarrierInAppSafari(url: sess.url)
+                .ignoresSafeArea()
+        }
+    }
+
+    /// Dial the carrier's dispatch phone when one is on file, fall
+    /// back to email, and finally to a generic email composer if
+    /// neither is available. Replaces the prior dead-tap MeAction
+    /// post which had no real local effect.
+    private func contactDispatch(_ c: DriversAPI.MyCarrier) {
+        if let phone = c.phone, !phone.isEmpty {
+            let digits = phone.filter { "+0123456789".contains($0) }
+            if let url = URL(string: "tel:\(digits)") {
+                #if canImport(UIKit)
+                UIApplication.shared.open(url)
+                #endif
+                return
+            }
+        }
+        if let email = c.email, !email.isEmpty {
+            let subj = "Driver request · \(c.name ?? "carrier")"
+            let encoded = subj.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            if let url = URL(string: "mailto:\(email)?subject=\(encoded)") {
+                #if canImport(UIKit)
+                UIApplication.shared.open(url)
+                #endif
+                return
+            }
+        }
+        // No phone + no email on file — fall through to support.
+        if let url = URL(string: "mailto:support@eusotrip.com?subject=Reach%20my%20dispatcher%20at%20\((c.name ?? "carrier").addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") {
+            #if canImport(UIKit)
+            UIApplication.shared.open(url)
+            #endif
+        }
     }
 
     // MARK: Sections
@@ -4210,9 +4333,7 @@ struct MeCarrierView: View {
                 }
                 contactRow(icon: "globe", value: c.website) {
                     if let w = c.website, let url = URL(string: w.hasPrefix("http") ? w : "https://\(w)") {
-                        #if canImport(UIKit)
-                        UIApplication.shared.open(url)
-                        #endif
+                        webSession = MeCarrierWebSession(id: UUID(), url: url)
                     }
                 }
                 if let addr = mailingAddress(c) {
@@ -4323,6 +4444,93 @@ private extension String {
         let t = trimmingCharacters(in: .whitespacesAndNewlines)
         return t.isEmpty ? nil : t
     }
+}
+
+// MARK: - Attach-to-carrier composer
+
+/// Driver-initiated attach request. There's no public server endpoint
+/// for "I want to join this carrier" yet, so the composer routes via
+/// a real mailto to support@eusotrip.com — the platform team links
+/// the driver row to the named company. Replaces the prior MeAction
+/// dead-tap with a real action (email composer opens system Mail).
+private struct AttachToCarrierComposer: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+    @State private var carrierName: String = ""
+    @State private var dotNumber: String = ""
+    @State private var mcNumber: String = ""
+    @State private var note: String = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Carrier") {
+                    TextField("Trade name", text: $carrierName)
+                    TextField("USDOT number", text: $dotNumber)
+                        .keyboardType(.numberPad)
+                    TextField("MC number", text: $mcNumber)
+                        .keyboardType(.numberPad)
+                }
+                Section("Note") {
+                    TextField("Anything support should know", text: $note, axis: .vertical)
+                        .lineLimit(2...6)
+                }
+                Section {
+                    Text("Tap Send to compose an email to support@eusotrip.com. The platform team links your driver record to the carrier within one business day.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+            .navigationTitle("Attach to a carrier")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Send") {
+                        sendRequest()
+                    }
+                    .disabled(carrierName.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+    }
+
+    private func sendRequest() {
+        let lines = [
+            "Carrier: \(carrierName)",
+            "USDOT: \(dotNumber)",
+            "MC: \(mcNumber)",
+            "Note: \(note)"
+        ]
+        let body = lines.joined(separator: "\n").addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let subj = "Attach-to-carrier request".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let url = URL(string: "mailto:support@eusotrip.com?subject=\(subj)&body=\(body)") {
+            #if canImport(UIKit)
+            UIApplication.shared.open(url)
+            #endif
+        }
+        dismiss()
+    }
+}
+
+// MARK: - In-app SFSafariViewController for the carrier website link
+
+/// Hosts the carrier's website inside an in-app modal so the Me ·
+/// Carrier "globe" row never kicks the driver out to Safari.
+private struct MeCarrierInAppSafari: UIViewControllerRepresentable {
+    let url: URL
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        let cfg = SFSafariViewController.Configuration()
+        cfg.entersReaderIfAvailable = false
+        cfg.barCollapsingEnabled = true
+        let vc = SFSafariViewController(url: url, configuration: cfg)
+        vc.dismissButtonStyle = .done
+        vc.preferredControlTintColor = UIColor(red: 0.745, green: 0.004, blue: 1.0, alpha: 1)
+        return vc
+    }
+    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
 }
 
 // MARK: - Previews

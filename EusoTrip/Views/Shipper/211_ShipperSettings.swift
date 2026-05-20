@@ -549,18 +549,54 @@ struct ShipperSettings: View {
     /// Binding that reads from the matrix and writes through the
     /// store's optimistic-update path. Rollback on error happens
     /// inside the store.
+    /// Binding that reads LIVE from prefsStore.matrix instead of a
+    /// captured snapshot. The prior `get: { currentValue }` pattern
+    /// was a Swift-SwiftUI anti-pattern: SwiftUI does re-render the
+    /// parent when @StateObject changes, but the closure captures
+    /// the value at construction time so on race-y rapid taps the
+    /// toggle could appear to "stick" or revert. Reading directly
+    /// from `prefsStore.matrix.<key>` via the resolver makes the
+    /// binding's `get` always reflect the current store state — no
+    /// flicker, no snap-back. Also surfaces the server failure
+    /// inline (errorBanner instead of silent toast) so the user
+    /// always knows when a write didn't land.
     private func bindingFor(keyName: String, currentValue: Bool) -> Binding<Bool> {
         Binding(
-            get: { currentValue },
-            set: { newValue in
+            get: { [prefsStore] in
+                Self.liveValue(keyName: keyName, matrix: prefsStore.matrix)
+                    ?? currentValue
+            },
+            set: { [prefsStore] newValue in
                 Task {
                     await prefsStore.setPreference(keyName: keyName, value: newValue)
-                    if prefsStore.lastError == nil {
+                    if let err = prefsStore.lastError {
+                        flashToast("Couldn't save: \((err as? LocalizedError)?.errorDescription ?? err.localizedDescription)")
+                    } else {
                         flashToast("Saved")
                     }
                 }
             }
         )
+    }
+
+    /// Read one Bool field off the matrix by stable string key.
+    /// Mirrors the `buildPatch` switch on the store so the UI never
+    /// drifts out of sync with what the server actually persists.
+    private static func liveValue(keyName: String, matrix: UsersAPI.PreferenceMatrix) -> Bool? {
+        switch keyName {
+        case "emailNotifications": return matrix.emailNotifications
+        case "pushNotifications":  return matrix.pushNotifications
+        case "smsNotifications":   return matrix.smsNotifications
+        case "inAppNotifications": return matrix.inAppNotifications
+        case "loadUpdates":        return matrix.loadUpdates
+        case "bidAlerts":          return matrix.bidAlerts
+        case "paymentAlerts":      return matrix.paymentAlerts
+        case "messageAlerts":      return matrix.messageAlerts
+        case "missionAlerts":      return matrix.missionAlerts
+        case "promotionalAlerts":  return matrix.promotionalAlerts
+        case "weeklyDigest":       return matrix.weeklyDigest
+        default:                   return nil
+        }
     }
 
     // MARK: - LANE TEMPLATES (live store + "+ New template" gradient row)

@@ -300,13 +300,12 @@ struct EusoPDFViewer: View {
         if url.isFileURL {
             return try Data(contentsOf: url)
         }
-        let (data, response) = try await URLSession.shared.data(from: url)
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw NSError(
-                domain: "EusoPDFViewer", code: http.statusCode,
-                userInfo: [NSLocalizedDescriptionKey: "Server returned status \(http.statusCode)"]
-            )
-        }
+        // Route through EusoTripAPI so the bearer token is attached
+        // when the URL is on our origin (auth-protected docs would
+        // otherwise return 401 here and the viewer would render the
+        // "not a valid PDF" empty state). Falls back to the
+        // unauthenticated URLSession for fully-public URLs.
+        let (data, _) = try await EusoTripAPI.shared.fetchAuthenticatedData(url)
         return data
     }
 

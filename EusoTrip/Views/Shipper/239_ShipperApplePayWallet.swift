@@ -351,7 +351,12 @@ struct ShipperApplePayWallet: View {
             escrowLine: escrowLine,
             carrierTier: String(row.id.suffix(2)).first.map(String.init) ?? "A",
             ctaLabel: "Add to Wallet",
-            matrixRowLabel: nil
+            // Founder ask 2026-05-19 — canonical SVG section label
+            // "ACTIVE PASS · MATRIX-50 ROW 1" should show when an
+            // active load exists. Default to row 1 when the server
+            // doesn't tag a cohort; downstream cohort tagging
+            // (server-side metadata.matrix50.row) will flip this.
+            matrixRowLabel: "ACTIVE PASS · MATRIX-50 ROW 1"
         )
     }
 
@@ -435,12 +440,16 @@ struct ShipperApplePayWallet: View {
                 )
 
                 ZStack(alignment: .topLeading) {
+                    // SVG-canonical offsets: LOAD ID label y=62 (22pt
+                    // below the 40h header strip), LOAD ID value y=80,
+                    // LANE label y=102, LANE value y=124, ETA/EQUIPMENT
+                    // row y=144. Spacings retuned to those gaps.
                     VStack(alignment: .leading, spacing: 0) {
                         Text("LOAD ID")
                             .font(.system(size: 8, weight: .heavy))
                             .tracking(0.6)
                             .foregroundStyle(palette.textTertiary)
-                            .padding(.top, 12)
+                            .padding(.top, 22)
 
                         Text(activePass.loadId)
                             .font(.system(size: 17, weight: .bold, design: .monospaced))
@@ -454,7 +463,7 @@ struct ShipperApplePayWallet: View {
                             .font(.system(size: 8, weight: .heavy))
                             .tracking(0.6)
                             .foregroundStyle(palette.textTertiary)
-                            .padding(.top, 12)
+                            .padding(.top, 14)
 
                         Text(activePass.lane)
                             .font(.system(size: 20, weight: .heavy))
@@ -487,7 +496,7 @@ struct ShipperApplePayWallet: View {
                                     .minimumScaleFactor(0.78)
                             }
                         }
-                        .padding(.top, 12)
+                        .padding(.top, 14)
 
                         Spacer(minLength: 0)
                     }
@@ -545,14 +554,23 @@ struct ShipperApplePayWallet: View {
                         GradientCapsuleCTA(label: activePass.ctaLabel, width: 140)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Add the active pickup credential to Apple Wallet — installs a .pkpass bundle bound to LD-260427-A38FB12C7E.")
+                    .accessibilityLabel("Add the active pickup credential to Apple Wallet — installs a .pkpass bundle bound to \(activePass.loadId).")
                 }
                 .padding(.horizontal, 20)
+                // SVG carrier band sits at y=178 within the 220h card;
+                // body content ends near y=160 (ETA value baseline), so
+                // the gap is ~18pt. The prior 56pt was driven by the
+                // unbounded body and pushed the carrier band off-card.
+                .padding(.top, 14)
                 .padding(.bottom, 14)
-                .padding(.top, 56)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 220, alignment: .topLeading)
+        // SVG-canonical hero pass-card height — 220pt fixed. Locking
+        // minHeight = maxHeight so the gradient header strip (40) +
+        // body block (140) + carrier band (40) total exactly to the
+        // spec and the QR + Add-to-Wallet pill sit in their
+        // SVG-defined positions instead of drifting on long strings.
+        .frame(maxWidth: .infinity, minHeight: 220, maxHeight: 220, alignment: .topLeading)
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 

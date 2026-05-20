@@ -1579,23 +1579,23 @@ struct ShipperAgreementDetailSheet: View {
         }
         .buttonStyle(.plain)
         .sheet(isPresented: $presentingPDFViewer) {
-            // Build the contract PDF URL from the agreement record.
-            // Server endpoint: agreements.getPDFURL(agreementId).
-            // When the URL isn't populated yet, the viewer's load
-            // path surfaces an honest empty state — never a fake
-            // PDF.
-            let pdfURL = URL(string: "https://eusotrip.com/api/agreements/\(row.id)/pdf")
-            EusoPDFViewer(
-                title: row.agreementNumber ?? "Agreement #\(row.id)",
-                subtitle: (row.agreementType ?? "Contract") + (row.status.map { " · \($0.uppercased())" } ?? ""),
-                source: .url(pdfURL ?? URL(string: "about:blank")!),
+            // 2026-05-19 — render via authenticated tRPC. The server's
+            // `agreements.generatePdf` runs pdfkit against the AI-
+            // generated contract content + parties + clauses + fin
+            // terms and returns base64 PDF bytes. EusoPDFViewer's
+            // `.data(...)` source path renders them in-app via PDFKit
+            // with our brand-tinted share sheet for save / sign.
+            //
+            // Replaces the prior `https://eusotrip.com/api/agreements/
+            // <id>/pdf` URL hand-off, which (a) pointed at a route
+            // that didn't exist, and (b) had no auth header so even if
+            // it had, it would've 401'd. Authenticated round-trip
+            // through EusoTripAPI keeps the bearer attached.
+            ShipperAgreementPdfBridge(
+                row: row,
                 allowSigning: (row.status ?? "").lowercased() == "pending_signature",
                 onSigned: { _, base64 in
                     Task {
-                        // Submit gradient-ink signature back to the
-                        // agreement record. Best-effort — the
-                        // mutation is server-routed; a failure
-                        // surfaces in the next refresh.
                         struct In: Encodable {
                             let agreementId: Int
                             let signatureBase64: String
@@ -1614,8 +1614,88 @@ struct ShipperAgreementDetailSheet: View {
                     }
                 }
             )
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
+        }
+    }
+}
+
+/// Async PDF fetcher → EusoPDFViewer renderer. Replaces the prior
+/// "punt to https URL" pattern with a real authenticated round-trip
+/// through `agreements.generatePdf`.
+private struct ShipperAgreementPdfBridge: View {
+    let row: ShipperAgreementsAPI.Agreement
+    let allowSigning: Bool
+    let onSigned: (UIImage, String) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var pdfData: Data? = nil
+    @State private var fetchError: String? = nil
+
+    var body: some View {
+        Group {
+            if let data = pdfData {
+                EusoPDFViewer(
+                    title: row.agreementNumber ?? "Agreement #\(row.id)",
+                    subtitle: (row.agreementType ?? "Contract") + (row.status.map { " · \($0.uppercased())" } ?? ""),
+                    source: .data(data),
+                    allowSigning: allowSigning,
+                    onSigned: onSigned,
+                    loadIdForWalletPass: nil
+                )
+            } else if let err = fetchError {
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 28, weight: .heavy))
+                        .foregroundStyle(Brand.danger)
+                    Text("Couldn't generate the contract PDF")
+                        .font(.system(size: 15, weight: .heavy))
+                    Text(err)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Done") { dismiss() }
+                        .padding(.horizontal, 16).padding(.vertical, 8)
+                        .background(Capsule().fill(LinearGradient.diagonal))
+                        .foregroundStyle(.white)
+                }
+                .padding(24)
+            } else {
+                VStack(spacing: 10) {
+                    ProgressView()
+                    Text("Generating contract PDF…")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .task { await fetch() }
+    }
+
+    @MainActor
+    private func fetch() async {
+        struct In: Encodable { let agreementId: Int }
+        struct Out: Decodable {
+            let agreementId: Int
+            let agreementNumber: String?
+            let mimeType: String
+            let dataBase64: String
+            let generatedAt: String?
+        }
+        do {
+            let r: Out = try await EusoTripAPI.shared.query(
+                "agreements.generatePdf",
+                input: In(agreementId: row.id)
+            )
+            guard let bytes = Data(base64Encoded: r.dataBase64), !bytes.isEmpty else {
+                fetchError = "Server returned an empty PDF."
+                return
+            }
+            pdfData = bytes
+        } catch let apiErr as EusoTripAPIError {
+            fetchError = apiErr.errorDescription ?? "Couldn't fetch the PDF."
+        } catch {
+            fetchError = error.localizedDescription
         }
     }
 }

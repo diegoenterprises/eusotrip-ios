@@ -10,6 +10,7 @@
 //
 
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct BulkUploadShellScreen: View {
@@ -57,6 +58,19 @@ private struct BulkUploadShellBody: View {
     @State private var actionError: String? = nil
     @State private var loading = true
     @State private var fileImporterPresented = false
+    /// In-app share-sheet state for the "Download template CSV" tap.
+    /// Replaces the previous `UIApplication.shared.open(url)` Safari
+    /// punt with an authed-fetch + UIActivityViewController flow so
+    /// the user can save into Files / AirDrop / Mail without leaving
+    /// the app. Identifiable wrapper around the temp URL so SwiftUI
+    /// `.sheet(item:)` re-presents per-fetch.
+    private struct BulkTemplateShareItem: Identifiable, Hashable {
+        let id: UUID
+        let url: URL
+    }
+    @State private var templateShareItem: BulkTemplateShareItem? = nil
+    @State private var templateFetching: Bool = false
+    @State private var templateFetchError: String? = nil
     /// ESANG AI parse mode toggle. When ON, the upload routes through
     /// the platform's Gemini-backed structured-extraction pipeline
     /// (`payloadKind: "ai-parse"` per founder doctrine 2026-05-07).
@@ -104,6 +118,46 @@ private struct BulkUploadShellBody: View {
             allowsMultipleSelection: false
         ) { result in
             handleFile(result)
+        }
+        // In-app share sheet for the fetched template CSV. Presents
+        // UIActivityViewController so the user can Save to Files,
+        // AirDrop, Mail, etc. — no Safari punt.
+        .sheet(item: $templateShareItem) { item in
+            BulkTemplateActivitySheet(url: item.url)
+                .presentationDetents([.medium, .large])
+        }
+    }
+
+    // MARK: - Template CSV fetch
+
+    @MainActor
+    private func fetchTemplateCsv(urlString: String) async {
+        guard !templateFetching else { return }
+        templateFetching = true
+        templateFetchError = nil
+        defer { templateFetching = false }
+        guard let url = URL(string: urlString) else {
+            templateFetchError = "Couldn't parse the template URL."
+            return
+        }
+        do {
+            let (data, _) = try await EusoTripAPI.shared.fetchAuthenticatedData(url)
+            guard !data.isEmpty else {
+                templateFetchError = "Server returned an empty file."
+                return
+            }
+            let suggested = url.lastPathComponent.isEmpty
+                ? "\(selected?.key ?? "template").csv"
+                : url.lastPathComponent
+            let safeName = suggested.lowercased().hasSuffix(".csv") ? suggested : "\(suggested).csv"
+            let tmp = FileManager.default.temporaryDirectory
+                .appendingPathComponent(safeName)
+            try data.write(to: tmp, options: .atomic)
+            templateShareItem = BulkTemplateShareItem(id: UUID(), url: tmp)
+        } catch let apiErr as EusoTripAPIError {
+            templateFetchError = apiErr.errorDescription ?? "Network error"
+        } catch {
+            templateFetchError = error.localizedDescription
         }
     }
 
@@ -153,12 +207,29 @@ private struct BulkUploadShellBody: View {
                 }
                 if let url = selected?.templateCsvUrl {
                     Button {
-                        if let u = URL(string: url) { UIApplication.shared.open(u) }
+                        Task { await fetchTemplateCsv(urlString: url) }
                     } label: {
-                        Text("Download template CSV").font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
-                            .padding(.horizontal, 14).padding(.vertical, 6)
-                            .background(LinearGradient.diagonal).clipShape(Capsule())
-                    }.buttonStyle(.plain).padding(.top, 4)
+                        HStack(spacing: 6) {
+                            if templateFetching {
+                                ProgressView().scaleEffect(0.7).tint(.white)
+                            } else {
+                                Image(systemName: "square.and.arrow.down.fill")
+                                    .font(.system(size: 11, weight: .heavy))
+                            }
+                            Text(templateFetching ? "Fetching…" : "Download template CSV")
+                                .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 6)
+                        .background(LinearGradient.diagonal).clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 4)
+                    .disabled(templateFetching)
+                    if let err = templateFetchError {
+                        Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }
@@ -310,7 +381,18 @@ private struct BulkUploadShellBody: View {
         do {
             let r: [UploadJob] = try await EusoTripAPI.shared.queryNoInput("bulkUpload.getJobHistory")
             jobHistory = r
-        } catch { /* tolerate */ }
+        } catch let apiErr as EusoTripAPIError {
+            // History is a secondary panel; record the error to the
+            // shared `actionError` only when nothing else has populated
+            // it yet, so the primary upload flow stays the priority.
+            if actionError == nil {
+                actionError = "Job history: \(apiErr.errorDescription ?? "couldn't load")"
+            }
+        } catch {
+            if actionError == nil {
+                actionError = "Job history: \(error.localizedDescription)"
+            }
+        }
     }
 
     private func submit() async {
@@ -349,6 +431,19 @@ private struct BulkUploadShellBody: View {
             } catch { return }
         }
     }
+}
+
+// MARK: - In-app activity sheet for the downloaded template CSV.
+
+/// Hosts UIActivityViewController so the template CSV opens in the
+/// system share sheet (Save to Files / AirDrop / Mail / Messages)
+/// instead of bouncing the user out to Safari.
+private struct BulkTemplateActivitySheet: UIViewControllerRepresentable {
+    let url: URL
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: [url], applicationActivities: nil)
+    }
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 #Preview("400 · Bulk upload · Night") { BulkUploadShellScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }

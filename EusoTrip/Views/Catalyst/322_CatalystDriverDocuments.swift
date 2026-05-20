@@ -806,6 +806,13 @@ private struct CatalystDocumentUploadSheet: View {
     @State private var notes: String = ""
     @State private var uploading: Bool = false
     @State private var uploadError: String? = nil
+    /// Doc-router classifier sheet — same Gemini Vision pipeline the
+    /// shipper Templates/Bulk + driver Me·Docs surfaces use. When the
+    /// catalyst scans a doc, the form pre-fills with detected type,
+    /// identifier (used as the doc name), and expiration date so the
+    /// human just confirms and taps Save.
+    @State private var showClassifier: Bool = false
+    @State private var classifierAck: String? = nil
 
     enum DQUploadType: String, CaseIterable, Identifiable {
         case cdl, medical, mvr, drug, hazmat, twic, annualReview, other
@@ -852,6 +859,35 @@ private struct CatalystDocumentUploadSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Button {
+                        showClassifier = true
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "sparkles.tv.fill")
+                                .font(.system(size: 14, weight: .heavy))
+                                .foregroundStyle(LinearGradient.diagonal)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Scan to autofill")
+                                    .font(.system(size: 14, weight: .heavy))
+                                    .foregroundStyle(palette.textPrimary)
+                                Text("Gemini Vision detects type, identifier, and expiration. Confirm and save.")
+                                    .font(.system(size: 11, weight: .regular))
+                                    .foregroundStyle(palette.textSecondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .heavy))
+                                .foregroundStyle(palette.textTertiary)
+                        }
+                    }
+                    if let ack = classifierAck {
+                        Text("Pre-filled · \(ack)")
+                            .font(.system(size: 11, weight: .heavy))
+                            .foregroundStyle(LinearGradient.diagonal)
+                    }
+                }
                 Section("Document type") {
                     Picker("Type", selection: $docType) {
                         ForEach(DQUploadType.allCases) { t in
@@ -898,9 +934,71 @@ private struct CatalystDocumentUploadSheet: View {
                     docType = DQUploadType.from(filter: preset)
                 }
             }
+            .sheet(isPresented: $showClassifier) {
+                DocumentClassifierSheet(
+                    mode: .prefillWizard,
+                    callerContext: "catalyst driver document upload",
+                    onApplySingle: { doc in
+                        applyClassified(doc)
+                    },
+                    onDispatchBatch: { _ in }
+                )
+            }
         }
         .presentationDetents([.large])
     }
+
+    /// Map a documentRouter classification onto this form's @State.
+    /// Confidence is implicit — the user can override anything before
+    /// tapping Save, so we treat the scan as an aggressive pre-fill,
+    /// not a fait accompli.
+    private func applyClassified(_ result: ClassifiedDocument) {
+        let mapped: DQUploadType
+        switch result.classifiedType {
+        case "us_cdl", "ca_cdl", "mx_cdl":          mapped = .cdl
+        case "us_medical_card", "ca_medical_card", "mx_medical_card": mapped = .medical
+        case "us_twic":                              mapped = .twic
+        case "us_hazmat_endorsement", "us_hazmat_certificate", "us_tanker_endorsement":
+            mapped = .hazmat
+        case "us_mvr", "ca_mvr":                     mapped = .mvr
+        case "drug_screen", "us_drug_test":          mapped = .drug
+        case "annual_review":                        mapped = .annualReview
+        default:                                     mapped = .other
+        }
+        docType = mapped
+
+        // Doc name → prefer extracted identifier (license number / TWIC #).
+        if let ident = result.fields["identifier"] ?? result.fields["licenseNumber"] ?? result.fields["cardNumber"], !ident.isEmpty {
+            docName = "\(mapped.label) \(ident)"
+        } else if let holder = result.fields["holderName"] ?? result.fields["name"], !holder.isEmpty {
+            docName = "\(mapped.label) · \(holder)"
+        }
+
+        // Expiration → parse common shapes (ISO, MM/DD/YYYY, YYYY-MM-DD).
+        if let raw = result.fields["expirationDate"] ?? result.fields["expiration"] ?? result.fields["expirationDateIso"], !raw.isEmpty {
+            if let parsed = ISO8601DateFormatter().date(from: raw)
+                ?? Self.mdyFormatter.date(from: raw)
+                ?? Self.ymdFormatter.date(from: raw) {
+                expiresAt = parsed
+                hasExpiry = true
+            }
+        }
+
+        classifierAck = mapped.label
+    }
+
+    private static let mdyFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "MM/dd/yyyy"
+        return f
+    }()
+    private static let ymdFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
 
     private func upload() async {
         uploadError = nil

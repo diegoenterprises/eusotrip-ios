@@ -1755,19 +1755,50 @@ struct ShipperLoadDetail: View {
                 Text("COULDN'T LOAD")
                     .font(EType.micro).tracking(0.8)
                     .foregroundStyle(Brand.danger)
+                Spacer(minLength: 0)
+                Text("load \(loadId)")
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(palette.textTertiary)
             }
             Text(message)
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
-            Button(action: { Task { await refreshAll() } }) {
-                Text("Retry")
-                    .font(EType.micro).tracking(0.6)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14).padding(.vertical, 8)
-                    .background(LinearGradient.diagonal)
-                    .clipShape(Capsule())
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+            HStack(spacing: 8) {
+                Button(action: { Task { await refreshAll() } }) {
+                    Text("Retry")
+                        .font(EType.micro).tracking(0.6)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(LinearGradient.diagonal)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                Button {
+                    // Copy the FULL error string + load id to the
+                    // clipboard so the founder can paste it into
+                    // chat. The error mapper truncates display at
+                    // 240 chars; the raw lastError on the store
+                    // carries the full trace.
+                    let full: String = {
+                        let raw = (detailStore.lastError as? LocalizedError)?.errorDescription
+                            ?? detailStore.lastError?.localizedDescription
+                            ?? message
+                        return "load=\(loadId)\n\(raw)"
+                    }()
+                    UIPasteboard.general.string = full
+                } label: {
+                    Text("Copy details")
+                        .font(EType.micro).tracking(0.6)
+                        .foregroundStyle(palette.textPrimary)
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(palette.bgCardSoft)
+                        .overlay(Capsule().strokeBorder(palette.borderSoft))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1884,30 +1915,56 @@ struct ShipperLoadDetail: View {
     }
 
     private func readableError(_ error: Error) -> String {
-        // The raw `loads.getById` failure on a missing schema column
-        // (e.g. `tanker_sub_state` before migration 0100 ran) returns
-        // a 600+ char SQL trace that floods the error card. Strip it
-        // down to a useful one-liner — the founder report on
-        // 2026-05-05 was a screenshot of the entire `select id,
-        // shipperId, … from loads where id = ? limit ?` query
-        // surfaced raw under "COULDN'T LOAD". Server fix is migration
-        // 0100; this is the client-side hardening so the next
-        // schema drift is at least readable.
+        // Surface the actual server error to the user. The previous
+        // mapper aggressively rewrote ANY "failed query" string to
+        // "schema is out of sync — apply migrations", which was
+        // misleading when (a) schema was fully in sync, but (b) the
+        // failure was a Drizzle internal error containing "Failed
+        // query:" anyway. Confirmed 2026-05-19: all 39 loads columns
+        // present on prod, load 1077 selects cleanly in psql — yet
+        // iOS still surfaced the "missing column" copy.
+        //
+        // New triage rules (tightened):
+        //   • `unknown column` / `er_bad_field` — true MySQL schema
+        //     drift signal. Keep the migration hint.
+        //   • Decoding errors (JSONDecoder.DecodingError) — the
+        //     server returned a row whose shape the iOS LoadDetail
+        //     struct doesn't expect. Surface as "Server response
+        //     shape doesn't match" + log the underlying details.
+        //   • Anything else — pass through the raw first line so we
+        //     stop hiding real errors behind a generic schema hint.
         let raw: String
         if let api = error as? EusoTripAPIError {
             raw = api.errorDescription ?? "Request failed."
+        } else if let decode = error as? DecodingError {
+            // Log so the device console catches the gory details.
+            print("[ShipperLoadDetail] DecodingError on loads.getById: \(decode)")
+            switch decode {
+            case .keyNotFound(let key, _):
+                return "Server response is missing key \"\(key.stringValue)\" — the deploy target's loads.getById response is older than this build."
+            case .typeMismatch(let type, let ctx):
+                return "Server returned \(type) where iOS expected something else (path: \(ctx.codingPath.map { $0.stringValue }.joined(separator: "."))). Server response shape doesn't match."
+            case .valueNotFound(let type, let ctx):
+                return "Server returned null for a required \(type) at \(ctx.codingPath.map { $0.stringValue }.joined(separator: "."))."
+            case .dataCorrupted(let ctx):
+                return "Couldn't parse server response: \(ctx.debugDescription)"
+            @unknown default:
+                return "Couldn't parse server response."
+            }
         } else {
             raw = error.localizedDescription
         }
         let lower = raw.lowercased()
-        if lower.contains("failed query") ||
-           lower.contains("unknown column") ||
-           lower.contains("er_bad_field") {
-            return "Server-side schema is out of sync — missing column on `loads`. Apply the latest tanker / lifecycle migrations on the deploy target. (Surfacing the raw query was hiding this — see ops on-call.)"
+        // True MySQL schema-drift signal only.
+        if lower.contains("unknown column") || lower.contains("er_bad_field") {
+            return "Server-side schema is out of sync — missing column on `loads`. Apply the latest migrations on the deploy target."
         }
-        if lower.contains("network") || lower.contains("offline") {
+        if lower.contains("network") || lower.contains("offline")
+            || lower.contains("could not connect") {
             return "We can't reach the server right now. Pull to refresh once you're back online."
         }
+        // Log everything else to the device console for debugging.
+        print("[ShipperLoadDetail] raw error on loads.getById: \(raw)")
         // Long messages still fold but we keep the first line so a
         // genuine TRPC user-message ("Load not found", "Permission
         // denied") remains visible.

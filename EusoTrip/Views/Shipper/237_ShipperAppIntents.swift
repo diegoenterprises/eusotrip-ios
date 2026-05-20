@@ -57,6 +57,10 @@ import SwiftUI
 // MARK: - Screen
 
 struct ShipperAppIntents: View {
+    /// In-app SFSafariViewController for `app.eusotrip.com` deep
+    /// links. Stays inside the EusoTrip app per "all on the app"
+    /// founder doctrine.
+    @State private var inAppLink: EusoSafariLink? = nil
     @Environment(\.palette) var palette
     @Environment(\.openURL) private var openURL
 
@@ -167,6 +171,9 @@ struct ShipperAppIntents: View {
             footer
                 .padding(.top, Space.s4)
                 .padding(.bottom, Space.s5)
+        }
+        .sheet(item: $inAppLink) { link in
+            EusoInAppSafari(url: link.url).ignoresSafeArea()
         }
     }
 
@@ -369,7 +376,7 @@ struct ShipperAppIntents: View {
             ]
         )
         if let url = URL(string: "https://app.eusotrip.com/shipper/intents/run/\(activeIntent.id)") {
-            openURL(url)
+            inAppLink = EusoSafariLink(url: url)
         }
     }
 
@@ -385,7 +392,7 @@ struct ShipperAppIntents: View {
             ]
         )
         if let url = URL(string: "https://app.eusotrip.com/shipper/intents/\(intent.id)/toggle") {
-            openURL(url)
+            inAppLink = EusoSafariLink(url: url)
         }
     }
 
@@ -402,7 +409,7 @@ struct ShipperAppIntents: View {
             ]
         )
         if let url = URL(string: "https://app.eusotrip.com/shipper/intents/\(intent.id)") {
-            openURL(url)
+            inAppLink = EusoSafariLink(url: url)
         }
     }
 
@@ -417,7 +424,7 @@ struct ShipperAppIntents: View {
             ]
         )
         if let url = URL(string: "https://app.eusotrip.com/shipper/settings/siri") {
-            openURL(url)
+            inAppLink = EusoSafariLink(url: url)
         }
     }
 }

@@ -1961,6 +1961,11 @@ struct DriverWalletPane: View {
     }
     @State private var sheet: WalletSheet? = nil
     @State private var showAddAccount: Bool = false
+    /// In-app PDF viewer presentation for the 1099-NEC download.
+    /// Replaces the prior `openURL(u)` Safari kick — the driver
+    /// stays inside the EusoTrip app and can save the 1099 to Files
+    /// / AirDrop / Mail via EusoPDFViewer's share sheet.
+    @State private var taxPdfPresentation: EusoPDFPresentation? = nil
 
     // MARK: - Stores (all bound to canonical backend procedures)
     //
@@ -2030,6 +2035,20 @@ struct DriverWalletPane: View {
                 .environment(\.palette, palette)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+        }
+        // In-app 1099-NEC viewer — opens the signed PDF inside the
+        // EusoTrip app via EusoPDFViewer (PDFKit render + iOS share
+        // sheet for Save to Files / AirDrop / Mail). Replaces the
+        // prior `openURL(u)` Safari kick on the §8 1099 CTA.
+        .sheet(item: $taxPdfPresentation) { pres in
+            EusoPDFViewer(
+                title: pres.title,
+                subtitle: pres.subtitle,
+                source: .url(pres.url),
+                allowSigning: false,
+                onSigned: nil,
+                loadIdForWalletPass: nil
+            )
         }
         .sheet(isPresented: $showAddAccount) {
             AddPaymentAccountSheet(onLinked: {
@@ -2686,9 +2705,9 @@ struct DriverWalletPane: View {
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
             Button(action: {
-                // Open the signed 1099 URL in Safari. If the server
-                // didn't mint one (older build / not yet issued), fall
-                // back to the legacy fetch path for back-compat.
+                // In-app 1099 render. Resolve a relative server path
+                // against `EusoTripAPI.baseURL`, then present
+                // `EusoPDFViewer` so the driver never leaves the app.
                 if let raw = s.download1099URL, !raw.isEmpty {
                     let resolved: URL? = {
                         if let u = URL(string: raw), u.scheme != nil { return u }
@@ -2697,7 +2716,13 @@ struct DriverWalletPane: View {
                         }
                         return URL(string: raw)
                     }()
-                    if let u = resolved { openURL(u) }
+                    if let u = resolved {
+                        taxPdfPresentation = EusoPDFPresentation(
+                            url: u,
+                            title: "1099-NEC · \(String(displayYear))",
+                            subtitle: "Eusorone Technologies, Inc."
+                        )
+                    }
                 } else {
                     Task {
                         _ = try? await EusoTripAPI.shared.tax.get1099(year: displayYear)

@@ -54,6 +54,10 @@ import SwiftUI
 struct ShipperFocusModeWidget: View {
     @Environment(\.palette) var palette
     @Environment(\.openURL) private var openURL
+    /// In-app SFSafariViewController for `app.eusotrip.com` deep
+    /// links — keeps the shipper in EusoTrip per "all on the app"
+    /// founder doctrine.
+    @State private var inAppLink: EusoSafariLink? = nil
 
     private let counterEyebrow = "3 PROFILES · DRIVING ACTIVE"
 
@@ -135,6 +139,9 @@ struct ShipperFocusModeWidget: View {
             footer
                 .padding(.top, Space.s4)
                 .padding(.bottom, Space.s5)
+        }
+        .sheet(item: $inAppLink) { link in
+            EusoInAppSafari(url: link.url).ignoresSafeArea()
         }
     }
 
@@ -337,7 +344,7 @@ struct ShipperFocusModeWidget: View {
             ]
         )
         if let url = URL(string: "https://app.eusotrip.com/shipper/focus/test/\(activeProfile.id)") {
-            openURL(url)
+            inAppLink = EusoSafariLink(url: url)
         }
     }
 
@@ -353,7 +360,7 @@ struct ShipperFocusModeWidget: View {
             ]
         )
         if let url = URL(string: "https://app.eusotrip.com/shipper/focus/profile/\(profile.id)/toggle") {
-            openURL(url)
+            inAppLink = EusoSafariLink(url: url)
         }
     }
 
@@ -370,7 +377,7 @@ struct ShipperFocusModeWidget: View {
             ]
         )
         if let url = URL(string: "https://app.eusotrip.com/shipper/focus/profile/\(profile.id)") {
-            openURL(url)
+            inAppLink = EusoSafariLink(url: url)
         }
     }
 
@@ -385,7 +392,7 @@ struct ShipperFocusModeWidget: View {
             ]
         )
         if let url = URL(string: "https://app.eusotrip.com/shipper/settings/focus") {
-            openURL(url)
+            inAppLink = EusoSafariLink(url: url)
         }
     }
 }

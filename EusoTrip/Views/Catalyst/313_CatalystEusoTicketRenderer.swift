@@ -172,6 +172,11 @@ private struct CatalystEusoTicketRenderer: View {
     @State private var dispatching: Bool = false
     @State private var dispatchError: String? = nil
     @State private var dispatchedURL: String? = nil
+    /// In-app PDF presentation for the dispatched EusoTicket PDF.
+    /// Replaces the prior `UIApplication.shared.open(url)` Safari
+    /// punt with a native EusoPDFViewer sheet so the catalyst stays
+    /// in the EusoTrip app.
+    @State private var pdfPresentation: EusoPDFPresentation? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -212,6 +217,19 @@ private struct CatalystEusoTicketRenderer: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
             Task { await fetchLoad() }
+        }
+        // In-app EusoTicket PDF viewer — opens the dispatched PDF
+        // inside the EusoTrip app via EusoPDFViewer (PDFKit native
+        // render + iOS share sheet for Save to Files / AirDrop).
+        .sheet(item: $pdfPresentation) { pres in
+            EusoPDFViewer(
+                title: pres.title,
+                subtitle: pres.subtitle,
+                source: .url(pres.url),
+                allowSigning: false,
+                onSigned: nil,
+                loadIdForWalletPass: pres.loadIdForWalletPass
+            )
         }
     }
 
@@ -1004,7 +1022,17 @@ private struct CatalystEusoTicketRenderer: View {
             // so the dispatcher chain runs server-side. iOS just
             // confirms by surfacing the documentUrl.
             if let url = URL(string: res.documentUrl) {
-                await MainActor.run { UIApplication.shared.open(url) }
+                let title = "EusoTicket · \(bol.isEmpty ? "—" : bol)"
+                let subtitle = load.map { "Load \($0.loadNumber)" }
+                let loadIdForWallet = load.map { $0.id }
+                await MainActor.run {
+                    pdfPresentation = EusoPDFPresentation(
+                        url: url,
+                        title: title,
+                        subtitle: subtitle,
+                        loadIdForWalletPass: loadIdForWallet
+                    )
+                }
             }
         } catch {
             self.dispatchError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

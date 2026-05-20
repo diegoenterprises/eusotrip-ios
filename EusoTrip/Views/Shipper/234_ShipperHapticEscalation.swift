@@ -55,6 +55,7 @@ import SwiftUI
 struct ShipperHapticEscalation: View {
     @Environment(\.palette) var palette
     @Environment(\.openURL) private var openURL
+    @State private var inAppLink: EusoSafariLink? = nil
 
     private let counterEyebrow = "7 CATEGORIES · 4 ENABLED"
 
@@ -169,6 +170,9 @@ struct ShipperHapticEscalation: View {
             footer
                 .padding(.top, Space.s4)
                 .padding(.bottom, Space.s5)
+        }
+        .sheet(item: $inAppLink) { link in
+            EusoInAppSafari(url: link.url).ignoresSafeArea()
         }
     }
 
@@ -384,7 +388,7 @@ struct ShipperHapticEscalation: View {
             ]
         )
         if let url = URL(string: "https://app.eusotrip.com/shipper/haptic/test/\(activePattern.id)") {
-            openURL(url)
+            inAppLink = EusoSafariLink(url: url)
         }
     }
 
@@ -400,7 +404,7 @@ struct ShipperHapticEscalation: View {
             ]
         )
         if let url = URL(string: "https://app.eusotrip.com/shipper/haptic/category/\(category.id)/toggle") {
-            openURL(url)
+            inAppLink = EusoSafariLink(url: url)
         }
     }
 
@@ -418,7 +422,7 @@ struct ShipperHapticEscalation: View {
             ]
         )
         if let url = URL(string: "https://app.eusotrip.com/shipper/haptic/category/\(category.id)") {
-            openURL(url)
+            inAppLink = EusoSafariLink(url: url)
         }
     }
 
@@ -433,7 +437,7 @@ struct ShipperHapticEscalation: View {
             ]
         )
         if let url = URL(string: "https://app.eusotrip.com/shipper/settings/haptics") {
-            openURL(url)
+            inAppLink = EusoSafariLink(url: url)
         }
     }
 }

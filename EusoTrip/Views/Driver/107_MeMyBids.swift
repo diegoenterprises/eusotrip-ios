@@ -143,6 +143,10 @@ struct MeMyBidsView: View {
             Spacer(minLength: 0)
             Button {
                 MeAction.fire("driver.loadboard.open")
+                NotificationCenter.default.post(
+                    name: .eusoDriverMeNavSwap, object: nil,
+                    userInfo: ["screenId": "108"]
+                )
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "shippingbox.and.arrow.backward").font(.system(size: 11, weight: .heavy))
@@ -235,6 +239,12 @@ struct MeMyBidsView: View {
         let isPending = b.status.lowercased() == "pending"
         return Button {
             MeAction.fire("driver.bid.detail", userInfo: ["bidId": b.id, "loadId": b.loadId])
+            // Drill into the load detail surface so the driver can
+            // see the bid lifecycle, counter chain, and accept.
+            NotificationCenter.default.post(
+                name: .eusoDriverMeNavSwap, object: nil,
+                userInfo: ["screenId": "108", "loadId": String(b.loadId), "bidId": String(b.id)]
+            )
         } label: {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "hand.raised.fill").font(.system(size: 14, weight: .heavy))
@@ -319,6 +329,10 @@ struct MeMyBidsView: View {
                 .multilineTextAlignment(.center)
             Button {
                 MeAction.fire("driver.loadboard.open")
+                NotificationCenter.default.post(
+                    name: .eusoDriverMeNavSwap, object: nil,
+                    userInfo: ["screenId": "108"]
+                )
             } label: {
                 Text("Open Eusoboards").font(.system(size: 13, weight: .heavy))
                     .foregroundStyle(.white)

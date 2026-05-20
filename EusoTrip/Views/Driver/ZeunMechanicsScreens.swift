@@ -27,6 +27,7 @@
 //
 
 import SwiftUI
+import SafariServices
 import CoreLocation
 #if canImport(UIKit)
 import UIKit
@@ -706,6 +707,15 @@ struct ZeunProviderDetail: View {
 
     @State private var detail: ZeunMechanicsAPI.ProviderDetail?
     @State private var isLoading: Bool = true
+    /// In-app SFSafariViewController presentation for the provider's
+    /// website. Replaces the prior `UIApplication.shared.open(url)`
+    /// Safari kick — driver stays inside the EusoTrip app and can
+    /// browse the mechanic shop site without leaving.
+    private struct ZeunWebSession: Identifiable, Hashable {
+        let id: UUID
+        let url: URL
+    }
+    @State private var webSession: ZeunWebSession? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -750,6 +760,10 @@ struct ZeunProviderDetail: View {
         }
         .background(palette.bgPage.ignoresSafeArea())
         .task { await load() }
+        .sheet(item: $webSession) { sess in
+            ZeunInAppSafari(url: sess.url)
+                .ignoresSafeArea()
+        }
     }
 
     private func load() async {
@@ -818,9 +832,7 @@ struct ZeunProviderDetail: View {
                 if let web = d.website, !web.isEmpty {
                     contactRow(icon: "globe", value: web) {
                         if let url = URL(string: web.hasPrefix("http") ? web : "https://\(web)") {
-                            #if canImport(UIKit)
-                            UIApplication.shared.open(url)
-                            #endif
+                            webSession = ZeunWebSession(id: UUID(), url: url)
                         }
                     }
                 }
@@ -1246,4 +1258,25 @@ struct ZeunMaintenanceTracker: View {
     ZeunProviderNetwork()
         .environment(\.palette, Theme.light)
         .preferredColorScheme(.light)
+}
+
+// MARK: - In-app SFSafariViewController for provider websites
+
+/// Hosts a provider/mechanic shop website in an in-app modal so the
+/// "globe" contact row doesn't actually kick the driver out to the
+/// system Safari. SFSafariViewController preserves cookies + paywall
+/// sessions exactly like Safari does — it's just chromed as a Zeun
+/// modal.
+private struct ZeunInAppSafari: UIViewControllerRepresentable {
+    let url: URL
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        let cfg = SFSafariViewController.Configuration()
+        cfg.entersReaderIfAvailable = false
+        cfg.barCollapsingEnabled = true
+        let vc = SFSafariViewController(url: url, configuration: cfg)
+        vc.dismissButtonStyle = .done
+        vc.preferredControlTintColor = UIColor(red: 0.745, green: 0.004, blue: 1.0, alpha: 1)
+        return vc
+    }
+    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
 }

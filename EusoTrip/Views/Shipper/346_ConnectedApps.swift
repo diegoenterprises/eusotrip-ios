@@ -27,11 +27,18 @@ private struct ConnectedAppsBody: View {
     @State private var loading = true
     @State private var revoking: String? = nil
     @State private var loadError: String? = nil
+    @State private var revokeError: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
+                if let rerr = revokeError {
+                    LifecycleCard(accentDanger: true) {
+                        Text(rerr).font(EType.caption).foregroundStyle(Brand.danger)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 if loading { LifecycleCard { Text("Loading connections…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
                 else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
                 else { connectedSection; tokensSection }
@@ -119,12 +126,17 @@ private struct ConnectedAppsBody: View {
 
     private func revoke(_ id: String, kind: String) async {
         revoking = id
+        revokeError = nil
         struct In: Encodable { let id: String }
         struct Out: Decodable { let success: Bool }
         do {
             let _ : Out = try await EusoTripAPI.shared.mutation(kind == "app" ? "auth.revokeConnectedApp" : "auth.revokeApiToken", input: In(id: id))
             await load()
-        } catch { /* surface inline */ }
+        } catch let apiErr as EusoTripAPIError {
+            revokeError = apiErr.errorDescription ?? "Couldn't revoke."
+        } catch {
+            revokeError = error.localizedDescription
+        }
         revoking = nil
     }
 }

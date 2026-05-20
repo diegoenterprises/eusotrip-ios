@@ -16,6 +16,9 @@ private struct TierDetailBody: View {
     @Environment(\.palette) private var palette
     @State private var stats: ShipperAPI.Stats? = nil
     @State private var loading = true
+    /// Inline error surface for stats fetch failures (was an empty
+    /// `catch {}` that left the ladder collapsed with no hint).
+    @State private var loadError: String? = nil
 
     private let tiers: [(name: String, threshold: Int, benefits: [String])] = [
         ("Bronze",  0,    ["Base spot rates", "Standard insurance"]),
@@ -30,12 +33,32 @@ private struct TierDetailBody: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
                 if let s = stats { currentTierCard(s) }
+                if let err = loadError {
+                    LifecycleCard(accentDanger: true) {
+                        Text(err)
+                            .font(EType.caption)
+                            .foregroundStyle(Brand.danger)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 ladder
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 56)
         }
-        .task { do { stats = try await EusoTripAPI.shared.shipper.getStats() } catch {}; loading = false }
+        .task { await load() }
+    }
+
+    private func load() async {
+        loadError = nil
+        do {
+            stats = try await EusoTripAPI.shared.shipper.getStats()
+        } catch let apiErr as EusoTripAPIError {
+            loadError = "Couldn't load tier stats: \(apiErr.errorDescription ?? "network error")"
+        } catch {
+            loadError = "Couldn't load tier stats: \(error.localizedDescription)"
+        }
+        loading = false
     }
 
     private var header: some View {

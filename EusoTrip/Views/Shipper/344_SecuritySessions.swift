@@ -27,6 +27,10 @@ private struct SessionsBody: View {
     @State private var loading = true
     @State private var revoking: String? = nil
     @State private var loadError: String? = nil
+    /// Inline revoke-error surface (was silently swallowed in the
+    /// `/* surface inline */` catch, leaving the user thinking a
+    /// stale session was killed when it wasn't).
+    @State private var revokeError: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -53,6 +57,12 @@ private struct SessionsBody: View {
 
     @ViewBuilder
     private var content: some View {
+        if let err = revokeError {
+            LifecycleCard(accentDanger: true) {
+                Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
         if loading { LifecycleCard { Text("Loading sessions…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
         else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
         else if sessions.isEmpty { LifecycleCard { Text("No active sessions on file.").font(EType.caption).foregroundStyle(palette.textSecondary) } }
@@ -96,12 +106,17 @@ private struct SessionsBody: View {
 
     private func revoke(_ id: String) async {
         revoking = id
+        revokeError = nil
         struct In: Encodable { let id: String }
         struct Out: Decodable { let success: Bool }
         do {
             let _ : Out = try await EusoTripAPI.shared.mutation("auth.revokeSession", input: In(id: id))
             await load()
-        } catch { /* surface inline */ }
+        } catch let apiErr as EusoTripAPIError {
+            revokeError = apiErr.errorDescription ?? "Couldn't revoke this session."
+        } catch {
+            revokeError = error.localizedDescription
+        }
         revoking = nil
     }
 }

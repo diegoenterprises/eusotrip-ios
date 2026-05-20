@@ -24,6 +24,7 @@
 //
 
 import SwiftUI
+import SafariServices
 #if canImport(UIKit)
 import UIKit
 import WebKit
@@ -78,6 +79,17 @@ struct NewsArticleReader: View {
     /// driver is on 17.0–17.3 (no `Translation` framework at all) or
     /// `article.articleURL` is nil (nothing to extract text from).
     @State private var showTranslationUnavailableAlert: Bool = false
+    /// In-app SFSafariViewController presentation for "Open in
+    /// Safari" — the previous `UIApplication.shared.open(url)`
+    /// kicked the driver out to the system browser. Per founder
+    /// "all on the app" doctrine: stay in-app via SFSafariViewController
+    /// (handles paywalls, JS, X-Frame-Options the same way Safari
+    /// does, but inside an EusoTrip-chrome modal).
+    private struct NewsSafariSession: Identifiable, Hashable {
+        let id: UUID
+        let url: URL
+    }
+    @State private var inAppSafariSession: NewsSafariSession? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -151,6 +163,12 @@ struct NewsArticleReader: View {
                 showTranslationUnavailableAlert = false
                 activeLanguage = nil
             }
+        }
+        // In-app SFSafariViewController fallback for the "Open in
+        // Safari" affordances. Stays inside the EusoTrip app.
+        .sheet(item: $inAppSafariSession) { sess in
+            NewsInAppSafari(url: sess.url)
+                .ignoresSafeArea()
         }
     }
 
@@ -249,9 +267,7 @@ struct NewsArticleReader: View {
             // button rather than silently falling back.
             if let url = article.articleURL {
                 Button {
-                    #if canImport(UIKit)
-                    UIApplication.shared.open(url)
-                    #endif
+                    inAppSafariSession = NewsSafariSession(id: UUID(), url: url)
                 } label: {
                     Image(systemName: "safari")
                         .font(.system(size: 14, weight: .semibold))
@@ -511,9 +527,7 @@ struct NewsArticleReader: View {
                 .buttonStyle(.plain)
 
                 Button {
-                    #if canImport(UIKit)
-                    UIApplication.shared.open(url)
-                    #endif
+                    inAppSafariSession = NewsSafariSession(id: UUID(), url: url)
                 } label: {
                     Text("Open in Safari")
                         .font(EType.bodyStrong)
@@ -1360,4 +1374,25 @@ private struct TranslationToast: View {
         )
         .shadow(color: Color.black.opacity(0.22), radius: 16, y: 8)
     }
+}
+
+// MARK: - In-app SFSafariViewController bridge for the news reader
+
+/// Hosts the article publisher's URL in an in-app modal so the
+/// "Open in Safari" affordance doesn't actually kick the driver out
+/// of the EusoTrip app. SFSafariViewController preserves cookies +
+/// paywall sessions exactly like Safari does — it's just chromed
+/// as an EusoTrip modal.
+private struct NewsInAppSafari: UIViewControllerRepresentable {
+    let url: URL
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        let cfg = SFSafariViewController.Configuration()
+        cfg.entersReaderIfAvailable = true
+        cfg.barCollapsingEnabled = true
+        let vc = SFSafariViewController(url: url, configuration: cfg)
+        vc.dismissButtonStyle = .done
+        vc.preferredControlTintColor = UIColor(red: 0.745, green: 0.004, blue: 1.0, alpha: 1)
+        return vc
+    }
+    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
 }

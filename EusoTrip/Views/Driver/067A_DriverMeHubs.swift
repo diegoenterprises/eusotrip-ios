@@ -321,11 +321,21 @@ private struct DriverMeHomeBody: View {
     /// email edits land via `profile.updateProfile` instead of
     /// going through some other path.
     @State private var showProfileEdit: Bool = false
+    /// Avatar upload state — keeps the user informed instead of
+    /// silently swallowing the failure. Was a `/* surface via toast
+    /// in a follow-up */` no-op; now drives an inline banner with
+    /// auto-dismiss.
+    @State private var avatarUploading: Bool = false
+    @State private var avatarAck: String? = nil
+    @State private var avatarError: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 hero
+                if avatarUploading || avatarAck != nil || avatarError != nil {
+                    avatarStatusBanner
+                }
 
                 hubCard(icon: "person.crop.circle.fill",
                         title: "Account & Profile",
@@ -369,6 +379,68 @@ private struct DriverMeHomeBody: View {
         .sheet(isPresented: $showProfileEdit) {
             ProfileEditView()
                 .environmentObject(profile)
+        }
+    }
+
+    /// Avatar upload status — shown after the user picks a photo
+    /// from the system Photos picker. Renders one of three states:
+    /// uploading (gradient ring + spinner), success (gradient seal +
+    /// short ack copy, auto-dismisses), failure (danger glyph + the
+    /// concrete error string + manual dismiss).
+    @ViewBuilder
+    private var avatarStatusBanner: some View {
+        if avatarUploading {
+            HStack(spacing: 8) {
+                ProgressView().scaleEffect(0.75).tint(.white)
+                Text("Uploading profile photo…")
+                    .font(EType.caption)
+                    .foregroundStyle(.white)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(Capsule().fill(LinearGradient.diagonal.opacity(0.85)))
+        } else if let ack = avatarAck {
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text(ack)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(palette.bgCard)
+            .overlay(Capsule().strokeBorder(LinearGradient.diagonal.opacity(0.45)))
+            .clipShape(Capsule())
+            .task(id: avatarAck) {
+                try? await Task.sleep(nanoseconds: 2_400_000_000)
+                await MainActor.run { avatarAck = nil }
+            }
+        } else if let err = avatarError {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(Brand.danger)
+                Text(err)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Button { avatarError = nil } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(palette.bgCard)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Brand.danger.opacity(0.45))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
     }
 
@@ -434,7 +506,18 @@ private struct DriverMeHomeBody: View {
     /// image renders without a manual reload.
     private func uploadAvatar(item: PhotosPickerItem) async {
         guard let data = try? await item.loadTransferable(type: Data.self),
-              !data.isEmpty else { return }
+              !data.isEmpty else {
+            avatarError = "Couldn't read the picked photo."
+            avatarPickerItem = nil
+            return
+        }
+        avatarUploading = true
+        avatarError = nil
+        avatarAck = nil
+        defer {
+            avatarUploading = false
+            avatarPickerItem = nil
+        }
         // Re-encode to JPEG ≤ 200KB so the data-URL stays reasonable.
         var jpeg = data
         if let img = UIImage(data: data) {
@@ -455,8 +538,12 @@ private struct DriverMeHomeBody: View {
                 "profile.updateAvatar", input: In(imageData: dataURL)
             )
             await profile.refreshFromServer()
-        } catch { /* surface via toast in a follow-up */ }
-        avatarPickerItem = nil
+            avatarAck = "Profile photo updated"
+        } catch let apiErr as EusoTripAPIError {
+            avatarError = apiErr.errorDescription ?? "Couldn't upload photo."
+        } catch {
+            avatarError = error.localizedDescription
+        }
     }
 
     /// Card-style hub button — opens its child via the canonical

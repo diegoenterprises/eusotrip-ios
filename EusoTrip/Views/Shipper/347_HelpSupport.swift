@@ -17,6 +17,11 @@ private struct HelpArticle: Decodable, Identifiable, Hashable {
     let title: String
     let category: String?
     let summary: String?
+    /// Optional markdown / plain-text body. The current server-side
+    /// help stub doesn't ship article bodies yet (the table isn't
+    /// built); the reader gracefully falls back to summary when
+    /// body is missing.
+    let body: String?
 }
 
 private struct HelpSupportBody: View {
@@ -24,6 +29,11 @@ private struct HelpSupportBody: View {
     @State private var query: String = ""
     @State private var articles: [HelpArticle] = []
     @State private var loading = true
+    /// In-app article reader sheet. Replaces the previous
+    /// `UIApplication.shared.open(https://eusotrip.com/help/...)`
+    /// Safari punt with a native SwiftUI sheet so the user never
+    /// leaves the app to read a help article.
+    @State private var openedArticle: HelpArticle? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -37,6 +47,9 @@ private struct HelpSupportBody: View {
             .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
+        .sheet(item: $openedArticle) { article in
+            HelpArticleReaderSheet(article: article)
+        }
     }
 
     private var header: some View {
@@ -94,7 +107,7 @@ private struct HelpSupportBody: View {
             } else {
                 ForEach(articles) { a in
                     Button {
-                        if let u = URL(string: "https://eusotrip.com/help/\(a.id)") { UIApplication.shared.open(u) }
+                        openedArticle = a
                     } label: {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(a.title).font(EType.bodyStrong).foregroundStyle(palette.textPrimary).lineLimit(1)
@@ -109,12 +122,84 @@ private struct HelpSupportBody: View {
 
     private func load() async {
         loading = true
-        struct In: Encodable { let q: String? }
+        // Server endpoint is `help.getArticles`. Earlier code called
+        // a non-existent `help.search` which always errored, so the
+        // articles list stayed permanently empty. Real endpoint
+        // returns `[]` until the help_articles table ships, but at
+        // least we no longer drop the request on the floor.
+        struct In: Encodable { let categoryId: String?; let search: String? }
         do {
-            let r: [HelpArticle] = try await EusoTripAPI.shared.query("help.search", input: In(q: query.isEmpty ? nil : query))
+            let r: [HelpArticle] = try await EusoTripAPI.shared.query(
+                "help.getArticles",
+                input: In(categoryId: nil, search: query.isEmpty ? nil : query)
+            )
             articles = r
         } catch { articles = [] }
         loading = false
+    }
+}
+
+// MARK: - In-app article reader sheet
+
+private struct HelpArticleReaderSheet: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+    let article: HelpArticle
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "doc.text.fill")
+                            .font(.system(size: 9, weight: .heavy))
+                            .foregroundStyle(LinearGradient.diagonal)
+                        Text((article.category ?? "HELP").uppercased())
+                            .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                            .foregroundStyle(LinearGradient.diagonal)
+                    }
+                    Text(article.title)
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let summary = article.summary, !summary.isEmpty {
+                        Text(summary)
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(palette.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Divider().background(palette.borderFaint)
+                    if let body = article.body, !body.isEmpty {
+                        Text(body)
+                            .font(EType.body)
+                            .foregroundStyle(palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Full article body not available yet.")
+                                .font(EType.body)
+                                .foregroundStyle(palette.textPrimary)
+                            Text("Email support@eusotrip.com or tap Escalate to dispatch from the previous screen — a human responds the same business day.")
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    Spacer(minLength: 40)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+            }
+            .background(palette.bgPage)
+            .navigationTitle("Help article")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .foregroundStyle(LinearGradient.diagonal)
+                }
+            }
+        }
     }
 }
 

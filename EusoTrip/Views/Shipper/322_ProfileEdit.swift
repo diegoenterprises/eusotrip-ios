@@ -91,7 +91,11 @@ private struct ProfileEditBody: View {
             let p = try await EusoTripAPI.shared.shipper.getProfile()
             contactName = p.contactName; email = p.email; phone = p.phone
             address = p.address; website = p.website
-        } catch { /* tolerate */ }
+        } catch let apiErr as EusoTripAPIError {
+            actionError = "Couldn't load profile: \(apiErr.errorDescription ?? "network error")"
+        } catch {
+            actionError = "Couldn't load profile: \(error.localizedDescription)"
+        }
         loading = false
     }
 
