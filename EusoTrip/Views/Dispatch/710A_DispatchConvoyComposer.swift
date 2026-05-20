@@ -13,13 +13,15 @@
 //  bridge-clearance pilot — this screen composes all of them under a
 //  single parent shipment so the lifecycle FSM advances atomically.
 //
-//  Server endpoint (T-023b platform backlog):
+//  Server endpoint (shipped 2026-05-20 · commit c4905024,
+//  frontend/server/routers/dispatch.ts):
 //    `dispatch.composeConvoy` — accepts a parent loadId + child
-//    vehicles array + escort agreements; returns the convoy shipmentId
-//    + child vehicle ids. Until that ships, "Save composition"
-//    surfaces an inline confirmation that the convoy plan is captured
-//    locally and the operator should re-dispatch through 708 after the
-//    server-side endpoint lands.
+//    vehicles array + escort agreements. Inserts one `convoys` row
+//    anchored on the parent load plus N `escort_assignments` rows
+//    and stashes child-vehicle labels in `loads.specialInstructions`.
+//    Returns { success, shipmentId, convoyId, escortIds[],
+//    childVehicleCount } which "Save composition" surfaces as
+//    "Convoy composed · convoy #<id> · …".
 //
 
 import SwiftUI
@@ -388,7 +390,13 @@ private struct ConvoyComposerBody: View {
                 let contactPhone: String?
             }
         }
-        struct Out: Decodable { let success: Bool; let shipmentId: String? }
+        struct Out: Decodable {
+            let success: Bool
+            let shipmentId: String?
+            let convoyId: Int?
+            let escortIds: [Int]?
+            let childVehicleCount: Int?
+        }
         let payload = In(
             parentLoadId: pid,
             childVehicles: childVehicles.map { c in
@@ -402,15 +410,17 @@ private struct ConvoyComposerBody: View {
             }
         )
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation(
+            let result: Out = try await EusoTripAPI.shared.mutation(
                 "dispatch.composeConvoy",
                 input: payload
             )
-            savedAck = "Convoy composed · \(childVehicles.count) child vehicle\(childVehicles.count == 1 ? "" : "s") + \(escorts.count) escort\(escorts.count == 1 ? "" : "s") attached to parent."
+            let convoyTag = result.convoyId.map { " · convoy #\($0)" } ?? ""
+            savedAck = "Convoy composed\(convoyTag) · \(childVehicles.count) child vehicle\(childVehicles.count == 1 ? "" : "s") + \(result.escortIds?.count ?? escorts.count) escort\((result.escortIds?.count ?? escorts.count) == 1 ? "" : "s") attached."
         } catch {
-            // Server endpoint not shipped yet — capture locally so the
-            // operator at least has a record of the composition.
-            savedAck = "Composition captured locally. Server endpoint `dispatch.composeConvoy` not deployed yet — re-dispatch through 708 once the platform team ships T-023b."
+            // Server reachable but rejected the call (RBAC denied, parent
+            // load not found, validation failure). Surface the real error
+            // so the operator knows what to fix instead of guessing.
+            savedAck = "Convoy not composed · \((error as NSError).localizedDescription)"
         }
     }
 }

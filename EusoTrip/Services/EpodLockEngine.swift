@@ -14,7 +14,8 @@
 //    - Heavy-haul vertical (permits + escort verification)
 //
 //  This service is the iOS-side counterpart to the server's
-//  `epodLock.status({shipmentId})` endpoint (T-026b platform backlog).
+//  `epodLock.status({shipmentId})` endpoint (shipped 2026-05-20,
+//  commit c4905024 — server/routers/epodLock.ts).
 //  Every iOS surface that exposes a disbursement-style CTA — wallet
 //  home (290), day close (055), settlement preview, broker payout —
 //  must `try await EpodLockEngine.assertCanDisburse(shipmentId:)`

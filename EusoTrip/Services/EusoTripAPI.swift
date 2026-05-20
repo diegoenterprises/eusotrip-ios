@@ -2608,13 +2608,15 @@ struct InspectionsAPI {
     /// `inspections.getTemplate` — returns the FMCSA walk-around template
     /// (categories × required items) for pre-trip / post-trip / DVIR.
     ///
-    /// T-018 · 2026-05-20 — Now accepts an optional canonical `TrailerCode`
+    /// T-018 · 2026-05-20 — Accepts an optional canonical `TrailerCode`
     /// so the server returns trailer-keyed checklist categories (tanker
-    /// pressure check for `liquid_tank`, reefer setpoint download for
-    /// `reefer`, livestock 28-hr arming for `livestock_cattle_pot`, etc.).
-    /// Nil-safe: when omitted the server returns the legacy generic FMCSA
-    /// 393 walkaround template (current behavior). Once every caller fills
-    /// the field, server-side ticket T-018b drops the legacy generic path.
+    /// PRV + vapor recovery for `liquid_tank`, reefer setpoint + FSMA
+    /// wash-out for `reefer`, livestock 28-hr arming + bedding for
+    /// `livestock_cattle_pot`, intermodal CSC plate + twist-locks for
+    /// `intermodal_chassis`, etc.). Round-trip shipped 2026-05-20 in
+    /// server commit c4905024 (frontend/server/routers/inspections.ts).
+    /// Nil-safe: when omitted the server returns the legacy generic
+    /// FMCSA 393 walkaround template.
     func getTemplate(type: InspectionType, trailer: TrailerCode? = nil) async throws -> InspectionTemplate {
         struct Input: Encodable { let type: String; let trailer: String? }
         return try await api.query(
