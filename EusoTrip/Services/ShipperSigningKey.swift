@@ -78,7 +78,7 @@ public enum ShipperSigningKey {
     // MARK: - Keychain primitives
 
     private static func loadFromKeychain() throws -> Data? {
-        var query: [String: Any] = [
+        let query: [String: Any] = [
             kSecClass as String:       kSecClassGenericPassword,
             kSecAttrService as String: kcService,
             kSecAttrAccount as String: kcAccount,
@@ -98,7 +98,6 @@ public enum ShipperSigningKey {
                 userInfo: [NSLocalizedDescriptionKey: "Keychain load failed (OSStatus \(status))"]
             )
         }
-        _ = query   // silence unused warning if compiler ever objects
     }
 
     private static func storeToKeychain(_ data: Data) throws {

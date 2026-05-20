@@ -14,7 +14,7 @@ import Foundation
 
 /// The 12 industry verticals supported by EusoTrip's Post-Load Wizard.
 /// Order matches the production wizard's display order (Industry Vertical section).
-public enum Vertical: String, CaseIterable, Codable, Hashable, Identifiable {
+public enum Vertical: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
     case generalFreight          = "general_freight"
     case refrigerated            = "refrigerated"
     case hazmat                  = "hazmat"
@@ -103,7 +103,7 @@ public enum Vertical: String, CaseIterable, Codable, Hashable, Identifiable {
 
 /// Regulatory overlay buckets — each one drives a unique FSM overlay state set,
 /// document-requirement list, fee multiplier, and driver/dispatch UI branch.
-public enum ComplianceOverlay: String, Codable, Hashable {
+public enum ComplianceOverlay: String, Codable, Hashable, Sendable {
     case none
     case coldChain      // FSMA, FDA, USDA cold-chain
     case hazmat         // 49 CFR 172, ERG, placards, segregation (177.848)

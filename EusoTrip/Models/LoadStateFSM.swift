@@ -28,7 +28,7 @@ import Foundation
 
 // MARK: - Base load-cycle states (all trailers)
 
-public enum LoadState: String, CaseIterable, Codable, Hashable {
+public enum LoadState: String, CaseIterable, Codable, Hashable, Sendable {
     case draft                = "DRAFT"
     case posted               = "POSTED"
     case tenderedPartial      = "TENDERED_PARTIAL"
@@ -59,14 +59,14 @@ public enum LoadState: String, CaseIterable, Codable, Hashable {
     }
 }
 
-public enum LoadStateBucket: String, Codable {
+public enum LoadStateBucket: String, Codable, Sendable {
     case preBooking, booked, pickup, delivery, closeout, settled, terminal
 }
 
 // MARK: - Overlay states by compliance bucket
 
 /// Hazmat overlay (49 CFR 172 / 177 / ERG 2024).
-public enum HazmatOverlay: String, CaseIterable, Codable {
+public enum HazmatOverlay: String, CaseIterable, Codable, Hashable, Sendable {
     case ergVerified            = "HAZMAT.ERG_VERIFIED"             // at DRAFT
     case placardsAffixed        = "HAZMAT.PLACARDS_AFFIXED"         // at LOADED
     case segregationVerified    = "HAZMAT.SEGREGATION_VERIFIED"     // at LOADED (49 CFR 177.848)
@@ -75,7 +75,7 @@ public enum HazmatOverlay: String, CaseIterable, Codable {
 }
 
 /// Refrigerated / food-grade overlay (FSMA, FDA, USDA).
-public enum ReeferOverlay: String, CaseIterable, Codable {
+public enum ReeferOverlay: String, CaseIterable, Codable, Hashable, Sendable {
     case tempSetpointConfirmed = "REEFER.TEMP_SETPOINT_CONFIRMED"   // at AT_PICKUP
     case coldChainVerified     = "REEFER.COLD_CHAIN_VERIFIED"       // at AT_DELIVERY
     case tempLogSealed         = "REEFER.TEMP_LOG_SEALED"           // at POD_SIGNED
@@ -83,7 +83,7 @@ public enum ReeferOverlay: String, CaseIterable, Codable {
 }
 
 /// Livestock overlay (USDA, FMCSA 28-hour law).
-public enum LivestockOverlay: String, CaseIterable, Codable {
+public enum LivestockOverlay: String, CaseIterable, Codable, Hashable, Sendable {
     case usdaInspectionPassed  = "LIVESTOCK.USDA_INSPECTION_PASSED" // at AT_PICKUP
     case timer28hArmed         = "LIVESTOCK.28HR_TIMER_ARMED"       // at LOADED
     case restRequired          = "LIVESTOCK.REST_REQUIRED"          // if 28h breached
@@ -92,7 +92,7 @@ public enum LivestockOverlay: String, CaseIterable, Codable {
 }
 
 /// Heavy haul / oversize / overweight overlay.
-public enum HeavyHaulOverlay: String, CaseIterable, Codable {
+public enum HeavyHaulOverlay: String, CaseIterable, Codable, Hashable, Sendable {
     case permitsVerified           = "HEAVY_HAUL.PERMITS_VERIFIED"             // at DRAFT
     case routeSurveyComplete       = "HEAVY_HAUL.ROUTE_SURVEY_COMPLETE"        // at DRAFT
     case escortsAssigned           = "HEAVY_HAUL.ESCORTS_ASSIGNED"             // at BOOKED
@@ -101,7 +101,7 @@ public enum HeavyHaulOverlay: String, CaseIterable, Codable {
 }
 
 /// Cross-border overlay (US/MX/CA).
-public enum CrossBorderOverlay: String, CaseIterable, Codable {
+public enum CrossBorderOverlay: String, CaseIterable, Codable, Hashable, Sendable {
     case usmcaCertificateOnFile = "CROSS_BORDER.USMCA_CERT_ON_FILE"        // at DRAFT
     case enRouteToCrossing      = "CROSS_BORDER.EN_ROUTE_TO_CROSSING"
     case atBorder               = "CROSS_BORDER.AT_BORDER"
@@ -112,7 +112,7 @@ public enum CrossBorderOverlay: String, CaseIterable, Codable {
 }
 
 /// Autonomous vehicle handoff overlay.
-public enum AvHandoffOverlay: String, CaseIterable, Codable {
+public enum AvHandoffOverlay: String, CaseIterable, Codable, Hashable, Sendable {
     case oddPreCheckPassed       = "AV.ODD_PRECHECK_PASSED"           // at BOOKED
     case handoffPending          = "AV.HANDOFF_PENDING"
     case dispatched              = "AV.DISPATCHED"
@@ -121,7 +121,7 @@ public enum AvHandoffOverlay: String, CaseIterable, Codable {
 }
 
 /// Rail-mode-specific overlay states.
-public enum RailOverlay: String, CaseIterable, Codable {
+public enum RailOverlay: String, CaseIterable, Codable, Hashable, Sendable {
     case yardPlacement      = "RAIL.YARD_PLACEMENT"
     case interchangeTransfer = "RAIL.INTERCHANGE_TRANSFER"
     case waybillFiled       = "RAIL.WAYBILL_FILED"
@@ -131,7 +131,7 @@ public enum RailOverlay: String, CaseIterable, Codable {
 }
 
 /// Vessel-mode-specific overlay states.
-public enum VesselOverlay: String, CaseIterable, Codable {
+public enum VesselOverlay: String, CaseIterable, Codable, Hashable, Sendable {
     case gateIn                  = "VESSEL.GATE_IN"
     case loadPlanConfirmed       = "VESSEL.LOAD_PLAN_CONFIRMED"
     case stowPlanVerified        = "VESSEL.STOW_PLAN_VERIFIED"
@@ -146,7 +146,7 @@ public enum VesselOverlay: String, CaseIterable, Codable {
 // MARK: - Composite state for a vehicle
 
 /// A full state envelope: base state + every applicable overlay.
-public struct CompositeLoadState: Codable, Hashable {
+public struct CompositeLoadState: Codable, Hashable, Sendable {
     public let base: LoadState
     public let hazmat: Set<HazmatOverlay>
     public let reefer: Set<ReeferOverlay>
