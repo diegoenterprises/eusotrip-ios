@@ -28,6 +28,12 @@
 		BFAD202605200006000500BC /* CrossBorderComplianceRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200006000500FC /* CrossBorderComplianceRouter.swift */; };
 		BFAD202605200007000100BD /* RailYardLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200007000100FD /* RailYardLookup.swift */; };
 		BFAD202605200007000200BD /* VesselClassRecommender.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200007000200FD /* VesselClassRecommender.swift */; };
+		BFAD202605202008000100B8 /* ESangIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605202008000100F8 /* ESangIntent.swift */; };
+		BFAD202605202009000100B9 /* ESangVoiceClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605202009000100F9 /* ESangVoiceClient.swift */; };
+		BFAD202605202010000100BA /* ESangContextProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605202010000100FA /* ESangContextProvider.swift */; };
+		BFAD202605202011000100BB /* UserVoicePreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605202011000100FB /* UserVoicePreference.swift */; };
+		BFAD202605202012000100BC /* ESangTTSPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605202012000100FC /* ESangTTSPlayer.swift */; };
+		BFAD202605202013000100BD /* VoiceDialectPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605202013000100FD /* VoiceDialectPicker.swift */; };
 		A1B7C9E000000000B7C9E001 /* RoleSurfaceRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B7C9E000000000B7C9E002 /* RoleSurfaceRouter.swift */; };
 		A10AAEEEAC9C0054F8B34905 /* 019_HosDutyStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10C7CD83E4BB6CA038192D0 /* 019_HosDutyStatus.swift */; };
 		A11E8603E79595216A3607DB /* 004_ResetPassword.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F6E6E09C5EB9568612F3E1 /* 004_ResetPassword.swift */; };
@@ -753,6 +759,12 @@
 		FA1F202605200006000500FC /* CrossBorderComplianceRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CrossBorderComplianceRouter.swift; path = EusoTrip/Services/Compliance/CrossBorderComplianceRouter.swift; sourceTree = SOURCE_ROOT; };
 		FA1F202605200007000100FD /* RailYardLookup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RailYardLookup.swift; sourceTree = "<group>"; };
 		FA1F202605200007000200FD /* VesselClassRecommender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VesselClassRecommender.swift; sourceTree = "<group>"; };
+		FA1F202605202008000100F8 /* ESangIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESangIntent.swift; sourceTree = "<group>"; };
+		FA1F202605202009000100F9 /* ESangVoiceClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESangVoiceClient.swift; sourceTree = "<group>"; };
+		FA1F202605202010000100FA /* ESangContextProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESangContextProvider.swift; sourceTree = "<group>"; };
+		FA1F202605202011000100FB /* UserVoicePreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserVoicePreference.swift; sourceTree = "<group>"; };
+		FA1F202605202012000100FC /* ESangTTSPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESangTTSPlayer.swift; sourceTree = "<group>"; };
+		FA1F202605202013000100FD /* VoiceDialectPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VoiceDialectPicker.swift; path = Settings/VoiceDialectPicker.swift; sourceTree = "<group>"; };
 		A1B7C9E000000000B7C9E002 /* RoleSurfaceRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoleSurfaceRouter.swift; sourceTree = "<group>"; };
 		A1F6E6E09C5EB9568612F3E1 /* 004_ResetPassword.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 004_ResetPassword.swift; sourceTree = "<group>"; };
 		A1FA70836FB725922F39A4E9 /* 015_AtGateAwaitingDock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 015_AtGateAwaitingDock.swift; sourceTree = "<group>"; };
@@ -1311,6 +1323,7 @@
 			children = (
 				A1F5325921E558CD8ED37DBF /* AppRoot.swift */,
 				A1B7C9E000000000B7C9E002 /* RoleSurfaceRouter.swift */,
+				FA1F202605202013000100FD /* VoiceDialectPicker.swift */,
 				A1000000000000000000AAD5 /* Auth */,
 				A12E1A1C0010CE0FF1000014 /* Components */,
 				A1000000000000000000AAC0 /* Driver */,
@@ -1747,6 +1760,8 @@
 				FA1F202605200001000300F3 /* LoadStateFSM.swift */,
 				FA1F202605200001000400F4 /* EquipmentEquivalency.swift */,
 				FA1F202605200001000500F5 /* DocumentRequirements.swift */,
+				FA1F202605202008000100F8 /* ESangIntent.swift */,
+				FA1F202605202011000100FB /* UserVoicePreference.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -1769,6 +1784,9 @@
 				FA1F202605200006000500FC /* CrossBorderComplianceRouter.swift */,
 				FA1F202605200007000100FD /* RailYardLookup.swift */,
 				FA1F202605200007000200FD /* VesselClassRecommender.swift */,
+				FA1F202605202009000100F9 /* ESangVoiceClient.swift */,
+				FA1F202605202010000100FA /* ESangContextProvider.swift */,
+				FA1F202605202012000100FC /* ESangTTSPlayer.swift */,
 				C1A11111111111111111BA02 /* DriverProfileStore.swift */,
 				B1A11111111111111111AA04 /* WeatherService.swift */,
 				B1A21111111111111111AA02 /* AgreementPDFBuilder.swift */,
@@ -2335,6 +2353,12 @@
 				BFAD202605200006000500BC /* CrossBorderComplianceRouter.swift in Sources */,
 				BFAD202605200007000100BD /* RailYardLookup.swift in Sources */,
 				BFAD202605200007000200BD /* VesselClassRecommender.swift in Sources */,
+				BFAD202605202008000100B8 /* ESangIntent.swift in Sources */,
+				BFAD202605202009000100B9 /* ESangVoiceClient.swift in Sources */,
+				BFAD202605202010000100BA /* ESangContextProvider.swift in Sources */,
+				BFAD202605202011000100BB /* UserVoicePreference.swift in Sources */,
+				BFAD202605202012000100BC /* ESangTTSPlayer.swift in Sources */,
+				BFAD202605202013000100BD /* VoiceDialectPicker.swift in Sources */,
 				A17EA9A0121947A6C4E1DDE9 /* HOSStatus.swift in Sources */,
 				A147FB466ACE52CB7A92127C /* Load.swift in Sources */,
 				E1E1A1A100000001AA000001 /* NewsArticle.swift in Sources */,

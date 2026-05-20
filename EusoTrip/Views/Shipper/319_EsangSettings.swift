@@ -22,6 +22,7 @@ private struct eSangSettingsBody: View {
     @State private var pushEnabled: Bool = true
     @State private var sending: Bool = false
     @State private var saved: Bool = false
+    @State private var showDialectPicker: Bool = false
 
     private let languages = ["en-US", "es-MX", "fr-CA", "pt-BR"]
     private let voiceProfiles = ["Diego", "Eusorone classic", "Pacific", "Heartland"]
@@ -32,6 +33,7 @@ private struct eSangSettingsBody: View {
                 header
                 if saved { LifecycleCard(accentGradient: true) { Text("Saved.").font(EType.body).foregroundStyle(palette.textPrimary) } }
                 voiceCard
+                dialectCard
                 languageCard
                 dndCard
                 channelsCard
@@ -41,6 +43,10 @@ private struct eSangSettingsBody: View {
             .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
+        .sheet(isPresented: $showDialectPicker) {
+            VoiceDialectPicker()
+                .presentationDetents([.large])
+        }
     }
 
     private var header: some View {
@@ -57,6 +63,32 @@ private struct eSangSettingsBody: View {
         LifecycleCard {
             LifecycleSection(label: "VOICE PROFILE", icon: "waveform")
             Picker("", selection: $voiceProfile) { ForEach(voiceProfiles, id: \.self) { Text($0).tag($0) } }.pickerStyle(.menu).labelsHidden()
+        }
+    }
+
+    /// 2026-05-20 · IO 2026 P0-4 — regional dialect. Opens
+    /// `VoiceDialectPicker` as a sheet per the animation doctrine
+    /// (NavigationLink is banned platform-wide; sheet keeps the
+    /// 0.18s cross-fade intact).
+    @ViewBuilder
+    private var dialectCard: some View {
+        LifecycleCard {
+            LifecycleSection(label: "DIALECT", icon: "globe")
+            Button {
+                showDialectPicker = true
+            } label: {
+                HStack {
+                    Text(UserVoicePreference.shared.current.displayName)
+                        .font(EType.body)
+                        .foregroundStyle(palette.textPrimary)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
     }
 
