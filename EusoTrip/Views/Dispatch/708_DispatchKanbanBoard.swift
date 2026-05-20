@@ -50,6 +50,21 @@ private struct KanbanLoad: Decodable, Identifiable, Hashable {
     let transportMode: String?
     let multiVehicleCount: Int?
     let permitType: String?
+    /// T-017 · 2026-05-20 — Canonical vertical raw value (Vertical.rawValue).
+    /// Optional so older server payloads decode without it; when nil the
+    /// kanban chip renderer falls back to deriving overlay chips from
+    /// transportMode + hazmatClass + multiVehicleCount.
+    let vertical: String?
+    /// T-017 · 2026-05-20 — Canonical TrailerCode raw value.
+    let trailer: String?
+    /// T-017 · 2026-05-20 — Cross-border flag for the load. Drives the
+    /// "CUSTOMS" overlay chip and the kanban-card highlight.
+    let isCrossBorder: Bool?
+    /// T-017 · 2026-05-20 — Composite overlay state envelope from
+    /// `Vehicle.overlayStates` (T-015). Optional until every server
+    /// payload fills it; the chip renderer treats nil as "no overlays
+    /// cleared" and surfaces required-but-empty chips in warning style.
+    let overlayStates: CompositeLoadState?
 }
 
 private struct UnifiedLoadsResponse: Decodable, Hashable {
@@ -191,10 +206,20 @@ private struct KanbanBody: View {
             HStack {
                 LifecycleSection(label: l.loadNumber.uppercased(), icon: hazmatIcon(l))
                 Spacer(minLength: 0)
-                // 2026-05-17 — Dispatch kanban card mode badge so the
-                // dispatcher sees mode + vehicle count BEFORE deciding
-                // which lane / driver to assign. Hidden for default
-                // truck-single-vehicle so common loads don't add chrome.
+                // T-017 · 2026-05-20 — Canonical FSM overlay chip row.
+                // Replaces the bare multiVehicleCount badge with the
+                // full overlay envelope so the dispatcher sees which
+                // compliance gates a load is hitting (hazmat ERG · reefer
+                // cold-chain · livestock 28hr · heavy-haul permits ·
+                // cross-border customs · AV handoff · rail yard · vessel
+                // stow). Each chip is color-coded: gradient = required
+                // and cleared · warning = required and missing · neutral
+                // = informational (mode/convoy hint). LoadModeBadge kept
+                // alongside until every server payload carries
+                // overlayStates (T-015 backlog item on the platform repo).
+                ForEach(overlayChips(for: l)) { chip in
+                    OverlayChipView(chip)
+                }
                 LoadModeBadge(modeRaw: l.transportMode,
                               multiVehicleCount: l.multiVehicleCount,
                               compact: true)
@@ -299,6 +324,130 @@ private struct KanbanBody: View {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         advancing = nil
+    }
+}
+
+// MARK: - T-017 · Overlay chips (2026-05-20)
+
+/// Color tier the chip renders in. Drives gradient/warning/neutral
+/// styling so the dispatcher can scan a kanban column and spot loads
+/// blocked on compliance overlays at a glance.
+private enum OverlayChipTier {
+    case satisfied   // overlay required AND cleared → gradient (success)
+    case missing     // overlay required AND NOT cleared → warning (blocker)
+    case info        // informational (mode hint, convoy count) → neutral
+}
+
+private struct OverlayChip: Identifiable, Hashable {
+    let id: String
+    let label: String
+    let tier: OverlayChipTier
+}
+
+/// Build the canonical overlay-chip list for a kanban load. Reads
+/// `KanbanLoad.overlayStates` (server-provided once T-015b lands on
+/// the platform repo) AND derives a fallback set from
+/// (vertical, transportMode, hazmatClass, isCrossBorder,
+/// multiVehicleCount) so the dispatcher sees meaningful chips before
+/// the server-side overlay field ships.
+private func overlayChips(for l: KanbanLoad) -> [OverlayChip] {
+    var chips: [OverlayChip] = []
+
+    let mode = l.transportMode ?? "truck"
+    let vertical = Vertical(rawValue: l.vertical ?? "") ?? .generalFreight
+    let isCrossBorder = l.isCrossBorder ?? false
+    let hasHazmat = (l.hazmatClass ?? "").isEmpty == false
+    let isHazmatVertical = vertical.isHazmatVertical || hasHazmat
+
+    // Mode chip — only non-truck modes get a chip (truck is the
+    // default; adding chrome for every truck load is noise).
+    switch mode.lowercased() {
+    case "rail":   chips.append(.init(id: "mode_rail",   label: "RAIL",   tier: .info))
+    case "vessel": chips.append(.init(id: "mode_vessel", label: "VESSEL", tier: .info))
+    case "barge":  chips.append(.init(id: "mode_barge",  label: "BARGE",  tier: .info))
+    default: break
+    }
+
+    // Hazmat overlay — required when load is hazmat-vertical OR a
+    // hazmat class is declared. Satisfied when overlayStates carries
+    // ergVerified + placardsAffixed + segregationVerified; otherwise
+    // surfaces as a missing-blocker chip.
+    if isHazmatVertical {
+        let satisfied = l.overlayStates.map { o in
+            o.hazmat.contains(.ergVerified)
+            && o.hazmat.contains(.placardsAffixed)
+            && o.hazmat.contains(.segregationVerified)
+        } ?? false
+        chips.append(.init(id: "haz", label: "HAZMAT", tier: satisfied ? .satisfied : .missing))
+    }
+
+    // Reefer overlay — required for refrigerated vertical.
+    if vertical == .refrigerated {
+        let satisfied = l.overlayStates.map { o in
+            o.reefer.contains(.tempSetpointConfirmed) || o.reefer.contains(.coldChainVerified)
+        } ?? false
+        chips.append(.init(id: "reefer", label: "COLD CHAIN", tier: satisfied ? .satisfied : .missing))
+    }
+
+    // Livestock overlay — required for livestock vertical (28-hr law).
+    if vertical == .livestock {
+        let satisfied = l.overlayStates.map { o in
+            o.livestock.contains(.timer28hArmed) || o.livestock.contains(.usdaInspectionPassed)
+        } ?? false
+        chips.append(.init(id: "livestock", label: "28-HR", tier: satisfied ? .satisfied : .missing))
+    }
+
+    // Heavy haul — required for heavy-haul vertical (permits + escorts).
+    if vertical == .heavyHaulSpecialized {
+        let satisfied = l.overlayStates.map { o in
+            o.heavyHaul.contains(.permitsVerified) && o.heavyHaul.contains(.escortsAssigned)
+        } ?? false
+        chips.append(.init(id: "heavy", label: "OS/OW", tier: satisfied ? .satisfied : .missing))
+    }
+
+    // Cross-border overlay — required when origin/destination differ.
+    if isCrossBorder {
+        let satisfied = l.overlayStates.map { o in
+            o.crossBorder.contains(.customsFiled) || o.crossBorder.contains(.usmcaCertificateOnFile)
+        } ?? false
+        chips.append(.init(id: "customs", label: "CUSTOMS", tier: satisfied ? .satisfied : .missing))
+    }
+
+    // Convoy chip — informational only (already shown by LoadModeBadge,
+    // but useful when overlayStates is absent and the dispatcher needs
+    // a quick visual that this isn't a single-vehicle load).
+    if let count = l.multiVehicleCount, count > 1 {
+        chips.append(.init(id: "convoy", label: "×\(count)", tier: .info))
+    }
+
+    return chips
+}
+
+private struct OverlayChipView: View {
+    @Environment(\.palette) private var palette
+    let chip: OverlayChip
+    init(_ chip: OverlayChip) { self.chip = chip }
+    var body: some View {
+        Text(chip.label)
+            .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+            .foregroundStyle(foreground)
+            .padding(.horizontal, 5).padding(.vertical, 2)
+            .background(background)
+            .clipShape(Capsule())
+    }
+    private var foreground: Color {
+        switch chip.tier {
+        case .satisfied: return .white
+        case .missing:   return .white
+        case .info:      return palette.textSecondary
+        }
+    }
+    private var background: AnyShapeStyle {
+        switch chip.tier {
+        case .satisfied: return AnyShapeStyle(LinearGradient.diagonal)
+        case .missing:   return AnyShapeStyle(Brand.warning)
+        case .info:      return AnyShapeStyle(palette.bgCard)
+        }
     }
 }
 

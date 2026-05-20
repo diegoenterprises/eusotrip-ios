@@ -10,6 +10,24 @@
 		A1000000000000000000AABA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000AAB9 /* Assets.xcassets */; };
 		A1000000000000000000AABD /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000AABC /* Preview Assets.xcassets */; };
 		A104A92790FBBAD8E412C5F3 /* AppRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F5325921E558CD8ED37DBF /* AppRoot.swift */; };
+		BFAD202605200001000100B1 /* Vertical.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200001000100F1 /* Vertical.swift */; };
+		BFAD202605200001000200B2 /* TrailerCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200001000200F2 /* TrailerCode.swift */; };
+		BFAD202605200001000300B3 /* LoadStateFSM.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200001000300F3 /* LoadStateFSM.swift */; };
+		BFAD202605200001000400B4 /* EquipmentEquivalency.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200001000400F4 /* EquipmentEquivalency.swift */; };
+		BFAD202605200001000500B5 /* DocumentRequirements.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200001000500F5 /* DocumentRequirements.swift */; };
+		BFAD202605200001000600B6 /* FeeMultiplierEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200001000600F6 /* FeeMultiplierEngine.swift */; };
+		BFAD202605200001000700B7 /* AnimationBindingMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200001000700F7 /* AnimationBindingMap.swift */; };
+		BFAD202605200002000100B8 /* ShipperSigningKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200002000100F8 /* ShipperSigningKey.swift */; };
+		BFAD202605200004000100BA /* CommissionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200004000100FA /* CommissionEngine.swift */; };
+		BFAD202605200005000100BB /* EpodLockEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200005000100FB /* EpodLockEngine.swift */; };
+		BFAD202605200006000000BC /* ComplianceRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200006000000FC /* ComplianceRouter.swift */; };
+		BFAD202605200006000100BC /* HazmatComplianceRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200006000100FC /* HazmatComplianceRouter.swift */; };
+		BFAD202605200006000200BC /* ReeferComplianceRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200006000200FC /* ReeferComplianceRouter.swift */; };
+		BFAD202605200006000300BC /* LivestockComplianceRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200006000300FC /* LivestockComplianceRouter.swift */; };
+		BFAD202605200006000400BC /* HeavyHaulComplianceRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200006000400FC /* HeavyHaulComplianceRouter.swift */; };
+		BFAD202605200006000500BC /* CrossBorderComplianceRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200006000500FC /* CrossBorderComplianceRouter.swift */; };
+		BFAD202605200007000100BD /* RailYardLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200007000100FD /* RailYardLookup.swift */; };
+		BFAD202605200007000200BD /* VesselClassRecommender.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200007000200FD /* VesselClassRecommender.swift */; };
 		A1B7C9E000000000B7C9E001 /* RoleSurfaceRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B7C9E000000000B7C9E002 /* RoleSurfaceRouter.swift */; };
 		A10AAEEEAC9C0054F8B34905 /* 019_HosDutyStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10C7CD83E4BB6CA038192D0 /* 019_HosDutyStatus.swift */; };
 		A11E8603E79595216A3607DB /* 004_ResetPassword.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F6E6E09C5EB9568612F3E1 /* 004_ResetPassword.swift */; };
@@ -293,6 +311,8 @@
 		D1A11111111111111111RI01 /* EnRouteRoadIntelStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111RI02 /* EnRouteRoadIntelStrip.swift */; };
 		D1A11111111111111111SB01 /* 203_ShipperBids.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111SB02 /* 203_ShipperBids.swift */; };
 		D1A11111111111111111SC01 /* 204_ShipperPostLoad.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111SC02 /* 204_ShipperPostLoad.swift */; };
+		D1A11111111111111111DCRD01 /* 204_DocumentClassifierSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111DCRD02 /* 204_DocumentClassifierSheet.swift */; };
+		D1A11111111111111111EISAF01 /* EusoInAppSafari.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111EISAF02 /* EusoInAppSafari.swift */; };
 		D1A11111111111111111SD01 /* 205_ShipperLoadDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111SD02 /* 205_ShipperLoadDetail.swift */; };
 		D1A11111111111111111CCC1 /* ShipperLoadCycleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CCC2 /* ShipperLoadCycleView.swift */; };
 		D2120000000000000021CT /* 212_ShipperControlTower.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2120000000000000021CU /* 212_ShipperControlTower.swift */; };
@@ -460,6 +480,7 @@
 		D2DSP0800000000000ABDS /* 708_DispatchKanbanBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSP0800000000000ACDS /* 708_DispatchKanbanBoard.swift */; };
 		D2DSP0900000000000ABDS /* 709_DispatchBulkUploadKanban.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSP0900000000000ACDS /* 709_DispatchBulkUploadKanban.swift */; };
 		D2DSP1000000000000ABDS /* 710_DispatchRunTicketCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSP1000000000000ACDS /* 710_DispatchRunTicketCapture.swift */; };
+		BFAD202605200003000100B9 /* 710A_DispatchConvoyComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200003000100F9 /* 710A_DispatchConvoyComposer.swift */; };
 		D2DSP1100000000000ABDS /* 711_DispatchPriceBook.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSP1100000000000ACDS /* 711_DispatchPriceBook.swift */; };
 		D2DSP1200000000000ABDS /* 712_DispatchReportsHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSP1200000000000ACDS /* 712_DispatchReportsHub.swift */; };
 		D2CMP0000000000000ABDS /* 900_ComplianceOfficerHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2CMP0000000000000ACDS /* 900_ComplianceOfficerHome.swift */; };
@@ -714,6 +735,24 @@
 		A1F3A1F3A1F3A1F3A1F30002 /* Inspection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Inspection.swift; sourceTree = "<group>"; };
 		A1F3A1F3A1F3A1F3A1F30004 /* PretripDVIRViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PretripDVIRViewModel.swift; sourceTree = "<group>"; };
 		A1F5325921E558CD8ED37DBF /* AppRoot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRoot.swift; sourceTree = "<group>"; };
+		FA1F202605200001000100F1 /* Vertical.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Vertical.swift; sourceTree = "<group>"; };
+		FA1F202605200001000200F2 /* TrailerCode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrailerCode.swift; sourceTree = "<group>"; };
+		FA1F202605200001000300F3 /* LoadStateFSM.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadStateFSM.swift; sourceTree = "<group>"; };
+		FA1F202605200001000400F4 /* EquipmentEquivalency.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EquipmentEquivalency.swift; sourceTree = "<group>"; };
+		FA1F202605200001000500F5 /* DocumentRequirements.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentRequirements.swift; sourceTree = "<group>"; };
+		FA1F202605200001000600F6 /* FeeMultiplierEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeeMultiplierEngine.swift; sourceTree = "<group>"; };
+		FA1F202605200001000700F7 /* AnimationBindingMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimationBindingMap.swift; sourceTree = "<group>"; };
+		FA1F202605200002000100F8 /* ShipperSigningKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShipperSigningKey.swift; sourceTree = "<group>"; };
+		FA1F202605200004000100FA /* CommissionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommissionEngine.swift; sourceTree = "<group>"; };
+		FA1F202605200005000100FB /* EpodLockEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpodLockEngine.swift; sourceTree = "<group>"; };
+		FA1F202605200006000000FC /* ComplianceRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ComplianceRouter.swift; path = EusoTrip/Services/Compliance/ComplianceRouter.swift; sourceTree = SOURCE_ROOT; };
+		FA1F202605200006000100FC /* HazmatComplianceRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HazmatComplianceRouter.swift; path = EusoTrip/Services/Compliance/HazmatComplianceRouter.swift; sourceTree = SOURCE_ROOT; };
+		FA1F202605200006000200FC /* ReeferComplianceRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ReeferComplianceRouter.swift; path = EusoTrip/Services/Compliance/ReeferComplianceRouter.swift; sourceTree = SOURCE_ROOT; };
+		FA1F202605200006000300FC /* LivestockComplianceRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LivestockComplianceRouter.swift; path = EusoTrip/Services/Compliance/LivestockComplianceRouter.swift; sourceTree = SOURCE_ROOT; };
+		FA1F202605200006000400FC /* HeavyHaulComplianceRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HeavyHaulComplianceRouter.swift; path = EusoTrip/Services/Compliance/HeavyHaulComplianceRouter.swift; sourceTree = SOURCE_ROOT; };
+		FA1F202605200006000500FC /* CrossBorderComplianceRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CrossBorderComplianceRouter.swift; path = EusoTrip/Services/Compliance/CrossBorderComplianceRouter.swift; sourceTree = SOURCE_ROOT; };
+		FA1F202605200007000100FD /* RailYardLookup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RailYardLookup.swift; sourceTree = "<group>"; };
+		FA1F202605200007000200FD /* VesselClassRecommender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VesselClassRecommender.swift; sourceTree = "<group>"; };
 		A1B7C9E000000000B7C9E002 /* RoleSurfaceRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoleSurfaceRouter.swift; sourceTree = "<group>"; };
 		A1F6E6E09C5EB9568612F3E1 /* 004_ResetPassword.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 004_ResetPassword.swift; sourceTree = "<group>"; };
 		A1FA70836FB725922F39A4E9 /* 015_AtGateAwaitingDock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 015_AtGateAwaitingDock.swift; sourceTree = "<group>"; };
@@ -895,6 +934,8 @@
 		D1A11111111111111111RI02 /* EnRouteRoadIntelStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnRouteRoadIntelStrip.swift; sourceTree = "<group>"; };
 		D1A11111111111111111SB02 /* 203_ShipperBids.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 203_ShipperBids.swift; path = EusoTrip/Views/Shipper/203_ShipperBids.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111SC02 /* 204_ShipperPostLoad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 204_ShipperPostLoad.swift; path = EusoTrip/Views/Shipper/204_ShipperPostLoad.swift; sourceTree = SOURCE_ROOT; };
+		D1A11111111111111111DCRD02 /* 204_DocumentClassifierSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 204_DocumentClassifierSheet.swift; path = EusoTrip/Views/Shipper/204_DocumentClassifierSheet.swift; sourceTree = SOURCE_ROOT; };
+		D1A11111111111111111EISAF02 /* EusoInAppSafari.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EusoInAppSafari.swift; path = EusoTrip/Views/Components/EusoInAppSafari.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111SD02 /* 205_ShipperLoadDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 205_ShipperLoadDetail.swift; path = EusoTrip/Views/Shipper/205_ShipperLoadDetail.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CCC2 /* ShipperLoadCycleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ShipperLoadCycleView.swift; path = EusoTrip/Views/Shipper/ShipperLoadCycleView.swift; sourceTree = SOURCE_ROOT; };
 		D2120000000000000021CU /* 212_ShipperControlTower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 212_ShipperControlTower.swift; path = EusoTrip/Views/Shipper/212_ShipperControlTower.swift; sourceTree = SOURCE_ROOT; };
@@ -1062,6 +1103,7 @@
 		D2DSP0800000000000ACDS /* 708_DispatchKanbanBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 708_DispatchKanbanBoard.swift; path = EusoTrip/Views/Dispatch/708_DispatchKanbanBoard.swift; sourceTree = SOURCE_ROOT; };
 		D2DSP0900000000000ACDS /* 709_DispatchBulkUploadKanban.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 709_DispatchBulkUploadKanban.swift; path = EusoTrip/Views/Dispatch/709_DispatchBulkUploadKanban.swift; sourceTree = SOURCE_ROOT; };
 		D2DSP1000000000000ACDS /* 710_DispatchRunTicketCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 710_DispatchRunTicketCapture.swift; path = EusoTrip/Views/Dispatch/710_DispatchRunTicketCapture.swift; sourceTree = SOURCE_ROOT; };
+		FA1F202605200003000100F9 /* 710A_DispatchConvoyComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 710A_DispatchConvoyComposer.swift; path = EusoTrip/Views/Dispatch/710A_DispatchConvoyComposer.swift; sourceTree = SOURCE_ROOT; };
 		D2DSP1100000000000ACDS /* 711_DispatchPriceBook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 711_DispatchPriceBook.swift; path = EusoTrip/Views/Dispatch/711_DispatchPriceBook.swift; sourceTree = SOURCE_ROOT; };
 		D2DSP1200000000000ACDS /* 712_DispatchReportsHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 712_DispatchReportsHub.swift; path = EusoTrip/Views/Dispatch/712_DispatchReportsHub.swift; sourceTree = SOURCE_ROOT; };
 		D2CMP0000000000000ACDS /* 900_ComplianceOfficerHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 900_ComplianceOfficerHome.swift; path = EusoTrip/Views/Compliance/900_ComplianceOfficerHome.swift; sourceTree = SOURCE_ROOT; };
@@ -1413,6 +1455,8 @@
 				D1A11111111111111111SP02 /* 202_ShipperProfile.swift */,
 				D1A11111111111111111SB02 /* 203_ShipperBids.swift */,
 				D1A11111111111111111SC02 /* 204_ShipperPostLoad.swift */,
+				D1A11111111111111111DCRD02 /* 204_DocumentClassifierSheet.swift */,
+				D1A11111111111111111EISAF02 /* EusoInAppSafari.swift */,
 				D1A11111111111111111SD02 /* 205_ShipperLoadDetail.swift */,
 				D1A11111111111111111CCC2 /* ShipperLoadCycleView.swift */,
 				D2120000000000000021CU /* 212_ShipperControlTower.swift */,
@@ -1580,6 +1624,7 @@
 				D2DSP0800000000000ACDS /* 708_DispatchKanbanBoard.swift */,
 				D2DSP0900000000000ACDS /* 709_DispatchBulkUploadKanban.swift */,
 				D2DSP1000000000000ACDS /* 710_DispatchRunTicketCapture.swift */,
+				FA1F202605200003000100F9 /* 710A_DispatchConvoyComposer.swift */,
 				D2DSP1100000000000ACDS /* 711_DispatchPriceBook.swift */,
 				D2DSP1200000000000ACDS /* 712_DispatchReportsHub.swift */,
 				D2CMP0000000000000ACDS /* 900_ComplianceOfficerHome.swift */,
@@ -1697,6 +1742,11 @@
 				E1E1A1A200000001AA000001 /* NewsArticle.swift */,
 				B1A11111111111111111AA02 /* WeatherSnapshot.swift */,
 				A12E1A1C0010CE0FF100003A /* DriverStoreModels.swift */,
+				FA1F202605200001000100F1 /* Vertical.swift */,
+				FA1F202605200001000200F2 /* TrailerCode.swift */,
+				FA1F202605200001000300F3 /* LoadStateFSM.swift */,
+				FA1F202605200001000400F4 /* EquipmentEquivalency.swift */,
+				FA1F202605200001000500F5 /* DocumentRequirements.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -1706,6 +1756,19 @@
 			children = (
 				A16B82B4BAD14ED9D95C9A26 /* EusoTripAPI.swift */,
 				A13B8109FC394A8921DF752F /* EusoTripSession.swift */,
+				FA1F202605200001000600F6 /* FeeMultiplierEngine.swift */,
+				FA1F202605200001000700F7 /* AnimationBindingMap.swift */,
+				FA1F202605200002000100F8 /* ShipperSigningKey.swift */,
+				FA1F202605200004000100FA /* CommissionEngine.swift */,
+				FA1F202605200005000100FB /* EpodLockEngine.swift */,
+				FA1F202605200006000000FC /* ComplianceRouter.swift */,
+				FA1F202605200006000100FC /* HazmatComplianceRouter.swift */,
+				FA1F202605200006000200FC /* ReeferComplianceRouter.swift */,
+				FA1F202605200006000300FC /* LivestockComplianceRouter.swift */,
+				FA1F202605200006000400FC /* HeavyHaulComplianceRouter.swift */,
+				FA1F202605200006000500FC /* CrossBorderComplianceRouter.swift */,
+				FA1F202605200007000100FD /* RailYardLookup.swift */,
+				FA1F202605200007000200FD /* VesselClassRecommender.swift */,
 				C1A11111111111111111BA02 /* DriverProfileStore.swift */,
 				B1A11111111111111111AA04 /* WeatherService.swift */,
 				B1A21111111111111111AA02 /* AgreementPDFBuilder.swift */,
@@ -2082,7 +2145,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Auto-bump CFBundleVersion. Uses git commit count as the floor,\n# but raises to BUILD_FLOOR when the count regresses below the\n# highest build number already accepted on TestFlight (otherwise\n# a squash/rebase that drops the commit count produces an\n# upload that Apple rejects with `non-monotonic build number`).\n# 2026-05-06: floor raised to 230 after the count fell from 209\n# (TestFlight 209 was the HereMapView crash that this fix supersedes).\n# 2026-05-16: floor raised to 258 ahead of the Post-a-Load Step-2\n# ship (animation badges deduped + dark-mode SVGs + cargo/equip\n# auto-snap + permit type + HERE routing fix). Avoids any chance\n# of non-monotonic-build-number rejection if 257 was uploaded.\n# 2026-05-17: floor raised to 259 — 258 archive was superseded by\n# the HERE Routing v8 namespace correction (vehicle[trailerType]\n# instead of vehicle[type], drop emissionType=epa). 258 was the\n# CFBundleVersion mismatch fix archive; 259 carries the real\n# routing fix.\n# 2026-05-17: floor raised to 260 — 259 crashed on-device with\n# EXC_BREAKPOINT (SIGTRAP) brk 1 at HereRoutingClient.swift:142.\n# Root cause: URLComponents.percentEncodedQuery setter fatalErrors\n# when handed a string containing raw `[` `]` (RFC 3986 reserved).\n# 260 reverted to URLComponents.queryItems (proven path) — bracket\n# encoding to %5B/%5D is fine; HERE accepts both forms.\n# 2026-05-17: floor raised to 261 — 260 still shows \\\"Malformed\n# request · Error while parsing\\\" because `return=notices` is in\n# the v8 returnFields default but `notices` is NOT a valid v8\n# return value (only polyline, actions, instructions, summary,\n# travelSummary, mlDuration, turnByTurnActions, elevation,\n# routeHandle, passthrough, incidents, tolls, spans). 261 drops\n# `notices` from the returnFields default.\nset -e\nBUILD_FLOOR=264\nINFO_PLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\nif [ ! -f \"$INFO_PLIST\" ]; then\n  echo \"[auto-bump] Info.plist not found at $INFO_PLIST — skipping\"\n  exit 0\nfi\ncd \"$SRCROOT\" || exit 0\nif ! command -v git >/dev/null 2>&1; then\n  echo \"[auto-bump] git not on PATH — using floor $BUILD_FLOOR\"\n  /usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $BUILD_FLOOR\" \"$INFO_PLIST\"\n  exit 0\nfi\nGIT_COUNT=$(git rev-list HEAD --count 2>/dev/null || echo \"0\")\nif [ -z \"$GIT_COUNT\" ] || [ \"$GIT_COUNT\" -le 0 ]; then\n  GIT_COUNT=0\nfi\nif [ \"$GIT_COUNT\" -gt \"$BUILD_FLOOR\" ]; then\n  BUILD=$GIT_COUNT\nelse\n  BUILD=$BUILD_FLOOR\nfi\n/usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $BUILD\" \"$INFO_PLIST\"\necho \"[auto-bump] CFBundleVersion → $BUILD (git=$GIT_COUNT, floor=$BUILD_FLOOR)\"\n\n# Apple App Store Connect requires every embedded app extension\n# (widgets + watch app) to carry the SAME CFBundleVersion as the\n# containing parent app. Without the loop below, Apple's validator\n# rejects the upload with: \\\"The CFBundleVersion of an app extension\n# ('257') must match that of its containing parent app ('258')\\\".\n# This script runs LAST in the main-app build phases, after both\n# Embed App Extensions + Embed Watch Content have copied the .appex\n# and embedded .app payloads into PlugIns/ and Watch/ — so the\n# embedded plists exist at this point and we just overwrite them.\nAPP_BUNDLE=\"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\nfor EMBEDDED_PLIST in \"$APP_BUNDLE/PlugIns/\"*.appex/Info.plist \"$APP_BUNDLE/Watch/\"*.app/Info.plist; do\n  [ -f \"$EMBEDDED_PLIST\" ] || continue\n  /usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $BUILD\" \"$EMBEDDED_PLIST\" 2>/dev/null \\\n    && echo \"[auto-bump]   ↳ ${EMBEDDED_PLIST#$APP_BUNDLE/} → $BUILD\"\ndone\n";
+			shellScript = "# Auto-bump CFBundleVersion. Uses git commit count as the floor,\n# but raises to BUILD_FLOOR when the count regresses below the\n# highest build number already accepted on TestFlight (otherwise\n# a squash/rebase that drops the commit count produces an\n# upload that Apple rejects with `non-monotonic build number`).\n# 2026-05-06: floor raised to 230 after the count fell from 209\n# (TestFlight 209 was the HereMapView crash that this fix supersedes).\n# 2026-05-16: floor raised to 258 ahead of the Post-a-Load Step-2\n# ship (animation badges deduped + dark-mode SVGs + cargo/equip\n# auto-snap + permit type + HERE routing fix). Avoids any chance\n# of non-monotonic-build-number rejection if 257 was uploaded.\n# 2026-05-17: floor raised to 259 — 258 archive was superseded by\n# the HERE Routing v8 namespace correction (vehicle[trailerType]\n# instead of vehicle[type], drop emissionType=epa). 258 was the\n# CFBundleVersion mismatch fix archive; 259 carries the real\n# routing fix.\n# 2026-05-17: floor raised to 260 — 259 crashed on-device with\n# EXC_BREAKPOINT (SIGTRAP) brk 1 at HereRoutingClient.swift:142.\n# Root cause: URLComponents.percentEncodedQuery setter fatalErrors\n# when handed a string containing raw `[` `]` (RFC 3986 reserved).\n# 260 reverted to URLComponents.queryItems (proven path) — bracket\n# encoding to %5B/%5D is fine; HERE accepts both forms.\n# 2026-05-17: floor raised to 261 — 260 still shows \\\"Malformed\n# request · Error while parsing\\\" because `return=notices` is in\n# the v8 returnFields default but `notices` is NOT a valid v8\n# return value (only polyline, actions, instructions, summary,\n# travelSummary, mlDuration, turnByTurnActions, elevation,\n# routeHandle, passthrough, incidents, tolls, spans). 261 drops\n# `notices` from the returnFields default.\n# 2026-05-20: floor raised to 296 — 295 was the cache-killing\n# archive (URLCache.shared cleared + Cache-Control no-cache\n# headers + selectable error banner with Copy details button)\n# shipped to diagnose persistent \\\"Failed query\\\" on Load Detail\n# load_1077. 296 is the next bump for whatever lands next.\n# 2026-05-20: floor raised to 297 — adds Catalyst Requirements card\n# to Step 3 PRICING (min FMCSA safety score slider + 6 CDL endorsement\n# chips: H/N/X/T/P/S), wired into composeSubmissionNotes() so the\n# catalyst dispatcher sees them at dispatch time. Also fixes iOS 17\n# deprecation warnings in 313 ESANG Voice (AVAudioApplication\n# .requestRecordPermission + .allowBluetoothHFP).\n# 2026-05-20: floor raised to 298 — T-001 PARITY FOUNDATION DROP:\n# lands the 7 canonical Swift files from _PARITY_AUDIT_2026-05-20/\n# (Vertical, TrailerCode, LoadStateFSM, EquipmentEquivalency,\n# DocumentRequirements → Models/; FeeMultiplierEngine,\n# AnimationBindingMap → Services/). Compile-only — no behavior wired\n# yet. Tickets T-002 through T-036 will consume these enums from\n# each downstream surface (wizard / FSM / driver / dispatch /\n# settlement / animations / compliance). After T-036 the type\n# system enforces the canonical 12-vertical × 23-trailer inventory.\n# 2026-05-20: floor raised to 299 — T-001 through T-036 parity drop\n# complete. 36 of 36 tickets locked across 8 phases: P0 foundation\n# drop (7 canonical Swift files into Models/ + Services/) · P1 wizard\n# lock-in (mode + country pickers, TrailerCode/Vertical chips, hazmat\n# + reefer triggers, FeeMultiplierEngine, DocumentRequirements,\n# confirmation gate, ePOD lock) · P2 agreement wizard (Vertical +\n# TrailerCode + DocumentRequirements + Ed25519 signing via\n# ShipperSigningKey) · P3 FSM overlay (Vehicle.overlayStates, driver\n# overlay gate, dispatch overlay chips) · P4 driver/catalyst/broker\n# (trailer-keyed DVIR templates, equipment-specific POD, loading\n# metrics builder, endorsement filter, livestock 28-hr HOS, convoy\n# composer, FeeBreakdown rate sheet) · P5 settlement + compliance\n# (CommissionEngine delegation, EpodLockEngine, 5 per-vertical\n# compliance routers under Services/Compliance/) · P6 animation\n# bundling (66 Loading/Unloading SVGs + AnimationBindingMap +\n# 6 missing trailer types added to EquipmentKind) · P7 cross-track\n# (mode-switch auto-snap, RailYardLookup, VesselClassRecommender,\n# rail+vessel identifier UI) · P8 driver-mode UI (atPickupLabel et al,\n# rail waybill / vessel BL POD). Foundation lock-in complete —\n# every iOS surface that references vertical/trailer/FSM-state/\n# overlay/endorsement reads through a canonical enum; typo = compile\n# error; drift impossible at the type-system level.\nset -e\nBUILD_FLOOR=299\nINFO_PLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\nif [ ! -f \"$INFO_PLIST\" ]; then\n  echo \"[auto-bump] Info.plist not found at $INFO_PLIST — skipping\"\n  exit 0\nfi\ncd \"$SRCROOT\" || exit 0\nif ! command -v git >/dev/null 2>&1; then\n  echo \"[auto-bump] git not on PATH — using floor $BUILD_FLOOR\"\n  /usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $BUILD_FLOOR\" \"$INFO_PLIST\"\n  exit 0\nfi\nGIT_COUNT=$(git rev-list HEAD --count 2>/dev/null || echo \"0\")\nif [ -z \"$GIT_COUNT\" ] || [ \"$GIT_COUNT\" -le 0 ]; then\n  GIT_COUNT=0\nfi\nif [ \"$GIT_COUNT\" -gt \"$BUILD_FLOOR\" ]; then\n  BUILD=$GIT_COUNT\nelse\n  BUILD=$BUILD_FLOOR\nfi\n/usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $BUILD\" \"$INFO_PLIST\"\necho \"[auto-bump] CFBundleVersion → $BUILD (git=$GIT_COUNT, floor=$BUILD_FLOOR)\"\n\n# Apple App Store Connect requires every embedded app extension\n# (widgets + watch app) to carry the SAME CFBundleVersion as the\n# containing parent app. Without the loop below, Apple's validator\n# rejects the upload with: \\\"The CFBundleVersion of an app extension\n# ('257') must match that of its containing parent app ('258')\\\".\n# This script runs LAST in the main-app build phases, after both\n# Embed App Extensions + Embed Watch Content have copied the .appex\n# and embedded .app payloads into PlugIns/ and Watch/ — so the\n# embedded plists exist at this point and we just overwrite them.\nAPP_BUNDLE=\"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\nfor EMBEDDED_PLIST in \"$APP_BUNDLE/PlugIns/\"*.appex/Info.plist \"$APP_BUNDLE/Watch/\"*.app/Info.plist; do\n  [ -f \"$EMBEDDED_PLIST\" ] || continue\n  /usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $BUILD\" \"$EMBEDDED_PLIST\" 2>/dev/null \\\n    && echo \"[auto-bump]   ↳ ${EMBEDDED_PLIST#$APP_BUNDLE/} → $BUILD\"\ndone\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -2254,6 +2317,24 @@
 				B07D0FA2CE1A4B7E0000D067 /* SheetCloseButton.swift in Sources */,
 				A40C0FA9CE1A4B7E0000C011 /* MeComplianceView.swift in Sources */,
 				A16BC7376B77E8DC7AA73CE6 /* AuthModels.swift in Sources */,
+				BFAD202605200001000100B1 /* Vertical.swift in Sources */,
+				BFAD202605200001000200B2 /* TrailerCode.swift in Sources */,
+				BFAD202605200001000300B3 /* LoadStateFSM.swift in Sources */,
+				BFAD202605200001000400B4 /* EquipmentEquivalency.swift in Sources */,
+				BFAD202605200001000500B5 /* DocumentRequirements.swift in Sources */,
+				BFAD202605200001000600B6 /* FeeMultiplierEngine.swift in Sources */,
+				BFAD202605200001000700B7 /* AnimationBindingMap.swift in Sources */,
+				BFAD202605200002000100B8 /* ShipperSigningKey.swift in Sources */,
+				BFAD202605200004000100BA /* CommissionEngine.swift in Sources */,
+				BFAD202605200005000100BB /* EpodLockEngine.swift in Sources */,
+				BFAD202605200006000000BC /* ComplianceRouter.swift in Sources */,
+				BFAD202605200006000100BC /* HazmatComplianceRouter.swift in Sources */,
+				BFAD202605200006000200BC /* ReeferComplianceRouter.swift in Sources */,
+				BFAD202605200006000300BC /* LivestockComplianceRouter.swift in Sources */,
+				BFAD202605200006000400BC /* HeavyHaulComplianceRouter.swift in Sources */,
+				BFAD202605200006000500BC /* CrossBorderComplianceRouter.swift in Sources */,
+				BFAD202605200007000100BD /* RailYardLookup.swift in Sources */,
+				BFAD202605200007000200BD /* VesselClassRecommender.swift in Sources */,
 				A17EA9A0121947A6C4E1DDE9 /* HOSStatus.swift in Sources */,
 				A147FB466ACE52CB7A92127C /* Load.swift in Sources */,
 				E1E1A1A100000001AA000001 /* NewsArticle.swift in Sources */,
@@ -2374,6 +2455,8 @@
 				D1A11111111111111111SP01 /* 202_ShipperProfile.swift in Sources */,
 				D1A11111111111111111SB01 /* 203_ShipperBids.swift in Sources */,
 				D1A11111111111111111SC01 /* 204_ShipperPostLoad.swift in Sources */,
+				D1A11111111111111111DCRD01 /* 204_DocumentClassifierSheet.swift in Sources */,
+				D1A11111111111111111EISAF01 /* EusoInAppSafari.swift in Sources */,
 				D1A11111111111111111SD01 /* 205_ShipperLoadDetail.swift in Sources */,
 				D1A11111111111111111CCC1 /* ShipperLoadCycleView.swift in Sources */,
 				D2120000000000000021CT /* 212_ShipperControlTower.swift in Sources */,
@@ -2541,6 +2624,7 @@
 				D2DSP0800000000000ABDS /* 708_DispatchKanbanBoard.swift in Sources */,
 				D2DSP0900000000000ABDS /* 709_DispatchBulkUploadKanban.swift in Sources */,
 				D2DSP1000000000000ABDS /* 710_DispatchRunTicketCapture.swift in Sources */,
+				BFAD202605200003000100B9 /* 710A_DispatchConvoyComposer.swift in Sources */,
 				D2DSP1100000000000ABDS /* 711_DispatchPriceBook.swift in Sources */,
 				D2DSP1200000000000ABDS /* 712_DispatchReportsHub.swift in Sources */,
 				D2CMP0000000000000ABDS /* 900_ComplianceOfficerHome.swift in Sources */,
@@ -2857,7 +2941,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = EusoTrip/EusoTrip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 282;
+				CURRENT_PROJECT_VERSION = 299;
 				DEVELOPMENT_ASSET_PATHS = "\"EusoTrip/Preview Content\"";
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				ENABLE_PREVIEWS = YES;
@@ -2898,7 +2982,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = EusoTrip/EusoTrip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 282;
+				CURRENT_PROJECT_VERSION = 299;
 				DEVELOPMENT_ASSET_PATHS = "\"EusoTrip/Preview Content\"";
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				ENABLE_PREVIEWS = YES;
@@ -2938,7 +3022,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = EusoTripPulseWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 282;
+				CURRENT_PROJECT_VERSION = 299;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -2971,7 +3055,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = EusoTripPulseWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 282;
+				CURRENT_PROJECT_VERSION = 299;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -3001,7 +3085,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 282;
+				CURRENT_PROJECT_VERSION = 299;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -3025,7 +3109,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 282;
+				CURRENT_PROJECT_VERSION = 299;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -3047,7 +3131,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 282;
+				CURRENT_PROJECT_VERSION = 299;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -3070,7 +3154,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 282;
+				CURRENT_PROJECT_VERSION = 299;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -3100,7 +3184,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				CURRENT_PROJECT_VERSION = 282;
+				CURRENT_PROJECT_VERSION = 299;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = EusoTripiOSWidgets/Info.plist;
@@ -3133,7 +3217,7 @@
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
-				CURRENT_PROJECT_VERSION = 282;
+				CURRENT_PROJECT_VERSION = 299;
 				DEVELOPMENT_TEAM = 665Z3ZBZS2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = EusoTripiOSWidgets/Info.plist;

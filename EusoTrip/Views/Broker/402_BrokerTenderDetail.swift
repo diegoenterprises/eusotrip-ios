@@ -171,9 +171,154 @@ struct BrokerTenderDetail: View {
         scheduleCard(detail)
         cargoCard(detail)
         spreadCard(detail)
+        feeBreakdownCard(detail)   // T-024 · 2026-05-20
         carriersCard(detail)
         notesCard(detail)
         awardCTA(detail)
+    }
+
+    // MARK: - T-024 · Canonical FeeBreakdown rate sheet (2026-05-20)
+
+    /// Renders the canonical 7-multiplier breakdown
+    /// (`BASE × COUNTRY × VERTICAL × PRODUCT × HAZMAT × DISTANCE × CYCLE`)
+    /// so the broker sees how the platform fee is composed before they
+    /// award the tender. Each multiplier renders as a chip — gradient
+    /// for surcharge (> 1.0), green for discount (< 1.0), neutral for
+    /// no impact. The `humanRateSheet` text is appended in mono so the
+    /// broker can copy/paste it into a back-office spreadsheet.
+    private func feeBreakdownCard(_ d: LoadsAPI.LoadDetail) -> some View {
+        let inputs = feeInputs(from: d)
+        let breakdown = FeeMultiplierEngine.compute(inputs)
+        let effPct = pctString(breakdown.effective - 1)
+        let rateUsd = d.rateValue
+        let feeUsd = rateUsd * NSDecimalNumber(decimal: breakdown.effective).doubleValue - rateUsd
+        return VStack(alignment: .leading, spacing: Space.s2) {
+            sectionHeader("CANONICAL RATE SHEET", icon: "sparkles")
+            HStack(alignment: .firstTextBaseline) {
+                Text("Effective platform fee")
+                    .font(.system(size: 12, weight: .heavy)).tracking(0.4)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 0)
+                Text(effPct)
+                    .font(.system(size: 16, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(LinearGradient.diagonal)
+                if rateUsd > 0 {
+                    Text(String(format: "≈ $%.2f", feeUsd))
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    feeChip("BASE",     breakdown.base)
+                    feeChip("COUNTRY",  breakdown.country)
+                    feeChip("VERTICAL", breakdown.vertical)
+                    feeChip("PRODUCT",  breakdown.product)
+                    feeChip("HAZMAT",   breakdown.hazmat)
+                    feeChip("DISTANCE", breakdown.distance)
+                    feeChip("CYCLE",    breakdown.cycleDampener)
+                }
+            }
+            Text(breakdown.humanRateSheet)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(palette.textSecondary)
+                .padding(.top, 4)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    /// Build a `FeeComputationInput` from the load detail. Verticals
+    /// + trailer types are derived from cargoType + equipmentType +
+    /// hazmatClass with the same heuristic used by 030_LoadingInProgress
+    /// (T-020). Country defaults to US; cross-border defaults to false
+    /// — refines once LoadDetail grows structured columns (T-024b).
+    private func feeInputs(from d: LoadsAPI.LoadDetail) -> FeeComputationInput {
+        let cargo = (d.cargoType ?? "").lowercased()
+        let hasHaz = !(d.hazmatClass ?? "").isEmpty
+        let vertical: Vertical = {
+            switch cargo {
+            case "refrigerated": return .refrigerated
+            case "livestock":    return .livestock
+            case "vehicles":     return .autoTransport
+            case "oversized", "flatbed": return .flatbedOpenDeck
+            case "hazmat":       return .hazmat
+            case "petroleum", "liquid", "chemicals", "gas", "cryogenic":
+                return .tankerLiquidBulk
+            default:             return .generalFreight
+            }
+        }()
+        let trailer: TrailerCode = {
+            switch cargo {
+            case "refrigerated": return .reefer
+            case "livestock":    return .livestockCattlePot
+            case "vehicles":     return .autoCarrier
+            case "oversized", "flatbed": return .standardFlatbed
+            case "petroleum", "liquid", "chemicals": return .liquidTank
+            case "gas":          return .pressurizedGasTank
+            case "cryogenic":    return .cryogenicTank
+            case "hazmat":       return hasHaz ? .hazmatBox : .dryVan
+            default:             return .dryVan
+            }
+        }()
+        let miles: Decimal = {
+            guard let dist = d.distance, dist > 0 else { return 0 }
+            // Distance comes in miles by default; convert km if the unit says so.
+            if (d.distanceUnit ?? "miles").lowercased() == "km" {
+                return Decimal(dist * 0.621371)
+            }
+            return Decimal(dist)
+        }()
+        return FeeComputationInput(
+            baseRate: PostLoadDraft.canonicalBaseRate,   // 5% platform floor
+            originCountry: .US,
+            destinationCountry: .US,
+            vertical: vertical,
+            trailer: trailer,
+            mode: .truck,
+            isHazmat: hasHaz || vertical.isHazmatVertical,
+            distanceMiles: miles,
+            shipperPostingCycleDays: 365,
+            isCrossBorder: false
+        )
+    }
+
+    @ViewBuilder
+    private func feeChip(_ label: String, _ value: Decimal) -> some View {
+        let n = NSDecimalNumber(decimal: value).doubleValue
+        let isSurcharge = n > 1.0001
+        let isDiscount  = n < 0.9999
+        let bg: AnyShapeStyle = {
+            if isSurcharge { return AnyShapeStyle(LinearGradient.diagonal) }
+            if isDiscount  { return AnyShapeStyle(Brand.success.opacity(0.85)) }
+            return AnyShapeStyle(palette.bgCardSoft)
+        }()
+        let fg: Color = isSurcharge || isDiscount ? .white : palette.textPrimary
+        VStack(spacing: 1) {
+            Text(label)
+                .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                .foregroundStyle(fg.opacity(0.85))
+            Text(pctString(value - 1))
+                .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                .foregroundStyle(fg)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 5)
+        .background(bg)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    private func pctString(_ d: Decimal) -> String {
+        let n = NSDecimalNumber(decimal: d).doubleValue
+        if abs(n) < 0.0001 { return "0%" }
+        let sign = n >= 0 ? "+" : ""
+        return "\(sign)\(String(format: "%.1f", n * 100))%"
     }
 
     /// Three-tile row: target rate / responding carriers / posted-at.

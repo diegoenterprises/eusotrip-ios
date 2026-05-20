@@ -126,11 +126,25 @@ final class EusoTripAPI: ObservableObject {
 
     /// Underlying URLSession (swap for tests).  Wired to HTTPCookieStorage.shared
     /// so the JWT cookie set by auth.login persists across requests.
+    /// Cache is explicitly disabled — see comment below.
     lazy var session: URLSession = {
         let config = URLSessionConfiguration.default
         config.httpCookieStorage = HTTPCookieStorage.shared
         config.httpCookieAcceptPolicy = .always
         config.httpShouldSetCookies = true
+        // Disable URLCache app-wide. tRPC responses are stateful by
+        // nature (signed-in user / load detail / wallet) and must
+        // never be served from cache. Earlier crashes / "Failed
+        // query" panics from a pre-migration deploy left poisoned
+        // entries in URLCache that kept getting replayed even after
+        // the server was patched, until app reinstall. .none drops
+        // every response straight to disk and out.
+        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        config.urlCache = nil
+        // Also clear any pre-existing cache from prior builds — the
+        // poisoned-entry path is a one-time-on-install problem so we
+        // only need to flush once per launch.
+        URLCache.shared.removeAllCachedResponses()
         return URLSession(configuration: config)
     }()
 
@@ -884,6 +898,15 @@ final class EusoTripAPI: ObservableObject {
 
         var req = URLRequest(url: finalURL)
         req.httpMethod = "GET"
+        // Force every tRPC query to hit the network — never serve a
+        // cached response. A previous build that failed loads.getById
+        // (pre-migration 0307) could have its error response cached
+        // by URLCache; until the cache entry expired the iOS app
+        // would keep replaying the old error even after the server
+        // started returning success.
+        req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        req.setValue("no-cache", forHTTPHeaderField: "Pragma")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         if let authToken {
             req.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
@@ -946,6 +969,39 @@ final class EusoTripAPI: ObservableObject {
             )
         }
         return data
+    }
+
+    /// Fetch raw bytes from an arbitrary HTTPS URL via the session
+    /// that already owns our cookies + bearer. Attaches the bearer
+    /// only when the URL's host matches the configured `baseURL`
+    /// host so signed third-party URLs (Azure Blob SAS, S3 pre-sign)
+    /// don't get their signature clobbered by an extra Auth header.
+    /// Used by the in-app PDF viewer + the file-download share sheet
+    /// so every doc render stays in-app and never punts to Safari.
+    func fetchAuthenticatedData(_ url: URL) async throws -> (Data, HTTPURLResponse) {
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.setValue("application/pdf,image/*,application/octet-stream,*/*", forHTTPHeaderField: "Accept")
+        if let token = authToken,
+           let baseHost = baseURL?.host,
+           let urlHost = url.host,
+           urlHost.caseInsensitiveCompare(baseHost) == .orderedSame {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        if let pushDeviceToken {
+            req.setValue(pushDeviceToken, forHTTPHeaderField: "x-push-token")
+        }
+        let (data, resp) = try await session.data(for: req)
+        guard let http = resp as? HTTPURLResponse else {
+            throw EusoTripAPIError.httpStatus(0, "No HTTP response")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw EusoTripAPIError.httpStatus(
+                http.statusCode,
+                String(data: data, encoding: .utf8) ?? ""
+            )
+        }
+        return (data, http)
     }
 
     /// POST /api/trpc/<path>  body: {"json": <input>}
@@ -2551,11 +2607,19 @@ struct InspectionsAPI {
 
     /// `inspections.getTemplate` — returns the FMCSA walk-around template
     /// (categories × required items) for pre-trip / post-trip / DVIR.
-    func getTemplate(type: InspectionType) async throws -> InspectionTemplate {
-        struct Input: Encodable { let type: String }
+    ///
+    /// T-018 · 2026-05-20 — Now accepts an optional canonical `TrailerCode`
+    /// so the server returns trailer-keyed checklist categories (tanker
+    /// pressure check for `liquid_tank`, reefer setpoint download for
+    /// `reefer`, livestock 28-hr arming for `livestock_cattle_pot`, etc.).
+    /// Nil-safe: when omitted the server returns the legacy generic FMCSA
+    /// 393 walkaround template (current behavior). Once every caller fills
+    /// the field, server-side ticket T-018b drops the legacy generic path.
+    func getTemplate(type: InspectionType, trailer: TrailerCode? = nil) async throws -> InspectionTemplate {
+        struct Input: Encodable { let type: String; let trailer: String? }
         return try await api.query(
             "inspections.getTemplate",
-            input: Input(type: type.rawValue)
+            input: Input(type: type.rawValue, trailer: trailer?.rawValue)
         )
     }
 
@@ -9600,8 +9664,14 @@ struct RatesAPI {
         let sampleSize: Int
         let savingsVsAvg: Double
         let recommendation: String
-        /// "platform_data" | "national_benchmark"
+        /// "platform_data" | "national_benchmark" | "gemini"
         let source: String
+        /// 2026-05-19 — mode-aware unit + transport mode echoed back
+        /// by the server. Optional for back-compat with older deploys
+        /// that haven't shipped the rewrite yet.
+        let unit: String?
+        let unitLong: String?
+        let transportMode: String?
     }
 
     func compareLaneRate(
@@ -9610,7 +9680,10 @@ struct RatesAPI {
         rate: Double,
         distance: Double,
         cargoType: String? = nil,
-        lookbackDays: Int = 90
+        lookbackDays: Int = 90,
+        transportMode: String = "truck",
+        rateUnit: String? = nil,
+        commodity: String? = nil
     ) async throws -> LaneComparison {
         struct Input: Encodable {
             let originState: String
@@ -9619,6 +9692,9 @@ struct RatesAPI {
             let distance: Double
             let cargoType: String?
             let lookbackDays: Int
+            let transportMode: String
+            let rateUnit: String?
+            let commodity: String?
         }
         return try await api.query(
             "rates.compareLaneRate",
@@ -9628,7 +9704,10 @@ struct RatesAPI {
                 rate: rate,
                 distance: distance,
                 cargoType: cargoType,
-                lookbackDays: lookbackDays
+                lookbackDays: lookbackDays,
+                transportMode: transportMode,
+                rateUnit: rateUnit,
+                commodity: commodity
             )
         )
     }
@@ -12893,6 +12972,21 @@ struct CatalystAPI {
         /// "lat, lng" formatted to 2 decimals, or "Unknown" when no
         /// GPS data is available for this driver yet.
         let location: String
+        /// T-021 · 2026-05-20 — Canonical CDL endorsement codes the
+        /// driver holds, sourced from `drivers.endorsements[]` once
+        /// the server column ships. Optional during the migration —
+        /// the catalyst-side filter treats nil as "endorsements
+        /// unknown" and excludes the driver when any endorsement is
+        /// required (fail-safe; better to over-filter than to assign
+        /// a non-endorsed driver to a hazmat load).
+        let endorsementCodes: [String]?
+
+        /// Convenience — typed endorsement set for the canonical
+        /// `required.isSubset(of:)` filter pattern. Empty when the
+        /// server hasn't shipped endorsement data yet.
+        var endorsements: Set<DriverEndorsement> {
+            Set((endorsementCodes ?? []).compactMap { DriverEndorsement(rawValue: $0) })
+        }
     }
 
     struct GetMyDriversInput: Encodable { let limit: Int }

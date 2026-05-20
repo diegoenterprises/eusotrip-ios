@@ -659,6 +659,23 @@ enum ScreenRegistry {
         // remaining 10 surfaces the Me hubs need: ESANG settings,
         // Profile edit, Tier detail, Insurance, FMCSA SAFER, Hazmat
         // audit, Settings home, Notification prefs, Help, Legal.
+        // ESANG chat / voice / assist surfaces — 310-318 were live in
+        // `EusoTrip/Views/Shipper/31*_Esang*.swift` but never registered
+        // here, so every NotificationCenter.post to "310"/"311"/"313"/
+        // "314"/"318" failed RoleAccess.canRender and dropped the user
+        // back to home (200). 2026-05-19 — registered under `.shipper`
+        // so the chat thread list + per-thread view + voice listening
+        // + transcribing + per-bid rank assist + status + forecast +
+        // dispatch escalation all reach their actual screens.
+        list.append(.init(id: "310", title: "Shipper · ESANG Thread List",     role: .shipper) { p in AnyView(eSangThreadListScreen(theme: p)) })
+        list.append(.init(id: "311", title: "Shipper · ESANG Thread",          role: .shipper) { p in AnyView(eSangThreadScreen(theme: p, conversationId: "")) })
+        list.append(.init(id: "312", title: "Shipper · ESANG Attachment",      role: .shipper) { p in AnyView(eSangAttachmentPickerScreen(theme: p)) })
+        list.append(.init(id: "313", title: "Shipper · ESANG Voice",           role: .shipper) { p in AnyView(eSangVoiceListeningScreen(theme: p)) })
+        list.append(.init(id: "314", title: "Shipper · ESANG Transcribing",    role: .shipper) { p in AnyView(eSangTranscribingScreen(theme: p)) })
+        list.append(.init(id: "315", title: "Shipper · ESANG Rank Bids",       role: .shipper) { p in AnyView(eSangAssistRankBidsScreen(theme: p, loadId: "")) })
+        list.append(.init(id: "316", title: "Shipper · ESANG Assist Status",   role: .shipper) { p in AnyView(eSangAssistStatusScreen(theme: p)) })
+        list.append(.init(id: "317", title: "Shipper · ESANG Forecast",        role: .shipper) { p in AnyView(eSangAssistForecastScreen(theme: p)) })
+        list.append(.init(id: "318", title: "Shipper · ESANG Dispatch Escalate", role: .shipper) { p in AnyView(eSangDispatchEscalationScreen(theme: p)) })
         list.append(.init(id: "319", title: "Shipper · ESANG Settings",        role: .shipper) { p in AnyView(eSangSettingsScreen(theme: p)) })
         list.append(.init(id: "322", title: "Shipper · Profile Edit",          role: .shipper) { p in AnyView(ProfileEditScreen(theme: p)) })
         list.append(.init(id: "323", title: "Shipper · Tier Detail",           role: .shipper) { p in AnyView(TierDetailScreen(theme: p)) })

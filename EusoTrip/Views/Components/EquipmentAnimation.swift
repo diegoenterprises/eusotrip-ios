@@ -55,6 +55,13 @@ enum EquipmentKind: String, Hashable, CaseIterable {
     case vesselRoRo, vesselLNG, vesselReeferContainer, vesselISOTank
     // Truck — extended (21-22)
     case lowboy, hotShot
+    // T-030 (2026-05-20) — 6 missing trailer types added per audit.
+    // Previously these had to fall back to dryVan in every consumer,
+    // which hid their distinct animation requirements (livestock pot
+    // looks nothing like a dry van; end-dump's articulating bed is
+    // its identity). Each maps to the canonical TrailerCode of the
+    // same name from T-001's foundation.
+    case livestockCattlePot, logTrailer, pneumaticTank, endDump, waterTank, curtainSide
 
     var vertical: AnimVertical {
         switch self {
@@ -108,6 +115,16 @@ enum EquipmentKind: String, Hashable, CaseIterable {
         case .vesselLNG:             return "31_vessel_lng_anim"
         case .vesselReeferContainer: return "32_vessel_reefer_container_anim"
         case .vesselISOTank:         return "33_vessel_iso_tank_anim"
+        // T-030 hero fallbacks — closest-shape v1 SVG until the
+        // dedicated state-variant catalog ships (T-030b on the design
+        // backlog). Once the 6 dedicated hero SVGs land, swap each
+        // case to its own asset name.
+        case .livestockCattlePot:    return "01_dry_van_anim"        // fallback proxy
+        case .logTrailer:            return "03_flatbed_anim"        // fallback proxy
+        case .pneumaticTank:         return "10_tanker_gas_anim"     // fallback proxy
+        case .endDump:               return "03_flatbed_anim"        // fallback proxy
+        case .waterTank:             return "09_tanker_liquid_anim"  // fallback proxy
+        case .curtainSide:           return "01_dry_van_anim"        // fallback proxy
         }
     }
 
@@ -116,6 +133,97 @@ enum EquipmentKind: String, Hashable, CaseIterable {
         case .truck:  return "Animations/Equipment/01_Truck"
         case .rail:   return "Animations/Equipment/02_Rail"
         case .vessel: return "Animations/Equipment/03_Vessel"
+        }
+    }
+
+    // MARK: - T-029 · AnimationBindingMap bridge (2026-05-20)
+
+    /// Map this EquipmentKind to the canonical AnyEquipment (the type
+    /// AnimationBindingMap.files(for:) accepts). Returns nil when the
+    /// EquipmentKind doesn't have a direct TrailerCode / RailCarKind /
+    /// VesselClassKind counterpart yet (a few legacy edge cases —
+    /// covered by the hero fallback below).
+    var canonical: AnyEquipment? {
+        switch self {
+        // Truck → TrailerCode
+        case .dryVan:                return .truck(.dryVan)
+        case .reefer:                return .truck(.reefer)
+        case .flatbed:               return .truck(.standardFlatbed)
+        case .stepDeck:              return .truck(.stepDeck)
+        case .conestoga:             return .truck(.conestoga)
+        case .container:             return .truck(.intermodalChassis)
+        case .tankerHazmat:          return .truck(.liquidTank)
+        case .tankerPetro:           return .truck(.liquidTank)
+        case .tankerLiquid:          return .truck(.foodGradeLiquidTank)
+        case .tankerGas:             return .truck(.pressurizedGasTank)
+        case .powerOnly:             return .truck(.dryVan)
+        case .oversized:             return .truck(.standardFlatbed)
+        case .lowboy:                return .truck(.lowboyRgn)
+        case .hotShot:               return .truck(.dryVan)
+        // Rail → RailCarKind
+        case .railTOFC:              return .rail(.tofc)
+        case .railCOFC:              return .rail(.tofc)
+        case .railIntermodal:        return .rail(.wellCar)
+        case .railTankGas:           return .rail(.tankPressure)
+        case .railTankLiquid:        return .rail(.tankLiquid)
+        case .railBoxcar:            return .rail(.boxcar)
+        case .railReeferBoxcar:      return .rail(.reeferBoxcar)
+        case .railHopper:            return .rail(.hopperCovered)
+        case .railCenterbeam:        return .rail(.centerbeam)
+        case .railGondola:           return .rail(.gondola)
+        case .railAutoRack:          return .rail(.autoRack)
+        case .railFlatcar:           return .rail(.flatcar)
+        // Vessel → VesselClassKind
+        case .vesselContainer:       return .vessel(.containerShip)
+        case .vesselBulk:            return .vessel(.bulkCarrier)
+        case .vesselTanker:          return .vessel(.tanker)
+        case .vesselRoRo:            return .vessel(.roRo)
+        case .vesselLNG:             return .vessel(.lng)
+        case .vesselReeferContainer: return .vessel(.reeferContainer)
+        case .vesselISOTank:         return .vessel(.isoTank)
+        // T-030 — direct canonical mapping (each EquipmentKind case
+        // maps to the matching TrailerCode from T-001's foundation).
+        case .livestockCattlePot:    return .truck(.livestockCattlePot)
+        case .logTrailer:            return .truck(.logTrailer)
+        case .pneumaticTank:         return .truck(.pneumaticTank)
+        case .endDump:               return .truck(.endDump)
+        case .waterTank:             return .truck(.waterTank)
+        case .curtainSide:           return .truck(.curtainSide)
+        }
+    }
+
+    /// Resolve the SVG filename for a given state via the canonical
+    /// AnimationBindingMap. Replaces the legacy single-state
+    /// `svgFilename` lookup. Returns nil when no binding exists OR the
+    /// canonical bridge fails — callers should fall back to
+    /// `svgFilename` (hero) for legacy back-compat.
+    func file(for state: AnimationState) -> String? {
+        guard let canonical = canonical,
+              let pair = AnimationBindingMap.files(for: canonical) else {
+            return nil
+        }
+        switch state {
+        case .loading:    return pair.loading
+        case .unloading:  return pair.unloading
+        case .hero:       return pair.hero
+        }
+    }
+
+    /// Resolve the subdirectory path inside the bundle for a state.
+    /// Encapsulates the `Animations/Equipment/{Loading,Unloading}/{mode}/`
+    /// layout from T-028.
+    func subdirectory(for state: AnimationState) -> String {
+        let mode: String = {
+            switch vertical {
+            case .truck:  return "01_Truck"
+            case .rail:   return "02_Rail"
+            case .vessel: return "03_Vessel"
+            }
+        }()
+        switch state {
+        case .hero:       return "Animations/Equipment/\(mode)"
+        case .loading:    return "Animations/Equipment/Loading/\(mode)"
+        case .unloading:  return "Animations/Equipment/Unloading/\(mode)"
         }
     }
 
@@ -157,8 +265,26 @@ enum EquipmentKind: String, Hashable, CaseIterable {
         case .vesselISOTank:         return "ISO-TANK VESSEL"
         case .lowboy:                return "LOWBOY / RGN"
         case .hotShot:               return "HOT-SHOT"
+        // T-030 (2026-05-20) — 6 missing trailer labels.
+        case .livestockCattlePot:    return "LIVESTOCK / CATTLE POT"
+        case .logTrailer:            return "LOG TRAILER"
+        case .pneumaticTank:         return "PNEUMATIC TANK"
+        case .endDump:               return "END-DUMP"
+        case .waterTank:             return "WATER TANK"
+        case .curtainSide:           return "CURTAIN-SIDE / TAUTLINER"
         }
     }
+}
+
+/// T-029 · 2026-05-20 — Canonical animation state. The .hero variant
+/// drives the wizard's equipment-tile selection and existing 33-SVG
+/// catalog; .loading and .unloading drive the new 66-SVG state-variant
+/// catalog landed in T-028. Consumed by `EquipmentKind.file(for:)`
+/// + `EquipmentKind.subdirectory(for:)`.
+public enum AnimationState: String, CaseIterable, Codable, Hashable {
+    case hero
+    case loading
+    case unloading
 }
 
 enum CargoKind: String, Hashable {

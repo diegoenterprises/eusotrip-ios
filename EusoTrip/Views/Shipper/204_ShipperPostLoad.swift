@@ -105,6 +105,15 @@ struct ShipperPostLoad: View {
     @State private var properShippingName: String = ""
     @State private var tankerHoseSpec: String = ""
     @State private var tankerFitting: String = ""
+    // ─── Catalyst Requirements (web parity, 2026-05-20) ───
+    // Web wizard Step 7 captures min safety score (0-100) + a set of
+    // CDL endorsements the catalyst's driver must hold. iOS now matches
+    // — values land in composeSubmissionNotes() until shippers.create
+    // gains structured columns. See loads.ts:155-156 for the loads
+    // route equivalent.
+    @State private var catalystMinSafetyScore: Double = 80
+    @State private var catalystEndorsements: Set<String> = []
+    @State private var showCatalystRequirements: Bool = false
 
     // ERG (Emergency Response Guidebook) lookup state. When the user
     // types a UN number, debounce → fire `erg.searchByUN` → if a
@@ -173,6 +182,23 @@ struct ShipperPostLoad: View {
     @State private var templates: [LoadTemplatesAPI.Template] = []
     @State private var isLoadingTemplates: Bool = false
     @State private var templateSearchQuery: String = ""
+
+    // Doc-router classifier sheets (Templates "Scan to pre-fill" +
+    // Bulk pill). Both surfaces route through 204_DocumentClassifierSheet
+    // which calls `documentRouter.classifyAndRoute` / `classifyBatch`
+    // against Gemini Vision and hands back extractedFields the wizard
+    // can apply.
+    @State private var showDocClassifierSingle: Bool = false
+    @State private var showDocClassifierBulk: Bool = false
+    /// Banner shown on the wizard after a successful pre-fill, so the
+    /// user knows what changed and can undo.
+    @State private var prefillBannerType: String? = nil
+    @State private var prefillBannerSummary: String? = nil
+    /// Most recent batch result — when the user dismisses the bulk
+    /// sheet with a "route N docs" tap we flip this on; ESANG then
+    /// surfaces a routing summary on the wizard.
+    @State private var bulkBannerCount: Int = 0
+    @State private var bulkBannerTopType: String? = nil
 
     /// Equipment-type choice covering truck (dry van / reefer /
     /// flatbed / step deck / conestoga / container / tanker variants
@@ -656,6 +682,38 @@ struct ShipperPostLoad: View {
         .sheet(isPresented: $showTemplatePicker) { templatePickerSheet }
         // Save-as-template (loadTemplates.create)
         .sheet(isPresented: $showSaveTemplateSheet) { saveTemplateSheet }
+        // Doc-router classifier — "Scan to pre-fill" (single doc).
+        // Routes through documentRouter.classifyAndRoute (Gemini
+        // Vision against the 60-type taxonomy) and pre-fills the
+        // wizard from the extracted fields.
+        .sheet(isPresented: $showDocClassifierSingle) {
+            DocumentClassifierSheet(
+                mode: .prefillWizard,
+                callerContext: "shipper Post-Load Templates",
+                onApplySingle: { doc in
+                    applyClassifiedDocument(doc)
+                },
+                onDispatchBatch: { _ in }
+            )
+        }
+        // Doc-router classifier — Bulk (up to 30 docs). Routes
+        // through documentRouter.classifyBatch. After classification
+        // we split: load-shaped docs (rate_confirmation,
+        // bill_of_lading, load_tender, load_csv, run_ticket) feed
+        // bulkImport.executeImport on the server-side; everything
+        // else surfaces with its dispatchTarget so the user can
+        // route it intentionally (COIs → certificates.upload,
+        // 1099s → tax.upload, etc.).
+        .sheet(isPresented: $showDocClassifierBulk) {
+            DocumentClassifierSheet(
+                mode: .batch,
+                callerContext: "shipper Post-Load Bulk",
+                onApplySingle: { _ in },
+                onDispatchBatch: { docs in
+                    routeBulkClassified(docs)
+                }
+            )
+        }
     }
 
     // MARK: - ERG search sheet
@@ -776,6 +834,53 @@ struct ShipperPostLoad: View {
                 }
                 .buttonStyle(.plain)
             }
+
+            // Scan-to-pre-fill card — opens the doc-router classifier
+            // in single-doc mode. Drop a Rate Confirmation / BOL /
+            // Load Tender / Run Ticket and we fill the wizard from
+            // the extracted fields.
+            Button {
+                showTemplatePicker = false
+                showDocClassifierSingle = true
+            } label: {
+                HStack(spacing: Space.s3) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .fill(LinearGradient.diagonal.opacity(0.18))
+                        Image(systemName: "sparkles.tv.fill")
+                            .font(.system(size: 18, weight: .heavy))
+                            .foregroundStyle(LinearGradient.diagonal)
+                    }
+                    .frame(width: 40, height: 40)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text("Scan to pre-fill")
+                                .font(.system(size: 14, weight: .heavy))
+                                .foregroundStyle(palette.textPrimary)
+                            Text("ESANG AI")
+                                .font(.system(size: 8, weight: .heavy)).tracking(0.7)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5).padding(.vertical, 1)
+                                .background(Capsule().fill(LinearGradient.diagonal))
+                        }
+                        Text("Drop a Rate Con, BOL, Load Tender or Run Ticket — Gemini Vision pre-fills lane, equipment, cargo, weight, and rate.")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .padding(Space.s3)
+                .background(palette.bgCard)
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(LinearGradient.diagonal.opacity(0.45)))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 13, weight: .heavy))
@@ -945,6 +1050,145 @@ struct ShipperPostLoad: View {
         // Returning to step 1 forces the user to confirm the lane
         // and lets the geocode fallback re-resolve coordinates.
         step = .lane
+    }
+
+    // MARK: - Doc-router classifier pre-fill
+
+    /// Applies an `extractedFields` dictionary from
+    /// `documentRouter.classifyAndRoute` onto the wizard's @State
+    /// fields. Field keys come from the Gemini Vision master prompt
+    /// (server-side `documentRouter.ts`) and are doc-type-specific —
+    /// the keys this maps are the union across rate_confirmation /
+    /// bill_of_lading / load_tender / run_ticket / load_csv. Unknown
+    /// keys are ignored so future server-side additions are
+    /// forward-compatible.
+    private func applyClassifiedDocument(_ doc: ClassifiedDocument) {
+        let fields = doc.fields
+
+        // — Lane —
+        if let originCity = fields["originCity"] ?? fields["pickupCity"] ?? fields["shipperCity"] ?? fields["origin"] {
+            let state = fields["originState"] ?? fields["pickupState"] ?? fields["shipperState"]
+            origin = [originCity, state].compactMap { $0?.isEmpty == false ? $0 : nil }
+                        .joined(separator: ", ")
+            originLat = nil; originLng = nil
+        }
+        if let destCity = fields["destinationCity"] ?? fields["deliveryCity"] ?? fields["consigneeCity"] ?? fields["destination"] {
+            let state = fields["destinationState"] ?? fields["deliveryState"] ?? fields["consigneeState"]
+            destination = [destCity, state].compactMap { $0?.isEmpty == false ? $0 : nil }
+                            .joined(separator: ", ")
+            destLat = nil; destLng = nil
+        }
+
+        // — Equipment —
+        if let rawEq = fields["equipmentType"] ?? fields["equipment"] ?? fields["trailerType"],
+           let mapped = EquipmentChoice(rawValue: rawEq.lowercased().replacingOccurrences(of: " ", with: "_"))
+                        ?? EquipmentChoice.allCases.first(where: { $0.rawValue == rawEq.lowercased() }) {
+            equipmentType = mapped
+        }
+
+        // — Cargo type —
+        if let rawCargo = fields["cargoType"] ?? fields["commodityType"] ?? fields["commodity"],
+           let mapped = ShipperAPI.CargoType(rawValue: rawCargo.lowercased()) {
+            cargoType = mapped
+        }
+
+        // — Weight —
+        if let w = fields["weight"] ?? fields["totalWeight"] ?? fields["weightLbs"], !w.isEmpty {
+            weightText = w
+        }
+        if let unit = fields["weightUnit"]?.lowercased() {
+            switch unit {
+            case "lb", "lbs", "pound", "pounds": weightUnit = .pounds
+            case "kg", "kgs", "kilogram", "kilograms": weightUnit = .kilograms
+            case "mt", "metric_ton", "metric_tons", "tonne", "tonnes": weightUnit = .metricTons
+            default: break
+            }
+        }
+
+        // — Rate —
+        if let r = fields["rate"] ?? fields["totalRate"] ?? fields["lineHaul"] ?? fields["amount"], !r.isEmpty {
+            // Strip $ + commas — wizard expects a numeric string.
+            rateText = r.replacingOccurrences(of: "$", with: "")
+                        .replacingOccurrences(of: ",", with: "")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        // — Pickup date —
+        if let raw = fields["pickupDate"] ?? fields["readyDate"] ?? fields["shipDate"], !raw.isEmpty,
+           let parsed = ISO8601DateFormatter().date(from: raw)
+                        ?? DateFormatter.iso_yMd.date(from: raw)
+                        ?? DateFormatter.iso_mDy.date(from: raw) {
+            pickupDate = parsed
+            hasPickupDate = true
+        }
+
+        // — Hazmat (if doc carried it) —
+        if let un = fields["unNumber"] ?? fields["UN"], !un.isEmpty { unNumber = un }
+        if let cls = fields["hazmatClass"] ?? fields["hazardClass"], !cls.isEmpty { hazmatClass = cls }
+        if let pg = fields["packingGroup"], !pg.isEmpty { packingGroup = pg }
+        if let psn = fields["properShippingName"] ?? fields["shippingName"], !psn.isEmpty {
+            properShippingName = psn
+        }
+
+        // — Notes / description —
+        if let desc = fields["description"] ?? fields["commodityDescription"] ?? fields["specialInstructions"], !desc.isEmpty {
+            notes = notes.isEmpty ? desc : notes + "\n" + desc
+        }
+
+        prefillBannerType = doc.classifiedType
+        prefillBannerSummary = doc.summary
+        step = .lane
+    }
+
+    /// Routes a batch from `documentRouter.classifyBatch`. Load-shaped
+    /// docs (rate_confirmation, bill_of_lading, load_tender,
+    /// run_ticket) → if exactly one, apply it as a pre-fill; if
+    /// multiple, hand off the first as pre-fill and surface the rest
+    /// via NotificationCenter so the host shell can stack them as
+    /// drafts. Everything else → route to its `dispatchTarget`
+    /// (which is the canonical tRPC procedure for that doc type).
+    private func routeBulkClassified(_ docs: [ClassifiedDocument]) {
+        guard !docs.isEmpty else { return }
+        let loadShaped: Set<String> = [
+            "rate_confirmation",
+            "bill_of_lading",
+            "load_tender",
+            "run_ticket",
+            "load_csv",
+        ]
+        let loads = docs.filter { loadShaped.contains($0.classifiedType) }
+        let nonLoads = docs.filter { !loadShaped.contains($0.classifiedType) }
+
+        if let first = loads.first {
+            applyClassifiedDocument(first)
+        }
+
+        // Hand the rest to the shell — it can stack them on the
+        // "Loads" tab as draft posts. Listener lives in
+        // 200_ShipperHome which routes to the drafts queue.
+        let payload: [[String: Any]] = docs.dropFirst(loads.isEmpty ? 0 : 1).map { d in
+            [
+                "classifiedType": d.classifiedType,
+                "dispatchTarget": d.dispatchTarget ?? "",
+                "confidence": d.confidence,
+                "summary": d.summary,
+            ]
+        }
+        if !payload.isEmpty {
+            NotificationCenter.default.post(
+                name: .eusoShipperBulkClassifiedRouted,
+                object: nil,
+                userInfo: ["docs": payload]
+            )
+        }
+
+        bulkBannerCount = docs.count
+        bulkBannerTopType = (loads.first?.classifiedType) ?? (nonLoads.first?.classifiedType)
+        if !loads.isEmpty {
+            templateSaveAck = "Pre-filled from \(loads.count) load doc\(loads.count == 1 ? "" : "s") · \(nonLoads.count) other doc\(nonLoads.count == 1 ? "" : "s") queued"
+        } else {
+            templateSaveAck = "Routed \(nonLoads.count) doc\(nonLoads.count == 1 ? "" : "s")"
+        }
     }
 
     // MARK: - Save-as-template sheet (loadTemplates.create)
@@ -1333,16 +1577,15 @@ struct ShipperPostLoad: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Open saved load templates")
-                    // Bulk upload — XLS / XLSX / CSV / PDF / JSON
-                    // for shippers, brokers, dispatchers. Routes to
-                    // the existing 400_BulkUploadShell which is
-                    // wired to bulkUpload.uploadAndProcess.
+                    // Bulk upload — up to 30 docs in one sheet.
+                    // Routes through `documentRouter.classifyBatch`
+                    // (Gemini Vision against the 60-type taxonomy)
+                    // and splits results: load-shaped docs into
+                    // bulkImport.executeImport, everything else
+                    // into the type-appropriate dispatch target
+                    // (COIs, 1099s, agreements, EIN letters, etc.).
                     Button {
-                        NotificationCenter.default.post(
-                            name: .eusoShipperNavSwap,
-                            object: nil,
-                            userInfo: ["screenId": "400b"]   // 400b = BulkUploadShell (id below)
-                        )
+                        showDocClassifierBulk = true
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "square.and.arrow.up.on.square")
@@ -1465,6 +1708,12 @@ struct ShipperPostLoad: View {
     @ViewBuilder
     private var laneStepBody: some View {
         VStack(alignment: .leading, spacing: Space.s5) {
+            // Pre-fill / template / bulk-classify confirmation —
+            // surfaces immediately after Templates or Bulk lands on
+            // the lane step so the user sees what changed.
+            if let toast = templateSaveAck {
+                templateAckBanner(toast)
+            }
             laneSection
             routeMetaPill
             modePickerSection      // 2026-05-17 — Google-Maps-style picker
@@ -1882,13 +2131,20 @@ struct ShipperPostLoad: View {
         rateCompareError = nil
         Task {
             do {
+                // 2026-05-19 — pipe transportMode + commodity through
+                // so the server can branch units (rail $/car-mile,
+                // vessel $/MT, etc.) and tap Gemini for market intel
+                // when platform data is thin.
                 let r = try await EusoTripAPI.shared.rates.compareLaneRate(
                     originState: oState,
                     destState:   dState,
                     rate:        rate,
                     distance:    miles,
                     cargoType:   cargoType.rawValue,
-                    lookbackDays: 90
+                    lookbackDays: 90,
+                    transportMode: transportMode.rawValue,
+                    rateUnit:    nil,
+                    commodity:   cargoType.rawValue
                 )
                 await MainActor.run {
                     self.rateComparison = r
@@ -3672,8 +3928,137 @@ struct ShipperPostLoad: View {
         VStack(alignment: .leading, spacing: Space.s5) {
             rateField
             targetRateCard
+            catalystRequirementsCard
             notesField
         }
+    }
+
+    /// Catalyst requirements — collapsible card with a min safety score
+    /// slider + multi-select endorsement chips. Web parity (LoadCreationWizard
+    /// Step 7). Endorsements: H = Hazmat, N = Tank, T = Doubles/Triples,
+    /// X = H+N combo, P = Passenger, S = School Bus. Stuffed into the
+    /// submission notes line so the catalyst's dispatcher sees them at
+    /// dispatch time — see composeSubmissionNotes() for serialization.
+    @ViewBuilder
+    private var catalystRequirementsCard: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            Button {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    showCatalystRequirements.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "person.badge.shield.checkmark")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text("CATALYST REQUIREMENTS")
+                        .font(EType.micro).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                    Spacer(minLength: 0)
+                    if !catalystEndorsements.isEmpty || catalystMinSafetyScore != 80 {
+                        Text("\(catalystEndorsements.count) endorsement\(catalystEndorsements.count == 1 ? "" : "s") · ≥\(Int(catalystMinSafetyScore))")
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Capsule().fill(LinearGradient.diagonal))
+                    }
+                    Image(systemName: showCatalystRequirements ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if showCatalystRequirements {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    // Min safety score slider
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Min FMCSA safety score")
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                            Spacer(minLength: 0)
+                            Text("\(Int(catalystMinSafetyScore))")
+                                .font(.system(size: 14, weight: .heavy, design: .monospaced))
+                                .foregroundStyle(LinearGradient.diagonal)
+                        }
+                        Slider(value: $catalystMinSafetyScore, in: 50...100, step: 5) {
+                            Text("Safety score")
+                        }
+                        .tint(Brand.magenta)
+                        Text("Carriers below this CSA / safety score are filtered out of bid eligibility.")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    // Endorsement chips
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Required CDL endorsements")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                        let endorsementCodes: [(code: String, label: String)] = [
+                            ("H", "Hazmat"),
+                            ("N", "Tank"),
+                            ("X", "H+N"),
+                            ("T", "Doubles/Triples"),
+                            ("P", "Passenger"),
+                            ("S", "School Bus"),
+                        ]
+                        // Two-column grid of toggle chips
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+                            ForEach(endorsementCodes, id: \.code) { e in
+                                let selected = catalystEndorsements.contains(e.code)
+                                Button {
+                                    if selected { catalystEndorsements.remove(e.code) }
+                                    else        { catalystEndorsements.insert(e.code) }
+                                } label: {
+                                    VStack(spacing: 1) {
+                                        Text(e.code)
+                                            .font(.system(size: 13, weight: .heavy))
+                                            .foregroundStyle(selected ? .white : palette.textPrimary)
+                                        Text(e.label)
+                                            .font(.system(size: 8, weight: .semibold)).tracking(0.3)
+                                            .foregroundStyle(selected ? .white.opacity(0.85) : palette.textTertiary)
+                                            .lineLimit(1).minimumScaleFactor(0.7)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 6).padding(.horizontal, 4)
+                                    .background(
+                                        Group {
+                                            if selected {
+                                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                                    .fill(LinearGradient.diagonal)
+                                            } else {
+                                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                                    .fill(palette.bgCardSoft)
+                                            }
+                                        }
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                            .strokeBorder(selected ? Color.clear : palette.borderFaint)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        Text("Drivers must hold every selected endorsement on their CDL to bid this load.")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
     private var rateField: some View {
@@ -3799,9 +4184,18 @@ struct ShipperPostLoad: View {
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: 0)
                 if let cmp = rateComparison {
-                    Text(cmp.source == "national_benchmark" ? "national" : "platform")
+                    Text(sourceBadgeLabel(cmp.source))
                         .font(.system(size: 8, weight: .heavy)).tracking(0.6)
-                        .foregroundStyle(palette.textTertiary)
+                        .foregroundStyle(cmp.source == "gemini" ? .white : palette.textTertiary)
+                        .padding(.horizontal, cmp.source == "gemini" ? 6 : 0)
+                        .padding(.vertical, cmp.source == "gemini" ? 2 : 0)
+                        .background(
+                            Group {
+                                if cmp.source == "gemini" {
+                                    Capsule().fill(LinearGradient.diagonal)
+                                }
+                            }
+                        )
                 }
             }
             if isComparingRate {
@@ -3848,14 +4242,18 @@ struct ShipperPostLoad: View {
     @ViewBuilder
     private func rateMeterBody(_ cmp: RatesAPI.LaneComparison) -> some View {
         let (positionLabel, positionColor) = positionStyling(for: cmp.position)
-        let (ratingLabel, ratingColor) = ratingStyling(percentile: cmp.percentile,
-                                                        position: cmp.position)
+        let (ratingLabel, ratingColor) = ratingStyling(
+            percentile: cmp.percentile,
+            position: cmp.position,
+            source: cmp.source,
+            sampleSize: cmp.sampleSize
+        )
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
                 Text(dollars(cmp.yourRate))
                     .font(.system(size: 24, weight: .bold).monospacedDigit())
                     .foregroundStyle(LinearGradient.diagonal)
-                Text(String(format: "$%.2f / mi", cmp.yourRPM))
+                Text(formatPerUnit(cmp.yourRPM, unit: cmp.unit))
                     .font(EType.caption).monospacedDigit()
                     .foregroundStyle(palette.textSecondary)
                 Spacer(minLength: 0)
@@ -3913,17 +4311,39 @@ struct ShipperPostLoad: View {
         }
         .frame(height: 18)
         HStack {
-            Text(String(format: "$%.2f / mi · min", lo))
+            Text("\(formatPerUnit(lo, unit: cmp.unit)) · min")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.4)
                 .foregroundStyle(palette.textTertiary).monospacedDigit()
             Spacer(minLength: 0)
-            Text(String(format: "$%.2f / mi · avg", cmp.marketAvgRPM))
+            Text("\(formatPerUnit(cmp.marketAvgRPM, unit: cmp.unit)) · avg")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.4)
                 .foregroundStyle(palette.textTertiary).monospacedDigit()
             Spacer(minLength: 0)
-            Text(String(format: "$%.2f / mi · max", hi))
+            Text("\(formatPerUnit(hi, unit: cmp.unit)) · max")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.4)
                 .foregroundStyle(palette.textTertiary).monospacedDigit()
+        }
+    }
+
+    /// Format a per-unit rate for display. Falls back to "$X.XX / mi"
+    /// when the server doesn't report a unit (older deploys), and
+    /// otherwise uses the server's unit label ($/mi, $/car-mile,
+    /// $/MT, etc.) so the card adapts to whichever mode the user picked.
+    private func formatPerUnit(_ value: Double, unit: String?) -> String {
+        let label = (unit?.isEmpty == false ? unit! : "$/mi")
+            .replacingOccurrences(of: "$/", with: "")
+        return String(format: "$%.2f / %@", value, label)
+    }
+
+    /// Short source badge — "platform" (real loads), "ai" (Gemini),
+    /// or "national" (fallback). Gemini gets the gradient pill so
+    /// the user knows the answer came from real-time market intel.
+    private func sourceBadgeLabel(_ source: String) -> String {
+        switch source {
+        case "platform_data":      return "platform"
+        case "gemini":             return "ESANG AI · live"
+        case "national_benchmark": return "national"
+        default:                   return source
         }
     }
 
@@ -3944,7 +4364,27 @@ struct ShipperPostLoad: View {
     /// when it's at the high end (carrier-favorable, shipper pays
     /// more than they need to). Position label still flips the
     /// shipper-vs-carrier framing in the pill above.
-    private func ratingStyling(percentile: Int, position: String) -> (String, Color) {
+    private func ratingStyling(
+        percentile: Int,
+        position: String,
+        source: String,
+        sampleSize: Int
+    ) -> (String, Color) {
+        // 2026-05-19 — source-aware. When the server falls back to
+        // the national benchmark (no real platform comparables AND
+        // Gemini's market lookup also failed), it returns
+        // `percentile = 50` as a default — which the old buckets
+        // mapped to "GOOD" regardless of the actual rate. That made
+        // the card always read GOOD on thin lanes, which is exactly
+        // what the founder flagged. New rules:
+        //
+        //   • source == national_benchmark, sampleSize == 0 →
+        //     "REFERENCE" pill (neutral). No claim that the rate is
+        //     good or bad — we just don't have data to judge.
+        //   • Otherwise — percentile-driven rating as before.
+        if source == "national_benchmark" && sampleSize == 0 {
+            return ("REFERENCE", Brand.neutral)
+        }
         // For shippers: lower rate = better deal. Percentile ≤25
         // means your rate is in the bottom quartile of comparable
         // lanes — excellent for the shipper. ≥80th percentile is
@@ -4614,6 +5054,17 @@ struct ShipperPostLoad: View {
     private func composeSubmissionNotes() -> String {
         var lines: [String] = []
         if !notes.isEmpty { lines.append(notes) }
+        // Catalyst Requirements — web parity. Min safety score is always
+        // serialized so the catalyst knows the gate; endorsements only
+        // when the shipper actually selected some. Format matches the
+        // server's loads.ts:242-243 expected pattern ("Required Endorsements:"
+        // and "Min Safety Score:") so the catalyst load-detail view shows
+        // them in the same line block.
+        lines.append("Min Safety Score: \(Int(catalystMinSafetyScore))")
+        if !catalystEndorsements.isEmpty {
+            let sorted = catalystEndorsements.sorted()
+            lines.append("Required Endorsements: \(sorted.joined(separator: ", "))")
+        }
         // 2026-05-17 — Mode line is the first machine-readable token in
         // the notes block. Catalyst + dispatch parse this until the
         // server `shippers.create` input carries transport_mode
@@ -5055,6 +5506,40 @@ struct ShipperPostLoadScreen: View {
             )
         }
     }
+}
+
+// Doc-router (Templates + Bulk) notification + date parsing helpers.
+extension Notification.Name {
+    /// Fired by 204 Post-Load after a Bulk classifier session routes
+    /// docs. `userInfo["docs"]` is an `[[String: Any]]` summarizing
+    /// per-doc classifiedType / dispatchTarget / confidence / summary
+    /// for everything beyond the first load-shaped doc (which got
+    /// applied as a wizard pre-fill). The shipper Home/Loads tab
+    /// listens and queues non-load docs into the appropriate inbox
+    /// (certificates, agreements, etc.).
+    static let eusoShipperBulkClassifiedRouted =
+        Notification.Name("eusoShipperBulkClassifiedRouted")
+}
+
+extension DateFormatter {
+    /// `YYYY-MM-DD` — the most common Gemini-extracted date shape.
+    static let iso_yMd: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .iso8601)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+    /// `MM/DD/YYYY` — US BOL / Rate Con convention.
+    static let iso_mDy: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .iso8601)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        f.dateFormat = "MM/dd/yyyy"
+        return f
+    }()
 }
 
 // Shipper bottom-nav doctrine — out of scope per parity mandate §1.

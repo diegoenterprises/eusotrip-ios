@@ -23,6 +23,7 @@ private struct PostLoadStep3Body: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
+                rateSheetCard      // T-008 · 2026-05-20
                 rateCard
                 fuelCard
                 accessorialsCard
@@ -33,6 +34,115 @@ private struct PostLoadStep3Body: View {
             .padding(.horizontal, 14)
             .padding(.top, 56)
         }
+    }
+
+    // ── T-008 (canonical fee engine, 2026-05-20) ────────────────────
+    // Renders the canonical FeeMultiplierEngine breakdown above the
+    // rate field so the shipper sees BASE × COUNTRY × VERTICAL × PRODUCT
+    // × HAZMAT × DISTANCE × CYCLE before they commit a number. Reads
+    // `draft.feeBreakdown` which clamps unknown countries to US and
+    // computes great-circle distance from the lane coordinates. When
+    // trailer + vertical aren't both ready the card shows an empty
+    // state pointing back to Step 2.
+    private var rateSheetCard: some View {
+        LifecycleCard {
+            LifecycleSection(label: "ESANG · CANONICAL RATE SHEET", icon: "sparkles")
+            if let breakdown = draft.feeBreakdown {
+                // Effective fee header line
+                let effPct = decimalToPct(breakdown.effective - 1)
+                let baseRateUsd = draft.rate ?? 0
+                let feeAmount = baseRateUsd * (NSDecimalNumber(decimal: breakdown.effective).doubleValue - 1)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("EusoTrip platform fee")
+                        .font(.system(size: 12, weight: .heavy)).tracking(0.4)
+                        .foregroundStyle(palette.textPrimary)
+                    Spacer(minLength: 0)
+                    Text(effPct)
+                        .font(.system(size: 16, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    if baseRateUsd > 0 {
+                        Text(String(format: "≈ $%.2f", feeAmount))
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                }
+                // Multiplier chips — one per dimension. Color-coded:
+                // gradient = > 1.0 surcharge · neutral = exactly 1.0
+                // (no impact) · green = < 1.0 discount.
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        multiplierChip(label: "BASE",     value: breakdown.base)
+                        multiplierChip(label: "COUNTRY",  value: breakdown.country)
+                        multiplierChip(label: "VERTICAL", value: breakdown.vertical)
+                        multiplierChip(label: "PRODUCT",  value: breakdown.product)
+                        multiplierChip(label: "HAZMAT",   value: breakdown.hazmat)
+                        multiplierChip(label: "DISTANCE", value: breakdown.distance)
+                        multiplierChip(label: "CYCLE",    value: breakdown.cycleDampener)
+                    }
+                }
+                // Live lane summary so the user sees what the engine
+                // resolved (helps debug "why is the fee so high?").
+                Text(laneSummary(breakdown: breakdown))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                // Empty state — trailer or vertical not set yet.
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                    Text("Pick a trailer + vertical on Step 2 to see the canonical fee breakdown.")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func multiplierChip(label: String, value: Decimal) -> some View {
+        let n = NSDecimalNumber(decimal: value).doubleValue
+        let isSurcharge = n > 1.0001
+        let isDiscount  = n < 0.9999
+        let bg: AnyShapeStyle = {
+            if isSurcharge { return AnyShapeStyle(LinearGradient.diagonal) }
+            if isDiscount  { return AnyShapeStyle(Brand.success.opacity(0.85)) }
+            return AnyShapeStyle(palette.tintNeutral)
+        }()
+        let fg: Color = isSurcharge || isDiscount ? .white : palette.textPrimary
+        VStack(spacing: 1) {
+            Text(label)
+                .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                .foregroundStyle(fg.opacity(0.85))
+            Text(decimalToPct(value - 1))
+                .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                .foregroundStyle(fg)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 5)
+        .background(bg)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    private func decimalToPct(_ d: Decimal) -> String {
+        let n = NSDecimalNumber(decimal: d).doubleValue
+        if abs(n) < 0.0001 { return "0%" }
+        let sign = n >= 0 ? "+" : ""
+        return "\(sign)\(String(format: "%.1f", n * 100))%"
+    }
+
+    private func laneSummary(breakdown: FeeBreakdown) -> String {
+        let i = breakdown.inputs
+        var parts: [String] = []
+        parts.append("\(i.originCountry.rawValue)→\(i.destinationCountry.rawValue)")
+        parts.append(i.mode.rawValue.uppercased())
+        parts.append(i.vertical.displayName)
+        parts.append(i.trailer.displayName)
+        if i.isHazmat { parts.append("HAZMAT") }
+        let miles = NSDecimalNumber(decimal: i.distanceMiles).doubleValue
+        if miles > 0 { parts.append("\(Int(miles)) mi") }
+        return parts.joined(separator: " · ")
     }
 
     private var header: some View {

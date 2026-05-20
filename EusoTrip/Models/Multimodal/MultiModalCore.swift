@@ -58,6 +58,74 @@ public enum TransportMode: String, CaseIterable, Codable, Identifiable, Sendable
         case .barge:  return "$/short ton"
         }
     }
+
+    // MARK: - T-035 · Mode-specific lifecycle labels (2026-05-20)
+    //
+    // Audit fix: the driver lifecycle labels were truck-centric ("AT
+    // PICKUP DOCK" surfaced on a rail load made no sense). These
+    // computed properties give every driver-side surface a mode-aware
+    // label vocabulary. Consumers swap a hardcoded string for the
+    // mode getter on whichever TransportMode they're rendering.
+
+    /// Label shown when the driver is at the origin pickup point.
+    public var atPickupLabel: String {
+        switch self {
+        case .truck:  return "AT PICKUP DOCK"
+        case .rail:   return "AT RAIL RAMP / YARD"
+        case .vessel: return "AT VESSEL GATE"
+        case .barge:  return "AT BARGE TERMINAL"
+        }
+    }
+
+    /// Label shown when the driver is at the destination delivery point.
+    public var atDeliveryLabel: String {
+        switch self {
+        case .truck:  return "AT DELIVERY DOCK"
+        case .rail:   return "AT RAIL DESTINATION YARD"
+        case .vessel: return "AT VESSEL DISCHARGE GATE"
+        case .barge:  return "AT BARGE DISCHARGE TERMINAL"
+        }
+    }
+
+    /// Short noun used in section headers ("PICKUP" / "RAMP" / "GATE").
+    public var pickupNoun: String {
+        switch self {
+        case .truck:  return "PICKUP"
+        case .rail:   return "RAMP"
+        case .vessel: return "GATE"
+        case .barge:  return "TERMINAL"
+        }
+    }
+
+    /// Short noun used in section headers for delivery side.
+    public var deliveryNoun: String {
+        switch self {
+        case .truck:  return "DELIVERY"
+        case .rail:   return "DEST. RAMP"
+        case .vessel: return "DISCHARGE"
+        case .barge:  return "DISCHARGE"
+        }
+    }
+
+    /// Verb for the loading phase ("LOADING" / "RAMPING" / "STOWING").
+    public var loadingVerb: String {
+        switch self {
+        case .truck:  return "LOADING"
+        case .rail:   return "RAMPING"
+        case .vessel: return "STOWING"
+        case .barge:  return "STOWING"
+        }
+    }
+
+    /// Verb for the unloading phase.
+    public var unloadingVerb: String {
+        switch self {
+        case .truck:  return "UNLOADING"
+        case .rail:   return "DERAMPING"
+        case .vessel: return "DISCHARGING"
+        case .barge:  return "DISCHARGING"
+        }
+    }
 }
 
 // MARK: - ModeRoute

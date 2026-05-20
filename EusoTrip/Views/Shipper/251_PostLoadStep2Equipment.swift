@@ -20,14 +20,29 @@ private struct PostLoadStep2Body: View {
     @Environment(\.palette) private var palette
     @ObservedObject var draft: PostLoadDraft
 
-    private var equipmentChoices: [String] {
+    // ── T-005 (canonical lock-in, 2026-05-20) ───────────────────────
+    // Truck mode now reads from the canonical `TrailerCode` enum
+    // (23 codes, vertical-filtered). Rail + vessel modes keep their
+    // legacy display strings until T-034 lands the RailCarKind +
+    // VesselClassKind UI. A typo in a TrailerCode rawValue is now a
+    // compile error — drift impossible at the type system layer.
+
+    /// Returns the canonical TrailerCode list for truck mode (vertical-filtered if a
+    /// vertical is selected, else all 23). Tap writes `draft.trailer` (TrailerCode)
+    /// AND mirrors to `draft.equipmentType` (String) for legacy consumers.
+    private var truckTrailerChoices: [TrailerCode] {
+        if let v = draft.vertical {
+            return TrailerCode.filtered(by: v)
+        }
+        return TrailerCode.allCases
+    }
+
+    /// Legacy display strings retained for rail / vessel modes only. T-034
+    /// will replace these with canonical RailCarKind / VesselClassKind chips.
+    private var legacyDisplayChoices: [String] {
         switch draft.mode {
         case .truck:
-            return [
-                "53' Dry Van", "53' Reefer", "Flatbed 48'", "Step Deck", "Conestoga",
-                "MC-306 Tanker", "MC-307 Tanker", "MC-331 Tanker", "Container 40' HC",
-                "Power Only", "Lowboy", "Hot Shot",
-            ]
+            return []   // truck routes through truckTrailerChoices
         case .rail:
             return [
                 "Boxcar", "Hopper", "Tank Car (UTLX)", "Centerbeam", "Gondola",
@@ -47,11 +62,27 @@ private struct PostLoadStep2Body: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
+                verticalCard         // T-006 · 2026-05-20
                 cargoCard
                 equipmentCard
+                // T-034 · 2026-05-20 — Cross-track identifier card.
+                // Renders only when mode is rail or vessel. Provides the
+                // canonical equipment IDs (reporting marks + AAR class
+                // for rail; BIC + ISO + IMO + MMSI for vessel) so the
+                // catalyst's dispatcher receives a fully-identified
+                // unit at dispatch time. Truck loads skip this entirely.
+                if draft.mode == .rail || draft.mode == .vessel {
+                    crossTrackIdentifiersCard
+                }
                 weightCard
-                if draft.cargoType == .hazmat { hazmatLink }
-                if draft.cargoType == .refrigerated { reeferLink }
+                // T-007 · 2026-05-20: hazmat / reefer subforms now trigger
+                // on the trailer's intrinsic property (TrailerCode.isHazmatEligible
+                // / requiresReeferSubform) OR the cargoType, OR the vertical's
+                // compliance overlay. The old cargoType-only gate missed cases
+                // where a hazmat-eligible tanker was picked but cargoType
+                // stayed .general (founder report).
+                if isHazmatContext { hazmatLink }
+                if isReeferContext { reeferLink }
                 escortCard
                 endorsementsCard
                 specialEquipmentCard
@@ -61,6 +92,67 @@ private struct PostLoadStep2Body: View {
             }
             .padding(.horizontal, 14)
             .padding(.top, 56)
+        }
+    }
+
+    /// T-007 trigger logic — kept inline so the body composition reads
+    /// cleanly. Returns true when the hazmat subform must be reachable.
+    private var isHazmatContext: Bool {
+        if draft.cargoType == .hazmat { return true }
+        if draft.trailer?.isHazmatEligible == true { return true }
+        if draft.vertical == .hazmat { return true }
+        if draft.vertical == .tankerLiquidBulk { return true }
+        return false
+    }
+
+    /// Reefer subform reachability — set whenever the trailer or cargo
+    /// or vertical implies cold-chain handling.
+    private var isReeferContext: Bool {
+        if draft.cargoType == .refrigerated { return true }
+        if draft.trailer?.requiresReeferSubform == true { return true }
+        if draft.vertical == .refrigerated { return true }
+        return false
+    }
+
+    // ── Vertical chip row (T-006 · 2026-05-20) ──────────────────────
+    // Renders the canonical 12 industry verticals as horizontally-
+    // scrollable chips. Tap toggles `draft.vertical`. Selected vertical
+    // narrows the truck trailer list below via TrailerCode.filtered(by:).
+    // Vertical also feeds `DocumentRequirements.forShipment(vertical:)`
+    // on Step 4 and `FeeMultiplierEngine.compute(vertical:)` on Step 3.
+    private var verticalCard: some View {
+        LifecycleCard {
+            LifecycleSection(label: "INDUSTRY VERTICAL", icon: "tag.square")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Vertical.allCases) { v in
+                        let active = draft.vertical == v
+                        Button {
+                            // Tapping the active chip clears the vertical,
+                            // tapping a new one selects it.
+                            draft.vertical = active ? nil : v
+                            // Clear trailer if it no longer fits the new vertical.
+                            if let t = draft.trailer, !TrailerCode.filtered(by: v).contains(t) {
+                                draft.trailer = nil
+                                draft.equipmentType = ""
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: v.systemImage)
+                                    .font(.system(size: 10, weight: .heavy))
+                                Text(v.displayName)
+                                    .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                            }
+                            .foregroundStyle(active ? .white : palette.textPrimary)
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(active
+                                ? AnyShapeStyle(LinearGradient.diagonal)
+                                : AnyShapeStyle(palette.tintNeutral))
+                            .clipShape(Capsule())
+                        }.buttonStyle(.plain)
+                    }
+                }
+            }
         }
     }
 
@@ -246,23 +338,156 @@ private struct PostLoadStep2Body: View {
         }
     }
 
+    // T-034 (2026-05-20) — Cross-track identifier card. Mode-aware:
+    // rail surfaces reporting marks + AAR car class; vessel surfaces
+    // BIC + ISO 6346 + IMO + MMSI. Fields are optional — the wizard
+    // doesn't gate Continue on them (they're nice-to-have metadata
+    // the catalyst can confirm at dispatch) but they ride through to
+    // the load row via `composedNotes()` so the catalyst's
+    // dispatcher sees the canonical unit IDs.
+    private var crossTrackIdentifiersCard: some View {
+        LifecycleCard {
+            if draft.mode == .rail {
+                LifecycleSection(label: "RAIL IDENTIFIERS", icon: "tram.fill")
+                identifierField(
+                    label: "Reporting marks",
+                    placeholder: "e.g., BNSF · UP · CSXT · NS",
+                    text: $draft.reportingMarks
+                )
+                identifierField(
+                    label: "AAR car class",
+                    placeholder: "e.g., C113 covered hopper · T108 tank",
+                    text: $draft.aarClass
+                )
+                Text("AAR reporting marks + car class let the catalyst's dispatcher confirm the exact car the load rides on. Optional but recommended for interchange-billing accuracy.")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if draft.mode == .vessel {
+                LifecycleSection(label: "VESSEL IDENTIFIERS", icon: "ferry.fill")
+                identifierField(
+                    label: "BIC code",
+                    placeholder: "e.g., MSCU1234567 (11-char container ID)",
+                    text: $draft.bicCode
+                )
+                identifierField(
+                    label: "ISO 6346 size/type",
+                    placeholder: "e.g., 45G1 · 22T1",
+                    text: $draft.isoCode
+                )
+                identifierField(
+                    label: "IMO number",
+                    placeholder: "e.g., 9123456 (7-digit vessel ID)",
+                    text: $draft.imoNumber
+                )
+                identifierField(
+                    label: "MMSI",
+                    placeholder: "e.g., 367123456 (9-digit MMSI)",
+                    text: $draft.mmsi
+                )
+                Text("BIC + ISO identify the container; IMO + MMSI identify the carrying vessel. All four ride to the load row so customs filings (US ACE / CBSA CARM / SAT Carta Porte) auto-populate.")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func identifierField(label: String, placeholder: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label.uppercased())
+                .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            TextField(placeholder, text: text)
+                .textFieldStyle(.plain)
+                .autocorrectionDisabled(true)
+                .textInputAutocapitalization(.characters)
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .background(palette.bgCard.opacity(0.6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(palette.borderFaint, lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+    }
+
     private var equipmentCard: some View {
         LifecycleCard {
             LifecycleSection(label: "EQUIPMENT", icon: "truck.box")
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(equipmentChoices, id: \.self) { c in
-                        Button { draft.equipmentType = c } label: {
-                            Text(c).font(.system(size: 11, weight: .heavy)).tracking(0.4)
-                                .foregroundStyle(draft.equipmentType == c ? .white : palette.textPrimary)
+                    // T-005 (2026-05-20): truck mode now renders the canonical
+                    // TrailerCode enum (23 codes, vertical-filtered). Selecting
+                    // writes draft.trailer (TrailerCode) AND mirrors to
+                    // draft.equipmentType for legacy back-compat. Rail / vessel
+                    // modes fall through to the legacy display-string path until
+                    // T-034 lands RailCarKind + VesselClassKind chips.
+                    if draft.mode == .truck {
+                        ForEach(truckTrailerChoices) { t in
+                            let active = draft.trailer == t
+                            Button {
+                                draft.trailer = t
+                                draft.equipmentType = t.rawValue   // legacy mirror
+                                // Auto-snap vertical from the trailer's default
+                                // when the user hasn't picked one yet — friendlier
+                                // UX than forcing them to set vertical first.
+                                if draft.vertical == nil {
+                                    draft.vertical = t.defaultVertical
+                                }
+                            } label: {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(t.displayName)
+                                        .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                                    if t.isHazmatEligible {
+                                        Text("HAZMAT-ELIGIBLE")
+                                            .font(.system(size: 7, weight: .heavy)).tracking(0.6)
+                                            .opacity(0.7)
+                                    }
+                                }
+                                .foregroundStyle(active ? .white : palette.textPrimary)
                                 .padding(.horizontal, 12).padding(.vertical, 7)
-                                .background(draft.equipmentType == c
+                                .background(active
                                     ? AnyShapeStyle(LinearGradient.diagonal)
                                     : AnyShapeStyle(palette.tintNeutral))
                                 .clipShape(Capsule())
-                        }.buttonStyle(.plain)
+                            }.buttonStyle(.plain)
+                        }
+                    } else {
+                        ForEach(legacyDisplayChoices, id: \.self) { c in
+                            Button {
+                                draft.equipmentType = c
+                                draft.trailer = nil   // legacy path, canonical type cleared
+                            } label: {
+                                Text(c).font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                                    .foregroundStyle(draft.equipmentType == c ? .white : palette.textPrimary)
+                                    .padding(.horizontal, 12).padding(.vertical, 7)
+                                    .background(draft.equipmentType == c
+                                        ? AnyShapeStyle(LinearGradient.diagonal)
+                                        : AnyShapeStyle(palette.tintNeutral))
+                                    .clipShape(Capsule())
+                            }.buttonStyle(.plain)
+                        }
                     }
                 }
+            }
+            // Selected-trailer summary chip (truck mode only — surfaces the
+            // canonical spec line so the user sees "MC-306 / DOT-406 / DOT-407"
+            // confirmation instead of just the display name pill above).
+            if draft.mode == .truck, let t = draft.trailer {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text(t.shortSpec)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(palette.bgCard.opacity(0.6))
+                .clipShape(Capsule())
             }
         }
     }

@@ -116,6 +116,27 @@ private struct AgreementWizardBody: View {
     @State private var equipmentTypes: Set<String> = ["dry_van"]
     @State private var hazmat: Bool = false
 
+    // T-012 · 2026-05-20 — Canonical Vertical + TrailerCode for the
+    // agreement wizard. Threaded into the `agreements.generate` Zod
+    // input so the server can:
+    //   1. Build the per-vertical document checklist (T-013).
+    //   2. Apply the canonical FeeMultiplierEngine (T-024).
+    //   3. Surface the correct compliance prompts on Driver / Dispatch.
+    // Both nil-safe — older agreement drafts without these picks still
+    // generate; the server falls back to .generalFreight / .dryVan when
+    // the optional fields are absent.
+    @State private var selectedVertical: Vertical? = nil
+    @State private var selectedTrailer: TrailerCode? = nil
+
+    /// T-013 · 2026-05-20 — Cross-border flag for the agreement. Drives
+    /// the additional USMCA / pedimento / Carta Porte / CBP ACE / CARM
+    /// document requirements in the canonical checklist. Defaults false;
+    /// shipper toggles on for international lanes. (LaneInput city/state
+    /// pairs don't carry an ISO-3166 country today so we capture this
+    /// as an explicit toggle rather than inferring — refinement tracked
+    /// when LaneInput grows a country field.)
+    @State private var isCrossBorderAgreement: Bool = false
+
     // Lanes
     @State private var lanes: [LaneInput] = []
 
@@ -361,8 +382,61 @@ private struct AgreementWizardBody: View {
                     ("Cargo ($)",             $cargo),
                 ])
             }
+            // T-012 · 2026-05-20 — canonical Vertical + TrailerCode pickers.
+            // These drive the per-vertical document checklist (T-013) and
+            // the FeeMultiplierEngine breakdown. Above the legacy equipment
+            // chips so the user picks the canonical pair first; the chips
+            // below stay for backward-compat with existing draft agreements.
             LifecycleCard {
-                LifecycleSection(label: "EQUIPMENT", icon: "truck.box")
+                LifecycleSection(label: "INDUSTRY VERTICAL", icon: "tag.square")
+                Picker("Vertical", selection: $selectedVertical) {
+                    Text("— Select vertical —").tag(Vertical?.none)
+                    ForEach(Vertical.allCases) { v in
+                        Text(v.displayName).tag(Vertical?.some(v))
+                    }
+                }
+                .pickerStyle(.menu)
+                .onChange(of: selectedVertical) { _, v in
+                    // Clear trailer if it no longer fits the new vertical.
+                    if let v = v, let t = selectedTrailer,
+                       !TrailerCode.filtered(by: v).contains(t) {
+                        selectedTrailer = nil
+                    }
+                    // Auto-flip hazmat flag when the vertical implies it.
+                    if v?.isHazmatVertical == true { hazmat = true }
+                }
+
+                LifecycleSection(label: "CANONICAL TRAILER", icon: "shippingbox")
+                Picker("Trailer", selection: $selectedTrailer) {
+                    Text("— Any trailer —").tag(TrailerCode?.none)
+                    let pool = selectedVertical.map { TrailerCode.filtered(by: $0) } ?? TrailerCode.allCases
+                    ForEach(pool) { t in
+                        Text(t.displayName).tag(TrailerCode?.some(t))
+                    }
+                }
+                .pickerStyle(.menu)
+                .onChange(of: selectedTrailer) { _, t in
+                    // Mirror the canonical trailer into the legacy chip set
+                    // so server-side parsers that key off equipmentTypes keep
+                    // working. Also auto-flip hazmat when the trailer is
+                    // intrinsically hazmat-eligible.
+                    if let t = t {
+                        equipmentTypes.insert(t.rawValue)
+                        if t.isHazmatEligible { hazmat = true }
+                        if selectedVertical == nil { selectedVertical = t.defaultVertical }
+                    }
+                }
+
+                // T-013 — Cross-border toggle. Appends the USMCA / customs
+                // document overlay to the per-vertical checklist surfaced
+                // on the Review step (and downstream on every load posted
+                // under this agreement).
+                Toggle("Cross-border lane (USMCA / customs)", isOn: $isCrossBorderAgreement)
+                    .toggleStyle(SwitchToggleStyle(tint: Brand.blue))
+            }
+
+            LifecycleCard {
+                LifecycleSection(label: "EQUIPMENT (LEGACY CHIPS)", icon: "truck.box")
                 FlowEquipmentChips(selection: $equipmentTypes, hazmat: $hazmat)
             }
             navRow(back: "Back", next: "Continue",
@@ -468,6 +542,38 @@ private struct AgreementWizardBody: View {
                     LifecycleRow(label: "Type",     value: humanType(agType))
                     LifecycleRow(label: "Duration", value: humanDur(dur))
                     LifecycleRow(label: "Status",   value: (a.status ?? "draft").uppercased())
+                    if let v = selectedVertical {
+                        LifecycleRow(label: "Vertical", value: v.displayName)
+                    }
+                    if let t = selectedTrailer {
+                        LifecycleRow(label: "Trailer", value: t.displayName)
+                    }
+                    if isCrossBorderAgreement {
+                        LifecycleRow(label: "Cross-border", value: "Yes · USMCA / customs overlay")
+                    }
+                }
+                // T-013 · 2026-05-20 — Canonical document checklist for
+                // the chosen (vertical, isCrossBorder) tuple. Renders every
+                // DocumentRequirement from DocumentRequirements.forShipment
+                // so the parties see exactly which 49 CFR / USMCA / ERG /
+                // securement / customs docs the agreement obligates them
+                // to maintain. Empty when no vertical picked (the canonical
+                // checklist requires a vertical anchor).
+                let canonicalDocs = DocumentRequirements.forShipment(
+                    vertical: selectedVertical ?? .generalFreight,
+                    isCrossBorder: isCrossBorderAgreement
+                )
+                if !canonicalDocs.isEmpty {
+                    LifecycleCard {
+                        LifecycleSection(label: "DOCUMENT OBLIGATIONS", icon: "doc.text.fill")
+                        Text("Both parties must maintain these documents on file for every load under this agreement. Pre-flight items must be uploaded before any load posts; later-state items are due before the FSM transitions to that state.")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        ForEach(canonicalDocs, id: \.document) { req in
+                            agreementDocRow(req)
+                        }
+                    }
                 }
                 LifecycleCard {
                     LifecycleSection(label: "CONTRACT TEXT", icon: "text.alignleft")
@@ -515,6 +621,49 @@ private struct AgreementWizardBody: View {
                    onBack: { step = .lanes },
                    onNext: { step = .sign })
         }
+    }
+
+    // T-013 (2026-05-20) — Inline doc-requirement row for the agreement
+    // review. Shows the document label, regulatory citation, FSM stage,
+    // and a BLOCKING pill for cases that must be on-file for the FSM
+    // to advance. Read-only; uploads happen on the per-load review
+    // (253) and on the agreement detail screen.
+    @ViewBuilder
+    private func agreementDocRow(_ req: DocumentRequirement) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Image(systemName: req.blocking ? "exclamationmark.shield.fill" : "doc.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(req.blocking ? Brand.warning : palette.textTertiary)
+                Text(req.document.rawValue
+                        .replacingOccurrences(of: "_", with: " ")
+                        .capitalized)
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(2).minimumScaleFactor(0.85)
+                Spacer(minLength: 0)
+                if req.blocking {
+                    Text("BLOCKING")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4).padding(.vertical, 1)
+                        .background(Brand.warning)
+                        .clipShape(Capsule())
+                }
+            }
+            HStack(spacing: 6) {
+                Text("DUE AT \(req.requiredAt.rawValue)")
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                if let ref = req.regulatoryRef {
+                    Text(ref)
+                        .font(.system(size: 9, weight: .semibold)).tracking(0.4)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1).minimumScaleFactor(0.85)
+                }
+            }
+        }
+        .padding(.vertical, 4)
     }
 
     // MARK: - Step 6: Sign
@@ -669,6 +818,13 @@ private struct AgreementWizardBody: View {
             let cargoInsuranceRequired: Double?
             let equipmentTypes: [String]
             let hazmatRequired: Bool
+            // T-012 · 2026-05-20 — Canonical vertical + trailer raw values.
+            // The agreement generator routes these into the per-vertical
+            // document checklist (DocumentRequirements.forVertical) and
+            // FeeMultiplierEngine.compute(). Optional so older clients
+            // still post; server defaults to .generalFreight / .dryVan.
+            let vertical: String?
+            let trailer: String?
             let lanes: [Lane]?
             let effectiveDate: String?
             let expirationDate: String?
@@ -698,6 +854,8 @@ private struct AgreementWizardBody: View {
                     cargoInsuranceRequired: Double(cargo),
                     equipmentTypes: Array(equipmentTypes),
                     hazmatRequired: hazmat,
+                    vertical: selectedVertical?.rawValue,
+                    trailer: selectedTrailer?.rawValue,
                     lanes: laneList.isEmpty ? nil : laneList,
                     effectiveDate: isoFormatter.string(from: effDate),
                     expirationDate: isoFormatter.string(from: expDate),
@@ -721,12 +879,58 @@ private struct AgreementWizardBody: View {
             await MainActor.run { error = "Generate the agreement first" }
             return
         }
+
+        // T-014 · 2026-05-20 — Ed25519 cryptographic signing.
+        //
+        // The base64 PNG signature alone is a visual artifact — anyone with
+        // the PNG can claim to have signed it. To make the signing event
+        // tamper-evident:
+        //   1. SHA-256 of (agreement body + signature PNG + ISO timestamp)
+        //   2. Sign the digest with the shipper's persistent Ed25519 key
+        //      (Keychain-backed, generated on first sign, stable thereafter)
+        //   3. Send (signatureBytes, publicKey, signedDigest, signedAt) so
+        //      the server can verify the chain and append to
+        //      Shipment.hashChainAnchor (T-015 wires the chain).
+        // The PNG keeps flying as `signatureData` for ESIGN-act visual
+        // compliance; the cryptographic payload rides alongside.
+        let signedAtISO: String = {
+            let f = ISO8601DateFormatter()
+            f.formatOptions = [.withInternetDateTime]
+            return f.string(from: Date())
+        }()
+        let agreementBody = ack?.generatedContent ?? ""
+        let digest = ShipperSigningKey.canonicalDigest(
+            agreementBody: agreementBody,
+            signatureDataURL: dataURL,
+            timestampISO: signedAtISO
+        )
+        let digestB64 = digest.base64EncodedString()
+        let signatureBytesB64: String
+        let publicKeyB64: String
+        do {
+            signatureBytesB64 = try ShipperSigningKey.sign(digest)
+            publicKeyB64 = try ShipperSigningKey.currentPublicKeyB64()
+        } catch {
+            await MainActor.run {
+                self.error = "Cryptographic sign failed: \(error.localizedDescription)"
+            }
+            return
+        }
+
         struct In: Encodable {
             let agreementId: Int
-            let signatureData: String
+            let signatureData: String       // base64 PNG (existing — ESIGN-act visual)
             let signatureRole: String
             let signerName: String
             let signerTitle: String
+            // T-014 · 2026-05-20 — Ed25519 signing block. All optional so
+            // older server builds without the verifier still accept the
+            // signature; once the verifier ships, signatures without these
+            // fields downgrade to "ESIGN visual only" status.
+            let signedDigestB64: String?    // SHA-256 of (body + png + ts)
+            let signatureBytesB64: String?  // Ed25519 signature of the digest
+            let publicKeyB64: String?       // shipper's Curve25519 public key
+            let signedAtISO: String?        // matches the digest's timestamp input
         }
         do {
             let resp: AgreementSignAck = try await EusoTripAPI.shared.mutation(
@@ -736,7 +940,11 @@ private struct AgreementWizardBody: View {
                     signatureData: dataURL,
                     signatureRole: (session.user?.role ?? "shipper").lowercased(),
                     signerName: aSignerName.isEmpty ? (session.user?.name ?? "Shipper") : aSignerName,
-                    signerTitle: "Authorized Representative"
+                    signerTitle: "Authorized Representative",
+                    signedDigestB64: digestB64,
+                    signatureBytesB64: signatureBytesB64,
+                    publicKeyB64: publicKeyB64,
+                    signedAtISO: signedAtISO
                 )
             )
             await MainActor.run {

@@ -58,14 +58,31 @@ import SwiftUI
 
 struct CatalystFleetDriversScreen: View {
     let theme: Theme.Palette
+    /// T-021 · 2026-05-20 — When opened from a load-assignment context,
+    /// `requiredEndorsements` filters the roster to drivers who hold
+    /// every code (canonical TrailerCode.requiredEndorsements result).
+    /// Empty for the standalone fleet-browsing flow — full roster shown.
+    let requiredEndorsements: Set<DriverEndorsement>
+    /// T-021 · 2026-05-20 — Optional load reference shown in the filter
+    /// banner so the dispatcher sees which load is driving the filter.
+    let filterContextLabel: String?
 
-    init(theme: Theme.Palette) {
+    init(
+        theme: Theme.Palette,
+        requiredEndorsements: Set<DriverEndorsement> = [],
+        filterContextLabel: String? = nil
+    ) {
         self.theme = theme
+        self.requiredEndorsements = requiredEndorsements
+        self.filterContextLabel = filterContextLabel
     }
 
     var body: some View {
         Shell(theme: theme) {
-            CatalystFleetDrivers()
+            CatalystFleetDrivers(
+                requiredEndorsements: requiredEndorsements,
+                filterContextLabel: filterContextLabel
+            )
         } nav: {
             BottomNav(
                 leading: catalystNavLeading_304(),
@@ -94,9 +111,31 @@ private struct CatalystFleetDrivers: View {
     @Environment(\.palette) private var palette
     @Environment(\.colorScheme) private var scheme
 
+    // T-021 · 2026-05-20 — Required-endorsements gate. Empty = full roster.
+    let requiredEndorsements: Set<DriverEndorsement>
+    let filterContextLabel: String?
+
+    init(requiredEndorsements: Set<DriverEndorsement> = [],
+         filterContextLabel: String? = nil) {
+        self.requiredEndorsements = requiredEndorsements
+        self.filterContextLabel = filterContextLabel
+    }
+
     @State private var drivers: [CatalystAPI.FleetDriver] = []
     @State private var driversLoading: Bool = true
     @State private var driversError: String? = nil
+
+    /// T-021 · 2026-05-20 — Drivers filtered by required endorsements.
+    /// Canonical pattern: `required.isSubset(of: driver.endorsements)`.
+    /// When the server hasn't shipped endorsement data yet (driver.endorsementCodes
+    /// is nil → endorsements is empty), the filter excludes that driver
+    /// whenever any endorsement is required. Fail-safe: better to
+    /// over-filter than to assign a non-endorsed driver to a hazmat load.
+    private var filteredDrivers: [CatalystAPI.FleetDriver] {
+        guard !requiredEndorsements.isEmpty else { return drivers }
+        return drivers.filter { requiredEndorsements.isSubset(of: $0.endorsements) }
+    }
+    private var filteredOutCount: Int { drivers.count - filteredDrivers.count }
 
     /// Active hero driver — defaults to the first roster entry. When
     /// the catalyst has multiple drivers a future firing wires a
@@ -117,6 +156,15 @@ private struct CatalystFleetDrivers: View {
                 topBar
                 titleRowWithAddButton
                 iridescentHairline
+
+                // T-021 · 2026-05-20 — Filter banner. Surfaces only when
+                // the screen was opened with `requiredEndorsements` (from
+                // a load-assignment context). Shows which load drove the
+                // filter + how many roster drivers were filtered out for
+                // missing endorsements.
+                if !requiredEndorsements.isEmpty {
+                    endorsementFilterBanner
+                }
 
                 if driversLoading {
                     loadingHeroSkeleton
@@ -783,11 +831,71 @@ private struct CatalystFleetDrivers: View {
         return "Due \(date) · \(item.daysRemaining)d remaining"
     }
 
+    // MARK: - T-021 · Endorsement filter banner (2026-05-20)
+
+    /// Banner shown above the roster when the screen was opened with
+    /// `requiredEndorsements`. Lists the codes required and how many
+    /// drivers were filtered out for missing them.
+    private var endorsementFilterBanner: some View {
+        let codeLabels = requiredEndorsements.sorted { $0.rawValue < $1.rawValue }.map { e -> String in
+            switch e {
+            case .hazmat:         return "H · Hazmat"
+            case .xCombination:   return "X · H+N"
+            case .tanker:         return "N · Tank"
+            case .doublesTriples: return "T · Doubles/Triples"
+            case .passenger:      return "P · Passenger"
+            case .schoolBus:      return "S · School Bus"
+            }
+        }.joined(separator: " · ")
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.shield.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("ENDORSEMENT FILTER")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 0)
+                if let label = filterContextLabel {
+                    Text(label)
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(LinearGradient.diagonal))
+                }
+            }
+            Text(codeLabels)
+                .font(.system(size: 12, weight: .heavy)).tracking(0.4)
+                .foregroundStyle(palette.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            if filteredOutCount > 0 {
+                Text("\(filteredOutCount) of \(drivers.count) driver\(drivers.count == 1 ? "" : "s") filtered out — missing one or more required endorsements")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if !drivers.isEmpty {
+                Text("All \(drivers.count) driver\(drivers.count == 1 ? "" : "s") hold the required endorsements")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Brand.success)
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCardSoft)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
     // MARK: - Additional drivers list (rows below the hero)
 
     @ViewBuilder
     private var additionalDriversList: some View {
-        let others = drivers.filter { $0.id != heroDriver?.id }
+        // T-021 · 2026-05-20 — Pull from filteredDrivers (canonical
+        // endorsements gate) instead of the raw roster. When no filter
+        // is active, filteredDrivers == drivers, so the legacy behavior
+        // is preserved verbatim.
+        let others = filteredDrivers.filter { $0.id != heroDriver?.id }
         if !others.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text("ROSTER · \(others.count) MORE")

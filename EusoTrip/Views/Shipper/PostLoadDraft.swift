@@ -15,6 +15,16 @@
 
 import SwiftUI
 
+// T-008 (2026-05-20) — `Country` is shadowed inside `PostLoadDraft` by its
+// nested `PostLoadDraft.Country` enum (6-case wizard UI). The canonical
+// 3-case `Country` from `Services/FeeMultiplierEngine.swift` is what the
+// fee engine accepts. A file-scope typealias resolves at file scope BEFORE
+// PostLoadDraft is defined, so `FeeCountry` retains the canonical meaning
+// even inside PostLoadDraft's nested scope. Same pattern for the canonical
+// `TransportMode` (no collision today but futureproof).
+fileprivate typealias FeeCountry = Country
+fileprivate typealias FeeTransportMode = TransportMode
+
 @MainActor
 final class PostLoadDraft: ObservableObject {
 
@@ -116,6 +126,58 @@ final class PostLoadDraft: ObservableObject {
     @Published var equipmentType: String = ""
     @Published var weight: Double? = nil
     @Published var commodity: String = ""
+
+    // ── T-005 / T-006 (canonical lock-in, 2026-05-20) ──
+    // Canonical industry vertical (from Models/Vertical.swift) and trailer
+    // code (Models/TrailerCode.swift). Replaces the old free-form
+    // `equipmentType: String` for the truck-mode happy path; rail / vessel
+    // modes still write the legacy String until T-034 lands the
+    // RailCarKind + VesselClassKind UI. Both nullable so a partially-built
+    // draft (no vertical chosen yet) renders the full TrailerCode list.
+    /// Selected industry vertical (12 canonical buckets). Drives the
+    /// trailer filter on Step 2 and the document requirements on Step 4.
+    @Published var vertical: Vertical? = nil
+    /// Selected trailer code. When set, `equipmentType` is kept synced
+    /// to `trailer.rawValue` so legacy server-side parsers keep working.
+    /// Server payload `shippers.create.trailer` reads this when present.
+    @Published var trailer: TrailerCode? = nil
+
+    // T-034 · 2026-05-20 — Cross-track identifier fields.
+    // Rendered conditionally on the Step 2 equipment screen by mode:
+    //   rail   → reporting marks + AAR car class
+    //   vessel → BIC + ISO 6346 + IMO + MMSI
+    // All optional/empty when unused. Stuffed into composedNotes() at
+    // submit time as `[RAIL] MARKS=BNSF AAR=C113` or `[VESSEL] BIC=...`
+    // blocks until `shippers.create` gains structured columns
+    // (T-034b platform backlog).
+
+    /// Rail mode — AAR reporting marks (e.g., "BNSF", "UP", "CSXT").
+    @Published var reportingMarks: String = ""
+    /// Rail mode — AAR car class code (e.g., "C113" for covered hopper,
+    /// "T108" for tank car). Disambiguates equipment beyond the
+    /// canonical RailCarKind enum which only captures families.
+    @Published var aarClass: String = ""
+    /// Vessel mode — BIC code (Bureau International des Containers).
+    /// Standard 11-char container ID e.g., "MSCU1234567".
+    @Published var bicCode: String = ""
+    /// Vessel mode — ISO 6346 size + type code, 4 chars (e.g., "45G1"
+    /// for 40' high-cube general-purpose container).
+    @Published var isoCode: String = ""
+    /// Vessel mode — IMO number (7-digit International Maritime
+    /// Organization vessel identifier, e.g., "9123456").
+    @Published var imoNumber: String = ""
+    /// Vessel mode — MMSI (Maritime Mobile Service Identity), 9 digits.
+    @Published var mmsi: String = ""
+
+    /// T-009 · 2026-05-20 — canonical attached-documents set. Step 4
+    /// Review surfaces every required document for the (vertical,
+    /// isCrossBorder) tuple via `DocumentRequirements.forShipment(...)`
+    /// and lets the shipper mark each one as on-file. The submit gate
+    /// blocks Post when any document required at DRAFT / POSTED with
+    /// `blocking == true` isn't in this set — later-state docs (LOADED /
+    /// DELIVERED) ride along so the catalyst's load detail shows the
+    /// full checklist, but they don't block the marketplace post.
+    @Published var attachedDocuments: Set<DocumentType> = []
 
     // Hazmat sub-fields (only relevant when cargoType == .hazmat or
     // when equipmentType is a tanker spec'd for UN-coded cargo).
@@ -222,6 +284,11 @@ final class PostLoadDraft: ObservableObject {
     func reset() {
         origin = ""; destination = ""; pickupDate = nil; deliveryDate = nil
         stops = []; cargoType = .general; equipmentType = ""
+        vertical = nil; trailer = nil
+        attachedDocuments = []
+        reportingMarks = ""; aarClass = ""
+        bicCode = ""; isoCode = ""; imoNumber = ""; mmsi = ""
+        ePodLockOverride = nil
         weight = nil; commodity = ""
         unNumber = ""; hazmatClass = ""; packingGroup = ""
         properShippingName = ""; ergGuide = nil; chemtrecPhone = ""
@@ -336,6 +403,28 @@ final class PostLoadDraft: ObservableObject {
                 let targetRate:           Double?
                 let biddingDurationHours: Int?
                 let equipmentType:        String?
+                // T-005 · canonical lock-in 2026-05-20:
+                // Server now receives the canonical TrailerCode + Vertical
+                // raw values alongside the legacy `equipmentType` string.
+                // Both fields are optional so an older client without
+                // T-005 can still post. Server-side validators round-trip
+                // through TrailerCode.RawValue / Vertical.RawValue when
+                // present; equipmentType remains the fallback path until
+                // every consumer migrates.
+                let trailer:              String?
+                let vertical:             String?
+                // T-009 · 2026-05-20 — attached document set as raw values.
+                // Server stores against the load row + uses them as the
+                // initial "documents on file" set; future doc uploads
+                // append. Empty array elided to nil so older servers
+                // ignore the field.
+                let attachedDocuments:    [String]?
+                // T-011 · 2026-05-20 — ePOD lock flag. When true, EusoWallet
+                // holds settlement disbursement until the driver's POD
+                // capture passes the cryptographic chain-of-custody check
+                // at DELIVERED. Auto-true for cross-border / hazmat /
+                // rate > $5k / heavy-haul; shipper can override.
+                let ePodLockEnabled:      Bool?
             }
             struct Out: Decodable {
                 let success: Bool; let id: Int; let loadNumber: String
@@ -369,7 +458,11 @@ final class PostLoadDraft: ObservableObject {
                     minimumBid:            minimumBid,
                     targetRate:            targetRate,
                     biddingDurationHours:  biddingDurationHours > 0 ? biddingDurationHours : nil,
-                    equipmentType:         equipmentType.isEmpty ? nil : equipmentType
+                    equipmentType:         equipmentType.isEmpty ? nil : equipmentType,
+                    trailer:               trailer?.rawValue,
+                    vertical:              vertical?.rawValue,
+                    attachedDocuments:     attachedDocuments.isEmpty ? nil : attachedDocuments.map(\.rawValue),
+                    ePodLockEnabled:       ePodLockEnabled ? true : nil
                 )
             )
             postedLoadNumber = result.loadNumber
@@ -411,8 +504,185 @@ final class PostLoadDraft: ObservableObject {
             }.joined(separator: " | ")
             lines.append("[STOPS] " + r)
         }
+        // T-034 · 2026-05-20 — Cross-track identifier serialization.
+        // Until shippers.create grows structured rail/vessel columns,
+        // these ride in the notes block so the catalyst's dispatcher
+        // sees the equipment IDs at dispatch time. Server-side parsers
+        // already accept this overflow pattern (see CARGO + STOPS).
+        if mode == .rail, !reportingMarks.isEmpty || !aarClass.isEmpty {
+            var parts: [String] = []
+            if !reportingMarks.isEmpty { parts.append("MARKS=\(reportingMarks)") }
+            if !aarClass.isEmpty        { parts.append("AAR=\(aarClass)") }
+            lines.append("[RAIL] " + parts.joined(separator: " · "))
+        }
+        if mode == .vessel,
+           !bicCode.isEmpty || !isoCode.isEmpty || !imoNumber.isEmpty || !mmsi.isEmpty {
+            var parts: [String] = []
+            if !bicCode.isEmpty   { parts.append("BIC=\(bicCode)") }
+            if !isoCode.isEmpty   { parts.append("ISO=\(isoCode)") }
+            if !imoNumber.isEmpty { parts.append("IMO=\(imoNumber)") }
+            if !mmsi.isEmpty      { parts.append("MMSI=\(mmsi)") }
+            lines.append("[VESSEL] " + parts.joined(separator: " · "))
+        }
         return lines.joined(separator: "\n")
     }
+
+    // MARK: - T-008 · FeeMultiplierEngine bridge (2026-05-20)
+    //
+    // The canonical fee engine (Services/FeeMultiplierEngine.swift)
+    // requires its own enum vocabulary (Country: 3 cases · TransportMode:
+    // 4 cases · Vertical · TrailerCode · Decimal distance / cycle days).
+    // PostLoadDraft holds the broader UI enums (Country: 6 cases · Mode:
+    // 3 cases · Double weight); this section bridges between them with
+    // a single computed `FeeComputationInput` the wizard's Step 3 pricing
+    // card reads. Unknown countries clamp to US so the engine never sees
+    // an unsupported case — broker rate sheets still resolve.
+
+    /// Canonical platform commission floor (5%). Read from the server
+    /// in a follow-up firing — for now a single source of truth here.
+    static let canonicalBaseRate: Decimal = 0.05
+
+    /// Best-effort posting-cycle window. Until `shipper.lastPostedOnLane`
+    /// lands as a server endpoint, default to 365 (one-off) so the cycle
+    /// dampener applies the highest multiplier (1.10). Repeat shippers
+    /// override this when the server starts returning the value.
+    var shipperPostingCycleDays: Int { 365 }
+
+    /// Map the wizard's 6-case Country enum to the engine's 3-case enum.
+    /// EU / UK / Asia clamp to US so the engine has a defined multiplier
+    /// — refinement tracked when ROW lanes ship. Return type uses the
+    /// `FeeCountry` typealias to escape `PostLoadDraft.Country` shadowing.
+    private func canonicalCountry(_ c: PostLoadDraft.Country) -> FeeCountry {
+        switch c {
+        case .US: return .US
+        case .MX: return .MX
+        case .CA: return .CA
+        case .EU, .UK, .Asia: return .US   // fallback until engine grows ROW coverage
+        }
+    }
+
+    /// Map the wizard's 3-case Mode enum to the engine's 4-case TransportMode.
+    /// `barge` and `intermodal` come from the canonical TransportMode but
+    /// the wizard doesn't expose them yet.
+    private func canonicalMode(_ m: PostLoadDraft.Mode) -> FeeTransportMode {
+        switch m {
+        case .truck:  return .truck
+        case .rail:   return .rail
+        case .vessel: return .vessel
+        }
+    }
+
+    /// Derive isHazmat from the strongest available signal: explicit cargo
+    /// type, the trailer's intrinsic hazmat eligibility, or the vertical.
+    var isHazmatComputed: Bool {
+        if cargoType == .hazmat { return true }
+        if trailer?.isHazmatEligible == true { return true }
+        if vertical == .hazmat { return true }
+        if vertical == .tankerLiquidBulk { return true }
+        return false
+    }
+
+    /// Great-circle distance in miles between origin/destination coordinates.
+    /// Returns 0 when either endpoint is unset — the engine treats 0 as
+    /// "drayage" tier (highest distance multiplier).
+    var distanceMiles: Decimal {
+        guard let oLat = originLat, let oLng = originLng,
+              let dLat = destLat,   let dLng = destLng else { return 0 }
+        let r: Double = 3959   // Earth radius, statute miles
+        let dLatR = (dLat - oLat) * .pi / 180
+        let dLngR = (dLng - oLng) * .pi / 180
+        let a = sin(dLatR / 2) * sin(dLatR / 2)
+              + cos(oLat * .pi / 180) * cos(dLat * .pi / 180)
+              * sin(dLngR / 2) * sin(dLngR / 2)
+        let c = 2 * atan2(sqrt(a), sqrt(1 - a))
+        return Decimal(r * c)
+    }
+
+    /// Build a complete `FeeComputationInput` from the current draft. Returns
+    /// nil when the canonical inputs aren't ready yet (no trailer or vertical
+    /// picked) so the pricing card can render its empty state instead of
+    /// computing a fee against `.dryVan / .generalFreight` defaults.
+    var feeInputs: FeeComputationInput? {
+        guard let t = trailer else { return nil }
+        let v = vertical ?? t.defaultVertical
+        return FeeComputationInput(
+            baseRate: Self.canonicalBaseRate,
+            originCountry: canonicalCountry(originCountry),
+            destinationCountry: canonicalCountry(destinationCountry),
+            vertical: v,
+            trailer: t,
+            mode: canonicalMode(mode),
+            isHazmat: isHazmatComputed,
+            distanceMiles: distanceMiles,
+            shipperPostingCycleDays: shipperPostingCycleDays,
+            isCrossBorder: isCrossBorder,
+        )
+    }
+
+    /// Convenience — invokes the engine when `feeInputs` is ready.
+    var feeBreakdown: FeeBreakdown? {
+        guard let inputs = feeInputs else { return nil }
+        return FeeMultiplierEngine.compute(inputs)
+    }
+
+    // MARK: - T-009 · Document requirements (2026-05-20)
+
+    /// Full required-document list for the current draft, derived from
+    /// `DocumentRequirements.forShipment(vertical:isCrossBorder:)`. Returns
+    /// an empty list when no vertical is picked yet (Step 2 still pending).
+    var requiredDocuments: [DocumentRequirement] {
+        guard let v = vertical else { return [] }
+        return DocumentRequirements.forShipment(vertical: v, isCrossBorder: isCrossBorder)
+    }
+
+    /// Documents whose `blocking == true` and whose `requiredAt` is
+    /// DRAFT or POSTED — i.e., documents the wizard must enforce BEFORE
+    /// the shipper hits Post. Later-state blocking docs (LOADED /
+    /// DELIVERED) are tracked on the load row and enforced by the FSM
+    /// guard when the driver / catalyst attempts those transitions.
+    var preFlightBlockingDocs: [DocumentRequirement] {
+        requiredDocuments.filter { req in
+            guard req.blocking else { return false }
+            return req.requiredAt == .draft || req.requiredAt == .posted
+        }
+    }
+
+    /// True when every pre-flight blocking document is in `attachedDocuments`.
+    /// Step 4 disables the Post button while false.
+    var canPostMarketplace: Bool {
+        for req in preFlightBlockingDocs where !attachedDocuments.contains(req.document) {
+            return false
+        }
+        return true
+    }
+
+    // MARK: - T-011 · ePOD lock (2026-05-20)
+    //
+    // ePOD lock = settlement disbursement waits for cryptographically-
+    // verified proof of delivery before EusoWallet releases funds. Auto-
+    // enabled for high-risk lanes per the canonical spec: cross-border
+    // (customs fraud risk), hazmat (regulatory compliance), high-value
+    // (rate > $5k → escrow protection), heavy haul (permits + escort
+    // verification). Shipper can override by toggling on Step 4 (the
+    // override surfaces a banner).
+
+    /// User override — when nil, auto-derive from `requiresEpodLock`.
+    /// When set, takes precedence (true = force on, false = force off).
+    @Published var ePodLockOverride: Bool? = nil
+
+    /// True when this load's risk profile triggers an automatic ePOD
+    /// lock per the canonical thresholds.
+    var requiresEpodLock: Bool {
+        if isCrossBorder { return true }
+        if isHazmatComputed { return true }
+        if let r = rate, r > 5000 { return true }
+        if vertical == .heavyHaulSpecialized { return true }
+        return false
+    }
+
+    /// Final ePOD-lock decision sent to the server. Honors any explicit
+    /// override; falls back to the auto-derived value.
+    var ePodLockEnabled: Bool { ePodLockOverride ?? requiresEpodLock }
 
     // MARK: - Stop type for multi-stop builder
 

@@ -52,15 +52,37 @@ struct DeliveryPODCaptureView: View {
     /// — pre-populates the receiver-name field so the driver only
     /// has to confirm rather than re-type.
     let receiverHint: String?
+    /// T-019 · 2026-05-20 — Canonical trailer + vertical for the load.
+    /// Drive the equipment-specific POD cards below: reefer temp log /
+    /// livestock 28-hr attestation / hazmat placard photo / flatbed
+    /// securement log. Both nullable so legacy callers (load detail
+    /// open-POD button without canonical context) still render the
+    /// generic POD; once the lifecycle dispatchers fill them, the
+    /// driver gets the per-equipment cards too.
+    let trailer: TrailerCode?
+    let vertical: Vertical?
+    /// T-036 · 2026-05-20 — Canonical TransportMode for the load.
+    /// Drives mode-specific POD cards:
+    ///   .rail   → rail waybill signature + reporting marks photo
+    ///   .vessel → BL signature + container seal verification
+    ///   .truck/.barge → existing generic POD only
+    /// Nullable for legacy callers; defaults to truck POD when nil.
+    let mode: TransportMode?
 
     init(
         loadId: String,
         loadNumber: String? = nil,
-        receiverHint: String? = nil
+        receiverHint: String? = nil,
+        trailer: TrailerCode? = nil,
+        vertical: Vertical? = nil,
+        mode: TransportMode? = nil
     ) {
         self.loadId = loadId
         self.loadNumber = loadNumber
         self.receiverHint = receiverHint
+        self.trailer = trailer
+        self.vertical = vertical
+        self.mode = mode
     }
 
     // MARK: Capture state
@@ -71,6 +93,312 @@ struct DeliveryPODCaptureView: View {
     @State private var liveStroke: SignatureStroke = SignatureStroke()
     @State private var receiverName: String = ""
     @State private var notes: String = ""
+
+    // T-019 · 2026-05-20 — Equipment-specific POD capture state. Each
+    // bucket is gated by a trailer / vertical predicate (see Body) and
+    // stuffed into the submission notes block via `composedPODNotes()`
+    // until POD schema grows structured columns (T-019b platform repo).
+
+    /// Reefer temp log — driver downloads the reefer's setpoint /
+    /// actual temperature log from the unit (CSV/PDF). Captured here as
+    /// a single download-confirmed flag + final-leg average temp; the
+    /// full file uploads via a follow-up document picker in T-019b.
+    @State private var reeferTempLogDownloaded: Bool = false
+    @State private var reeferAvgTempF: String = ""
+
+    /// Livestock 28-hr attestation — driver confirms the FMCSA 49 USC
+    /// 80502 rest periods (animals must have food/water/rest within
+    /// every 28 hours of continuous transit). Captures the timestamp
+    /// of the last qualifying rest stop.
+    @State private var livestock28hrAttested: Bool = false
+    @State private var livestockLastRestStop: String = ""
+
+    /// Hazmat placard verification photo — driver photographs the
+    /// affixed placards at delivery so the audit chain matches the
+    /// load's UN/class/PSN. Reuses the PhotosPicker pattern of the
+    /// primary PoD photo above.
+    @State private var hazmatPlacardItem: PhotosPickerItem? = nil
+    @State private var hazmatPlacardImage: UIImage? = nil
+
+    /// Flatbed securement log — driver attests that all straps / chains
+    /// / tarps / edge protectors were per 49 CFR 393 at delivery. The
+    /// free-text notes field captures any deviations.
+    @State private var flatbedSecurementAttested: Bool = false
+    @State private var flatbedSecurementNotes: String = ""
+
+    // MARK: T-036 · Mode-specific POD state (2026-05-20)
+    //
+    // Rail and vessel modes need different POD primitives than truck:
+    //   rail   → waybill signature confirms AAR interchange acceptance
+    //            + reporting marks photo (the car's reporting marks +
+    //            number must be photographed at delivery for the
+    //            yard's interchange-billing audit)
+    //   vessel → BL signature is the canonical legal handoff at port
+    //            + container seal verification (seal number + photo;
+    //            broken seals at delivery trigger ISO 17712 incident
+    //            chain).
+
+    /// Rail mode — waybill signature attestation (driver confirms the
+    /// physical waybill was signed by the yard's interchange agent).
+    @State private var railWaybillSigned: Bool = false
+    /// Rail mode — reporting marks photo (AAR car ID at delivery).
+    @State private var railMarksItem: PhotosPickerItem? = nil
+    @State private var railMarksImage: UIImage? = nil
+
+    /// Vessel mode — Bill of Lading signature attestation.
+    @State private var vesselBLSigned: Bool = false
+    /// Vessel mode — container seal number captured from the physical
+    /// seal at discharge. Must match the seal logged at LOADED.
+    @State private var vesselSealNumber: String = ""
+    /// Vessel mode — container seal photo.
+    @State private var vesselSealItem: PhotosPickerItem? = nil
+    @State private var vesselSealImage: UIImage? = nil
+    /// Vessel mode — seal-intact attestation (false flags a security
+    /// incident → catalyst dispatch notified + customs broker looped in).
+    @State private var vesselSealIntact: Bool = true
+
+    // MARK: T-019 · Equipment-specific predicates + cards
+
+    /// Reefer temp log required when the trailer is `requiresReeferSubform`
+    /// (reefer or food-grade liquid tank) OR the vertical is refrigerated.
+    private var requiresReeferLog: Bool {
+        if trailer?.requiresReeferSubform == true { return true }
+        if vertical == .refrigerated { return true }
+        return false
+    }
+    /// 28-hr attestation required for the livestock vertical (49 USC 80502 / FMCSA 395.8).
+    private var requiresLivestockAttest: Bool { vertical == .livestock }
+    /// Placard photo required when the trailer is hazmat-eligible (49 CFR 172).
+    private var requiresHazmatPlacard: Bool { trailer?.isHazmatEligible == true }
+    /// Securement attestation required for the flatbed / open-deck vertical (49 CFR 393).
+    private var requiresSecurementLog: Bool { vertical == .flatbedOpenDeck }
+
+    /// T-036 · Rail-mode POD card required when mode is .rail.
+    private var requiresRailWaybillCapture: Bool { mode == .rail }
+    /// T-036 · Vessel-mode POD card required when mode is .vessel.
+    private var requiresVesselSealCapture: Bool { mode == .vessel }
+
+    /// Reefer temp log card — driver confirms downloaded the unit's
+    /// temperature trace + records the final-leg average temp.
+    private var reeferLogCard: some View {
+        EquipmentPODCard(
+            title: "REEFER TEMP LOG",
+            icon: "thermometer",
+            regulatory: "FSMA 2011 / FDA 21 CFR 1.900"
+        ) {
+            Toggle("Temp log downloaded from reefer unit",
+                   isOn: $reeferTempLogDownloaded)
+                .toggleStyle(SwitchToggleStyle(tint: Brand.success))
+                .font(EType.caption)
+            HStack {
+                Text("Average temp this leg (°F)").font(EType.caption).foregroundStyle(palette.textSecondary)
+                Spacer(minLength: 0)
+                TextField("e.g. 34", text: $reeferAvgTempF)
+                    .keyboardType(.numbersAndPunctuation)
+                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: 80)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(palette.bgCard.opacity(0.6))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+        }
+    }
+
+    /// Livestock 28-hr attestation card — FMCSA 395.8 / 49 USC 80502.
+    private var livestock28hrCard: some View {
+        EquipmentPODCard(
+            title: "LIVESTOCK 28-HR LAW",
+            icon: "person.2",
+            regulatory: "49 USC 80502 / FMCSA 395.8"
+        ) {
+            Toggle("All 28-hr rest stops met (food + water + rest)",
+                   isOn: $livestock28hrAttested)
+                .toggleStyle(SwitchToggleStyle(tint: Brand.success))
+                .font(EType.caption)
+            HStack {
+                Text("Last rest stop").font(EType.caption).foregroundStyle(palette.textSecondary)
+                Spacer(minLength: 0)
+                TextField("e.g. Amarillo, TX 14:30", text: $livestockLastRestStop)
+                    .multilineTextAlignment(.trailing)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(palette.bgCard.opacity(0.6))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+        }
+    }
+
+    /// Hazmat placard photo card — 49 CFR 172.504.
+    private var hazmatPlacardCard: some View {
+        EquipmentPODCard(
+            title: "HAZMAT PLACARD VERIFICATION",
+            icon: "exclamationmark.triangle.fill",
+            regulatory: "49 CFR 172.504"
+        ) {
+            PhotosPicker(selection: $hazmatPlacardItem,
+                         matching: .images,
+                         photoLibrary: .shared()) {
+                HStack(spacing: 8) {
+                    Image(systemName: hazmatPlacardImage == nil ? "camera" : "checkmark.circle.fill")
+                        .foregroundStyle(hazmatPlacardImage == nil ? Brand.warning : Brand.success)
+                    Text(hazmatPlacardImage == nil
+                         ? "Photograph affixed placards"
+                         : "Placard photo captured · tap to replace")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textPrimary)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .background(palette.bgCard.opacity(0.6))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .onChange(of: hazmatPlacardItem) { _, newItem in
+                guard let newItem else { return }
+                Task {
+                    if let data = try? await newItem.loadTransferable(type: Data.self),
+                       let img = UIImage(data: data) {
+                        await MainActor.run { hazmatPlacardImage = img }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Flatbed securement log card — 49 CFR 393.
+    private var securementLogCard: some View {
+        EquipmentPODCard(
+            title: "SECUREMENT LOG",
+            icon: "link",
+            regulatory: "49 CFR 393"
+        ) {
+            Toggle("All straps / chains / tarps per 49 CFR 393 at delivery",
+                   isOn: $flatbedSecurementAttested)
+                .toggleStyle(SwitchToggleStyle(tint: Brand.success))
+                .font(EType.caption)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Deviations (optional)").font(EType.caption).foregroundStyle(palette.textSecondary)
+                TextField("Loose strap, missing edge protector, etc.",
+                          text: $flatbedSecurementNotes, axis: .vertical)
+                    .lineLimit(1...3)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 8).padding(.vertical, 6)
+                    .background(palette.bgCard.opacity(0.6))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+        }
+    }
+
+    // T-036 · Rail waybill + reporting marks card.
+    private var railWaybillCard: some View {
+        EquipmentPODCard(
+            title: "RAIL WAYBILL · REPORTING MARKS",
+            icon: "tram.fill",
+            regulatory: "AAR interchange · 49 CFR 174"
+        ) {
+            Toggle("Waybill signed by yard interchange agent",
+                   isOn: $railWaybillSigned)
+                .toggleStyle(SwitchToggleStyle(tint: Brand.success))
+                .font(EType.caption)
+            PhotosPicker(selection: $railMarksItem,
+                         matching: .images,
+                         photoLibrary: .shared()) {
+                HStack(spacing: 8) {
+                    Image(systemName: railMarksImage == nil ? "camera" : "checkmark.circle.fill")
+                        .foregroundStyle(railMarksImage == nil ? Brand.warning : Brand.success)
+                    Text(railMarksImage == nil
+                         ? "Photograph reporting marks + car number"
+                         : "Reporting marks photo captured · tap to replace")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textPrimary)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .background(palette.bgCard.opacity(0.6))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .onChange(of: railMarksItem) { _, newItem in
+                guard let newItem else { return }
+                Task {
+                    if let data = try? await newItem.loadTransferable(type: Data.self),
+                       let img = UIImage(data: data) {
+                        await MainActor.run { railMarksImage = img }
+                    }
+                }
+            }
+            Text("AAR reporting marks (e.g., BNSF · UP · CSXT) + car number must be on file for interchange billing. Photograph the side-of-car stencil; the catalyst's dispatcher cross-checks it against the load row's marks at settlement.")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(palette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // T-036 · Vessel BL + container seal card.
+    private var vesselSealCard: some View {
+        EquipmentPODCard(
+            title: "BILL OF LADING · CONTAINER SEAL",
+            icon: "ferry.fill",
+            regulatory: "ISO 17712 · UN customs"
+        ) {
+            Toggle("Bill of Lading signed at port",
+                   isOn: $vesselBLSigned)
+                .toggleStyle(SwitchToggleStyle(tint: Brand.success))
+                .font(EType.caption)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Container seal number (must match LOADED-state log)")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+                TextField("e.g., AB1234567 · CN9876543",
+                          text: $vesselSealNumber)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled(true)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 8).padding(.vertical, 6)
+                    .background(palette.bgCard.opacity(0.6))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+            Toggle("Seal intact at delivery (uncut / unbroken)",
+                   isOn: $vesselSealIntact)
+                .toggleStyle(SwitchToggleStyle(tint: Brand.success))
+                .font(EType.caption)
+            PhotosPicker(selection: $vesselSealItem,
+                         matching: .images,
+                         photoLibrary: .shared()) {
+                HStack(spacing: 8) {
+                    Image(systemName: vesselSealImage == nil ? "camera" : "checkmark.circle.fill")
+                        .foregroundStyle(vesselSealImage == nil ? Brand.warning : Brand.success)
+                    Text(vesselSealImage == nil
+                         ? "Photograph the affixed seal"
+                         : "Seal photo captured · tap to replace")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textPrimary)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .background(palette.bgCard.opacity(0.6))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .onChange(of: vesselSealItem) { _, newItem in
+                guard let newItem else { return }
+                Task {
+                    if let data = try? await newItem.loadTransferable(type: Data.self),
+                       let img = UIImage(data: data) {
+                        await MainActor.run { vesselSealImage = img }
+                    }
+                }
+            }
+            if !vesselSealIntact {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(Brand.danger)
+                    Text("Broken-seal incident — catalyst dispatch + customs broker notified at submit.")
+                        .font(.system(size: 10, weight: .heavy)).tracking(0.2)
+                        .foregroundStyle(Brand.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
 
     // MARK: Submit state
 
@@ -88,6 +416,16 @@ struct DeliveryPODCaptureView: View {
                     photoCard
                     signatureCard
                     receiverNotesCard
+                    // T-019 · 2026-05-20 — Equipment-specific POD cards.
+                    // Each renders only when the trailer or vertical
+                    // demands it, so generic dry-van PODs stay clean.
+                    if requiresReeferLog        { reeferLogCard }
+                    if requiresLivestockAttest  { livestock28hrCard }
+                    if requiresHazmatPlacard    { hazmatPlacardCard }
+                    if requiresSecurementLog    { securementLogCard }
+                    // T-036 · 2026-05-20 — Mode-specific POD cards.
+                    if requiresRailWaybillCapture  { railWaybillCard }
+                    if requiresVesselSealCapture   { vesselSealCard }
                     if let err = error {
                         errorBanner(err)
                     }
@@ -534,6 +872,55 @@ func renderSignaturePNGBase64(
 }
 
 // MARK: - Previews
+
+// MARK: - T-019 · Shared equipment POD card chrome (2026-05-20)
+
+/// Lightweight card wrapper used by the four equipment-specific POD
+/// surfaces (reefer / livestock / hazmat / flatbed). Title bar mirrors
+/// the LifecycleSection pattern with a regulatory citation pill so the
+/// driver sees which CFR clause this attestation backs.
+private struct EquipmentPODCard<Content: View>: View {
+    @Environment(\.palette) private var palette
+    let title: String
+    let icon: String
+    let regulatory: String?
+    @ViewBuilder let content: () -> Content
+
+    init(title: String,
+         icon: String,
+         regulatory: String? = nil,
+         @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.icon = icon
+        self.regulatory = regulatory
+        self.content = content
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text(title)
+                    .font(.system(size: 10, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 0)
+                if let ref = regulatory {
+                    Text(ref)
+                        .font(.system(size: 8, weight: .semibold)).tracking(0.4)
+                        .foregroundStyle(palette.textTertiary)
+                }
+            }
+            content()
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+}
 
 #Preview("POD capture · Dark") {
     DeliveryPODCaptureView(

@@ -126,6 +126,89 @@ public struct Vehicle: Identifiable, Codable, Hashable {
     public let geofenceEvents: [GeofenceEvent]
     public let hazmatChain: HazmatPlacardChain?    // per-vehicle placard history
     public let identityChain: [IdentityVerification]
+    /// T-015 · 2026-05-20 — Canonical FSM overlay state from
+    /// `LoadStateFSM.swift`. Tracks which compliance overlay states
+    /// (hazmat ERG verified · reefer cold-chain · livestock 28hr ·
+    /// heavy-haul permits · cross-border customs · AV handoff · rail
+    /// yard placement · vessel stow-plan) the vehicle has cleared.
+    /// Optional so legacy server payloads decode without it — the
+    /// driver / dispatch guards (T-016 / T-017) treat nil as
+    /// "no overlays cleared" (every required overlay still gates).
+    public let overlayStates: CompositeLoadState?
+
+    /// Public initializer covers the optional `overlayStates` field
+    /// with a default nil so the existing 11+ call sites that build
+    /// Vehicle by hand keep compiling without source changes. T-015
+    /// chose Optional + explicit nil-default for backward compat;
+    /// once every producer fills the field it migrates to a non-optional
+    /// in T-015b.
+    public init(
+        id: String,
+        shipmentId: String,
+        role: VehicleRole,
+        modality: VehicleModality,
+        equipment: EquipmentSpec,
+        driverIds: [String],
+        carrierId: String,
+        leg: LegSpec,
+        cargoSplit: CargoSplit,
+        childState: String,
+        animationManifestId: String,
+        geofenceEvents: [GeofenceEvent],
+        hazmatChain: HazmatPlacardChain? = nil,
+        identityChain: [IdentityVerification] = [],
+        overlayStates: CompositeLoadState? = nil
+    ) {
+        self.id = id
+        self.shipmentId = shipmentId
+        self.role = role
+        self.modality = modality
+        self.equipment = equipment
+        self.driverIds = driverIds
+        self.carrierId = carrierId
+        self.leg = leg
+        self.cargoSplit = cargoSplit
+        self.childState = childState
+        self.animationManifestId = animationManifestId
+        self.geofenceEvents = geofenceEvents
+        self.hazmatChain = hazmatChain
+        self.identityChain = identityChain
+        self.overlayStates = overlayStates
+    }
+
+    /// Decoder that tolerates legacy rows missing the `overlayStates`
+    /// field. Every other key uses the auto-synthesized path via
+    /// `decode(_:forKey:)`; `overlayStates` uses `decodeIfPresent` so
+    /// pre-T-015 rows decode with nil overlays.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id                  = try c.decode(String.self,                      forKey: .id)
+        self.shipmentId          = try c.decode(String.self,                      forKey: .shipmentId)
+        self.role                = try c.decode(VehicleRole.self,                 forKey: .role)
+        self.modality            = try c.decode(VehicleModality.self,             forKey: .modality)
+        self.equipment           = try c.decode(EquipmentSpec.self,               forKey: .equipment)
+        self.driverIds           = try c.decode([String].self,                    forKey: .driverIds)
+        self.carrierId           = try c.decode(String.self,                      forKey: .carrierId)
+        self.leg                 = try c.decode(LegSpec.self,                     forKey: .leg)
+        self.cargoSplit          = try c.decode(CargoSplit.self,                  forKey: .cargoSplit)
+        self.childState          = try c.decode(String.self,                      forKey: .childState)
+        self.animationManifestId = try c.decode(String.self,                      forKey: .animationManifestId)
+        self.geofenceEvents      = try c.decode([GeofenceEvent].self,             forKey: .geofenceEvents)
+        self.hazmatChain         = try c.decodeIfPresent(HazmatPlacardChain.self, forKey: .hazmatChain)
+        self.identityChain       = try c.decode([IdentityVerification].self,      forKey: .identityChain)
+        self.overlayStates       = try c.decodeIfPresent(CompositeLoadState.self, forKey: .overlayStates)
+    }
+
+    /// Convenience — returns the overlays envelope or a fresh one
+    /// rooted at the current childState. Consumers should prefer this
+    /// over the raw optional so the empty-overlays path is consistent.
+    public var effectiveOverlays: CompositeLoadState {
+        if let o = overlayStates { return o }
+        // childState may be the 55-state lifecycle raw value; fall back
+        // to LoadState.draft when the parse fails (legacy/unknown).
+        let base = LoadState(rawValue: childState) ?? .draft
+        return CompositeLoadState(base: base)
+    }
 }
 
 public enum VehicleRole: String, Codable, Hashable {

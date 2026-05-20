@@ -37,6 +37,12 @@ final class PretripDVIRViewModel: ObservableObject {
     @Published var vehicleId: String
     /// Trailer (optional — some moves are bobtail).
     @Published var trailerId: String?
+    /// T-018 · 2026-05-20 — Canonical trailer code for the load. Forwarded
+    /// to `inspections.getTemplate(trailer:)` so the server returns a
+    /// trailer-keyed walkaround (tanker pressure / reefer setpoint /
+    /// livestock 28-hr / hazmat placards) instead of the generic FMCSA
+    /// 393 list. Nil-safe — when unset the legacy generic template loads.
+    @Published var trailer: TrailerCode? = nil
     /// Unit label shown in the top bar (e.g. "Unit 4821").
     @Published var unitLabel: String
     /// Load number shown in the top bar (e.g. "EUSO-2026-…").
@@ -94,12 +100,14 @@ final class PretripDVIRViewModel: ObservableObject {
         vehicleId: String,
         trailerId: String? = nil,
         unitLabel: String = "Unit",
-        loadLabel: String? = nil
+        loadLabel: String? = nil,
+        trailer: TrailerCode? = nil
     ) {
         self.vehicleId = vehicleId
         self.trailerId = trailerId
         self.unitLabel = unitLabel
         self.loadLabel = loadLabel
+        self.trailer = trailer
     }
 
     // MARK: - Derived progress
@@ -146,7 +154,9 @@ final class PretripDVIRViewModel: ObservableObject {
     func load(api: EusoTripAPI = .shared) async {
         phase = .loading
         do {
-            async let template = api.inspections.getTemplate(type: .preTrip)
+            // T-018 (2026-05-20) — pass the canonical trailer so the
+            // server returns the trailer-specific walkaround template.
+            async let template = api.inspections.getTemplate(type: .preTrip, trailer: trailer)
             async let previous = api.inspections.getPrevious(vehicleId: vehicleId)
             let (t, prev) = try await (template, previous)
             self.sections = Self.buildSections(from: t)

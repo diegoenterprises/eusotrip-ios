@@ -38,12 +38,20 @@ struct PretripDVIR: View {
     init(vehicleId: String = "",
          trailerId: String? = nil,
          unitLabel: String = "",
-         loadLabel: String? = nil) {
+         loadLabel: String? = nil,
+         trailer: TrailerCode? = nil) {
+        // T-018 · 2026-05-20 — `trailer` is the canonical TrailerCode for
+        // the load on this pre-trip. Threaded into the ViewModel so the
+        // walkaround template the server returns is keyed by trailer
+        // (tanker pressure check / reefer setpoint / livestock 28-hr /
+        // hazmat placards). Nil-safe — defaults to the legacy generic
+        // FMCSA 393 walkaround.
         _vm = StateObject(wrappedValue: PretripDVIRViewModel(
             vehicleId: vehicleId,
             trailerId: trailerId,
             unitLabel: unitLabel,
-            loadLabel: loadLabel
+            loadLabel: loadLabel,
+            trailer: trailer
         ))
     }
 

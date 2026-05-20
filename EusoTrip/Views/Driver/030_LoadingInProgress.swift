@@ -197,10 +197,48 @@ struct LoadingInProgress: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
+    // T-020 · 2026-05-20 — Equipment-keyed metric row.
+    // Resolves the canonical TrailerCode (from load.cargoType + hazmatClass
+    // heuristic until Load grows a structured trailer column) and dispatches
+    // to per-equipment metric pairs:
+    //   dry van       → cargo weight + load fill %
+    //   flatbed       → stack height + securement count
+    //   reefer        → set temp + actual temp
+    //   livestock     → head count + 28-hr timer
+    //   auto-carrier  → vehicles loaded + per-vehicle VCR
+    //   tanker / hazmat (default) → FLOW RATE + ETA FULL (preserved)
+    private var resolvedTrailer: TrailerCode? {
+        // Direct canonical lookup will land once Load gains a structured
+        // `trailer` field (T-020b in the platform backlog). For now derive
+        // a best-guess from the cargoType + hazmatClass already on Load.
+        guard let cargo = activeLoad?.cargoType?.lowercased() else { return nil }
+        let haz = activeLoad?.hazmatClass ?? ""
+        let isHaz = !haz.isEmpty
+        switch cargo {
+        case "refrigerated":             return .reefer
+        case "livestock":                return .livestockCattlePot
+        case "vehicles":                 return .autoCarrier
+        case "oversized", "flatbed":     return .standardFlatbed
+        case "general":                  return .dryVan
+        case "petroleum":                return .liquidTank
+        case "gas":                      return .pressurizedGasTank
+        case "cryogenic":                return .cryogenicTank
+        case "hazmat":                   return isHaz ? .hazmatBox : .dryVan
+        case "liquid":                   return .liquidTank
+        case "chemicals":                return .liquidTank
+        default:                         return nil
+        }
+    }
+
     private var metricRow: some View {
-        HStack(spacing: Space.s2) {
-            bigMetric(label: "FLOW RATE", primary: fallbackFlow, unit: "gpm", sub: fallbackFlowSub, subColor: Brand.success)
-            bigMetric(label: "ETA FULL",  primary: fallbackEtaFull, unit: "ds", sub: fallbackEtaSub, subColor: Brand.warning)
+        let pair = LoadingMetricsViewBuilder.pair(for: resolvedTrailer)
+        return HStack(spacing: Space.s2) {
+            bigMetric(label: pair.left.label,  primary: pair.left.primary,
+                      unit: pair.left.unit,    sub: pair.left.sub,
+                      subColor: pair.left.subColor)
+            bigMetric(label: pair.right.label, primary: pair.right.primary,
+                      unit: pair.right.unit,   sub: pair.right.sub,
+                      subColor: pair.right.subColor)
         }
     }
 
@@ -431,6 +469,107 @@ private func driverNavLeading_030() -> [NavSlot] {
 private func driverNavTrailing_030() -> [NavSlot] {
     [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
      NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
+}
+
+// MARK: - T-020 · LoadingMetricsViewBuilder (2026-05-20)
+
+/// One metric cell descriptor (label / primary number / unit / sub /
+/// sub-color). Pairs render side-by-side in the metricRow above.
+fileprivate struct LoadingMetric {
+    let label: String
+    let primary: String
+    let unit: String
+    let sub: String
+    let subColor: Color
+}
+
+fileprivate struct LoadingMetricPair {
+    let left: LoadingMetric
+    let right: LoadingMetric
+}
+
+/// Equipment-keyed metrics for the Loading-In-Progress screen. Picks
+/// the metric pair that's most useful for the active trailer type —
+/// the driver no longer sees tanker FLOW RATE / ETA when they're
+/// loading a livestock pot or auto-carrier. Telemetry values are
+/// em-dash placeholders until the per-equipment server endpoints ship
+/// (`tankMonitor` exists for tanker; reefer / livestock / auto-carrier
+/// equivalents land in T-020b on the platform repo).
+fileprivate enum LoadingMetricsViewBuilder {
+
+    static func pair(for trailer: TrailerCode?) -> LoadingMetricPair {
+        guard let t = trailer else { return tankerDefault }
+        switch t {
+        // Dry-cargo van — driver cares about weight on the floor.
+        case .dryVan, .curtainSide, .hazmatBox, .conestoga,
+             .intermodalChassis:
+            return LoadingMetricPair(
+                left:  .init(label: "CARGO WEIGHT", primary: "—", unit: "lb",
+                             sub: "of 44,000 max", subColor: Brand.success),
+                right: .init(label: "LOAD FILL",   primary: "—", unit: "%",
+                             sub: "pallets staged", subColor: Brand.warning)
+            )
+
+        // Flatbed family — stack height for bridge-clearance + securement.
+        case .standardFlatbed, .stepDeck, .lowboyRgn, .doubleDrop, .logTrailer:
+            return LoadingMetricPair(
+                left:  .init(label: "STACK HEIGHT", primary: "—", unit: "ft",
+                             sub: "13'6\" legal max", subColor: Brand.success),
+                right: .init(label: "TIE-DOWNS",   primary: "—", unit: "ct",
+                             sub: "per 49 CFR 393", subColor: Brand.warning)
+            )
+
+        // Reefer family — temperature is the load.
+        case .reefer, .foodGradeLiquidTank:
+            return LoadingMetricPair(
+                left:  .init(label: "SET TEMP",   primary: "—", unit: "°F",
+                             sub: "FSMA setpoint", subColor: Brand.success),
+                right: .init(label: "ACTUAL TEMP", primary: "—", unit: "°F",
+                             sub: "live reefer feed", subColor: Brand.warning)
+            )
+
+        // Livestock pot — head count + 28-hr countdown.
+        case .livestockCattlePot:
+            return LoadingMetricPair(
+                left:  .init(label: "HEAD COUNT", primary: "—", unit: "hd",
+                             sub: "USDA cert", subColor: Brand.success),
+                right: .init(label: "28-HR TIMER", primary: "—", unit: "hr",
+                             sub: "49 USC 80502", subColor: Brand.warning)
+            )
+
+        // Auto carrier — per-vehicle VCR ticked off as each car loads.
+        case .autoCarrier:
+            return LoadingMetricPair(
+                left:  .init(label: "VEHICLES LOADED", primary: "—", unit: "of —",
+                             sub: "VCR pending", subColor: Brand.success),
+                right: .init(label: "DECK FILL", primary: "—", unit: "%",
+                             sub: "upper + lower", subColor: Brand.warning)
+            )
+
+        // Dry bulk / hopper — fill weight + tare.
+        case .dryBulkHopper, .gravityHopper, .grainHopper, .pneumaticTank, .endDump:
+            return LoadingMetricPair(
+                left:  .init(label: "NET WEIGHT", primary: "—", unit: "lb",
+                             sub: "scale ticket", subColor: Brand.success),
+                right: .init(label: "TARE", primary: "—", unit: "lb",
+                             sub: "empty unit weight", subColor: Brand.warning)
+            )
+
+        // Tanker family (liquid / gas / cryo / water) and any unhandled
+        // type — the original FLOW RATE / ETA FULL pair stays. This is
+        // the most production-tested layout (tankMonitor live wiring).
+        case .liquidTank, .pressurizedGasTank, .cryogenicTank, .waterTank:
+            return tankerDefault
+
+        }
+    }
+
+    private static let tankerDefault = LoadingMetricPair(
+        left:  .init(label: "FLOW RATE", primary: "—", unit: "gpm",
+                     sub: "—", subColor: Brand.success),
+        right: .init(label: "ETA FULL",  primary: "—", unit: "ds",
+                     sub: "—", subColor: Brand.warning)
+    )
 }
 
 #Preview("030 · Loading in Progress · Dark") {

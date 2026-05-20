@@ -2192,6 +2192,63 @@ final class TripLifecycleStore: ObservableObject {
 
     // MARK: - Execute
 
+    /// T-016 · 2026-05-20 — Overlay gate context. Driver views that
+    /// have canonical vertical / mode / cross-border / AV-dispatch
+    /// awareness pass this alongside the transition; the store checks
+    /// every required overlay set against the vehicle's current
+    /// `CompositeLoadState` and short-circuits when any required set
+    /// is empty (e.g., trying to LOAD a hazmat vehicle before the ERG
+    /// overlay is verified). Optional so the legacy driver call sites
+    /// — which haven't yet been refactored to carry vertical/mode —
+    /// keep working. Server-side validation still runs after the
+    /// client gate, so a stale or missing context never lets a
+    /// blocking transition through.
+    public struct OverlayGate: Sendable {
+        public let vertical: Vertical
+        public let mode: TransportMode
+        public let isCrossBorder: Bool
+        public let isAvDispatch: Bool
+        /// The vehicle's current overlay snapshot (`Vehicle.overlayStates`
+        /// from T-015). When nil the gate treats every required overlay
+        /// as unsatisfied.
+        public let current: CompositeLoadState?
+        public init(
+            vertical: Vertical,
+            mode: TransportMode,
+            isCrossBorder: Bool,
+            isAvDispatch: Bool = false,
+            current: CompositeLoadState? = nil
+        ) {
+            self.vertical = vertical
+            self.mode = mode
+            self.isCrossBorder = isCrossBorder
+            self.isAvDispatch = isAvDispatch
+            self.current = current
+        }
+    }
+
+    /// Returns a non-nil string listing the overlay families that are
+    /// required but not yet cleared. nil = ready to proceed.
+    static func missingOverlaySummary(_ gate: OverlayGate) -> String? {
+        let req = CompositeLoadState.requiredOverlays(
+            vertical: gate.vertical,
+            mode: gate.mode,
+            isCrossBorder: gate.isCrossBorder,
+            isAvDispatch: gate.isAvDispatch
+        )
+        let cur = gate.current
+        var missing: [String] = []
+        if req.hazmat      && (cur?.hazmat.isEmpty      ?? true) { missing.append("hazmat (ERG + placards + segregation)") }
+        if req.reefer      && (cur?.reefer.isEmpty      ?? true) { missing.append("reefer (FSMA + cold-chain)") }
+        if req.livestock   && (cur?.livestock.isEmpty   ?? true) { missing.append("livestock (USDA + 28-hr)") }
+        if req.heavyHaul   && (cur?.heavyHaul.isEmpty   ?? true) { missing.append("heavy-haul (permits + escorts + bridge clearance)") }
+        if req.crossBorder && (cur?.crossBorder.isEmpty ?? true) { missing.append("cross-border (USMCA + customs)") }
+        if req.avHandoff   && (cur?.avHandoff.isEmpty   ?? true) { missing.append("AV handoff (ODD pre-check)") }
+        if req.rail        && (cur?.rail.isEmpty        ?? true) { missing.append("rail (yard placement + waybill)") }
+        if req.vessel      && (cur?.vessel.isEmpty      ?? true) { missing.append("vessel (gate-in + stow-plan)") }
+        return missing.isEmpty ? nil : missing.joined(separator: " · ")
+    }
+
     /// Fire a state transition. Returns true on success so the
     /// calling screen can navigate forward without waiting on the
     /// refresh (which happens automatically after).
@@ -2200,9 +2257,24 @@ final class TripLifecycleStore: ObservableObject {
         _ transition: LoadLifecycleAPI.Transition,
         location: LoadLifecycleAPI.ExecuteLocation? = nil,
         data: [String: String]? = nil,
-        compliance: LoadLifecycleAPI.ComplianceBlock? = nil
+        compliance: LoadLifecycleAPI.ComplianceBlock? = nil,
+        overlayGate: OverlayGate? = nil
     ) async -> Bool {
         guard !loadId.isEmpty else { return false }
+        // T-016 — overlay gate runs BEFORE the network call so the
+        // driver sees a remediation prompt instead of a server-side
+        // rejection toast. Only fires when the caller supplies a gate;
+        // legacy callers keep the previous behavior.
+        if let gate = overlayGate,
+           let missing = Self.missingOverlaySummary(gate) {
+            lastError = NSError(
+                domain: "TripLifecycleStore",
+                code: -16,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "Cannot advance — missing required overlay states: \(missing). Clear those compliance steps and retry."]
+            )
+            return false
+        }
         inflightTransitionId = transition.transitionId
         defer { inflightTransitionId = nil }
         do {
