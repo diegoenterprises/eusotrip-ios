@@ -39,7 +39,10 @@ enum DispatchNavRoute {
         "home":    "Dpch700",
         "drivers": "Dpch701",
         "loads":   "Dpch702",
-        "me":      "Dpch700",
+        // 2026-05-21 — dedicated Dispatch Me hub (Dpch713). Was "Dpch700"
+        // (Home), which made the "Me" tab a silent dead-end that bounced
+        // the dispatcher back to the screen they were already on.
+        "me":      "Dpch713",
     ]
 
     static let orbLabels: Set<String> = ["esang", "orb"]

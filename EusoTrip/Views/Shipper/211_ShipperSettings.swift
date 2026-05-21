@@ -241,28 +241,28 @@ struct ShipperSettings: View {
                     glyph: "person.crop.circle.fill",
                     title: "Profile",
                     subtitle: profileSubtitle,
-                    action: { pushScreenById?("202") }
+                    action: { navigate(to: "202") }
                 )
                 Divider().overlay(palette.borderFaint).padding(.leading, 56)
                 accountRow(
                     glyph: "doc.text.fill",
                     title: "Posted loads",
                     subtitle: "Manage every load on the board",
-                    action: { pushScreenById?("201") }
+                    action: { navigate(to: "201") }
                 )
                 Divider().overlay(palette.borderFaint).padding(.leading, 56)
                 accountRow(
                     glyph: "creditcard.fill",
                     title: "Payment methods",
                     subtitle: "Cards and bank accounts",
-                    action: { pushScreenById?("208") }
+                    action: { navigate(to: "208") }
                 )
                 Divider().overlay(palette.borderFaint).padding(.leading, 56)
                 accountRow(
                     glyph: "person.2.fill",
                     title: "Working carriers",
                     subtitle: "Top 10 directory",
-                    action: { pushScreenById?("209") }
+                    action: { navigate(to: "209") }
                 )
             }
             .background(
@@ -963,6 +963,39 @@ struct ShipperSettings: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Sign out")
         .accessibilityHint("Logs you out of Eusorone Technologies and returns to the sign-in screen.")
+    }
+
+    // MARK: - Navigation
+
+    /// Canonical navigation for the Account-section rows.
+    ///
+    /// 2026-05-21 dead-button fix: these rows previously called the
+    /// `pushScreenById` closure directly — but `ShipperSettingsScreen`
+    /// (the ContentView ScreenRegistry factory at 211) instantiates
+    /// `ShipperSettings()` with NO `pushScreenById`, and the registry
+    /// factory signature is `(palette) -> AnyView` with no slot to
+    /// inject one. So `pushScreenById` was ALWAYS nil and Profile /
+    /// Posted loads / Payment methods / Working carriers were silent
+    /// no-ops (the dead buttons the founder reported).
+    ///
+    /// Fix: route through the same `.eusoShipperNavSwap` notification
+    /// the SECURITY rows already use successfully. RoleSurfaceRouter
+    /// observes it (Half-1 receiver), runs `RoleAccess.canRender`, and
+    /// pushes the screen. Targets 202/201/208/209 are all registered
+    /// for `.shipper` in ContentView, so `canRender` passes. The
+    /// `pushScreenById` fast-path is kept for any future caller that
+    /// DOES inject it (e.g. a NavigationStack host), but it is no
+    /// longer required for the rows to work.
+    private func navigate(to screenId: String) {
+        if let push = pushScreenById {
+            push(screenId)
+        } else {
+            NotificationCenter.default.post(
+                name: .eusoShipperNavSwap,
+                object: nil,
+                userInfo: ["screenId": screenId]
+            )
+        }
     }
 
     // MARK: - Notification posts (§20.4 — wireframe-defined names)

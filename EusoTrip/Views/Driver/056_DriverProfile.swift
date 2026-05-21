@@ -390,12 +390,27 @@ struct DriverProfile: View {
 
     private var footerActions: some View {
         HStack(spacing: Space.s3) {
-            // Outline secondary — quiet press feedback only.
-            PressableOutlineButton(title: "Runs") { }
+            // 2026-05-21 dead-button fix: both footer CTAs had empty
+            // `{ }` actions. Wired to real registered driver screens via
+            // the canonical `.eusoDriverMeNavSwap` notification (observed
+            // in 067A_DriverMeHubs / RoleSurfaceRouter):
+            //   • "Runs" → 108 Me · LoadBoard (the driver's run history)
+            //   • "Day-2 brief" → 027 Next Load Brief
+            PressableOutlineButton(title: "Runs") { navigateDriver(to: "108") }
             // Primary CTA — uses CTAButton recipe (§B.4: easeOut 0.12
             // press scale + iridescent hue-shift) for crisp feedback.
-            CTAButton(title: "Day-2 brief") { }
+            CTAButton(title: "Day-2 brief") { navigateDriver(to: "027") }
         }
+    }
+
+    /// Post the canonical driver nav-swap so the Me router pushes the
+    /// requested screen. Both targets are registered for `.driver`.
+    private func navigateDriver(to screenId: String) {
+        NotificationCenter.default.post(
+            name: .eusoDriverMeNavSwap,
+            object: nil,
+            userInfo: ["screenId": screenId]
+        )
     }
 }
 
