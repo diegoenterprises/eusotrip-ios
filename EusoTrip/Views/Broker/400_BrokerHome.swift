@@ -61,6 +61,10 @@ struct BrokerHome: View {
     @StateObject private var alerts    = BrokerAlertsStore()
     @StateObject private var tenders   = BrokerOpenTendersStore()
     @StateObject private var recent    = BrokerRecentLoadsStore()
+    /// Tier 2 #37 (2026-05-21) — present the conversational lane
+    /// intelligence sheet. Surfaces rate band + drivers + surcharges
+    /// + a one-paragraph broker advisory for any lane question.
+    @State private var showLaneIntel: Bool = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -68,6 +72,7 @@ struct BrokerHome: View {
                 header
                 kpiStrip
                 attentionStrip
+                laneIntelCTA
                 openTendersCard
                 recentActivityCard
                 Color.clear.frame(height: 96)
@@ -78,6 +83,46 @@ struct BrokerHome: View {
         .task { await refreshAll() }
         .refreshable { await refreshAll() }
         .screenTileRoot()
+        .sheet(isPresented: $showLaneIntel) {
+            LaneIntelSheet(companyId: Int(session.user?.companyId ?? "") ?? 1)
+        }
+    }
+
+    /// Tier 2 #37 — entry CTA into the conversational lane-intel
+    /// sheet. Sits between the attention strip and the open-tenders
+    /// card so brokers reach for it while triaging which tenders
+    /// to bid on.
+    private var laneIntelCTA: some View {
+        Button {
+            showLaneIntel = true
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .font(.system(size: 16, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Ask ESANG about a lane")
+                        .font(EType.body.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Rate band + drivers + surcharges from your last 90 days.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, 12)
+            .background(palette.bgCard)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(LinearGradient.diagonal.opacity(0.4))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private func refreshAll() async {

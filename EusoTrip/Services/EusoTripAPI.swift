@@ -331,6 +331,9 @@ final class EusoTripAPI: ObservableObject {
     /// (dock-worker POD), Tier 3 #11 (USMCA filing assistant).
     /// Backed by `frontend/server/routers/xrChecklist.ts`.
     lazy var xrChecklist: XRChecklistAPI = XRChecklistAPI(api: self)
+    /// Lane Agent — IO 2026 Tier 2 #37 (conversational rate intel).
+    /// Backed by `frontend/server/routers/laneAgent.ts`.
+    lazy var laneAgent: LaneAgentAPI = LaneAgentAPI(api: self)
 
     // --- Driver-facing surfaces added to back the gamification / wallet /
     // fleet / availability screens. Each router mirrors a file under
@@ -19006,5 +19009,32 @@ struct XRChecklistAPI {
     /// from the sheet so the driver's eyes stay on the road.
     func usmcaFilingAssistant(input: USMCAFilingInput) async throws -> USMCAFilingResponse {
         try await api.mutation("xrChecklist.usmcaFilingAssistant", input: input)
+    }
+}
+
+// MARK: - laneAgentRouter (Tier 2 #37 · conversational rate intel)
+//
+// Mirrors `frontend/server/routers/laneAgent.ts`. 3-child Cortex
+// fanout (perception parses the lane query, memory pulls the
+// last-90d settlement sample, reasoning emits drivers + surcharges)
+// + a synthesis pass returning a single broker advisory paragraph.
+
+struct LaneAgentAPI {
+    unowned let api: EusoTripAPI
+
+    /// `laneAgent.query` — fire a conversational lane question.
+    func query(input: LaneAgentQueryInput) async throws -> LaneAgentResponse {
+        try await api.mutation("laneAgent.query", input: input)
+    }
+
+    /// `laneAgent.getRecent` — last N query snapshots for the
+    /// founder's company (rendered as the History strip).
+    struct GetRecentInput: Encodable {
+        let companyId: Int
+        let limit: Int
+    }
+    func getRecent(companyId: Int, limit: Int = 5) async throws -> [LaneAgentHistoryItem] {
+        try await api.query("laneAgent.getRecent",
+                            input: GetRecentInput(companyId: companyId, limit: limit))
     }
 }

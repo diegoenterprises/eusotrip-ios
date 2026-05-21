@@ -268,6 +268,7 @@
 		ACSH20260521000001 /* AstraCaptureSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACSH20260521000002 /* AstraCaptureSheet.swift */; };
 		DKWP20260521000001 /* DockWorkerPodSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DKWP20260521000002 /* DockWorkerPodSheet.swift */; };
 		USMC20260521000001 /* USMCAFilingAssistantSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = USMC20260521000002 /* USMCAFilingAssistantSheet.swift */; };
+		LANI20260521000001 /* LaneIntelSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = LANI20260521000002 /* LaneIntelSheet.swift */; };
 		B1A11111111111111111AA07 /* DriverTabPanes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA08 /* DriverTabPanes.swift */; };
 		B1A11111111111111111AB01 /* ESangParticleBurst.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AB02 /* ESangParticleBurst.swift */; };
 		B1A11111111111111111AC01 /* MeDetailScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AC02 /* MeDetailScreens.swift */; };
@@ -916,6 +917,7 @@
 		ACSH20260521000002 /* AstraCaptureSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AstraCaptureSheet.swift; path = EusoTrip/Views/Components/AstraCaptureSheet.swift; sourceTree = SOURCE_ROOT; };
 		DKWP20260521000002 /* DockWorkerPodSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DockWorkerPodSheet.swift; path = EusoTrip/Views/Components/DockWorkerPodSheet.swift; sourceTree = SOURCE_ROOT; };
 		USMC20260521000002 /* USMCAFilingAssistantSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = USMCAFilingAssistantSheet.swift; path = EusoTrip/Views/Components/USMCAFilingAssistantSheet.swift; sourceTree = SOURCE_ROOT; };
+		LANI20260521000002 /* LaneIntelSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LaneIntelSheet.swift; path = EusoTrip/Views/Components/LaneIntelSheet.swift; sourceTree = SOURCE_ROOT; };
 		B1A11111111111111111AA08 /* DriverTabPanes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverTabPanes.swift; sourceTree = "<group>"; };
 		B1A11111111111111111AA09 /* EusoTrip.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = EusoTrip.entitlements; sourceTree = "<group>"; };
 		B1A11111111111111111AB02 /* ESangParticleBurst.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESangParticleBurst.swift; sourceTree = "<group>"; };
@@ -1958,6 +1960,7 @@
 				ACSH20260521000002 /* AstraCaptureSheet.swift */,
 				DKWP20260521000002 /* DockWorkerPodSheet.swift */,
 				USMC20260521000002 /* USMCAFilingAssistantSheet.swift */,
+				LANI20260521000002 /* LaneIntelSheet.swift */,
 				B1A11111111111111111AB02 /* ESangParticleBurst.swift */,
 				B1A11111111111111111AE02 /* LoadDetailSheet.swift */,
 				B1A11111111111111111AF02 /* SOSEmergencySheet.swift */,
@@ -2523,6 +2526,7 @@
 				ACSH20260521000001 /* AstraCaptureSheet.swift in Sources */,
 				DKWP20260521000001 /* DockWorkerPodSheet.swift in Sources */,
 				USMC20260521000001 /* USMCAFilingAssistantSheet.swift in Sources */,
+				LANI20260521000001 /* LaneIntelSheet.swift in Sources */,
 				B1A11111111111111111AA07 /* DriverTabPanes.swift in Sources */,
 				B1A11111111111111111AB01 /* ESangParticleBurst.swift in Sources */,
 				B1A11111111111111111AC01 /* MeDetailScreens.swift in Sources */,
