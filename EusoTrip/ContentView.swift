@@ -1754,6 +1754,12 @@ enum ScreenRegistry {
             .init(id: "SH253", title: "Shipper · BH Pickup Fired",       role: .shipper) { p in AnyView(ShipperBackhaulPickupFiredScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "SH254", title: "Shipper · BH In-Transit",         role: .shipper) { p in AnyView(ShipperBackhaulInTransitScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "SH255", title: "Shipper · BH Delivery",           role: .shipper) { p in AnyView(ShipperBackhaulDeliveryScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            // 2026-05-21 — Shipper backhaul-echo close quintet (SVG 256-260).
+            .init(id: "SH256", title: "Shipper · BH Docked Loading",     role: .shipper) { p in AnyView(ShipperBackhaulDockedLoadingScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "SH257", title: "Shipper · BH BOL Pre-Sign",       role: .shipper) { p in AnyView(ShipperBackhaulBOLPreSignScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "SH258", title: "Shipper · BH BOL Signed",         role: .shipper) { p in AnyView(ShipperBackhaulBOLSignedScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "SH259", title: "Shipper · BH Paperwork",          role: .shipper) { p in AnyView(ShipperBackhaulPaperworkScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "SH260", title: "Shipper · BH Closed Seal",        role: .shipper) { p in AnyView(ShipperBackhaulClosedSealScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
         ])
 
         return list
