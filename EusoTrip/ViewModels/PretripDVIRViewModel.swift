@@ -212,6 +212,86 @@ final class PretripDVIRViewModel: ObservableObject {
         sections[s].items[i].photoUrl = url
     }
 
+    // MARK: - Astra (P0-6 · 2026-05-20)
+
+    /// Astra observation associated with a DVIR item — note text +
+    /// pass/fail verdict are auto-derived from the Gemini response.
+    /// Stored on the item so the submit payload + audit chain
+    /// (server-side) both carry the same observation.
+    @Published var astraObservations: [String: AstraObservation] = [:]
+    @Published var astraInFlightItemId: String? = nil
+    @Published var astraErrorMessage: String? = nil
+
+    /// Run Astra against a freshly-captured photo. The Gemini response
+    /// is cryptographically signed server-side and verified locally
+    /// (see `AstraVisionService.verifySignature`); on success the
+    /// observation is folded into the item's note + auto-sets the
+    /// pass/fail status from `passFail`.
+    func analyzeItemWithAstra(
+        itemId: String,
+        image: UIImage
+    ) async {
+        guard let astraItem = AstraItem(rawValue: itemId) ?? guessAstraItem(forDvirItemId: itemId) else {
+            astraErrorMessage = "Astra doesn't know how to read item \"\(itemId)\" yet."
+            return
+        }
+        astraInFlightItemId = itemId
+        astraErrorMessage = nil
+        defer { astraInFlightItemId = nil }
+        do {
+            let result = try await AstraVisionService.shared.analyze(
+                item: astraItem,
+                image: image,
+                trailer: trailer,
+                vehicleId: vehicleId,
+                loadId: loadLabel
+            )
+            astraObservations[itemId] = result.observation
+            // Auto-populate the row note + status from the observation.
+            setNote(result.observation.summary, forItemId: itemId)
+            switch result.observation.passFail {
+            case .pass:        setStatus(.pass, forItemId: itemId)
+            case .fail:        setStatus(.fail, forItemId: itemId)
+            case .needsReview: break  // leave status pending — driver decides
+            }
+        } catch {
+            astraErrorMessage = (error as NSError).localizedDescription
+        }
+    }
+
+    /// Heuristic fallback when an iOS DVIR template item id doesn't
+    /// match the canonical Astra item enum verbatim (the FMCSA
+    /// walkaround returns ids like `tread_depth`, not the canonical
+    /// `tire_tread`). Maps the most common mismatches; anything
+    /// unrecognized returns nil so the UI shows a clear error.
+    private func guessAstraItem(forDvirItemId itemId: String) -> AstraItem? {
+        let id = itemId.lowercased()
+        if id.contains("tread")     { return .tireTread }
+        if id.contains("tire") && id.contains("pressure") { return .tirePressureVisual }
+        if id.contains("brake") && id.contains("pad")     { return .brakePad }
+        if id.contains("brake") && id.contains("air")     { return .brakeAirLine }
+        if id.contains("headlight") { return .lightsHeadlight }
+        if id.contains("taillight") || id.contains("brake_lights") { return .lightsTaillight }
+        if id.contains("clearance") { return .lightsClearance }
+        if id.contains("mirror")    { return .mirrors }
+        if id.contains("kingpin")   { return .kingpin }
+        if id.contains("fifth")     { return .fifthWheel }
+        if id.contains("temp_setpoint") || id.contains("temp_recorder") { return .reeferTempDisplay }
+        if id.contains("reefer_fuel") { return .reeferFuel }
+        if id.contains("manhole")   { return .tankerManhole }
+        if id.contains("prv") || id.contains("relief") { return .tankerPrv }
+        if id.contains("vapor")     { return .tankerVaporRecovery }
+        if id.contains("chain") || id.contains("binder") { return .flatbedChains }
+        if id.contains("tarp")      { return .flatbedTarps }
+        if id.contains("csc")       { return .containerCscPlate }
+        if id.contains("seal")      { return .containerSeal }
+        if id.contains("bedding")   { return .livestockBedding }
+        if id.contains("vent")      { return .livestockVentilation }
+        if id.contains("placard")   { return .hazmatPlacard }
+        if id.contains("shipping_papers") || id.contains("erg") { return .hazmatShippingPapers }
+        return nil
+    }
+
     private func locate(_ itemId: String) -> (Int, Int)? {
         for (s, sec) in sections.enumerated() {
             if let i = sec.items.firstIndex(where: { $0.id == itemId }) {

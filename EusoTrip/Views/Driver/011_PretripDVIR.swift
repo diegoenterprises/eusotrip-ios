@@ -29,6 +29,11 @@ struct PretripDVIR: View {
     @Environment(\.lifecycleExit) private var exit
     @StateObject private var vm: PretripDVIRViewModel
 
+    /// 2026-05-20 · IO 2026 P0-6 — Astra camera capture target.
+    /// When non-nil, presents the camera sheet; on dismissal-with-image
+    /// the captured photo is handed to `vm.analyzeItemWithAstra`.
+    @State private var astraCaptureForItemId: String? = nil
+
     // Initializers let callers inject the live vehicle / load in production.
     // Defaults are empty so an unconfigured render reads as a neutral
     // empty state ("Unit —") rather than the legacy "Unit 4821" Figma
@@ -63,8 +68,40 @@ struct PretripDVIR: View {
         .task {
             if case .idle = vm.phase { await vm.load() }
         }
+        // 2026-05-20 · IO 2026 P0-6 — Astra camera capture sheet.
+        .sheet(item: Binding(
+            get: { astraCaptureForItemId.map { AstraCapturePresentation(itemId: $0) } },
+            set: { astraCaptureForItemId = $0?.itemId }
+        )) { presentation in
+            AstraCameraSheet(itemLabel: itemLabel(for: presentation.itemId)) { image in
+                let id = presentation.itemId
+                astraCaptureForItemId = nil
+                if let image {
+                    Task { await vm.analyzeItemWithAstra(itemId: id, image: image) }
+                }
+            }
+        }
+        .alert("Astra couldn't read this photo",
+               isPresented: Binding(
+                   get: { vm.astraErrorMessage != nil },
+                   set: { if !$0 { vm.astraErrorMessage = nil } }
+               )) {
+            Button("OK", role: .cancel) { vm.astraErrorMessage = nil }
+        } message: {
+            Text(vm.astraErrorMessage ?? "")
+        }
         // Uniform cafe-door entrance.
         .screenTileRoot()
+    }
+
+    /// Item label used in the camera-sheet title.
+    private func itemLabel(for itemId: String) -> String {
+        for sec in vm.sections {
+            if let item = sec.items.first(where: { $0.id == itemId }) {
+                return item.name
+            }
+        }
+        return itemId
     }
 
     // MARK: - TopBar
@@ -278,24 +315,36 @@ struct PretripDVIR: View {
     // MARK: - Item row
 
     private func itemRow(_ item: PretripDVIRViewModel.EditableItem) -> some View {
-        HStack(alignment: .top, spacing: Space.s3) {
-            stateOrb(for: item.status)
-                .padding(.top, 2)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: Space.s3) {
+                stateOrb(for: item.status)
+                    .padding(.top, 2)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.name)
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
-                Text(item.categoryName)
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.name)
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text(item.categoryName)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: Space.s2)
+
+                // 2026-05-20 · IO 2026 P0-6 — Astra scan affordance.
+                astraScanButton(for: item)
+                    .padding(.top, 2)
+
+                statusTrailingMenu(for: item)
+                    .padding(.top, 2)
             }
 
-            Spacer(minLength: Space.s2)
-
-            statusTrailingMenu(for: item)
-                .padding(.top, 2)
+            // 2026-05-20 · IO 2026 P0-6 — inline Astra observation.
+            if let obs = vm.astraObservations[item.id] {
+                astraObservationStrip(obs)
+                    .padding(.top, Space.s2)
+            }
         }
         .padding(.horizontal, Space.s5)
         .padding(.vertical, Space.s4)
@@ -305,6 +354,67 @@ struct PretripDVIR: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("\(item.name), \(trailLabel(for: item.status))"))
+    }
+
+    /// "Scan with Astra" camera button. Opens the camera sheet; the
+    /// captured photo flows into `vm.analyzeItemWithAstra(itemId:image:)`.
+    /// Shows a spinner while the analyze call is in flight.
+    @ViewBuilder
+    private func astraScanButton(for item: PretripDVIRViewModel.EditableItem) -> some View {
+        Button {
+            astraCaptureForItemId = item.id
+        } label: {
+            ZStack {
+                if vm.astraInFlightItemId == item.id {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "camera.viewfinder")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(LinearGradient.diagonal)
+                }
+            }
+            .frame(width: 28, height: 28)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(vm.astraInFlightItemId != nil)
+        .accessibilityLabel("Scan \(item.name) with Astra")
+    }
+
+    /// Inline strip under an item row showing the Astra observation
+    /// summary + verdict pill. Tap-collapses by default; tap once to
+    /// reveal the warnings list.
+    @ViewBuilder
+    private func astraObservationStrip(_ obs: AstraObservation) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("ASTRA")
+                    .font(.system(size: 9, weight: .heavy))
+                    .tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 0)
+                Text(obs.passFail.rawValue.uppercased())
+                    .font(.system(size: 9, weight: .heavy))
+                    .tracking(0.8)
+                    .foregroundStyle(Color(uiColor: obs.passFail.color))
+            }
+            Text(obs.summary)
+                .font(EType.caption)
+                .foregroundStyle(palette.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            if !obs.warnings.isEmpty {
+                ForEach(obs.warnings, id: \.self) { warning in
+                    Text("• \(warning)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
+        .padding(8)
+        .background(palette.borderFaint.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
     }
 
     /// Figma-verbatim trailing word label — tap opens a Menu so the driver
@@ -657,4 +767,50 @@ struct PretripDVIRScreen: View {
         .preferredColorScheme(.light)
         .padding(24)
         .background(Theme.light.bgPage)
+}
+
+// MARK: - IO 2026 P0-6 · Astra camera bridge
+
+/// Identifiable wrapper around the item id so SwiftUI's `.sheet(item:)`
+/// reliably presents on iOS 17+ (raw String isn't Identifiable).
+private struct AstraCapturePresentation: Identifiable {
+    let itemId: String
+    var id: String { itemId }
+}
+
+/// UIImagePickerController bridge — single capture, returns the
+/// photo via the `onImage` callback. No editing, no library.
+private struct AstraCameraSheet: UIViewControllerRepresentable {
+    let itemLabel: String
+    let onImage: (UIImage?) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onImage: onImage) }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        // Camera if available, otherwise fall back to library so the
+        // affordance is testable on simulator.
+        picker.sourceType = UIImagePickerController.isSourceTypeAvailable(.camera) ? .camera : .photoLibrary
+        picker.allowsEditing = false
+        picker.delegate = context.coordinator
+        picker.title = "Scan \(itemLabel)"
+        return picker
+    }
+
+    func updateUIViewController(_ controller: UIImagePickerController, context: Context) {}
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let onImage: (UIImage?) -> Void
+        init(onImage: @escaping (UIImage?) -> Void) { self.onImage = onImage }
+
+        func imagePickerController(_ picker: UIImagePickerController,
+                                   didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            picker.dismiss(animated: true)
+            onImage(info[.originalImage] as? UIImage)
+        }
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            picker.dismiss(animated: true)
+            onImage(nil)
+        }
+    }
 }
