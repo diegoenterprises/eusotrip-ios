@@ -342,6 +342,9 @@
 		CFV020260521000001 /* 303_CatalystFleetVehicles.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFV020260521000002 /* 303_CatalystFleetVehicles.swift */; };
 		CDP020260521000001 /* 306_CatalystDriverPayroll.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDP020260521000002 /* 306_CatalystDriverPayroll.swift */; };
 		CAI020260521000001 /* 308_CatalystAuthorityInsurance.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAI020260521000002 /* 308_CatalystAuthorityInsurance.swift */; };
+		CHZ020260521000001 /* 312_CatalystHotZones.swift in Sources */ = {isa = PBXBuildFile; fileRef = CHZ020260521000002 /* 312_CatalystHotZones.swift */; };
+		CMZ020260521000001 /* 314_CatalystMaintenanceZeun.swift in Sources */ = {isa = PBXBuildFile; fileRef = CMZ020260521000002 /* 314_CatalystMaintenanceZeun.swift */; };
+		CWL020260521000001 /* 319_CatalystWallet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CWL020260521000002 /* 319_CatalystWallet.swift */; };
 		CCE020260521000001 /* 331_CatalystCommissionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCE020260521000002 /* 331_CatalystCommissionEngine.swift */; };
 		D1A11111111111111111CDD1 /* 322_CatalystDriverDocuments.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CDD2 /* 322_CatalystDriverDocuments.swift */; };
 		D1A11111111111111111CDP1 /* 321_CatalystDriverProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CDP2 /* 321_CatalystDriverProfile.swift */; };
@@ -1007,6 +1010,9 @@
 		CFV020260521000002 /* 303_CatalystFleetVehicles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 303_CatalystFleetVehicles.swift; path = EusoTrip/Views/Catalyst/303_CatalystFleetVehicles.swift; sourceTree = SOURCE_ROOT; };
 		CDP020260521000002 /* 306_CatalystDriverPayroll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 306_CatalystDriverPayroll.swift; path = EusoTrip/Views/Catalyst/306_CatalystDriverPayroll.swift; sourceTree = SOURCE_ROOT; };
 		CAI020260521000002 /* 308_CatalystAuthorityInsurance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 308_CatalystAuthorityInsurance.swift; path = EusoTrip/Views/Catalyst/308_CatalystAuthorityInsurance.swift; sourceTree = SOURCE_ROOT; };
+		CHZ020260521000002 /* 312_CatalystHotZones.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 312_CatalystHotZones.swift; path = EusoTrip/Views/Catalyst/312_CatalystHotZones.swift; sourceTree = SOURCE_ROOT; };
+		CMZ020260521000002 /* 314_CatalystMaintenanceZeun.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 314_CatalystMaintenanceZeun.swift; path = EusoTrip/Views/Catalyst/314_CatalystMaintenanceZeun.swift; sourceTree = SOURCE_ROOT; };
+		CWL020260521000002 /* 319_CatalystWallet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 319_CatalystWallet.swift; path = EusoTrip/Views/Catalyst/319_CatalystWallet.swift; sourceTree = SOURCE_ROOT; };
 		CCE020260521000002 /* 331_CatalystCommissionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 331_CatalystCommissionEngine.swift; path = EusoTrip/Views/Catalyst/331_CatalystCommissionEngine.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CDD2 /* 322_CatalystDriverDocuments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 322_CatalystDriverDocuments.swift; path = EusoTrip/Views/Catalyst/322_CatalystDriverDocuments.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CDP2 /* 321_CatalystDriverProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 321_CatalystDriverProfile.swift; path = EusoTrip/Views/Catalyst/321_CatalystDriverProfile.swift; sourceTree = SOURCE_ROOT; };
@@ -1814,6 +1820,9 @@
 				CFV020260521000002 /* 303_CatalystFleetVehicles.swift */,
 				CDP020260521000002 /* 306_CatalystDriverPayroll.swift */,
 				CAI020260521000002 /* 308_CatalystAuthorityInsurance.swift */,
+				CHZ020260521000002 /* 312_CatalystHotZones.swift */,
+				CMZ020260521000002 /* 314_CatalystMaintenanceZeun.swift */,
+				CWL020260521000002 /* 319_CatalystWallet.swift */,
 				CCE020260521000002 /* 331_CatalystCommissionEngine.swift */,
 				D1A11111111111111111CDD2 /* 322_CatalystDriverDocuments.swift */,
 				D1A11111111111111111CDP2 /* 321_CatalystDriverProfile.swift */,
@@ -2876,6 +2885,9 @@
 				CFV020260521000001 /* 303_CatalystFleetVehicles.swift in Sources */,
 				CDP020260521000001 /* 306_CatalystDriverPayroll.swift in Sources */,
 				CAI020260521000001 /* 308_CatalystAuthorityInsurance.swift in Sources */,
+				CHZ020260521000001 /* 312_CatalystHotZones.swift in Sources */,
+				CMZ020260521000001 /* 314_CatalystMaintenanceZeun.swift in Sources */,
+				CWL020260521000001 /* 319_CatalystWallet.swift in Sources */,
 				CCE020260521000001 /* 331_CatalystCommissionEngine.swift in Sources */,
 				D1A11111111111111111CDD1 /* 322_CatalystDriverDocuments.swift in Sources */,
 				D1A11111111111111111CDP1 /* 321_CatalystDriverProfile.swift in Sources */,
