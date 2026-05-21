@@ -1105,6 +1105,12 @@ enum ScreenRegistry {
         list.append(.init(id: "403",  title: "Broker · Tender to Carrier", role: .broker) { p in AnyView(BrokerTenderToCarrierScreen(theme: p, loadId: "0", catalystId: "0")) })
         list.append(.init(id: "404",  title: "Broker · Commission Queue", role: .broker) { p in AnyView(BrokerCommissionQueueScreen(theme: p)) })
         list.append(.init(id: "405",  title: "Broker · Active Brokerages", role: .broker) { p in AnyView(BrokerActiveBrokeragesScreen(theme: p)) })
+        // 2026-05-21 — eusotrip-killers screen porting sweep. CatalystVetting.tsx
+        // (web) lands as 406 — the catalyst-onboarding review queue. Server
+        // stubs in `brokers.{getVettingStats, approveCatalyst, rejectCatalyst}`
+        // upgraded to real DB writes in the same commit pair so the buttons
+        // are not dead.
+        list.append(.init(id: "406",  title: "Broker · Catalyst Vetting", role: .broker) { p in AnyView(BrokerCatalystVettingScreen(theme: p)) })
         // 2026-04-25 — eusotrip-killers 102nd firing
         // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
         // First real Catalyst-track brick lands in production. Lifts

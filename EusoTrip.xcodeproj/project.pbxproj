@@ -271,6 +271,7 @@
 		LANI20260521000001 /* LaneIntelSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = LANI20260521000002 /* LaneIntelSheet.swift */; };
 		CVET20260521000001 /* CarrierVetSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CVET20260521000002 /* CarrierVetSheet.swift */; };
 		XRRH20260521000001 /* XRReeferStatusHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = XRRH20260521000002 /* XRReeferStatusHUD.swift */; };
+		BCVT20260521000001 /* 406_BrokerCatalystVetting.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCVT20260521000002 /* 406_BrokerCatalystVetting.swift */; };
 		B1A11111111111111111AA07 /* DriverTabPanes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA08 /* DriverTabPanes.swift */; };
 		B1A11111111111111111AB01 /* ESangParticleBurst.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AB02 /* ESangParticleBurst.swift */; };
 		B1A11111111111111111AC01 /* MeDetailScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AC02 /* MeDetailScreens.swift */; };
@@ -922,6 +923,7 @@
 		LANI20260521000002 /* LaneIntelSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LaneIntelSheet.swift; path = EusoTrip/Views/Components/LaneIntelSheet.swift; sourceTree = SOURCE_ROOT; };
 		CVET20260521000002 /* CarrierVetSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CarrierVetSheet.swift; path = EusoTrip/Views/Components/CarrierVetSheet.swift; sourceTree = SOURCE_ROOT; };
 		XRRH20260521000002 /* XRReeferStatusHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = XRReeferStatusHUD.swift; path = EusoTrip/Views/Components/XRReeferStatusHUD.swift; sourceTree = SOURCE_ROOT; };
+		BCVT20260521000002 /* 406_BrokerCatalystVetting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 406_BrokerCatalystVetting.swift; path = EusoTrip/Views/Broker/406_BrokerCatalystVetting.swift; sourceTree = SOURCE_ROOT; };
 		B1A11111111111111111AA08 /* DriverTabPanes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverTabPanes.swift; sourceTree = "<group>"; };
 		B1A11111111111111111AA09 /* EusoTrip.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = EusoTrip.entitlements; sourceTree = "<group>"; };
 		B1A11111111111111111AB02 /* ESangParticleBurst.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESangParticleBurst.swift; sourceTree = "<group>"; };
@@ -1680,6 +1682,7 @@
 				D2V0200000000000000ACFE /* 403_BrokerTenderToCarrier.swift */,
 				D2V0300000000000000ACFE /* 404_BrokerCommissionQueue.swift */,
 				D2V0400000000000000ACFE /* 405_BrokerActiveBrokerages.swift */,
+				BCVT20260521000002 /* 406_BrokerCatalystVetting.swift */,
 				D2DSPDSP0000000000000ACDS /* 700_DispatchHome.swift */,
 				D2DSPNAV0000000000000ACDS /* DispatchNavController.swift */,
 				D2DSPDSP0100000000000ACDS /* 701_DispatchDriverBoard.swift */,
@@ -2728,6 +2731,7 @@
 				D2V0200000000000000ABFE /* 403_BrokerTenderToCarrier.swift in Sources */,
 				D2V0300000000000000ABFE /* 404_BrokerCommissionQueue.swift in Sources */,
 				D2V0400000000000000ABFE /* 405_BrokerActiveBrokerages.swift in Sources */,
+				BCVT20260521000001 /* 406_BrokerCatalystVetting.swift in Sources */,
 				D2DSPDSP0000000000000ABDS /* 700_DispatchHome.swift in Sources */,
 				D2DSPNAV0000000000000ABDS /* DispatchNavController.swift in Sources */,
 				D2DSPDSP0100000000000ABDS /* 701_DispatchDriverBoard.swift in Sources */,

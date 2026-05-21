@@ -73,6 +73,7 @@ struct BrokerHome: View {
                 kpiStrip
                 attentionStrip
                 laneIntelCTA
+                catalystVettingCTA
                 openTendersCard
                 recentActivityCard
                 Color.clear.frame(height: 96)
@@ -86,6 +87,48 @@ struct BrokerHome: View {
         .sheet(isPresented: $showLaneIntel) {
             LaneIntelSheet(companyId: Int(session.user?.companyId ?? "") ?? 1)
         }
+    }
+
+    /// 2026-05-21 — eusotrip-killers screen-porting sweep. Routes
+    /// to 406 Catalyst Vetting (port of web `CatalystVetting.tsx`).
+    /// Backed by `brokers.{getPendingVetting, getVettingStats,
+    /// approveCatalyst, rejectCatalyst}` — all real DB writes, no
+    /// stubs.
+    private var catalystVettingCTA: some View {
+        Button {
+            NotificationCenter.default.post(
+                name: .eusoBrokerNavSwap,
+                object: nil,
+                userInfo: ["screenId": "406"]
+            )
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "person.2.crop.square.stack.fill")
+                    .font(.system(size: 16, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Review catalyst applications")
+                        .font(EType.body.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Approve or reject pending onboarding requests.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, 12)
+            .background(palette.bgCard)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(LinearGradient.diagonal.opacity(0.4))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     /// Tier 2 #37 — entry CTA into the conversational lane-intel
