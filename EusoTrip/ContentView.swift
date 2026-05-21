@@ -1737,6 +1737,13 @@ enum ScreenRegistry {
             .init(id: "CV366", title: "Catalyst · BH BOL Signed",         role: .catalyst) { p in AnyView(CatalystBackhaulBOLSignedScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "CV367", title: "Catalyst · BH Paperwork",          role: .catalyst) { p in AnyView(CatalystBackhaulPaperworkScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "CV368", title: "Catalyst · BH Closed Stage",       role: .catalyst) { p in AnyView(CatalystBackhaulClosedStageScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            // 2026-05-21 — Catalyst M-04 multi-broker bidding sextet (SVG 369-374).
+            .init(id: "CV369", title: "Catalyst · M-04 First Bid",        role: .catalyst) { p in AnyView(CatalystM04FirstBidScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "CV370", title: "Catalyst · M-04 Second Quote",     role: .catalyst) { p in AnyView(CatalystM04SecondQuoteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "CV371", title: "Catalyst · M-04 Third Quote",      role: .catalyst) { p in AnyView(CatalystM04ThirdQuoteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "CV372", title: "Catalyst · M-04 Fourth Quote",     role: .catalyst) { p in AnyView(CatalystM04FourthQuoteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "CV373", title: "Catalyst · M-04 Awarded CEL",      role: .catalyst) { p in AnyView(CatalystM04AwardedScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "CV374", title: "Catalyst · M-04 On-Site CEL",      role: .catalyst) { p in AnyView(CatalystM04OnSiteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
         ])
 
         return list
