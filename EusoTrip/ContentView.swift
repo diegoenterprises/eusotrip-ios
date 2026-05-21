@@ -1324,6 +1324,12 @@ enum ScreenRegistry {
         list.append(.init(id: "324", title: "Catalyst · Driver Ledger",    role: .catalyst) { p in
             AnyView(CatalystDriverSettlementLedgerScreen(theme: p, driverId: "001", driverName: "Owner-op"))
         })
+        // 2026-05-21 — closes Catalyst 300-326 SVG range.
+        list.append(.init(id: "315", title: "Catalyst · Lease-on / Lease-out", role: .catalyst) { p in AnyView(CatalystLeaseOnOutScreen(theme: p)) })
+        list.append(.init(id: "316", title: "Catalyst · Drive Mode",          role: .catalyst) { p in AnyView(CatalystDriveModeScreen(theme: p)) })
+        list.append(.init(id: "325", title: "Catalyst · Driver Onboarding",   role: .catalyst) { p in
+            AnyView(CatalystDriverOnboardingScreen(theme: p, driverId: "001", driverName: "Owner-op"))
+        })
         list.append(.init(id: "306", title: "Catalyst · Driver Payroll", role: .catalyst) { p in AnyView(CatalystDriverPayrollScreen(theme: p)) })
         list.append(.init(id: "308", title: "Catalyst · Authority + Insurance", role: .catalyst) { p in AnyView(CatalystAuthorityInsuranceScreen(theme: p)) })
         list.append(.init(id: "312", title: "Catalyst · Hot Zones",        role: .catalyst) { p in AnyView(CatalystHotZonesScreen(theme: p)) })
