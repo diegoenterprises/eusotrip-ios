@@ -201,8 +201,8 @@ private struct MatchedLoadsBody: View {
             let _: Out = try await EusoTripAPI.shared.mutation("dispatchRole.acceptLoad", input: In(loadId: id))
             acceptAck = "Accepted load \(id) — status flipped to ACCEPTED."
             await loadAll()
-        } catch {
-            error = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+        } catch let err {
+            error = (err as? LocalizedError)?.errorDescription ?? "\(err)"
         }
         acceptingId = nil
     }

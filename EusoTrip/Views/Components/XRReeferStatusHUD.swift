@@ -48,7 +48,7 @@ struct XRReeferStatusInput: Encodable {
 // MARK: - Store
 
 @MainActor
-final class XRReeferStatusStore: ObservableObject {
+public final class XRReeferStatusStore: ObservableObject {
     @Published var status: XRReeferStatusPayload?
     @Published var pollingActive: Bool = false
     @Published var lastError: String?
@@ -122,6 +122,9 @@ public struct XRReeferStatusHUD: View {
     public init(loadId: String, expectedSetpointF: Double? = nil) {
         self.loadId = loadId
         self.expectedSetpointF = expectedSetpointF
+        _store = StateObject(wrappedValue: XRReeferStatusStore(
+            loadId: loadId, expectedSetpointF: expectedSetpointF
+        ))
     }
 
     @StateObject private var store: XRReeferStatusStore

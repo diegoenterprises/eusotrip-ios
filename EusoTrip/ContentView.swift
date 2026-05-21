@@ -181,6 +181,14 @@ enum ScreenRegistry {
             .init(id: "DL091", title: "Driver · Load Offer Detail",  role: .driver) { p in AnyView(DriverLoadOfferDetailScreen(theme: p, loadId: "0")) },
             .init(id: "DL092", title: "Driver · Assignment Receipt", role: .driver) { p in AnyView(DriverAssignmentReceiptScreen(theme: p, loadId: "0")) },
             .init(id: "DL093", title: "Driver · Pickup Approach",    role: .driver) { p in AnyView(DriverPickupApproachScreen(theme: p, loadId: "0")) },
+            // 2026-05-21 — Driver lifecycle septet (SVG 094-100).
+            .init(id: "DL094", title: "Driver · At Gate",            role: .driver) { p in AnyView(DriverAtGateScreen(theme: p, loadId: "0")) },
+            .init(id: "DL095", title: "Driver · At Dock",            role: .driver) { p in AnyView(DriverAtDockScreen(theme: p, loadId: "0")) },
+            .init(id: "DL096", title: "Driver · Departing",          role: .driver) { p in AnyView(DriverDepartingScreen(theme: p, loadId: "0")) },
+            .init(id: "DL097", title: "Driver · Pre-Delivery",       role: .driver) { p in AnyView(DriverPreDeliveryScreen(theme: p, loadId: "0")) },
+            .init(id: "DL098", title: "Driver · At Delivery",        role: .driver) { p in AnyView(DriverAtDeliveryScreen(theme: p, loadId: "0")) },
+            .init(id: "DL099", title: "Driver · POD Sign",           role: .driver) { p in AnyView(DriverPODSignScreen(theme: p, loadId: "0")) },
+            .init(id: "DL100", title: "Driver · Load Closed",        role: .driver) { p in AnyView(DriverLoadClosedScreen(theme: p, loadId: "0")) },
             .init(id: "109", title: "Me · Bid Detail",              role: .driver) { p in AnyView(MeBidDetailScreen(theme: p, loadId: 0)) },
             .init(id: "110", title: "Me · Auto-Accept",             role: .driver) { p in AnyView(MeAutoAcceptRulesScreen(theme: p)) },
             // 2026-05-21 — Bonus Tracker port (web BonusTracker.tsx → iOS).

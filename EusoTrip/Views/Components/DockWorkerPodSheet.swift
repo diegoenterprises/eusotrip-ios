@@ -29,20 +29,20 @@ struct DockWorkerPodInput: Encodable {
     let notes: String?
 }
 
-struct DockWorkerPodResponse: Decodable, Hashable {
-    let loadId: Int
-    let auditId: Int?
-    let observedAt: String
-    let chainedToDriverPod: Bool
-    let signature: XRSignatureBlock
+public struct DockWorkerPodResponse: Decodable, Hashable {
+    public let loadId: Int
+    public let auditId: Int?
+    public let observedAt: String
+    public let chainedToDriverPod: Bool
+    public let signature: XRSignatureBlock
 }
 
 /// Mirrors the canonical Ed25519 signature envelope the server
 /// emits across every audit-chain row.
-struct XRSignatureBlock: Codable, Hashable {
-    let digestSha256B64: String
-    let signatureBytesB64: String
-    let publicKeyB64: String
+public struct XRSignatureBlock: Codable, Hashable {
+    public let digestSha256B64: String
+    public let signatureBytesB64: String
+    public let publicKeyB64: String
 }
 
 // MARK: - Sheet

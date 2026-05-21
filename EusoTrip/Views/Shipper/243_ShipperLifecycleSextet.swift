@@ -48,7 +48,7 @@ private struct LifecycleLoad: Decodable, Hashable {
 
 // MARK: - Shared body factory
 
-private struct LifecycleSection: Hashable {
+private struct ShipperLifecycleStageSection: Hashable {
     let stage: String       // "AT GATE", "AT DOCK", ...
     let citation: String    // "§277 · WITHIN-TRACK THIRD-PORT 2/3"
     let title: String       // "Driver at the gate"
@@ -82,7 +82,7 @@ private struct LifecycleScreenShell<Content: View>: View {
 private struct LifecycleBody: View {
     let loadId: String
     let stageEyebrow: String
-    let sectionFor: (LifecycleLoad?) -> LifecycleSection
+    let sectionFor: (LifecycleLoad?) -> ShipperLifecycleStageSection
     let subtitleFor: (LifecycleLoad?) -> String
 
     @Environment(\.palette) private var palette
@@ -120,7 +120,7 @@ private struct LifecycleBody: View {
         }
     }
 
-    private func contextBanner(_ s: LifecycleSection) -> some View {
+    private func contextBanner(_ s: ShipperLifecycleStageSection) -> some View {
         LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("\(s.stage) · \(s.citation)")
@@ -197,7 +197,7 @@ struct ShipperAtGateScreen: View {
                 loadId: loadId,
                 stageEyebrow: "SHIPPER · LOADS · IN TRANSIT · AT GATE",
                 sectionFor: { l in
-                    LifecycleSection(
+                    ShipperLifecycleStageSection(
                         stage: "SHIPPER AT GATE",
                         citation: "§277 · WITHIN-TRACK THIRD-PORT 2/3",
                         title: "Driver at the gate",
@@ -226,7 +226,7 @@ struct ShipperAtDockScreen: View {
                 loadId: loadId,
                 stageEyebrow: "SHIPPER · LOADS · PICKUP · AT DOCK",
                 sectionFor: { l in
-                    LifecycleSection(
+                    ShipperLifecycleStageSection(
                         stage: "SHIPPER AT DOCK",
                         citation: "§278 · WITHIN-TRACK FOURTH-PORT 2/3",
                         title: "At dock · loading",
@@ -255,7 +255,7 @@ struct ShipperDepartingScreen: View {
                 loadId: loadId,
                 stageEyebrow: "SHIPPER · LOADS · PICKUP · DEPARTING",
                 sectionFor: { l in
-                    LifecycleSection(
+                    ShipperLifecycleStageSection(
                         stage: "SHIPPER DEPARTING",
                         citation: "§284 · WITHIN-TRACK FIFTH-PORT 2/3",
                         title: "Departing pickup",
@@ -284,7 +284,7 @@ struct ShipperPreDeliveryScreen: View {
                 loadId: loadId,
                 stageEyebrow: "SHIPPER · LOADS · IN TRANSIT · PRE-DELIVERY",
                 sectionFor: { l in
-                    LifecycleSection(
+                    ShipperLifecycleStageSection(
                         stage: "SHIPPER PRE-DELIVERY",
                         citation: "§289 · WITHIN-TRACK SIXTH-PORT 2/3",
                         title: "Pre-delivery approach",
@@ -313,7 +313,7 @@ struct ShipperAtDeliveryScreen: View {
                 loadId: loadId,
                 stageEyebrow: "SHIPPER · LOADS · DELIVERY · AT DOCK",
                 sectionFor: { l in
-                    LifecycleSection(
+                    ShipperLifecycleStageSection(
                         stage: "SHIPPER AT DELIVERY",
                         citation: "§290 · WITHIN-TRACK SEVENTH-PORT 2/3",
                         title: "My delivery · arrived",
@@ -343,7 +343,7 @@ struct ShipperLoadClosedScreen: View {
                 stageEyebrow: "SHIPPER · LOADS · CLOSED",
                 sectionFor: { l in
                     let pal = l?.palletCount ?? 0
-                    return LifecycleSection(
+                    return ShipperLifecycleStageSection(
                         stage: "SHIPPER LOAD CLOSED",
                         citation: "§294 · WITHIN-TRACK NINTH-PORT OPENS",
                         title: "Load closed · sealed",

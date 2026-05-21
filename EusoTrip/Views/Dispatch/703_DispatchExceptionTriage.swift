@@ -56,7 +56,7 @@ private struct DispatchExceptionRow: Decodable, Hashable {
 }
 
 /// `zeunMechanics.getFleetBreakdowns` row (subset of fields we render).
-private struct ZeunBreakdownRow: Decodable, Hashable {
+private struct DispatchTriageBreakdownRow: Decodable, Hashable {
     let id: Int
     let severity: String?
     let issueCategory: String?
@@ -159,7 +159,7 @@ private enum AlertSeverity: String, Hashable, Comparable {
 private struct OperationsAlertsBody: View {
     @Environment(\.palette) private var palette
     @State private var loadExceptions: [DispatchExceptionRow] = []
-    @State private var breakdowns: [ZeunBreakdownRow] = []
+    @State private var breakdowns: [DispatchTriageBreakdownRow] = []
     @State private var drivers: [EldDriverStatusRow] = []
     @State private var loading: Bool = true
     @State private var loadError: String?
@@ -404,7 +404,7 @@ private struct OperationsAlertsBody: View {
             let limit: Int
         }
         do {
-            let r: [ZeunBreakdownRow] = try await EusoTripAPI.shared.query(
+            let r: [DispatchTriageBreakdownRow] = try await EusoTripAPI.shared.query(
                 "zeunMechanics.getFleetBreakdowns",
                 input: In(status: "OPEN", limit: 50)
             )

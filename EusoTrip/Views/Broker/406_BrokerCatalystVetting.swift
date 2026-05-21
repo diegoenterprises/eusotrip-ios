@@ -318,11 +318,11 @@ private struct CatalystVettingBody: View {
 // MARK: - Previews
 
 #Preview("Loading · Dark") {
-    BrokerCatalystVettingScreen(theme: Theme.makeDark())
+    BrokerCatalystVettingScreen(theme: Theme.dark)
         .preferredColorScheme(.dark)
 }
 
 #Preview("Loading · Light") {
-    BrokerCatalystVettingScreen(theme: Theme.makeLight())
+    BrokerCatalystVettingScreen(theme: Theme.light)
         .preferredColorScheme(.light)
 }

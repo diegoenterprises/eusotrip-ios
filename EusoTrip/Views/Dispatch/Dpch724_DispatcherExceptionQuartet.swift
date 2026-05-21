@@ -355,7 +355,7 @@ private struct CancelLoadBody: View {
                 Button { reason = r } label: {
                     HStack {
                         Image(systemName: reason == r ? "largecircle.fill.circle" : "circle")
-                            .foregroundStyle(reason == r ? LinearGradient.diagonal : AnyShapeStyle(palette.textTertiary))
+                            .foregroundStyle(reason == r ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
                         Text(r).font(EType.body).foregroundStyle(palette.textPrimary)
                         Spacer()
                     }

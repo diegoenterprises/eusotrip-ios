@@ -31,7 +31,7 @@ private struct WalletSummary: Decodable, Hashable {
     let payableCount: Int?
 }
 
-private struct WalletTxn: Decodable, Hashable, Identifiable {
+private struct CatalystWalletTxnRow: Decodable, Hashable, Identifiable {
     let id: String
     let loadNumber: String?
     let kind: String?         // RECEIVABLE / PAYABLE / RESERVED / CLEARED
@@ -67,12 +67,12 @@ private struct WalletBody: View {
 
     @State private var balance: WalletBalance?
     @State private var summary: WalletSummary?
-    @State private var txns: [WalletTxn] = []
+    @State private var txns: [CatalystWalletTxnRow] = []
     @State private var filter: Filter = .all
     @State private var loading: Bool = true
     @State private var error: String?
 
-    private var filtered: [WalletTxn] {
+    private var filtered: [CatalystWalletTxnRow] {
         guard filter != .all else { return txns }
         return txns.filter { ($0.kind ?? "").lowercased() == filter.rawValue.lowercased() }
     }
@@ -174,7 +174,7 @@ private struct WalletBody: View {
         }
     }
 
-    private func txnCard(_ t: WalletTxn) -> some View {
+    private func txnCard(_ t: CatalystWalletTxnRow) -> some View {
         let kindUpper = (t.kind ?? "").uppercased()
         let kindColor: Color = {
             switch kindUpper {

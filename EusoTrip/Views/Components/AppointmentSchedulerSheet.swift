@@ -273,8 +273,8 @@ public struct AppointmentSchedulerSheet: View {
             )
             actionAck = "Appointment \(id): \(action) ✓"
             await loadAll()
-        } catch {
-            error = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+        } catch let err {
+            error = (err as? LocalizedError)?.errorDescription ?? "\(err)"
         }
         actingId = nil
     }
