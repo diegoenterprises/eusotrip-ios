@@ -1340,6 +1340,13 @@ enum ScreenRegistry {
         list.append(.init(id: "248", title: "Shipper · POD Receipt",         role: .shipper) { p in
             AnyView(ShipperPODReceiptScreen(theme: p, loadId: "0"))
         })
+        // 2026-05-21 — Shipper lifecycle sextet (243-247 + 249).
+        list.append(.init(id: "243", title: "Shipper · At Gate",        role: .shipper) { p in AnyView(ShipperAtGateScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "244", title: "Shipper · At Dock",        role: .shipper) { p in AnyView(ShipperAtDockScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "245", title: "Shipper · Departing",      role: .shipper) { p in AnyView(ShipperDepartingScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "246", title: "Shipper · Pre-Delivery",   role: .shipper) { p in AnyView(ShipperPreDeliveryScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "247", title: "Shipper · At Delivery",    role: .shipper) { p in AnyView(ShipperAtDeliveryScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "249", title: "Shipper · Load Closed",    role: .shipper) { p in AnyView(ShipperLoadClosedScreen(theme: p, loadId: "0")) })
         list.append(.init(id: "306", title: "Catalyst · Driver Payroll", role: .catalyst) { p in AnyView(CatalystDriverPayrollScreen(theme: p)) })
         list.append(.init(id: "308", title: "Catalyst · Authority + Insurance", role: .catalyst) { p in AnyView(CatalystAuthorityInsuranceScreen(theme: p)) })
         list.append(.init(id: "312", title: "Catalyst · Hot Zones",        role: .catalyst) { p in AnyView(CatalystHotZonesScreen(theme: p)) })

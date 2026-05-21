@@ -360,6 +360,7 @@
 		SCR020260521000001 /* 241_ShipperCounterReview.swift in Sources */ = {isa = PBXBuildFile; fileRef = SCR020260521000002 /* 241_ShipperCounterReview.swift */; };
 		SAC020260521000001 /* 242_ShipperAwardedConfirmation.swift in Sources */ = {isa = PBXBuildFile; fileRef = SAC020260521000002 /* 242_ShipperAwardedConfirmation.swift */; };
 		SPR020260521000001 /* 248_ShipperPODReceipt.swift in Sources */ = {isa = PBXBuildFile; fileRef = SPR020260521000002 /* 248_ShipperPODReceipt.swift */; };
+		SLS020260521000001 /* 243_ShipperLifecycleSextet.swift in Sources */ = {isa = PBXBuildFile; fileRef = SLS020260521000002 /* 243_ShipperLifecycleSextet.swift */; };
 		CCE020260521000001 /* 331_CatalystCommissionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCE020260521000002 /* 331_CatalystCommissionEngine.swift */; };
 		D1A11111111111111111CDD1 /* 322_CatalystDriverDocuments.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CDD2 /* 322_CatalystDriverDocuments.swift */; };
 		D1A11111111111111111CDP1 /* 321_CatalystDriverProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CDP2 /* 321_CatalystDriverProfile.swift */; };
@@ -1043,6 +1044,7 @@
 		SCR020260521000002 /* 241_ShipperCounterReview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 241_ShipperCounterReview.swift; path = EusoTrip/Views/Shipper/241_ShipperCounterReview.swift; sourceTree = SOURCE_ROOT; };
 		SAC020260521000002 /* 242_ShipperAwardedConfirmation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 242_ShipperAwardedConfirmation.swift; path = EusoTrip/Views/Shipper/242_ShipperAwardedConfirmation.swift; sourceTree = SOURCE_ROOT; };
 		SPR020260521000002 /* 248_ShipperPODReceipt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 248_ShipperPODReceipt.swift; path = EusoTrip/Views/Shipper/248_ShipperPODReceipt.swift; sourceTree = SOURCE_ROOT; };
+		SLS020260521000002 /* 243_ShipperLifecycleSextet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 243_ShipperLifecycleSextet.swift; path = EusoTrip/Views/Shipper/243_ShipperLifecycleSextet.swift; sourceTree = SOURCE_ROOT; };
 		CCE020260521000002 /* 331_CatalystCommissionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 331_CatalystCommissionEngine.swift; path = EusoTrip/Views/Catalyst/331_CatalystCommissionEngine.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CDD2 /* 322_CatalystDriverDocuments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 322_CatalystDriverDocuments.swift; path = EusoTrip/Views/Catalyst/322_CatalystDriverDocuments.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CDP2 /* 321_CatalystDriverProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 321_CatalystDriverProfile.swift; path = EusoTrip/Views/Catalyst/321_CatalystDriverProfile.swift; sourceTree = SOURCE_ROOT; };
@@ -1868,6 +1870,7 @@
 				SCR020260521000002 /* 241_ShipperCounterReview.swift */,
 				SAC020260521000002 /* 242_ShipperAwardedConfirmation.swift */,
 				SPR020260521000002 /* 248_ShipperPODReceipt.swift */,
+				SLS020260521000002 /* 243_ShipperLifecycleSextet.swift */,
 				CCE020260521000002 /* 331_CatalystCommissionEngine.swift */,
 				D1A11111111111111111CDD2 /* 322_CatalystDriverDocuments.swift */,
 				D1A11111111111111111CDP2 /* 321_CatalystDriverProfile.swift */,
@@ -2948,6 +2951,7 @@
 				SCR020260521000001 /* 241_ShipperCounterReview.swift in Sources */,
 				SAC020260521000001 /* 242_ShipperAwardedConfirmation.swift in Sources */,
 				SPR020260521000001 /* 248_ShipperPODReceipt.swift in Sources */,
+				SLS020260521000001 /* 243_ShipperLifecycleSextet.swift in Sources */,
 				CCE020260521000001 /* 331_CatalystCommissionEngine.swift in Sources */,
 				D1A11111111111111111CDD1 /* 322_CatalystDriverDocuments.swift in Sources */,
 				D1A11111111111111111CDP1 /* 321_CatalystDriverProfile.swift in Sources */,
