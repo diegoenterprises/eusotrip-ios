@@ -1680,6 +1680,15 @@ enum ScreenRegistry {
             .init(id: "Dpch745", title: "Dispatch · Driver Onboarding",   role: .dispatch) { p in AnyView(DispatcherDriverOnboardingStepDetailScreen(theme: p, driverId: BrokerNavContext.latestDriverId)) },
             .init(id: "Dpch746", title: "Dispatch · Driver Compliance",   role: .dispatch) { p in AnyView(DispatcherDriverComplianceRowDetailScreen(theme: p, driverId: BrokerNavContext.latestDriverId)) },
             .init(id: "Dpch747", title: "Dispatch · Driver Quarter",      role: .dispatch) { p in AnyView(DispatcherDriverQuarterDetailScreen(theme: p, driverId: BrokerNavContext.latestDriverId)) },
+            // 2026-05-21 — Dispatcher shipper-detail octet (SVG 440-447).
+            .init(id: "Dpch750", title: "Dispatch · Shipper Review",      role: .dispatch) { p in AnyView(DispatcherShipperReviewScreen(theme: p, shipperId: BrokerNavContext.latestShipperId)) },
+            .init(id: "Dpch751", title: "Dispatch · Shipper Pull-Volume", role: .dispatch) { p in AnyView(DispatcherShipperPullVolumeScreen(theme: p, shipperId: BrokerNavContext.latestShipperId)) },
+            .init(id: "Dpch752", title: "Dispatch · Shipper Tender-Win",  role: .dispatch) { p in AnyView(DispatcherShipperTenderWinScreen(theme: p, shipperId: BrokerNavContext.latestShipperId)) },
+            .init(id: "Dpch753", title: "Dispatch · Shipper Payment",     role: .dispatch) { p in AnyView(DispatcherShipperPaymentBehaviorScreen(theme: p, shipperId: BrokerNavContext.latestShipperId)) },
+            .init(id: "Dpch754", title: "Dispatch · Shipper Lane-Win",    role: .dispatch) { p in AnyView(DispatcherShipperLaneWinScreen(theme: p, shipperId: BrokerNavContext.latestShipperId)) },
+            .init(id: "Dpch755", title: "Dispatch · Shipper Health",      role: .dispatch) { p in AnyView(DispatcherShipperAccountHealthScreen(theme: p, shipperId: BrokerNavContext.latestShipperId)) },
+            .init(id: "Dpch756", title: "Dispatch · Shipper Onboarding",  role: .dispatch) { p in AnyView(DispatcherShipperOnboardingStepScreen(theme: p, shipperId: BrokerNavContext.latestShipperId)) },
+            .init(id: "Dpch757", title: "Dispatch · Shipper Quarter",     role: .dispatch) { p in AnyView(DispatcherShipperQuarterScreen(theme: p, shipperId: BrokerNavContext.latestShipperId)) },
         ])
 
         return list
