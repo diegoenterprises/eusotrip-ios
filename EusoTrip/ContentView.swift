@@ -1706,6 +1706,15 @@ enum ScreenRegistry {
             .init(id: "CV334", title: "Catalyst · Vehicle Settlements",   role: .catalyst) { p in AnyView(CatalystVehicleSettlementsScreen(theme: p)) },
             .init(id: "CV335", title: "Catalyst · Vehicle Onboarding",    role: .catalyst) { p in AnyView(CatalystVehicleOnboardingScreen(theme: p)) },
             .init(id: "CV336", title: "Catalyst · Vehicle Compliance",    role: .catalyst) { p in AnyView(CatalystVehicleComplianceScreen(theme: p)) },
+            // 2026-05-21 — Catalyst customer scorecard octet (SVG 340-347).
+            .init(id: "CV340", title: "Catalyst · Customer Scorecard",    role: .catalyst) { p in AnyView(CatalystShipperScorecardScreen(theme: p, shipperId: BrokerNavContext.latestShipperId)) },
+            .init(id: "CV341", title: "Catalyst · Customer Profile",      role: .catalyst) { p in AnyView(CatalystShipperProfileScreen(theme: p, shipperId: BrokerNavContext.latestShipperId)) },
+            .init(id: "CV342", title: "Catalyst · Customer Documents",    role: .catalyst) { p in AnyView(CatalystShipperDocumentsScreen(theme: p, shipperId: BrokerNavContext.latestShipperId)) },
+            .init(id: "CV343", title: "Catalyst · Customer Analytics",    role: .catalyst) { p in AnyView(CatalystShipperAnalyticsScreen(theme: p, shipperId: BrokerNavContext.latestShipperId)) },
+            .init(id: "CV344", title: "Catalyst · Customer Ledger",       role: .catalyst) { p in AnyView(CatalystShipperSettlementsScreen(theme: p, shipperId: BrokerNavContext.latestShipperId)) },
+            .init(id: "CV345", title: "Catalyst · Customer Onboarding",   role: .catalyst) { p in AnyView(CatalystShipperOnboardingScreen(theme: p, shipperId: BrokerNavContext.latestShipperId)) },
+            .init(id: "CV346", title: "Catalyst · Customer Compliance",   role: .catalyst) { p in AnyView(CatalystShipperComplianceScreen(theme: p, shipperId: BrokerNavContext.latestShipperId)) },
+            .init(id: "CV347", title: "Catalyst · Customer Quarterly",    role: .catalyst) { p in AnyView(CatalystShipperQuarterScreen(theme: p, shipperId: BrokerNavContext.latestShipperId)) },
         ])
 
         return list
