@@ -1311,6 +1311,8 @@ enum ScreenRegistry {
         // iftaCalculator.calculateQuarter × 4 + maintenance.{getUpcoming,
         // getAlerts}. Bottom nav frozen per doctrine — content only.
         list.append(.init(id: "303", title: "Catalyst · Fleet · Vehicles", role: .catalyst) { p in AnyView(CatalystFleetVehiclesScreen(theme: p)) })
+        list.append(.init(id: "306", title: "Catalyst · Driver Payroll", role: .catalyst) { p in AnyView(CatalystDriverPayrollScreen(theme: p)) })
+        list.append(.init(id: "308", title: "Catalyst · Authority + Insurance", role: .catalyst) { p in AnyView(CatalystAuthorityInsuranceScreen(theme: p)) })
         // 2026-05-21 — Load board trio (web → iOS port).
         list.append(.init(id: "340", title: "Catalyst · Matched Loads",  role: .catalyst) { p in AnyView(MatchedLoadsScreen(theme: p)) })
         list.append(.init(id: "341", title: "Catalyst · Find Loads",     role: .catalyst) { p in AnyView(FindLoadsScreen(theme: p)) })
