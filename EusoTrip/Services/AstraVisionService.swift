@@ -278,6 +278,153 @@ public enum AstraError: LocalizedError {
     }
 }
 
+// MARK: - IO 2026 Tier 1 #18 · Reefer temp-log scan wire types
+
+public enum AstraReeferVerdict: String, Codable, Hashable, Sendable {
+    case pass, fail
+    case needsReview = "needs_review"
+}
+
+public struct AstraReeferTempLogResponse: Decodable, Hashable, Sendable {
+    public let observation: [String: AstraStructuredValue]
+    public let verdict: AstraReeferVerdict
+    public let setpointMatches: Bool?
+    public let modelUsed: String?
+    public let observedAt: String
+    public let auditId: Int?
+    public let overlayAuditId: Int?
+    public let tempLogSealedEligible: Bool
+    public let signature: AstraSignatureBlock
+}
+
+// MARK: - IO 2026 Tier 3 #19 · OS&D scan wire types
+
+public enum AstraOSDVerdict: String, Codable, Hashable, Sendable {
+    case clean
+    case inspectionRecommended = "inspection_recommended"
+    case claimFiled            = "claim_filed"
+}
+
+public struct AstraOSDExpectedItem: Encodable, Hashable, Sendable {
+    public let sku: String?
+    public let description: String
+    public let expectedQty: Int
+    public init(sku: String? = nil, description: String, expectedQty: Int) {
+        self.sku = sku; self.description = description; self.expectedQty = expectedQty
+    }
+}
+
+public struct AstraOSDReportResponse: Decodable, Hashable, Sendable {
+    public let observation: [String: AstraStructuredValue]
+    public let verdict: AstraOSDVerdict
+    public let modelUsed: String?
+    public let observedAt: String
+    public let auditId: Int?
+    public let overlayAuditId: Int?
+    public let claimOverlayWritten: Bool
+    public let signature: AstraSignatureBlock
+}
+
+// MARK: - Service extensions
+
+public extension AstraVisionService {
+
+    /// Tier 1 #18 — Astra reefer unit temp-log scan. Driver / dock
+    /// worker captures the Carrier Vector / Thermo King display
+    /// panel; server's Gemini Vision returns the structured
+    /// observation + verdict. Verifies the Ed25519 signature
+    /// locally before returning.
+    func reeferTempLog(
+        image: UIImage,
+        expectedSetpointF: Double? = nil,
+        vehicleId: String? = nil,
+        loadId: String? = nil
+    ) async throws -> AstraReeferTempLogResponse {
+        guard let jpeg = image.jpegData(compressionQuality: jpegQuality) else {
+            throw AstraError.imageEncodeFailed
+        }
+        struct In: Encodable {
+            let imageBase64: String
+            let mimeType: String
+            let vehicleId: String?
+            let loadId: String?
+            let expectedSetpointF: Double?
+        }
+        let payload = In(
+            imageBase64: jpeg.base64EncodedString(),
+            mimeType: "image/jpeg",
+            vehicleId: vehicleId,
+            loadId: loadId,
+            expectedSetpointF: expectedSetpointF
+        )
+        let response: AstraReeferTempLogResponse = try await EusoTripAPI.shared.mutation(
+            "astraDvir.reeferTempLog",
+            input: payload
+        )
+        if !verifySignatureBlock(response.signature) {
+            throw AstraError.signatureVerificationFailed
+        }
+        return response
+    }
+
+    /// Tier 3 #19 — Astra OS&D (Overage / Shortage / Damage) scan.
+    /// Caller supplies an expected-items list from the BOL; server
+    /// reconciles the photo against it and returns a verdict. On
+    /// `claim_filed` the server writes a CARGO.OSD_CLAIM overlay
+    /// chained to the observation digest — iOS reads
+    /// `claimOverlayWritten` to surface the "Claim Auto-Filed" badge.
+    func osdReport(
+        image: UIImage,
+        expectedItems: [AstraOSDExpectedItem] = [],
+        loadId: String? = nil,
+        note: String? = nil
+    ) async throws -> AstraOSDReportResponse {
+        guard let jpeg = image.jpegData(compressionQuality: jpegQuality) else {
+            throw AstraError.imageEncodeFailed
+        }
+        struct In: Encodable {
+            let imageBase64: String
+            let mimeType: String
+            let loadId: String?
+            let expectedItems: [AstraOSDExpectedItem]?
+            let note: String?
+        }
+        let payload = In(
+            imageBase64: jpeg.base64EncodedString(),
+            mimeType: "image/jpeg",
+            loadId: loadId,
+            expectedItems: expectedItems.isEmpty ? nil : expectedItems,
+            note: note
+        )
+        let response: AstraOSDReportResponse = try await EusoTripAPI.shared.mutation(
+            "astraDvir.osdReport",
+            input: payload
+        )
+        if !verifySignatureBlock(response.signature) {
+            throw AstraError.signatureVerificationFailed
+        }
+        return response
+    }
+
+    /// Shared signature verifier for the new endpoints. Mirrors the
+    /// existing `verifySignature(response:)` shape so the
+    /// crypto-validation is consistent across all Astra mutations.
+    private func verifySignatureBlock(_ sig: AstraSignatureBlock) -> Bool {
+        guard
+            let digest = Data(base64Encoded: sig.digestSha256B64),
+            let signature = Data(base64Encoded: sig.signatureBytesB64),
+            let pubKeyRaw = Data(base64Encoded: sig.publicKeyB64),
+            digest.count == 32, signature.count == 64, pubKeyRaw.count == 32
+        else { return false }
+        do {
+            let publicKey = try Curve25519.Signing.PublicKey(rawRepresentation: pubKeyRaw)
+            return publicKey.isValidSignature(signature, for: digest)
+        } catch {
+            return false
+        }
+    }
+}
+
 // MARK: - IO 2026 P0-17 · POD scan wire types
 
 public struct AstraPodDamage: Codable, Hashable, Sendable {
