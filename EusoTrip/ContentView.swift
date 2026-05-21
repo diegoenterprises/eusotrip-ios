@@ -1698,6 +1698,14 @@ enum ScreenRegistry {
             .init(id: "Dpch765", title: "Dispatch · Vehicle Deadhead",    role: .dispatch) { p in AnyView(DispatcherVehicleDeadheadScreen(theme: p)) },
             .init(id: "Dpch766", title: "Dispatch · Vehicle Onboarding",  role: .dispatch) { p in AnyView(DispatcherVehicleOnboardingScreen(theme: p)) },
             .init(id: "Dpch767", title: "Dispatch · Vehicle Quarter",     role: .dispatch) { p in AnyView(DispatcherVehicleQuarterScreen(theme: p)) },
+            // 2026-05-21 — Catalyst vehicle scorecard septet (SVG 330-336).
+            .init(id: "CV330", title: "Catalyst · Vehicle Scorecard",     role: .catalyst) { p in AnyView(CatalystVehicleScorecardScreen(theme: p)) },
+            .init(id: "CV331", title: "Catalyst · Vehicle Profile",       role: .catalyst) { p in AnyView(CatalystVehicleProfileScreen(theme: p)) },
+            .init(id: "CV332", title: "Catalyst · Vehicle Documents",     role: .catalyst) { p in AnyView(CatalystVehicleDocumentsScreen(theme: p)) },
+            .init(id: "CV333", title: "Catalyst · Vehicle Analytics",     role: .catalyst) { p in AnyView(CatalystVehicleAnalyticsScreen(theme: p)) },
+            .init(id: "CV334", title: "Catalyst · Vehicle Settlements",   role: .catalyst) { p in AnyView(CatalystVehicleSettlementsScreen(theme: p)) },
+            .init(id: "CV335", title: "Catalyst · Vehicle Onboarding",    role: .catalyst) { p in AnyView(CatalystVehicleOnboardingScreen(theme: p)) },
+            .init(id: "CV336", title: "Catalyst · Vehicle Compliance",    role: .catalyst) { p in AnyView(CatalystVehicleComplianceScreen(theme: p)) },
         ])
 
         return list
