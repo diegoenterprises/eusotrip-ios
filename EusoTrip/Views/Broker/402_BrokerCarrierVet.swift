@@ -37,21 +37,71 @@ private struct VetCandidate: Decodable, Identifiable, Hashable {
 
 private struct CarrierVetBody: View {
     @Environment(\.palette) private var palette
+    @EnvironmentObject private var session: EusoTripSession
     let loadId: String
     @State private var candidates: [VetCandidate] = []
     @State private var loading = true
     @State private var loadError: String? = nil
+    /// Tier 2 #38 (2026-05-21) — present the ESANG carrier-vetting
+    /// sheet for any DOT. Sits above the lane-eligible candidate
+    /// list so the broker can drill on an off-board carrier too.
+    @State private var showEsangVet: Bool = false
+    @State private var esangVetPrefillDot: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
+                esangVetCTA
                 content
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
+        .sheet(isPresented: $showEsangVet) {
+            CarrierVetSheet(
+                companyId: Int(session.user?.companyId ?? "") ?? 1,
+                prefillDot: esangVetPrefillDot
+            )
+        }
+    }
+
+    /// Tier 2 #38 — entry CTA for the ESANG vet sheet. Broker can
+    /// type any DOT (off-board carriers too) and get a guarded
+    /// verdict with FMCSA + scorecard + redFlags + citations.
+    private var esangVetCTA: some View {
+        Button {
+            esangVetPrefillDot = nil
+            showEsangVet = true
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "checkmark.shield.fill")
+                    .font(.system(size: 16, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Ask ESANG to vet a carrier")
+                        .font(EType.body.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Any DOT — FMCSA + your scorecard + a guarded verdict with citations.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, 12)
+            .background(palette.bgCard)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(LinearGradient.diagonal.opacity(0.4))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private var header: some View {

@@ -334,6 +334,10 @@ final class EusoTripAPI: ObservableObject {
     /// Lane Agent — IO 2026 Tier 2 #37 (conversational rate intel).
     /// Backed by `frontend/server/routers/laneAgent.ts`.
     lazy var laneAgent: LaneAgentAPI = LaneAgentAPI(api: self)
+    /// Carrier Vet Agent — IO 2026 Tier 2 #38 (FMCSA + scorecard +
+    /// guardian verdict). Backed by
+    /// `frontend/server/routers/carrierVetAgent.ts`.
+    lazy var carrierVetAgent: CarrierVetAgentAPI = CarrierVetAgentAPI(api: self)
 
     // --- Driver-facing surfaces added to back the gamification / wallet /
     // fleet / availability screens. Each router mirrors a file under
@@ -19035,6 +19039,33 @@ struct LaneAgentAPI {
     }
     func getRecent(companyId: Int, limit: Int = 5) async throws -> [LaneAgentHistoryItem] {
         try await api.query("laneAgent.getRecent",
+                            input: GetRecentInput(companyId: companyId, limit: limit))
+    }
+}
+
+// MARK: - carrierVetAgentRouter (Tier 2 #38 · FMCSA + scorecard + guardian)
+//
+// Mirrors `frontend/server/routers/carrierVetAgent.ts`. 3-child
+// Cortex fanout (perception parses FMCSA snapshot, memory pulls
+// EusoTrip scorecard, guardian emits the verdict) returning the
+// vetting envelope.
+
+struct CarrierVetAgentAPI {
+    unowned let api: EusoTripAPI
+
+    /// `carrierVetAgent.vet` — fire a vetting call for a DOT.
+    func vet(input: CarrierVetInput) async throws -> CarrierVetResponse {
+        try await api.mutation("carrierVetAgent.vet", input: input)
+    }
+
+    struct GetRecentInput: Encodable {
+        let companyId: Int
+        let limit: Int
+    }
+    /// `carrierVetAgent.getRecentVettings` — history strip for the
+    /// founder's company.
+    func getRecentVettings(companyId: Int, limit: Int = 10) async throws -> [CarrierVetHistoryItem] {
+        try await api.query("carrierVetAgent.getRecentVettings",
                             input: GetRecentInput(companyId: companyId, limit: limit))
     }
 }
