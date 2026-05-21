@@ -364,6 +364,7 @@
 		DST020260521000001 /* Dpch720_DispatcherSVGTrio.swift in Sources */ = {isa = PBXBuildFile; fileRef = DST020260521000002 /* Dpch720_DispatcherSVGTrio.swift */; };
 		DEQ020260521000001 /* Dpch724_DispatcherExceptionQuartet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEQ020260521000002 /* Dpch724_DispatcherExceptionQuartet.swift */; };
 		DOQ020260521000001 /* Dpch730_DispatcherOpsQuartet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DOQ020260521000002 /* Dpch730_DispatcherOpsQuartet.swift */; };
+		DCQ020260521000001 /* Dpch734_DispatcherControlQuartet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCQ020260521000002 /* Dpch734_DispatcherControlQuartet.swift */; };
 		CCE020260521000001 /* 331_CatalystCommissionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCE020260521000002 /* 331_CatalystCommissionEngine.swift */; };
 		D1A11111111111111111CDD1 /* 322_CatalystDriverDocuments.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CDD2 /* 322_CatalystDriverDocuments.swift */; };
 		D1A11111111111111111CDP1 /* 321_CatalystDriverProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CDP2 /* 321_CatalystDriverProfile.swift */; };
@@ -1051,6 +1052,7 @@
 		DST020260521000002 /* Dpch720_DispatcherSVGTrio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch720_DispatcherSVGTrio.swift; path = EusoTrip/Views/Dispatch/Dpch720_DispatcherSVGTrio.swift; sourceTree = SOURCE_ROOT; };
 		DEQ020260521000002 /* Dpch724_DispatcherExceptionQuartet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch724_DispatcherExceptionQuartet.swift; path = EusoTrip/Views/Dispatch/Dpch724_DispatcherExceptionQuartet.swift; sourceTree = SOURCE_ROOT; };
 		DOQ020260521000002 /* Dpch730_DispatcherOpsQuartet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch730_DispatcherOpsQuartet.swift; path = EusoTrip/Views/Dispatch/Dpch730_DispatcherOpsQuartet.swift; sourceTree = SOURCE_ROOT; };
+		DCQ020260521000002 /* Dpch734_DispatcherControlQuartet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch734_DispatcherControlQuartet.swift; path = EusoTrip/Views/Dispatch/Dpch734_DispatcherControlQuartet.swift; sourceTree = SOURCE_ROOT; };
 		CCE020260521000002 /* 331_CatalystCommissionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 331_CatalystCommissionEngine.swift; path = EusoTrip/Views/Catalyst/331_CatalystCommissionEngine.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CDD2 /* 322_CatalystDriverDocuments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 322_CatalystDriverDocuments.swift; path = EusoTrip/Views/Catalyst/322_CatalystDriverDocuments.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CDP2 /* 321_CatalystDriverProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 321_CatalystDriverProfile.swift; path = EusoTrip/Views/Catalyst/321_CatalystDriverProfile.swift; sourceTree = SOURCE_ROOT; };
@@ -1880,6 +1882,7 @@
 				DST020260521000002 /* Dpch720_DispatcherSVGTrio.swift */,
 				DEQ020260521000002 /* Dpch724_DispatcherExceptionQuartet.swift */,
 				DOQ020260521000002 /* Dpch730_DispatcherOpsQuartet.swift */,
+				DCQ020260521000002 /* Dpch734_DispatcherControlQuartet.swift */,
 				CCE020260521000002 /* 331_CatalystCommissionEngine.swift */,
 				D1A11111111111111111CDD2 /* 322_CatalystDriverDocuments.swift */,
 				D1A11111111111111111CDP2 /* 321_CatalystDriverProfile.swift */,
@@ -2964,6 +2967,7 @@
 				DST020260521000001 /* Dpch720_DispatcherSVGTrio.swift in Sources */,
 				DEQ020260521000001 /* Dpch724_DispatcherExceptionQuartet.swift in Sources */,
 				DOQ020260521000001 /* Dpch730_DispatcherOpsQuartet.swift in Sources */,
+				DCQ020260521000001 /* Dpch734_DispatcherControlQuartet.swift in Sources */,
 				CCE020260521000001 /* 331_CatalystCommissionEngine.swift in Sources */,
 				D1A11111111111111111CDD1 /* 322_CatalystDriverDocuments.swift in Sources */,
 				D1A11111111111111111CDP1 /* 321_CatalystDriverProfile.swift in Sources */,

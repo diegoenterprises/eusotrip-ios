@@ -1643,6 +1643,11 @@ enum ScreenRegistry {
             .init(id: "Dpch731", title: "Dispatch · Reassignment Sheet", role: .dispatch) { p in AnyView(DispatcherReassignmentSheetScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "Dpch732", title: "Dispatch · Quick-Tender",       role: .dispatch) { p in AnyView(DispatcherQuickTenderScreen(theme: p)) },
             .init(id: "Dpch733", title: "Dispatch · Escort Republish",   role: .dispatch) { p in AnyView(DispatcherEscortRepublishScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            // 2026-05-21 — Dispatcher control quartet (409/413/416/417).
+            .init(id: "Dpch734", title: "Dispatch · Settings",            role: .dispatch) { p in AnyView(DispatcherSettingsScreen(theme: p)) },
+            .init(id: "Dpch735", title: "Dispatch · Weather Reroute",     role: .dispatch) { p in AnyView(DispatcherWeatherRerouteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "Dpch736", title: "Dispatch · Reload Offer",        role: .dispatch) { p in AnyView(DispatcherReloadOfferScreen(theme: p, driverId: BrokerNavContext.latestCatalystId)) },
+            .init(id: "Dpch737", title: "Dispatch · Fuel-Policy Override",role: .dispatch) { p in AnyView(DispatcherFuelPolicyOverrideScreen(theme: p, driverId: BrokerNavContext.latestCatalystId)) },
         ])
 
         return list
