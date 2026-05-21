@@ -1638,6 +1638,11 @@ enum ScreenRegistry {
             .init(id: "Dpch725", title: "Dispatch · Cancel Load",       role: .dispatch) { p in AnyView(DispatcherCancelLoadWizardScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "Dpch726", title: "Dispatch · Late Pickup",       role: .dispatch) { p in AnyView(DispatcherLatePickupScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "Dpch727", title: "Dispatch · Dock Mismatch",     role: .dispatch) { p in AnyView(DispatcherDockMismatchScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            // 2026-05-21 — Dispatcher ops quartet (406/407/408/414).
+            .init(id: "Dpch730", title: "Dispatch · Yard Slots",         role: .dispatch) { p in AnyView(DispatcherYardSlotsScreen(theme: p)) },
+            .init(id: "Dpch731", title: "Dispatch · Reassignment Sheet", role: .dispatch) { p in AnyView(DispatcherReassignmentSheetScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "Dpch732", title: "Dispatch · Quick-Tender",       role: .dispatch) { p in AnyView(DispatcherQuickTenderScreen(theme: p)) },
+            .init(id: "Dpch733", title: "Dispatch · Escort Republish",   role: .dispatch) { p in AnyView(DispatcherEscortRepublishScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
         ])
 
         return list
