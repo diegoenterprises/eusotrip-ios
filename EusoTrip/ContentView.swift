@@ -1747,6 +1747,13 @@ enum ScreenRegistry {
             // 2026-05-21 — Catalyst M-04 fleet-track pair (SVG 375-376).
             .init(id: "CV375", title: "Catalyst · M-04 In-Transit Track",  role: .catalyst) { p in AnyView(CatalystM04InTransitTrackScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "CV376", title: "Catalyst · M-04 At-Delivery Track", role: .catalyst) { p in AnyView(CatalystM04AtDeliveryTrackScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            // 2026-05-21 — Shipper backhaul-echo sextet (SVG 250-255).
+            .init(id: "SH250", title: "Shipper · BH Eyebrow",            role: .shipper) { p in AnyView(ShipperBackhaulEyebrowScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "SH251", title: "Shipper · BH Awarded",            role: .shipper) { p in AnyView(ShipperBackhaulAwardedScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "SH252", title: "Shipper · BH Pickup Annex",       role: .shipper) { p in AnyView(ShipperBackhaulPickupAnnexScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "SH253", title: "Shipper · BH Pickup Fired",       role: .shipper) { p in AnyView(ShipperBackhaulPickupFiredScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "SH254", title: "Shipper · BH In-Transit",         role: .shipper) { p in AnyView(ShipperBackhaulInTransitScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "SH255", title: "Shipper · BH Delivery",           role: .shipper) { p in AnyView(ShipperBackhaulDeliveryScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
         ])
 
         return list
