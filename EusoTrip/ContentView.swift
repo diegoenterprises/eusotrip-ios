@@ -1744,6 +1744,9 @@ enum ScreenRegistry {
             .init(id: "CV372", title: "Catalyst · M-04 Fourth Quote",     role: .catalyst) { p in AnyView(CatalystM04FourthQuoteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "CV373", title: "Catalyst · M-04 Awarded CEL",      role: .catalyst) { p in AnyView(CatalystM04AwardedScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "CV374", title: "Catalyst · M-04 On-Site CEL",      role: .catalyst) { p in AnyView(CatalystM04OnSiteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            // 2026-05-21 — Catalyst M-04 fleet-track pair (SVG 375-376).
+            .init(id: "CV375", title: "Catalyst · M-04 In-Transit Track",  role: .catalyst) { p in AnyView(CatalystM04InTransitTrackScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "CV376", title: "Catalyst · M-04 At-Delivery Track", role: .catalyst) { p in AnyView(CatalystM04AtDeliveryTrackScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
         ])
 
         return list
