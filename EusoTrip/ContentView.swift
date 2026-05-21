@@ -1288,6 +1288,16 @@ enum ScreenRegistry {
                 AnyView(CatalystDriverComplianceScreen(theme: p, driverId: ""))
             }
         )
+        // 2026-05-21 — eusotrip-killers screen-porting sweep. iOS port of
+        // web CommissionEnginePage.tsx. Server contract was broken on the
+        // web (called `commissionEngine.calculate` which doesn't exist);
+        // the paired web commit fixes it to `calculateSplit` with the
+        // right field names so both surfaces read off the same shape.
+        list.append(
+            .init(id: "331", title: "Catalyst · Commission Engine", role: .catalyst) { p in
+                AnyView(CatalystCommissionEngineScreen(theme: p))
+            }
+        )
         // 2026-05-06 — Catalyst Driver Documents (Figma 322 light + dark)
         // lands. The catalyst-side document vault for a single driver —
         // the file binaries behind 321 Driver Profile's credential pills
@@ -1549,6 +1559,11 @@ enum ScreenRegistry {
             .init(id: "Dpch710", title: "Dispatch · Run Ticket Capture", role: .dispatch) { p in AnyView(DispatchRunTicketCaptureScreen(theme: p)) },
             .init(id: "Dpch711", title: "Dispatch · Price Book",       role: .dispatch) { p in AnyView(DispatchPriceBookScreen(theme: p)) },
             .init(id: "Dpch712", title: "Dispatch · Reports Hub",      role: .dispatch) { p in AnyView(DispatchReportsHubScreen(theme: p)) },
+            // 2026-05-21 dead-button fix — dedicated Dispatch Me hub. The
+            // bottom-nav "Me" slot used to map to Dpch700 (Home), a
+            // functional dead-end. Now points here. Links to all 13
+            // registered dispatch screens via .eusoDispatchNavSwap.
+            .init(id: "Dpch713", title: "Dispatch · Me",               role: .dispatch) { p in AnyView(DispatchMeScreen(theme: p)) },
         ])
 
         return list

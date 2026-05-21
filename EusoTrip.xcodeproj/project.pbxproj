@@ -332,6 +332,7 @@
 		D1A11111111111111111CLD1 /* 305_CatalystLoadDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CLD2 /* 305_CatalystLoadDetail.swift */; };
 		D1A11111111111111111CDS1 /* 320_CatalystDriverScorecard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CDS2 /* 320_CatalystDriverScorecard.swift */; };
 		D1A11111111111111111CDC1 /* 326_CatalystDriverCompliance.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CDC2 /* 326_CatalystDriverCompliance.swift */; };
+		CCE020260521000001 /* 331_CatalystCommissionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCE020260521000002 /* 331_CatalystCommissionEngine.swift */; };
 		D1A11111111111111111CDD1 /* 322_CatalystDriverDocuments.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CDD2 /* 322_CatalystDriverDocuments.swift */; };
 		D1A11111111111111111CDP1 /* 321_CatalystDriverProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CDP2 /* 321_CatalystDriverProfile.swift */; };
 		D1A11111111111111111CMP1 /* 317_CatalystCompliance.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CMP2 /* 317_CatalystCompliance.swift */; };
@@ -513,6 +514,7 @@
 		BFAD202605200003000100B9 /* 710A_DispatchConvoyComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200003000100F9 /* 710A_DispatchConvoyComposer.swift */; };
 		D2DSP1100000000000ABDS /* 711_DispatchPriceBook.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSP1100000000000ACDS /* 711_DispatchPriceBook.swift */; };
 		D2DSP1200000000000ABDS /* 712_DispatchReportsHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSP1200000000000ACDS /* 712_DispatchReportsHub.swift */; };
+		D2DSP1300000000000ABDS /* Dpch713_DispatchMe.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSP1300000000000ACDS /* Dpch713_DispatchMe.swift */; };
 		D2CMP0000000000000ABDS /* 900_ComplianceOfficerHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2CMP0000000000000ACDS /* 900_ComplianceOfficerHome.swift */; };
 		D2CMPNAV0000000000ABDS /* ComplianceNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2CMPNAV0000000000ACDS /* ComplianceNavController.swift */; };
 		D2CMP0100000000000ABDS /* 901_ComplianceExpiringDocs.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2CMP0100000000000ACDS /* 901_ComplianceExpiringDocs.swift */; };
@@ -985,6 +987,7 @@
 		D1A11111111111111111CLD2 /* 305_CatalystLoadDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 305_CatalystLoadDetail.swift; path = EusoTrip/Views/Catalyst/305_CatalystLoadDetail.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CDS2 /* 320_CatalystDriverScorecard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 320_CatalystDriverScorecard.swift; path = EusoTrip/Views/Catalyst/320_CatalystDriverScorecard.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CDC2 /* 326_CatalystDriverCompliance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 326_CatalystDriverCompliance.swift; path = EusoTrip/Views/Catalyst/326_CatalystDriverCompliance.swift; sourceTree = SOURCE_ROOT; };
+		CCE020260521000002 /* 331_CatalystCommissionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 331_CatalystCommissionEngine.swift; path = EusoTrip/Views/Catalyst/331_CatalystCommissionEngine.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CDD2 /* 322_CatalystDriverDocuments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 322_CatalystDriverDocuments.swift; path = EusoTrip/Views/Catalyst/322_CatalystDriverDocuments.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CDP2 /* 321_CatalystDriverProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 321_CatalystDriverProfile.swift; path = EusoTrip/Views/Catalyst/321_CatalystDriverProfile.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CMP2 /* 317_CatalystCompliance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 317_CatalystCompliance.swift; path = EusoTrip/Views/Catalyst/317_CatalystCompliance.swift; sourceTree = SOURCE_ROOT; };
@@ -1166,6 +1169,7 @@
 		FA1F202605200003000100F9 /* 710A_DispatchConvoyComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 710A_DispatchConvoyComposer.swift; path = EusoTrip/Views/Dispatch/710A_DispatchConvoyComposer.swift; sourceTree = SOURCE_ROOT; };
 		D2DSP1100000000000ACDS /* 711_DispatchPriceBook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 711_DispatchPriceBook.swift; path = EusoTrip/Views/Dispatch/711_DispatchPriceBook.swift; sourceTree = SOURCE_ROOT; };
 		D2DSP1200000000000ACDS /* 712_DispatchReportsHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 712_DispatchReportsHub.swift; path = EusoTrip/Views/Dispatch/712_DispatchReportsHub.swift; sourceTree = SOURCE_ROOT; };
+		D2DSP1300000000000ACDS /* Dpch713_DispatchMe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch713_DispatchMe.swift; path = EusoTrip/Views/Dispatch/Dpch713_DispatchMe.swift; sourceTree = SOURCE_ROOT; };
 		D2CMP0000000000000ACDS /* 900_ComplianceOfficerHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 900_ComplianceOfficerHome.swift; path = EusoTrip/Views/Compliance/900_ComplianceOfficerHome.swift; sourceTree = SOURCE_ROOT; };
 		D2CMPNAV0000000000ACDS /* ComplianceNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ComplianceNavController.swift; path = EusoTrip/Views/Compliance/ComplianceNavController.swift; sourceTree = SOURCE_ROOT; };
 		D2CMP0100000000000ACDS /* 901_ComplianceExpiringDocs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 901_ComplianceExpiringDocs.swift; path = EusoTrip/Views/Compliance/901_ComplianceExpiringDocs.swift; sourceTree = SOURCE_ROOT; };
@@ -1698,6 +1702,7 @@
 				FA1F202605200003000100F9 /* 710A_DispatchConvoyComposer.swift */,
 				D2DSP1100000000000ACDS /* 711_DispatchPriceBook.swift */,
 				D2DSP1200000000000ACDS /* 712_DispatchReportsHub.swift */,
+				D2DSP1300000000000ACDS /* Dpch713_DispatchMe.swift */,
 				D2CMP0000000000000ACDS /* 900_ComplianceOfficerHome.swift */,
 				D2CMP0100000000000ACDS /* 901_ComplianceExpiringDocs.swift */,
 				D2CMP0200000000000ACDS /* 902_ComplianceViolations.swift */,
@@ -1780,6 +1785,7 @@
 				D1A11111111111111111CLD2 /* 305_CatalystLoadDetail.swift */,
 				D1A11111111111111111CDS2 /* 320_CatalystDriverScorecard.swift */,
 				D1A11111111111111111CDC2 /* 326_CatalystDriverCompliance.swift */,
+				CCE020260521000002 /* 331_CatalystCommissionEngine.swift */,
 				D1A11111111111111111CDD2 /* 322_CatalystDriverDocuments.swift */,
 				D1A11111111111111111CDP2 /* 321_CatalystDriverProfile.swift */,
 				D1A11111111111111111CMP2 /* 317_CatalystCompliance.swift */,
@@ -2747,6 +2753,7 @@
 				BFAD202605200003000100B9 /* 710A_DispatchConvoyComposer.swift in Sources */,
 				D2DSP1100000000000ABDS /* 711_DispatchPriceBook.swift in Sources */,
 				D2DSP1200000000000ABDS /* 712_DispatchReportsHub.swift in Sources */,
+				D2DSP1300000000000ABDS /* Dpch713_DispatchMe.swift in Sources */,
 				D2CMP0000000000000ABDS /* 900_ComplianceOfficerHome.swift in Sources */,
 				D2CMP0100000000000ABDS /* 901_ComplianceExpiringDocs.swift in Sources */,
 				D2CMP0200000000000ABDS /* 902_ComplianceViolations.swift in Sources */,
@@ -2829,6 +2836,7 @@
 				D1A11111111111111111CLD1 /* 305_CatalystLoadDetail.swift in Sources */,
 				D1A11111111111111111CDS1 /* 320_CatalystDriverScorecard.swift in Sources */,
 				D1A11111111111111111CDC1 /* 326_CatalystDriverCompliance.swift in Sources */,
+				CCE020260521000001 /* 331_CatalystCommissionEngine.swift in Sources */,
 				D1A11111111111111111CDD1 /* 322_CatalystDriverDocuments.swift in Sources */,
 				D1A11111111111111111CDP1 /* 321_CatalystDriverProfile.swift in Sources */,
 				D1A11111111111111111CMP1 /* 317_CatalystCompliance.swift in Sources */,
