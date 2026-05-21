@@ -189,6 +189,15 @@ enum ScreenRegistry {
             .init(id: "DL098", title: "Driver · At Delivery",        role: .driver) { p in AnyView(DriverAtDeliveryScreen(theme: p, loadId: "0")) },
             .init(id: "DL099", title: "Driver · POD Sign",           role: .driver) { p in AnyView(DriverPODSignScreen(theme: p, loadId: "0")) },
             .init(id: "DL100", title: "Driver · Load Closed",        role: .driver) { p in AnyView(DriverLoadClosedScreen(theme: p, loadId: "0")) },
+            // 2026-05-21 — Driver backhaul + DVIR octet (SVG 101-108).
+            .init(id: "DL101", title: "Driver · Backhaul Offer",      role: .driver) { p in AnyView(DriverBackhaulOfferScreen(theme: p, loadId: "0")) },
+            .init(id: "DL102", title: "Driver · Backhaul Accepted",   role: .driver) { p in AnyView(DriverBackhaulAcceptedScreen(theme: p, loadId: "0")) },
+            .init(id: "DL103", title: "Driver · DVIR Started",        role: .driver) { p in AnyView(DriverDVIRStartedScreen(theme: p, loadId: "0")) },
+            .init(id: "DL104", title: "Driver · DVIR Section 3",      role: .driver) { p in AnyView(DriverDVIRSection3Screen(theme: p, loadId: "0")) },
+            .init(id: "DL105", title: "Driver · DVIR Section 4",      role: .driver) { p in AnyView(DriverDVIRSection4Screen(theme: p, loadId: "0")) },
+            .init(id: "DL106", title: "Driver · DVIR Section 5",      role: .driver) { p in AnyView(DriverDVIRSection5Screen(theme: p, loadId: "0")) },
+            .init(id: "DL107", title: "Driver · DVIR Section 6",      role: .driver) { p in AnyView(DriverDVIRSection6Screen(theme: p, loadId: "0")) },
+            .init(id: "DL108", title: "Driver · DVIR Section 7",      role: .driver) { p in AnyView(DriverDVIRSection7Screen(theme: p, loadId: "0")) },
             .init(id: "109", title: "Me · Bid Detail",              role: .driver) { p in AnyView(MeBidDetailScreen(theme: p, loadId: 0)) },
             .init(id: "110", title: "Me · Auto-Accept",             role: .driver) { p in AnyView(MeAutoAcceptRulesScreen(theme: p)) },
             // 2026-05-21 — Bonus Tracker port (web BonusTracker.tsx → iOS).
