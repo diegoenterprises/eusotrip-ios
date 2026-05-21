@@ -42,6 +42,7 @@
 		BFAD202605202019000100A0 /* HazmatPlacardScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605202019000100A0 /* HazmatPlacardScanView.swift */; };
 		BFAD202605202020000100A1 /* ShipmentAgentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605202020000100A1 /* ShipmentAgentService.swift */; };
 		BFAD202605202021000100A2 /* TrackShipments.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605202021000100A2 /* TrackShipments.swift */; };
+		BFAD202605202022000100A3 /* ComplianceAgentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605202022000100A3 /* ComplianceAgentView.swift */; };
 		A1B7C9E000000000B7C9E001 /* RoleSurfaceRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B7C9E000000000B7C9E002 /* RoleSurfaceRouter.swift */; };
 		A10AAEEEAC9C0054F8B34905 /* 019_HosDutyStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10C7CD83E4BB6CA038192D0 /* 019_HosDutyStatus.swift */; };
 		A11E8603E79595216A3607DB /* 004_ResetPassword.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F6E6E09C5EB9568612F3E1 /* 004_ResetPassword.swift */; };
@@ -781,6 +782,7 @@
 		FA1F202605202019000100A0 /* HazmatPlacardScanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HazmatPlacardScanView.swift; path = Driver/HazmatPlacardScanView.swift; sourceTree = "<group>"; };
 		FA1F202605202020000100A1 /* ShipmentAgentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShipmentAgentService.swift; sourceTree = "<group>"; };
 		FA1F202605202021000100A2 /* TrackShipments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TrackShipments.swift; path = Shipper/TrackShipments.swift; sourceTree = "<group>"; };
+		FA1F202605202022000100A3 /* ComplianceAgentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ComplianceAgentView.swift; path = Compliance/ComplianceAgentView.swift; sourceTree = "<group>"; };
 		A1B7C9E000000000B7C9E002 /* RoleSurfaceRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoleSurfaceRouter.swift; sourceTree = "<group>"; };
 		A1F6E6E09C5EB9568612F3E1 /* 004_ResetPassword.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 004_ResetPassword.swift; sourceTree = "<group>"; };
 		A1FA70836FB725922F39A4E9 /* 015_AtGateAwaitingDock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 015_AtGateAwaitingDock.swift; sourceTree = "<group>"; };
@@ -1343,6 +1345,7 @@
 				FA1F202605202015000100FF /* DailyBriefWidget.swift */,
 				FA1F202605202019000100A0 /* HazmatPlacardScanView.swift */,
 				FA1F202605202021000100A2 /* TrackShipments.swift */,
+				FA1F202605202022000100A3 /* ComplianceAgentView.swift */,
 				FA1F202605202016000100FA /* CartView.swift */,
 				A1000000000000000000AAD5 /* Auth */,
 				A12E1A1C0010CE0FF1000014 /* Components */,
@@ -2391,6 +2394,7 @@
 				BFAD202605202019000100A0 /* HazmatPlacardScanView.swift in Sources */,
 				BFAD202605202020000100A1 /* ShipmentAgentService.swift in Sources */,
 				BFAD202605202021000100A2 /* TrackShipments.swift in Sources */,
+				BFAD202605202022000100A3 /* ComplianceAgentView.swift in Sources */,
 				A17EA9A0121947A6C4E1DDE9 /* HOSStatus.swift in Sources */,
 				A147FB466ACE52CB7A92127C /* Load.swift in Sources */,
 				E1E1A1A100000001AA000001 /* NewsArticle.swift in Sources */,
