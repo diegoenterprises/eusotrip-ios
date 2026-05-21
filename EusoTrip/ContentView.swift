@@ -1689,6 +1689,15 @@ enum ScreenRegistry {
             .init(id: "Dpch755", title: "Dispatch · Shipper Health",      role: .dispatch) { p in AnyView(DispatcherShipperAccountHealthScreen(theme: p, shipperId: BrokerNavContext.latestShipperId)) },
             .init(id: "Dpch756", title: "Dispatch · Shipper Onboarding",  role: .dispatch) { p in AnyView(DispatcherShipperOnboardingStepScreen(theme: p, shipperId: BrokerNavContext.latestShipperId)) },
             .init(id: "Dpch757", title: "Dispatch · Shipper Quarter",     role: .dispatch) { p in AnyView(DispatcherShipperQuarterScreen(theme: p, shipperId: BrokerNavContext.latestShipperId)) },
+            // 2026-05-21 — Dispatcher vehicle-detail octet (SVG 460-467).
+            .init(id: "Dpch760", title: "Dispatch · Vehicle Review",      role: .dispatch) { p in AnyView(DispatcherVehicleReviewScreen(theme: p)) },
+            .init(id: "Dpch761", title: "Dispatch · Vehicle Utilization", role: .dispatch) { p in AnyView(DispatcherVehicleUtilizationScreen(theme: p)) },
+            .init(id: "Dpch762", title: "Dispatch · Vehicle Maintenance", role: .dispatch) { p in AnyView(DispatcherVehicleMaintenanceScreen(theme: p)) },
+            .init(id: "Dpch763", title: "Dispatch · Vehicle On-Time",     role: .dispatch) { p in AnyView(DispatcherVehicleOnTimeScreen(theme: p)) },
+            .init(id: "Dpch764", title: "Dispatch · Vehicle Inspection",  role: .dispatch) { p in AnyView(DispatcherVehicleInspectionScreen(theme: p)) },
+            .init(id: "Dpch765", title: "Dispatch · Vehicle Deadhead",    role: .dispatch) { p in AnyView(DispatcherVehicleDeadheadScreen(theme: p)) },
+            .init(id: "Dpch766", title: "Dispatch · Vehicle Onboarding",  role: .dispatch) { p in AnyView(DispatcherVehicleOnboardingScreen(theme: p)) },
+            .init(id: "Dpch767", title: "Dispatch · Vehicle Quarter",     role: .dispatch) { p in AnyView(DispatcherVehicleQuarterScreen(theme: p)) },
         ])
 
         return list
