@@ -19014,6 +19014,14 @@ struct XRChecklistAPI {
     func usmcaFilingAssistant(input: USMCAFilingInput) async throws -> USMCAFilingResponse {
         try await api.mutation("xrChecklist.usmcaFilingAssistant", input: input)
     }
+
+    /// `xrChecklist.streamReeferStatus` — Tier 1 #12.
+    /// Read-only poll endpoint. Returns the latest reefer
+    /// observation + breach flag + spoken status + the server-
+    /// recommended next-poll interval (30s in breach, 120s normal).
+    func streamReeferStatus(input: XRReeferStatusInput) async throws -> XRReeferStatusPayload {
+        try await api.query("xrChecklist.streamReeferStatus", input: input)
+    }
 }
 
 // MARK: - laneAgentRouter (Tier 2 #37 · conversational rate intel)

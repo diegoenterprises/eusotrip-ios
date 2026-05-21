@@ -287,6 +287,14 @@ struct ActiveEnrouteLoaded: View {
                 // HERE returns nothing for that layer.
                 EnRouteRoadIntelStrip()
                     .padding(.horizontal, 14)
+                // Tier 1 #12 (2026-05-21) — live reefer status HUD.
+                // Only renders when this load's product is reefer;
+                // server-driven poll cadence (30s in breach, 120s
+                // normal); breach transitions speak via ESangTTSPlayer.
+                if ctx.product == .reefer && !lifecycle.loadId.isEmpty {
+                    XRReeferStatusHUD(_loadId: lifecycle.loadId)
+                        .padding(.horizontal, 14)
+                }
                 Spacer()
             }
             .padding(.top, 8)

@@ -270,6 +270,7 @@
 		USMC20260521000001 /* USMCAFilingAssistantSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = USMC20260521000002 /* USMCAFilingAssistantSheet.swift */; };
 		LANI20260521000001 /* LaneIntelSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = LANI20260521000002 /* LaneIntelSheet.swift */; };
 		CVET20260521000001 /* CarrierVetSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CVET20260521000002 /* CarrierVetSheet.swift */; };
+		XRRH20260521000001 /* XRReeferStatusHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = XRRH20260521000002 /* XRReeferStatusHUD.swift */; };
 		B1A11111111111111111AA07 /* DriverTabPanes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA08 /* DriverTabPanes.swift */; };
 		B1A11111111111111111AB01 /* ESangParticleBurst.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AB02 /* ESangParticleBurst.swift */; };
 		B1A11111111111111111AC01 /* MeDetailScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AC02 /* MeDetailScreens.swift */; };
@@ -920,6 +921,7 @@
 		USMC20260521000002 /* USMCAFilingAssistantSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = USMCAFilingAssistantSheet.swift; path = EusoTrip/Views/Components/USMCAFilingAssistantSheet.swift; sourceTree = SOURCE_ROOT; };
 		LANI20260521000002 /* LaneIntelSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LaneIntelSheet.swift; path = EusoTrip/Views/Components/LaneIntelSheet.swift; sourceTree = SOURCE_ROOT; };
 		CVET20260521000002 /* CarrierVetSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CarrierVetSheet.swift; path = EusoTrip/Views/Components/CarrierVetSheet.swift; sourceTree = SOURCE_ROOT; };
+		XRRH20260521000002 /* XRReeferStatusHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = XRReeferStatusHUD.swift; path = EusoTrip/Views/Components/XRReeferStatusHUD.swift; sourceTree = SOURCE_ROOT; };
 		B1A11111111111111111AA08 /* DriverTabPanes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverTabPanes.swift; sourceTree = "<group>"; };
 		B1A11111111111111111AA09 /* EusoTrip.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = EusoTrip.entitlements; sourceTree = "<group>"; };
 		B1A11111111111111111AB02 /* ESangParticleBurst.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESangParticleBurst.swift; sourceTree = "<group>"; };
@@ -1964,6 +1966,7 @@
 				USMC20260521000002 /* USMCAFilingAssistantSheet.swift */,
 				LANI20260521000002 /* LaneIntelSheet.swift */,
 				CVET20260521000002 /* CarrierVetSheet.swift */,
+				XRRH20260521000002 /* XRReeferStatusHUD.swift */,
 				B1A11111111111111111AB02 /* ESangParticleBurst.swift */,
 				B1A11111111111111111AE02 /* LoadDetailSheet.swift */,
 				B1A11111111111111111AF02 /* SOSEmergencySheet.swift */,
@@ -2531,6 +2534,7 @@
 				USMC20260521000001 /* USMCAFilingAssistantSheet.swift in Sources */,
 				LANI20260521000001 /* LaneIntelSheet.swift in Sources */,
 				CVET20260521000001 /* CarrierVetSheet.swift in Sources */,
+				XRRH20260521000001 /* XRReeferStatusHUD.swift in Sources */,
 				B1A11111111111111111AA07 /* DriverTabPanes.swift in Sources */,
 				B1A11111111111111111AB01 /* ESangParticleBurst.swift in Sources */,
 				B1A11111111111111111AC01 /* MeDetailScreens.swift in Sources */,
