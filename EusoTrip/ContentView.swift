@@ -1715,6 +1715,14 @@ enum ScreenRegistry {
             .init(id: "CV345", title: "Catalyst · Customer Onboarding",   role: .catalyst) { p in AnyView(CatalystShipperOnboardingScreen(theme: p, shipperId: BrokerNavContext.latestShipperId)) },
             .init(id: "CV346", title: "Catalyst · Customer Compliance",   role: .catalyst) { p in AnyView(CatalystShipperComplianceScreen(theme: p, shipperId: BrokerNavContext.latestShipperId)) },
             .init(id: "CV347", title: "Catalyst · Customer Quarterly",    role: .catalyst) { p in AnyView(CatalystShipperQuarterScreen(theme: p, shipperId: BrokerNavContext.latestShipperId)) },
+            // 2026-05-21 — Catalyst outbound lifecycle septet (SVG 350-356).
+            .init(id: "CV350", title: "Catalyst · At Gate",               role: .catalyst) { p in AnyView(CatalystAtGateScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "CV351", title: "Catalyst · At Dock",               role: .catalyst) { p in AnyView(CatalystAtDockScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "CV352", title: "Catalyst · Departing",             role: .catalyst) { p in AnyView(CatalystDepartingScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "CV353", title: "Catalyst · Pre-Delivery",          role: .catalyst) { p in AnyView(CatalystPreDeliveryScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "CV354", title: "Catalyst · At Delivery",           role: .catalyst) { p in AnyView(CatalystAtDeliveryScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "CV355", title: "Catalyst · POD Receipt",           role: .catalyst) { p in AnyView(CatalystPODReceiptScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "CV356", title: "Catalyst · Load Closed",           role: .catalyst) { p in AnyView(CatalystLoadClosedScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
         ])
 
         return list
