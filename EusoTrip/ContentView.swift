@@ -175,6 +175,12 @@ enum ScreenRegistry {
             .init(id: "106", title: "Me · EusoTicket",              role: .driver) { p in AnyView(MeEusoTicketsScreen(theme: p)) },
             .init(id: "107", title: "Me · My Bids",                 role: .driver) { p in AnyView(MeMyBidsScreen(theme: p)) },
             .init(id: "108", title: "Me · LoadBoard",               role: .driver) { p in AnyView(MeLoadBoardScreen(theme: p)) },
+            // 2026-05-21 — Driver lifecycle entry trio (SVG 091/092/093).
+            // Numbering uses "DL09x" to avoid the 091-108 Me-section
+            // collision; iOS already uses 091_MeDetention etc.
+            .init(id: "DL091", title: "Driver · Load Offer Detail",  role: .driver) { p in AnyView(DriverLoadOfferDetailScreen(theme: p, loadId: "0")) },
+            .init(id: "DL092", title: "Driver · Assignment Receipt", role: .driver) { p in AnyView(DriverAssignmentReceiptScreen(theme: p, loadId: "0")) },
+            .init(id: "DL093", title: "Driver · Pickup Approach",    role: .driver) { p in AnyView(DriverPickupApproachScreen(theme: p, loadId: "0")) },
             .init(id: "109", title: "Me · Bid Detail",              role: .driver) { p in AnyView(MeBidDetailScreen(theme: p, loadId: 0)) },
             .init(id: "110", title: "Me · Auto-Accept",             role: .driver) { p in AnyView(MeAutoAcceptRulesScreen(theme: p)) },
             // 2026-05-21 — Bonus Tracker port (web BonusTracker.tsx → iOS).
