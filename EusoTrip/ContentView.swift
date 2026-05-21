@@ -1633,6 +1633,11 @@ enum ScreenRegistry {
             .init(id: "Dpch720", title: "Dispatch · Tender Queue",     role: .dispatch) { p in AnyView(DispatcherTenderQueueScreen(theme: p)) },
             .init(id: "Dpch721", title: "Dispatch · Comms Hub",        role: .dispatch) { p in AnyView(DispatcherCommsHubScreen(theme: p)) },
             .init(id: "Dpch722", title: "Dispatch · BOL Mismatch",     role: .dispatch) { p in AnyView(DispatcherBOLMismatchScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            // 2026-05-21 — Dispatcher exception flow quartet (412/415/418/419).
+            .init(id: "Dpch724", title: "Dispatch · HOS Reassignment",  role: .dispatch) { p in AnyView(DispatcherHOSReassignmentScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "Dpch725", title: "Dispatch · Cancel Load",       role: .dispatch) { p in AnyView(DispatcherCancelLoadWizardScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "Dpch726", title: "Dispatch · Late Pickup",       role: .dispatch) { p in AnyView(DispatcherLatePickupScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "Dpch727", title: "Dispatch · Dock Mismatch",     role: .dispatch) { p in AnyView(DispatcherDockMismatchScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
         ])
 
         return list
