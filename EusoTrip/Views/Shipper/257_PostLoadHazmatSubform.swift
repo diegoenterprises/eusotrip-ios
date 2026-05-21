@@ -34,11 +34,222 @@ private struct HazmatBody: View {
                 classificationCard
                 psnCard
                 ergCard
+                // 2026-05-20 · IO 2026 P0-8 — ERG copilot + segregation.
+                ergCopilotCard
+                segregationCard
                 chemtrecCard
                 ctaRow
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 56)
+        }
+    }
+
+    // ─── 2026-05-20 · IO 2026 P0-8 · ERG copilot panel ──────────────
+    //
+    // Multi-turn conversation grounded in the canonical ERG guide.
+    // Reuses `ERGLookupService.askFollowUp` shipped in P0-7 — same
+    // thought-signature cache keyed by UN number, same dialect-aware
+    // reply (P0-4). Surfaces directly under the existing ergCard so
+    // the shipper composing the load can ask "What if it spills?",
+    // "Can I haul with class 3?", etc. without leaving the wizard.
+
+    @State private var copilotQuestion: String = ""
+    @State private var copilotAnswer: String? = nil
+    @State private var copilotAsking: Bool = false
+    @State private var copilotError: String? = nil
+
+    @State private var segregationPartnerClass: String = ""
+    @State private var segregationResult: SegregationVerdict? = nil
+    @State private var segregationChecking: Bool = false
+
+    private struct SegregationVerdict: Hashable {
+        let verdict: String
+        let reason: String
+        let citation: String?
+        let classA: String?
+        let classB: String?
+    }
+
+    @ViewBuilder
+    private var ergCopilotCard: some View {
+        LifecycleCard {
+            LifecycleSection(label: "ESANG ERG COPILOT", icon: "sparkles")
+            Text("Ask anything about UN \(draft.unNumber.isEmpty ? "—" : draft.unNumber).")
+                .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+            HStack(spacing: 8) {
+                TextField("e.g. \"What if it spills?\"", text: $copilotQuestion, axis: .horizontal)
+                    .textFieldStyle(.plain).autocorrectionDisabled(true)
+                    .padding(.horizontal, 10).padding(.vertical, 8)
+                    .background(palette.bgCard.opacity(0.6))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .submitLabel(.send)
+                    .onSubmit { Task { await askCopilot() } }
+                Button {
+                    Task { await askCopilot() }
+                } label: {
+                    Group {
+                        if copilotAsking {
+                            ProgressView().controlSize(.small).tint(.white)
+                        } else {
+                            Image(systemName: "paperplane.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(LinearGradient.diagonal)
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(draft.unNumber.trimmingCharacters(in: .whitespaces).isEmpty || copilotQuestion.trimmingCharacters(in: .whitespaces).isEmpty || copilotAsking)
+            }
+            if let err = copilotError {
+                Text(err).font(.system(size: 11)).foregroundStyle(.red)
+            }
+            if let answer = copilotAnswer {
+                Text(answer)
+                    .font(.system(size: 13))
+                    .foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(palette.tintNeutral, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var segregationCard: some View {
+        LifecycleCard {
+            LifecycleSection(label: "SEGREGATION CHECK · 49 CFR 177.848", icon: "rectangle.split.2x1")
+            Text("Pick a partner class to verify it can ride with class \(draft.hazmatClass.isEmpty ? "—" : draft.hazmatClass) on the same trailer.")
+                .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(classes, id: \.self) { c in
+                        Button { Task { await runSegregationCheck(partnerClass: c) } } label: {
+                            Text(c).font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                                .foregroundStyle(segregationPartnerClass == c ? .white : palette.textPrimary)
+                                .padding(.horizontal, 10).padding(.vertical, 6)
+                                .background(segregationPartnerClass == c
+                                            ? AnyShapeStyle(LinearGradient.diagonal)
+                                            : AnyShapeStyle(palette.tintNeutral))
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            if segregationChecking {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Checking…").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+                }
+            }
+            if let result = segregationResult {
+                segregationVerdictView(result)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func segregationVerdictView(_ result: SegregationVerdict) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                let (sym, color) = segregationSymbol(verdict: result.verdict)
+                Image(systemName: sym).foregroundStyle(color)
+                Text(result.verdict.uppercased())
+                    .font(.system(size: 11, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(color)
+            }
+            Text(result.reason)
+                .font(.system(size: 12))
+                .foregroundStyle(palette.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let citation = result.citation {
+                Text(citation)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(palette.textTertiary)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.tintNeutral, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func segregationSymbol(verdict: String) -> (String, Color) {
+        switch verdict {
+        case "compatible":           return ("checkmark.seal.fill", .green)
+        case "separation_required":  return ("rectangle.split.2x1.fill", .orange)
+        case "incompatible":         return ("xmark.octagon.fill", .red)
+        default:                     return ("questionmark.circle.fill", .yellow)
+        }
+    }
+
+    @MainActor
+    private func askCopilot() async {
+        let un = draft.unNumber.trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: "UN", with: "", options: [.caseInsensitive])
+            .replacingOccurrences(of: "NA", with: "", options: [.caseInsensitive])
+            .trimmingCharacters(in: .whitespaces)
+        let q  = copilotQuestion.trimmingCharacters(in: .whitespaces)
+        guard !un.isEmpty, !q.isEmpty else { return }
+        copilotAsking = true
+        copilotError = nil
+        defer { copilotAsking = false }
+        do {
+            let reply = try await ERGLookupService.shared.askFollowUp(
+                unNumber: un, question: q
+            )
+            copilotAnswer = reply.answer
+            copilotQuestion = ""
+        } catch {
+            copilotError = "Couldn't reach ESang: \((error as NSError).localizedDescription)"
+        }
+    }
+
+    @MainActor
+    private func runSegregationCheck(partnerClass: String) async {
+        let primary = draft.hazmatClass.trimmingCharacters(in: .whitespaces)
+        guard !primary.isEmpty else {
+            segregationResult = SegregationVerdict(
+                verdict: "unknown",
+                reason: "Pick a primary class first, then a partner class.",
+                citation: nil, classA: nil, classB: nil
+            )
+            return
+        }
+        segregationPartnerClass = partnerClass
+        segregationChecking = true
+        defer { segregationChecking = false }
+        do {
+            struct In: Encodable { let classA: String; let classB: String }
+            struct Out: Decodable {
+                let verdict: String
+                let reason: String
+                let citation: String?
+                let classA: String?
+                let classB: String?
+            }
+            let reply: Out = try await EusoTripAPI.shared.mutation(
+                "compliance.segregationCheck",
+                input: In(classA: primary, classB: partnerClass)
+            )
+            segregationResult = SegregationVerdict(
+                verdict: reply.verdict,
+                reason: reply.reason,
+                citation: reply.citation,
+                classA: reply.classA,
+                classB: reply.classB
+            )
+        } catch {
+            segregationResult = SegregationVerdict(
+                verdict: "unknown",
+                reason: "Couldn't reach segregation service: \((error as NSError).localizedDescription)",
+                citation: nil, classA: primary, classB: partnerClass
+            )
         }
     }
 
