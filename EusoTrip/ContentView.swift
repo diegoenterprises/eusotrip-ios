@@ -1723,6 +1723,14 @@ enum ScreenRegistry {
             .init(id: "CV354", title: "Catalyst · At Delivery",           role: .catalyst) { p in AnyView(CatalystAtDeliveryScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "CV355", title: "Catalyst · POD Receipt",           role: .catalyst) { p in AnyView(CatalystPODReceiptScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "CV356", title: "Catalyst · Load Closed",           role: .catalyst) { p in AnyView(CatalystLoadClosedScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            // 2026-05-21 — Catalyst backhaul-ack septet (SVG 357-363).
+            .init(id: "CV357", title: "Catalyst · BH Tender",             role: .catalyst) { p in AnyView(CatalystBackhaulTenderScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "CV358", title: "Catalyst · BH Accepted",           role: .catalyst) { p in AnyView(CatalystBackhaulAcceptedScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "CV359", title: "Catalyst · BH Pickup Watch",       role: .catalyst) { p in AnyView(CatalystBackhaulPickupWatchScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "CV360", title: "Catalyst · BH On-Site",            role: .catalyst) { p in AnyView(CatalystBackhaulOnSiteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "CV361", title: "Catalyst · BH In-Transit",         role: .catalyst) { p in AnyView(CatalystBackhaulInTransitScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "CV362", title: "Catalyst · BH Approach",           role: .catalyst) { p in AnyView(CatalystBackhaulDeliveryApproachScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "CV363", title: "Catalyst · BH At Delivery",        role: .catalyst) { p in AnyView(CatalystBackhaulAtDeliveryScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
         ])
 
         return list
