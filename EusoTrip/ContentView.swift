@@ -1310,7 +1310,11 @@ enum ScreenRegistry {
         // Fleet · Vehicles (303). Wire contract: vehicles.list +
         // iftaCalculator.calculateQuarter × 4 + maintenance.{getUpcoming,
         // getAlerts}. Bottom nav frozen per doctrine — content only.
+        list.append(.init(id: "301", title: "Catalyst · Dispatch Board", role: .catalyst) { p in AnyView(CatalystDispatchBoardScreen(theme: p)) })
+        list.append(.init(id: "302", title: "Catalyst · Profile",        role: .catalyst) { p in AnyView(CatalystProfileScreen(theme: p)) })
         list.append(.init(id: "303", title: "Catalyst · Fleet · Vehicles", role: .catalyst) { p in AnyView(CatalystFleetVehiclesScreen(theme: p)) })
+        list.append(.init(id: "309", title: "Catalyst · Bids Outbound",  role: .catalyst) { p in AnyView(CatalystBidsOutboundScreen(theme: p)) })
+        list.append(.init(id: "318", title: "Catalyst · RFP Inbound",    role: .catalyst) { p in AnyView(CatalystRFPInboundScreen(theme: p)) })
         list.append(.init(id: "306", title: "Catalyst · Driver Payroll", role: .catalyst) { p in AnyView(CatalystDriverPayrollScreen(theme: p)) })
         list.append(.init(id: "308", title: "Catalyst · Authority + Insurance", role: .catalyst) { p in AnyView(CatalystAuthorityInsuranceScreen(theme: p)) })
         list.append(.init(id: "312", title: "Catalyst · Hot Zones",        role: .catalyst) { p in AnyView(CatalystHotZonesScreen(theme: p)) })
