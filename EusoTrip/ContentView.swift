@@ -1629,6 +1629,10 @@ enum ScreenRegistry {
             .init(id: "Dpch714", title: "Dispatch · Command Center",   role: .dispatch) { p in AnyView(DispatchCommandCenterScreen(theme: p)) },
             .init(id: "Dpch715", title: "Dispatch · Fleet Map",        role: .dispatch) { p in AnyView(DispatchFleetMapScreen(theme: p)) },
             .init(id: "Dpch716", title: "Dispatch · Performance",      role: .dispatch) { p in AnyView(DispatchPerformanceScreen(theme: p)) },
+            // 2026-05-21 — SVG-port sweep (403/405/411).
+            .init(id: "Dpch720", title: "Dispatch · Tender Queue",     role: .dispatch) { p in AnyView(DispatcherTenderQueueScreen(theme: p)) },
+            .init(id: "Dpch721", title: "Dispatch · Comms Hub",        role: .dispatch) { p in AnyView(DispatcherCommsHubScreen(theme: p)) },
+            .init(id: "Dpch722", title: "Dispatch · BOL Mismatch",     role: .dispatch) { p in AnyView(DispatcherBOLMismatchScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
         ])
 
         return list
