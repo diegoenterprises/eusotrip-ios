@@ -48,6 +48,21 @@ enum HereMapsConfig {
     /// is a separate, JS-scoped credential.
     static let jsApiKeyPlistKey        = "HEREJSApiKey"
 
+    /// Origin presented as the WKWebView document `baseURL` when hosting
+    /// the HERE Maps JS SDK. This becomes the HTTP `Referer` on every
+    /// OMV tile / style request, which HERE validates against the apiKey's
+    /// TRUSTED-DOMAINS list (developer.here.com/tutorials/how-to-secure-
+    /// your-here-apikey). It MUST be a domain whitelisted in the HERE
+    /// portal for `HEREJSApiKey`.
+    ///
+    /// 2026-05-21: was implicitly `https://js.api.here.com` (HERE's own
+    /// CDN, NOT whitelisted) → every tile 403'd → blank map on every iOS
+    /// surface. Set to the production web origin, which is already
+    /// whitelisted (the web platform renders fine from it). If the web
+    /// app is served from a different host (e.g. app.eusotrip.com),
+    /// change this ONE constant to match the portal trusted-domains list.
+    static let jsTrustedReferrerOrigin = "https://eusotrip.com"
+
     // MARK: - Base URLs
 
     /// Routing API v8  — truck-aware route computation.

@@ -260,11 +260,12 @@ struct ShipperControlTower: View {
 
     private func mapHero(overview: ControlTowerAPI.Overview, exceptionCount: Int) -> some View {
         ZStack(alignment: .top) {
-            // §6 — single full-bleed HERE basemap. No markers/lanes
-            // until a per-load coords endpoint ships; the basemap itself
-            // is the production-correct canvas (light tiles in light
-            // mode, dark in dark).
-            HereMapView()
+            // §6 — single full-bleed HERE basemap. 2026-05-21: swapped the
+            // raster HereMapView (Maps Tile v3 — empty grid, plan doesn't
+            // serve raster) for the OMV vector renderer the web platform
+            // uses + the plan DOES serve. Light tiles in light mode, dark
+            // in dark. CONUS framing until a per-load coords endpoint ships.
+            HereVectorMapView(center: .init(39.5, -98.35), zoom: 4)
                 .frame(height: 380)
                 .clipped()
                 .accessibilityLabel("Live load map, \(overview.total.active) active loads")

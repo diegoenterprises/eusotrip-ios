@@ -852,9 +852,32 @@ struct HotZonesHeatmapWebView: UIViewRepresentable {
             centerLng: initialCenterLng,
             zoom: initialZoom
         )
+        // 2026-05-21 ROOT-CAUSE FIX — the HERE Maps JS apiKey is validated
+        // against the HERE portal's TRUSTED DOMAINS list via the HTTP
+        // `Referer` header (confirmed in HERE's own docs:
+        // developer.here.com/tutorials/how-to-secure-your-here-apikey).
+        // The baseURL here sets the WKWebView document origin, which is
+        // exactly the referrer HERE sees on every tile/style request.
+        //
+        // The old value `https://js.api.here.com` is HERE's own CDN — it
+        // is NOT in our apiKey's trusted-domains list, so EVERY OMV tile +
+        // style request returned 403, the basemap never painted, and the
+        // map read as a blank dark rectangle ("the HERE map never works").
+        // The web platform renders fine because its referrer is
+        // `eusotrip.com`, which IS whitelisted. Setting the WebView origin
+        // to the same whitelisted domain makes the device send the
+        // identical referrer the working web app does → tiles return 200.
+        //
+        // NOTE: the "night YAML returns 403" tier-limit noted above was
+        // very likely THIS referrer bug all along — re-test night/dark
+        // styles after this fix; dark mode should now paint natively.
+        //
+        // The origin MUST be a domain present in the HERE portal trusted-
+        // domains list for HEREJSApiKey. Pulled from HereMapsConfig so
+        // there is ONE place to change it if the portal whitelist changes.
         webView.loadHTMLString(
             html,
-            baseURL: URL(string: "https://js.api.here.com")
+            baseURL: URL(string: HereMapsConfig.jsTrustedReferrerOrigin)
         )
         return webView
     }

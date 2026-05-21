@@ -303,7 +303,11 @@ struct ShipperLiveTracking: View {
 
     private var mapHero: some View {
         ZStack(alignment: .top) {
-            HereMapView()
+            // 2026-05-21: swapped the raster HereMapView (MKMapView + HERE
+            // Maps Tile v3 — empty grid, plan doesn't serve raster) for the
+            // OMV vector renderer that the web platform uses + that the
+            // plan DOES serve. CONUS framing until per-load coords land.
+            HereVectorMapView(center: .init(39.5, -98.35), zoom: 4)
                 .frame(height: 380)
                 .clipped()
                 .accessibilityLabel("Live load map, \(store.loads.count) active loads")

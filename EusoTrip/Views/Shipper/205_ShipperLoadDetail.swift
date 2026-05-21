@@ -1047,11 +1047,26 @@ struct ShipperLoadDetail: View {
     private var heroMap: some View {
         ZStack(alignment: .topLeading) {
             if let lane = laneForMap {
-                HereMapView(
-                    lanes: [lane],
-                    useHereTiles: true,
-                    showsUserLocation: false,
-                    showsCompass: false
+                // 2026-05-21: swapped the raster HereMapView (Maps Tile v3 —
+                // the "Route loading…" forever blank) for the OMV vector
+                // renderer the plan serves. Pickup/delivery pins + a route
+                // connector layered on the vector basemap; dark/light native.
+                HereVectorMapView(
+                    center: .init(
+                        (lane.pickup.latitude + lane.delivery.latitude) / 2,
+                        (lane.pickup.longitude + lane.delivery.longitude) / 2
+                    ),
+                    zoom: 6,
+                    layers: [
+                        .route(
+                            polyline: [.init(lane.pickup), .init(lane.delivery)],
+                            colorHex: "#1473FF"
+                        ),
+                        .markers([
+                            .init(at: .init(lane.pickup), kind: .pickup, label: lane.originTitle),
+                            .init(at: .init(lane.delivery), kind: .delivery, label: lane.destinationTitle)
+                        ])
+                    ]
                 )
             } else {
                 // No coords yet — show a neutral skeleton while the

@@ -315,6 +315,12 @@ final class EusoTripAPI: ObservableObject {
     lazy var news: NewsAPI = NewsAPI(api: self)
     lazy var messaging: MessagingAPI = MessagingAPI(api: self)
     lazy var hotZones: HotZonesAPI = HotZonesAPI(api: self)
+    /// HERE server-side add-ons (ad-zones, ISA, ADAS, road alerts,
+    /// geofencing, location analytics, discover, EV chargers, …) consumed
+    /// the SAME way the web client does — through the `hereMaps.*` tRPC
+    /// router. iOS does NOT re-implement these against HERE directly; the
+    /// OAuth Bearer + rate-limiting live server-side. 2026-05-21.
+    lazy var hereMaps: HereMapsAPI = HereMapsAPI(api: self)
     lazy var eld: ELDAPI = ELDAPI(api: self)
     lazy var capabilities: CapabilitiesAPI = CapabilitiesAPI(api: self)
     lazy var media: MediaAPI = MediaAPI(api: self)
@@ -4489,6 +4495,131 @@ struct NewsTranslationResult: Decodable, Sendable {
     let targetLanguage: String
     let error: String?
     let latencyMs: Int?
+}
+
+// MARK: - HereMapsAPI
+//
+// iOS-side facade over the `hereMaps.*` tRPC router
+// (frontend/server/routers/hereMaps.ts). Every server-side HERE add-on
+// — including the monetization (ad-zones, fuel-affiliate) +
+// gamification (haul missions, location analytics) layer — is reached
+// here so iOS and web stay in lockstep. Inputs match the verified Zod
+// schemas; outputs decode into the shapes below (extend as the UI needs
+// more fields — decoding is lenient on unknown keys via optionals).
+
+struct HereMapsAPI {
+    unowned let api: EusoTripAPI
+
+    // ── Shared wire types ──
+    struct LatLng: Encodable { let lat: Double; let lng: Double }
+    struct BBox: Encodable { let north: Double; let south: Double; let east: Double; let west: Double }
+
+    // MARK: Ad Zones (MONETIZATION — sponsored / SAE-ODD zones)
+    struct AdZone: Decodable, Identifiable, Hashable {
+        let id: String
+        let name: String?
+        let saeLevel: Int?
+        let polygon: [Coord]?
+        let conditions: [String]?
+        struct Coord: Decodable, Hashable { let lat: Double; let lng: Double }
+    }
+    func adZonesInBbox(_ bbox: BBox) async throws -> [AdZone] {
+        // Server returns an array; wrap-tolerant decode.
+        try await api.query("hereMaps.adZonesInBbox", input: bbox)
+    }
+
+    // MARK: ISA — speed limits (feeds safety score + gamification)
+    struct IsaResult: Decodable, Hashable {
+        let speedLimitKph: Double?
+        let speedUnit: String?
+        let inSchoolZone: Bool?
+    }
+    func isaForPoint(lat: Double, lng: Double) async throws -> IsaResult {
+        try await api.query("hereMaps.isaForPoint", input: LatLng(lat: lat, lng: lng))
+    }
+    func isaAlongPolyline(_ polyline: String) async throws -> [IsaResult] {
+        struct In: Encodable { let polyline: String }
+        return try await api.query("hereMaps.isaAlongPolyline", input: In(polyline: polyline))
+    }
+
+    // MARK: ADAS attributes (curvature / slope — co-pilot ODD)
+    func adasForLink(tileId: Int, linkId: Int) async throws -> AdasResult {
+        struct In: Encodable { let tileId: Int; let linkId: Int }
+        return try await api.query("hereMaps.adasForLink", input: In(tileId: tileId, linkId: linkId))
+    }
+    struct AdasResult: Decodable, Hashable {
+        let curvatures: [Double]?
+        let slopes: [Double]?
+    }
+
+    // MARK: Road alerts along a route
+    struct RoadAlert: Decodable, Identifiable, Hashable {
+        let id: String
+        let type: String?
+        let description: String?
+        let lat: Double?
+        let lng: Double?
+    }
+    func roadAlertsAlongRoute(polyline: String, marginMeters: Int? = nil) async throws -> [RoadAlert] {
+        struct In: Encodable { let polyline: String; let marginMeters: Int? }
+        return try await api.query("hereMaps.roadAlertsAlongRoute", input: In(polyline: polyline, marginMeters: marginMeters))
+    }
+
+    // MARK: Discover / Browse nearby (truck stops, scales, weigh stations)
+    struct Place: Decodable, Identifiable, Hashable {
+        let id: String
+        let title: String?
+        let lat: Double?
+        let lng: Double?
+        let category: String?
+        let distanceMeters: Int?
+    }
+    func discoverNearby(query: String, at: LatLng, radiusMeters: Int? = nil) async throws -> [Place] {
+        struct In: Encodable { let query: String; let at: LatLng; let radiusMeters: Int? }
+        return try await api.query("hereMaps.discoverNearby", input: In(query: query, at: at, radiusMeters: radiusMeters))
+    }
+
+    // MARK: Autosuggest (address fields)
+    struct Suggestion: Decodable, Identifiable, Hashable {
+        let id: String
+        let title: String
+        let lat: Double?
+        let lng: Double?
+    }
+    func autosuggest(query: String, anchor: LatLng, country: String? = nil, limit: Int? = nil) async throws -> [Suggestion] {
+        struct In: Encodable { let query: String; let anchor: LatLng; let country: String?; let limit: Int? }
+        return try await api.query("hereMaps.autosuggest", input: In(query: query, anchor: anchor, country: country, limit: limit))
+    }
+
+    // MARK: EV chargers (consumed alongside HereEVClient)
+    struct Charger: Decodable, Identifiable, Hashable {
+        let id: String
+        let name: String?
+        let lat: Double?
+        let lng: Double?
+        let maxPowerKw: Double?
+        let connectorTypes: [String]?
+        let available: Int?
+    }
+    func evChargers(at: LatLng, radiusMeters: Int? = nil, connectorType: String? = nil, minPowerKw: Double? = nil) async throws -> [Charger] {
+        struct In: Encodable { let at: LatLng; let radiusMeters: Int?; let connectorType: String?; let minPowerKw: Double? }
+        return try await api.query("hereMaps.evChargers", input: In(at: at, radiusMeters: radiusMeters, connectorType: connectorType, minPowerKw: minPowerKw))
+    }
+
+    // MARK: Location Analytics (GAMIFICATION — leaderboards + territory badges)
+    /// Server collapses breadcrumbs → coverage scalars used by The Haul.
+    struct CoverageSummary: Decodable, Hashable {
+        let uniqueStates: [String]?
+        let uniqueMetros: [String]?
+        let uniqueZips: [String]?
+        let totalKm: Double?
+        let corridorKm: [String: Double]?
+    }
+    func locationAnalytics(breadcrumbs: [Breadcrumb]) async throws -> CoverageSummary {
+        struct In: Encodable { let breadcrumbs: [Breadcrumb] }
+        return try await api.query("hereMaps.locationAnalytics", input: In(breadcrumbs: breadcrumbs))
+    }
+    struct Breadcrumb: Encodable { let lat: Double; let lng: Double; let capturedAt: String; let speedKph: Double? }
 }
 
 // MARK: - messagesRouter
