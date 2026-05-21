@@ -327,6 +327,10 @@ final class EusoTripAPI: ObservableObject {
     /// trailer recommendation). Backed by
     /// `frontend/server/routers/equipmentAgent.ts`.
     lazy var equipmentAgent: EquipmentAgentAPI = EquipmentAgentAPI(api: self)
+    /// XR Checklist — IO 2026 Tier 1 #12 (reefer HUD), Tier 3 #10
+    /// (dock-worker POD), Tier 3 #11 (USMCA filing assistant).
+    /// Backed by `frontend/server/routers/xrChecklist.ts`.
+    lazy var xrChecklist: XRChecklistAPI = XRChecklistAPI(api: self)
 
     // --- Driver-facing surfaces added to back the gamification / wallet /
     // fleet / availability screens. Each router mirrors a file under
@@ -18974,5 +18978,24 @@ struct EquipmentAgentAPI {
         // We accept both shapes here.
         return try? await api.query("equipmentAgent.getLatest",
                                     input: GetLatestInput(companyId: companyId))
+    }
+}
+
+// MARK: - xrChecklistRouter (Tier 1 #12 / Tier 3 #10 / Tier 3 #11)
+//
+// Mirrors `frontend/server/routers/xrChecklist.ts`. Surfaces the
+// XR HUD endpoints to iOS: streaming reefer status, dock-worker
+// POD capture (counter-party to driver POD), USMCA filing
+// assistant.
+
+struct XRChecklistAPI {
+    unowned let api: EusoTripAPI
+
+    /// `xrChecklist.dockWorkerPodCapture` — counter-party POD sign-off
+    /// for the receiver's dock worker. Server chains the audit row
+    /// off the driver's existing `load.pod_captured` block when one
+    /// exists; returns `chainedToDriverPod: true` in that case.
+    func dockWorkerPodCapture(input: DockWorkerPodInput) async throws -> DockWorkerPodResponse {
+        try await api.mutation("xrChecklist.dockWorkerPodCapture", input: input)
     }
 }

@@ -33,6 +33,11 @@ struct Paperwork: View {
     /// `ratings.submit` has shipped since the 90th firing — the
     /// missing piece was the iOS prompt screen.
     @State private var showRateShipper: Bool = false
+    /// Tier 3 #10 (2026-05-21) — present the dock-worker POD sheet
+    /// so the receiver's worker can sign off on the same screen
+    /// the driver lands on after offload. Server chains the row
+    /// off the driver POD, closing the cross-role action loop.
+    @State private var showDockPod: Bool = false
 
     enum Register { case night, afternoon }
     let register: Register
@@ -366,6 +371,40 @@ struct Paperwork: View {
                     laneSummary: paperworkLaneSummary
                 )
                 .environment(\.palette, palette)
+            }
+
+            // Dock-worker counter-party POD — Tier 3 #10. Driver hands
+            // the phone to the receiver's dock worker; the sheet
+            // chains their signature off the driver's POD row.
+            Button { showDockPod = true } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "person.badge.shield.checkmark")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text("Receiver sign-off")
+                        .font(EType.body).fontWeight(.semibold)
+                        .foregroundStyle(palette.textPrimary)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .padding(.horizontal, Space.s4)
+                .padding(.vertical, 12)
+                .background(palette.bgCard)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(LinearGradient.diagonal.opacity(0.4))
+                )
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .sheet(isPresented: $showDockPod) {
+                DockWorkerPodSheet(
+                    loadId: lifecycle.loadId.isEmpty ? "0" : lifecycle.loadId,
+                    osdReportRef: nil,
+                    onSigned: { _ in showDockPod = false }
+                )
             }
 
             HStack(spacing: Space.s3) {
