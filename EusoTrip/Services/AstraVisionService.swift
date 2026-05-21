@@ -277,3 +277,105 @@ public enum AstraError: LocalizedError {
         }
     }
 }
+
+// MARK: - IO 2026 P0-17 · POD scan wire types
+
+public struct AstraPodDamage: Codable, Hashable, Sendable {
+    public let visible: Bool
+    public let summary: String?
+    public let categories: [String]?
+}
+
+public struct AstraPodObservation: Codable, Hashable, Sendable {
+    public let sealNumber: String?
+    public let sealIntact: Bool?
+    public let palletCount: Int?
+    public let pieceCount: Int?
+    public let containerNumber: String?
+    public let containerSealNumber: String?
+    public let temperatureSetpoint: String?
+    public let temperatureCurrent: String?
+    public let damage: AstraPodDamage?
+    public let missingPieces: Bool?
+    public let placardsVisible: Bool?
+    public let confidence: Double?
+    public let warnings: [String]?
+}
+
+public enum AstraPodVerdict: String, Codable, Hashable, Sendable {
+    case pass
+    case fail
+    case needsReview = "needs_review"
+}
+
+public struct AstraPodResponse: Decodable, Hashable, Sendable {
+    public let observation: AstraPodObservation
+    public let verdict: AstraPodVerdict
+    public let modelUsed: String?
+    public let observedAt: String
+    public let auditId: Int?
+    public let overlayAuditId: Int?
+    public let podSignedEligible: Bool
+    public let signature: AstraSignatureBlock
+}
+
+extension AstraVisionService {
+    /// IO 2026 P0-17 — Auto-detect POD details (seal #, damage,
+    /// pallet count, OS&D triggers) from a delivery photo. Verifies
+    /// the Ed25519 signature locally before trusting the observation.
+    public func analyzePod(
+        image: UIImage,
+        trailer: TrailerCode? = nil,
+        vehicleId: String? = nil,
+        loadId: String? = nil,
+        expectedPieceCount: Int? = nil,
+        expectedSealNumber: String? = nil
+    ) async throws -> AstraPodResponse {
+        guard let jpeg = image.jpegData(compressionQuality: jpegQuality) else {
+            throw AstraError.imageEncodeFailed
+        }
+        let b64 = jpeg.base64EncodedString()
+        struct In: Encodable {
+            let imageBase64: String
+            let mimeType: String
+            let trailerCode: String?
+            let vehicleId: String?
+            let loadId: String?
+            let expectedPieceCount: Int?
+            let expectedSealNumber: String?
+        }
+        let payload = In(
+            imageBase64: b64,
+            mimeType: "image/jpeg",
+            trailerCode: trailer?.rawValue,
+            vehicleId: vehicleId,
+            loadId: loadId,
+            expectedPieceCount: expectedPieceCount,
+            expectedSealNumber: expectedSealNumber
+        )
+        let response: AstraPodResponse = try await EusoTripAPI.shared.mutation(
+            "astraDvir.podScan",
+            input: payload
+        )
+        // Verify the Ed25519 signature locally — never persist an
+        // unverified observation. Reuses the same CryptoKit path
+        // as `analyze(item:image:)` shipped in P0-6.
+        if !verifyPodSignature(response.signature) {
+            throw AstraError.signatureVerificationFailed
+        }
+        return response
+    }
+
+    private func verifyPodSignature(_ sig: AstraSignatureBlock) -> Bool {
+        guard
+            let digest = Data(base64Encoded: sig.digestSha256B64),
+            let signature = Data(base64Encoded: sig.signatureBytesB64),
+            let pubKeyRaw = Data(base64Encoded: sig.publicKeyB64),
+            digest.count == 32, signature.count == 64, pubKeyRaw.count == 32
+        else { return false }
+        do {
+            let publicKey = try Curve25519.Signing.PublicKey(rawRepresentation: pubKeyRaw)
+            return publicKey.isValidSignature(signature, for: digest)
+        } catch { return false }
+    }
+}

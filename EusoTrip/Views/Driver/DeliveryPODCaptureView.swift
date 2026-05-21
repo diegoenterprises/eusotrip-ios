@@ -94,6 +94,17 @@ struct DeliveryPODCaptureView: View {
     @State private var receiverName: String = ""
     @State private var notes: String = ""
 
+    // 2026-05-20 · IO 2026 P0-17 — Astra POD auto-detection state.
+    // After the driver picks a photo we offer a "Scan with Astra"
+    // affordance that runs the photo through Gemini Vision +
+    // Ed25519-signed audit chain. Successful scans auto-fill the
+    // OS&D notes + seal number; verdict gates the POD-signed FSM
+    // transition server-side (no client-side override).
+    @State private var astraPod: AstraPodResponse? = nil
+    @State private var astraScanning: Bool = false
+    @State private var astraError: String? = nil
+    @State private var sealNumber: String = ""
+
     // T-019 · 2026-05-20 — Equipment-specific POD capture state. Each
     // bucket is gated by a trailer / vertical predicate (see Body) and
     // stuffed into the submission notes block via `composedPODNotes()`
@@ -537,6 +548,14 @@ struct DeliveryPODCaptureView: View {
                     .buttonStyle(.plain)
                 }
             }
+
+            // 2026-05-20 · IO 2026 P0-17 — Astra POD auto-detection.
+            if photoImage != nil {
+                astraScanStrip
+            }
+            if let pod = astraPod {
+                astraObservationStrip(pod)
+            }
         }
         .padding(Space.s4)
         .background(palette.bgCard)
@@ -547,6 +566,158 @@ struct DeliveryPODCaptureView: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
         .onChange(of: photoItem) { _, newItem in
             Task { await loadPickedPhoto(newItem) }
+        }
+    }
+
+    /// "Scan with Astra" button rendered below the captured photo.
+    /// Fires `astraDvir.podScan` which OCRs seal #, damage, missing
+    /// pieces, pallet count + writes the Ed25519-signed observation
+    /// to the load.pod.astra_observed hash chain.
+    @ViewBuilder
+    private var astraScanStrip: some View {
+        HStack(spacing: 10) {
+            Button {
+                Task { await runAstraPodScan() }
+            } label: {
+                HStack(spacing: 6) {
+                    if astraScanning {
+                        ProgressView().controlSize(.small).tint(.white)
+                    } else {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 12, weight: .heavy))
+                    }
+                    Text(astraScanning ? "Astra scanning…" : (astraPod == nil ? "Scan with Astra" : "Re-scan"))
+                        .font(.system(size: 12, weight: .heavy))
+                        .tracking(0.4)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .foregroundStyle(.white)
+                .background(LinearGradient.diagonal)
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(astraScanning)
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// Inline strip showing Astra's parsed observation: verdict pill,
+    /// seal number, pallet count, damage summary. Verdict color
+    /// matches the server-side gating (green = pass / red = fail /
+    /// orange = needs_review). The `podSignedEligible` flag drives
+    /// whether the FSM overlay row was already written server-side.
+    @ViewBuilder
+    private func astraObservationStrip(_ pod: AstraPodResponse) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("ASTRA · POD")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 0)
+                verdictPill(pod.verdict)
+                if pod.podSignedEligible {
+                    Label("Overlay signed", systemImage: "checkmark.shield.fill")
+                        .labelStyle(.iconOnly)
+                        .foregroundStyle(.green)
+                        .font(.caption)
+                }
+            }
+            if let seal = pod.observation.sealNumber, !seal.isEmpty {
+                detailRow(label: "SEAL", value: seal)
+            }
+            if let pallets = pod.observation.palletCount {
+                detailRow(label: "PALLETS", value: String(pallets))
+            }
+            if let pieces = pod.observation.pieceCount {
+                detailRow(label: "PIECES", value: String(pieces))
+            }
+            if let container = pod.observation.containerNumber, !container.isEmpty {
+                detailRow(label: "CONTAINER", value: container)
+            }
+            if let temp = pod.observation.temperatureCurrent, !temp.isEmpty {
+                detailRow(label: "TEMP", value: temp)
+            }
+            if let dmg = pod.observation.damage?.summary, !dmg.isEmpty,
+               dmg.lowercased() != "none visible" {
+                Text("⚠︎ \(dmg)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let warnings = pod.observation.warnings, !warnings.isEmpty {
+                ForEach(warnings, id: \.self) { w in
+                    Text("• \(w)").font(.system(size: 11)).foregroundStyle(.orange)
+                }
+            }
+            if let err = astraError {
+                Text(err).font(.system(size: 11)).foregroundStyle(.red)
+            }
+        }
+        .padding(10)
+        .background(palette.bgCardSoft.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder
+    private func verdictPill(_ verdict: AstraPodVerdict) -> some View {
+        let (label, color): (String, Color) = {
+            switch verdict {
+            case .pass:        return ("PASS", .green)
+            case .fail:        return ("FAIL", .red)
+            case .needsReview: return ("NEEDS REVIEW", .orange)
+            }
+        }()
+        Text(label)
+            .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+            .foregroundStyle(color)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(color.opacity(0.14), in: Capsule())
+    }
+
+    @ViewBuilder
+    private func detailRow(label: String, value: String) -> some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.system(size: 9, weight: .heavy))
+                .tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+                .frame(width: 64, alignment: .leading)
+            Text(value)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(palette.textPrimary)
+        }
+    }
+
+    @MainActor
+    private func runAstraPodScan() async {
+        guard let img = photoImage else { return }
+        astraScanning = true
+        astraError = nil
+        defer { astraScanning = false }
+        do {
+            let response = try await AstraVisionService.shared.analyzePod(
+                image: img,
+                trailer: trailer,
+                vehicleId: nil,
+                loadId: loadId,
+                expectedPieceCount: nil,
+                expectedSealNumber: nil
+            )
+            astraPod = response
+            // Auto-fill seal number + OS&D notes from observation.
+            if let seal = response.observation.sealNumber, sealNumber.isEmpty {
+                sealNumber = seal
+            }
+            if let dmgSummary = response.observation.damage?.summary,
+               !dmgSummary.isEmpty,
+               dmgSummary.lowercased() != "none visible",
+               notes.isEmpty {
+                notes = dmgSummary
+            }
+        } catch {
+            astraError = (error as NSError).localizedDescription
         }
     }
 

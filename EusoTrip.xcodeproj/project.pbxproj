@@ -47,6 +47,7 @@
 		BFAD202605202024000100A5 /* PremiumTierView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605202024000100A5 /* PremiumTierView.swift */; };
 		BFAD202605202025000100A6 /* HaulCartService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605202025000100A6 /* HaulCartService.swift */; };
 		BFAD202605202026000100A7 /* 067_TheHaulRedemptionShop.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605202026000100A7 /* 067_TheHaulRedemptionShop.swift */; };
+		BFAD202605202027000100A8 /* GeminiAttributionBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605202027000100A8 /* GeminiAttributionBadge.swift */; };
 		A1B7C9E000000000B7C9E001 /* RoleSurfaceRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B7C9E000000000B7C9E002 /* RoleSurfaceRouter.swift */; };
 		A10AAEEEAC9C0054F8B34905 /* 019_HosDutyStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10C7CD83E4BB6CA038192D0 /* 019_HosDutyStatus.swift */; };
 		A11E8603E79595216A3607DB /* 004_ResetPassword.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F6E6E09C5EB9568612F3E1 /* 004_ResetPassword.swift */; };
@@ -791,6 +792,7 @@
 		FA1F202605202024000100A5 /* PremiumTierView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PremiumTierView.swift; path = Wallet/PremiumTierView.swift; sourceTree = "<group>"; };
 		FA1F202605202025000100A6 /* HaulCartService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HaulCartService.swift; sourceTree = "<group>"; };
 		FA1F202605202026000100A7 /* 067_TheHaulRedemptionShop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 067_TheHaulRedemptionShop.swift; path = Driver/067_TheHaulRedemptionShop.swift; sourceTree = "<group>"; };
+		FA1F202605202027000100A8 /* GeminiAttributionBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GeminiAttributionBadge.swift; path = Branding/GeminiAttributionBadge.swift; sourceTree = "<group>"; };
 		A1B7C9E000000000B7C9E002 /* RoleSurfaceRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoleSurfaceRouter.swift; sourceTree = "<group>"; };
 		A1F6E6E09C5EB9568612F3E1 /* 004_ResetPassword.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 004_ResetPassword.swift; sourceTree = "<group>"; };
 		A1FA70836FB725922F39A4E9 /* 015_AtGateAwaitingDock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 015_AtGateAwaitingDock.swift; sourceTree = "<group>"; };
@@ -1357,6 +1359,7 @@
 				FA1F202605202023000100A4 /* 427_CrossBorderWaitForecast.swift */,
 				FA1F202605202024000100A5 /* PremiumTierView.swift */,
 				FA1F202605202026000100A7 /* 067_TheHaulRedemptionShop.swift */,
+				FA1F202605202027000100A8 /* GeminiAttributionBadge.swift */,
 				FA1F202605202016000100FA /* CartView.swift */,
 				A1000000000000000000AAD5 /* Auth */,
 				A12E1A1C0010CE0FF1000014 /* Components */,
@@ -2411,6 +2414,7 @@
 				BFAD202605202024000100A5 /* PremiumTierView.swift in Sources */,
 				BFAD202605202025000100A6 /* HaulCartService.swift in Sources */,
 				BFAD202605202026000100A7 /* 067_TheHaulRedemptionShop.swift in Sources */,
+				BFAD202605202027000100A8 /* GeminiAttributionBadge.swift in Sources */,
 				A17EA9A0121947A6C4E1DDE9 /* HOSStatus.swift in Sources */,
 				A147FB466ACE52CB7A92127C /* Load.swift in Sources */,
 				E1E1A1A100000001AA000001 /* NewsArticle.swift in Sources */,
