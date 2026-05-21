@@ -1306,6 +1306,11 @@ enum ScreenRegistry {
                 AnyView(CatalystCommissionEngineScreen(theme: p))
             }
         )
+        // 2026-05-21 — eusotrip-killers SVG-faithful port. Catalyst
+        // Fleet · Vehicles (303). Wire contract: vehicles.list +
+        // iftaCalculator.calculateQuarter × 4 + maintenance.{getUpcoming,
+        // getAlerts}. Bottom nav frozen per doctrine — content only.
+        list.append(.init(id: "303", title: "Catalyst · Fleet · Vehicles", role: .catalyst) { p in AnyView(CatalystFleetVehiclesScreen(theme: p)) })
         // 2026-05-21 — Load board trio (web → iOS port).
         list.append(.init(id: "340", title: "Catalyst · Matched Loads",  role: .catalyst) { p in AnyView(MatchedLoadsScreen(theme: p)) })
         list.append(.init(id: "341", title: "Catalyst · Find Loads",     role: .catalyst) { p in AnyView(FindLoadsScreen(theme: p)) })
