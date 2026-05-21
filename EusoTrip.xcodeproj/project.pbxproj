@@ -272,6 +272,11 @@
 		CVET20260521000001 /* CarrierVetSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CVET20260521000002 /* CarrierVetSheet.swift */; };
 		XRRH20260521000001 /* XRReeferStatusHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = XRRH20260521000002 /* XRReeferStatusHUD.swift */; };
 		BCVT20260521000001 /* 406_BrokerCatalystVetting.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCVT20260521000002 /* 406_BrokerCatalystVetting.swift */; };
+		BNTR20260521000001 /* 089_DriverBonusTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = BNTR20260521000002 /* 089_DriverBonusTracker.swift */; };
+		FPSH20260521000001 /* FacilityProfileSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FPSH20260521000002 /* FacilityProfileSheet.swift */; };
+		ACSC20260521000001 /* AppointmentSchedulerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACSC20260521000002 /* AppointmentSchedulerSheet.swift */; };
+		DPTR20260521000001 /* Dpch714_DispatchTrio.swift in Sources */ = {isa = PBXBuildFile; fileRef = DPTR20260521000002 /* Dpch714_DispatchTrio.swift */; };
+		LBTR20260521000001 /* 340_LoadBoardTrio.swift in Sources */ = {isa = PBXBuildFile; fileRef = LBTR20260521000002 /* 340_LoadBoardTrio.swift */; };
 		B1A11111111111111111AA07 /* DriverTabPanes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA08 /* DriverTabPanes.swift */; };
 		B1A11111111111111111AB01 /* ESangParticleBurst.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AB02 /* ESangParticleBurst.swift */; };
 		B1A11111111111111111AC01 /* MeDetailScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AC02 /* MeDetailScreens.swift */; };
@@ -926,6 +931,11 @@
 		CVET20260521000002 /* CarrierVetSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CarrierVetSheet.swift; path = EusoTrip/Views/Components/CarrierVetSheet.swift; sourceTree = SOURCE_ROOT; };
 		XRRH20260521000002 /* XRReeferStatusHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = XRReeferStatusHUD.swift; path = EusoTrip/Views/Components/XRReeferStatusHUD.swift; sourceTree = SOURCE_ROOT; };
 		BCVT20260521000002 /* 406_BrokerCatalystVetting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 406_BrokerCatalystVetting.swift; path = EusoTrip/Views/Broker/406_BrokerCatalystVetting.swift; sourceTree = SOURCE_ROOT; };
+		BNTR20260521000002 /* 089_DriverBonusTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 089_DriverBonusTracker.swift; path = EusoTrip/Views/Driver/089_DriverBonusTracker.swift; sourceTree = SOURCE_ROOT; };
+		FPSH20260521000002 /* FacilityProfileSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FacilityProfileSheet.swift; path = EusoTrip/Views/Components/FacilityProfileSheet.swift; sourceTree = SOURCE_ROOT; };
+		ACSC20260521000002 /* AppointmentSchedulerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppointmentSchedulerSheet.swift; path = EusoTrip/Views/Components/AppointmentSchedulerSheet.swift; sourceTree = SOURCE_ROOT; };
+		DPTR20260521000002 /* Dpch714_DispatchTrio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch714_DispatchTrio.swift; path = EusoTrip/Views/Dispatch/Dpch714_DispatchTrio.swift; sourceTree = SOURCE_ROOT; };
+		LBTR20260521000002 /* 340_LoadBoardTrio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 340_LoadBoardTrio.swift; path = EusoTrip/Views/Catalyst/340_LoadBoardTrio.swift; sourceTree = SOURCE_ROOT; };
 		B1A11111111111111111AA08 /* DriverTabPanes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverTabPanes.swift; sourceTree = "<group>"; };
 		B1A11111111111111111AA09 /* EusoTrip.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = EusoTrip.entitlements; sourceTree = "<group>"; };
 		B1A11111111111111111AB02 /* ESangParticleBurst.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESangParticleBurst.swift; sourceTree = "<group>"; };
@@ -1687,6 +1697,11 @@
 				D2V0300000000000000ACFE /* 404_BrokerCommissionQueue.swift */,
 				D2V0400000000000000ACFE /* 405_BrokerActiveBrokerages.swift */,
 				BCVT20260521000002 /* 406_BrokerCatalystVetting.swift */,
+				BNTR20260521000002 /* 089_DriverBonusTracker.swift */,
+				FPSH20260521000002 /* FacilityProfileSheet.swift */,
+				ACSC20260521000002 /* AppointmentSchedulerSheet.swift */,
+				DPTR20260521000002 /* Dpch714_DispatchTrio.swift */,
+				LBTR20260521000002 /* 340_LoadBoardTrio.swift */,
 				D2DSPDSP0000000000000ACDS /* 700_DispatchHome.swift */,
 				D2DSPNAV0000000000000ACDS /* DispatchNavController.swift */,
 				D2DSPDSP0100000000000ACDS /* 701_DispatchDriverBoard.swift */,
@@ -2738,6 +2753,11 @@
 				D2V0300000000000000ABFE /* 404_BrokerCommissionQueue.swift in Sources */,
 				D2V0400000000000000ABFE /* 405_BrokerActiveBrokerages.swift in Sources */,
 				BCVT20260521000001 /* 406_BrokerCatalystVetting.swift in Sources */,
+				BNTR20260521000001 /* 089_DriverBonusTracker.swift in Sources */,
+				FPSH20260521000001 /* FacilityProfileSheet.swift in Sources */,
+				ACSC20260521000001 /* AppointmentSchedulerSheet.swift in Sources */,
+				DPTR20260521000001 /* Dpch714_DispatchTrio.swift in Sources */,
+				LBTR20260521000001 /* 340_LoadBoardTrio.swift in Sources */,
 				D2DSPDSP0000000000000ABDS /* 700_DispatchHome.swift in Sources */,
 				D2DSPNAV0000000000000ABDS /* DispatchNavController.swift in Sources */,
 				D2DSPDSP0100000000000ABDS /* 701_DispatchDriverBoard.swift in Sources */,

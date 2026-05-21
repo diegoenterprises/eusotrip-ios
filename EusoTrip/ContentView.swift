@@ -177,6 +177,8 @@ enum ScreenRegistry {
             .init(id: "108", title: "Me · LoadBoard",               role: .driver) { p in AnyView(MeLoadBoardScreen(theme: p)) },
             .init(id: "109", title: "Me · Bid Detail",              role: .driver) { p in AnyView(MeBidDetailScreen(theme: p, loadId: 0)) },
             .init(id: "110", title: "Me · Auto-Accept",             role: .driver) { p in AnyView(MeAutoAcceptRulesScreen(theme: p)) },
+            // 2026-05-21 — Bonus Tracker port (web BonusTracker.tsx → iOS).
+            .init(id: "111", title: "Me · Bonus Tracker",           role: .driver) { p in AnyView(DriverBonusTrackerScreen(theme: p)) },
             // Driver Me hub — parent + 7 children mirroring the
             // Shipper 320/320a-g design. Founder feedback 2026-05-04:
             // wanted the same parent-child IA on driver. The catalog
@@ -1298,6 +1300,10 @@ enum ScreenRegistry {
                 AnyView(CatalystCommissionEngineScreen(theme: p))
             }
         )
+        // 2026-05-21 — Load board trio (web → iOS port).
+        list.append(.init(id: "340", title: "Catalyst · Matched Loads",  role: .catalyst) { p in AnyView(MatchedLoadsScreen(theme: p)) })
+        list.append(.init(id: "341", title: "Catalyst · Find Loads",     role: .catalyst) { p in AnyView(FindLoadsScreen(theme: p)) })
+        list.append(.init(id: "342", title: "Catalyst · Assigned Loads", role: .catalyst) { p in AnyView(AssignedLoadsScreen(theme: p)) })
         // 2026-05-06 — Catalyst Driver Documents (Figma 322 light + dark)
         // lands. The catalyst-side document vault for a single driver —
         // the file binaries behind 321 Driver Profile's credential pills
@@ -1564,6 +1570,13 @@ enum ScreenRegistry {
             // functional dead-end. Now points here. Links to all 13
             // registered dispatch screens via .eusoDispatchNavSwap.
             .init(id: "Dpch713", title: "Dispatch · Me",               role: .dispatch) { p in AnyView(DispatchMeScreen(theme: p)) },
+            // 2026-05-21 — eusotrip-killers screen-porting sweep.
+            // Three dispatch flagship screens land bundled in one
+            // Swift file (Dpch714_DispatchTrio.swift): Command Center,
+            // Fleet Map, Performance.
+            .init(id: "Dpch714", title: "Dispatch · Command Center",   role: .dispatch) { p in AnyView(DispatchCommandCenterScreen(theme: p)) },
+            .init(id: "Dpch715", title: "Dispatch · Fleet Map",        role: .dispatch) { p in AnyView(DispatchFleetMapScreen(theme: p)) },
+            .init(id: "Dpch716", title: "Dispatch · Performance",      role: .dispatch) { p in AnyView(DispatchPerformanceScreen(theme: p)) },
         ])
 
         return list
