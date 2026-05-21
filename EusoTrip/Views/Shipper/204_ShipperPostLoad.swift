@@ -2497,6 +2497,44 @@ struct ShipperPostLoad: View {
         }
     }
 
+    // MARK: - Equipment Recommender helpers (Tier 2 #40)
+
+    /// Best-effort commodity description for the equipment agent.
+    /// Prefers a fresh free-form `notes` description; falls back to
+    /// the canonical cargo category. Trimmed to under 200 chars so
+    /// the agent prompt stays predictable.
+    private func equipmentRecommenderCommodityString() -> String {
+        let trimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            return String(trimmed.prefix(200))
+        }
+        return cargoType.rawValue.replacingOccurrences(of: "_", with: " ")
+    }
+
+    /// Equipment-agent vertical: "TRUCK" | "RAIL" | "VESSEL".
+    /// Barge folds into VESSEL since the server side equipment
+    /// catalog uses the same set for both.
+    private func equipmentRecommenderVerticalString() -> String {
+        switch transportMode {
+        case .truck:  return "TRUCK"
+        case .rail:   return "RAIL"
+        case .vessel: return "VESSEL"
+        case .barge:  return "VESSEL"
+        }
+    }
+
+    /// Apply a server-recommended trailerKey to the picker. Server
+    /// emits canonical EquipmentChoice rawValues, so a direct lookup
+    /// works; defaults to dryVan if the server returns a key the
+    /// client doesn't know (forward-compat hedge).
+    private func applyRecommendedTrailerKey(_ trailerKey: String) {
+        if let match = EquipmentChoice(rawValue: trailerKey) {
+            withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
+                equipmentType = match
+            }
+        }
+    }
+
     /// Parse the user's typed weight + unit and convert to pounds.
     /// Returns 0 for unparseable input or units with no mass meaning
     /// (TEU/FEU/pallets etc.).
@@ -2778,6 +2816,24 @@ struct ShipperPostLoad: View {
                     .font(.system(size: 8, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(LinearGradient.diagonal)
             }
+            // ESANG Equipment Recommender — Tier 2 #40 ship 2026-05-21.
+            // Fires once cargo description + weight are filled in.
+            // Tap a recommendation row to apply it as the active
+            // equipment choice.
+            EquipmentRecommenderWidget(
+                commodity: equipmentRecommenderCommodityString(),
+                weightLbs: parseWeightLbs(weightText, unit: weightUnit) > 0
+                    ? Int(parseWeightLbs(weightText, unit: weightUnit))
+                    : nil,
+                vertical: equipmentRecommenderVerticalString(),
+                companyId: Int(session.user?.companyId ?? ""),
+                originState: originStateCode,
+                destState: destStateCode,
+                isOverdimensional: equipmentType == .oversized
+                    || equipmentType == .lowboy,
+                onApply: { applyRecommendedTrailerKey($0) },
+                currentSelection: equipmentType.rawValue
+            )
             // ScrollViewReader wraps the horizontal chip strip so we
             // can `scrollTo` the selected equipment chip whenever
             // `equipmentType` changes — including the cascade from a

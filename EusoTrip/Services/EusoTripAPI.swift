@@ -323,6 +323,10 @@ final class EusoTripAPI: ObservableObject {
     /// Shipper / Dispatcher / Catalyst). Backed by
     /// `frontend/server/routers/spark.ts`.
     lazy var spark: SparkAPI = SparkAPI(api: self)
+    /// Equipment Agent — IO 2026 Tier 2 #40 (Cortex-orchestrated
+    /// trailer recommendation). Backed by
+    /// `frontend/server/routers/equipmentAgent.ts`.
+    lazy var equipmentAgent: EquipmentAgentAPI = EquipmentAgentAPI(api: self)
 
     // --- Driver-facing surfaces added to back the gamification / wallet /
     // fleet / availability screens. Each router mirrors a file under
@@ -18932,5 +18936,43 @@ struct SparkAPI {
     /// on the existing brief and swaps when this resolves.
     func run(role: SparkRole) async throws -> SparkRunBriefResponse {
         try await api.mutation(role.runPath, input: Empty())
+    }
+}
+
+// MARK: - equipmentAgentRouter (Tier 2 #40 · trailer recommendation)
+//
+// Mirrors `frontend/server/routers/equipmentAgent.ts`.
+// 3-child Cortex fanout (perception + memory + planning) plus a
+// synthesis pass returning a top pick + 2 alternatives with
+// fitScore + redFlags + availableInFleet count.
+
+struct EquipmentAgentAPI {
+    unowned let api: EusoTripAPI
+
+    /// Calls `equipmentAgent.recommend`. Response shape mirrors
+    /// the server's `RecommendOutput`:
+    ///   { generatedAtUtc, topPick, alternatives, synthesis,
+    ///     childrenFiredCount }
+    func recommend(input: EquipmentRecommendInput) async throws -> EquipmentRecommendResponse {
+        try await api.mutation("equipmentAgent.recommend", input: input)
+    }
+
+    /// `equipmentAgent.getLatest` — read the most recent
+    /// recommendation envelope for the calling user's company.
+    /// Use this to hydrate the widget on first render so the
+    /// founder sees the prior recommendation instantly while a
+    /// fresh fanout runs in the background.
+    struct GetLatestInput: Encodable {
+        let companyId: Int
+    }
+    func getLatest(companyId: Int) async throws -> EquipmentRecommendResponse? {
+        struct EnvelopeOptional: Decodable {
+            let envelope: EquipmentRecommendResponse?
+        }
+        // Server returns either the recommendation envelope or null;
+        // tRPC wraps it as the value itself, not under `envelope`.
+        // We accept both shapes here.
+        return try? await api.query("equipmentAgent.getLatest",
+                                    input: GetLatestInput(companyId: companyId))
     }
 }
