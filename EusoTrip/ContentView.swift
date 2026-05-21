@@ -1113,6 +1113,12 @@ enum ScreenRegistry {
         // upgraded to real DB writes in the same commit pair so the buttons
         // are not dead.
         list.append(.init(id: "406",  title: "Broker · Catalyst Vetting", role: .broker) { p in AnyView(BrokerCatalystVettingScreen(theme: p)) })
+        // 2026-05-21 — 407 drill-down (web CatalystVettingDetails.tsx port).
+        // catalystId routes through BrokerNavContext.latestCatalystId so
+        // the row tap from 406 hands off correctly.
+        list.append(.init(id: "407",  title: "Broker · Catalyst Vetting Details", role: .broker) { p in
+            AnyView(BrokerCatalystVettingDetailsScreen(theme: p, catalystId: BrokerNavContext.latestCatalystId))
+        })
         // 2026-04-25 — eusotrip-killers 102nd firing
         // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
         // First real Catalyst-track brick lands in production. Lifts

@@ -53,6 +53,19 @@ enum BrokerNavRoute {
     static let orbLabels: Set<String> = ["esang", "orb"]
 }
 
+/// Lightweight bridge for catalystId / loadId payloads on
+/// `.eusoBrokerNavSwap`. Broker drill-down screens (403 Tender to
+/// Carrier, 407 Catalyst Vetting Details, etc.) read from here
+/// instead of taking the ID via init — the ScreenRegistry factory
+/// signature is `(palette) -> AnyView` with no slot for extra args.
+/// Updated by `BrokerSurface` on each navSwap that carries the
+/// payload (2026-05-21).
+@MainActor
+enum BrokerNavContext {
+    static var latestCatalystId: String = "0"
+    static var latestLoadId: String = "0"
+}
+
 @MainActor
 enum BrokerNavDispatcher {
     static func handle(_ label: String) {

@@ -53,6 +53,7 @@
 		A10AAEEEAC9C0054F8B34905 /* 019_HosDutyStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10C7CD83E4BB6CA038192D0 /* 019_HosDutyStatus.swift */; };
 		A11E8603E79595216A3607DB /* 004_ResetPassword.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F6E6E09C5EB9568612F3E1 /* 004_ResetPassword.swift */; };
 		A12E1A1C0010CE0FF1000001 /* HereMapsConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000002 /* HereMapsConfig.swift */; };
+		A1HMWV0001000000000000A1 /* HereMapWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1HMWV0001000000000000A2 /* HereMapWebView.swift */; };
 		A12E1A1C0010CE0FF1000003 /* TruckProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000004 /* TruckProfile.swift */; };
 		A12E1A1C0010CE0FF1000005 /* HereRouteModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000006 /* HereRouteModels.swift */; };
 		A12E1A1C0010CE0FF1000007 /* HereFlexiblePolyline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000008 /* HereFlexiblePolyline.swift */; };
@@ -272,6 +273,7 @@
 		CVET20260521000001 /* CarrierVetSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CVET20260521000002 /* CarrierVetSheet.swift */; };
 		XRRH20260521000001 /* XRReeferStatusHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = XRRH20260521000002 /* XRReeferStatusHUD.swift */; };
 		BCVT20260521000001 /* 406_BrokerCatalystVetting.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCVT20260521000002 /* 406_BrokerCatalystVetting.swift */; };
+		BCVD20260521000001 /* 407_BrokerCatalystVettingDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCVD20260521000002 /* 407_BrokerCatalystVettingDetails.swift */; };
 		BNTR20260521000001 /* 089_DriverBonusTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = BNTR20260521000002 /* 089_DriverBonusTracker.swift */; };
 		FPSH20260521000001 /* FacilityProfileSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FPSH20260521000002 /* FacilityProfileSheet.swift */; };
 		ACSC20260521000001 /* AppointmentSchedulerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACSC20260521000002 /* AppointmentSchedulerSheet.swift */; };
@@ -674,6 +676,7 @@
 		A10C7CD83E4BB6CA038192D0 /* 019_HosDutyStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 019_HosDutyStatus.swift; sourceTree = "<group>"; };
 		A12AE74E2A03406ADC0DD5AD /* 010_DriverHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 010_DriverHome.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000002 /* HereMapsConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereMapsConfig.swift; sourceTree = "<group>"; };
+		A1HMWV0001000000000000A2 /* HereMapWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereMapWebView.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000004 /* TruckProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TruckProfile.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000006 /* HereRouteModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereRouteModels.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000008 /* HereFlexiblePolyline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereFlexiblePolyline.swift; sourceTree = "<group>"; };
@@ -931,6 +934,7 @@
 		CVET20260521000002 /* CarrierVetSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CarrierVetSheet.swift; path = EusoTrip/Views/Components/CarrierVetSheet.swift; sourceTree = SOURCE_ROOT; };
 		XRRH20260521000002 /* XRReeferStatusHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = XRReeferStatusHUD.swift; path = EusoTrip/Views/Components/XRReeferStatusHUD.swift; sourceTree = SOURCE_ROOT; };
 		BCVT20260521000002 /* 406_BrokerCatalystVetting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 406_BrokerCatalystVetting.swift; path = EusoTrip/Views/Broker/406_BrokerCatalystVetting.swift; sourceTree = SOURCE_ROOT; };
+		BCVD20260521000002 /* 407_BrokerCatalystVettingDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 407_BrokerCatalystVettingDetails.swift; path = EusoTrip/Views/Broker/407_BrokerCatalystVettingDetails.swift; sourceTree = SOURCE_ROOT; };
 		BNTR20260521000002 /* 089_DriverBonusTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 089_DriverBonusTracker.swift; path = EusoTrip/Views/Driver/089_DriverBonusTracker.swift; sourceTree = SOURCE_ROOT; };
 		FPSH20260521000002 /* FacilityProfileSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FacilityProfileSheet.swift; path = EusoTrip/Views/Components/FacilityProfileSheet.swift; sourceTree = SOURCE_ROOT; };
 		ACSC20260521000002 /* AppointmentSchedulerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppointmentSchedulerSheet.swift; path = EusoTrip/Views/Components/AppointmentSchedulerSheet.swift; sourceTree = SOURCE_ROOT; };
@@ -1697,6 +1701,7 @@
 				D2V0300000000000000ACFE /* 404_BrokerCommissionQueue.swift */,
 				D2V0400000000000000ACFE /* 405_BrokerActiveBrokerages.swift */,
 				BCVT20260521000002 /* 406_BrokerCatalystVetting.swift */,
+				BCVD20260521000002 /* 407_BrokerCatalystVettingDetails.swift */,
 				BNTR20260521000002 /* 089_DriverBonusTracker.swift */,
 				FPSH20260521000002 /* FacilityProfileSheet.swift */,
 				ACSC20260521000002 /* AppointmentSchedulerSheet.swift */,
@@ -1934,6 +1939,7 @@
 			isa = PBXGroup;
 			children = (
 				A12E1A1C0010CE0FF1000002 /* HereMapsConfig.swift */,
+				A1HMWV0001000000000000A2 /* HereMapWebView.swift */,
 				A12E1A1C0010CE0FF1000004 /* TruckProfile.swift */,
 				A12E1A1C0010CE0FF1000006 /* HereRouteModels.swift */,
 				A12E1A1C0010CE0FF1000008 /* HereFlexiblePolyline.swift */,
@@ -2488,6 +2494,7 @@
 				A1F3A1F3A1F3A1F3A1F30003 /* PretripDVIRViewModel.swift in Sources */,
 				A1F100000000000000000BAA /* IntroSplash.swift in Sources */,
 				A12E1A1C0010CE0FF1000001 /* HereMapsConfig.swift in Sources */,
+				A1HMWV0001000000000000A1 /* HereMapWebView.swift in Sources */,
 				A12E1A1C0010CE0FF1000003 /* TruckProfile.swift in Sources */,
 				A12E1A1C0010CE0FF1000005 /* HereRouteModels.swift in Sources */,
 				A12E1A1C0010CE0FF1000007 /* HereFlexiblePolyline.swift in Sources */,
@@ -2753,6 +2760,7 @@
 				D2V0300000000000000ABFE /* 404_BrokerCommissionQueue.swift in Sources */,
 				D2V0400000000000000ABFE /* 405_BrokerActiveBrokerages.swift in Sources */,
 				BCVT20260521000001 /* 406_BrokerCatalystVetting.swift in Sources */,
+				BCVD20260521000001 /* 407_BrokerCatalystVettingDetails.swift in Sources */,
 				BNTR20260521000001 /* 089_DriverBonusTracker.swift in Sources */,
 				FPSH20260521000001 /* FacilityProfileSheet.swift in Sources */,
 				ACSC20260521000001 /* AppointmentSchedulerSheet.swift in Sources */,

@@ -978,6 +978,12 @@ struct BrokerSurface: View {
                 guard RoleAccess.canRender(role: .broker, screenId: id) else {
                     screenStack = ["400"]; return
                 }
+                // 2026-05-21 — capture drill-down payload (catalystId /
+                // loadId) into BrokerNavContext so child screens can
+                // read it during init. ScreenRegistry factories are
+                // (palette) -> AnyView with no slot for extra args.
+                if let c = note.userInfo?["catalystId"] as? String { BrokerNavContext.latestCatalystId = c }
+                if let l = note.userInfo?["loadId"]     as? String { BrokerNavContext.latestLoadId     = l }
                 withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in

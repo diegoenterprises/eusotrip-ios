@@ -165,7 +165,17 @@ private struct CatalystVettingBody: View {
             )
         } else {
             ForEach(items) { item in
-                vettingCard(item)
+                Button {
+                    // Tap a row → drill into 407 (per-applicant details).
+                    NotificationCenter.default.post(
+                        name: .eusoBrokerNavSwap,
+                        object: nil,
+                        userInfo: ["screenId": "407", "catalystId": item.catalystId]
+                    )
+                } label: {
+                    vettingCard(item)
+                }
+                .buttonStyle(.plain)
             }
         }
     }
