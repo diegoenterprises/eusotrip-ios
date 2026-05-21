@@ -1671,6 +1671,15 @@ enum ScreenRegistry {
             .init(id: "Dpch735", title: "Dispatch · Weather Reroute",     role: .dispatch) { p in AnyView(DispatcherWeatherRerouteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "Dpch736", title: "Dispatch · Reload Offer",        role: .dispatch) { p in AnyView(DispatcherReloadOfferScreen(theme: p, driverId: BrokerNavContext.latestCatalystId)) },
             .init(id: "Dpch737", title: "Dispatch · Fuel-Policy Override",role: .dispatch) { p in AnyView(DispatcherFuelPolicyOverrideScreen(theme: p, driverId: BrokerNavContext.latestCatalystId)) },
+            // 2026-05-21 — Dispatcher driver-detail octet (SVG 420-427).
+            .init(id: "Dpch740", title: "Dispatch · Driver Review",       role: .dispatch) { p in AnyView(DispatcherDriverReviewScreen(theme: p, driverId: BrokerNavContext.latestDriverId)) },
+            .init(id: "Dpch741", title: "Dispatch · Driver Lane",         role: .dispatch) { p in AnyView(DispatcherDriverLaneDetailScreen(theme: p, driverId: BrokerNavContext.latestDriverId)) },
+            .init(id: "Dpch742", title: "Dispatch · Driver Incident Log", role: .dispatch) { p in AnyView(DispatcherDriverIncidentLogScreen(theme: p, driverId: BrokerNavContext.latestDriverId)) },
+            .init(id: "Dpch743", title: "Dispatch · Driver Performance",  role: .dispatch) { p in AnyView(DispatcherDriverPerformanceDetailScreen(theme: p, driverId: BrokerNavContext.latestDriverId)) },
+            .init(id: "Dpch744", title: "Dispatch · Driver HOS",          role: .dispatch) { p in AnyView(DispatcherDriverHOSDetailScreen(theme: p, driverId: BrokerNavContext.latestDriverId)) },
+            .init(id: "Dpch745", title: "Dispatch · Driver Onboarding",   role: .dispatch) { p in AnyView(DispatcherDriverOnboardingStepDetailScreen(theme: p, driverId: BrokerNavContext.latestDriverId)) },
+            .init(id: "Dpch746", title: "Dispatch · Driver Compliance",   role: .dispatch) { p in AnyView(DispatcherDriverComplianceRowDetailScreen(theme: p, driverId: BrokerNavContext.latestDriverId)) },
+            .init(id: "Dpch747", title: "Dispatch · Driver Quarter",      role: .dispatch) { p in AnyView(DispatcherDriverQuarterDetailScreen(theme: p, driverId: BrokerNavContext.latestDriverId)) },
         ])
 
         return list
