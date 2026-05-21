@@ -36,6 +36,10 @@ public struct CrossBorderShippingView: View {
     @State private var cacheAgeSeconds: Int = 0
     @State private var isLoading: Bool = false
     @State private var errorMessage: String? = nil
+    /// Tier 3 #11 (2026-05-21) — present the USMCA filing assistant
+    /// sheet from the border-crossing screen. The driver gets the
+    /// next filing step out loud via ESangTTSPlayer.
+    @State private var showUSMCA: Bool = false
 
     public init(
         fromLat: Double,
@@ -74,11 +78,15 @@ public struct CrossBorderShippingView: View {
                 if recommendations.count > 1 {
                     alternatesList
                 }
+                usmcaCTA
                 sourceLine
             }
             .padding(16)
         }
         .navigationTitle("Border Crossing")
+        .sheet(isPresented: $showUSMCA) {
+            USMCAFilingAssistantSheet(loadId: nil)
+        }
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .refreshable { await load() }
@@ -203,6 +211,34 @@ public struct CrossBorderShippingView: View {
             .foregroundStyle(color)
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(color.opacity(0.12), in: Capsule())
+    }
+
+    private var usmcaCTA: some View {
+        Button {
+            showUSMCA = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.shield.fill")
+                    .foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("USMCA Filing Help")
+                        .font(.callout.weight(.semibold))
+                    Text("ESANG checks your cert + tells you the next filing step out loud.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color(.secondarySystemBackground))
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private var sourceLine: some View {

@@ -18998,4 +18998,13 @@ struct XRChecklistAPI {
     func dockWorkerPodCapture(input: DockWorkerPodInput) async throws -> DockWorkerPodResponse {
         try await api.mutation("xrChecklist.dockWorkerPodCapture", input: input)
     }
+
+    /// `xrChecklist.usmcaFilingAssistant` — Tier 3 #11.
+    /// 2-child Cortex fanout (perception + guardian) + a synthesis
+    /// pass returning the next filing step with citations and a
+    /// driver-spoken instruction. Played through ESangTTSPlayer
+    /// from the sheet so the driver's eyes stay on the road.
+    func usmcaFilingAssistant(input: USMCAFilingInput) async throws -> USMCAFilingResponse {
+        try await api.mutation("xrChecklist.usmcaFilingAssistant", input: input)
+    }
 }
