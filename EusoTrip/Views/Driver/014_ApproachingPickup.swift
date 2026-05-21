@@ -122,11 +122,19 @@ struct ApproachingPickup: View {
 
     // MARK: - Body
 
+    /// IO 2026 P0-16 — Audio-only XR pre-haul handoff sheet.
+    /// Surfaces when the driver pairs an XR audio headset (Warby
+    /// Parker frames Fall 2026, AirPods today) and the load is
+    /// hazmat / reefer / livestock / tanker. Reads each checklist
+    /// item aloud + accepts voice confirmation.
+    @State private var showXRHandoff: Bool = false
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
                 esangCard
+                xrHandoffCard
                 progressHeader
                 checklistRows
                 footerActions
@@ -139,7 +147,68 @@ struct ApproachingPickup: View {
             await hydrateLiveTrip()
             seedDefaultCompletions()
         }
+        .sheet(isPresented: $showXRHandoff) {
+            XRPreHaulSessionSheet(loadId: activeLoad?.loadNumber ?? activeLoad.map { "load_\($0.id)" } ?? "")
+        }
         .screenTileRoot()
+    }
+
+    /// CTA card offering the audio-only XR pre-haul session. Only
+    /// shows when the active load has hazmat / reefer / tanker /
+    /// livestock characteristics — these are the verticals the
+    /// XR checklist actually has prompts for.
+    @ViewBuilder
+    private var xrHandoffCard: some View {
+        if shouldOfferXRChecklist {
+            Button {
+                showXRHandoff = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "headphones")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("ESANG · AUDIO PRE-HAUL")
+                            .font(.system(size: 9, weight: .heavy))
+                            .tracking(0.8)
+                            .foregroundStyle(palette.textTertiary)
+                        Text("Hands-free hazmat checklist")
+                            .font(EType.body.weight(.semibold))
+                            .foregroundStyle(palette.textPrimary)
+                        Text("Reads each step aloud — say the confirm phrase to advance.")
+                            .font(.caption)
+                            .foregroundStyle(palette.textSecondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .padding(14)
+                .background(palette.bgCard)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                        .strokeBorder(LinearGradient.diagonal.opacity(0.35), lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    /// True when the active load benefits from the XR checklist
+    /// — hazmat / reefer / tanker / livestock loads have prompts;
+    /// dry-van general freight doesn't.
+    private var shouldOfferXRChecklist: Bool {
+        guard let load = activeLoad else { return false }
+        let cargo = (load.cargoType ?? "").lowercased()
+        let isHazmat   = load.hazmatClass != nil || cargo.contains("hazmat")
+        let isReefer   = cargo.contains("reefer") || cargo.contains("refrigerated")
+        let isTanker   = cargo.contains("tank")   || cargo.contains("petroleum") || cargo.contains("crude")
+        let isLivestock = cargo.contains("cattle") || cargo.contains("livestock") || cargo.contains("hog")
+        return isHazmat || isReefer || isTanker || isLivestock
     }
 
     // MARK: Header
@@ -487,4 +556,168 @@ private func driverNavTrailing_014() -> [NavSlot] {
 #Preview("014 · Approaching · Light") {
     ApproachingPickupScreen(theme: Theme.light)
         .preferredColorScheme(.light)
+}
+
+// MARK: - IO 2026 P0-16 · Audio-only XR pre-haul session sheet
+
+/// Hosted from 014_ApproachingPickup when the driver opts into the
+/// hands-free hazmat checklist. Renders the live session state
+/// (current item, progress, manual confirm + skip buttons) while
+/// the XRSessionBridge handles TTS playback + voice confirmation
+/// via ESang. Audio routes through whichever output the driver has
+/// active (Bluetooth XR frames, AirPods, CarPlay speaker).
+private struct XRPreHaulSessionSheet: View {
+    let loadId: String
+    @StateObject private var bridge = XRSessionBridge.shared
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            header
+            progressStrip
+            currentItemCard
+            controlsRow
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .task { await bridge.start(loadId: loadId) }
+        .onDisappear { bridge.stop() }
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "sparkles")
+                .foregroundStyle(LinearGradient(
+                    colors: [.cyan, .green],
+                    startPoint: .leading, endPoint: .trailing
+                ))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("ESANG · AUDIO PRE-HAUL")
+                    .font(.system(size: 11, weight: .heavy))
+                    .tracking(0.8)
+                    .foregroundStyle(.secondary)
+                Text("Hands-free checklist").font(.title3.bold())
+            }
+            Spacer(minLength: 0)
+            Button("Done") { dismiss() }
+                .buttonStyle(.borderless)
+        }
+    }
+
+    @ViewBuilder
+    private var progressStrip: some View {
+        if let list = bridge.checklist {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("\(list.confirmedCount + (bridge.currentItemIndex > list.confirmedCount ? bridge.currentItemIndex - list.confirmedCount : 0)) of \(list.totalCount) confirmed")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    if list.requiredRemaining > 0 {
+                        Text("\(list.requiredRemaining) required remaining")
+                            .font(.caption.bold())
+                            .foregroundStyle(.orange)
+                    } else {
+                        Label("Ready to depart", systemImage: "checkmark.seal.fill")
+                            .font(.caption.bold())
+                            .foregroundStyle(.green)
+                    }
+                }
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(.gray.opacity(0.2))
+                        Capsule()
+                            .fill(LinearGradient(
+                                colors: [.cyan, .green],
+                                startPoint: .leading, endPoint: .trailing
+                            ))
+                            .frame(width: list.totalCount > 0
+                                   ? geo.size.width * CGFloat(bridge.currentItemIndex) / CGFloat(list.totalCount)
+                                   : 0)
+                    }
+                }
+                .frame(height: 3)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var currentItemCard: some View {
+        switch bridge.phase {
+        case .idle, .loading:
+            HStack {
+                ProgressView().controlSize(.small)
+                Text("Pulling checklist…").foregroundStyle(.secondary).font(.callout)
+            }
+        case .error(let msg):
+            Text(msg).font(.callout).foregroundStyle(.red)
+        case .complete:
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Pre-haul checklist complete.", systemImage: "checkmark.seal.fill")
+                    .foregroundStyle(.green)
+                    .font(.body.bold())
+                Text("You're cleared to depart pickup. The audit chain has been signed.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(14)
+            .background(.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        case .prompting, .awaitingConfirmation:
+            if let list = bridge.checklist, !list.items.isEmpty {
+                let idx = max(0, min(bridge.currentItemIndex, list.items.count - 1))
+                let item = list.items[idx]
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(item.category.uppercased() + " · " + item.citation)
+                        .font(.system(size: 10, weight: .heavy))
+                        .tracking(0.8)
+                        .foregroundStyle(.secondary)
+                    Text(item.label).font(.title3.bold())
+                    Text(item.spokenPrompt)
+                        .font(.callout)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let phrase = item.confirmPhrases.first {
+                        Text("Say: \"\(phrase)\"")
+                            .font(.caption.bold())
+                            .foregroundStyle(.tint)
+                    }
+                }
+                .padding(14)
+                .background(.gray.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var controlsRow: some View {
+        if case .complete = bridge.phase {
+            EmptyView()
+        } else {
+            HStack(spacing: 12) {
+                Button {
+                    Task { await bridge.confirmCurrentItemManually() }
+                } label: {
+                    Label("Confirm", systemImage: "checkmark.circle.fill")
+                        .font(.body.bold())
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(LinearGradient(
+                            colors: [.cyan, .green],
+                            startPoint: .leading, endPoint: .trailing
+                        ))
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+                Button {
+                    Task { await bridge.skipCurrentItem() }
+                } label: {
+                    Text("Skip")
+                        .font(.body)
+                        .padding(.horizontal, 18).padding(.vertical, 12)
+                        .background(.gray.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
 }
