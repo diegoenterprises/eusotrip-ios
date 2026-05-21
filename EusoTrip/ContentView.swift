@@ -1731,6 +1731,12 @@ enum ScreenRegistry {
             .init(id: "CV361", title: "Catalyst · BH In-Transit",         role: .catalyst) { p in AnyView(CatalystBackhaulInTransitScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "CV362", title: "Catalyst · BH Approach",           role: .catalyst) { p in AnyView(CatalystBackhaulDeliveryApproachScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "CV363", title: "Catalyst · BH At Delivery",        role: .catalyst) { p in AnyView(CatalystBackhaulAtDeliveryScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            // 2026-05-21 — Catalyst backhaul-close quintet (SVG 364-368).
+            .init(id: "CV364", title: "Catalyst · BH Docked Loading",     role: .catalyst) { p in AnyView(CatalystBackhaulDockedLoadingScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "CV365", title: "Catalyst · BH BOL Pre-Sign",       role: .catalyst) { p in AnyView(CatalystBackhaulBOLPreSignScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "CV366", title: "Catalyst · BH BOL Signed",         role: .catalyst) { p in AnyView(CatalystBackhaulBOLSignedScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "CV367", title: "Catalyst · BH Paperwork",          role: .catalyst) { p in AnyView(CatalystBackhaulPaperworkScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "CV368", title: "Catalyst · BH Closed Stage",       role: .catalyst) { p in AnyView(CatalystBackhaulClosedStageScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
         ])
 
         return list
