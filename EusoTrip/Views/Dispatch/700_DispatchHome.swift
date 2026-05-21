@@ -70,6 +70,10 @@ private struct DispatchHomeBody: View {
                 // Canonical lead: morning brief → weather. Driver 010 is the
                 // baseline; every role home opens with these two cards.
                 RoleHomeIntro()
+                // Dispatcher Spark Brief — Tier 1 #23 ship 2026-05-21.
+                // HoS-aware assignments + driver scorecards + exception
+                // queue, generated overnight via SubagentOrchestrator.
+                SparkBriefCard(role: .dispatcher)
                 if loading {
                     LifecycleCard { Text("Loading dispatch pulse…").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 } else if let err = loadError {

@@ -87,6 +87,10 @@ struct CatalystHome: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
                 weatherSection         // pinned top per founder doctrine
+                // Catalyst Spark Brief — Tier 1 #24 ship 2026-05-21.
+                // Settlement reconciliation + factoring decisions +
+                // carrier scorecards, overnight via SubagentOrchestrator.
+                SparkBriefCard(role: .catalyst)
                 kpiStrip
                 collapsibleAttentionStrip
                 activeMatchesCard

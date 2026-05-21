@@ -82,6 +82,11 @@ struct ShipperHome: View {
                     // to the top of every role's home, everything
                     // else after.
                     weatherSection
+                    // ESANG Morning Brief (Spark overnight) — Tier 1
+                    // #21 ship 2026-05-21. Per home-widget doctrine
+                    // sits between weather and the role-specific
+                    // attention card.
+                    SparkBriefCard(role: .shipper)
                     collapsibleAttentionCard
                     ctaRow
                     statRow

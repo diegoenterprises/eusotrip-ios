@@ -319,6 +319,10 @@ final class EusoTripAPI: ObservableObject {
     lazy var capabilities: CapabilitiesAPI = CapabilitiesAPI(api: self)
     lazy var media: MediaAPI = MediaAPI(api: self)
     lazy var reports: ReportsAPI = ReportsAPI(api: self)
+    /// Spark — IO 2026 Tier 1 #21/#23/#24 (overnight briefs for
+    /// Shipper / Dispatcher / Catalyst). Backed by
+    /// `frontend/server/routers/spark.ts`.
+    lazy var spark: SparkAPI = SparkAPI(api: self)
 
     // --- Driver-facing surfaces added to back the gamification / wallet /
     // fleet / availability screens. Each router mirrors a file under
@@ -4429,6 +4433,47 @@ struct NewsAPI {
     func getSavedArticles() async throws -> [NewsArticle] {
         try await api.queryNoInput("news.getSavedArticles")
     }
+
+    /// `news.translateArticle` — Gemini 3.5 (ESANG) article translation.
+    ///
+    /// 2026-05-20: replaces the in-app reader's old Apple-Translation-
+    /// framework + dead `translate.google.com/translate?u=` proxy path.
+    /// The reader extracts the visible DOM text and posts it here; the
+    /// server translates via ESANG and returns the translated body.
+    /// Works on every iOS version + every publisher (no CSP/X-Frame
+    /// problems because we never re-navigate the WebView).
+    func translateArticle(
+        text: String,
+        targetLanguage: String,
+        sourceLanguage: String? = nil,
+        articleId: String? = nil
+    ) async throws -> NewsTranslationResult {
+        struct Input: Encodable {
+            let text: String
+            let targetLanguage: String
+            let sourceLanguage: String?
+            let articleId: String?
+        }
+        return try await api.mutation(
+            "news.translateArticle",
+            input: Input(
+                text: text,
+                targetLanguage: targetLanguage,
+                sourceLanguage: sourceLanguage,
+                articleId: articleId
+            )
+        )
+    }
+}
+
+/// Mirrors the server's `news.translateArticle` reply shape.
+struct NewsTranslationResult: Decodable, Sendable {
+    let ok: Bool
+    let translated: String
+    let sourceLanguage: String
+    let targetLanguage: String
+    let error: String?
+    let latencyMs: Int?
 }
 
 // MARK: - messagesRouter
@@ -18857,5 +18902,35 @@ struct DocumentRouterAPI {
     func listSupportedTypes() async throws -> SupportedTypesResponse {
         struct Empty: Encodable {}
         return try await api.query("documentRouter.listSupportedTypes", input: Empty())
+    }
+}
+
+// MARK: - sparkRouter (overnight briefs · Tier 1 #21/#23/#24)
+//
+// Mirrors `frontend/server/routers/spark.ts`. Three roles
+// (shipper / dispatcher / catalyst) each get a 3-child Cortex
+// fanout + 1 synthesis call at ~03:00 UTC; the iOS card pulls
+// the cached brief on Home and offers a "Run Now" mutation
+// when the founder wants a fresh one mid-day.
+
+struct SparkAPI {
+    unowned let api: EusoTripAPI
+
+    private struct RoleInput: Encodable {
+        let role: String
+        init(_ role: SparkRole) { self.role = role.rawValue }
+    }
+    private struct Empty: Encodable {}
+
+    /// Read the current cached brief for the calling user's
+    /// company. Returns `{ brief: SparkBriefPayload?, sampledAt, source }`.
+    func getLatest(role: SparkRole) async throws -> SparkGetBriefResponse {
+        try await api.queryNoInput(role.getPath)
+    }
+
+    /// Fire a fresh fanout. Server takes ~6-8s; the card stays
+    /// on the existing brief and swaps when this resolves.
+    func run(role: SparkRole) async throws -> SparkRunBriefResponse {
+        try await api.mutation(role.runPath, input: Empty())
     }
 }
