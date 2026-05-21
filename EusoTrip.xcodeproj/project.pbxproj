@@ -38,6 +38,8 @@
 		BFAD202605202015000100BF /* DailyBriefWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605202015000100FF /* DailyBriefWidget.swift */; };
 		BFAD202605202016000100BA /* CartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605202016000100FA /* CartView.swift */; };
 		BFAD202605202017000100AE /* AstraVisionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605202017000100AE /* AstraVisionService.swift */; };
+		BFAD202605202018000100AF /* ERGLookupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605202018000100AF /* ERGLookupService.swift */; };
+		BFAD202605202019000100A0 /* HazmatPlacardScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605202019000100A0 /* HazmatPlacardScanView.swift */; };
 		A1B7C9E000000000B7C9E001 /* RoleSurfaceRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B7C9E000000000B7C9E002 /* RoleSurfaceRouter.swift */; };
 		A10AAEEEAC9C0054F8B34905 /* 019_HosDutyStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10C7CD83E4BB6CA038192D0 /* 019_HosDutyStatus.swift */; };
 		A11E8603E79595216A3607DB /* 004_ResetPassword.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F6E6E09C5EB9568612F3E1 /* 004_ResetPassword.swift */; };
@@ -773,6 +775,8 @@
 		FA1F202605202015000100FF /* DailyBriefWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DailyBriefWidget.swift; path = Home/DailyBriefWidget.swift; sourceTree = "<group>"; };
 		FA1F202605202016000100FA /* CartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CartView.swift; path = Wallet/CartView.swift; sourceTree = "<group>"; };
 		FA1F202605202017000100AE /* AstraVisionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstraVisionService.swift; sourceTree = "<group>"; };
+		FA1F202605202018000100AF /* ERGLookupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ERGLookupService.swift; sourceTree = "<group>"; };
+		FA1F202605202019000100A0 /* HazmatPlacardScanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HazmatPlacardScanView.swift; path = Driver/HazmatPlacardScanView.swift; sourceTree = "<group>"; };
 		A1B7C9E000000000B7C9E002 /* RoleSurfaceRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoleSurfaceRouter.swift; sourceTree = "<group>"; };
 		A1F6E6E09C5EB9568612F3E1 /* 004_ResetPassword.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 004_ResetPassword.swift; sourceTree = "<group>"; };
 		A1FA70836FB725922F39A4E9 /* 015_AtGateAwaitingDock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 015_AtGateAwaitingDock.swift; sourceTree = "<group>"; };
@@ -1333,6 +1337,7 @@
 				A1B7C9E000000000B7C9E002 /* RoleSurfaceRouter.swift */,
 				FA1F202605202013000100FD /* VoiceDialectPicker.swift */,
 				FA1F202605202015000100FF /* DailyBriefWidget.swift */,
+				FA1F202605202019000100A0 /* HazmatPlacardScanView.swift */,
 				FA1F202605202016000100FA /* CartView.swift */,
 				A1000000000000000000AAD5 /* Auth */,
 				A12E1A1C0010CE0FF1000014 /* Components */,
@@ -1799,6 +1804,7 @@
 				FA1F202605202012000100FC /* ESangTTSPlayer.swift */,
 				FA1F202605202014000100FE /* GeminiBriefAdapter.swift */,
 				FA1F202605202017000100AE /* AstraVisionService.swift */,
+				FA1F202605202018000100AF /* ERGLookupService.swift */,
 				C1A11111111111111111BA02 /* DriverProfileStore.swift */,
 				B1A11111111111111111AA04 /* WeatherService.swift */,
 				B1A21111111111111111AA02 /* AgreementPDFBuilder.swift */,
@@ -2375,6 +2381,8 @@
 				BFAD202605202015000100BF /* DailyBriefWidget.swift in Sources */,
 				BFAD202605202016000100BA /* CartView.swift in Sources */,
 				BFAD202605202017000100AE /* AstraVisionService.swift in Sources */,
+				BFAD202605202018000100AF /* ERGLookupService.swift in Sources */,
+				BFAD202605202019000100A0 /* HazmatPlacardScanView.swift in Sources */,
 				A17EA9A0121947A6C4E1DDE9 /* HOSStatus.swift in Sources */,
 				A147FB466ACE52CB7A92127C /* Load.swift in Sources */,
 				E1E1A1A100000001AA000001 /* NewsArticle.swift in Sources */,
