@@ -349,6 +349,11 @@
 		CPR020260521000001 /* 302_CatalystProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = CPR020260521000002 /* 302_CatalystProfile.swift */; };
 		CBO020260521000001 /* 309_CatalystBidsOutbound.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBO020260521000002 /* 309_CatalystBidsOutbound.swift */; };
 		CRI020260521000001 /* 318_CatalystRFPInbound.swift in Sources */ = {isa = PBXBuildFile; fileRef = CRI020260521000002 /* 318_CatalystRFPInbound.swift */; };
+		CRP020260521000001 /* 307_CatalystReports.swift in Sources */ = {isa = PBXBuildFile; fileRef = CRP020260521000002 /* 307_CatalystReports.swift */; };
+		CPS020260521000001 /* 310_CatalystDriverPaySetup.swift in Sources */ = {isa = PBXBuildFile; fileRef = CPS020260521000002 /* 310_CatalystDriverPaySetup.swift */; };
+		CST020260521000001 /* 311_CatalystSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = CST020260521000002 /* 311_CatalystSettings.swift */; };
+		CDP320260521000001 /* 323_CatalystDriverPerformance.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDP320260521000002 /* 323_CatalystDriverPerformance.swift */; };
+		CDL020260521000001 /* 324_CatalystDriverSettlementLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDL020260521000002 /* 324_CatalystDriverSettlementLedger.swift */; };
 		CCE020260521000001 /* 331_CatalystCommissionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCE020260521000002 /* 331_CatalystCommissionEngine.swift */; };
 		D1A11111111111111111CDD1 /* 322_CatalystDriverDocuments.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CDD2 /* 322_CatalystDriverDocuments.swift */; };
 		D1A11111111111111111CDP1 /* 321_CatalystDriverProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CDP2 /* 321_CatalystDriverProfile.swift */; };
@@ -1021,6 +1026,11 @@
 		CPR020260521000002 /* 302_CatalystProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 302_CatalystProfile.swift; path = EusoTrip/Views/Catalyst/302_CatalystProfile.swift; sourceTree = SOURCE_ROOT; };
 		CBO020260521000002 /* 309_CatalystBidsOutbound.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 309_CatalystBidsOutbound.swift; path = EusoTrip/Views/Catalyst/309_CatalystBidsOutbound.swift; sourceTree = SOURCE_ROOT; };
 		CRI020260521000002 /* 318_CatalystRFPInbound.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 318_CatalystRFPInbound.swift; path = EusoTrip/Views/Catalyst/318_CatalystRFPInbound.swift; sourceTree = SOURCE_ROOT; };
+		CRP020260521000002 /* 307_CatalystReports.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 307_CatalystReports.swift; path = EusoTrip/Views/Catalyst/307_CatalystReports.swift; sourceTree = SOURCE_ROOT; };
+		CPS020260521000002 /* 310_CatalystDriverPaySetup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 310_CatalystDriverPaySetup.swift; path = EusoTrip/Views/Catalyst/310_CatalystDriverPaySetup.swift; sourceTree = SOURCE_ROOT; };
+		CST020260521000002 /* 311_CatalystSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 311_CatalystSettings.swift; path = EusoTrip/Views/Catalyst/311_CatalystSettings.swift; sourceTree = SOURCE_ROOT; };
+		CDP320260521000002 /* 323_CatalystDriverPerformance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 323_CatalystDriverPerformance.swift; path = EusoTrip/Views/Catalyst/323_CatalystDriverPerformance.swift; sourceTree = SOURCE_ROOT; };
+		CDL020260521000002 /* 324_CatalystDriverSettlementLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 324_CatalystDriverSettlementLedger.swift; path = EusoTrip/Views/Catalyst/324_CatalystDriverSettlementLedger.swift; sourceTree = SOURCE_ROOT; };
 		CCE020260521000002 /* 331_CatalystCommissionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 331_CatalystCommissionEngine.swift; path = EusoTrip/Views/Catalyst/331_CatalystCommissionEngine.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CDD2 /* 322_CatalystDriverDocuments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 322_CatalystDriverDocuments.swift; path = EusoTrip/Views/Catalyst/322_CatalystDriverDocuments.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CDP2 /* 321_CatalystDriverProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 321_CatalystDriverProfile.swift; path = EusoTrip/Views/Catalyst/321_CatalystDriverProfile.swift; sourceTree = SOURCE_ROOT; };
@@ -1835,6 +1845,11 @@
 				CPR020260521000002 /* 302_CatalystProfile.swift */,
 				CBO020260521000002 /* 309_CatalystBidsOutbound.swift */,
 				CRI020260521000002 /* 318_CatalystRFPInbound.swift */,
+				CRP020260521000002 /* 307_CatalystReports.swift */,
+				CPS020260521000002 /* 310_CatalystDriverPaySetup.swift */,
+				CST020260521000002 /* 311_CatalystSettings.swift */,
+				CDP320260521000002 /* 323_CatalystDriverPerformance.swift */,
+				CDL020260521000002 /* 324_CatalystDriverSettlementLedger.swift */,
 				CCE020260521000002 /* 331_CatalystCommissionEngine.swift */,
 				D1A11111111111111111CDD2 /* 322_CatalystDriverDocuments.swift */,
 				D1A11111111111111111CDP2 /* 321_CatalystDriverProfile.swift */,
@@ -2904,6 +2919,11 @@
 				CPR020260521000001 /* 302_CatalystProfile.swift in Sources */,
 				CBO020260521000001 /* 309_CatalystBidsOutbound.swift in Sources */,
 				CRI020260521000001 /* 318_CatalystRFPInbound.swift in Sources */,
+				CRP020260521000001 /* 307_CatalystReports.swift in Sources */,
+				CPS020260521000001 /* 310_CatalystDriverPaySetup.swift in Sources */,
+				CST020260521000001 /* 311_CatalystSettings.swift in Sources */,
+				CDP320260521000001 /* 323_CatalystDriverPerformance.swift in Sources */,
+				CDL020260521000001 /* 324_CatalystDriverSettlementLedger.swift in Sources */,
 				CCE020260521000001 /* 331_CatalystCommissionEngine.swift in Sources */,
 				D1A11111111111111111CDD1 /* 322_CatalystDriverDocuments.swift in Sources */,
 				D1A11111111111111111CDP1 /* 321_CatalystDriverProfile.swift in Sources */,

@@ -1315,6 +1315,15 @@ enum ScreenRegistry {
         list.append(.init(id: "303", title: "Catalyst · Fleet · Vehicles", role: .catalyst) { p in AnyView(CatalystFleetVehiclesScreen(theme: p)) })
         list.append(.init(id: "309", title: "Catalyst · Bids Outbound",  role: .catalyst) { p in AnyView(CatalystBidsOutboundScreen(theme: p)) })
         list.append(.init(id: "318", title: "Catalyst · RFP Inbound",    role: .catalyst) { p in AnyView(CatalystRFPInboundScreen(theme: p)) })
+        list.append(.init(id: "307", title: "Catalyst · Reports",          role: .catalyst) { p in AnyView(CatalystReportsScreen(theme: p)) })
+        list.append(.init(id: "310", title: "Catalyst · Driver Pay Setup", role: .catalyst) { p in AnyView(CatalystDriverPaySetupScreen(theme: p)) })
+        list.append(.init(id: "311", title: "Catalyst · Settings",         role: .catalyst) { p in AnyView(CatalystSettingsScreen(theme: p)) })
+        list.append(.init(id: "323", title: "Catalyst · Driver Performance", role: .catalyst) { p in
+            AnyView(CatalystDriverPerformanceScreen(theme: p, driverId: "001"))
+        })
+        list.append(.init(id: "324", title: "Catalyst · Driver Ledger",    role: .catalyst) { p in
+            AnyView(CatalystDriverSettlementLedgerScreen(theme: p, driverId: "001", driverName: "Owner-op"))
+        })
         list.append(.init(id: "306", title: "Catalyst · Driver Payroll", role: .catalyst) { p in AnyView(CatalystDriverPayrollScreen(theme: p)) })
         list.append(.init(id: "308", title: "Catalyst · Authority + Insurance", role: .catalyst) { p in AnyView(CatalystAuthorityInsuranceScreen(theme: p)) })
         list.append(.init(id: "312", title: "Catalyst · Hot Zones",        role: .catalyst) { p in AnyView(CatalystHotZonesScreen(theme: p)) })
