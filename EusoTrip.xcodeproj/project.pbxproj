@@ -392,6 +392,7 @@
 		DLR020260521000001 /* Dpch790_DispatcherLaneRFPSextet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DLR020260521000002 /* Dpch790_DispatcherLaneRFPSextet.swift */; };
 		DBH020260521000001 /* Dpch800_DispatcherBHCardDuodecet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBH020260521000002 /* Dpch800_DispatcherBHCardDuodecet.swift */; };
 		DKB020260521000001 /* Dpch820_DispatcherM04KanbanQuintet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DKB020260521000002 /* Dpch820_DispatcherM04KanbanQuintet.swift */; };
+		CVB020260521000001 /* CV330B_CatalystVehicleBVariantOctet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CVB020260521000002 /* CV330B_CatalystVehicleBVariantOctet.swift */; };
 		CCE020260521000001 /* 331_CatalystCommissionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCE020260521000002 /* 331_CatalystCommissionEngine.swift */; };
 		D1A11111111111111111CDD1 /* 322_CatalystDriverDocuments.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CDD2 /* 322_CatalystDriverDocuments.swift */; };
 		D1A11111111111111111CDP1 /* 321_CatalystDriverProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CDP2 /* 321_CatalystDriverProfile.swift */; };
@@ -1107,6 +1108,7 @@
 		DLR020260521000002 /* Dpch790_DispatcherLaneRFPSextet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch790_DispatcherLaneRFPSextet.swift; path = EusoTrip/Views/Dispatch/Dpch790_DispatcherLaneRFPSextet.swift; sourceTree = SOURCE_ROOT; };
 		DBH020260521000002 /* Dpch800_DispatcherBHCardDuodecet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch800_DispatcherBHCardDuodecet.swift; path = EusoTrip/Views/Dispatch/Dpch800_DispatcherBHCardDuodecet.swift; sourceTree = SOURCE_ROOT; };
 		DKB020260521000002 /* Dpch820_DispatcherM04KanbanQuintet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch820_DispatcherM04KanbanQuintet.swift; path = EusoTrip/Views/Dispatch/Dpch820_DispatcherM04KanbanQuintet.swift; sourceTree = SOURCE_ROOT; };
+		CVB020260521000002 /* CV330B_CatalystVehicleBVariantOctet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CV330B_CatalystVehicleBVariantOctet.swift; path = EusoTrip/Views/Catalyst/CV330B_CatalystVehicleBVariantOctet.swift; sourceTree = SOURCE_ROOT; };
 		CCE020260521000002 /* 331_CatalystCommissionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 331_CatalystCommissionEngine.swift; path = EusoTrip/Views/Catalyst/331_CatalystCommissionEngine.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CDD2 /* 322_CatalystDriverDocuments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 322_CatalystDriverDocuments.swift; path = EusoTrip/Views/Catalyst/322_CatalystDriverDocuments.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CDP2 /* 321_CatalystDriverProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 321_CatalystDriverProfile.swift; path = EusoTrip/Views/Catalyst/321_CatalystDriverProfile.swift; sourceTree = SOURCE_ROOT; };
@@ -1961,6 +1963,7 @@
 				DLR020260521000002 /* Dpch790_DispatcherLaneRFPSextet.swift */,
 				DBH020260521000002 /* Dpch800_DispatcherBHCardDuodecet.swift */,
 				DKB020260521000002 /* Dpch820_DispatcherM04KanbanQuintet.swift */,
+				CVB020260521000002 /* CV330B_CatalystVehicleBVariantOctet.swift */,
 				DLE020260521000002 /* DL091_DriverLifecycleEntryTrio.swift */,
 				DLS020260521000002 /* DL094_DriverLifecycleSeptet.swift */,
 				DBO020260521000002 /* DL101_DriverBackhaulDVIROctet.swift */,
@@ -3073,6 +3076,7 @@
 				DLR020260521000001 /* Dpch790_DispatcherLaneRFPSextet.swift in Sources */,
 				DBH020260521000001 /* Dpch800_DispatcherBHCardDuodecet.swift in Sources */,
 				DKB020260521000001 /* Dpch820_DispatcherM04KanbanQuintet.swift in Sources */,
+				CVB020260521000001 /* CV330B_CatalystVehicleBVariantOctet.swift in Sources */,
 				DLE020260521000001 /* DL091_DriverLifecycleEntryTrio.swift in Sources */,
 				DLS020260521000001 /* DL094_DriverLifecycleSeptet.swift in Sources */,
 				DBO020260521000001 /* DL101_DriverBackhaulDVIROctet.swift in Sources */,
