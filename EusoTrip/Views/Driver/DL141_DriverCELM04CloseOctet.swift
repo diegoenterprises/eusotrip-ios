@@ -25,80 +25,93 @@ private struct CMCLoadCtx: Decodable, Hashable {
     let pickupCity: String?
     let destCity: String?
     let rate: String?
+    let driver: CMCParty?
+    let catalyst: CMCParty?
+    let shipper: CMCParty?
+    struct CMCParty: Decodable, Hashable {
+        let id: Int?
+        let name: String?
+        let initials: String?
+        let companyName: String?
+        let mcNumber: String?
+    }
 }
 
 enum CELCloseKind: String {
     case onSite, atDock, loading, bolSign, departed, inTransit, atDelivery, podSigned
 }
 
+/// Stage-only labels — no scenario data baked in. The body composes
+/// these with load.loadNumber / load.driver / load.catalyst / load.shipper
+/// at render time so the surface paints whatever load is bound.
 private struct CCConfig {
-    let eyebrow: String
-    let citation: String
-    let title: String
-    let subhead: String
-    let stagePill: String
-    let chainPill: String
+    let eyebrowStage: String     // composed with load number: "DRIVER · TRIPS · {stage} · {loadNumber}"
+    let citation: String         // §number · stage citation (stage-canonical)
+    let title: String            // user-facing UX title for the stage
+    let subhead: String          // short stage-state line
+    let stageNote: String        // composed: "{carrier} · {loadNumber} · {stageNote}"
+    let chainNote: String        // composed: "{loadNumber} · {chainNote} · {driverInitials} · {dispatchInitials} ops · {shipperInitials} shipper"
 }
 
 private extension CELCloseKind {
     var config: CCConfig {
         switch self {
         case .onSite:
-            return .init(eyebrow: "DRIVER · TRIPS · PICKUP · ON-SITE · CEL · M-04",
-                         citation: "§386 · PICKUP ON-SITE · 1/5 · DOCK 4A",
-                         title: "On-site · dock 4A",
-                         subhead: "ON-SITE · DOCK 4A · gated in 0:00 ago",
-                         stagePill: "CEL · LD-M-04 · gated in 0:00 ago · pickup window 08:00 – 10:00 EDT",
-                         chainPill: "LD-M-04 · ATL West Caswell DC · JR gated in · NC ops · DU shipper")
+            return .init(eyebrowStage: "PICKUP · ON-SITE",
+                         citation: "§386 · PICKUP ON-SITE · 1/5",
+                         title: "On-site at pickup",
+                         subhead: "ON-SITE · gated in",
+                         stageNote: "gated in · pickup window per appointment",
+                         chainNote: "gated in at origin")
         case .atDock:
-            return .init(eyebrow: "DRIVER · TRIPS · PICKUP · AT-DOCK · CEL · M-04",
-                         citation: "§390 · PICKUP AT-DOCK · 2/5 · DOCK 4A",
-                         title: "At dock 4A",
-                         subhead: "AT-DOCK · DOCK 4A · dwell 0:12",
-                         stagePill: "CEL · LD-M-04 · backed in 0:00 ago · dwell 0:12 · pickup window 08:00 – 10:00 EDT",
-                         chainPill: "LD-M-04 · ATL West Caswell DC · JR backed in · NC ops · DU shipper")
+            return .init(eyebrowStage: "PICKUP · AT-DOCK",
+                         citation: "§390 · PICKUP AT-DOCK · 2/5",
+                         title: "At the dock",
+                         subhead: "AT-DOCK · dwell starting",
+                         stageNote: "backed in · dwell running · pickup window per appointment",
+                         chainNote: "backed in at dock")
         case .loading:
-            return .init(eyebrow: "DRIVER · TRIPS · PICKUP · LOADING · CEL · M-04",
-                         citation: "§391 · PICKUP LOADING · 3/5 · DOCK 4A",
-                         title: "Loading dock 4A",
-                         subhead: "LOADING · DOCK 4A · dwell 0:24",
-                         stagePill: "CEL · LD-M-04 · loading commenced 0:06 ago · dwell 0:24 · pickup window 08:00 – 10:00 EDT",
-                         chainPill: "LD-M-04 · forklift active · JR observing · NC ops · DU shipper")
+            return .init(eyebrowStage: "PICKUP · LOADING",
+                         citation: "§391 · PICKUP LOADING · 3/5",
+                         title: "Loading",
+                         subhead: "LOADING · dwell within free window",
+                         stageNote: "loading commenced · dwell running",
+                         chainNote: "forklift active · driver observing")
         case .bolSign:
-            return .init(eyebrow: "DRIVER · TRIPS · PICKUP · BOL-SIGN · CEL · M-04",
-                         citation: "§392 · PICKUP BOL-SIGN · 4/5 · DOCK 4A",
+            return .init(eyebrowStage: "PICKUP · BOL-SIGN",
+                         citation: "§392 · PICKUP BOL-SIGN · 4/5",
                          title: "Sign the BOL",
-                         subhead: "BOL-SIGN · DOCK 4A · dwell 0:34",
-                         stagePill: "CEL · LD-M-04 · loaded + sealed · dwell 0:34 · BOL ready to sign · pickup window 08:00 – 10:00 EDT",
-                         chainPill: "LD-M-04 · ATL West Caswell DC · JR signs BOL · gradient ink · DU shipper")
+                         subhead: "BOL-SIGN · dwell running",
+                         stageNote: "loaded + sealed · BOL ready to sign",
+                         chainNote: "driver signs BOL · gradient ink")
         case .departed:
-            return .init(eyebrow: "DRIVER · TRIPS · TRANSIT · DEPARTED · CEL · M-04",
-                         citation: "§393 · TRANSIT DEPARTED · 5/5 · ROLLING",
+            return .init(eyebrowStage: "TRANSIT · DEPARTED",
+                         citation: "§393 · TRANSIT DEPARTED · 5/5",
                          title: "In transit",
-                         subhead: "DEPARTED · ROLLING · 245 mi to CLT Newell",
-                         stagePill: "CEL · LD-M-04 · departed dock 4A · in_transit · 245 mi to CLT Newell · ETA 12:46 EDT",
-                         chainPill: "LD-M-04 · ATL West Caswell DC · gate-out cleared · JR rolling · NC ops · DU shipper")
+                         subhead: "DEPARTED · ROLLING",
+                         stageNote: "departed dock · in_transit",
+                         chainNote: "gate-out cleared · rolling")
         case .inTransit:
-            return .init(eyebrow: "DRIVER · TRIPS · TRANSIT · ROLLING · CEL · M-04",
-                         citation: "§394 · IN TRANSIT · ROLLING · I-85 SE",
+            return .init(eyebrowStage: "TRANSIT · ROLLING",
+                         citation: "§394 · IN TRANSIT · ROLLING",
                          title: "On the road",
-                         subhead: "ROLLING · I-85 SE · ETA 12:44 EDT",
-                         stagePill: "CEL · LD-M-04 · rolling I-85 SE · in_transit · 199 mi to CLT Newell · ETA 12:44 EDT",
-                         chainPill: "LD-M-04 · I-85 SE · in_transit holds · HOS driving 10:14 · DU shipper")
+                         subhead: "ROLLING",
+                         stageNote: "rolling · in_transit",
+                         chainNote: "in_transit holds")
         case .atDelivery:
-            return .init(eyebrow: "DRIVER · TRIPS · DELIVERY · ON-SITE · CEL · M-04",
-                         citation: "§398 · AT DELIVERY · ARRIVED · CLT NEWELL",
+            return .init(eyebrowStage: "DELIVERY · ON-SITE",
+                         citation: "§398 · AT DELIVERY · ARRIVED",
                          title: "At delivery",
-                         subhead: "ON-SITE · CLT NEWELL · appt 14:00 EDT",
-                         stagePill: "CEL · LD-M-04 · arrived CLT Newell · at_delivery · appt 14:00 EDT · on-time",
-                         chainPill: "LD-M-04 · CLT Newell Receiving · JR arrived · early · NC ops · DU shipper")
+                         subhead: "ON-SITE · receiver appointment",
+                         stageNote: "arrived · at_delivery",
+                         chainNote: "driver arrived")
         case .podSigned:
-            return .init(eyebrow: "DRIVER · TRIPS · PAPERWORK · POD SIGNED · CEL · M-04",
-                         citation: "§402 · PAPERWORK · POD SIGNED · CLT NEWELL",
+            return .init(eyebrowStage: "PAPERWORK · POD SIGNED",
+                         citation: "§402 · PAPERWORK · POD SIGNED",
                          title: "POD signed",
-                         subhead: "POD SIGNED · CLT · delivered FIRED",
-                         stagePill: "CEL · LD-M-04 · unload complete · delivered · POD 13:34 EDT · early",
-                         chainPill: "LD-M-04 · delivered FIRED · ring rolled · pod_pending → DU · HOS on_duty")
+                         subhead: "POD SIGNED · delivered FIRED",
+                         stageNote: "unload complete · delivered · POD signed",
+                         chainNote: "delivered FIRED · ring rolled · pod_pending")
         }
     }
 }
@@ -193,11 +206,24 @@ private struct CELCloseBody: View {
         }
     }
 
+    // MARK: - Dynamic display helpers
+
+    private var loadNumberDisplay: String { load?.loadNumber ?? "—" }
+    private var carrierCodeDisplay: String {
+        load?.catalyst?.companyName ?? load?.catalyst?.name ?? "—"
+    }
+    private var laneDisplay: String? {
+        guard let p = load?.pickupCity, let d = load?.destCity else { return nil }
+        return "\(p) → \(d)"
+    }
+
     private func header(_ c: CCConfig) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text(c.eyebrow).font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+                Text("DRIVER · TRIPS · \(c.eyebrowStage) · \(loadNumberDisplay)")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+                    .lineLimit(1)
             }
             Text(c.title).font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
             Text(c.subhead).font(EType.caption).foregroundStyle(palette.textSecondary)
@@ -207,10 +233,15 @@ private struct CELCloseBody: View {
     private func citationPill(_ c: CCConfig) -> some View {
         LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(c.citation).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text(c.stagePill).font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true)
-                if let l = load {
-                    Text("\(l.loadNumber ?? "LD-M-04") · \(l.pickupCity ?? "ATL") → \(l.destCity ?? "CLT")")
+                Text(c.citation)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+                Text("\(carrierCodeDisplay) · \(loadNumberDisplay) · \(c.stageNote)")
+                    .font(EType.caption.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let lane = laneDisplay {
+                    Text("\(loadNumberDisplay) · \(lane)")
                         .font(.caption2).foregroundStyle(palette.textSecondary)
                 }
             }
@@ -218,22 +249,40 @@ private struct CELCloseBody: View {
     }
 
     private func chainPill(_ c: CCConfig) -> some View {
-        LifecycleCard {
+        let driverIni = load?.driver?.initials ?? "—"
+        let dispIni = load?.catalyst?.initials ?? "—"
+        let shipIni = load?.shipper?.initials ?? "—"
+        return LifecycleCard {
             VStack(alignment: .leading, spacing: 4) {
-                Text("DISPATCH CHAIN").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text(c.chainPill).font(.caption2).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+                Text("DISPATCH CHAIN")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+                Text("\(loadNumberDisplay) · \(c.chainNote) · \(driverIni) driver · \(dispIni) ops · \(shipIni) shipper")
+                    .font(.caption2).foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
     private var identityRow: some View {
-        LifecycleCard {
+        let driverIni = load?.driver?.initials ?? "—"
+        let driverName = load?.driver?.name ?? "driver"
+        let carrierFull = load?.catalyst?.companyName ?? load?.catalyst?.name ?? "—"
+        let mc = load?.catalyst?.mcNumber.map { "MC-\($0)" } ?? "—"
+        let dispatchName = load?.catalyst?.name ?? "—"
+        let shipperName = load?.shipper?.name ?? "—"
+        return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    .overlay(Text("JR").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
+                    .overlay(Text(driverIni).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("CEL · JR · driver").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("Carolina Express Logistics · MC-712 944 · Naomi Chen dispatcher · DU shipper").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text("\(carrierCodeDisplay) · \(driverName) · driver")
+                        .font(EType.caption.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    Text("\(carrierFull) · \(mc) · \(dispatchName) dispatcher · \(shipperName) shipper")
+                        .font(.caption2).foregroundStyle(palette.textTertiary)
+                        .lineLimit(2)
                 }
                 Spacer()
             }
@@ -247,14 +296,14 @@ private struct CELCloseBody: View {
                 return [
                     ("DOCK",   "4A",                 "gated in · 0:00",      .orange),
                     ("WINDOW", "08:00-10:00",          "EDT pickup",         .blue),
-                    ("PAYOUT", "$1,610",                "CEL margin",        .green),
+                    ("PAYOUT", Self.payoutDisplay(load?.rate),                "CEL margin",        .green),
                     ("STATE",  "ON-SITE",                "§386 · 1/5",       .green),
                 ]
             case .atDock:
                 return [
                     ("DOCK",   "4A",                       "BACKED IN",      .orange),
                     ("DWELL",  "0:12",                       "within free",  .green),
-                    ("PAYOUT", "$1,610",                       "LOCKED",     .green),
+                    ("PAYOUT", Self.payoutDisplay(load?.rate),                       "LOCKED",     .green),
                     ("STATE",  "AT-DOCK",                       "§390 · 2/5", .blue),
                 ]
             case .loading:
@@ -269,14 +318,14 @@ private struct CELCloseBody: View {
                     ("STATE",  "BOL-SIGN",                              "§392 · 4/5",  .green),
                     ("DWELL",  "0:34",                                    "within free", .green),
                     ("STATUS", "LOADED + SEALED",                          "ready to sign", .green),
-                    ("PAYOUT", "$1,610",                                    "LOCKED",     .green),
+                    ("PAYOUT", Self.payoutDisplay(load?.rate),                                    "LOCKED",     .green),
                 ]
             case .departed:
                 return [
                     ("STATE",  "DEPARTED",                                    "§393 · 5/5",  .green),
                     ("DIST",   "245 mi",                                       "to CLT Newell", .blue),
                     ("ETA",    "12:46",                                         "EDT",        .blue),
-                    ("PAYOUT", "$1,610",                                          "LOCKED",   .green),
+                    ("PAYOUT", Self.payoutDisplay(load?.rate),                                          "LOCKED",   .green),
                 ]
             case .inTransit:
                 return [
@@ -290,14 +339,14 @@ private struct CELCloseBody: View {
                     ("STATE",  "ARRIVED",                                                "§398 · early",     .green),
                     ("APPT",   "14:00",                                                    "EDT · on-time",  .green),
                     ("RECV",   "CLT NEWELL",                                                  "Receiving",   .blue),
-                    ("PAYOUT", "$1,610",                                                        "LOCKED",   .green),
+                    ("PAYOUT", Self.payoutDisplay(load?.rate),                                                        "LOCKED",   .green),
                 ]
             case .podSigned:
                 return [
                     ("POD",    "SIGNED",                                                          "§402 · CLT",    .green),
                     ("DELIV",  "13:34",                                                            "EDT · early",  .green),
                     ("CHAIN",  "FIRED",                                                              "ring rolled · pod_pending → DU", .green),
-                    ("PAYOUT", "$1,610",                                                                "release queued",  .green),
+                    ("PAYOUT", Self.payoutDisplay(load?.rate),                                                                "release queued",  .green),
                 ]
             }
         }()
@@ -341,6 +390,14 @@ private struct CELCloseBody: View {
     private func loadCtx() async {
         struct In: Encodable { let id: String }
         do { load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId)) } catch { /* */ }
+    }
+
+    /// Format the load's rate (decimal string from server) into a
+    /// display payout string. Falls back to "—" when missing/invalid.
+    private static func payoutDisplay(_ rate: String?) -> String {
+        guard let r = rate, let n = Double(r), n > 0 else { return "—" }
+        let v = n.rounded()
+        return v < 1000 ? String(format: "$%.0f", v) : "$\(Int(v).formatted(.number))"
     }
 }
 
