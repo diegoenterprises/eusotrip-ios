@@ -29,6 +29,17 @@ private struct SMLoadCtx: Decodable, Hashable {
     let destCity: String?
     let rate: String?
     let distance: Double?
+    let equipmentType: String?
+    let driver: SMParty?
+    let catalyst: SMParty?
+    let shipper: SMParty?
+    struct SMParty: Decodable, Hashable {
+        let id: Int?
+        let name: String?
+        let initials: String?
+        let companyName: String?
+        let mcNumber: String?
+    }
 }
 
 enum ShipperM04Kind: String {
@@ -57,28 +68,28 @@ private extension ShipperM04Kind {
     var config: SMConfig {
         switch self {
         case .freshPosted:
-            return .init(eyebrow: "SHIPPER · LOADS · POSTED · FRESH CHAIN",
+            return .init(eyebrow: "POSTED · FRESH CHAIN",
                          citation: "§359 · CHAIN PORT 1/N · POSTED · BIDS OPEN",
                          title: "Posted · fresh MATRIX load · bids open",
-                         subhead: "LD-E5C9 · §359 · POSTED · BIDS OPEN",
+                         subhead: "§359 · POSTED · BIDS OPEN",
                          pillCopy: "FRESH MATRIX-50 ROW M-04 · CHAIN PORT 1/N · BIDS WINDOW OPEN · 4H 00M",
                          chainPill: "LD-260427-E5C9A41B22 · Atlanta GA → Charlotte NC · 245 mi · 53' Dry Van · 38,000 lb · target $1,650",
                          quotes: [],
                          lead: nil, target: 1650, timeLeft: "4h 00m")
         case .firstQuote:
-            return .init(eyebrow: "SHIPPER · LOADS · BIDDING · FIRST QUOTE",
+            return .init(eyebrow: "BIDDING · FIRST QUOTE",
                          citation: "§361 · CHAIN PORT 3/N · BIDDING · 1/1 QUOTE IN",
                          title: "First quote in · Aurora · $1,640",
-                         subhead: "LD-E5C9 · §361 · BIDDING · 1/1 QUOTE IN · 3H 57M",
+                         subhead: "§361 · BIDDING · 1/1 QUOTE IN · 3H 57M",
                          pillCopy: "FIRST QUOTE · AURORA · MC-942 008 · CHAIN PORT 3/N · QUARTET 2/N",
                          chainPill: "AUR-MC942008-M-04-Q-001 · $1,640 · vs target $1,650 · spread −$10 · $6.69/mi",
                          quotes: [.init(code: "AUR", name: "Aurora Freight Lines", amount: 1640, bidId: "AUR-MC942008-M-04-Q-001")],
                          lead: "AUR", target: 1650, timeLeft: "3h 57m")
         case .secondQuote:
-            return .init(eyebrow: "SHIPPER · LOADS · BIDDING · COMPETING",
+            return .init(eyebrow: "BIDDING · COMPETING",
                          citation: "§363 · CHAIN PORT 5/N · BIDDING · 4/N · 2 QUOTES IN",
                          title: "Piedmont leads · $1,625 · −$15 under Aurora",
-                         subhead: "LD-E5C9 · §363 · 2 QUOTES · LEAD PFC · 3H 46M",
+                         subhead: "§363 · 2 QUOTES · LEAD PFC · 3H 46M",
                          pillCopy: "BIDDING · 2 QUOTES · LEAD PFC · 3H 46M · spread $15",
                          chainPill: "PFC-MC748219-M-04-Q-002 · $1,625 · vs target $1,650 · spread −$25",
                          quotes: [
@@ -87,10 +98,10 @@ private extension ShipperM04Kind {
                          ],
                          lead: "PFC", target: 1650, timeLeft: "3h 46m")
         case .thirdQuote:
-            return .init(eyebrow: "SHIPPER · LOADS · BIDDING · 3-QUOTE OBSERVED",
+            return .init(eyebrow: "BIDDING · 3-QUOTE OBSERVED",
                          citation: "§365 · CHAIN PORT 7/N · BIDDING · 6/N · 3 QUOTES IN",
                          title: "SCC takes the lead · $1,615 · −$35 vs target",
-                         subhead: "LD-E5C9 · §365 · 3 QUOTES · LEAD SCC · 3H 33M",
+                         subhead: "§365 · 3 QUOTES · LEAD SCC · 3H 33M",
                          pillCopy: "BIDDING · 3 QUOTES · LEAD SCC · 3H 33M · spread $25",
                          chainPill: "SCC-MC836472-M-04-Q-003 · $1,615 · vs target $1,650 · spread −$35",
                          quotes: [
@@ -100,10 +111,10 @@ private extension ShipperM04Kind {
                          ],
                          lead: "SCC", target: 1650, timeLeft: "3h 33m")
         case .fourthQuote:
-            return .init(eyebrow: "SHIPPER · LOADS · BIDDING · 4-QUOTE OBSERVED",
+            return .init(eyebrow: "BIDDING · 4-QUOTE OBSERVED",
                          citation: "§367 · CHAIN PORT 9/N · BIDDING · 8/N · 4 QUOTES IN",
                          title: "CEL takes the lead · $1,610 · −$40 vs target",
-                         subhead: "LD-E5C9 · §367 · 4 QUOTES · LEAD CEL · 3H 23M",
+                         subhead: "§367 · 4 QUOTES · LEAD CEL · 3H 23M",
                          pillCopy: "BIDDING · 4 QUOTES · LEAD CEL · 3H 23M · spread $30",
                          chainPill: "CEL-MC712944-M-04-Q-004 · $1,610 · vs target $1,650 · spread −$40",
                          quotes: [
@@ -114,37 +125,37 @@ private extension ShipperM04Kind {
                          ],
                          lead: "CEL", target: 1650, timeLeft: "3h 23m")
         case .awarded:
-            return .init(eyebrow: "SHIPPER · LOADS · AWARDED · CEL WON",
+            return .init(eyebrow: "AWARDED · CEL WON",
                          citation: "§368 · CHAIN PORT 10/N · AWARDED · 1/N · QUARTET 1/N",
                          title: "Awarded to CEL · $1,610 · saved $40",
-                         subhead: "LD-E5C9 · §368 · CEL $1,610 · TENDER ACCEPT 24H",
+                         subhead: "§368 · CEL $1,610 · TENDER ACCEPT 24H",
                          pillCopy: "AWARD COMMITTED · CEL $1,610 · −$40 vs TARGET · CHAIN PORT 10/N · QUARTET 1/N AWARDED",
                          chainPill: "CEL-MC712944-M-04-Q-004 · saved $40 vs target $1,650 · pickup 21h 36m",
                          quotes: [.init(code: "CEL", name: "Carolina Express Logistics", amount: 1610, bidId: "CEL-MC712944-M-04-Q-004")],
                          lead: "CEL", target: 1650, timeLeft: "21h 36m")
         case .onSite:
-            return .init(eyebrow: "SHIPPER · LOADS · PICKUP · ON-SITE ECHO",
+            return .init(eyebrow: "PICKUP · ON-SITE ECHO",
                          citation: "§389 · CHAIN PORT 14/N · PICKUP · 4/N · ON-SITE",
                          title: "Driver on-site · dock 4A",
-                         subhead: "LD-E5C9 · §389 · CEL · on-site 0:06 ago",
+                         subhead: "§389 · CEL · on-site 0:06 ago",
                          pillCopy: "PICKUP · ON-SITE · DOCK 4A · CEL driver JR · delivery by 16:00 EDT",
                          chainPill: "CEL-MC712944-M-04-Q-004 · JR on-site dock 4A · 245 mi to LA",
                          quotes: [.init(code: "CEL", name: "Carolina Express Logistics", amount: 1610, bidId: "CEL-MC712944-M-04-Q-004")],
                          lead: "CEL", target: 1650, timeLeft: nil)
         case .inTransit:
-            return .init(eyebrow: "SHIPPER · LOADS · IN-TRANSIT · ECHO",
+            return .init(eyebrow: "IN-TRANSIT · ECHO",
                          citation: "§397 · CHAIN PORT 15/N · IN-TRANSIT · 4/4 · ROLLING",
                          title: "In transit · ETA 12:43",
-                         subhead: "LD-E5C9 · §397 · CEL · 80/245 mi · delivery by 16:00",
+                         subhead: "§397 · CEL · 80/245 mi · delivery by 16:00",
                          pillCopy: "IN-TRANSIT · ROLLING · I-85 SE · CEL JR · 80/245 mi · 33% complete",
                          chainPill: "CEL-MC712944-M-04-Q-004 · ETA 12:43 EDT · delivery by 16:00",
                          quotes: [.init(code: "CEL", name: "Carolina Express Logistics", amount: 1610, bidId: "CEL-MC712944-M-04-Q-004")],
                          lead: "CEL", target: 1650, timeLeft: nil)
         case .atDelivery:
-            return .init(eyebrow: "SHIPPER · LOADS · AT-DELIVERY · ECHO",
+            return .init(eyebrow: "AT-DELIVERY · ECHO",
                          citation: "§401 · CHAIN PORT 16/N · DELIVERY · 4/4 · ARRIVED · QUARTET 4/4 CLOSES",
                          title: "At delivery · POD pending",
-                         subhead: "LD-E5C9 · §401 · CEL · arrived 12:43 · appt 14:00",
+                         subhead: "§401 · CEL · arrived 12:43 · appt 14:00",
                          pillCopy: "AT-DELIVERY · CEL DRIVER ON-SITE CLT NEWELL · CHAIN PORT 16/N · QUARTET 4/4 CLOSES",
                          chainPill: "CEL-MC712944-M-04-Q-004 · arrived 12:43 EDT · 245/245 mi · 100% · appt 14:00 · POD PENDING",
                          quotes: [.init(code: "CEL", name: "Carolina Express Logistics", amount: 1610, bidId: "CEL-MC712944-M-04-Q-004")],
@@ -194,11 +205,22 @@ private struct ShipperM04ObservedBody: View {
         .refreshable { await loadCtx() }
     }
 
+    // MARK: - Dynamic display helpers
+
+    private var loadNumberDisplay: String { load?.loadNumber ?? "—" }
+    private var laneDisplay: String? {
+        guard let p = load?.pickupCity, let d = load?.destCity else { return nil }
+        return "\(p) → \(d)"
+    }
+
     private func header(_ c: SMConfig) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text(c.eyebrow).font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+                Text("SHIPPER · LOADS · \(c.eyebrow) · \(loadNumberDisplay)")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .lineLimit(1)
             }
             Text(c.title).font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
             Text(c.subhead).font(EType.caption).foregroundStyle(palette.textSecondary)
