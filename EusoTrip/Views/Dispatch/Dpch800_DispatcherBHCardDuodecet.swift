@@ -158,6 +158,9 @@ private struct DispatcherBHCardBody: View {
 
     @Environment(\.palette) private var palette
     @State private var load: DBCLoadCtx?
+    @State private var actionInFlight: Bool = false
+    @State private var actionAck: String?
+    @State private var actionError: String?
 
     var body: some View {
         let c = kind.config
@@ -169,12 +172,56 @@ private struct DispatcherBHCardBody: View {
                 identityRow
                 kpiGrid
                 nextStepCard
+                if kind == .reassign { reassignActionRow }
+                if let ack = actionAck {
+                    LifecycleCard { Text(ack).font(EType.caption).foregroundStyle(.green) }
+                }
+                if let err = actionError {
+                    LifecycleCard { Text(err).font(EType.caption).foregroundStyle(.red) }
+                }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await loadCtx() }
         .refreshable { await loadCtx() }
+    }
+
+    private var reassignActionRow: some View {
+        Button { Task { await reassignLoad() } } label: {
+            HStack(spacing: 6) {
+                if actionInFlight { ProgressView().tint(.white).scaleEffect(0.8) }
+                Text(actionInFlight ? "Reassigning…" : "Reassign to carrier B")
+                    .font(EType.body.weight(.semibold))
+            }
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .foregroundStyle(.white)
+            .background(LinearGradient.diagonal)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(actionInFlight)
+    }
+
+    private func reassignLoad() async {
+        actionInFlight = true; actionAck = nil; actionError = nil
+        defer { actionInFlight = false }
+        struct In: Encodable { let loadId: String; let fallbackCarrierId: String?; let reason: String? }
+        struct Out: Decodable { let success: Bool?; let loadId: String?; let fallbackCarrierId: String?; let reassignedAt: String? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "dispatchRole.reassignLoad",
+                input: In(loadId: loadId, fallbackCarrierId: "carrier-b", reason: "ME silent 4:00 of 8:00 — dispatcher reassigned via Dpch800")
+            )
+            if resp.success == true {
+                actionAck = "Tender reassigned · returned to the pool · carrier B armed for next acceptance."
+                await loadCtx()
+            } else {
+                actionError = "Reassign returned no success flag — reload and try again."
+            }
+        } catch let err {
+            actionError = (err as? LocalizedError)?.errorDescription ?? "Reassign failed: \(err)"
+        }
     }
 
     private func header(_ c: DBCConfig) -> some View {
