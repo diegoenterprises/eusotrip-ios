@@ -1762,6 +1762,13 @@ enum ScreenRegistry {
             .init(id: "Dpch785", title: "Dispatch · Comms Volume",        role: .dispatch) { p in AnyView(DispatcherCommsVolumeScreen(theme: p)) },
             .init(id: "Dpch786", title: "Dispatch · Comms FTR",           role: .dispatch) { p in AnyView(DispatcherCommsFTRScreen(theme: p)) },
             .init(id: "Dpch787", title: "Dispatch · Comms Quarter",       role: .dispatch) { p in AnyView(DispatcherCommsQuarterScreen(theme: p)) },
+            // 2026-05-21 — Dispatcher lane/RFP/contract sextet (SVG 508-513).
+            .init(id: "Dpch790", title: "Dispatch · Lane Board",          role: .dispatch) { p in AnyView(DispatcherLaneBoardScreen(theme: p)) },
+            .init(id: "Dpch791", title: "Dispatch · Lane Drill",          role: .dispatch) { p in AnyView(DispatcherLaneDrillScreen(theme: p)) },
+            .init(id: "Dpch792", title: "Dispatch · Haul Detail",         role: .dispatch) { p in AnyView(DispatcherHaulDetailScreen(theme: p)) },
+            .init(id: "Dpch793", title: "Dispatch · RFP Inbox",           role: .dispatch) { p in AnyView(DispatcherRFPInboxScreen(theme: p)) },
+            .init(id: "Dpch794", title: "Dispatch · Match-Up",            role: .dispatch) { p in AnyView(DispatcherMatchUpScreen(theme: p)) },
+            .init(id: "Dpch795", title: "Dispatch · Contract Write",      role: .dispatch) { p in AnyView(DispatcherContractWriteScreen(theme: p)) },
             // 2026-05-21 — Catalyst vehicle scorecard septet (SVG 330-336).
             .init(id: "CV330", title: "Catalyst · Vehicle Scorecard",     role: .catalyst) { p in AnyView(CatalystVehicleScorecardScreen(theme: p)) },
             .init(id: "CV331", title: "Catalyst · Vehicle Profile",       role: .catalyst) { p in AnyView(CatalystVehicleProfileScreen(theme: p)) },
