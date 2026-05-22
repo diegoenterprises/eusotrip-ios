@@ -235,6 +235,15 @@ enum ScreenRegistry {
             .init(id: "DL138", title: "Driver · CEL DVIR S12",         role: .driver) { p in AnyView(DriverCELM04S12Screen(theme: p, loadId: "0")) },
             .init(id: "DL139", title: "Driver · CEL DVIR S13",         role: .driver) { p in AnyView(DriverCELM04S13Screen(theme: p, loadId: "0")) },
             .init(id: "DL140", title: "Driver · CEL DVIR Submit",      role: .driver) { p in AnyView(DriverCELM04S14SubmitScreen(theme: p, loadId: "0")) },
+            // 2026-05-21 — Driver CEL M-04 close octet (SVG 141-148).
+            .init(id: "DL141", title: "Driver · CEL On-Site",          role: .driver) { p in AnyView(DriverCELM04OnSiteScreen(theme: p, loadId: "0")) },
+            .init(id: "DL142", title: "Driver · CEL At-Dock",          role: .driver) { p in AnyView(DriverCELM04AtDockScreen(theme: p, loadId: "0")) },
+            .init(id: "DL143", title: "Driver · CEL Loading",          role: .driver) { p in AnyView(DriverCELM04LoadingScreen(theme: p, loadId: "0")) },
+            .init(id: "DL144", title: "Driver · CEL BOL Sign",         role: .driver) { p in AnyView(DriverCELM04BOLSignScreen(theme: p, loadId: "0")) },
+            .init(id: "DL145", title: "Driver · CEL Departed",         role: .driver) { p in AnyView(DriverCELM04DepartedScreen(theme: p, loadId: "0")) },
+            .init(id: "DL146", title: "Driver · CEL In Transit",       role: .driver) { p in AnyView(DriverCELM04InTransitScreen(theme: p, loadId: "0")) },
+            .init(id: "DL147", title: "Driver · CEL At Delivery",      role: .driver) { p in AnyView(DriverCELM04AtDeliveryScreen(theme: p, loadId: "0")) },
+            .init(id: "DL148", title: "Driver · CEL POD Signed",       role: .driver) { p in AnyView(DriverCELM04PODSignedScreen(theme: p, loadId: "0")) },
             .init(id: "109", title: "Me · Bid Detail",              role: .driver) { p in AnyView(MeBidDetailScreen(theme: p, loadId: 0)) },
             .init(id: "110", title: "Me · Auto-Accept",             role: .driver) { p in AnyView(MeAutoAcceptRulesScreen(theme: p)) },
             // 2026-05-21 — Bonus Tracker port (web BonusTracker.tsx → iOS).
