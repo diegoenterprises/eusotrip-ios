@@ -211,6 +211,13 @@ enum ScreenRegistry {
             .init(id: "DL117", title: "Driver · At Delivery BH",      role: .driver) { p in AnyView(DriverAtDeliveryBHScreen(theme: p, loadId: "0")) },
             .init(id: "DL118", title: "Driver · Docked Loading",      role: .driver) { p in AnyView(DriverDockedLoadingScreen(theme: p, loadId: "0")) },
             .init(id: "DL119", title: "Driver · Loading In Progress", role: .driver) { p in AnyView(DriverLoadingInProgressScreen(theme: p, loadId: "0")) },
+            // 2026-05-21 — Driver backhaul-close sextet (SVG 120-125).
+            .init(id: "DL120", title: "Driver · Loading Tick 2",       role: .driver) { p in AnyView(DriverLoadingTick2Screen(theme: p, loadId: "0")) },
+            .init(id: "DL121", title: "Driver · Loading Tick 3",       role: .driver) { p in AnyView(DriverLoadingTick3Screen(theme: p, loadId: "0")) },
+            .init(id: "DL122", title: "Driver · BOL Pre-Sign",         role: .driver) { p in AnyView(DriverBOLPreSignScreen(theme: p, loadId: "0")) },
+            .init(id: "DL123", title: "Driver · BOL Signed",           role: .driver) { p in AnyView(DriverBOLSignedScreen(theme: p, loadId: "0")) },
+            .init(id: "DL124", title: "Driver · BH Paperwork",         role: .driver) { p in AnyView(DriverBHPaperworkScreen(theme: p, loadId: "0")) },
+            .init(id: "DL125", title: "Driver · BH Closed",            role: .driver) { p in AnyView(DriverBHClosedScreen(theme: p, loadId: "0")) },
             .init(id: "109", title: "Me · Bid Detail",              role: .driver) { p in AnyView(MeBidDetailScreen(theme: p, loadId: 0)) },
             .init(id: "110", title: "Me · Auto-Accept",             role: .driver) { p in AnyView(MeAutoAcceptRulesScreen(theme: p)) },
             // 2026-05-21 — Bonus Tracker port (web BonusTracker.tsx → iOS).
