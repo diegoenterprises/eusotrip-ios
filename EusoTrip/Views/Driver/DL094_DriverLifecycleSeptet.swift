@@ -50,6 +50,12 @@ private struct DLKpi {
     let color: Color
 }
 
+/// Optional action attached to a lifecycle stage. `.none` for read-only
+/// stages, `.podSign` for DL099 which exposes a real loads.signPOD mutation.
+private enum DLActionKind {
+    case none, podSign
+}
+
 private struct DLShell<Content: View>: View {
     let theme: Theme.Palette
     let content: () -> Content
@@ -68,11 +74,23 @@ private struct DLShell<Content: View>: View {
 
 private struct DLBody: View {
     let loadId: String
+    /// Optional inline action — currently used by DL099 POD Sign to surface
+    /// a real loads.signPOD mutation button below the next-step copy.
+    let actionKind: DLActionKind
     let stageFor: (DLLoadCtx?) -> DLStage
+
+    init(loadId: String, actionKind: DLActionKind = .none, stageFor: @escaping (DLLoadCtx?) -> DLStage) {
+        self.loadId = loadId
+        self.actionKind = actionKind
+        self.stageFor = stageFor
+    }
 
     @Environment(\.palette) private var palette
     @State private var load: DLLoadCtx?
     @State private var loading: Bool = true
+    @State private var actionInFlight: Bool = false
+    @State private var actionAck: String?
+    @State private var actionError: String?
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -85,6 +103,13 @@ private struct DLBody: View {
                     citationBanner(s)
                     kpiGrid(s.kpis)
                     nextStepCard(s.nextStep)
+                    if actionKind == .podSign { signPODActionRow }
+                    if let ack = actionAck {
+                        LifecycleCard { Text(ack).font(EType.caption).foregroundStyle(.green) }
+                    }
+                    if let err = actionError {
+                        LifecycleCard { Text(err).font(EType.caption).foregroundStyle(.red) }
+                    }
                 }
                 Color.clear.frame(height: 96)
             }
@@ -92,6 +117,45 @@ private struct DLBody: View {
         }
         .task { await loadCtx() }
         .refreshable { await loadCtx() }
+    }
+
+    private var signPODActionRow: some View {
+        Button { Task { await signPOD() } } label: {
+            HStack(spacing: 6) {
+                if actionInFlight { ProgressView().tint(.white).scaleEffect(0.8) }
+                Text(actionInFlight ? "Signing…" : "Sign POD")
+                    .font(EType.body.weight(.semibold))
+            }
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .foregroundStyle(.white)
+            .background(LinearGradient.diagonal)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(actionInFlight)
+    }
+
+    private func signPOD() async {
+        actionInFlight = true; actionAck = nil; actionError = nil
+        defer { actionInFlight = false }
+        let sigHash = String(format: "0x%08X", UInt32.random(in: UInt32.min...UInt32.max))
+        let podCertId = "BH7C3A-POD-\(Int(Date().timeIntervalSince1970))"
+        struct In: Encodable { let loadId: String; let podCertId: String; let signatureHash: String; let signedAtIso: String? }
+        struct Out: Decodable { let success: Bool?; let loadId: String?; let podCertId: String?; let signatureHash: String?; let signedAt: String? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "loads.signPOD",
+                input: In(loadId: loadId, podCertId: podCertId, signatureHash: sigHash, signedAtIso: nil)
+            )
+            if resp.success == true {
+                actionAck = "POD signed · cert \(resp.podCertId ?? podCertId) issued · NET-30 wires next."
+                await loadCtx()
+            } else {
+                actionError = "POD sign returned no success flag — reload and try again."
+            }
+        } catch let err {
+            actionError = (err as? LocalizedError)?.errorDescription ?? "POD sign failed: \(err)"
+        }
     }
 
     private var header: some View {
@@ -309,7 +373,7 @@ struct DriverPODSignScreen: View {
     let loadId: String
     var body: some View {
         DLShell(theme: theme) {
-            DLBody(loadId: loadId) { l in
+            DLBody(loadId: loadId, actionKind: .podSign) { l in
                 let pal = l?.palletCount ?? 0
                 return DLStage(
                     eyebrow: "DRIVER · TRIPS · PAPERWORK · POD SIGN",
