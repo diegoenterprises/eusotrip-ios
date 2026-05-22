@@ -472,6 +472,9 @@ private struct LatePickupBody: View {
     @Environment(\.palette) private var palette
     @State private var load: ExceptionLoadCtx?
     @State private var loading: Bool = true
+    @State private var actionInFlight: String? = nil
+    @State private var actionAck: String?
+    @State private var actionError: String?
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -481,6 +484,12 @@ private struct LatePickupBody: View {
                 driverCard
                 releaseCountdown
                 actionRow
+                if let ack = actionAck {
+                    LifecycleCard { Text(ack).font(EType.caption).foregroundStyle(.green) }
+                }
+                if let err = actionError {
+                    LifecycleCard { Text(err).font(EType.caption).foregroundStyle(.red) }
+                }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 8)
@@ -546,23 +555,76 @@ private struct LatePickupBody: View {
 
     private var actionRow: some View {
         HStack(spacing: 10) {
-            Button { } label: {
-                Text("Extend window")
-                    .font(EType.body.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .foregroundStyle(.white)
-                    .background(LinearGradient.diagonal)
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }.buttonStyle(.plain)
-            Button { } label: {
-                Text("Release to market")
-                    .font(EType.body.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .foregroundStyle(palette.textPrimary)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Brand.danger.opacity(0.5)))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }.buttonStyle(.plain)
+            Button { Task { await extendWindow() } } label: {
+                HStack(spacing: 6) {
+                    if actionInFlight == "extend" { ProgressView().tint(.white).scaleEffect(0.8) }
+                    Text(actionInFlight == "extend" ? "Extending…" : "Extend window")
+                        .font(EType.body.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .foregroundStyle(.white)
+                .background(LinearGradient.diagonal)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(actionInFlight != nil)
+
+            Button { Task { await releaseToMarket() } } label: {
+                HStack(spacing: 6) {
+                    if actionInFlight == "release" { ProgressView().scaleEffect(0.8) }
+                    Text(actionInFlight == "release" ? "Releasing…" : "Release to market")
+                        .font(EType.body.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .foregroundStyle(palette.textPrimary)
+                .background(palette.bgCard)
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Brand.danger.opacity(0.5)))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(actionInFlight != nil)
+        }
+    }
+
+    private func extendWindow() async {
+        actionInFlight = "extend"; actionAck = nil; actionError = nil
+        defer { actionInFlight = nil }
+        struct In: Encodable { let loadId: String; let minutes: Int; let reason: String? }
+        struct Out: Decodable { let success: Bool?; let newPickupIso: String?; let extendedMinutes: Int? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "dispatchRole.extendPickupWindow",
+                input: In(loadId: loadId, minutes: 30, reason: "Driver 38 min late · 4 mi out · dispatcher extended via Dpch726")
+            )
+            if resp.success == true {
+                actionAck = "Pickup window extended +\(resp.extendedMinutes ?? 30)m · new ETA \(resp.newPickupIso?.prefix(16) ?? "—")."
+                await loadCtx()
+            } else {
+                actionError = "Extend returned no success flag — reload and try again."
+            }
+        } catch let err {
+            actionError = (err as? LocalizedError)?.errorDescription ?? "Extend failed: \(err)"
+        }
+    }
+
+    private func releaseToMarket() async {
+        actionInFlight = "release"; actionAck = nil; actionError = nil
+        defer { actionInFlight = nil }
+        struct In: Encodable { let loadId: String; let fallbackCarrierId: String?; let reason: String? }
+        struct Out: Decodable { let success: Bool?; let reassignedAt: String? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "dispatchRole.reassignLoad",
+                input: In(loadId: loadId, fallbackCarrierId: nil, reason: "Auto-release after late pickup · 22m window expired")
+            )
+            if resp.success == true {
+                actionAck = "Released to market · load returned to the pool · carriers can re-bid now."
+                await loadCtx()
+            } else {
+                actionError = "Release returned no success flag — reload and try again."
+            }
+        } catch let err {
+            actionError = (err as? LocalizedError)?.errorDescription ?? "Release failed: \(err)"
         }
     }
 

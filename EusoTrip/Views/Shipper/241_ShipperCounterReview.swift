@@ -62,6 +62,11 @@ private struct CounterReviewBody: View {
     @State private var load: ShipperLoadCtx?
     @State private var counter: CounterBid?
     @State private var loading: Bool = true
+    @State private var actionInFlight: String? = nil
+    @State private var actionAck: String?
+    @State private var actionError: String?
+    @State private var showCounterSheet: Bool = false
+    @State private var counterAmountText: String = ""
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -74,6 +79,12 @@ private struct CounterReviewBody: View {
                     if let c = counter { carrierCard(c) }
                     if let c = counter { kpiGrid(c) }
                     actionRow
+                    if let ack = actionAck {
+                        LifecycleCard { Text(ack).font(EType.caption).foregroundStyle(.green) }
+                    }
+                    if let err = actionError {
+                        LifecycleCard { Text(err).font(EType.caption).foregroundStyle(.red) }
+                    }
                 }
                 Color.clear.frame(height: 96)
             }
@@ -81,6 +92,35 @@ private struct CounterReviewBody: View {
         }
         .task { await load() }
         .refreshable { await load() }
+        .sheet(isPresented: $showCounterSheet) { counterBackSheet }
+    }
+
+    private var counterBackSheet: some View {
+        NavigationStack {
+            Form {
+                Section("Your counter-offer") {
+                    TextField("Counter amount (e.g. 2425)", text: $counterAmountText)
+                        .keyboardType(.numberPad)
+                    if let c = counter, let original = c.amount {
+                        Text("Carrier countered at $\(c.counterAmount ?? "—") vs original $\(original).")
+                            .font(.caption).foregroundStyle(palette.textSecondary)
+                    }
+                }
+            }
+            .navigationTitle("Counter back")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showCounterSheet = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Send") {
+                        showCounterSheet = false
+                        Task { await sendCounterBack() }
+                    }
+                    .disabled(Double(counterAmountText) == nil)
+                }
+            }
+        }
     }
 
     private var header: some View {
@@ -164,23 +204,76 @@ private struct CounterReviewBody: View {
 
     private var actionRow: some View {
         HStack(spacing: 10) {
-            Button { } label: {
-                Text("Accept counter")
-                    .font(EType.body.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .foregroundStyle(.white)
-                    .background(LinearGradient.diagonal)
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }.buttonStyle(.plain)
-            Button { } label: {
-                Text("Counter back")
-                    .font(EType.body.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .foregroundStyle(palette.textPrimary)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(LinearGradient.diagonal.opacity(0.4)))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }.buttonStyle(.plain)
+            Button { Task { await acceptCounter() } } label: {
+                HStack(spacing: 6) {
+                    if actionInFlight == "accept" { ProgressView().tint(.white).scaleEffect(0.8) }
+                    Text(actionInFlight == "accept" ? "Accepting…" : "Accept counter")
+                        .font(EType.body.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .foregroundStyle(.white)
+                .background(LinearGradient.diagonal)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(actionInFlight != nil || counter?.id == nil)
+
+            Button { showCounterSheet = true } label: {
+                HStack(spacing: 6) {
+                    if actionInFlight == "counter" { ProgressView().scaleEffect(0.8) }
+                    Text(actionInFlight == "counter" ? "Sending…" : "Counter back")
+                        .font(EType.body.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .foregroundStyle(palette.textPrimary)
+                .background(palette.bgCard)
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(LinearGradient.diagonal.opacity(0.4)))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(actionInFlight != nil || counter?.id == nil)
+        }
+    }
+
+    private func acceptCounter() async {
+        guard let bidId = counter?.id else { return }
+        actionInFlight = "accept"; actionAck = nil; actionError = nil
+        defer { actionInFlight = nil }
+        struct In: Encodable { let bidId: Int }
+        struct Out: Decodable { let success: Bool? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation("loadBidding.accept", input: In(bidId: bidId))
+            if resp.success == true {
+                actionAck = "Counter accepted · bid #\(bidId) awarded · carrier notified · load locked."
+                await self.load()
+            } else {
+                actionError = "Accept returned no success flag — reload and try again."
+            }
+        } catch let err {
+            actionError = (err as? LocalizedError)?.errorDescription ?? "Accept failed: \(err)"
+        }
+    }
+
+    private func sendCounterBack() async {
+        guard let bidId = counter?.id, let amount = Double(counterAmountText) else { return }
+        actionInFlight = "counter"; actionAck = nil; actionError = nil
+        defer { actionInFlight = nil }
+        struct In: Encodable { let bidId: Int; let counterAmount: Double; let message: String? }
+        struct Out: Decodable { let success: Bool? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "loadBidding.counter",
+                input: In(bidId: bidId, counterAmount: amount, message: "Shipper countered via SH241")
+            )
+            if resp.success == true {
+                actionAck = "Counter sent · $\(Int(amount)) back to carrier · bid #\(bidId) updated."
+                counterAmountText = ""
+                await self.load()
+            } else {
+                actionError = "Counter returned no success flag — reload and try again."
+            }
+        } catch let err {
+            actionError = (err as? LocalizedError)?.errorDescription ?? "Counter failed: \(err)"
         }
     }
 
