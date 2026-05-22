@@ -1753,6 +1753,15 @@ enum ScreenRegistry {
             .init(id: "Dpch775", title: "Dispatch · Settlement Onboard",  role: .dispatch) { p in AnyView(DispatcherSettlementOnboardingScreen(theme: p)) },
             .init(id: "Dpch776", title: "Dispatch · Settlement Audit",    role: .dispatch) { p in AnyView(DispatcherSettlementComplianceScreen(theme: p)) },
             .init(id: "Dpch777", title: "Dispatch · Settlement Quarter",  role: .dispatch) { p in AnyView(DispatcherSettlementQuarterScreen(theme: p)) },
+            // 2026-05-21 — Dispatcher Comms-detail octet (SVG 480-487).
+            .init(id: "Dpch780", title: "Dispatch · Comms Review",        role: .dispatch) { p in AnyView(DispatcherCommsReviewScreen(theme: p)) },
+            .init(id: "Dpch781", title: "Dispatch · Comms Response",      role: .dispatch) { p in AnyView(DispatcherCommsResponseTimeScreen(theme: p)) },
+            .init(id: "Dpch782", title: "Dispatch · Comms SLA",           role: .dispatch) { p in AnyView(DispatcherCommsSLAScreen(theme: p)) },
+            .init(id: "Dpch783", title: "Dispatch · Comms Escalation",    role: .dispatch) { p in AnyView(DispatcherCommsEscalationScreen(theme: p)) },
+            .init(id: "Dpch784", title: "Dispatch · Comms Closure",       role: .dispatch) { p in AnyView(DispatcherCommsClosureScreen(theme: p)) },
+            .init(id: "Dpch785", title: "Dispatch · Comms Volume",        role: .dispatch) { p in AnyView(DispatcherCommsVolumeScreen(theme: p)) },
+            .init(id: "Dpch786", title: "Dispatch · Comms FTR",           role: .dispatch) { p in AnyView(DispatcherCommsFTRScreen(theme: p)) },
+            .init(id: "Dpch787", title: "Dispatch · Comms Quarter",       role: .dispatch) { p in AnyView(DispatcherCommsQuarterScreen(theme: p)) },
             // 2026-05-21 — Catalyst vehicle scorecard septet (SVG 330-336).
             .init(id: "CV330", title: "Catalyst · Vehicle Scorecard",     role: .catalyst) { p in AnyView(CatalystVehicleScorecardScreen(theme: p)) },
             .init(id: "CV331", title: "Catalyst · Vehicle Profile",       role: .catalyst) { p in AnyView(CatalystVehicleProfileScreen(theme: p)) },
