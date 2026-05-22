@@ -1815,6 +1815,9 @@ enum ScreenRegistry {
             .init(id: "CV345B", title: "Catalyst · Customer Step",        role: .catalyst) { p in AnyView(CatalystShipperStepDetailScreen(theme: p)) },
             .init(id: "CV346B", title: "Catalyst · Customer Comp Row",    role: .catalyst) { p in AnyView(CatalystShipperComplianceRowScreen(theme: p)) },
             .init(id: "CV347B", title: "Catalyst · Customer Quarter",     role: .catalyst) { p in AnyView(CatalystShipperQuarterDetailScreen(theme: p)) },
+            // 2026-05-22 — Catalyst Quarterly History A-variants (SVG 327 + 337).
+            .init(id: "CV327", title: "Catalyst · Driver Q-History",      role: .catalyst) { p in AnyView(CatalystDriverQuarterlyHistoryScreen(theme: p)) },
+            .init(id: "CV337", title: "Catalyst · Vehicle Q-History",     role: .catalyst) { p in AnyView(CatalystVehicleQuarterlyHistoryScreen(theme: p)) },
             // 2026-05-21 — Catalyst vehicle scorecard septet (SVG 330-336).
             .init(id: "CV330", title: "Catalyst · Vehicle Scorecard",     role: .catalyst) { p in AnyView(CatalystVehicleScorecardScreen(theme: p)) },
             .init(id: "CV331", title: "Catalyst · Vehicle Profile",       role: .catalyst) { p in AnyView(CatalystVehicleProfileScreen(theme: p)) },
