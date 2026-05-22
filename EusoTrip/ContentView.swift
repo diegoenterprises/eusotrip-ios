@@ -1782,6 +1782,12 @@ enum ScreenRegistry {
             .init(id: "Dpch809", title: "Dispatch · BH BOL Signed",       role: .dispatch) { p in AnyView(DispatcherBHBOLSignedScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "Dpch810", title: "Dispatch · BH Paperwork",        role: .dispatch) { p in AnyView(DispatcherBHPaperworkScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "Dpch811", title: "Dispatch · BH Closed",           role: .dispatch) { p in AnyView(DispatcherBHClosedScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            // 2026-05-21 — Dispatcher M-04 kanban quintet (SVG 526-530).
+            .init(id: "Dpch820", title: "Dispatch · M-04 Awarded Kanban", role: .dispatch) { p in AnyView(DispatcherM04AwardedKanbanScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "Dpch821", title: "Dispatch · M-04 Pickup Kanban",  role: .dispatch) { p in AnyView(DispatcherM04PickupKanbanScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "Dpch822", title: "Dispatch · M-04 Transit Kanban", role: .dispatch) { p in AnyView(DispatcherM04InTransitKanbanScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "Dpch823", title: "Dispatch · M-04 Delivery Kanban",role: .dispatch) { p in AnyView(DispatcherM04AtDeliveryKanbanScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "Dpch824", title: "Dispatch · M-04 Paper Kanban",   role: .dispatch) { p in AnyView(DispatcherM04PaperworkKanbanScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             // 2026-05-21 — Catalyst vehicle scorecard septet (SVG 330-336).
             .init(id: "CV330", title: "Catalyst · Vehicle Scorecard",     role: .catalyst) { p in AnyView(CatalystVehicleScorecardScreen(theme: p)) },
             .init(id: "CV331", title: "Catalyst · Vehicle Profile",       role: .catalyst) { p in AnyView(CatalystVehicleProfileScreen(theme: p)) },
