@@ -226,6 +226,15 @@ enum ScreenRegistry {
             .init(id: "DL130", title: "Driver · CEL DVIR S4",          role: .driver) { p in AnyView(DriverCELM04S4Screen(theme: p, loadId: "0")) },
             .init(id: "DL131", title: "Driver · CEL DVIR S5",          role: .driver) { p in AnyView(DriverCELM04S5Screen(theme: p, loadId: "0")) },
             .init(id: "DL132", title: "Driver · CEL DVIR S6",          role: .driver) { p in AnyView(DriverCELM04S6Screen(theme: p, loadId: "0")) },
+            // 2026-05-21 — Driver CEL M-04 DVIR continuation (SVG 133-140).
+            .init(id: "DL133", title: "Driver · CEL DVIR S7",          role: .driver) { p in AnyView(DriverCELM04S7Screen(theme: p, loadId: "0")) },
+            .init(id: "DL134", title: "Driver · CEL DVIR S8",          role: .driver) { p in AnyView(DriverCELM04S8Screen(theme: p, loadId: "0")) },
+            .init(id: "DL135", title: "Driver · CEL DVIR S9",          role: .driver) { p in AnyView(DriverCELM04S9Screen(theme: p, loadId: "0")) },
+            .init(id: "DL136", title: "Driver · CEL DVIR S10",         role: .driver) { p in AnyView(DriverCELM04S10Screen(theme: p, loadId: "0")) },
+            .init(id: "DL137", title: "Driver · CEL DVIR S11",         role: .driver) { p in AnyView(DriverCELM04S11Screen(theme: p, loadId: "0")) },
+            .init(id: "DL138", title: "Driver · CEL DVIR S12",         role: .driver) { p in AnyView(DriverCELM04S12Screen(theme: p, loadId: "0")) },
+            .init(id: "DL139", title: "Driver · CEL DVIR S13",         role: .driver) { p in AnyView(DriverCELM04S13Screen(theme: p, loadId: "0")) },
+            .init(id: "DL140", title: "Driver · CEL DVIR Submit",      role: .driver) { p in AnyView(DriverCELM04S14SubmitScreen(theme: p, loadId: "0")) },
             .init(id: "109", title: "Me · Bid Detail",              role: .driver) { p in AnyView(MeBidDetailScreen(theme: p, loadId: 0)) },
             .init(id: "110", title: "Me · Auto-Accept",             role: .driver) { p in AnyView(MeAutoAcceptRulesScreen(theme: p)) },
             // 2026-05-21 — Bonus Tracker port (web BonusTracker.tsx → iOS).
