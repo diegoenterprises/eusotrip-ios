@@ -204,6 +204,13 @@ enum ScreenRegistry {
             .init(id: "DL111", title: "Driver · DVIR Section 10",     role: .driver) { p in AnyView(DriverDVIRSection10Screen(theme: p, loadId: "0")) },
             .init(id: "DL112", title: "Driver · DVIR Section 11",     role: .driver) { p in AnyView(DriverDVIRSection11Screen(theme: p, loadId: "0")) },
             .init(id: "DL113", title: "Driver · DVIR Section 12",     role: .driver) { p in AnyView(DriverDVIRSection12Screen(theme: p, loadId: "0")) },
+            // 2026-05-21 — Driver backhaul-pickup sextet (SVG 114-119).
+            .init(id: "DL114", title: "Driver · DVIR Complete",       role: .driver) { p in AnyView(DriverDVIRCompleteScreen(theme: p, loadId: "0")) },
+            .init(id: "DL115", title: "Driver · Loaded Departed",     role: .driver) { p in AnyView(DriverLoadedDepartedScreen(theme: p, loadId: "0")) },
+            .init(id: "DL116", title: "Driver · Approaching Dest",    role: .driver) { p in AnyView(DriverApproachingDestinationScreen(theme: p, loadId: "0")) },
+            .init(id: "DL117", title: "Driver · At Delivery BH",      role: .driver) { p in AnyView(DriverAtDeliveryBHScreen(theme: p, loadId: "0")) },
+            .init(id: "DL118", title: "Driver · Docked Loading",      role: .driver) { p in AnyView(DriverDockedLoadingScreen(theme: p, loadId: "0")) },
+            .init(id: "DL119", title: "Driver · Loading In Progress", role: .driver) { p in AnyView(DriverLoadingInProgressScreen(theme: p, loadId: "0")) },
             .init(id: "109", title: "Me · Bid Detail",              role: .driver) { p in AnyView(MeBidDetailScreen(theme: p, loadId: 0)) },
             .init(id: "110", title: "Me · Auto-Accept",             role: .driver) { p in AnyView(MeAutoAcceptRulesScreen(theme: p)) },
             // 2026-05-21 — Bonus Tracker port (web BonusTracker.tsx → iOS).
