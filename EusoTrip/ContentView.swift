@@ -218,6 +218,14 @@ enum ScreenRegistry {
             .init(id: "DL123", title: "Driver · BOL Signed",           role: .driver) { p in AnyView(DriverBOLSignedScreen(theme: p, loadId: "0")) },
             .init(id: "DL124", title: "Driver · BH Paperwork",         role: .driver) { p in AnyView(DriverBHPaperworkScreen(theme: p, loadId: "0")) },
             .init(id: "DL125", title: "Driver · BH Closed",            role: .driver) { p in AnyView(DriverBHClosedScreen(theme: p, loadId: "0")) },
+            // 2026-05-21 — Driver CEL M-04 septet (SVG 126-132).
+            .init(id: "DL126", title: "Driver · CEL Assigned",         role: .driver) { p in AnyView(DriverCELM04AssignedScreen(theme: p, loadId: "0")) },
+            .init(id: "DL127", title: "Driver · CEL DVIR S1",          role: .driver) { p in AnyView(DriverCELM04S1Screen(theme: p, loadId: "0")) },
+            .init(id: "DL128", title: "Driver · CEL DVIR S2",          role: .driver) { p in AnyView(DriverCELM04S2Screen(theme: p, loadId: "0")) },
+            .init(id: "DL129", title: "Driver · CEL DVIR S3",          role: .driver) { p in AnyView(DriverCELM04S3Screen(theme: p, loadId: "0")) },
+            .init(id: "DL130", title: "Driver · CEL DVIR S4",          role: .driver) { p in AnyView(DriverCELM04S4Screen(theme: p, loadId: "0")) },
+            .init(id: "DL131", title: "Driver · CEL DVIR S5",          role: .driver) { p in AnyView(DriverCELM04S5Screen(theme: p, loadId: "0")) },
+            .init(id: "DL132", title: "Driver · CEL DVIR S6",          role: .driver) { p in AnyView(DriverCELM04S6Screen(theme: p, loadId: "0")) },
             .init(id: "109", title: "Me · Bid Detail",              role: .driver) { p in AnyView(MeBidDetailScreen(theme: p, loadId: 0)) },
             .init(id: "110", title: "Me · Auto-Accept",             role: .driver) { p in AnyView(MeAutoAcceptRulesScreen(theme: p)) },
             // 2026-05-21 — Bonus Tracker port (web BonusTracker.tsx → iOS).
