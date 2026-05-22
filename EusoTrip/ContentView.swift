@@ -1797,6 +1797,15 @@ enum ScreenRegistry {
             .init(id: "CV335B", title: "Catalyst · Vehicle Step",         role: .catalyst) { p in AnyView(CatalystVehicleStepDetailScreen(theme: p)) },
             .init(id: "CV336B", title: "Catalyst · Vehicle Comp Row",     role: .catalyst) { p in AnyView(CatalystVehicleComplianceRowScreen(theme: p)) },
             .init(id: "CV337B", title: "Catalyst · Vehicle Quarter",      role: .catalyst) { p in AnyView(CatalystVehicleQuarterDetailScreen(theme: p)) },
+            // 2026-05-21 — Catalyst Driver B-variant deep-drill octet (SVG 320B-327B).
+            .init(id: "CV320B", title: "Catalyst · Driver Score Axis",    role: .catalyst) { p in AnyView(CatalystDriverScoreAxisScreen(theme: p)) },
+            .init(id: "CV321B", title: "Catalyst · Driver Tier",          role: .catalyst) { p in AnyView(CatalystDriverProfileTierScreen(theme: p)) },
+            .init(id: "CV322B", title: "Catalyst · Driver Document",      role: .catalyst) { p in AnyView(CatalystDriverDocumentDetailScreen(theme: p)) },
+            .init(id: "CV323B", title: "Catalyst · Driver Analytic",      role: .catalyst) { p in AnyView(CatalystDriverAnalyticDetailScreen(theme: p)) },
+            .init(id: "CV324B", title: "Catalyst · Driver Settlement",    role: .catalyst) { p in AnyView(CatalystDriverSettlementDetailScreen(theme: p)) },
+            .init(id: "CV325B", title: "Catalyst · Driver Step",          role: .catalyst) { p in AnyView(CatalystDriverStepDetailScreen(theme: p)) },
+            .init(id: "CV326B", title: "Catalyst · Driver Comp Row",      role: .catalyst) { p in AnyView(CatalystDriverComplianceRowScreen(theme: p)) },
+            .init(id: "CV327B", title: "Catalyst · Driver Quarter",       role: .catalyst) { p in AnyView(CatalystDriverQuarterDetailScreen(theme: p)) },
             // 2026-05-21 — Catalyst vehicle scorecard septet (SVG 330-336).
             .init(id: "CV330", title: "Catalyst · Vehicle Scorecard",     role: .catalyst) { p in AnyView(CatalystVehicleScorecardScreen(theme: p)) },
             .init(id: "CV331", title: "Catalyst · Vehicle Profile",       role: .catalyst) { p in AnyView(CatalystVehicleProfileScreen(theme: p)) },
