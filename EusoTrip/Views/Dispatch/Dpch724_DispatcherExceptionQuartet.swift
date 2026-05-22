@@ -259,11 +259,15 @@ struct DispatcherCancelLoadWizardScreen: View {
 private struct CancelLoadBody: View {
     let loadId: String
     @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
     @State private var load: ExceptionLoadCtx?
     @State private var reason: String = "Receiver facility unavailable"
     @State private var cascadeAck: Bool = false
     @State private var policyAck: Bool = false
     @State private var loading: Bool = true
+    @State private var actionInFlight: Bool = false
+    @State private var actionAck: String?
+    @State private var actionError: String?
 
     private let reasons: [String] = [
         "Receiver facility unavailable",
@@ -285,6 +289,12 @@ private struct CancelLoadBody: View {
                 cascadeSection
                 policySection
                 actionRow
+                if let ack = actionAck {
+                    LifecycleCard { Text(ack).font(EType.caption).foregroundStyle(.green) }
+                }
+                if let err = actionError {
+                    LifecycleCard { Text(err).font(EType.caption).foregroundStyle(.red) }
+                }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 8)
@@ -390,7 +400,7 @@ private struct CancelLoadBody: View {
 
     private var actionRow: some View {
         HStack(spacing: 10) {
-            Button { } label: {
+            Button { dismiss() } label: {
                 Text("Back")
                     .font(EType.body.weight(.semibold))
                     .frame(maxWidth: .infinity, minHeight: 48)
@@ -399,14 +409,42 @@ private struct CancelLoadBody: View {
                     .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }.buttonStyle(.plain)
-            Button { } label: {
-                Text("Confirm cancel · irreversible")
-                    .font(EType.body.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .foregroundStyle(.white)
-                    .background(Brand.danger)
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }.buttonStyle(.plain)
+            .disabled(actionInFlight)
+
+            Button { Task { await confirmCancel() } } label: {
+                HStack(spacing: 6) {
+                    if actionInFlight { ProgressView().tint(.white).scaleEffect(0.8) }
+                    Text(actionInFlight ? "Cancelling…" : "Confirm cancel · irreversible")
+                        .font(EType.body.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .foregroundStyle(.white)
+                .background(Brand.danger)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(actionInFlight || !cascadeAck || !policyAck)
+        }
+    }
+
+    private func confirmCancel() async {
+        actionInFlight = true; actionAck = nil; actionError = nil
+        defer { actionInFlight = false }
+        struct In: Encodable { let loadId: String; let reason: String; let waiveTonus: Bool; let cascadeAck: Bool }
+        struct Out: Decodable { let success: Bool?; let loadId: String?; let cancelledAt: String?; let reason: String? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "dispatchRole.cancelLoad",
+                input: In(loadId: loadId, reason: reason, waiveTonus: false, cascadeAck: cascadeAck)
+            )
+            if resp.success == true {
+                actionAck = "Load cancelled · reason '\(resp.reason ?? reason)' archived to audit chain."
+                await loadCtx()
+            } else {
+                actionError = "Cancel returned no success flag — reload and try again."
+            }
+        } catch let err {
+            actionError = (err as? LocalizedError)?.errorDescription ?? "Cancel failed: \(err)"
         }
     }
 
