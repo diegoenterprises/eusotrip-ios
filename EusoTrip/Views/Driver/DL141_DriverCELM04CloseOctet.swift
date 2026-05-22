@@ -125,6 +125,9 @@ private struct CELCloseBody: View {
 
     @Environment(\.palette) private var palette
     @State private var load: CMCLoadCtx?
+    @State private var actionInFlight: Bool = false
+    @State private var actionAck: String?
+    @State private var actionError: String?
 
     var body: some View {
         let c = kind.config
@@ -136,12 +139,58 @@ private struct CELCloseBody: View {
                 identityRow
                 kpiGrid
                 nextStepCard
+                if kind == .podSigned { signPODActionRow }
+                if let ack = actionAck {
+                    LifecycleCard { Text(ack).font(EType.caption).foregroundStyle(.green) }
+                }
+                if let err = actionError {
+                    LifecycleCard { Text(err).font(EType.caption).foregroundStyle(.red) }
+                }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await loadCtx() }
         .refreshable { await loadCtx() }
+    }
+
+    private var signPODActionRow: some View {
+        Button { Task { await signPOD() } } label: {
+            HStack(spacing: 6) {
+                if actionInFlight { ProgressView().tint(.white).scaleEffect(0.8) }
+                Text(actionInFlight ? "Signing…" : "Sign POD")
+                    .font(EType.body.weight(.semibold))
+            }
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .foregroundStyle(.white)
+            .background(LinearGradient.diagonal)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(actionInFlight)
+    }
+
+    private func signPOD() async {
+        actionInFlight = true; actionAck = nil; actionError = nil
+        defer { actionInFlight = false }
+        let sigHash = String(format: "0x%08X", UInt32.random(in: UInt32.min...UInt32.max))
+        let podCertId = "M04-POD-\(Int(Date().timeIntervalSince1970))"
+        struct In: Encodable { let loadId: String; let podCertId: String; let signatureHash: String; let signedAtIso: String? }
+        struct Out: Decodable { let success: Bool?; let loadId: String?; let podCertId: String?; let signatureHash: String?; let signedAt: String? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "loads.signPOD",
+                input: In(loadId: loadId, podCertId: podCertId, signatureHash: sigHash, signedAtIso: nil)
+            )
+            if resp.success == true {
+                actionAck = "POD signed · cert \(resp.podCertId ?? podCertId) · ring rolled · pod_pending → DU."
+                await loadCtx()
+            } else {
+                actionError = "POD sign returned no success flag — reload and try again."
+            }
+        } catch let err {
+            actionError = (err as? LocalizedError)?.errorDescription ?? "POD sign failed: \(err)"
+        }
     }
 
     private func header(_ c: CCConfig) -> some View {
