@@ -142,47 +142,40 @@ struct LegalDocSheet: View {
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
 
-    /// 2026-05-18 — Founder directive: Terms + Privacy are authored
-    /// canonically on eusotrip.com (single source of truth). The
-    /// other three (Cookie, OSS, Compliance) are app-bundle copy.
-    private var canonicalURL: URL? {
+    var body: some View {
+        // 2026-05-22 — Founder directive: every legal doc renders
+        // in-app from the same SwiftUI source that the Login screen
+        // (Auth/005_TermsOfService + Auth/006_PrivacyPolicy) uses.
+        // The Me-section sheet was previously a WKWebView pointing at
+        // eusotrip.com/terms-of-service which paints a different,
+        // simpler UI than the branded SwiftUI versions. Unified here.
         switch doc {
         case .termsOfService:
-            return URL(string: "https://eusotrip.com/terms-of-service")
+            TermsOfServiceView()
         case .privacyPolicy:
-            return URL(string: "https://eusotrip.com/privacy-policy")
+            PrivacyPolicyView()
         case .cookiePolicy, .openSourceNotices, .complianceAttestations:
-            return nil
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(doc.title)
-                        .font(.system(size: 22, weight: .heavy))
-                        .foregroundStyle(palette.textPrimary)
-                    Text("Eusorone Technologies, Inc · Last updated 2026-05-18")
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textSecondary)
+            // Cookie / OSS / Compliance still render from the app
+            // bundle (no web-canonical version exists yet).
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(doc.title)
+                            .font(.system(size: 22, weight: .heavy))
+                            .foregroundStyle(palette.textPrimary)
+                        Text("Eusorone Technologies, Inc · Last updated 2026-05-18")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                    Spacer(minLength: 0)
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 22, weight: .heavy))
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                    .buttonStyle(.plain)
                 }
-                Spacer(minLength: 0)
-                Button { dismiss() } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 22, weight: .heavy))
-                        .foregroundStyle(palette.textTertiary)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(Space.s5)
-
-            if let url = canonicalURL {
-                // Canonical sources live on the web — render via the
-                // same WKWebView the BOL viewer uses so any update on
-                // eusotrip.com flows through without app re-publish.
-                LegalWebDoc(url: url)
-            } else {
+                .padding(Space.s5)
                 ScrollView(showsIndicators: false) {
                     Text(LegalDocCopy.body(for: doc))
                         .font(EType.body)
@@ -192,8 +185,8 @@ struct LegalDocSheet: View {
                         .padding(.bottom, Space.s8)
                 }
             }
+            .background(palette.bgPrimary)
         }
-        .background(palette.bgPrimary)
     }
 }
 

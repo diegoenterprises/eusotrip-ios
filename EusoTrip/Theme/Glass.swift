@@ -307,28 +307,46 @@ struct GradientLogo: View {
 // MARK: - AuroraBackground
 
 /// Multi-stop radial gradient backdrop with soft blue→magenta aurora blobs,
-/// used behind auth surfaces.
+/// used behind auth surfaces. Adapts to light + dark via the env palette.
 struct AuroraBackground: View {
     @Environment(\.palette) var palette
+    @Environment(\.colorScheme) var colorScheme
+
+    /// In dark mode the auth surface gets a black-tinted vignette at
+    /// the bottom to lift the cards off the page; in light mode that
+    /// reads as a gray sheen which fights the white card backgrounds.
+    /// Use the palette page color so the vignette dissolves into the
+    /// background in light mode and reads as a soft darken in dark.
+    private var vignetteColor: Color {
+        colorScheme == .dark
+            ? Color.black.opacity(0.35)
+            : Color.white.opacity(0.45)
+    }
+
+    /// Blob opacities damped in light mode so the aurora reads as a
+    /// subtle pastel sheen rather than a saturated wash.
+    private var blueBlobOpacity: Double { colorScheme == .dark ? 0.55 : 0.18 }
+    private var magentaBlobOpacity: Double { colorScheme == .dark ? 0.45 : 0.16 }
+
     var body: some View {
         ZStack {
             palette.bgPage.ignoresSafeArea()
 
             Circle()
-                .fill(Brand.blue.opacity(0.55))
+                .fill(Brand.blue.opacity(blueBlobOpacity))
                 .frame(width: 380, height: 380)
                 .blur(radius: 140)
                 .offset(x: -120, y: -260)
 
             Circle()
-                .fill(Brand.magenta.opacity(0.45))
+                .fill(Brand.magenta.opacity(magentaBlobOpacity))
                 .frame(width: 340, height: 340)
                 .blur(radius: 140)
                 .offset(x: 150, y: 240)
 
             Rectangle()
                 .fill(LinearGradient(
-                    colors: [Color.black.opacity(0.35), Color.clear],
+                    colors: [vignetteColor, Color.clear],
                     startPoint: .bottom, endPoint: .top))
                 .ignoresSafeArea()
         }
