@@ -1744,6 +1744,15 @@ enum ScreenRegistry {
             .init(id: "Dpch765", title: "Dispatch · Vehicle Deadhead",    role: .dispatch) { p in AnyView(DispatcherVehicleDeadheadScreen(theme: p)) },
             .init(id: "Dpch766", title: "Dispatch · Vehicle Onboarding",  role: .dispatch) { p in AnyView(DispatcherVehicleOnboardingScreen(theme: p)) },
             .init(id: "Dpch767", title: "Dispatch · Vehicle Quarter",     role: .dispatch) { p in AnyView(DispatcherVehicleQuarterScreen(theme: p)) },
+            // 2026-05-21 — Dispatcher settlement-detail octet (SVG 500-507).
+            .init(id: "Dpch770", title: "Dispatch · Settlement Review",   role: .dispatch) { p in AnyView(DispatcherSettlementReviewScreen(theme: p)) },
+            .init(id: "Dpch771", title: "Dispatch · Settlement DSO",      role: .dispatch) { p in AnyView(DispatcherSettlementDSOScreen(theme: p)) },
+            .init(id: "Dpch772", title: "Dispatch · Settlement QPAY",     role: .dispatch) { p in AnyView(DispatcherSettlementQPAYScreen(theme: p)) },
+            .init(id: "Dpch773", title: "Dispatch · Settlement Ledger",   role: .dispatch) { p in AnyView(DispatcherSettlementOpenLedgerScreen(theme: p)) },
+            .init(id: "Dpch774", title: "Dispatch · Settlement Clean",    role: .dispatch) { p in AnyView(DispatcherSettlementCleanRateScreen(theme: p)) },
+            .init(id: "Dpch775", title: "Dispatch · Settlement Onboard",  role: .dispatch) { p in AnyView(DispatcherSettlementOnboardingScreen(theme: p)) },
+            .init(id: "Dpch776", title: "Dispatch · Settlement Audit",    role: .dispatch) { p in AnyView(DispatcherSettlementComplianceScreen(theme: p)) },
+            .init(id: "Dpch777", title: "Dispatch · Settlement Quarter",  role: .dispatch) { p in AnyView(DispatcherSettlementQuarterScreen(theme: p)) },
             // 2026-05-21 — Catalyst vehicle scorecard septet (SVG 330-336).
             .init(id: "CV330", title: "Catalyst · Vehicle Scorecard",     role: .catalyst) { p in AnyView(CatalystVehicleScorecardScreen(theme: p)) },
             .init(id: "CV331", title: "Catalyst · Vehicle Profile",       role: .catalyst) { p in AnyView(CatalystVehicleProfileScreen(theme: p)) },
