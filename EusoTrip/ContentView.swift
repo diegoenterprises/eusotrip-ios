@@ -1760,6 +1760,16 @@ enum ScreenRegistry {
             .init(id: "SH258", title: "Shipper · BH BOL Signed",         role: .shipper) { p in AnyView(ShipperBackhaulBOLSignedScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "SH259", title: "Shipper · BH Paperwork",          role: .shipper) { p in AnyView(ShipperBackhaulPaperworkScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "SH260", title: "Shipper · BH Closed Seal",        role: .shipper) { p in AnyView(ShipperBackhaulClosedSealScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            // 2026-05-21 — Shipper M-04 observed nonet (SVG 261-269).
+            .init(id: "SH261", title: "Shipper · M-04 Posted",           role: .shipper) { p in AnyView(ShipperM04FreshPostedScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "SH262", title: "Shipper · M-04 First Quote",      role: .shipper) { p in AnyView(ShipperM04FirstQuoteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "SH263", title: "Shipper · M-04 Second Quote",     role: .shipper) { p in AnyView(ShipperM04SecondQuoteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "SH264", title: "Shipper · M-04 Third Quote",      role: .shipper) { p in AnyView(ShipperM04ThirdQuoteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "SH265", title: "Shipper · M-04 Fourth Quote",     role: .shipper) { p in AnyView(ShipperM04FourthQuoteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "SH266", title: "Shipper · M-04 Awarded",          role: .shipper) { p in AnyView(ShipperM04AwardedScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "SH267", title: "Shipper · M-04 On-Site",          role: .shipper) { p in AnyView(ShipperM04OnSiteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "SH268", title: "Shipper · M-04 In-Transit",       role: .shipper) { p in AnyView(ShipperM04InTransitScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "SH269", title: "Shipper · M-04 At Delivery",      role: .shipper) { p in AnyView(ShipperM04AtDeliveryScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
         ])
 
         return list
