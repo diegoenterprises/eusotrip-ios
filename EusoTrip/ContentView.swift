@@ -198,6 +198,12 @@ enum ScreenRegistry {
             .init(id: "DL106", title: "Driver · DVIR Section 5",      role: .driver) { p in AnyView(DriverDVIRSection5Screen(theme: p, loadId: "0")) },
             .init(id: "DL107", title: "Driver · DVIR Section 6",      role: .driver) { p in AnyView(DriverDVIRSection6Screen(theme: p, loadId: "0")) },
             .init(id: "DL108", title: "Driver · DVIR Section 7",      role: .driver) { p in AnyView(DriverDVIRSection7Screen(theme: p, loadId: "0")) },
+            // 2026-05-21 — Driver DVIR continuation quintet (SVG 109-113).
+            .init(id: "DL109", title: "Driver · DVIR Section 8",      role: .driver) { p in AnyView(DriverDVIRSection8Screen(theme: p, loadId: "0")) },
+            .init(id: "DL110", title: "Driver · DVIR Section 9",      role: .driver) { p in AnyView(DriverDVIRSection9Screen(theme: p, loadId: "0")) },
+            .init(id: "DL111", title: "Driver · DVIR Section 10",     role: .driver) { p in AnyView(DriverDVIRSection10Screen(theme: p, loadId: "0")) },
+            .init(id: "DL112", title: "Driver · DVIR Section 11",     role: .driver) { p in AnyView(DriverDVIRSection11Screen(theme: p, loadId: "0")) },
+            .init(id: "DL113", title: "Driver · DVIR Section 12",     role: .driver) { p in AnyView(DriverDVIRSection12Screen(theme: p, loadId: "0")) },
             .init(id: "109", title: "Me · Bid Detail",              role: .driver) { p in AnyView(MeBidDetailScreen(theme: p, loadId: 0)) },
             .init(id: "110", title: "Me · Auto-Accept",             role: .driver) { p in AnyView(MeAutoAcceptRulesScreen(theme: p)) },
             // 2026-05-21 — Bonus Tracker port (web BonusTracker.tsx → iOS).
