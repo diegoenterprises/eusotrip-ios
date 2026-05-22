@@ -81,6 +81,9 @@ private struct LoadOfferBody: View {
     @Environment(\.palette) private var palette
     @State private var load: DriverLoadCtx?
     @State private var loading: Bool = true
+    @State private var actionInFlight: String? = nil  // "accept" / "decline"
+    @State private var actionAck: String?
+    @State private var actionError: String?
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -93,6 +96,12 @@ private struct LoadOfferBody: View {
                     rpmComparisonCard(l)
                     lifecycleProgressCard
                     actionRow
+                    if let ack = actionAck {
+                        LifecycleCard { Text(ack).font(EType.caption).foregroundStyle(.green) }
+                    }
+                    if let err = actionError {
+                        LifecycleCard { Text(err).font(EType.caption).foregroundStyle(.red) }
+                    }
                 }
                 Color.clear.frame(height: 96)
             }
@@ -195,23 +204,74 @@ private struct LoadOfferBody: View {
 
     private var actionRow: some View {
         HStack(spacing: 10) {
-            Button { } label: {
-                Text("Accept offer")
-                    .font(EType.body.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .foregroundStyle(.white)
-                    .background(LinearGradient.diagonal)
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }.buttonStyle(.plain)
-            Button { } label: {
-                Text("Counter")
-                    .font(EType.body.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .foregroundStyle(palette.textPrimary)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(LinearGradient.diagonal.opacity(0.4)))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }.buttonStyle(.plain)
+            Button { Task { await acceptOffer() } } label: {
+                HStack(spacing: 6) {
+                    if actionInFlight == "accept" {
+                        ProgressView().tint(.white).scaleEffect(0.8)
+                    }
+                    Text(actionInFlight == "accept" ? "Accepting…" : "Accept offer")
+                        .font(EType.body.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .foregroundStyle(.white)
+                .background(LinearGradient.diagonal)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(actionInFlight != nil)
+
+            Button { Task { await declineOffer() } } label: {
+                HStack(spacing: 6) {
+                    if actionInFlight == "decline" {
+                        ProgressView().scaleEffect(0.8)
+                    }
+                    Text(actionInFlight == "decline" ? "Declining…" : "Decline")
+                        .font(EType.body.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .foregroundStyle(palette.textPrimary)
+                .background(palette.bgCard)
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(LinearGradient.diagonal.opacity(0.4)))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(actionInFlight != nil)
+        }
+    }
+
+    private func acceptOffer() async {
+        actionInFlight = "accept"; actionAck = nil; actionError = nil
+        defer { actionInFlight = nil }
+        struct In: Encodable { let loadId: String }
+        struct Out: Decodable { let success: Bool?; let loadId: String?; let acceptedAt: String? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation("dispatchRole.acceptLoad", input: In(loadId: loadId))
+            if resp.success == true {
+                actionAck = "Offer accepted · load \(resp.loadId ?? loadId) is now yours."
+                await loadCtx()
+            } else {
+                actionError = "Accept returned no success flag — reload and try again."
+            }
+        } catch let err {
+            actionError = (err as? LocalizedError)?.errorDescription ?? "Accept failed: \(err)"
+        }
+    }
+
+    private func declineOffer() async {
+        actionInFlight = "decline"; actionAck = nil; actionError = nil
+        defer { actionInFlight = nil }
+        struct In: Encodable { let loadId: String; let reason: String? }
+        struct Out: Decodable { let success: Bool?; let loadId: String?; let declinedAt: String? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation("dispatchRole.declineLoad", input: In(loadId: loadId, reason: "Driver declined via DL091"))
+            if resp.success == true {
+                actionAck = "Offer declined · returned to the pool."
+                await loadCtx()
+            } else {
+                actionError = "Decline returned no success flag — reload and try again."
+            }
+        } catch let err {
+            actionError = (err as? LocalizedError)?.errorDescription ?? "Decline failed: \(err)"
         }
     }
 
