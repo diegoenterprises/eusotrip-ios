@@ -176,6 +176,7 @@ private struct CatalystM04BiddingBody: View {
 
     @Environment(\.palette) private var palette
     @State private var load: CMLoadCtx?
+    @State private var bids: [CMBid] = []
 
     var body: some View {
         let c = kind.config
@@ -191,8 +192,28 @@ private struct CatalystM04BiddingBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 8)
         }
-        .task { await loadCtx() }
-        .refreshable { await loadCtx() }
+        .task { await refresh() }
+        .refreshable { await refresh() }
+    }
+
+    private func refresh() async {
+        _ = await (loadCtx(), loadBids())
+    }
+
+    /// Server-sourced bids replace the wireframe `quotes` array when
+    /// any are returned. When empty, the CMConfig.quotes fall back as
+    /// stage illustration so the bidding screen still paints in the
+    /// preview / first-load state.
+    private var effectiveQuotes: [CMQuote] {
+        if !bids.isEmpty {
+            return bids.map { b in
+                CMQuote(code: b.catalyst.code,
+                        name: b.catalyst.companyName ?? b.catalyst.name ?? b.catalyst.code,
+                        amount: Int(b.amount.rounded()),
+                        bidId: b.bidId)
+            }
+        }
+        return kind.config.quotes
     }
 
     // MARK: - Dynamic display helpers
@@ -257,7 +278,7 @@ private struct CatalystM04BiddingBody: View {
         LifecycleCard {
             VStack(alignment: .leading, spacing: 6) {
                 Text("QUOTE LADDER").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                ForEach(Array(c.quotes.enumerated()), id: \.offset) { idx, q in
+                ForEach(Array(effectiveQuotes.enumerated()), id: \.offset) { idx, q in
                     HStack(spacing: 8) {
                         Circle().fill(q.code == c.leadCode ? LinearGradient.diagonal : LinearGradient(colors: [palette.bgPage, palette.bgPage], startPoint: .top, endPoint: .bottom))
                             .frame(width: 22, height: 22)
@@ -270,7 +291,7 @@ private struct CatalystM04BiddingBody: View {
                         Text("$\(q.amount.formatted(.number))").font(.system(size: 14, weight: .heavy).monospacedDigit())
                             .foregroundStyle(q.code == c.leadCode ? Color.green : palette.textPrimary)
                         if q.code == c.leadCode {
-                            Text("\(idx + 1)/\(c.quotes.count)").font(.caption2).foregroundStyle(.green)
+                            Text("\(idx + 1)/\(effectiveQuotes.count)").font(.caption2).foregroundStyle(.green)
                         }
                     }
                     .padding(8)
@@ -305,7 +326,7 @@ private struct CatalystM04BiddingBody: View {
     }
 
     private func kpiGrid(_ c: CMConfig) -> some View {
-        let lead = c.quotes.first { $0.code == c.leadCode } ?? c.quotes[0]
+        let lead = effectiveQuotes.first { $0.code == c.leadCode } ?? effectiveQuotes[0]
         let winnerCode = load?.catalyst?.name ?? lead.code
         let driverIni = load?.driver?.initials ?? "—"
         let kpis: [(String, String, String, Color)] = {
@@ -321,7 +342,7 @@ private struct CatalystM04BiddingBody: View {
                 return [
                     ("LEAD",   c.leadCode,               lead.name,              .green),
                     ("DELTA",  c.lastDeltaNote,          "spread under lead",    .green),
-                    ("QUOTES", "\(c.quotes.count)",      "live carriers",        .blue),
+                    ("QUOTES", "\(effectiveQuotes.count)",      "live carriers",        .blue),
                     ("WINDOW", c.timeLeft,               "to close",             .orange),
                 ]
             case .awardedCEL:
@@ -378,6 +399,36 @@ private struct CatalystM04BiddingBody: View {
     private func loadCtx() async {
         struct In: Encodable { let id: String }
         do { load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId)) } catch { /* */ }
+    }
+
+    private func loadBids() async {
+        struct In: Encodable { let id: String }
+        do { bids = try await EusoTripAPI.shared.query("loads.getBids", input: In(id: loadId)) } catch { /* */ }
+    }
+}
+
+/// Server-sourced bid shape from `loads.getBids`. Mirrors the
+/// BidContext return on the web router. When the array is empty, the
+/// bidding screen falls back to wireframe-illustration quotes.
+private struct CMBid: Decodable, Hashable {
+    let bidId: String
+    let rank: Int
+    let loadId: String
+    let amount: Double
+    let currency: String?
+    let status: String?
+    let notes: String?
+    let createdAt: String?
+    let expiresAt: String?
+    let catalyst: CMBidCatalyst
+
+    struct CMBidCatalyst: Decodable, Hashable {
+        let id: Int?
+        let name: String?
+        let companyName: String?
+        let mcNumber: String?
+        let dotNumber: String?
+        let code: String
     }
 }
 
