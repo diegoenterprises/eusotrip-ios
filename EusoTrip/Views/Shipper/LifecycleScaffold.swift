@@ -380,7 +380,7 @@ struct LifecycleMapCard: View {
     }
 
     var body: some View {
-        let stops = computeStops()
+        let pins = resolvedPins()
 
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
@@ -400,21 +400,16 @@ struct LifecycleMapCard: View {
                 }
             }
 
-            if stops.isEmpty {
+            if pins.pickup == nil && pins.delivery == nil && pins.truck == nil {
                 emptyMap
             } else {
-                HereMapView(
-                    stops: stops,
-                    extraAnnotations: extraTruckAnnotation(),
-                    showsUserLocation: false,
-                    showsCompass: false
-                )
-                .frame(height: height)
-                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(palette.borderFaint, lineWidth: 1)
-                )
+                lifecycleLiveMap(pins)
+                    .frame(height: height)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(palette.borderFaint, lineWidth: 1)
+                    )
             }
         }
         .padding(Space.s3)
@@ -443,70 +438,52 @@ struct LifecycleMapCard: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
-    /// Builds the `LoadLocation` array HereMapView consumes — first =
-    /// pickup, last = delivery. Coords resolution priority:
+    /// Resolves the pickup / delivery / truck coordinates for the live map,
+    /// reusing the same geocode-store resolution the legacy `computeStops`
+    /// used — but tagged by side so `HereLiveMapView` renders typed
+    /// (pickup / delivery / truck) pins instead of position-inferred ones.
+    /// Coords resolution priority per side:
     ///   1. Snapshot's lat/lng (server-side geocode already ran)
     ///   2. LifecycleGeocodeStore cache (HERE-resolved, persisted)
-    ///   3. Fire HERE Geocoding async + return [] for now (the store's
-    ///      `objectWillChange` will trigger a re-render when coords land)
-    ///
-    /// No fabricated lat/lng. The empty-state caption only renders if
-    /// step 3 also produced nothing (no address on the snapshot).
-    private func computeStops() -> [LoadLocation] {
-        var out: [LoadLocation] = []
+    ///   3. Fire HERE Geocoding async + return nil for now (the store's
+    ///      `objectWillChange` triggers a re-render when coords land)
+    /// No fabricated lat/lng — a side stays nil until HERE resolves it; the
+    /// empty-state caption renders only when all three sides are nil.
+    private func resolvedPins() -> (pickup: HereLatLng?, delivery: HereLatLng?, truck: HereLatLng?) {
         let wantPickup = mode == .lane || mode == .truckAtPickup || mode == .full
         let wantDelivery = mode == .lane || mode == .truckAtDelivery || mode == .full
         let resolvedLoadId = loadId ?? "load-\(live.load.id)"
 
-        if wantPickup, let pickup = live.pickup {
-            let addressLine = synthesizeAddressLine(
-                facilityName: pickup.facilityName,
-                address: pickup.address,
-                city: pickup.city,
-                state: pickup.state
-            )
+        var pickup: HereLatLng?
+        var delivery: HereLatLng?
+
+        if wantPickup, let p = live.pickup {
+            let line = synthesizeAddressLine(
+                facilityName: p.facilityName, address: p.address, city: p.city, state: p.state)
             if let coord = geocodeStore.coords(
-                loadId: resolvedLoadId,
-                side: .pickup,
-                lat: pickup.lat,
-                lng: pickup.lng,
-                addressLine: addressLine
+                loadId: resolvedLoadId, side: .pickup,
+                lat: p.lat, lng: p.lng, addressLine: line
             ) {
-                out.append(LoadLocation(
-                    address: pickup.address ?? "",
-                    city:    pickup.city ?? "",
-                    state:   pickup.state ?? "",
-                    zipCode: "",
-                    lat: coord.latitude,
-                    lng: coord.longitude
-                ))
+                pickup = HereLatLng(coord.latitude, coord.longitude)
             }
         }
-        if wantDelivery, let delivery = live.delivery {
-            let addressLine = synthesizeAddressLine(
-                facilityName: delivery.facilityName,
-                address: delivery.address,
-                city: delivery.city,
-                state: delivery.state
-            )
+        if wantDelivery, let d = live.delivery {
+            let line = synthesizeAddressLine(
+                facilityName: d.facilityName, address: d.address, city: d.city, state: d.state)
             if let coord = geocodeStore.coords(
-                loadId: resolvedLoadId,
-                side: .delivery,
-                lat: delivery.lat,
-                lng: delivery.lng,
-                addressLine: addressLine
+                loadId: resolvedLoadId, side: .delivery,
+                lat: d.lat, lng: d.lng, addressLine: line
             ) {
-                out.append(LoadLocation(
-                    address: delivery.address ?? "",
-                    city:    delivery.city ?? "",
-                    state:   delivery.state ?? "",
-                    zipCode: "",
-                    lat: coord.latitude,
-                    lng: coord.longitude
-                ))
+                delivery = HereLatLng(coord.latitude, coord.longitude)
             }
         }
-        return out
+
+        var truck: HereLatLng?
+        if mode == .truckAtPickup || mode == .truckAtDelivery || mode == .full,
+           let g = live.lastGeofence {
+            truck = HereLatLng(g.latitude, g.longitude)
+        }
+        return (pickup, delivery, truck)
     }
 
     /// Synthesize a single-line address suitable for HERE Geocoding.
@@ -527,18 +504,39 @@ struct LifecycleMapCard: View {
         return parts.joined(separator: ", ")
     }
 
-    /// Builds an `MKPointAnnotation` for the truck pin (lastGeofence)
-    /// when the mode includes one. HereMapView paints these via
-    /// `extraAnnotations` so they don't get tagged with pickup/delivery
-    /// roles in the marker view delegate.
-    private func extraTruckAnnotation() -> [MKPointAnnotation] {
-        guard mode == .truckAtPickup || mode == .truckAtDelivery || mode == .full else { return [] }
-        guard let g = live.lastGeofence else { return [] }
-        let truck = MKPointAnnotation()
-        truck.coordinate = CLLocationCoordinate2D(latitude: g.latitude, longitude: g.longitude)
-        truck.title = "Truck"
-        truck.subtitle = "truck · \(g.type)"
-        return [truck]
+    /// The live HERE vector map for this lifecycle stage: typed pickup /
+    /// delivery / truck pins on the OMV basemap, a route connector when both
+    /// endpoints are known, and shipper situational add-ons (weather +
+    /// traffic + sponsored ad-zones). Migrated 2026-05-22 off the legacy
+    /// raster `HereMapView(stops:extraAnnotations:)`.
+    private func lifecycleLiveMap(
+        _ pins: (pickup: HereLatLng?, delivery: HereLatLng?, truck: HereLatLng?)
+    ) -> some View {
+        let present = [pins.pickup, pins.delivery, pins.truck].compactMap { $0 }
+        let center = HereLatLng(
+            present.map { $0.lat }.reduce(0, +) / Double(max(present.count, 1)),
+            present.map { $0.lng }.reduce(0, +) / Double(max(present.count, 1))
+        )
+        let routePts = [pins.pickup, pins.delivery].compactMap { $0 }
+
+        var markers: [HereMarker] = []
+        if let p = pins.pickup   { markers.append(HereMarker(at: p, kind: .pickup,   label: "Pickup")) }
+        if let d = pins.delivery { markers.append(HereMarker(at: d, kind: .delivery, label: "Delivery")) }
+        if let t = pins.truck    { markers.append(HereMarker(at: t, kind: .truck,    label: "Truck")) }
+
+        var baseLayers: [HereMapLayer] = []
+        if routePts.count >= 2 {
+            baseLayers.append(.route(polyline: routePts, colorHex: "#1473FF"))
+        }
+        baseLayers.append(.markers(markers))
+
+        return HereLiveMapView(
+            center: center,
+            zoom: routePts.count >= 2 ? 6 : 9,
+            route: routePts,
+            baseLayers: baseLayers,
+            addOns: .shipperTracking
+        )
     }
 }
 

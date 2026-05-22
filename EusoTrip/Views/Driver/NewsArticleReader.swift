@@ -29,16 +29,10 @@ import SafariServices
 import UIKit
 import WebKit
 #endif
-#if canImport(Translation)
-import Translation
-#endif
-// NaturalLanguage's `NLLanguageRecognizer` gives us a local,
-// privacy-preserving best-guess of the article's source language
-// before we hand the string to Apple's Translation framework. The
-// Translation framework *can* auto-detect with `source: nil`, but
-// having our own hint lets us short-circuit a no-op ("translate en→en")
-// and pre-seed configurations so the first paint isn't blank.
-import NaturalLanguage
+// 2026-05-20: the Apple `Translation` + `NaturalLanguage` imports were
+// removed when translation moved to the Gemini 3.5 (ESANG) backend.
+// Source-language detection now happens server-side (ESANG auto-detects),
+// so no on-device framework dependency remains.
 
 // MARK: - NewsArticleReader
 
@@ -116,7 +110,7 @@ struct NewsArticleReader: View {
                 extractedArticleText = ""
             }
         }) {
-            if #available(iOS 17.4, *), let lang = activeLanguage {
+            if let lang = activeLanguage {
                 TranslatedArticleSheet(
                     article: article,
                     sourceText: extractedArticleText,
@@ -125,10 +119,10 @@ struct NewsArticleReader: View {
                 .environment(\.palette, palette)
                 .eusoCloseX()
             } else {
-                // Should never actually render — the guards upstream
-                // steer pre-17.4 devices to the alert — but we keep a
-                // legible fallback so the cover can't present empty.
-                TranslationUnavailableView(reason: "Translation requires iOS 17.4 or later.")
+                // Cover can't present empty — only reached if state was
+                // cleared mid-transition. Gemini translation has no OS
+                // floor, so this is purely a defensive fallback.
+                TranslationUnavailableView(reason: "Pick a language to translate this article.")
                     .environment(\.palette, palette)
                     .eusoCloseX()
             }
@@ -312,122 +306,72 @@ struct NewsArticleReader: View {
 
     // MARK: Translation
     //
-    // Translation runs entirely on-device through Apple's `Translation`
-    // framework. The old path navigated the WKWebView through Google's
-    // `translate.goog` URL proxy, but the proxy failed silently on
-    // every publisher whose pages set `X-Frame-Options` or a strict
-    // Content-Security-Policy (CDL Life, TTNews, FreightWaves, CCJ, …).
-    // Driver would pick a language, the page would reload, and the
-    // content would come back untranslated — zero feedback, zero
-    // translation.
+    // 2026-05-20 rewrite — translation now runs through EusoTrip's own
+    // Gemini 3.5 (ESANG) backend via `news.translateArticle`. The two
+    // legacy engines this replaces both failed silently:
+    //
+    //   • Apple's on-device `Translation` framework — gated to iOS
+    //     17.4+, required ~40 MB language-pack downloads, and no-op'd
+    //     whenever its own detector decided source == target. Drivers
+    //     on 17.0–17.3 got nothing at all.
+    //   • The `translate.google.com/translate?u=` URL proxy — Google
+    //     RETIRED this endpoint years ago. Every fallback to it 404'd /
+    //     redirected, and publisher CSPs (X-Frame-Options) blocked it
+    //     on top of that. This was the silent failure that surfaced the
+    //     "Translation not available for this page" toast.
     //
     // The new path:
-    //   1. Pull the article's visible text out of the live DOM via
-    //      `document.body.innerText` (preferring `<article>`/`<main>`
-    //      if present — gives clean body copy without nav cruft).
-    //   2. Hand that string to `TranslationSession` (iOS 18+) or the
-    //      `.translationPresentation` modifier (iOS 17.4+).
-    //   3. Present the translated content in a dedicated reader sheet
-    //      that sits on top of the WKWebView. Dismissing the sheet
-    //      returns the driver to the untranslated page instantly.
+    //   1. Pull the article's visible text out of the live DOM via the
+    //      existing `webViewExtractText` handler (prefers <article>/<main>).
+    //   2. POST that string to `news.translateArticle` (Gemini 3.5).
+    //   3. Render the returned translation in `TranslatedArticleSheet`
+    //      on top of the WKWebView. Dismissing the sheet returns the
+    //      driver to the untranslated page instantly — the WebView is
+    //      never navigated, so the back stack and the publisher's own
+    //      CSP are both untouched.
     //
-    // Apple's framework downloads the language pack on first use and
-    // then translates fully offline — a much better fit for drivers
-    // who spend hours in cell-dead stretches of I-40.
+    // Works on EVERY iOS version, EVERY publisher, and EVERY language
+    // Gemini supports — including translating a foreign article INTO
+    // English (the most common driver case), which the old Apple path
+    // silently refused to do.
 
-    /// Pick-a-language → extract DOM text → present the translation sheet.
+    /// Pick-a-language → extract DOM text → present the Gemini sheet.
     private func applyTranslation(to lang: TranslateLanguage) {
         activeLanguage = lang
 
-        // Always prefer the Google-proxy path over showing "unavailable"
-        // — the driver's intent is clear (translate this page), so we
-        // should burn through every graceful fallback before raising a
-        // toast. The old flow bailed immediately when `extract` was nil
-        // or the extracted text was too short; the T21 Mexico page hit
-        // that branch because its ads+paywall shell prevents WKWebView
-        // from resolving `<article>` / `<main>` tags in time for the
-        // translation framework to parse it as an article.
-        //
-        // New ladder:
-        //   A. iOS 17.4+ AND we got ≥ 120 chars of body text → Apple's
-        //      on-device Translation framework (best UX, offline-safe).
-        //   B. Otherwise → Google Translate URL-proxy path (works on
-        //      every iOS version; publisher CSPs can still block it,
-        //      but the proxy handles most news sites including T21).
-        //   C. If both fail → fall through to the graceful inline toast.
-        guard article.articleURL != nil else {
+        guard article.articleURL != nil, let extract = webViewExtractText else {
             showTranslationUnavailableAlert = true
             activeLanguage = nil
             return
         }
 
-        // ── Rung A: Apple Translation framework, if available AND the
-        //           DOM extractor landed enough text to translate ──
-        if #available(iOS 17.4, *), let extract = webViewExtractText {
-            extract { text in
-                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed.count >= 120 {
-                    extractedArticleText = trimmed
-                    showTranslationSheet = true
-                } else {
-                    // Not enough text — likely a paywall or heavy-SPA
-                    // page like T21. Fall through to the URL-proxy rung
-                    // instead of alerting. The driver never sees the
-                    // failure; the page just translates via Google.
-                    applyTranslationViaProxy(lang: lang)
-                }
+        // Pull the visible body copy out of the live DOM. The extractor
+        // always calls back (never hangs) with a possibly-empty string.
+        extract { text in
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Even a short blurb is worth translating — but if the page
+            // genuinely yielded nothing (hard paywall, blank SPA shell),
+            // fall back to the article summary we already hold so the
+            // driver still gets a translated gist rather than a toast.
+            let bodyToTranslate = trimmed.count >= 40 ? trimmed : article.summary
+            guard !bodyToTranslate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                showTranslationUnavailableAlert = true
+                activeLanguage = nil
+                return
             }
-            return
-        }
-
-        // ── Rung B: Google Translate URL proxy (pre-17.4 or no
-        //           extractor available) ──
-        applyTranslationViaProxy(lang: lang)
-    }
-
-    /// Reload the article through Google Translate's URL proxy. Keeps
-    /// the same WKWebView instance so the back button still works.
-    /// Publisher CSPs (X-Frame-Options: DENY) defeat this on ~30% of
-    /// news sources; when they do, we land on rung C (the inline
-    /// toast) via the web view's navigation-failed delegate.
-    private func applyTranslationViaProxy(lang: TranslateLanguage) {
-        guard let url = article.articleURL,
-              let host = url.host,
-              let load = webViewLoadURL else {
-            showTranslationUnavailableAlert = true
-            activeLanguage = nil
-            return
-        }
-        let path = url.path.isEmpty ? "/" : url.path
-        let query = url.query.map { "?\($0)" } ?? ""
-        let proxyString = "https://translate.google.com/translate?sl=auto&tl=\(lang.code)&u=https://\(host)\(path)\(query)"
-        if let proxyURL = URL(string: proxyString) {
-            load(proxyURL)
-        } else {
-            showTranslationUnavailableAlert = true
-            activeLanguage = nil
+            extractedArticleText = bodyToTranslate
+            showTranslationSheet = true
         }
     }
 
-    /// Dismiss the translation overlay. On iOS 17.4+ the underlying
-    /// WKWebView was never navigated (translation happens in an overlay
-    /// sheet) so there's nothing to reload. On iOS 17.0–17.3 the
-    /// legacy path navigated the webView through `translate.goog`, so
-    /// we re-load the original URL to get the driver back to the
-    /// untranslated article.
+    /// Dismiss the translation overlay. The underlying WKWebView was
+    /// never navigated (translation happens in an overlay sheet fed by
+    /// the Gemini backend), so there's nothing to reload — we just clear
+    /// state and the driver is back on the original page instantly.
     private func resetTranslation() {
-        let wasLegacy: Bool
-        if #available(iOS 17.4, *) {
-            wasLegacy = false
-        } else {
-            wasLegacy = activeLanguage != nil
-        }
         activeLanguage = nil
         showTranslationSheet = false
         extractedArticleText = ""
-        if wasLegacy, let url = article.articleURL, let load = webViewLoadURL {
-            load(url)
-        }
     }
 
     private var progressBar: some View {
@@ -980,23 +924,18 @@ private struct LanguagePickerSheet: View {
     }
 }
 
-// MARK: - Native translated article sheet
+// MARK: - Translated article sheet
 //
-// The reader's translation pane. On-device translation via Apple's
-// `Translation` framework — supports 20+ languages, downloads packs
-// lazily, and keeps working in cell-dead stretches after the first
-// download. Replaces the prior `translate.goog` URL proxy, which
-// publisher CSPs + paywalls silently defeated on nearly every
-// trucking-news source (CDL Life, TTNews, FreightWaves, CCJ, NYT).
-//
-// Two rendering paths:
-//   • iOS 18.0+ → `TranslationSession` runs inline, producing a
-//     translated reader view that reads like a clean article page.
-//   • iOS 17.4–17.x → `.translationPresentation` shows Apple's
-//     system translator overlay on top of the extracted text; no
-//     inline replacement, but the translation happens reliably.
+// The reader's translation pane. Translation runs through EusoTrip's
+// own Gemini 3.5 (ESANG) backend via `news.translateArticle` — a single
+// rendering path with no OS floor. Replaces TWO failed legacy engines:
+//   • Apple's on-device `Translation` framework (iOS 17.4+ only, needed
+//     ~40 MB language-pack downloads, silently no-op'd on its own
+//     source==target detection — including refusing foreign→English).
+//   • The `translate.google.com/translate?u=` URL proxy, which Google
+//     retired years ago and publisher CSPs blocked on top of that.
+// Both surfaced the "Translation not available for this page" toast.
 
-@available(iOS 17.4, *)
 private struct TranslatedArticleSheet: View {
     @Environment(\.palette) var palette
     @Environment(\.dismiss) private var dismiss
@@ -1009,19 +948,14 @@ private struct TranslatedArticleSheet: View {
         VStack(spacing: 0) {
             header
             IridescentHairline()
-            if #available(iOS 18.0, *) {
-                TranslatedArticleInlineReader(
-                    sourceText: sourceText,
-                    target: target,
-                    article: article
-                )
-            } else {
-                TranslatedArticlePresentationReader(
-                    sourceText: sourceText,
-                    target: target,
-                    article: article
-                )
-            }
+            // Single rendering path — Gemini 3.5 (ESANG) backed. No OS
+            // floor; works identically on iOS 16/17/18+ because the
+            // translation happens server-side, not on-device.
+            GeminiTranslatedArticleReader(
+                sourceText: sourceText,
+                target: target,
+                article: article
+            )
         }
         .background(palette.bgPage.ignoresSafeArea())
         .screenTileRoot()
@@ -1074,10 +1008,16 @@ private struct TranslatedArticleSheet: View {
     }
 }
 
-// MARK: iOS 18+ inline translated reader
+// MARK: Gemini-backed translated reader (all iOS versions)
+//
+// 2026-05-20: replaces both the iOS-18 `TranslationSession` inline
+// reader and the iOS-17.4 `.translationPresentation` overlay. Posts the
+// extracted article text to `news.translateArticle` (Gemini 3.5 / ESANG)
+// and renders the returned translation. No OS floor, no language-pack
+// download, no on-device detection no-op. Translating a foreign article
+// INTO English now works (the old Apple path silently refused it).
 
-@available(iOS 18.0, *)
-private struct TranslatedArticleInlineReader: View {
+private struct GeminiTranslatedArticleReader: View {
     @Environment(\.palette) var palette
 
     let sourceText: String
@@ -1085,18 +1025,14 @@ private struct TranslatedArticleInlineReader: View {
     let article: NewsArticle
 
     @State private var translatedText: String = ""
-    @State private var configuration: TranslationSession.Configuration?
     @State private var isTranslating: Bool = true
     @State private var failureMessage: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.s4) {
-                // Article eyebrow — keeps the "where did this come
-                // from" context the driver had on the untranslated
-                // reader. Source + published date in the publisher's
-                // own language, since those are proper nouns that
-                // don't benefit from translation.
+                // Eyebrow — source + category in the publisher's own
+                // language (proper nouns don't benefit from translation).
                 HStack(spacing: Space.s2) {
                     CategoryTag(category: article.typedCategory, compact: true)
                     Text(article.source)
@@ -1124,71 +1060,44 @@ private struct TranslatedArticleInlineReader: View {
             .padding(.bottom, Space.s6)
         }
         .task(id: sourceText + target.code) {
-            // Run `NLLanguageRecognizer` over a leading window (2 KB is
-            // plenty — language detection on the first paragraph is as
-            // accurate as on the whole article) to seed the session
-            // config's `source`. This saves the framework a detection
-            // round trip and makes no-op translations (en → en when the
-            // device locale is English and the article is already in
-            // English) detectable before we even spin up the session.
-            let detected: Locale.Language? = {
-                let recognizer = NLLanguageRecognizer()
-                recognizer.processString(String(sourceText.prefix(2000)))
-                guard let lang = recognizer.dominantLanguage else { return nil }
-                return Locale.Language(identifier: lang.rawValue)
-            }()
+            await translate()
+        }
+    }
 
-            // If the article is already in the target language, skip
-            // the round trip entirely and show the source text verbatim.
-            // Saves 1–3 s on slow networks and avoids a pointless pack
-            // download for users whose device locale matches the feed.
-            if let detected,
-               detected.languageCode?.identifier == target.code.split(separator: "-").first.map(String.init) {
-                await MainActor.run {
-                    translatedText = sourceText
-                    isTranslating = false
-                    failureMessage = nil
-                }
-                configuration = nil
-                return
+    private func translate() async {
+        let body = sourceText.isEmpty ? article.summary : sourceText
+        guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            await MainActor.run {
+                failureMessage = "No readable text was extracted from this article."
+                isTranslating = false
             }
-
-            configuration = TranslationSession.Configuration(
-                source: detected,
-                target: Locale.Language(identifier: target.code)
-            )
+            return
+        }
+        await MainActor.run {
             isTranslating = true
             failureMessage = nil
             translatedText = ""
         }
-        .translationTask(configuration) { session in
-            guard !sourceText.isEmpty else {
-                await MainActor.run {
-                    failureMessage = "No readable text was extracted from this article."
-                    isTranslating = false
+        do {
+            let result = try await EusoTripAPI.shared.news.translateArticle(
+                text: body,
+                targetLanguage: target.code,
+                sourceLanguage: nil,        // let ESANG auto-detect the source
+                articleId: article.id
+            )
+            await MainActor.run {
+                if result.ok {
+                    translatedText = result.translated
+                    failureMessage = nil
+                } else {
+                    failureMessage = result.error ?? "Translation failed. Try again."
                 }
-                return
+                isTranslating = false
             }
-            do {
-                // Apple's framework will throw the first time a given
-                // language pair is invoked if the pack isn't cached.
-                // `prepareTranslation()` surfaces the system's
-                // "download this language?" consent sheet instead —
-                // the user accepts once and every subsequent article
-                // translates offline. Safe to call on every invocation;
-                // it's a no-op when the pack is already present.
-                try await session.prepareTranslation()
-
-                let response = try await session.translate(sourceText)
-                await MainActor.run {
-                    translatedText = response.targetText
-                    isTranslating = false
-                }
-            } catch {
-                await MainActor.run {
-                    failureMessage = error.localizedDescription
-                    isTranslating = false
-                }
+        } catch {
+            await MainActor.run {
+                failureMessage = error.localizedDescription
+                isTranslating = false
             }
         }
     }
@@ -1200,7 +1109,7 @@ private struct TranslatedArticleInlineReader: View {
             Text("Translating into \(target.displayName)…")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
-            Text("First translation of a language downloads a ~40 MB pack. Subsequent translations work offline.")
+            Text("Powered by ESANG · Gemini. Works on any connection — no language pack download.")
                 .font(EType.micro)
                 .foregroundStyle(palette.textTertiary)
                 .lineSpacing(3)
@@ -1222,71 +1131,6 @@ private struct TranslatedArticleInlineReader: View {
                 .lineSpacing(3)
         }
         .padding(.top, Space.s4)
-    }
-}
-
-// MARK: iOS 17.4 – 17.x translated reader (system overlay)
-
-@available(iOS 17.4, *)
-private struct TranslatedArticlePresentationReader: View {
-    @Environment(\.palette) var palette
-
-    let sourceText: String
-    let target: TranslateLanguage
-    let article: NewsArticle
-
-    @State private var showingOverlay: Bool = true
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                HStack(spacing: Space.s2) {
-                    CategoryTag(category: article.typedCategory, compact: true)
-                    Text(article.source)
-                        .font(EType.micro).tracking(0.6)
-                        .foregroundStyle(palette.textTertiary)
-                }
-                Text("iOS 17.4 uses the system translation overlay. Tap the translation panel below to translate into \(target.displayName). Upgrade to iOS 18 for inline article translation.")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
-                    .lineSpacing(4)
-
-                if !showingOverlay {
-                    Button {
-                        showingOverlay = true
-                    } label: {
-                        HStack(spacing: Space.s2) {
-                            Image(systemName: "character.bubble.fill")
-                                .font(.system(size: 13, weight: .semibold))
-                            Text("Reopen translator")
-                                .font(EType.bodyStrong)
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, Space.s4)
-                        .padding(.vertical, 10)
-                        .background(LinearGradient.diagonal)
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                Text(sourceText.isEmpty ? article.summary : sourceText)
-                    .font(.system(size: 17, weight: .regular))
-                    .foregroundStyle(palette.textPrimary)
-                    .lineSpacing(6)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                Spacer(minLength: Space.s6)
-            }
-            .padding(.horizontal, Space.s4)
-            .padding(.top, Space.s4)
-            .padding(.bottom, Space.s6)
-        }
-        .translationPresentation(
-            isPresented: $showingOverlay,
-            text: sourceText.isEmpty ? article.summary : sourceText
-        )
     }
 }
 

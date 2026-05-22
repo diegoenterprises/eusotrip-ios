@@ -244,6 +244,7 @@ enum ScreenRegistry {
             .init(id: "DL146", title: "Driver · CEL In Transit",       role: .driver) { p in AnyView(DriverCELM04InTransitScreen(theme: p, loadId: "0")) },
             .init(id: "DL147", title: "Driver · CEL At Delivery",      role: .driver) { p in AnyView(DriverCELM04AtDeliveryScreen(theme: p, loadId: "0")) },
             .init(id: "DL148", title: "Driver · CEL POD Signed",       role: .driver) { p in AnyView(DriverCELM04PODSignedScreen(theme: p, loadId: "0")) },
+            .init(id: "149",   title: "Driver · CEL Closed Paid Receipt", role: .driver) { p in AnyView(DriverCELM04PaidReceiptScreen(theme: p, loadId: "0")) },
             .init(id: "109", title: "Me · Bid Detail",              role: .driver) { p in AnyView(MeBidDetailScreen(theme: p, loadId: 0)) },
             .init(id: "110", title: "Me · Auto-Accept",             role: .driver) { p in AnyView(MeAutoAcceptRulesScreen(theme: p)) },
             // 2026-05-21 — Bonus Tracker port (web BonusTracker.tsx → iOS).
@@ -1208,6 +1209,53 @@ enum ScreenRegistry {
                 AnyView(CatalystHomeScreen(theme: p))
             }
         )
+        // 2026-05-22 — Catalyst 300 owner-op Home (wireframe slot 300).
+        // Sister surface to 500 — single-truck owner-op flow with
+        // Drive-mode toggle, active haul card, tender-queue accept.
+        // Backed by catalysts.{getProfile, getDashboardStats,
+        // getActiveLoads, getAvailableLoads, submitBid}.
+        list.append(
+            .init(id: "300", title: "Catalyst · Owner-Op Home", role: .catalyst) { p in
+                AnyView(CatalystOwnerOpHome(theme: p))
+            }
+        )
+        // 2026-05-22 — Catalyst 348 outbound-counter receipt (§270).
+        // Post-acceptance read-only surface; load context via loads.getById.
+        list.append(
+            .init(id: "348", title: "Catalyst · Counter Receipt", role: .catalyst) { p in
+                AnyView(CatalystShipperCounterReceiptScreen(theme: p, loadId: BrokerNavContext.latestLoadId, onDone: {}))
+            }
+        )
+        // 2026-05-22 — Catalyst 349 awarded confirmation (§271).
+        // Sister to 348; post-award read-only surface. Buttons:
+        // Assign driver → routes to Dispatch 532 (M-05 Assign Driver).
+        list.append(
+            .init(id: "349", title: "Catalyst · Awarded Confirmation", role: .catalyst) { p in
+                AnyView(CatalystAwardedConfirmationScreen(theme: p, loadId: BrokerNavContext.latestLoadId, onAssignDriver: {}, onDone: {}))
+            }
+        )
+        // 2026-05-22 — Catalyst 377 paperwork settlement prep (§403).
+        // Read-only consumer between POD-signed and paid; factoring
+        // autopilot drives the state machine server-side.
+        list.append(
+            .init(id: "377", title: "Catalyst · Paperwork Prep", role: .catalyst) { p in
+                AnyView(CatalystPaperworkSettlementPrepScreen(theme: p, loadId: BrokerNavContext.latestLoadId))
+            }
+        )
+        // 2026-05-22 — Catalyst 378 closed payout (§407).
+        // Post-paid catalyst vantage; consumes loadLifecycle paid
+        // fan-out. Sister to Driver 149.
+        list.append(
+            .init(id: "378", title: "Catalyst · Closed Payout", role: .catalyst) { p in
+                AnyView(CatalystClosedPayoutScreen(theme: p, loadId: BrokerNavContext.latestLoadId, onViewSettlement: {}, onDone: {}))
+            }
+        )
+        // 2026-05-22 — Catalyst CV379-CV382 M-05 bidding quartet.
+        // Enum-driven shared body; loads.getById drives every value.
+        list.append(.init(id: "379", title: "Catalyst · M-05 First Bid",     role: .catalyst) { p in AnyView(CatalystM05FirstBidScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) })
+        list.append(.init(id: "380", title: "Catalyst · M-05 Competing Quote", role: .catalyst) { p in AnyView(CatalystM05CompetingQuoteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) })
+        list.append(.init(id: "381", title: "Catalyst · M-05 Third Quote",   role: .catalyst) { p in AnyView(CatalystM05ThirdQuoteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) })
+        list.append(.init(id: "382", title: "Catalyst · M-05 Awarded Aurora", role: .catalyst) { p in AnyView(CatalystM05AwardedAuroraScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) })
         // 2026-04-27 — eusotrip-killers 134th firing
         // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
         // Second Catalyst-track brick lands in production. The Matches
@@ -1788,6 +1836,8 @@ enum ScreenRegistry {
             .init(id: "Dpch822", title: "Dispatch · M-04 Transit Kanban", role: .dispatch) { p in AnyView(DispatcherM04InTransitKanbanScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "Dpch823", title: "Dispatch · M-04 Delivery Kanban",role: .dispatch) { p in AnyView(DispatcherM04AtDeliveryKanbanScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "Dpch824", title: "Dispatch · M-04 Paper Kanban",   role: .dispatch) { p in AnyView(DispatcherM04PaperworkKanbanScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "531",     title: "Dispatch · M-04 Closed Kanban",  role: .dispatch) { p in AnyView(DispatcherM04ClosedKanbanScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "532",     title: "Dispatch · M-05 Assign Driver",  role: .dispatch) { p in AnyView(DispatcherM05AssignDriverScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             // 2026-05-21 — Catalyst Vehicle B-variant deep-drill octet (SVG 330B-337B).
             .init(id: "CV330B", title: "Catalyst · Vehicle Score Axis",   role: .catalyst) { p in AnyView(CatalystVehicleScoreAxisScreen(theme: p)) },
             .init(id: "CV331B", title: "Catalyst · Vehicle Tier",         role: .catalyst) { p in AnyView(CatalystVehicleProfileTierScreen(theme: p)) },

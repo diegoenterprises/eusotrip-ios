@@ -91,6 +91,9 @@ struct TheHaulDashboard: View {
     @State private var showMissionsSheet = false
     @State private var showBadgesSheet = false
     @State private var showLeaderboardSheet = false
+    /// Transient reward banner driven by `.eusoHaulReward` (HERE
+    /// monetization / amenity engagement → Haul credit).
+    @State private var rewardBanner: String?
 
     // MARK: Body
 
@@ -121,6 +124,40 @@ struct TheHaulDashboard: View {
         .sheet(isPresented: $showLeaderboardSheet) {
             MeHaulView()
                 .eusoSheetX()
+        }
+        // HERE monetization → The Haul: a sponsored-zone / fuel-affiliate
+        // engagement posts `.eusoHaulReward`; surface a reward banner and
+        // refresh the profile + missions so the credit shows immediately.
+        .overlay(alignment: .top) {
+            if let banner = rewardBanner {
+                HStack(spacing: 8) {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 13, weight: .bold))
+                    Text(banner)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(2)
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    LinearGradient(colors: [Color(hex: "#A855F7"), Color(hex: "#EC4899")],
+                                   startPoint: .leading, endPoint: .trailing),
+                    in: Capsule())
+                .shadow(color: .black.opacity(0.22), radius: 12, y: 4)
+                .padding(.top, 8)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.34, dampingFraction: 0.85), value: rewardBanner)
+        .onReceive(NotificationCenter.default.publisher(for: .eusoHaulReward)) { note in
+            guard let event = note.object as? HaulRewardEvent else { return }
+            rewardBanner = "\(event.reason) · +\(event.xp) XP"
+            Task {
+                await refreshAll()
+                try? await Task.sleep(nanoseconds: 3_500_000_000)
+                rewardBanner = nil
+            }
         }
     }
 

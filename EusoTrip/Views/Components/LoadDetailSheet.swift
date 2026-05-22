@@ -437,10 +437,30 @@ struct LoadDetailSheet: View {
         return sectionCard(title: "ROUTE",
                            subtitle: "\(load.miles) mi · estimated \(estimatedDriveTime)") {
             ZStack(alignment: .bottomLeading) {
-                HereMapView(lanes: [lane],
-                            useHereTiles: true,   // HERE-uniform mapping (build 48)
-                            showsUserLocation: false,
-                            showsCompass: false)
+                // 2026-05-22: migrated off the legacy raster HereMapView onto
+                // the OMV vector renderer + live add-on layer (HereLiveMapView),
+                // matching the 205_ShipperLoadDetail hero map. Pickup/delivery
+                // pins + route connector on the vector basemap; shipper
+                // situational add-ons (weather + traffic + sponsored ad-zones).
+                HereLiveMapView(
+                    center: .init(
+                        (lane.pickup.latitude + lane.delivery.latitude) / 2,
+                        (lane.pickup.longitude + lane.delivery.longitude) / 2
+                    ),
+                    zoom: 6,
+                    route: [.init(lane.pickup), .init(lane.delivery)],
+                    baseLayers: [
+                        .route(
+                            polyline: [.init(lane.pickup), .init(lane.delivery)],
+                            colorHex: "#1473FF"
+                        ),
+                        .markers([
+                            .init(at: .init(lane.pickup), kind: .pickup, label: lane.originTitle),
+                            .init(at: .init(lane.delivery), kind: .delivery, label: lane.destinationTitle)
+                        ])
+                    ],
+                    addOns: .shipperTracking
+                )
                     .frame(height: 200)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md,
                                                 style: .continuous))

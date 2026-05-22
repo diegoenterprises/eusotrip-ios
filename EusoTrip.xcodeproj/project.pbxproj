@@ -54,6 +54,8 @@
 		A11E8603E79595216A3607DB /* 004_ResetPassword.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F6E6E09C5EB9568612F3E1 /* 004_ResetPassword.swift */; };
 		A12E1A1C0010CE0FF1000001 /* HereMapsConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000002 /* HereMapsConfig.swift */; };
 		A1HMWV0001000000000000A1 /* HereMapWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1HMWV0001000000000000A2 /* HereMapWebView.swift */; };
+		A1HADO0001000000000000A1 /* HereAddOns.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1HADO0001000000000000A2 /* HereAddOns.swift */; };
+		A1HHB00001000000000000A1 /* HereHaulBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1HHB00001000000000000A2 /* HereHaulBridge.swift */; };
 		A12E1A1C0010CE0FF1000003 /* TruckProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000004 /* TruckProfile.swift */; };
 		A12E1A1C0010CE0FF1000005 /* HereRouteModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000006 /* HereRouteModels.swift */; };
 		A12E1A1C0010CE0FF1000007 /* HereFlexiblePolyline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000008 /* HereFlexiblePolyline.swift */; };
@@ -192,6 +194,7 @@
 		A52D0FA0CE1A4B7E0000D025 /* 052_RateconTender.swift in Sources */ = {isa = PBXBuildFile; fileRef = A52D0FA0CE1A4B7E0000D026 /* 052_RateconTender.swift */; };
 		A53D0FA0CE1A4B7E0000D027 /* 053_ESangDispatchChat.swift in Sources */ = {isa = PBXBuildFile; fileRef = A53D0FA0CE1A4B7E0000D028 /* 053_ESangDispatchChat.swift */; };
 		A54D0FA1CE1A4B7E0000D001 /* 054_HaulPaySettlement.swift in Sources */ = {isa = PBXBuildFile; fileRef = A54D0FA1CE1A4B7E0000D002 /* 054_HaulPaySettlement.swift */; };
+		D149000000000000000004A1 /* 149_DriverClosedPaidReceiptCelM04.swift in Sources */ = {isa = PBXBuildFile; fileRef = D149000000000000000004A2 /* 149_DriverClosedPaidReceiptCelM04.swift */; };
 		A55D0FA1CE1A4B7E0000D003 /* 055_DayCloseWallet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55D0FA1CE1A4B7E0000D004 /* 055_DayCloseWallet.swift */; };
 		A56D0FA2CE1A4B7E0000D005 /* 056_DriverProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = A56D0FA2CE1A4B7E0000D006 /* 056_DriverProfile.swift */; };
 		A57D0FA2CE1A4B7E0000D007 /* 057_DriverVehicleCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57D0FA2CE1A4B7E0000D008 /* 057_DriverVehicleCard.swift */; };
@@ -332,6 +335,12 @@
 		D1A11111111111111111HG01 /* DriverHomeGlances.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111HG02 /* DriverHomeGlances.swift */; };
 		D1A11111111111111111HZ01 /* HotZonesWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111HZ02 /* HotZonesWidget.swift */; };
 		D1A11111111111111111KH01 /* 500_CatalystHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111KH02 /* 500_CatalystHome.swift */; };
+		D300000000000000000003C1 /* 300_CatalystHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D300000000000000000003C2 /* 300_CatalystHome.swift */; };
+		D348000000000000000003D1 /* 348_CatalystShipperCounterReceipt.swift in Sources */ = {isa = PBXBuildFile; fileRef = D348000000000000000003D2 /* 348_CatalystShipperCounterReceipt.swift */; };
+		D349000000000000000003E1 /* 349_CatalystAwardedConfirmation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D349000000000000000003E2 /* 349_CatalystAwardedConfirmation.swift */; };
+		D377000000000000000003F1 /* 377_CatalystPaperworkSettlementPrepCelM04.swift in Sources */ = {isa = PBXBuildFile; fileRef = D377000000000000000003F2 /* 377_CatalystPaperworkSettlementPrepCelM04.swift */; };
+		D378000000000000000004A1 /* 378_CatalystClosedPayoutCelM04.swift in Sources */ = {isa = PBXBuildFile; fileRef = D378000000000000000004A2 /* 378_CatalystClosedPayoutCelM04.swift */; };
+		D379000000000000000004B1 /* CV379_CatalystM05BiddingQuartet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D379000000000000000004B2 /* CV379_CatalystM05BiddingQuartet.swift */; };
 		D1A11111111111111111CM01 /* 501_CatalystMatches.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CM02 /* 501_CatalystMatches.swift */; };
 		D1A11111111111111111KMD1 /* 502_CatalystMatchDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111KMD2 /* 502_CatalystMatchDetail.swift */; };
 		D1A11111111111111111CER1 /* 313_CatalystEusoTicketRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111CER2 /* 313_CatalystEusoTicketRenderer.swift */; };
@@ -392,6 +401,8 @@
 		DLR020260521000001 /* Dpch790_DispatcherLaneRFPSextet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DLR020260521000002 /* Dpch790_DispatcherLaneRFPSextet.swift */; };
 		DBH020260521000001 /* Dpch800_DispatcherBHCardDuodecet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBH020260521000002 /* Dpch800_DispatcherBHCardDuodecet.swift */; };
 		DKB020260521000001 /* Dpch820_DispatcherM04KanbanQuintet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DKB020260521000002 /* Dpch820_DispatcherM04KanbanQuintet.swift */; };
+		D531000000000000000005A1 /* 531_DispatcherClosedKanbanCelM04.swift in Sources */ = {isa = PBXBuildFile; fileRef = D531000000000000000005A2 /* 531_DispatcherClosedKanbanCelM04.swift */; };
+		D532000000000000000005B1 /* 532_DispatcherAssignDriverM05.swift in Sources */ = {isa = PBXBuildFile; fileRef = D532000000000000000005B2 /* 532_DispatcherAssignDriverM05.swift */; };
 		CVB020260521000001 /* CV330B_CatalystVehicleBVariantOctet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CVB020260521000002 /* CV330B_CatalystVehicleBVariantOctet.swift */; };
 		CDV020260521000001 /* CV320B_CatalystDriverBVariantOctet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDV020260521000002 /* CV320B_CatalystDriverBVariantOctet.swift */; };
 		CSV020260521000001 /* CV340B_CatalystShipperBVariantOctet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CSV020260521000002 /* CV340B_CatalystShipperBVariantOctet.swift */; };
@@ -734,6 +745,8 @@
 		A12AE74E2A03406ADC0DD5AD /* 010_DriverHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 010_DriverHome.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000002 /* HereMapsConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereMapsConfig.swift; sourceTree = "<group>"; };
 		A1HMWV0001000000000000A2 /* HereMapWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereMapWebView.swift; sourceTree = "<group>"; };
+		A1HADO0001000000000000A2 /* HereAddOns.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereAddOns.swift; sourceTree = "<group>"; };
+		A1HHB00001000000000000A2 /* HereHaulBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereHaulBridge.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000004 /* TruckProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TruckProfile.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000006 /* HereRouteModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereRouteModels.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000008 /* HereFlexiblePolyline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereFlexiblePolyline.swift; sourceTree = "<group>"; };
@@ -910,6 +923,7 @@
 		A52D0FA0CE1A4B7E0000D026 /* 052_RateconTender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 052_RateconTender.swift; sourceTree = "<group>"; };
 		A53D0FA0CE1A4B7E0000D028 /* 053_ESangDispatchChat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 053_ESangDispatchChat.swift; sourceTree = "<group>"; };
 		A54D0FA1CE1A4B7E0000D002 /* 054_HaulPaySettlement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 054_HaulPaySettlement.swift; sourceTree = "<group>"; };
+		D149000000000000000004A2 /* 149_DriverClosedPaidReceiptCelM04.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 149_DriverClosedPaidReceiptCelM04.swift; sourceTree = "<group>"; };
 		A55D0FA1CE1A4B7E0000D004 /* 055_DayCloseWallet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 055_DayCloseWallet.swift; sourceTree = "<group>"; };
 		A56D0FA2CE1A4B7E0000D006 /* 056_DriverProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 056_DriverProfile.swift; sourceTree = "<group>"; };
 		A57D0FA2CE1A4B7E0000D008 /* 057_DriverVehicleCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 057_DriverVehicleCard.swift; sourceTree = "<group>"; };
@@ -1051,6 +1065,12 @@
 		D1A11111111111111111HG02 /* DriverHomeGlances.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverHomeGlances.swift; sourceTree = "<group>"; };
 		D1A11111111111111111HZ02 /* HotZonesWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotZonesWidget.swift; sourceTree = "<group>"; };
 		D1A11111111111111111KH02 /* 500_CatalystHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 500_CatalystHome.swift; path = EusoTrip/Views/Catalyst/500_CatalystHome.swift; sourceTree = SOURCE_ROOT; };
+		D300000000000000000003C2 /* 300_CatalystHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 300_CatalystHome.swift; path = EusoTrip/Views/Catalyst/300_CatalystHome.swift; sourceTree = SOURCE_ROOT; };
+		D348000000000000000003D2 /* 348_CatalystShipperCounterReceipt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 348_CatalystShipperCounterReceipt.swift; path = EusoTrip/Views/Catalyst/348_CatalystShipperCounterReceipt.swift; sourceTree = SOURCE_ROOT; };
+		D349000000000000000003E2 /* 349_CatalystAwardedConfirmation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 349_CatalystAwardedConfirmation.swift; path = EusoTrip/Views/Catalyst/349_CatalystAwardedConfirmation.swift; sourceTree = SOURCE_ROOT; };
+		D377000000000000000003F2 /* 377_CatalystPaperworkSettlementPrepCelM04.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 377_CatalystPaperworkSettlementPrepCelM04.swift; path = EusoTrip/Views/Catalyst/377_CatalystPaperworkSettlementPrepCelM04.swift; sourceTree = SOURCE_ROOT; };
+		D378000000000000000004A2 /* 378_CatalystClosedPayoutCelM04.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 378_CatalystClosedPayoutCelM04.swift; path = EusoTrip/Views/Catalyst/378_CatalystClosedPayoutCelM04.swift; sourceTree = SOURCE_ROOT; };
+		D379000000000000000004B2 /* CV379_CatalystM05BiddingQuartet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CV379_CatalystM05BiddingQuartet.swift; path = EusoTrip/Views/Catalyst/CV379_CatalystM05BiddingQuartet.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CM02 /* 501_CatalystMatches.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 501_CatalystMatches.swift; path = EusoTrip/Views/Catalyst/501_CatalystMatches.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111KMD2 /* 502_CatalystMatchDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 502_CatalystMatchDetail.swift; path = EusoTrip/Views/Catalyst/502_CatalystMatchDetail.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111CER2 /* 313_CatalystEusoTicketRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 313_CatalystEusoTicketRenderer.swift; path = EusoTrip/Views/Catalyst/313_CatalystEusoTicketRenderer.swift; sourceTree = SOURCE_ROOT; };
@@ -1111,6 +1131,8 @@
 		DLR020260521000002 /* Dpch790_DispatcherLaneRFPSextet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch790_DispatcherLaneRFPSextet.swift; path = EusoTrip/Views/Dispatch/Dpch790_DispatcherLaneRFPSextet.swift; sourceTree = SOURCE_ROOT; };
 		DBH020260521000002 /* Dpch800_DispatcherBHCardDuodecet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch800_DispatcherBHCardDuodecet.swift; path = EusoTrip/Views/Dispatch/Dpch800_DispatcherBHCardDuodecet.swift; sourceTree = SOURCE_ROOT; };
 		DKB020260521000002 /* Dpch820_DispatcherM04KanbanQuintet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch820_DispatcherM04KanbanQuintet.swift; path = EusoTrip/Views/Dispatch/Dpch820_DispatcherM04KanbanQuintet.swift; sourceTree = SOURCE_ROOT; };
+		D531000000000000000005A2 /* 531_DispatcherClosedKanbanCelM04.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 531_DispatcherClosedKanbanCelM04.swift; path = EusoTrip/Views/Dispatch/531_DispatcherClosedKanbanCelM04.swift; sourceTree = SOURCE_ROOT; };
+		D532000000000000000005B2 /* 532_DispatcherAssignDriverM05.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 532_DispatcherAssignDriverM05.swift; path = EusoTrip/Views/Dispatch/532_DispatcherAssignDriverM05.swift; sourceTree = SOURCE_ROOT; };
 		CVB020260521000002 /* CV330B_CatalystVehicleBVariantOctet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CV330B_CatalystVehicleBVariantOctet.swift; path = EusoTrip/Views/Catalyst/CV330B_CatalystVehicleBVariantOctet.swift; sourceTree = SOURCE_ROOT; };
 		CDV020260521000002 /* CV320B_CatalystDriverBVariantOctet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CV320B_CatalystDriverBVariantOctet.swift; path = EusoTrip/Views/Catalyst/CV320B_CatalystDriverBVariantOctet.swift; sourceTree = SOURCE_ROOT; };
 		CSV020260521000002 /* CV340B_CatalystShipperBVariantOctet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CV340B_CatalystShipperBVariantOctet.swift; path = EusoTrip/Views/Catalyst/CV340B_CatalystShipperBVariantOctet.swift; sourceTree = SOURCE_ROOT; };
@@ -1569,6 +1591,7 @@
 				A52D0FA0CE1A4B7E0000D026 /* 052_RateconTender.swift */,
 				A53D0FA0CE1A4B7E0000D028 /* 053_ESangDispatchChat.swift */,
 				A54D0FA1CE1A4B7E0000D002 /* 054_HaulPaySettlement.swift */,
+				D149000000000000000004A2 /* 149_DriverClosedPaidReceiptCelM04.swift */,
 				A55D0FA1CE1A4B7E0000D004 /* 055_DayCloseWallet.swift */,
 				A56D0FA2CE1A4B7E0000D006 /* 056_DriverProfile.swift */,
 				A57D0FA2CE1A4B7E0000D008 /* 057_DriverVehicleCard.swift */,
@@ -1912,6 +1935,12 @@
 				D1A11111111111111111BT02 /* 401_BrokerTenders.swift */,
 				D1A11111111111111111BD02 /* 402_BrokerTenderDetail.swift */,
 				D1A11111111111111111KH02 /* 500_CatalystHome.swift */,
+				D300000000000000000003C2 /* 300_CatalystHome.swift */,
+				D348000000000000000003D2 /* 348_CatalystShipperCounterReceipt.swift */,
+				D349000000000000000003E2 /* 349_CatalystAwardedConfirmation.swift */,
+				D377000000000000000003F2 /* 377_CatalystPaperworkSettlementPrepCelM04.swift */,
+				D378000000000000000004A2 /* 378_CatalystClosedPayoutCelM04.swift */,
+				D379000000000000000004B2 /* CV379_CatalystM05BiddingQuartet.swift */,
 				D1A11111111111111111CM02 /* 501_CatalystMatches.swift */,
 				D1A11111111111111111KMD2 /* 502_CatalystMatchDetail.swift */,
 				D1A11111111111111111CER2 /* 313_CatalystEusoTicketRenderer.swift */,
@@ -1969,6 +1998,8 @@
 				DLR020260521000002 /* Dpch790_DispatcherLaneRFPSextet.swift */,
 				DBH020260521000002 /* Dpch800_DispatcherBHCardDuodecet.swift */,
 				DKB020260521000002 /* Dpch820_DispatcherM04KanbanQuintet.swift */,
+				D531000000000000000005A2 /* 531_DispatcherClosedKanbanCelM04.swift */,
+				D532000000000000000005B2 /* 532_DispatcherAssignDriverM05.swift */,
 				CVB020260521000002 /* CV330B_CatalystVehicleBVariantOctet.swift */,
 				CDV020260521000002 /* CV320B_CatalystDriverBVariantOctet.swift */,
 				CSV020260521000002 /* CV340B_CatalystShipperBVariantOctet.swift */,
@@ -2111,6 +2142,8 @@
 			children = (
 				A12E1A1C0010CE0FF1000002 /* HereMapsConfig.swift */,
 				A1HMWV0001000000000000A2 /* HereMapWebView.swift */,
+				A1HADO0001000000000000A2 /* HereAddOns.swift */,
+				A1HHB00001000000000000A2 /* HereHaulBridge.swift */,
 				A12E1A1C0010CE0FF1000004 /* TruckProfile.swift */,
 				A12E1A1C0010CE0FF1000006 /* HereRouteModels.swift */,
 				A12E1A1C0010CE0FF1000008 /* HereFlexiblePolyline.swift */,
@@ -2542,6 +2575,7 @@
 				A52D0FA0CE1A4B7E0000D025 /* 052_RateconTender.swift in Sources */,
 				A53D0FA0CE1A4B7E0000D027 /* 053_ESangDispatchChat.swift in Sources */,
 				A54D0FA1CE1A4B7E0000D001 /* 054_HaulPaySettlement.swift in Sources */,
+				D149000000000000000004A1 /* 149_DriverClosedPaidReceiptCelM04.swift in Sources */,
 				A55D0FA1CE1A4B7E0000D003 /* 055_DayCloseWallet.swift in Sources */,
 				A56D0FA2CE1A4B7E0000D005 /* 056_DriverProfile.swift in Sources */,
 				A57D0FA2CE1A4B7E0000D007 /* 057_DriverVehicleCard.swift in Sources */,
@@ -2666,6 +2700,8 @@
 				A1F100000000000000000BAA /* IntroSplash.swift in Sources */,
 				A12E1A1C0010CE0FF1000001 /* HereMapsConfig.swift in Sources */,
 				A1HMWV0001000000000000A1 /* HereMapWebView.swift in Sources */,
+				A1HADO0001000000000000A1 /* HereAddOns.swift in Sources */,
+				A1HHB00001000000000000A1 /* HereHaulBridge.swift in Sources */,
 				A12E1A1C0010CE0FF1000003 /* TruckProfile.swift in Sources */,
 				A12E1A1C0010CE0FF1000005 /* HereRouteModels.swift in Sources */,
 				A12E1A1C0010CE0FF1000007 /* HereFlexiblePolyline.swift in Sources */,
@@ -3028,6 +3064,12 @@
 				D1A11111111111111111BT01 /* 401_BrokerTenders.swift in Sources */,
 				D1A11111111111111111BD01 /* 402_BrokerTenderDetail.swift in Sources */,
 				D1A11111111111111111KH01 /* 500_CatalystHome.swift in Sources */,
+				D300000000000000000003C1 /* 300_CatalystHome.swift in Sources */,
+				D348000000000000000003D1 /* 348_CatalystShipperCounterReceipt.swift in Sources */,
+				D349000000000000000003E1 /* 349_CatalystAwardedConfirmation.swift in Sources */,
+				D377000000000000000003F1 /* 377_CatalystPaperworkSettlementPrepCelM04.swift in Sources */,
+				D378000000000000000004A1 /* 378_CatalystClosedPayoutCelM04.swift in Sources */,
+				D379000000000000000004B1 /* CV379_CatalystM05BiddingQuartet.swift in Sources */,
 				D1A11111111111111111CM01 /* 501_CatalystMatches.swift in Sources */,
 				D1A11111111111111111KMD1 /* 502_CatalystMatchDetail.swift in Sources */,
 				D1A11111111111111111CER1 /* 313_CatalystEusoTicketRenderer.swift in Sources */,
@@ -3085,6 +3127,8 @@
 				DLR020260521000001 /* Dpch790_DispatcherLaneRFPSextet.swift in Sources */,
 				DBH020260521000001 /* Dpch800_DispatcherBHCardDuodecet.swift in Sources */,
 				DKB020260521000001 /* Dpch820_DispatcherM04KanbanQuintet.swift in Sources */,
+				D531000000000000000005A1 /* 531_DispatcherClosedKanbanCelM04.swift in Sources */,
+				D532000000000000000005B1 /* 532_DispatcherAssignDriverM05.swift in Sources */,
 				CVB020260521000001 /* CV330B_CatalystVehicleBVariantOctet.swift in Sources */,
 				CDV020260521000001 /* CV320B_CatalystDriverBVariantOctet.swift in Sources */,
 				CSV020260521000001 /* CV340B_CatalystShipperBVariantOctet.swift in Sources */,

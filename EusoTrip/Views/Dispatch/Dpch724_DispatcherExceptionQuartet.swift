@@ -76,10 +76,14 @@ struct DispatcherHOSReassignmentScreen: View {
 private struct HOSReassignBody: View {
     let loadId: String
     @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
     @State private var load: ExceptionLoadCtx?
     @State private var candidates: [AvailableDriver] = []
     @State private var selectedCandidate: String?
     @State private var loading: Bool = true
+    @State private var actionInFlight: Bool = false
+    @State private var actionAck: String?
+    @State private var actionError: String?
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -90,6 +94,12 @@ private struct HOSReassignBody: View {
                 wizardStrip(step: 2)
                 candidatesSection
                 actionRow
+                if let ack = actionAck {
+                    LifecycleCard { Text(ack).font(EType.caption).foregroundStyle(.green) }
+                }
+                if let err = actionError {
+                    LifecycleCard { Text(err).font(EType.caption).foregroundStyle(.red) }
+                }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 8)
@@ -199,7 +209,7 @@ private struct HOSReassignBody: View {
 
     private var actionRow: some View {
         HStack(spacing: 10) {
-            Button { } label: {
+            Button { dismiss() } label: {
                 Text("Back")
                     .font(EType.body.weight(.semibold))
                     .frame(maxWidth: .infinity, minHeight: 48)
@@ -207,16 +217,48 @@ private struct HOSReassignBody: View {
                     .background(palette.bgCard)
                     .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }.buttonStyle(.plain)
-            Button { } label: {
-                Text(selectedCandidate == nil ? "Select a driver" : "Confirm reassign")
-                    .font(EType.body.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .foregroundStyle(.white)
-                    .background(LinearGradient.diagonal)
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-                    .opacity(selectedCandidate == nil ? 0.5 : 1)
-            }.buttonStyle(.plain).disabled(selectedCandidate == nil)
+            }
+            .buttonStyle(.plain)
+            .disabled(actionInFlight)
+
+            Button { Task { await confirmReassign() } } label: {
+                HStack(spacing: 6) {
+                    if actionInFlight { ProgressView().tint(.white).scaleEffect(0.8) }
+                    Text(actionInFlight ? "Reassigning…"
+                         : selectedCandidate == nil ? "Select a driver" : "Confirm reassign")
+                        .font(EType.body.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .foregroundStyle(.white)
+                .background(LinearGradient.diagonal)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .opacity(selectedCandidate == nil ? 0.5 : 1)
+            }
+            .buttonStyle(.plain)
+            .disabled(selectedCandidate == nil || actionInFlight)
+        }
+    }
+
+    private func confirmReassign() async {
+        guard let driverId = selectedCandidate else { return }
+        actionInFlight = true; actionAck = nil; actionError = nil
+        defer { actionInFlight = false }
+        struct In: Encodable { let loadId: String; let driverId: String; let vehicleId: String?; let notes: String? }
+        struct Out: Decodable { let success: Bool?; let loadId: String?; let driverId: String?; let assignedAt: String? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "dispatchRole.assignDriver",
+                input: In(loadId: loadId, driverId: driverId, vehicleId: nil,
+                          notes: "HOS reassignment from prior driver · selected via Dpch724")
+            )
+            if resp.success == true {
+                actionAck = "Reassigned · driver \(resp.driverId ?? driverId) is now on LD-\(resp.loadId ?? loadId). Notification fired."
+                await loadCtx()
+            } else {
+                actionError = "Reassign returned no success flag — reload and try again."
+            }
+        } catch let err {
+            actionError = (err as? LocalizedError)?.errorDescription ?? "Reassign failed: \(err)"
         }
     }
 

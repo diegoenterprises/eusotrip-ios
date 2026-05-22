@@ -272,17 +272,25 @@ struct ActiveEnroute: View {
         if let load = activeLoad,
            let pickup = load.pickupLocation,
            let delivery = load.deliveryLocation {
-            let lane = HereMapView.Lane(
-                id: String(load.id),
-                originTitle: destinationFacility,
-                destinationTitle: "",
-                pickup: CLLocationCoordinate2D(latitude: pickup.lat, longitude: pickup.lng),
-                delivery: CLLocationCoordinate2D(latitude: delivery.lat, longitude: delivery.lng)
-            )
-            HereMapView(
-                lanes: [lane],
-                showsUserLocation: true,
-                showsCompass: false
+            // Canonical OMV vector map + live HERE add-ons surfaced as pins:
+            // fuel / EV / weather / traffic / sponsored ad-zones. The route +
+            // pickup/delivery are the base layers; HereLiveMapView fetches the
+            // add-ons around the lane and overlays them with a corner legend.
+            HereLiveMapView(
+                center: .init(pickup.lat, pickup.lng),
+                zoom: 7,
+                firstPerson: true,
+                route: [.init(pickup.lat, pickup.lng), .init(delivery.lat, delivery.lng)],
+                baseLayers: [
+                    .route(polyline: [.init(pickup.lat, pickup.lng),
+                                      .init(delivery.lat, delivery.lng)],
+                           colorHex: "#1473FF"),
+                    .markers([
+                        .init(at: .init(pickup.lat, pickup.lng), kind: .pickup, label: destinationFacility),
+                        .init(at: .init(delivery.lat, delivery.lng), kind: .delivery, label: nil)
+                    ])
+                ],
+                addOns: .driverEnRoute
             )
         } else {
             figmaMapFallback

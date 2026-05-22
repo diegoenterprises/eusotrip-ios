@@ -265,7 +265,7 @@ struct ShipperControlTower: View {
             // serve raster) for the OMV vector renderer the web platform
             // uses + the plan DOES serve. Light tiles in light mode, dark
             // in dark. CONUS framing until a per-load coords endpoint ships.
-            HereVectorMapView(center: .init(39.5, -98.35), zoom: 4)
+            HereLiveMapView(center: .init(39.5, -98.35), zoom: 4, addOns: .shipperTracking)
                 .frame(height: 380)
                 .clipped()
                 .accessibilityLabel("Live load map, \(overview.total.active) active loads")

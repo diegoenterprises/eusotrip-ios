@@ -379,27 +379,33 @@ struct DriverTripsPane: View {
             let routeReady = activeRoute != nil
                 && activeRouteLoadID == String(load.id)
 
-            HereMapView(
-                style: scheme == .dark ? .dark : .light,
-                route: routeReady ? activeRoute : nil,
-                // Straight-line fallback only while the truck route is
-                // still being fetched (or if the fetch failed). Once
-                // HERE responds we hide the lane so the real polyline
-                // owns the canvas on its own.
-                lanes: routeReady ? [] : [
-                    HereMapView.Lane(
-                        id: String(load.id),
-                        originTitle: pickup.city,
-                        destinationTitle: delivery.city,
-                        pickup: CLLocationCoordinate2D(
-                            latitude: pickup.lat, longitude: pickup.lng),
-                        delivery: CLLocationCoordinate2D(
-                            latitude: delivery.lat, longitude: delivery.lng)
-                    )
+            // Canonical OMV vector map + live HERE add-ons (fuel / EV /
+            // weather / traffic / sponsored ad-zones). Uses the real decoded
+            // HERE truck-route polyline when ready, else a straight pickup→
+            // delivery connector while the route fetch is in flight.
+            let routeCoords: [HereLatLng] = routeReady
+                ? (activeRoute?.sections ?? [])
+                    .flatMap { HereFlexiblePolyline.decode($0.polyline) }
+                    .map { HereLatLng($0) }
+                : []
+            let lineCoords: [HereLatLng] = routeCoords.isEmpty
+                ? [HereLatLng(pickup.lat, pickup.lng), HereLatLng(delivery.lat, delivery.lng)]
+                : routeCoords
+
+            HereLiveMapView(
+                center: .init((pickup.lat + delivery.lat) / 2,
+                              (pickup.lng + delivery.lng) / 2),
+                zoom: 7,
+                firstPerson: true,
+                route: lineCoords,
+                baseLayers: [
+                    .route(polyline: lineCoords, colorHex: "#1473FF"),
+                    .markers([
+                        .init(at: .init(pickup.lat, pickup.lng), kind: .pickup, label: pickup.city),
+                        .init(at: .init(delivery.lat, delivery.lng), kind: .delivery, label: delivery.city)
+                    ])
                 ],
-                useHereTiles: true,   // HERE-uniform mapping (build 48)
-                showsUserLocation: true,
-                showsCompass: false
+                addOns: .driverEnRoute
             )
             .frame(height: 260)
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
@@ -656,28 +662,38 @@ struct DriverTripsPane: View {
         // load-detail sheet (see `.sheet(item:)` below). This matches the
         // web Eusoboards pattern: the map is a pick-a-load surface, all
         // route / permit / prohibited-lane detail lives in the sheet.
-        let markers: [HereMapView.LoadMarker] = filtered.map { load in
-            HereMapView.LoadMarker(
-                id: load.id,
-                title: load.origin,
-                subtitle: "$\(Int(load.rate)) · \(load.miles) mi · \(load.equipment)",
-                coordinate: CLLocationCoordinate2D(
-                    latitude: load.originLat, longitude: load.originLng)
+        // One tappable pickup-pin per load — id bubbles back through
+        // HereLiveMapView.onSelectMarker into the load-detail sheet. No
+        // add-on overlays here: the board is a pick-a-load surface, kept
+        // clean. (Migrated off the raster `HereMapView` onto the canonical
+        // OMV vector renderer that the plan actually serves.)
+        let boardMarkers: [HereMarker] = filtered.map { load in
+            HereMarker(
+                at: HereLatLng(load.originLat, load.originLng),
+                kind: .pickup,
+                label: "\(load.origin) · $\(Int(load.rate)) · \(load.miles) mi · \(load.equipment)",
+                id: load.id
             )
         }
+        let boardCenter: HereLatLng = {
+            guard !boardMarkers.isEmpty else { return HereLatLng(39.5, -98.35) }
+            let lat = boardMarkers.map { $0.at.lat }.reduce(0, +) / Double(boardMarkers.count)
+            let lng = boardMarkers.map { $0.at.lng }.reduce(0, +) / Double(boardMarkers.count)
+            return HereLatLng(lat, lng)
+        }()
 
         return ZStack(alignment: .topTrailing) {
-            HereMapView(
-                style: scheme == .dark ? .dark : .light,
-                markers: markers,
+            HereLiveMapView(
+                center: boardCenter,
+                zoom: boardMarkers.isEmpty ? 4 : 5,
+                baseLayers: [.markers(boardMarkers)],
+                addOns: [],
+                showLegend: false,
                 onSelectMarker: { id in
                     withAnimation(.easeOut(duration: 0.18)) {
                         selectedLoadID = id
                     }
-                },
-                useHereTiles: true,           // HERE-uniform mapping (build 48) — brand parity with web
-                showsUserLocation: false,
-                showsCompass: false
+                }
             )
             .frame(height: 340)
             // Brand-gradient scrim: subtle blue→magenta tint wash, plus a

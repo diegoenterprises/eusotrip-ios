@@ -55,9 +55,12 @@ public struct HereMarker: Hashable, Codable {
     public let at: HereLatLng
     public let kind: Kind
     public let label: String?
-    public enum Kind: String, Codable { case truck, pickup, delivery, stop, fuel, charger, parking, alert, mission, adZone }
-    public init(at: HereLatLng, kind: Kind, label: String? = nil) {
-        self.at = at; self.kind = kind; self.label = label
+    /// Optional stable identity passed back through `onSelectMarker` when
+    /// the pin is tapped (e.g. a load id on the board). nil = not tappable.
+    public let id: String?
+    public enum Kind: String, Codable { case truck, pickup, delivery, stop, fuel, charger, parking, alert, weather, mission, adZone, truckStop, weigh, camera, hotZone }
+    public init(at: HereLatLng, kind: Kind, label: String? = nil, id: String? = nil) {
+        self.at = at; self.kind = kind; self.label = label; self.id = id
     }
 }
 
@@ -109,18 +112,24 @@ public struct HereVectorMapView: View {
     let center: HereLatLng
     let zoom: Int
     let interactive: Bool
+    let tilt: Double
     let layers: [HereMapLayer]
+    let onSelectMarker: ((String) -> Void)?
 
     public init(
         center: HereLatLng,
         zoom: Int = 6,
         interactive: Bool = true,
-        layers: [HereMapLayer] = []
+        tilt: Double = 0,
+        layers: [HereMapLayer] = [],
+        onSelectMarker: ((String) -> Void)? = nil
     ) {
         self.center = center
         self.zoom = zoom
         self.interactive = interactive
+        self.tilt = tilt
         self.layers = layers
+        self.onSelectMarker = onSelectMarker
     }
 
     public var body: some View {
@@ -129,8 +138,10 @@ public struct HereVectorMapView: View {
             center: center,
             zoom: zoom,
             interactive: interactive,
+            tilt: tilt,
             isDark: colorScheme == .dark,
-            layers: layers
+            layers: layers,
+            onSelectMarker: onSelectMarker
         )
         #else
         Color(white: 0.04)
@@ -146,15 +157,19 @@ struct HereMapWebViewRepresentable: UIViewRepresentable {
     let center: HereLatLng
     let zoom: Int
     let interactive: Bool
+    let tilt: Double
     let isDark: Bool
     let layers: [HereMapLayer]
+    let onSelectMarker: ((String) -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIView(context: Context) -> WKWebView {
+        context.coordinator.onSelectMarker = onSelectMarker
         let userContent = WKUserContentController()
         userContent.add(context.coordinator, name: "hzLog")
         userContent.add(context.coordinator, name: "mapReady")
+        userContent.add(context.coordinator, name: "markerTap")
 
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
@@ -173,7 +188,8 @@ struct HereMapWebViewRepresentable: UIViewRepresentable {
             interactive: interactive,
             centerLat: center.lat,
             centerLng: center.lng,
-            zoom: zoom
+            zoom: zoom,
+            tilt: tilt
         )
         // THE FIX: origin = a HERE-portal trusted domain (not js.api.here.com).
         webView.loadHTMLString(html, baseURL: URL(string: HereMapsConfig.jsTrustedReferrerOrigin))
@@ -181,6 +197,7 @@ struct HereMapWebViewRepresentable: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
+        context.coordinator.onSelectMarker = onSelectMarker
         // Re-style if the color scheme flipped.
         if context.coordinator.lastIsDark != isDark {
             context.coordinator.lastIsDark = isDark
@@ -205,12 +222,17 @@ struct HereMapWebViewRepresentable: UIViewRepresentable {
         var mapReady = false
         var lastIsDark: Bool?
         var pendingLayerJSON = "{}"
+        var onSelectMarker: ((String) -> Void)?
 
         func userContentController(_ uc: WKUserContentController, didReceive message: WKScriptMessage) {
             switch message.name {
             case "mapReady":
                 mapReady = true
                 webView?.evaluateJavaScript("window.__applyLayers && window.__applyLayers(\(pendingLayerJSON));")
+            case "markerTap":
+                if let id = message.body as? String, !id.isEmpty {
+                    onSelectMarker?(id)
+                }
             case "hzLog":
                 #if DEBUG
                 print("[HereMap] \(message.body)")
@@ -233,8 +255,14 @@ struct HereMapWebViewRepresentable: UIViewRepresentable {
             case .heatmap(let pts):
                 heatmap = pts.map { ["lat": $0.lat, "lng": $0.lng, "value": $0.weight ?? 1.0] }
             case .markers(let ms), .missionPins(let ms):
-                markers.append(contentsOf: ms.map {
-                    ["lat": $0.at.lat, "lng": $0.at.lng, "kind": $0.kind.rawValue, "label": $0.label ?? ""]
+                markers.append(contentsOf: ms.map { m in
+                    // Every pin is tappable: synthesize a stable id when the
+                    // caller didn't supply one (kind + rounded coords).
+                    let mid = (m.id?.isEmpty == false)
+                        ? m.id!
+                        : "\(m.kind.rawValue):\(String(format: "%.5f", m.at.lat)),\(String(format: "%.5f", m.at.lng))"
+                    return ["lat": m.at.lat, "lng": m.at.lng, "kind": m.kind.rawValue,
+                            "label": m.label ?? "", "id": mid]
                 })
             case .route(let poly, let hex):
                 routes.append(["color": hex, "pts": poly.map { ["lat": $0.lat, "lng": $0.lng] }])
@@ -259,7 +287,8 @@ struct HereMapWebViewRepresentable: UIViewRepresentable {
         interactive: Bool,
         centerLat: Double,
         centerLng: Double,
-        zoom: Int
+        zoom: Int,
+        tilt: Double = 0
     ) -> String {
         guard let apiKey = apiKey, !apiKey.isEmpty else {
             return """
@@ -317,6 +346,10 @@ struct HereMapWebViewRepresentable: UIViewRepresentable {
             behavior = new H.mapevents.Behavior(new H.mapevents.MapEvents(map));
             \(dragFlags)
 
+            // First-person / navigation tilt (0 = flat top-down). Gives the
+            // driver an immersive perspective view of the lane ahead.
+            try{ if(\(Int(tilt)) > 0 && map.getViewModel){ map.getViewModel().setLookAtData({ tilt: \(Int(tilt)) }); } }catch(e){ log("tilt "+e); }
+
             // Dark/light flip without reload — swap the base layer's style.
             window.__setDark = function(d){
               try{ dark=d; var nb=buildBase(d); if(nb){ map.setBaseLayer(nb); } }catch(e){ log("setDark "+e); }
@@ -343,14 +376,29 @@ struct HereMapWebViewRepresentable: UIViewRepresentable {
                   grp.addObject(new H.map.Polyline(ls, { style:{ lineWidth:5, strokeColor:r.color||"#1473FF" } }));
                 });
                 (L.polygons||[]).forEach(function(pg){
+                  var ring = pg.ring||[];
                   var ls = new H.geo.LineString();
-                  (pg.ring||[]).forEach(function(p){ ls.pushPoint({lat:p.lat,lng:p.lng}); });
-                  if((pg.ring||[]).length>2){
+                  ring.forEach(function(p){ ls.pushPoint({lat:p.lat,lng:p.lng}); });
+                  if(ring.length>2){
                     grp.addObject(new H.map.Polygon(ls, { style:{ fillColor:hexA(pg.fill, pg.opacity), strokeColor:pg.fill, lineWidth:2 } }));
+                    // (Tappable centroid pin for the zone is emitted as a
+                    //  separate marker by HereAddOnsModel, so none here.)
                   }
                 });
                 (L.markers||[]).forEach(function(m){
-                  grp.addObject(new H.map.Marker({lat:m.lat,lng:m.lng}));
+                  try{
+                    var ic = iconFor(m.kind);
+                    var mk = ic ? new H.map.Marker({lat:m.lat,lng:m.lng},{icon:ic})
+                                : new H.map.Marker({lat:m.lat,lng:m.lng});
+                    // Tappable pin → bubble the id back to Swift (onSelectMarker).
+                    if(m.id){
+                      mk.setData(m.id);
+                      mk.addEventListener("tap", function(ev){
+                        try{ window.webkit.messageHandlers.markerTap.postMessage(String(ev.target.getData())); }catch(e){}
+                      });
+                    }
+                    grp.addObject(mk);
+                  }catch(e){ grp.addObject(new H.map.Marker({lat:m.lat,lng:m.lng})); }
                 });
                 if(grp.getObjects().length){ map.addObject(grp); }
               }catch(e){ log("applyLayers "+e); }
@@ -359,6 +407,31 @@ struct HereMapWebViewRepresentable: UIViewRepresentable {
             function hexA(hex, a){
               try{ var h=hex.replace('#',''); var r=parseInt(h.substr(0,2),16),g=parseInt(h.substr(2,2),16),b=parseInt(h.substr(4,2),16);
                    return "rgba("+r+","+g+","+b+","+(a||0.25)+")"; }catch(e){ return "rgba(20,115,255,0.25)"; }
+            }
+
+            // Kind-specific teardrop pins so every add-on reads at a glance:
+            // fuel / EV / weather / traffic-alert / mission / ad-zone, plus the
+            // load primitives (truck / pickup / delivery / stop / parking).
+            var ICONS = {};
+            function svgPin(bg, glyph){
+              return '<svg xmlns="http://www.w3.org/2000/svg" width="30" height="38" viewBox="0 0 30 38">'
+                + '<path d="M15 0C7 0 1 6 1 14c0 9 14 24 14 24s14-15 14-24C29 6 23 0 15 0z" fill="'+bg+'" stroke="#ffffff" stroke-width="2"/>'
+                + '<circle cx="15" cy="14" r="8" fill="#ffffff" fill-opacity="0.95"/>'
+                + '<text x="15" y="17.5" font-size="9" font-family="-apple-system,Helvetica,Arial,sans-serif" font-weight="700" text-anchor="middle" fill="'+bg+'">'+glyph+'</text>'
+                + '</svg>';
+            }
+            function iconFor(kind){
+              if(ICONS[kind]) return ICONS[kind];
+              var spec = {
+                truck:["#1473FF","T"], pickup:["#16A34A","P"], delivery:["#DC2626","D"],
+                stop:["#6B7280","S"], fuel:["#F59E0B","F"], charger:["#10B981","E"],
+                parking:["#2563EB","P"], alert:["#EF4444","!"], weather:["#38BDF8","W"],
+                mission:["#A855F7","M"], adZone:["#EC4899","$"],
+                truckStop:["#B45309","T"], weigh:["#0EA5E9","S"], camera:["#6366F1","C"],
+                hotZone:["#F97316","H"]
+              }[kind] || ["#1473FF","●"];
+              try{ var ic = new H.map.Icon(svgPin(spec[0], spec[1]), { anchor:{x:15,y:38} }); ICONS[kind]=ic; return ic; }
+              catch(e){ return null; }
             }
 
             try{ window.webkit.messageHandlers.mapReady.postMessage("ok"); }catch(e){}

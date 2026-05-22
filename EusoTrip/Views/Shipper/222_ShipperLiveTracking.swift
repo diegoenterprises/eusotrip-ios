@@ -307,7 +307,7 @@ struct ShipperLiveTracking: View {
             // Maps Tile v3 — empty grid, plan doesn't serve raster) for the
             // OMV vector renderer that the web platform uses + that the
             // plan DOES serve. CONUS framing until per-load coords land.
-            HereVectorMapView(center: .init(39.5, -98.35), zoom: 4)
+            HereLiveMapView(center: .init(39.5, -98.35), zoom: 4, addOns: .shipperTracking)
                 .frame(height: 380)
                 .clipped()
                 .accessibilityLabel("Live load map, \(store.loads.count) active loads")

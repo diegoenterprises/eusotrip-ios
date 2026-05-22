@@ -1190,28 +1190,45 @@ struct HotZonesHeatMapView: View {
         if zones.isEmpty {
             jsKeyMissingFallback
         } else {
-            HereMapView(
-                markers: zones.map { z in
-                    HereMapView.LoadMarker(
-                        id: z.zoneId,
-                        title: z.zoneName,
-                        subtitle: "\(z.demandLevel) · \(z.zoneId)",
-                        coordinate: CLLocationCoordinate2D(
-                            latitude: z.center.lat,
-                            longitude: z.center.lng
+            // 2026-05-22: migrated off the legacy raster HereMapView (and the
+            // private timing-out HERE JS WebView) onto the OMV vector renderer
+            // via HereLiveMapView. Each hot zone is a tappable pin carrying its
+            // zoneId, so tap-to-open-detail routes through onSelectMarker →
+            // onSelectZone exactly as before. addOns are intentionally empty:
+            // this is a demand-zone picker, so amenity/traffic pins would be
+            // clutter (matches the driver load-board picker treatment).
+            HereLiveMapView(
+                center: mapCenter,
+                zoom: 5,
+                baseLayers: [
+                    .markers(zones.map { z in
+                        HereMarker(
+                            at: .init(z.center.lat, z.center.lng),
+                            kind: .hotZone,
+                            label: z.zoneName,
+                            id: z.zoneId
                         )
-                    )
-                },
+                    })
+                ],
+                addOns: [],
+                showLegend: false,
+                showTicker: false,
                 onSelectMarker: { id in
                     if let z = zones.first(where: { $0.zoneId == id }) {
                         onSelectZone?(z)
                     }
-                },
-                useHereTiles: true,
-                showsUserLocation: false,
-                showsCompass: false
+                }
             )
         }
+    }
+
+    /// Average of the live zone centers — a stable map anchor (the vector
+    /// view has no fit-to-bounds API; zoom 5 ≈ regional spread).
+    private var mapCenter: HereLatLng {
+        guard !zones.isEmpty else { return .init(39.5, -98.35) }
+        let lat = zones.map { $0.center.lat }.reduce(0, +) / Double(zones.count)
+        let lng = zones.map { $0.center.lng }.reduce(0, +) / Double(zones.count)
+        return .init(lat, lng)
     }
 
     private var jsKeyMissingFallback: some View {

@@ -1051,13 +1051,14 @@ struct ShipperLoadDetail: View {
                 // the "Route loading…" forever blank) for the OMV vector
                 // renderer the plan serves. Pickup/delivery pins + a route
                 // connector layered on the vector basemap; dark/light native.
-                HereVectorMapView(
+                HereLiveMapView(
                     center: .init(
                         (lane.pickup.latitude + lane.delivery.latitude) / 2,
                         (lane.pickup.longitude + lane.delivery.longitude) / 2
                     ),
                     zoom: 6,
-                    layers: [
+                    route: [.init(lane.pickup), .init(lane.delivery)],
+                    baseLayers: [
                         .route(
                             polyline: [.init(lane.pickup), .init(lane.delivery)],
                             colorHex: "#1473FF"
@@ -1066,7 +1067,11 @@ struct ShipperLoadDetail: View {
                             .init(at: .init(lane.pickup), kind: .pickup, label: lane.originTitle),
                             .init(at: .init(lane.delivery), kind: .delivery, label: lane.destinationTitle)
                         ])
-                    ]
+                    ],
+                    // Shipper situational awareness along the lane: weather +
+                    // traffic incidents + sponsored ad-zones (no driver-only
+                    // gamification pins).
+                    addOns: .shipperTracking
                 )
             } else {
                 // No coords yet — show a neutral skeleton while the
