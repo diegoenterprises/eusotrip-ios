@@ -54,6 +54,13 @@ private struct ProfileBody: View {
     @State private var profile: CatalystProfileData?
     @State private var gam: GamificationProfile?
     @State private var loading: Bool = true
+    @State private var editing: Bool = false
+    @State private var editName: String = ""
+    @State private var editPhone: String = ""
+    @State private var editCompany: String = ""
+    @State private var saveInFlight: Bool = false
+    @State private var ack: String? = nil
+    @State private var err: String? = nil
 
     private var tierIndex: Int {
         switch (gam?.tier ?? "").lowercased() {
@@ -77,12 +84,46 @@ private struct ProfileBody: View {
                     tierCard
                     ytdKPIRow
                 }
+                if let ack { LifecycleCard { Text(ack).font(EType.caption).foregroundStyle(.green) } }
+                if let err { LifecycleCard { Text(err).font(EType.caption).foregroundStyle(.red) } }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
         .refreshable { await load() }
+        .alert("Edit profile", isPresented: $editing) {
+            TextField("Name", text: $editName)
+            TextField("Company", text: $editCompany)
+            Button("Cancel", role: .cancel) { editing = false }
+            Button("Save") { Task { await saveProfile() } }
+        } message: {
+            Text("Update your display name and company on EusoTrip.")
+        }
+    }
+
+    private func saveProfile() async {
+        saveInFlight = true; ack = nil; err = nil
+        defer { saveInFlight = false }
+        struct In: Encodable { let name: String?; let company: String? }
+        struct Out: Decodable { let success: Bool?; let userId: Int? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "users.updateProfile",
+                input: In(
+                    name: editName.isEmpty ? nil : editName,
+                    company: editCompany.isEmpty ? nil : editCompany
+                )
+            )
+            if resp.success != false {
+                ack = "Profile updated."
+                await load()
+            } else {
+                err = "Update returned no success flag."
+            }
+        } catch let e {
+            err = (e as? LocalizedError)?.errorDescription ?? "Update failed: \(e)"
+        }
     }
 
     private var header: some View {
@@ -91,7 +132,11 @@ private struct ProfileBody: View {
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("CATALYST · ME · PROFILE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
                 Spacer()
-                Button { } label: {
+                Button {
+                    editName = profile?.name ?? ""
+                    editCompany = profile?.companyName ?? ""
+                    editing = true
+                } label: {
                     Text("Edit").font(.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
                         .padding(.horizontal, 10).padding(.vertical, 4)
                         .background(palette.bgCard)

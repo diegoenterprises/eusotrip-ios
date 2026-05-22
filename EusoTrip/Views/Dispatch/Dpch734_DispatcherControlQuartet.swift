@@ -188,6 +188,9 @@ private struct WeatherRerouteBody: View {
     @Environment(\.palette) private var palette
     @State private var load: WeatherRerouteLoad?
     @State private var loading: Bool = true
+    @State private var inFlight: Bool = false
+    @State private var ack: String? = nil
+    @State private var err: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -282,24 +285,59 @@ private struct WeatherRerouteBody: View {
     }
 
     private var actionRow: some View {
-        HStack(spacing: 10) {
-            Button { } label: {
-                Text("Accept reroute")
-                    .font(EType.body.weight(.semibold))
+        VStack(spacing: 6) {
+            HStack(spacing: 10) {
+                Button { Task { await resolveReroute(accept: true) } } label: {
+                    HStack(spacing: 6) {
+                        if inFlight { ProgressView().tint(.white).scaleEffect(0.7) }
+                        Text(inFlight ? "Working…" : "Accept reroute")
+                            .font(EType.body.weight(.semibold))
+                    }
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .foregroundStyle(.white)
                     .background(LinearGradient.diagonal)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }.buttonStyle(.plain)
-            Button { } label: {
-                Text("Hold for review")
-                    .font(EType.body.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .foregroundStyle(palette.textPrimary)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }.buttonStyle(.plain)
+                }
+                .buttonStyle(.plain)
+                .disabled(inFlight)
+                Button { Task { await resolveReroute(accept: false) } } label: {
+                    Text("Hold for review")
+                        .font(EType.body.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .foregroundStyle(palette.textPrimary)
+                        .background(palette.bgCard)
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(inFlight)
+            }
+            if let ack { Text(ack).font(.caption2).foregroundStyle(.green) }
+            if let err { Text(err).font(.caption2).foregroundStyle(.red) }
+        }
+    }
+
+    private func resolveReroute(accept: Bool) async {
+        inFlight = true; ack = nil; err = nil
+        defer { inFlight = false }
+        struct In: Encodable { let exceptionId: String; let resolution: String }
+        struct Out: Decodable { let success: Bool? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "dispatchRole.resolveException",
+                input: In(
+                    exceptionId: "weather-reroute-\(loadId)",
+                    resolution: accept ? "accepted-reroute" : "hold-for-review"
+                )
+            )
+            if resp.success != false {
+                ack = accept ? "Reroute accepted · driver receives new polyline."
+                             : "Held for review · ops will revisit before sending."
+            } else {
+                err = "Resolve returned no success flag."
+            }
+        } catch let e {
+            err = (e as? LocalizedError)?.errorDescription ?? "Resolve failed: \(e)"
         }
     }
 
@@ -345,6 +383,9 @@ struct DispatcherReloadOfferScreen: View {
 }
 
 private struct ReloadOfferBody: View {
+    @State private var inFlight: Bool = false
+    @State private var ack: String? = nil
+    @State private var err: String? = nil
     let driverId: String
     @Environment(\.palette) private var palette
     @State private var candidates: [ReloadCandidate] = []
@@ -461,15 +502,47 @@ private struct ReloadOfferBody: View {
     }
 
     private var actionRow: some View {
-        Button { } label: {
-            Text(selectedId == nil ? "Select a reload" : "Offer reload")
-                .font(EType.body.weight(.semibold))
+        VStack(spacing: 6) {
+            Button { Task { await offerReload() } } label: {
+                HStack(spacing: 6) {
+                    if inFlight { ProgressView().tint(.white).scaleEffect(0.7) }
+                    Text(inFlight
+                         ? "Offering…"
+                         : (selectedId == nil ? "Select a reload" : "Offer reload"))
+                        .font(EType.body.weight(.semibold))
+                }
                 .frame(maxWidth: .infinity, minHeight: 48)
                 .foregroundStyle(.white)
                 .background(LinearGradient.diagonal)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 .opacity(selectedId == nil ? 0.5 : 1)
-        }.buttonStyle(.plain).disabled(selectedId == nil)
+            }
+            .buttonStyle(.plain)
+            .disabled(selectedId == nil || inFlight)
+            if let ack { Text(ack).font(.caption2).foregroundStyle(.green) }
+            if let err { Text(err).font(.caption2).foregroundStyle(.red) }
+        }
+    }
+
+    private func offerReload() async {
+        guard let id = selectedId else { return }
+        inFlight = true; ack = nil; err = nil
+        defer { inFlight = false }
+        struct In: Encodable { let loadId: String }
+        struct Out: Decodable { let success: Bool?; let loadId: String?; let status: String? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "dispatchRole.acceptLoad",
+                input: In(loadId: id)
+            )
+            if resp.success != false {
+                ack = "Reload offered · driver receives the suggestion."
+            } else {
+                err = "Offer returned no success flag."
+            }
+        } catch let e {
+            err = (e as? LocalizedError)?.errorDescription ?? "Offer failed: \(e)"
+        }
     }
 
     private func load() async {
@@ -515,6 +588,9 @@ struct DispatcherFuelPolicyOverrideScreen: View {
 }
 
 private struct FuelOverrideBody: View {
+    @State private var inFlight: Bool = false
+    @State private var ack: String? = nil
+    @State private var err: String? = nil
     let driverId: String
     @Environment(\.palette) private var palette
     @State private var stations: [FuelStation] = []
@@ -637,24 +713,57 @@ private struct FuelOverrideBody: View {
     }
 
     private var actionRow: some View {
+        VStack(spacing: 6) {
         HStack(spacing: 10) {
-            Button { } label: {
-                Text(selectedId == nil ? "Select station" : "Approve fuel auth")
-                    .font(EType.body.weight(.semibold))
+            Button { Task { await resolveFuel(approve: true) } } label: {
+                HStack(spacing: 6) {
+                    if inFlight { ProgressView().tint(.white).scaleEffect(0.7) }
+                    Text(inFlight ? "Working…" : (selectedId == nil ? "Select station" : "Approve fuel auth"))
+                        .font(EType.body.weight(.semibold))
+                }
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .foregroundStyle(.white)
                     .background(LinearGradient.diagonal)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                     .opacity(selectedId == nil ? 0.5 : 1)
-            }.buttonStyle(.plain).disabled(selectedId == nil)
-            Button { } label: {
+            }.buttonStyle(.plain).disabled(selectedId == nil || inFlight)
+            Button { Task { await resolveFuel(approve: false) } } label: {
                 Text("Decline").font(EType.body.weight(.semibold))
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .foregroundStyle(palette.textPrimary)
                     .background(palette.bgCard)
                     .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }.buttonStyle(.plain)
+            }.buttonStyle(.plain).disabled(inFlight)
+        }
+        if let ack { Text(ack).font(.caption2).foregroundStyle(.green) }
+        if let err { Text(err).font(.caption2).foregroundStyle(.red) }
+        }
+    }
+
+    private func resolveFuel(approve: Bool) async {
+        inFlight = true; ack = nil; err = nil
+        defer { inFlight = false }
+        let stationKey = selectedId ?? "no-station"
+        struct In: Encodable { let exceptionId: String; let resolution: String }
+        struct Out: Decodable { let success: Bool? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "dispatchRole.resolveException",
+                input: In(
+                    exceptionId: "fuel-auth-driver-\(driverId)-station-\(stationKey)",
+                    resolution: approve ? "fuel-approved" : "fuel-declined"
+                )
+            )
+            if resp.success != false {
+                ack = approve
+                    ? "Fuel auth approved · driver receives PIN."
+                    : "Declined · driver routed to network station."
+            } else {
+                err = "Resolve returned no success flag."
+            }
+        } catch let e {
+            err = (e as? LocalizedError)?.errorDescription ?? "Resolve failed: \(e)"
         }
     }
 

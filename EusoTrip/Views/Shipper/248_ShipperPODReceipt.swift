@@ -62,6 +62,9 @@ private struct PODBody: View {
     @State private var load: PODLoad?
     @State private var pod: PODRecord?
     @State private var loading: Bool = true
+    @State private var inFlight: Bool = false
+    @State private var ack: String? = nil
+    @State private var err: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -178,17 +181,46 @@ private struct PODBody: View {
     }
 
     private var armOnTapCTA: some View {
-        Button { } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "signature").font(.system(size: 13, weight: .bold))
-                Text("Sign POD · arm NET-30")
-                    .font(EType.body.weight(.semibold))
+        VStack(spacing: 6) {
+            Button { Task { await signPOD() } } label: {
+                HStack(spacing: 8) {
+                    if inFlight { ProgressView().tint(.white).scaleEffect(0.7) }
+                    Image(systemName: "signature").font(.system(size: 13, weight: .bold))
+                    Text(inFlight ? "Signing…" : "Sign POD · arm NET-30")
+                        .font(EType.body.weight(.semibold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(LinearGradient.diagonal)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity, minHeight: 52)
-            .background(LinearGradient.diagonal)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-        }.buttonStyle(.plain)
+            .buttonStyle(.plain)
+            .disabled(inFlight)
+            if let ack { Text(ack).font(.caption2).foregroundStyle(.green) }
+            if let err { Text(err).font(.caption2).foregroundStyle(.red) }
+        }
+    }
+
+    private func signPOD() async {
+        inFlight = true; ack = nil; err = nil
+        defer { inFlight = false }
+        let sigHash = String(format: "0x%08X", UInt32.random(in: UInt32.min...UInt32.max))
+        let podCertId = "POD-\(Int(Date().timeIntervalSince1970))"
+        struct In: Encodable { let loadId: String; let podCertId: String; let signatureHash: String; let signedAtIso: String? }
+        struct Out: Decodable { let success: Bool?; let loadId: String?; let podCertId: String?; let signatureHash: String?; let signedAt: String? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "loads.signPOD",
+                input: In(loadId: loadId, podCertId: podCertId, signatureHash: sigHash, signedAtIso: nil)
+            )
+            if resp.success == true {
+                ack = "POD signed · cert \(resp.podCertId ?? podCertId) · NET-30 armed."
+            } else {
+                err = "POD sign returned no success flag."
+            }
+        } catch let e {
+            err = (e as? LocalizedError)?.errorDescription ?? "POD sign failed: \(e)"
+        }
     }
 
     private func timeAgo(_ iso: String) -> String {

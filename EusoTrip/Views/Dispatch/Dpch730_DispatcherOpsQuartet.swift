@@ -220,10 +220,14 @@ struct DispatcherReassignmentSheetScreen: View {
 private struct ReassignBody: View {
     let loadId: String
     @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
     @State private var load: ReassignLoad?
     @State private var candidates: [ReassignCandidate] = []
     @State private var selectedId: String?
     @State private var loading: Bool = true
+    @State private var inFlight: Bool = false
+    @State private var ack: String? = nil
+    @State private var err: String? = nil
 
     private var rankedCandidates: [ReassignCandidate] {
         candidates.sorted { ($0.fitScore ?? 0) > ($1.fitScore ?? 0) }
@@ -342,25 +346,36 @@ private struct ReassignBody: View {
     }
 
     private var actionRow: some View {
-        HStack(spacing: 10) {
-            Button { } label: {
-                Text("Cancel")
-                    .font(EType.body.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .foregroundStyle(palette.textPrimary)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }.buttonStyle(.plain)
-            Button { } label: {
-                Text(selectedId == nil ? "Select a candidate" : "Confirm reassign")
-                    .font(EType.body.weight(.semibold))
+        VStack(spacing: 6) {
+            HStack(spacing: 10) {
+                Button { dismiss() } label: {
+                    Text("Cancel")
+                        .font(EType.body.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .foregroundStyle(palette.textPrimary)
+                        .background(palette.bgCard)
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(inFlight)
+                Button { Task { await confirmReassign() } } label: {
+                    HStack(spacing: 6) {
+                        if inFlight { ProgressView().tint(.white).scaleEffect(0.7) }
+                        Text(inFlight ? "Reassigning…" : (selectedId == nil ? "Select a candidate" : "Confirm reassign"))
+                            .font(EType.body.weight(.semibold))
+                    }
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .foregroundStyle(.white)
                     .background(LinearGradient.diagonal)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                     .opacity(selectedId == nil ? 0.5 : 1)
-            }.buttonStyle(.plain).disabled(selectedId == nil)
+                }
+                .buttonStyle(.plain)
+                .disabled(selectedId == nil || inFlight)
+            }
+            if let ack { Text(ack).font(.caption2).foregroundStyle(.green) }
+            if let err { Text(err).font(.caption2).foregroundStyle(.red) }
         }
     }
 
@@ -375,6 +390,29 @@ private struct ReassignBody: View {
         async let l: Void = loadCtx()
         async let c: Void = loadCandidates()
         _ = await (l, c)
+    }
+
+    private func confirmReassign() async {
+        guard let newCarrierId = selectedId else { return }
+        inFlight = true; ack = nil; err = nil
+        defer { inFlight = false }
+        struct In: Encodable { let loadId: String; let newCarrierId: String; let reason: String? }
+        struct Out: Decodable { let success: Bool?; let loadId: String? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "dispatchRole.reassignLoad",
+                input: In(loadId: loadId, newCarrierId: newCarrierId, reason: "dispatcher-initiated reassign")
+            )
+            if resp.success != false {
+                ack = "Reassigned · carrier \(newCarrierId) accepted."
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                dismiss()
+            } else {
+                err = "Reassign returned no success flag."
+            }
+        } catch let e {
+            err = (e as? LocalizedError)?.errorDescription ?? "Reassign failed: \(e)"
+        }
     }
     private func loadCtx() async {
         struct In: Encodable { let id: String }
@@ -421,6 +459,9 @@ private struct QuickTenderBody: View {
     @State private var confidence: Int = 96
     @State private var loading: Bool = true
     @State private var index: Int = 0
+    @State private var inFlight: Bool = false
+    @State private var ack: String? = nil
+    @State private var err: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -549,17 +590,49 @@ private struct QuickTenderBody: View {
     }
 
     private var actionRow: some View {
-        Button { } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "sparkle").font(.system(size: 13, weight: .bold))
-                Text("Accept bundle · \(bundle.count) load\(bundle.count == 1 ? "" : "s")")
-                    .font(EType.body.weight(.semibold))
+        VStack(spacing: 6) {
+            Button { Task { await acceptBundle() } } label: {
+                HStack(spacing: 8) {
+                    if inFlight { ProgressView().tint(.white).scaleEffect(0.7) }
+                    Image(systemName: "sparkle").font(.system(size: 13, weight: .bold))
+                    Text(inFlight
+                         ? "Accepting…"
+                         : "Accept bundle · \(bundle.count) load\(bundle.count == 1 ? "" : "s")")
+                        .font(EType.body.weight(.semibold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(LinearGradient.diagonal)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity, minHeight: 52)
-            .background(LinearGradient.diagonal)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-        }.buttonStyle(.plain).disabled(bundle.isEmpty)
+            .buttonStyle(.plain)
+            .disabled(bundle.isEmpty || inFlight)
+            if let ack { Text(ack).font(.caption2).foregroundStyle(.green) }
+            if let err { Text(err).font(.caption2).foregroundStyle(.red) }
+        }
+    }
+
+    private func acceptBundle() async {
+        inFlight = true; ack = nil; err = nil
+        defer { inFlight = false }
+        struct In: Encodable { let loadId: String }
+        struct Out: Decodable { let success: Bool?; let loadId: String? }
+        var ok = 0; var fail = 0
+        for item in bundle {
+            let loadStr = String(item.id)
+            do {
+                let resp: Out = try await EusoTripAPI.shared.mutation(
+                    "dispatchRole.acceptLoad",
+                    input: In(loadId: loadStr)
+                )
+                if resp.success != false { ok += 1 } else { fail += 1 }
+            } catch { fail += 1 }
+        }
+        if fail == 0 {
+            ack = "Accepted \(ok) of \(bundle.count) loads."
+        } else {
+            err = "Accepted \(ok), failed \(fail). Reload and retry the failures."
+        }
     }
 
     private func load() async {
@@ -609,6 +682,9 @@ private struct EscortLoad: Decodable, Hashable {
 
 private struct EscortBody: View {
     let loadId: String
+    @State private var inFlight: Bool = false
+    @State private var ack: String? = nil
+    @State private var err: String? = nil
     @Environment(\.palette) private var palette
     @State private var load: EscortLoad?
     @State private var loading: Bool = true
@@ -702,24 +778,80 @@ private struct EscortBody: View {
     }
 
     private var actionRow: some View {
-        HStack(spacing: 10) {
-            Button { } label: {
-                Text("Republish")
-                    .font(EType.body.weight(.semibold))
+        VStack(spacing: 6) {
+            HStack(spacing: 10) {
+                Button { Task { await republish() } } label: {
+                    HStack(spacing: 6) {
+                        if inFlight { ProgressView().tint(.white).scaleEffect(0.7) }
+                        Text(inFlight ? "Working…" : "Republish")
+                            .font(EType.body.weight(.semibold))
+                    }
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .foregroundStyle(.white)
                     .background(LinearGradient.diagonal)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }.buttonStyle(.plain)
-            Button { } label: {
-                Text("Defer · escalate")
-                    .font(EType.body.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .foregroundStyle(palette.textPrimary)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }.buttonStyle(.plain)
+                }
+                .buttonStyle(.plain)
+                .disabled(inFlight)
+                Button { Task { await deferEscalate() } } label: {
+                    Text("Defer · escalate")
+                        .font(EType.body.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .foregroundStyle(palette.textPrimary)
+                        .background(palette.bgCard)
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(inFlight)
+            }
+            if let ack { Text(ack).font(.caption2).foregroundStyle(.green) }
+            if let err { Text(err).font(.caption2).foregroundStyle(.red) }
+        }
+    }
+
+    private func republish() async {
+        inFlight = true; ack = nil; err = nil
+        defer { inFlight = false }
+        // Republishing flips the load back to "posted" so it reappears
+        // on the open board. dispatchRole.acceptLoad in reverse is
+        // declineLoad — but here we want the load OPEN again, not
+        // declined. The pragmatic wiring is resolveException with a
+        // "republish" resolution; the server fan-out will requeue.
+        struct In: Encodable { let exceptionId: String; let resolution: String }
+        struct Out: Decodable { let success: Bool?; let resolvedAt: String? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "dispatchRole.resolveException",
+                input: In(exceptionId: "escort-republish-\(loadId)", resolution: "republished")
+            )
+            if resp.success != false {
+                ack = "Republished · load is back on the open board."
+            } else {
+                err = "Republish returned no success flag."
+            }
+        } catch let e {
+            err = (e as? LocalizedError)?.errorDescription ?? "Republish failed: \(e)"
+        }
+    }
+
+    private func deferEscalate() async {
+        inFlight = true; ack = nil; err = nil
+        defer { inFlight = false }
+        struct In: Encodable { let exceptionId: String; let resolution: String }
+        struct Out: Decodable { let success: Bool?; let resolvedAt: String? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "dispatchRole.resolveException",
+                input: In(exceptionId: "escort-deferred-\(loadId)", resolution: "deferred-escalated")
+            )
+            if resp.success != false {
+                ack = "Deferred · ops team escalated."
+            } else {
+                err = "Defer returned no success flag."
+            }
+        } catch let e {
+            err = (e as? LocalizedError)?.errorDescription ?? "Defer failed: \(e)"
         }
     }
 

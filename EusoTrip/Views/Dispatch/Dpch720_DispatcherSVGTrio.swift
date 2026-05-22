@@ -63,6 +63,11 @@ private struct TenderQueueBody: View {
     @State private var tenders: [PendingTender] = []
     @State private var sort: Sort = .expiry
     @State private var loading: Bool = true
+    @State private var actionInFlight: String? = nil   // load id mid-mutation
+    @State private var ack: String? = nil
+    @State private var err: String? = nil
+    @State private var counterFor: PendingTender? = nil
+    @State private var counterAmount: String = ""
 
     private var expiringSoon: Int {
         tenders.filter { expiresWithin($0.expiresAt, hours: 1) }.count
@@ -94,6 +99,22 @@ private struct TenderQueueBody: View {
         }
         .task { await load() }
         .refreshable { await load() }
+        .alert("Counter offer", isPresented: Binding(get: { counterFor != nil }, set: { if !$0 { counterFor = nil } })) {
+            TextField("Rate", text: $counterAmount).keyboardType(.decimalPad)
+            Button("Cancel", role: .cancel) { counterFor = nil; counterAmount = "" }
+            Button("Submit") {
+                if let t = counterFor {
+                    let amount = counterAmount
+                    Task { await submitCounter(t, rateStr: amount) }
+                }
+            }
+        } message: {
+            if let t = counterFor {
+                Text("Counter \(t.loadNumber ?? "LD-\(t.id)") · current $\(t.rate ?? "—")")
+            } else {
+                Text("Enter your counter rate")
+            }
+        }
     }
 
     private var header: some View {
@@ -170,22 +191,36 @@ private struct TenderQueueBody: View {
                         .font(.title3.weight(.heavy).monospacedDigit())
                         .foregroundStyle(palette.textPrimary)
                     Spacer()
-                    Button { } label: {
-                        Text("ACCEPT").font(.system(size: 11, weight: .heavy)).tracking(0.6).foregroundStyle(.white)
+                    Button { Task { await acceptTender(t) } } label: {
+                        HStack(spacing: 4) {
+                            if actionInFlight == t.id { ProgressView().tint(.white).scaleEffect(0.5) }
+                            Text(actionInFlight == t.id ? "..." : "ACCEPT")
+                                .font(.system(size: 11, weight: .heavy)).tracking(0.6).foregroundStyle(.white)
+                        }
                             .padding(.horizontal, 12).padding(.vertical, 6)
                             .background(Capsule().fill(Color.green))
-                    }.buttonStyle(.plain)
-                    Button { } label: {
+                    }.buttonStyle(.plain).disabled(actionInFlight != nil)
+                    Button {
+                        counterFor = t
+                        counterAmount = t.rate ?? ""
+                    } label: {
                         Text("COUNTER").font(.system(size: 11, weight: .heavy)).tracking(0.6).foregroundStyle(palette.textPrimary)
                             .padding(.horizontal, 12).padding(.vertical, 6)
                             .background(Capsule().fill(palette.bgCardSoft))
                             .overlay(Capsule().strokeBorder(LinearGradient.diagonal.opacity(0.4)))
-                    }.buttonStyle(.plain)
-                    Button { } label: {
-                        Text("DECLINE").font(.system(size: 11, weight: .heavy)).tracking(0.6).foregroundStyle(palette.textTertiary)
-                    }.buttonStyle(.plain)
+                    }.buttonStyle(.plain).disabled(actionInFlight != nil)
+                    Button { Task { await declineTender(t) } } label: {
+                        Text(actionInFlight == t.id ? "..." : "DECLINE")
+                            .font(.system(size: 11, weight: .heavy)).tracking(0.6).foregroundStyle(palette.textTertiary)
+                    }.buttonStyle(.plain).disabled(actionInFlight != nil)
                 }
                 .padding(.top, 4)
+                if let ack, actionInFlight == nil {
+                    Text(ack).font(.caption2).foregroundStyle(.green).padding(.top, 2)
+                }
+                if let err, actionInFlight == nil {
+                    Text(err).font(.caption2).foregroundStyle(.red).padding(.top, 2)
+                }
             }
         }
     }
@@ -193,6 +228,77 @@ private struct TenderQueueBody: View {
     private func expiresWithin(_ iso: String?, hours: Int) -> Bool {
         guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return false }
         return d.timeIntervalSinceNow < Double(hours) * 3600 && d.timeIntervalSinceNow > 0
+    }
+
+    // MARK: - Real wirings — dispatchRole.acceptLoad / declineLoad + counter
+
+    private func acceptTender(_ t: PendingTender) async {
+        actionInFlight = t.id; ack = nil; err = nil
+        defer { actionInFlight = nil }
+        struct In: Encodable { let loadId: String }
+        struct Out: Decodable { let success: Bool?; let loadId: String?; let status: String? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "dispatchRole.acceptLoad",
+                input: In(loadId: String(t.id))
+            )
+            if resp.success != false {
+                ack = "Accepted \(t.loadNumber ?? "LD-\(t.id)") · status \(resp.status ?? "accepted")."
+                await load()
+            } else {
+                err = "Accept returned no success flag."
+            }
+        } catch let e {
+            err = (e as? LocalizedError)?.errorDescription ?? "Accept failed: \(e)"
+        }
+    }
+
+    private func declineTender(_ t: PendingTender) async {
+        actionInFlight = t.id; ack = nil; err = nil
+        defer { actionInFlight = nil }
+        struct In: Encodable { let loadId: String; let reason: String? }
+        struct Out: Decodable { let success: Bool?; let loadId: String? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "dispatchRole.declineLoad",
+                input: In(loadId: String(t.id), reason: nil)
+            )
+            if resp.success != false {
+                ack = "Declined \(t.loadNumber ?? "LD-\(t.id)")."
+                await load()
+            } else {
+                err = "Decline returned no success flag."
+            }
+        } catch let e {
+            err = (e as? LocalizedError)?.errorDescription ?? "Decline failed: \(e)"
+        }
+    }
+
+    /// Counter the offered rate via bidReview.counterOffer. Fired from
+    /// the counter alert below; expects a positive decimal.
+    fileprivate func submitCounter(_ t: PendingTender, rateStr: String) async {
+        guard let rate = Double(rateStr), rate > 0 else {
+            err = "Counter requires a positive rate."
+            return
+        }
+        actionInFlight = t.id; ack = nil; err = nil
+        defer { actionInFlight = nil; counterFor = nil; counterAmount = "" }
+        struct In: Encodable { let loadId: String; let counterRate: Double; let message: String? }
+        struct Out: Decodable { let success: Bool?; let bidId: String? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "bidReview.counterOffer",
+                input: In(loadId: String(t.id), counterRate: rate, message: nil)
+            )
+            if resp.success != false {
+                ack = "Counter $\(Int(rate)) submitted on \(t.loadNumber ?? "LD-\(t.id)")."
+                await load()
+            } else {
+                err = "Counter returned no success flag."
+            }
+        } catch let e {
+            err = (e as? LocalizedError)?.errorDescription ?? "Counter failed: \(e)"
+        }
     }
 
     private func load() async {
@@ -466,6 +572,9 @@ private struct BOLBody: View {
     @Environment(\.palette) private var palette
     @State private var data: BOLMismatchData?
     @State private var loading: Bool = true
+    @State private var actionInFlight: Bool = false
+    @State private var ack: String? = nil
+    @State private var err: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -554,24 +663,60 @@ private struct BOLBody: View {
     }
 
     private var actionRow: some View {
-        HStack(spacing: 10) {
-            Button { } label: {
-                Text("Accept upload")
-                    .font(EType.body.weight(.semibold))
+        VStack(spacing: 6) {
+            HStack(spacing: 10) {
+                Button { Task { await resolveMismatch(accept: true) } } label: {
+                    HStack(spacing: 6) {
+                        if actionInFlight { ProgressView().tint(.white).scaleEffect(0.7) }
+                        Text(actionInFlight ? "Submitting…" : "Accept upload")
+                            .font(EType.body.weight(.semibold))
+                    }
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .foregroundStyle(.white)
                     .background(LinearGradient.diagonal)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }.buttonStyle(.plain)
-            Button { } label: {
-                Text("Reject · request fix")
-                    .font(EType.body.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .foregroundStyle(palette.textPrimary)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Brand.danger.opacity(0.5)))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }.buttonStyle(.plain)
+                }
+                .buttonStyle(.plain)
+                .disabled(actionInFlight)
+                Button { Task { await resolveMismatch(accept: false) } } label: {
+                    Text("Reject · request fix")
+                        .font(EType.body.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .foregroundStyle(palette.textPrimary)
+                        .background(palette.bgCard)
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Brand.danger.opacity(0.5)))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(actionInFlight)
+            }
+            if let ack { Text(ack).font(.caption2).foregroundStyle(.green) }
+            if let err { Text(err).font(.caption2).foregroundStyle(.red) }
+        }
+    }
+
+    private func resolveMismatch(accept: Bool) async {
+        actionInFlight = true; ack = nil; err = nil
+        defer { actionInFlight = false }
+        struct In: Encodable { let exceptionId: String; let resolution: String }
+        struct Out: Decodable { let success: Bool?; let resolvedAt: String? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "dispatchRole.resolveException",
+                input: In(
+                    exceptionId: "bol-mismatch-\(loadId)",
+                    resolution: accept ? "accepted-upload" : "rejected-request-fix"
+                )
+            )
+            if resp.success != false {
+                ack = accept
+                    ? "BOL upload accepted · exception resolved."
+                    : "Upload rejected · driver notified to re-upload."
+            } else {
+                err = "Resolve returned no success flag."
+            }
+        } catch let e {
+            err = (e as? LocalizedError)?.errorDescription ?? "Resolve failed: \(e)"
         }
     }
 

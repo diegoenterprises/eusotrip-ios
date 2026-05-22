@@ -702,6 +702,9 @@ private struct DockMismatchBody: View {
     @Environment(\.palette) private var palette
     @State private var load: ExceptionLoadCtx?
     @State private var loading: Bool = true
+    @State private var inFlight: Bool = false
+    @State private var ack: String? = nil
+    @State private var err: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -785,24 +788,60 @@ private struct DockMismatchBody: View {
     }
 
     private var actionRow: some View {
-        HStack(spacing: 10) {
-            Button { } label: {
-                Text("Accept reroute")
-                    .font(EType.body.weight(.semibold))
+        VStack(spacing: 6) {
+            HStack(spacing: 10) {
+                Button { Task { await resolveDock(accept: true) } } label: {
+                    HStack(spacing: 6) {
+                        if inFlight { ProgressView().tint(.white).scaleEffect(0.7) }
+                        Text(inFlight ? "Working…" : "Accept reroute")
+                            .font(EType.body.weight(.semibold))
+                    }
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .foregroundStyle(.white)
                     .background(LinearGradient.diagonal)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }.buttonStyle(.plain)
-            Button { } label: {
-                Text("Dispute")
-                    .font(EType.body.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .foregroundStyle(palette.textPrimary)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }.buttonStyle(.plain)
+                }
+                .buttonStyle(.plain)
+                .disabled(inFlight)
+                Button { Task { await resolveDock(accept: false) } } label: {
+                    Text("Dispute")
+                        .font(EType.body.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .foregroundStyle(palette.textPrimary)
+                        .background(palette.bgCard)
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(inFlight)
+            }
+            if let ack { Text(ack).font(.caption2).foregroundStyle(.green) }
+            if let err { Text(err).font(.caption2).foregroundStyle(.red) }
+        }
+    }
+
+    private func resolveDock(accept: Bool) async {
+        inFlight = true; ack = nil; err = nil
+        defer { inFlight = false }
+        struct In: Encodable { let exceptionId: String; let resolution: String }
+        struct Out: Decodable { let success: Bool? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "dispatchRole.resolveException",
+                input: In(
+                    exceptionId: "dock-mismatch-\(loadId)",
+                    resolution: accept ? "accepted-reroute" : "disputed"
+                )
+            )
+            if resp.success != false {
+                ack = accept
+                    ? "Reroute accepted · driver receives new dock."
+                    : "Disputed · ops team escalated."
+            } else {
+                err = "Resolve returned no success flag."
+            }
+        } catch let e {
+            err = (e as? LocalizedError)?.errorDescription ?? "Resolve failed: \(e)"
         }
     }
 
