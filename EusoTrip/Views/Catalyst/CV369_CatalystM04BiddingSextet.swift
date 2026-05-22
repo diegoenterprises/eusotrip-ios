@@ -25,8 +25,19 @@ private struct CMLoadCtx: Decodable, Hashable {
     let pickupCity: String?
     let destCity: String?
     let trailerType: String?
+    let equipmentType: String?
     let rate: String?
     let distance: Double?
+    let driver: CMParty?
+    let catalyst: CMParty?
+    let shipper: CMParty?
+    struct CMParty: Decodable, Hashable {
+        let id: Int?
+        let name: String?
+        let initials: String?
+        let companyName: String?
+        let mcNumber: String?
+    }
 }
 
 enum CatalystM04Kind: String {
@@ -41,103 +52,104 @@ private struct CMQuote {
 }
 
 private struct CMConfig {
-    let eyebrow: String
-    let citation: String
-    let title: String
-    let subhead: String
-    let pillCopy: String
-    let chainPill: String
-    let quotes: [CMQuote]
-    let leadCode: String
-    let timeLeft: String
-    let lastDelta: String
+    let eyebrowStage: String     // "BIDDING · FIRST BID" / "AWARDED · CEL ACK" / …
+    let citation: String         // §number stage citation (canonical)
+    let titleStage: String       // stage-only title (composed at render)
+    let stageNote: String        // appended to load-specific subhead
+    let pillCopyStage: String    // stage-only pill copy (composed)
+    let timeLeft: String         // illustration; bidding window
+    let lastDeltaNote: String    // illustration; delta semantic
+    let quotes: [CMQuote]        // TODO: replace with loads.getBids when shipped
+    let leadCode: String         // illustration; lead carrier code
 }
 
 private extension CatalystM04Kind {
     var config: CMConfig {
+        // NOTE: the quotes / leadCode / time fields below are
+        // illustration data (multi-carrier bidding landscape) that
+        // would be sourced from `loads.getBids` once the endpoint
+        // lands. Until then, the textual stage labels (eyebrowStage,
+        // citation, titleStage, stageNote, pillCopyStage) are dynamic
+        // and the body composes them with `load.loadNumber`,
+        // `load.pickupCity`, `load.destCity`, `load.equipmentType`,
+        // `load.rate`, `load.distance` at render time.
         switch self {
         case .firstBid:
-            return .init(eyebrow: "CATALYST · DISPATCH · BIDDING · FIRST BID",
+            return .init(eyebrowStage: "BIDDING · FIRST BID",
                          citation: "§360 · CHAIN PORT 2/N · BIDDING · 1/N",
-                         title: "Bidding · first quote in · Aurora opens",
-                         subhead: "Atlanta GA → Charlotte NC · 53' Dry Van · $1,640 quote · 245 mi · 3h 58m left",
-                         pillCopy: "FIRST BID IN · M-04 · CHAIN PORT 2/N · WINDOW 3H 58M · RANK 1/1",
-                         chainPill: "AUR-MC942008-M-04-Q-001 · Aurora Freight Lines · §360",
-                         quotes: [.init(code: "AUR", name: "Aurora Freight Lines", amount: 1640, bidId: "AUR-MC942008-M-04-Q-001")],
-                         leadCode: "AUR",
+                         titleStage: "first quote in",
+                         stageNote: "first quote on the floor",
+                         pillCopyStage: "FIRST BID IN · CHAIN PORT 2/N · RANK 1/1",
                          timeLeft: "3h 58m",
-                         lastDelta: "vs target $1,650 (-10)")
+                         lastDeltaNote: "first on the floor",
+                         quotes: [.init(code: "AUR", name: "Aurora Freight Lines", amount: 1640, bidId: "AUR-Q-001")],
+                         leadCode: "AUR")
         case .secondQuote:
-            return .init(eyebrow: "CATALYST · DISPATCH · BIDDING · COMPETING QUOTE",
+            return .init(eyebrowStage: "BIDDING · COMPETING QUOTE",
                          citation: "§362 · CHAIN PORT 4/N · BIDDING · 3/N",
-                         title: "Bidding · Piedmont undercuts · AUR to 2/2",
-                         subhead: "Atlanta GA → Charlotte NC · 53' Dry Van · $1,625 vs $1,640 · 2 quotes · 3h 50m left",
-                         pillCopy: "COMPETING QUOTE IN · M-04 · CHAIN PORT 4/N · WINDOW 3H 50M · RANK 1/2",
-                         chainPill: "PFC-MC748219-M-04-Q-002 · Piedmont Freight Carriers · §362",
-                         quotes: [
-                            .init(code: "PFC", name: "Piedmont Freight Carriers", amount: 1625, bidId: "PFC-MC748219-M-04-Q-002"),
-                            .init(code: "AUR", name: "Aurora Freight Lines",      amount: 1640, bidId: "AUR-MC942008-M-04-Q-001"),
-                         ],
-                         leadCode: "PFC",
+                         titleStage: "competing quote · lead changes",
+                         stageNote: "competing quote in · 2 carriers on board",
+                         pillCopyStage: "COMPETING QUOTE IN · CHAIN PORT 4/N · RANK 1/2",
                          timeLeft: "3h 50m",
-                         lastDelta: "vs AUR $1,640 (-15)")
+                         lastDeltaNote: "second carrier undercuts",
+                         quotes: [
+                            .init(code: "PFC", name: "Piedmont Freight Carriers", amount: 1625, bidId: "PFC-Q-002"),
+                            .init(code: "AUR", name: "Aurora Freight Lines",      amount: 1640, bidId: "AUR-Q-001"),
+                         ],
+                         leadCode: "PFC")
         case .thirdQuote:
-            return .init(eyebrow: "CATALYST · DISPATCH · BIDDING · 3RD QUOTE",
+            return .init(eyebrowStage: "BIDDING · 3RD QUOTE",
                          citation: "§364 · CHAIN PORT 6/N · BIDDING · 5/N",
-                         title: "Bidding · SCC undercuts · PFC 2/3 · AUR 3/3",
-                         subhead: "53' Dry Van · $1,615 vs $1,625 vs $1,640 · 3 quotes · 3h 37m left",
-                         pillCopy: "3 QUOTES · LEAD SCC · M-04 · CHAIN PORT 6/N · WINDOW 3H 37M · RANK 1/3",
-                         chainPill: "SCC-MC836472-M-04-Q-003 · Southern Crescent Carriers · §364",
-                         quotes: [
-                            .init(code: "SCC", name: "Southern Crescent Carriers", amount: 1615, bidId: "SCC-MC836472-M-04-Q-003"),
-                            .init(code: "PFC", name: "Piedmont Freight Carriers",  amount: 1625, bidId: "PFC-MC748219-M-04-Q-002"),
-                            .init(code: "AUR", name: "Aurora Freight Lines",        amount: 1640, bidId: "AUR-MC942008-M-04-Q-001"),
-                         ],
-                         leadCode: "SCC",
+                         titleStage: "third quote in · three-way contest",
+                         stageNote: "3 quotes on the floor",
+                         pillCopyStage: "3 QUOTES · CHAIN PORT 6/N · RANK 1/3",
                          timeLeft: "3h 37m",
-                         lastDelta: "vs PFC $1,625 (-10)")
+                         lastDeltaNote: "third carrier undercuts the lead",
+                         quotes: [
+                            .init(code: "SCC", name: "Southern Crescent Carriers", amount: 1615, bidId: "SCC-Q-003"),
+                            .init(code: "PFC", name: "Piedmont Freight Carriers",  amount: 1625, bidId: "PFC-Q-002"),
+                            .init(code: "AUR", name: "Aurora Freight Lines",        amount: 1640, bidId: "AUR-Q-001"),
+                         ],
+                         leadCode: "SCC")
         case .fourthQuote:
-            return .init(eyebrow: "CATALYST · DISPATCH · BIDDING · 4TH QUOTE",
+            return .init(eyebrowStage: "BIDDING · 4TH QUOTE",
                          citation: "§366 · CHAIN PORT 8/N · BIDDING · 7/N",
-                         title: "Bidding · CEL undercuts · SCC 2/4 · PFC 3/4 · AUR 4/4",
-                         subhead: "53' Dry Van · $1,610 vs $1,615 vs $1,625 vs $1,640 · 4 quotes · 3h 27m left",
-                         pillCopy: "4 QUOTES · LEAD CEL · M-04 · CHAIN PORT 8/N · WINDOW 3H 27M · RANK 1/4",
-                         chainPill: "CEL-MC712944-M-04-Q-004 · Carolina Express Logistics · §366",
-                         quotes: [
-                            .init(code: "CEL", name: "Carolina Express Logistics",  amount: 1610, bidId: "CEL-MC712944-M-04-Q-004"),
-                            .init(code: "SCC", name: "Southern Crescent Carriers",  amount: 1615, bidId: "SCC-MC836472-M-04-Q-003"),
-                            .init(code: "PFC", name: "Piedmont Freight Carriers",   amount: 1625, bidId: "PFC-MC748219-M-04-Q-002"),
-                            .init(code: "AUR", name: "Aurora Freight Lines",         amount: 1640, bidId: "AUR-MC942008-M-04-Q-001"),
-                         ],
-                         leadCode: "CEL",
+                         titleStage: "fourth quote in · final-call contest",
+                         stageNote: "4 quotes on the floor · last call",
+                         pillCopyStage: "4 QUOTES · CHAIN PORT 8/N · RANK 1/4",
                          timeLeft: "3h 27m",
-                         lastDelta: "vs SCC $1,615 (-5)")
+                         lastDeltaNote: "fourth carrier seizes the lead",
+                         quotes: [
+                            .init(code: "CEL", name: "Carolina Express Logistics", amount: 1610, bidId: "CEL-Q-004"),
+                            .init(code: "SCC", name: "Southern Crescent Carriers", amount: 1615, bidId: "SCC-Q-003"),
+                            .init(code: "PFC", name: "Piedmont Freight Carriers",  amount: 1625, bidId: "PFC-Q-002"),
+                            .init(code: "AUR", name: "Aurora Freight Lines",        amount: 1640, bidId: "AUR-Q-001"),
+                         ],
+                         leadCode: "CEL")
         case .awardedCEL:
-            return .init(eyebrow: "CATALYST · DISPATCH · AWARDED · CEL ACK",
-                         citation: "§369 · CHAIN PORT 11/N · AWARDED · 2/N · CEL $1,610",
-                         title: "Awarded · CEL receives tender · arm pickup",
-                         subhead: "53' Dry Van · $1,610 · win +$40 · pickup 21h 35m",
-                         pillCopy: "AWARDED · CEL ACK · ARM PICKUP · 23H 59M",
-                         chainPill: "AWARDED TO CEL · M-04 · CHAIN PORT 11/N · TENDER 10:24 EDT 5/21 · WIN +$40",
-                         quotes: [
-                            .init(code: "CEL", name: "Carolina Express Logistics", amount: 1610, bidId: "CEL-MC712944-M-04-Q-004"),
-                         ],
-                         leadCode: "CEL",
+            return .init(eyebrowStage: "AWARDED · WINNER ACK",
+                         citation: "§369 · CHAIN PORT 11/N · AWARDED · 2/N",
+                         titleStage: "awarded · winner receives tender",
+                         stageNote: "winner armed · pickup window opens",
+                         pillCopyStage: "AWARDED · WINNER ACK · ARM PICKUP",
                          timeLeft: "21h 35m",
-                         lastDelta: "CEL rank 1/4 · 24h tender window armed")
-        case .onSiteCEL:
-            return .init(eyebrow: "CATALYST · DISPATCH · PICKUP · ON-SITE",
-                         citation: "§387 · CHAIN PORT 12/N · PICKUP · 2/N · CEL ON-SITE",
-                         title: "Pickup · CEL driver on-site · dock 4A",
-                         subhead: "53' Dry Van · JR on-site · dwell 0:02",
-                         pillCopy: "PICKUP · ON-SITE · DOCK 4A · DWELL 0:02",
-                         chainPill: "ON-SITE · M-04 · CHAIN PORT 12/N · 08:04 EDT 5/21 · GATE CLEARED · PICK 1/5",
+                         lastDeltaNote: "tender window armed",
                          quotes: [
-                            .init(code: "CEL", name: "Carolina Express Logistics", amount: 1610, bidId: "CEL-MC712944-M-04-Q-004"),
+                            .init(code: "CEL", name: "Carolina Express Logistics", amount: 1610, bidId: "CEL-Q-004"),
                          ],
-                         leadCode: "CEL",
+                         leadCode: "CEL")
+        case .onSiteCEL:
+            return .init(eyebrowStage: "PICKUP · ON-SITE",
+                         citation: "§387 · CHAIN PORT 12/N · PICKUP · 2/N",
+                         titleStage: "winner on-site · pickup armed",
+                         stageNote: "driver on-site · dwell starting",
+                         pillCopyStage: "PICKUP · ON-SITE · DWELL STARTING",
                          timeLeft: "0:02 dwell",
-                         lastDelta: "CEL fleet · JR on-site dock 4A · gate cleared")
+                         lastDeltaNote: "gate cleared · pickup in motion",
+                         quotes: [
+                            .init(code: "CEL", name: "Carolina Express Logistics", amount: 1610, bidId: "CEL-Q-004"),
+                         ],
+                         leadCode: "CEL")
         }
     }
 }
@@ -183,23 +195,60 @@ private struct CatalystM04BiddingBody: View {
         .refreshable { await loadCtx() }
     }
 
+    // MARK: - Dynamic display helpers
+
+    private var loadNumberDisplay: String { load?.loadNumber ?? "—" }
+    private var laneDisplay: String? {
+        guard let p = load?.pickupCity, let d = load?.destCity else { return nil }
+        return "\(p) → \(d)"
+    }
+    private var equipmentDisplay: String { load?.equipmentType ?? load?.trailerType ?? "—" }
+    private var distanceDisplay: String {
+        guard let d = load?.distance, d > 0 else { return "—" }
+        return "\(Int(d.rounded())) mi"
+    }
+    private var rateDisplay: String {
+        guard let r = load?.rate, let n = Double(r), n > 0 else { return "—" }
+        let v = n.rounded()
+        return v < 1000 ? String(format: "$%.0f", v) : "$\(Int(v).formatted(.number))"
+    }
+    private var carrierCodeDisplay: String {
+        load?.catalyst?.companyName ?? load?.catalyst?.name ?? "—"
+    }
+
     private func header(_ c: CMConfig) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text(c.eyebrow).font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+                Text("CATALYST · DISPATCH · \(c.eyebrowStage) · \(loadNumberDisplay)")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .lineLimit(1)
             }
-            Text(c.title).font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text(c.subhead).font(EType.caption).foregroundStyle(palette.textSecondary)
+            Text("Bidding · \(c.titleStage)")
+                .font(.system(size: 22, weight: .heavy))
+                .foregroundStyle(palette.textPrimary)
+            Text("\(laneDisplay ?? "—") · \(equipmentDisplay) · \(rateDisplay) lead · \(distanceDisplay) · \(c.timeLeft) left")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private func citationPill(_ c: CMConfig) -> some View {
         LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(c.citation).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text(c.pillCopy).font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true)
-                Text(c.chainPill).font(.caption2).foregroundStyle(palette.textSecondary)
+                Text(c.citation)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+                Text("\(c.pillCopyStage) · \(loadNumberDisplay)")
+                    .font(EType.caption.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("\(loadNumberDisplay) · \(c.stageNote) · \(c.lastDeltaNote)")
+                    .font(.caption2)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -233,13 +282,22 @@ private struct CatalystM04BiddingBody: View {
     }
 
     private var identityRow: some View {
-        LifecycleCard {
+        let shipIni = load?.shipper?.initials ?? "—"
+        let shipName = load?.shipper?.name ?? "—"
+        let shipCompany = load?.shipper?.companyName ?? "—"
+        return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    .overlay(Text("DU").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
+                    .overlay(Text(shipIni).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Eusorone Technologies · Diego Usoro · catalyst").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("LD-260427-E5C9A41B22 · Atlanta GA → Charlotte NC · 245 mi").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text("\(shipCompany) · \(shipName) · shipper")
+                        .font(EType.caption.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    Text("\(loadNumberDisplay) · \(laneDisplay ?? "—") · \(distanceDisplay)")
+                        .font(.caption2)
+                        .foregroundStyle(palette.textTertiary)
+                        .lineLimit(2)
                 }
                 Spacer()
             }
@@ -248,35 +306,37 @@ private struct CatalystM04BiddingBody: View {
 
     private func kpiGrid(_ c: CMConfig) -> some View {
         let lead = c.quotes.first { $0.code == c.leadCode } ?? c.quotes[0]
+        let winnerCode = load?.catalyst?.name ?? lead.code
+        let driverIni = load?.driver?.initials ?? "—"
         let kpis: [(String, String, String, Color)] = {
             switch kind {
             case .firstBid:
                 return [
-                    ("LEAD",   "AUR",                  "Aurora · single quote", .green),
-                    ("QUOTE",  "$\(lead.amount)",       "vs target $1,650",     .blue),
+                    ("LEAD",   lead.code,                lead.name,              .green),
+                    ("QUOTE",  "$\(lead.amount)",        "first on the floor",   .blue),
                     ("WINDOW", c.timeLeft,               "to close",             .orange),
                     ("RANK",   "1/1",                    "first to quote",       .green),
                 ]
             case .secondQuote, .thirdQuote, .fourthQuote:
                 return [
                     ("LEAD",   c.leadCode,               lead.name,              .green),
-                    ("DELTA",  c.lastDelta,               "spread under lead",    .green),
-                    ("QUOTES", "\(c.quotes.count)",       "live carriers",        .blue),
-                    ("WINDOW", c.timeLeft,                "to close",             .orange),
+                    ("DELTA",  c.lastDeltaNote,          "spread under lead",    .green),
+                    ("QUOTES", "\(c.quotes.count)",      "live carriers",        .blue),
+                    ("WINDOW", c.timeLeft,               "to close",             .orange),
                 ]
             case .awardedCEL:
                 return [
-                    ("WINNER", "CEL",                     lead.name,             .green),
-                    ("TENDER", "$\(lead.amount)",          "win +$40",           .green),
-                    ("PICKUP", c.timeLeft,                  "to gate open",       .blue),
-                    ("CHAIN",  "11/N",                       "AWARDED · §369",   .blue),
+                    ("WINNER", winnerCode,               lead.name,              .green),
+                    ("TENDER", "$\(lead.amount)",        "tender accepted",      .green),
+                    ("PICKUP", c.timeLeft,               "to gate open",         .blue),
+                    ("CHAIN",  "11/N",                   "AWARDED · §369",       .blue),
                 ]
             case .onSiteCEL:
                 return [
-                    ("STATUS",  "ON-SITE",                  "CEL · JR · dock 4A", .green),
-                    ("DWELL",   "0:02",                      "since gate",        .green),
-                    ("GATE",    "CLEARED",                    "08:04 EDT",       .green),
-                    ("PICK",    "1/5",                         "in queue",       .blue),
+                    ("STATUS",  "ON-SITE",               "\(winnerCode) · \(driverIni) · dock", .green),
+                    ("DWELL",   "0:02",                  "since gate",           .green),
+                    ("GATE",    "CLEARED",               "pickup armed",         .green),
+                    ("PICK",    "1/5",                   "in queue",             .blue),
                 ]
             }
         }()
@@ -299,12 +359,12 @@ private struct CatalystM04BiddingBody: View {
     private var nextStepCard: some View {
         let copy: String = {
             switch kind {
-            case .firstBid:     return "Aurora opens the M-04 board at $1,640. Window holds 3h 58m; expect Piedmont/SCC/CEL to follow."
-            case .secondQuote:  return "Piedmont undercuts by $15. AUR drops to 2/2. Watch for SCC follow — ESang flags lane history."
-            case .thirdQuote:   return "Southern Crescent takes the lead at $1,615. CEL is queueing — Carolina lane is their flagship corridor."
-            case .fourthQuote:  return "Carolina Express undercuts to $1,610. 4 quotes live. Award fires when window closes or DU taps to lock."
-            case .awardedCEL:   return "CEL wins the tender at $1,610 (+$40 vs target). 24h pickup window armed; ESang pings -30 min before gate."
-            case .onSiteCEL:    return "CEL driver JR on-site at dock 4A. Dwell timer is live; loading-state arms on first pallet movement."
+            case .firstBid:     return "First quote on the floor. Bidding window open; competing carriers have time to undercut."
+            case .secondQuote:  return "Competing quote in. Lead changes; ESang flags lane history for both carriers."
+            case .thirdQuote:   return "Third quote lands. Spread tightens; next quote either seals the lead or opens another contest."
+            case .fourthQuote:  return "Fourth quote undercuts. Final-call clock running. Award fires when window closes or the shipper locks."
+            case .awardedCEL:   return "Tender accepted by the winner. Pickup window armed; ESang pings −30 min before gate."
+            case .onSiteCEL:    return "Driver on-site at pickup. Dwell timer is live; loading-state arms on first pallet movement."
             }
         }()
         return LifecycleCard {
