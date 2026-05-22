@@ -77,9 +77,14 @@ private struct BackhaulBody: View {
     let pillCopy: String
     let kpis: (BHLoadCtx?) -> [BHKpi]
     let nextStep: String
+    /// Only the DL101 tender screen shows accept/decline actions.
+    var showTenderActions: Bool = false
 
     @Environment(\.palette) private var palette
     @State private var load: BHLoadCtx?
+    @State private var actionInFlight: String? = nil
+    @State private var actionAck: String?
+    @State private var actionError: String?
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -89,6 +94,13 @@ private struct BackhaulBody: View {
                 identityRow
                 kpiGrid
                 nextStepCard
+                if showTenderActions { tenderActionRow }
+                if let ack = actionAck {
+                    LifecycleCard { Text(ack).font(EType.caption).foregroundStyle(.green) }
+                }
+                if let err = actionError {
+                    LifecycleCard { Text(err).font(EType.caption).foregroundStyle(.red) }
+                }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 8)
@@ -157,6 +169,78 @@ private struct BackhaulBody: View {
                 Text("NEXT STEP").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                 Text(nextStep).font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+
+    private var tenderActionRow: some View {
+        HStack(spacing: 10) {
+            Button { Task { await acceptTender() } } label: {
+                HStack(spacing: 6) {
+                    if actionInFlight == "accept" { ProgressView().tint(.white).scaleEffect(0.8) }
+                    Text(actionInFlight == "accept" ? "Accepting…" : "Accept tender")
+                        .font(EType.body.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .foregroundStyle(.white)
+                .background(LinearGradient.diagonal)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(actionInFlight != nil)
+
+            Button { Task { await declineTender() } } label: {
+                HStack(spacing: 6) {
+                    if actionInFlight == "decline" { ProgressView().scaleEffect(0.8) }
+                    Text(actionInFlight == "decline" ? "Declining…" : "Decline")
+                        .font(EType.body.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .foregroundStyle(palette.textPrimary)
+                .background(palette.bgCard)
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(LinearGradient.diagonal.opacity(0.4)))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(actionInFlight != nil)
+        }
+    }
+
+    private func acceptTender() async {
+        actionInFlight = "accept"; actionAck = nil; actionError = nil
+        defer { actionInFlight = nil }
+        struct In: Encodable { let loadId: String }
+        struct Out: Decodable { let success: Bool?; let loadId: String?; let acceptedAt: String? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation("dispatchRole.acceptLoad", input: In(loadId: loadId))
+            if resp.success == true {
+                actionAck = "Backhaul tender accepted · LD-\(resp.loadId ?? loadId) locked · DVIR opens 60m before pickup."
+                await loadCtx()
+            } else {
+                actionError = "Accept returned no success flag — reload and try again."
+            }
+        } catch let err {
+            actionError = (err as? LocalizedError)?.errorDescription ?? "Accept failed: \(err)"
+        }
+    }
+
+    private func declineTender() async {
+        actionInFlight = "decline"; actionAck = nil; actionError = nil
+        defer { actionInFlight = nil }
+        struct In: Encodable { let loadId: String; let reason: String? }
+        struct Out: Decodable { let success: Bool?; let loadId: String?; let declinedAt: String? }
+        do {
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "dispatchRole.declineLoad",
+                input: In(loadId: loadId, reason: "Driver declined backhaul tender via DL101")
+            )
+            if resp.success == true {
+                actionAck = "Backhaul tender declined · returned to Aurora's pool."
+                await loadCtx()
+            } else {
+                actionError = "Decline returned no success flag — reload and try again."
+            }
+        } catch let err {
+            actionError = (err as? LocalizedError)?.errorDescription ?? "Decline failed: \(err)"
         }
     }
 
@@ -368,7 +452,8 @@ struct DriverBackhaulOfferScreen: View {
                     .init(label: "HOS", value: "9h", subtitle: "post 10h reset", color: .blue),
                     .init(label: "DEADHEAD", value: "0 mi", subtitle: "at origin now", color: .green),
                 ] },
-                nextStep: "Tender expires in 8 minutes. Accept to lock the chain, decline to release back to Aurora."
+                nextStep: "Tender expires in 8 minutes. Accept to lock the chain, decline to release back to Aurora.",
+                showTenderActions: true
             )
         }
     }
