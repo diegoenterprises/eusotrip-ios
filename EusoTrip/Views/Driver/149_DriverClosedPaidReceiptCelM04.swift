@@ -23,7 +23,9 @@ import SwiftUI
 // MARK: - tRPC decode shapes
 
 /// Minimal projection of `loads.getById` — we ask only for the fields
-/// this surface actually renders. Server returns many more.
+/// this surface actually renders. Server returns many more, including
+/// the 2026-05-22 resolved party objects (driver / catalyst / shipper)
+/// with name + initials + companyName + mcNumber.
 private struct PRLoadCtx: Decodable, Hashable {
     let id: Int?
     let loadNumber: String?
@@ -36,9 +38,21 @@ private struct PRLoadCtx: Decodable, Hashable {
     let pickupLocation: PRCityState?
     let deliveryLocation: PRCityState?
     let deliveryDate: String?
+    let driver: PRParty?
+    let catalyst: PRParty?
+    let shipper: PRParty?
     struct PRCityState: Decodable, Hashable {
         let city: String?
         let state: String?
+    }
+    struct PRParty: Decodable, Hashable {
+        let id: Int?
+        let name: String?
+        let initials: String?
+        let email: String?
+        let companyName: String?
+        let mcNumber: String?
+        let dotNumber: String?
     }
 }
 
@@ -194,20 +208,29 @@ private struct PRBody: View {
     }
 
     private var identityRow: some View {
-        LifecycleCard {
+        let driverInitials = load?.driver?.initials ?? "—"
+        let driverName = load?.driver?.name ?? "driver"
+        let carrierName = load?.catalyst?.companyName ?? load?.catalyst?.name ?? "—"
+        let mc = load?.catalyst?.mcNumber.map { "MC-\($0)" } ?? "—"
+        let dispatchName = load?.catalyst?.name ?? "—"
+        let shipperName = load?.shipper?.name ?? "—"
+        return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
                     .overlay(
-                        Image(systemName: "person.fill")
-                            .font(.system(size: 14, weight: .heavy))
+                        Text(driverInitials)
+                            .font(.system(size: 10, weight: .heavy))
                             .foregroundStyle(.white)
                     )
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(load?.driverId.map { "driver #\($0)" } ?? "driver")
+                    Text("\(carrierName) · \(driverName) · driver")
                         .font(EType.caption.weight(.semibold))
                         .foregroundStyle(palette.textPrimary)
-                    Text("Carrier · dispatcher · shipper")
-                        .font(.caption2).foregroundStyle(palette.textTertiary)
+                        .lineLimit(1)
+                    Text("\(mc) · \(dispatchName) dispatcher · \(shipperName) shipper")
+                        .font(.caption2)
+                        .foregroundStyle(palette.textTertiary)
+                        .lineLimit(2)
                 }
                 Spacer()
             }
