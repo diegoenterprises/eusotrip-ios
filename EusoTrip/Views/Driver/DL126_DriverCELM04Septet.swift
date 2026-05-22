@@ -27,80 +27,94 @@ private struct CMELoadCtx: Decodable, Hashable {
     let destCity: String?
     let rate: String?
     let distance: Double?
+    let equipmentType: String?
+    let driver: CMEParty?
+    let catalyst: CMEParty?
+    let shipper: CMEParty?
+    struct CMEParty: Decodable, Hashable {
+        let id: Int?
+        let name: String?
+        let initials: String?
+        let companyName: String?
+        let mcNumber: String?
+    }
 }
 
 enum CELM04Kind: String {
     case assignedReceipt, s1, s2, s3, s4, s5, s6
 }
 
+/// Stage-only labels — no scenario data baked in. The view body
+/// composes these with `load.loadNumber` / `load.driver` / etc.
+/// at render time.
 private struct CEConfig {
-    let eyebrow: String
-    let citation: String       // "§371 4/N" / "§372 1/14" / …
-    let title: String
-    let subhead: String
-    let stagePill: String
-    let chainPill: String
-    let sectionsCompleted: Int // 0 (assigned) / 1-6 (DVIR)
+    let eyebrowStage: String     // "ASSIGNED" / "DVIR · S1" / …
+    let citation: String         // §number canonical stage citation
+    let title: String            // UX title
+    let subhead: String          // stage state line
+    let stageNote: String        // composed after carrier + loadNumber
+    let chainNote: String        // composed after loadNumber + parties
+    let sectionsCompleted: Int   // 0 (assigned) / 1-6 (DVIR)
 }
 
 private extension CELM04Kind {
     var config: CEConfig {
         switch self {
         case .assignedReceipt:
-            return .init(eyebrow: "DRIVER · TRIPS · ASSIGNED · CEL · M-04",
+            return .init(eyebrowStage: "ASSIGNED",
                          citation: "§371 · AWARDED QUARTET CLOSED · DVIR SUB-AXIS OPENED 0/14",
                          title: "Load assigned",
-                         subhead: "AWARDED · 4/N · ACCEPTED 0:00 ago",
-                         stagePill: "CEL · ATL → CLT 245 mi · Naomi Chen assigned · ACCEPTED 0:00 ago",
-                         chainPill: "LD-M-04 · ATL-CLT · JR drives · DU shipper-of-record · NC dispatched",
+                         subhead: "AWARDED · accepted",
+                         stageNote: "lane awarded · dispatch assigned · accepted",
+                         chainNote: "driver assigned · dispatcher monitors · shipper of record",
                          sectionsCompleted: 0)
         case .s1:
-            return .init(eyebrow: "DRIVER · TRIPS · DVIR · S1 · CEL · M-04",
+            return .init(eyebrowStage: "DVIR · S1",
                          citation: "§372 · DVIR ADVANCING · 1/14 · LIGHTS & REFLECTORS ACKED",
                          title: "Section 1 · acked",
                          subhead: "DVIR · 1/14 · ADVANCING",
-                         stagePill: "CEL · DVIR dvir_t1747830000123 · 1/14 sections · S1 acked 0:00 ago",
-                         chainPill: "LD-M-04 · ATL-CLT · JR runs DVIR · NC monitors · DU shipper",
+                         stageNote: "DVIR section 1 acked · advancing",
+                         chainNote: "DVIR walk-around running · dispatcher monitors",
                          sectionsCompleted: 1)
         case .s2:
-            return .init(eyebrow: "DRIVER · TRIPS · DVIR · S2 · CEL · M-04",
+            return .init(eyebrowStage: "DVIR · S2",
                          citation: "§373 · DVIR ADVANCING · 2/14 · BRAKES & AIR ACKED",
                          title: "Section 2 · acked",
                          subhead: "DVIR · 2/14 · ADVANCING",
-                         stagePill: "CEL · DVIR dvir_t1747830000123 · 2/14 sections · S2 acked 0:00 ago",
-                         chainPill: "LD-M-04 · ATL-CLT · JR runs DVIR · NC monitors · DU shipper",
+                         stageNote: "DVIR section 2 acked · advancing",
+                         chainNote: "DVIR walk-around running · dispatcher monitors",
                          sectionsCompleted: 2)
         case .s3:
-            return .init(eyebrow: "DRIVER · TRIPS · DVIR · S3 · CEL · M-04",
+            return .init(eyebrowStage: "DVIR · S3",
                          citation: "§374 · DVIR ADVANCING · 3/14 · TIRES & WHEELS ACKED",
                          title: "Section 3 · acked",
                          subhead: "DVIR · 3/14 · ADVANCING",
-                         stagePill: "CEL · DVIR dvir_t1747830000123 · 3/14 sections · S3 acked 0:00 ago",
-                         chainPill: "LD-M-04 · ATL-CLT · JR runs DVIR · NC monitors · DU shipper",
+                         stageNote: "DVIR section 3 acked · advancing",
+                         chainNote: "DVIR walk-around running · dispatcher monitors",
                          sectionsCompleted: 3)
         case .s4:
-            return .init(eyebrow: "DRIVER · TRIPS · DVIR · S4 · CEL · M-04",
+            return .init(eyebrowStage: "DVIR · S4",
                          citation: "§375 · DVIR ADVANCING · 4/14 · COUPLING DEVICES ACKED",
                          title: "Section 4 · acked",
                          subhead: "DVIR · 4/14 · ADVANCING",
-                         stagePill: "CEL · DVIR dvir_t1747830000123 · 4/14 sections · S4 acked 0:00 ago",
-                         chainPill: "LD-M-04 · ATL-CLT · JR runs DVIR · NC monitors · DU shipper",
+                         stageNote: "DVIR section 4 acked · advancing",
+                         chainNote: "DVIR walk-around running · dispatcher monitors",
                          sectionsCompleted: 4)
         case .s5:
-            return .init(eyebrow: "DRIVER · TRIPS · DVIR · S5 · CEL · M-04",
+            return .init(eyebrowStage: "DVIR · S5",
                          citation: "§376 · DVIR ADVANCING · 5/14 · WINDSHIELD & WIPERS ACKED",
                          title: "Section 5 · acked",
                          subhead: "DVIR · 5/14 · ADVANCING",
-                         stagePill: "CEL · DVIR dvir_t1747830000123 · 5/14 sections · S5 acked 0:00 ago",
-                         chainPill: "LD-M-04 · ATL-CLT · JR runs DVIR · NC monitors · DU shipper",
+                         stageNote: "DVIR section 5 acked · advancing",
+                         chainNote: "DVIR walk-around running · dispatcher monitors",
                          sectionsCompleted: 5)
         case .s6:
-            return .init(eyebrow: "DRIVER · TRIPS · DVIR · S6 · CEL · M-04",
+            return .init(eyebrowStage: "DVIR · S6",
                          citation: "§377 · DVIR ADVANCING · 6/14 · STEERING & LINKAGE ACKED",
                          title: "Section 6 · acked",
                          subhead: "DVIR · 6/14 · ADVANCING",
-                         stagePill: "CEL · DVIR dvir_t1747830000123 · 6/14 sections · S6 acked 0:00 ago",
-                         chainPill: "LD-M-04 · ATL-CLT · JR runs DVIR · NC monitors · DU shipper",
+                         stageNote: "DVIR section 6 acked · advancing",
+                         chainNote: "DVIR walk-around running · dispatcher monitors",
                          sectionsCompleted: 6)
         }
     }
@@ -147,11 +161,25 @@ private struct CELM04Body: View {
         .refreshable { await loadCtx() }
     }
 
+    // MARK: - Dynamic display helpers
+
+    private var loadNumberDisplay: String { load?.loadNumber ?? "—" }
+    private var carrierCodeDisplay: String {
+        load?.catalyst?.companyName ?? load?.catalyst?.name ?? "—"
+    }
+    private var laneDisplay: String? {
+        guard let p = load?.pickupCity, let d = load?.destCity else { return nil }
+        return "\(p) → \(d)"
+    }
+
     private func header(_ c: CEConfig) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text(c.eyebrow).font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+                Text("DRIVER · TRIPS · \(c.eyebrowStage) · \(loadNumberDisplay)")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .lineLimit(1)
             }
             Text(c.title).font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
             Text(c.subhead).font(EType.caption).foregroundStyle(palette.textSecondary)
@@ -159,11 +187,22 @@ private struct CELM04Body: View {
     }
 
     private func citationPill(_ c: CEConfig) -> some View {
-        LifecycleCard(accentGradient: true) {
+        let driverIni = load?.driver?.initials ?? "—"
+        let dispIni   = load?.catalyst?.initials ?? "—"
+        let shipIni   = load?.shipper?.initials ?? "—"
+        return LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(c.citation).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text(c.stagePill).font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true)
-                Text(c.chainPill).font(.caption2).foregroundStyle(palette.textSecondary)
+                Text(c.citation)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+                Text("\(carrierCodeDisplay) · \(loadNumberDisplay) · \(c.stageNote)")
+                    .font(EType.caption.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("\(loadNumberDisplay) · \(laneDisplay ?? "—") · \(c.chainNote) · \(driverIni) driver · \(dispIni) ops · \(shipIni) shipper")
+                    .font(.caption2)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -186,19 +225,31 @@ private struct CELM04Body: View {
                     }
                 }
                 .frame(height: 8)
-                Text("dvir_t1747830000123 · CEL walk-around live").font(.caption2).foregroundStyle(palette.textTertiary)
+                Text("\(carrierCodeDisplay) walk-around live").font(.caption2).foregroundStyle(palette.textTertiary)
             }
         }
     }
 
     private var identityRow: some View {
-        LifecycleCard {
+        let dispIni    = load?.catalyst?.initials ?? "—"
+        let dispName   = load?.catalyst?.name ?? "—"
+        let carrierFull = load?.catalyst?.companyName ?? load?.catalyst?.name ?? "—"
+        let mc         = load?.catalyst?.mcNumber.map { "MC-\($0)" } ?? "—"
+        let driverName = load?.driver?.name ?? "—"
+        let shipperName = load?.shipper?.name ?? "—"
+        return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    .overlay(Text("NC").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
+                    .overlay(Text(dispIni).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("CEL · Naomi Chen · dispatcher").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("Carolina Express Logistics · MC-712 944 · JR (driver) · DU (shipper-of-record)").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text("\(carrierCodeDisplay) · \(dispName) · dispatcher")
+                        .font(EType.caption.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    Text("\(carrierFull) · \(mc) · \(driverName) (driver) · \(shipperName) (shipper-of-record)")
+                        .font(.caption2)
+                        .foregroundStyle(palette.textTertiary)
+                        .lineLimit(2)
                 }
                 Spacer()
             }
@@ -206,14 +257,19 @@ private struct CELM04Body: View {
     }
 
     private func kpiGrid(_ c: CEConfig) -> some View {
+        let payout = Self.payoutDisplay(load?.rate)
+        let dist = Self.distanceDisplay(load?.distance)
+        let lane = laneDisplay ?? "—"
+        let equip = load?.equipmentType ?? "—"
+        let driverIni = load?.driver?.initials ?? "—"
         let kpis: [(String, String, String, Color)] = {
             switch kind {
             case .assignedReceipt:
                 return [
-                    ("PAYOUT",   "$1,610",                            "CEL margin · LD-M-04", .green),
-                    ("DIST",     "245 mi",                              "ATL → CLT",          .blue),
-                    ("EQUIP",    "53' DRY",                              "CEL fleet · JR",    .blue),
-                    ("STATE",    "AWARDED",                                "DVIR opens next",  .green),
+                    ("PAYOUT",   payout,                              "\(carrierCodeDisplay) · \(loadNumberDisplay)", .green),
+                    ("DIST",     dist,                                lane,                                            .blue),
+                    ("EQUIP",    equip,                               "\(carrierCodeDisplay) fleet · \(driverIni)",   .blue),
+                    ("STATE",    "AWARDED",                           "DVIR opens next",                              .green),
                 ]
             default:
                 let labels: [Int: String] = [
@@ -225,10 +281,10 @@ private struct CELM04Body: View {
                     6: "STEERING & LINKAGE",
                 ]
                 return [
-                    ("DVIR",    "\(c.sectionsCompleted)/14",            labels[c.sectionsCompleted] ?? "ADVANCING", .green),
-                    ("PAYOUT",  "$1,610",                                  "LOCKED · CEL",    .green),
-                    ("DIST",    "245 mi",                                    "ATL → CLT",     .blue),
-                    ("HOS",     "10h 30m",                                    "headroom · clean", .green),
+                    ("DVIR",    "\(c.sectionsCompleted)/14",          labels[c.sectionsCompleted] ?? "ADVANCING",     .green),
+                    ("PAYOUT",  payout,                               "LOCKED · \(carrierCodeDisplay)",               .green),
+                    ("DIST",    dist,                                 lane,                                            .blue),
+                    ("HOS",     "10h 30m",                            "headroom · clean",                             .green),
                 ]
             }
         }()
@@ -271,6 +327,20 @@ private struct CELM04Body: View {
     private func loadCtx() async {
         struct In: Encodable { let id: String }
         do { load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId)) } catch { /* */ }
+    }
+
+    /// Format the load's rate (decimal string from server) as a
+    /// payout display. Falls back to "—" when missing/invalid.
+    private static func payoutDisplay(_ rate: String?) -> String {
+        guard let r = rate, let n = Double(r), n > 0 else { return "—" }
+        let v = n.rounded()
+        return v < 1000 ? String(format: "$%.0f", v) : "$\(Int(v).formatted(.number))"
+    }
+
+    /// Format the load's distance in miles. Falls back to "—".
+    private static func distanceDisplay(_ d: Double?) -> String {
+        guard let d, d > 0 else { return "—" }
+        return "\(Int(d.rounded())) mi"
     }
 }
 
