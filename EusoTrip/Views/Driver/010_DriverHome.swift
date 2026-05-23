@@ -115,6 +115,8 @@ enum HomeWidgetCatalog {
     /// Broker-specific widgets.
     static let broker: [HomeWidgetDef] = [
         .init(id: "openTenders",        name: "Open tenders",       summary: "Pending tender pile",                  icon: "tray.full.fill",          category: .operations,     roles: ["BROKER"], defaultSize: (12, 8), iosRenderable: true),
+        .init(id: "margin_summary",     name: "Margin summary",     summary: "Weekly margin + per-load + on-time",   icon: "chart.line.uptrend.xyaxis", category: .financial,    roles: ["BROKER"], defaultSize: (10, 6), iosRenderable: true),
+        .init(id: "broker_alerts",      name: "Broker alerts",      summary: "Loads needing immediate action",       icon: "exclamationmark.triangle.fill", category: .operations, roles: ["BROKER"], defaultSize: (12, 6), iosRenderable: true),
     ]
 
     /// Dispatch-specific widgets.

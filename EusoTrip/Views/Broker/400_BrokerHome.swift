@@ -68,15 +68,16 @@ struct BrokerHome: View {
 
     // ── Home-widget customization — uses shared HomeWidgetGrid. ──
     private let widgetLayoutKey = "broker.home.widgetOrder"
-    private let brokerCanonicalOrder: [String] = ["openTenders", "recent", "news"]
+    private let brokerCanonicalOrder: [String] = ["openTenders", "margin_summary", "recent", "news"]
 
     @ViewBuilder
     private func brokerHomeRender(_ id: String) -> AnyView {
         switch id {
-        case "openTenders": AnyView(openTendersCard)
-        case "recent":      AnyView(recentActivityCard)
-        case "news":        AnyView(NewsCarouselWidget())
-        default:            AnyView(EmptyView())
+        case "openTenders":    AnyView(openTendersCard)
+        case "margin_summary": AnyView(marginSummaryWidget)
+        case "recent":         AnyView(recentActivityCard)
+        case "news":           AnyView(NewsCarouselWidget())
+        default:               AnyView(EmptyView())
         }
     }
 
@@ -582,6 +583,42 @@ struct BrokerHome: View {
                             .strokeBorder(palette.borderFaint)
                     )
             }
+        }
+    }
+
+    // MARK: - Margin summary widget
+
+    @ViewBuilder
+    private var marginSummaryWidget: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("MARGIN SUMMARY")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+            }
+            switch dashboard.state {
+            case .loading:
+                listSkeleton
+            case .loaded(let maybe):
+                if let s = maybe { marginTiles(s) }
+            case .empty:
+                EusoEmptyState(systemImage: "chart.line.uptrend.xyaxis", title: "No margin data",
+                               subtitle: "Deliver a load and this week's margin will appear here.")
+            case .error(let e):
+                inlineError(e) { Task { await dashboard.refresh() } }
+            }
+        }
+    }
+
+    private func marginTiles(_ s: BrokerAPI.DashboardStats) -> some View {
+        HStack(spacing: Space.s2) {
+            kpiTile(label: "MARGIN · 7D",  value: dollars(s.grossMarginThisWeek), sub: "gross this week")
+            kpiTile(label: "PER LOAD",     value: dollars(s.marginPerLoad),        sub: "avg margin")
+            kpiTile(label: "ON-TIME",      value: String(format: "%.1f%%", s.onTimeRate * 100), sub: "delivery rate")
         }
     }
 
