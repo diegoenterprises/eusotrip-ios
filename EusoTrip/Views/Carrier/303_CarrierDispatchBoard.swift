@@ -193,25 +193,29 @@ struct CarrierDispatchBoard: View {
     @StateObject private var active = CarrierActiveLoadsStore()
     @StateObject private var alerts = CarrierAlertsStore()
 
-    @State private var lane: DispatchLane = .all
+    @State private var selectedBin: DispatchBin = .unassigned
     @State private var detailRow: DispatchRow? = nil
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                header
-                laneChips
-                content
-                Color.clear.frame(height: 96)
+        VStack(spacing: 0) {
+            header.padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 6)
+            columnScrubber.padding(.bottom, 6)
+            if !combined.isSettled {
+                laneSkeleton.padding(.horizontal, 14)
+                Spacer(minLength: 0)
+            } else if case .error(let e) = combined {
+                inlineError(e) { Task { await refreshAll() } }.padding(.horizontal, 14)
+                Spacer(minLength: 0)
+            } else if activeRows.isEmpty {
+                emptyState.padding(.horizontal, 14)
+                Spacer(minLength: 0)
+            } else {
+                columnPager
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 8)
         }
         .task { await refreshAll() }
         .refreshable { await refreshAll() }
-        .sheet(item: $detailRow) { row in
-            dispatchDetailSheet(for: row)
-        }
+        .sheet(item: $detailRow) { dispatchDetailSheet(for: $0) }
         .screenTileRoot()
     }
 
@@ -297,86 +301,91 @@ struct CarrierDispatchBoard: View {
         return parts.joined(separator: " · ")
     }
 
-    // MARK: - Lane chips
+    // MARK: - Column scrubber
 
-    private var laneChips: some View {
+    private var columnScrubber: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(DispatchLane.allCases) { l in
+            HStack(spacing: 6) {
+                ForEach(DispatchBin.allCases, id: \.self) { bin in
                     Button {
-                        withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
-                            lane = l
-                        }
+                        withAnimation(.easeOut(duration: 0.18)) { selectedBin = bin }
                     } label: {
-                        chipLabel(l)
+                        let count: Int? = combined.isSettled
+                            ? activeRows.filter { $0.bin == bin }.count
+                            : nil
+                        let on = selectedBin == bin
+                        VStack(spacing: 2) {
+                            HStack(spacing: 4) {
+                                Image(systemName: bin.lane.systemImage)
+                                    .font(.system(size: 9, weight: .heavy))
+                                Text(bin.headerLabel)
+                                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                            }
+                            Text(count.map { "\($0)" } ?? "—")
+                                .font(.system(size: 13, weight: .heavy)).monospacedDigit()
+                        }
+                        .foregroundStyle(on ? AnyShapeStyle(Color.white) : AnyShapeStyle(palette.textSecondary))
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(
+                            on ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCard)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.vertical, 2)
+            .padding(.horizontal, 14)
         }
     }
 
-    @ViewBuilder
-    private func chipLabel(_ l: DispatchLane) -> some View {
-        let on = (lane == l)
-        let count = laneCount(l)
-        HStack(spacing: 6) {
-            Image(systemName: l.systemImage)
-                .font(.system(size: 10, weight: .heavy))
-            Text(l.rawValue.uppercased())
-                .font(.system(size: 10, weight: .heavy)).tracking(0.6)
-            if let c = count {
-                Text("\(c)")
-                    .font(.system(size: 10, weight: .heavy)).tracking(0.4)
-                    .opacity(on ? 1.0 : 0.7)
+    // MARK: - Column pager
+
+    private var columnPager: some View {
+        TabView(selection: $selectedBin) {
+            ForEach(DispatchBin.allCases, id: \.self) { bin in
+                column(bin).tag(bin)
             }
         }
-        .foregroundStyle(on ? AnyShapeStyle(Color.white) : AnyShapeStyle(palette.textSecondary))
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(
-            Capsule().fill(
-                on ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCard)
-            )
-        )
-        .overlay(
-            Capsule().strokeBorder(
-                on ? AnyShapeStyle(Color.clear) : AnyShapeStyle(palette.borderFaint),
-                lineWidth: 1
-            )
-        )
+        .tabViewStyle(.page(indexDisplayMode: .never))
     }
 
-    /// Per-lane row count. `nil` while either store is still settling
-    /// so we never voice a half-count.
-    private func laneCount(_ l: DispatchLane) -> Int? {
-        guard active.state.isSettled, alerts.state.isSettled else { return nil }
-        let rows = activeRows
-        switch l {
-        case .all:         return rows.count
-        case .unassigned:  return rows.filter { $0.bin == .unassigned }.count
-        case .dispatched:  return rows.filter { $0.bin == .dispatched }.count
-        case .intransit:   return rows.filter { $0.bin == .intransit  }.count
-        case .exception:   return rows.filter { $0.bin == .exception  }.count
+    private func column(_ bin: DispatchBin) -> some View {
+        let rows = activeRows.filter { $0.bin == bin }
+        return ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                HStack(spacing: 6) {
+                    Text(bin.headerLabel)
+                        .font(.system(size: 13, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(palette.textPrimary)
+                    Text("\(rows.count)")
+                        .font(.system(size: 11, weight: .heavy)).foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(LinearGradient.diagonal).clipShape(Capsule())
+                    Spacer(minLength: 0)
+                }
+                if rows.isEmpty {
+                    EusoEmptyState(
+                        systemImage: bin.lane.systemImage,
+                        title: "Nothing in this column",
+                        subtitle: "No \(bin.rawValue.lowercased()) loads right now."
+                    )
+                } else {
+                    VStack(spacing: Space.s2) {
+                        ForEach(rows) { row in
+                            Button { detailRow = row } label: {
+                                rowView(row)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                Color.clear.frame(height: 96)
+            }
+            .padding(.horizontal, 14).padding(.top, 6)
         }
     }
 
-    // MARK: - Content (loading / empty / error / loaded)
-
-    @ViewBuilder
-    private var content: some View {
-        switch combined {
-        case .loading:
-            laneSkeleton
-        case .empty:
-            emptyState
-        case .loaded:
-            loadedContent
-        case .error(let e):
-            inlineError(e) { Task { await refreshAll() } }
-        }
-    }
+    // MARK: - Combined state + row projection
 
     /// Folded RemoteState across the two stores. `loading` while
     /// either is still settling. `error` if the active store
@@ -401,82 +410,9 @@ struct CarrierDispatchBoard: View {
     private var activeRows: [DispatchRow] {
         let raw = active.state.value ?? []
         let alertList = alerts.state.value ?? []
-        // Join key: loadNumber. The server exposes loadNumber on
-        // both the ActiveLoad and LoadAlert envelopes, and the
-        // load number is unique per carrier-tenant per §16-02.
         var byLN: [String: CarrierAPI.LoadAlert] = [:]
         for a in alertList { byLN[a.loadNumber] = a }
         return raw.map { DispatchRow.from($0, alertsByLoadNumber: byLN) }
-    }
-
-    /// Rows visible after applying the current lane filter.
-    private var visibleRows: [DispatchRow] {
-        let rows = activeRows
-        switch lane {
-        case .all:         return rows
-        case .unassigned:  return rows.filter { $0.bin == .unassigned }
-        case .dispatched:  return rows.filter { $0.bin == .dispatched }
-        case .intransit:   return rows.filter { $0.bin == .intransit  }
-        case .exception:   return rows.filter { $0.bin == .exception  }
-        }
-    }
-
-    // MARK: - Loaded content
-
-    @ViewBuilder
-    private var loadedContent: some View {
-        if lane == .all {
-            // All-lane: group by bin in strict precedence order so
-            // exceptions surface first.
-            VStack(alignment: .leading, spacing: Space.s4) {
-                ForEach(DispatchBin.allCases.reversed(), id: \.self) { bin in
-                    let rows = visibleRows.filter { $0.bin == bin }
-                    if !rows.isEmpty {
-                        binSection(bin: bin, rows: rows)
-                    }
-                }
-            }
-        } else {
-            // Per-lane: single flat list under a single header.
-            VStack(alignment: .leading, spacing: Space.s2) {
-                if visibleRows.isEmpty {
-                    perLaneEmptyState
-                } else {
-                    ForEach(visibleRows) { row in
-                        Button { detailRow = row } label: {
-                            rowView(row)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func binSection(bin: DispatchBin, rows: [DispatchRow]) -> some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
-            HStack(spacing: 6) {
-                Image(systemName: bin.lane.systemImage)
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(LinearGradient.diagonal)
-                Text(bin.headerLabel)
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                    .foregroundStyle(palette.textPrimary)
-                Spacer()
-                Text("\(rows.count)")
-                    .font(.system(size: 9, weight: .heavy))
-                    .foregroundStyle(palette.textTertiary)
-            }
-            VStack(spacing: Space.s2) {
-                ForEach(rows) { row in
-                    Button { detailRow = row } label: {
-                        rowView(row)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
     }
 
     // MARK: - Row
@@ -648,9 +584,9 @@ struct CarrierDispatchBoard: View {
     @ViewBuilder
     private var perLaneEmptyState: some View {
         EusoEmptyState(
-            systemImage: lane.systemImage,
-            title: "Nothing in this lane",
-            subtitle: "No \(lane.rawValue.lowercased()) loads right now. Check the All lane for the full board."
+            systemImage: "tray",
+            title: "Nothing in this column",
+            subtitle: "No loads in this stage right now."
         )
     }
 
