@@ -2,6 +2,14 @@
 //  702_DispatchLoadAssignment.swift
 //  EusoTrip — Dispatch · Unassigned loads → assign driver mutation.
 //
+//  Reshaped 2026-05-23 from a tap-row → sheet-driven driver picker
+//  into a two-pane drag-to-pair surface (top carousel of unassigned
+//  load cards · bottom vertical list of available drivers). Drop a
+//  load card on a driver row to fire `dispatch.assignDriver` in
+//  one gesture instead of three taps. The legacy sheet picker stays
+//  wired to the same mutation as a tap fallback for accessibility +
+//  small-screen users who prefer not to drag.
+//
 
 import SwiftUI
 
@@ -50,14 +58,41 @@ private struct LoadAssignBody: View {
     @State private var assigning: String? = nil
     @State private var actionError: String? = nil
     @State private var lastAssigned: String? = nil
+    /// Driver id currently being hovered over by a dragged load card.
+    /// Drives the gradient stroke + faint inner highlight so the
+    /// dispatcher gets clear drop-target feedback before releasing.
+    @State private var hoverDriverId: String? = nil
+    /// Sticky reference to the load being dragged. Used to render the
+    /// "dragging LD-1234" inline pill on the driver row hover state.
+    @State private var draggingLoadId: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
-                if let msg = lastAssigned { LifecycleCard(accentGradient: true) { Text(msg).font(EType.caption).foregroundStyle(palette.textPrimary) } }
-                if let err = actionError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
-                content
+                if let msg = lastAssigned {
+                    LifecycleCard(accentGradient: true) {
+                        Text(msg).font(EType.caption).foregroundStyle(palette.textPrimary)
+                    }
+                }
+                if let err = actionError {
+                    LifecycleCard(accentDanger: true) {
+                        Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+                    }
+                }
+                if loading && loads.isEmpty && drivers.isEmpty {
+                    LifecycleCard {
+                        Text("Loading dispatch board…")
+                            .font(EType.caption).foregroundStyle(palette.textSecondary)
+                    }
+                } else if let err = loadError {
+                    LifecycleCard(accentDanger: true) {
+                        Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+                    }
+                } else {
+                    loadsCarousel
+                    driversList
+                }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 8)
@@ -70,56 +105,212 @@ private struct LoadAssignBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "shippingbox.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text("DISPATCH · ASSIGNMENT").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+                Image(systemName: "shippingbox.fill")
+                    .font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("DISPATCH · ASSIGNMENT · LIVE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(LinearGradient.diagonal)
             }
-            Text("Unassigned loads").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("Tap a row to pick a driver — assignment fires the LOAD_ASSIGNED socket event.").font(EType.caption).foregroundStyle(palette.textSecondary)
+            Text("Drag-to-assign")
+                .font(.system(size: 22, weight: .heavy))
+                .foregroundStyle(palette.textPrimary)
+            Text("Drag an unassigned load onto an available driver to fire LOAD_ASSIGNED. Or tap a load card for the picker.")
+                .font(EType.caption).foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    @ViewBuilder
-    private var content: some View {
-        if loading { LifecycleCard { Text("Loading unassigned loads…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
-        else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
-        else if loads.isEmpty {
-            EusoEmptyState(systemImage: "checkmark.seal", title: "Inbox at zero", subtitle: "Every active load has a driver. New tenders will land here.")
-        } else {
-            ForEach(loads) { l in
-                Button { pickFor = l } label: {
-                    LifecycleCard {
-                        HStack(spacing: 8) {
-                            LifecycleSection(label: l.loadNumber.uppercased(), icon: "shippingbox")
-                            Spacer(minLength: 0)
-                            // 2026-05-17 — Dispatch load-assignment row
-                            // mode badge. Surfaces rail / vessel / barge
-                            // BEFORE the dispatcher picks a driver — a
-                            // truck driver should not be assigned a rail
-                            // unit train.
-                            LoadModeBadge(modeRaw: l.transportMode ?? l.mode,
-                                          multiVehicleCount: l.multiVehicleCount,
-                                          compact: true)
+    // MARK: - Loads carousel (top, horizontal, draggable cards)
+
+    private var loadsCarousel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text("UNASSIGNED LOADS")
+                    .font(.system(size: 11, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
+                Text("\(loads.count)")
+                    .font(.system(size: 10, weight: .heavy)).foregroundStyle(.white)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(LinearGradient.diagonal).clipShape(Capsule())
+                Spacer(minLength: 0)
+                Text("DRAG ↓ ONTO A DRIVER")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            if loads.isEmpty {
+                EusoEmptyState(
+                    systemImage: "checkmark.seal",
+                    title: "Inbox at zero",
+                    subtitle: "Every active load has a driver. New tenders will land here."
+                )
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: Space.s3) {
+                        ForEach(loads) { l in
+                            Button { pickFor = l } label: { loadCard(l) }
+                                .buttonStyle(.plain)
+                                .draggable(l.id) {
+                                    loadCard(l)
+                                        .frame(maxWidth: 280)
+                                        .opacity(0.92)
+                                        .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
+                                }
+                                .onDrag {
+                                    draggingLoadId = l.id
+                                    return NSItemProvider(object: l.id as NSString)
+                                }
                         }
-                        LifecycleRow(label: "Origin",       value: dashIfEmpty(l.origin))
-                        LifecycleRow(label: "Destination",  value: dashIfEmpty(l.destination))
-                        LifecycleRow(label: "Pickup",       value: humanISO(l.pickupDate))
-                        LifecycleRow(label: "Rate",         value: usd(l.rate))
-                        LifecycleRow(label: "Mode",         value: dashIfEmpty(l.transportMode ?? l.mode))
                     }
-                }.buttonStyle(.plain)
+                    .padding(.vertical, 2)
+                }
             }
         }
     }
+
+    private func loadCard(_ l: UnassignedLoad) -> some View {
+        LifecycleCard {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    LifecycleSection(label: l.loadNumber.uppercased(), icon: "shippingbox")
+                    Spacer(minLength: 0)
+                    LoadModeBadge(
+                        modeRaw: l.transportMode ?? l.mode,
+                        multiVehicleCount: l.multiVehicleCount,
+                        compact: true
+                    )
+                }
+                Text("\(dashIfEmpty(l.origin)) → \(dashIfEmpty(l.destination))")
+                    .font(EType.body.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(2)
+                HStack {
+                    if let r = l.rate {
+                        Text(usd(r))
+                            .font(.title3.weight(.heavy).monospacedDigit())
+                            .foregroundStyle(palette.textPrimary)
+                    }
+                    Spacer(minLength: 0)
+                    Text("PICKUP \(humanISO(l.pickupDate).uppercased())")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                }
+            }
+        }
+        .frame(width: 280)
+    }
+
+    // MARK: - Drivers list (bottom, vertical, drop destinations)
+
+    private var driversList: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text("AVAILABLE DRIVERS")
+                    .font(.system(size: 11, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
+                Text("\(drivers.count)")
+                    .font(.system(size: 10, weight: .heavy)).foregroundStyle(.white)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(LinearGradient.diagonal).clipShape(Capsule())
+                Spacer(minLength: 0)
+                Text("DROP ZONE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            if drivers.isEmpty {
+                EusoEmptyState(
+                    systemImage: "person.3",
+                    title: "No drivers available",
+                    subtitle: "All drivers are on a load or off-duty. New availability surfaces here on the next refresh."
+                )
+            } else {
+                ForEach(drivers) { d in driverRow(d) }
+            }
+        }
+    }
+
+    private func driverRow(_ d: DriverPick) -> some View {
+        let isHover = hoverDriverId == d.id
+        let isAssigning = assigning == d.id
+        return LifecycleCard(accentGradient: isHover) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    LifecycleSection(label: d.name.uppercased(), icon: "person.fill")
+                    Spacer(minLength: 0)
+                    Text(d.status.uppercased())
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(Color.green.opacity(0.18)))
+                        .foregroundStyle(Color.green)
+                }
+                LifecycleRow(label: "HOS left", value: d.hoursRemaining.map { String(format: "%.1fh", $0) } ?? "—")
+                if isHover, let dragId = draggingLoadId,
+                   let l = loads.first(where: { $0.id == dragId }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 11, weight: .heavy))
+                            .foregroundStyle(LinearGradient.diagonal)
+                        Text("Drop to assign \(l.loadNumber)")
+                            .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                            .foregroundStyle(palette.textPrimary)
+                    }
+                    .padding(.top, 4)
+                }
+                if isAssigning {
+                    HStack(spacing: 6) {
+                        ProgressView().scaleEffect(0.6)
+                        Text("ASSIGNING…")
+                            .font(.system(size: 10, weight: .heavy)).tracking(0.6)
+                            .foregroundStyle(palette.textSecondary)
+                    }.padding(.top, 4)
+                }
+            }
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(
+                    isHover ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(Color.clear),
+                    lineWidth: isHover ? 2 : 0
+                )
+                .animation(.easeOut(duration: 0.12), value: isHover)
+        )
+        .dropDestination(for: String.self) { droppedIds, _ in
+            guard let loadId = droppedIds.first else { return false }
+            // Drop must reference a known unassigned-loads entry; ignore
+            // stray drops (e.g. another draggable from elsewhere in the
+            // app that happens to flow through this drop zone).
+            guard loads.first(where: { $0.id == loadId }) != nil else { return false }
+            Task { await assign(loadId: loadId, driverId: d.id) }
+            return true
+        } isTargeted: { hovering in
+            hoverDriverId = hovering ? d.id : (hoverDriverId == d.id ? nil : hoverDriverId)
+        }
+    }
+
+    // MARK: - Tap fallback (legacy sheet picker)
 
     private func driverPickerSheet(for l: UnassignedLoad) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.s3) {
-                Text("Pick driver for \(l.loadNumber)").font(EType.h2).foregroundStyle(palette.textPrimary).padding(.bottom, 6)
+                Text("Pick driver for \(l.loadNumber)")
+                    .font(EType.h2)
+                    .foregroundStyle(palette.textPrimary)
+                    .padding(.bottom, 6)
+                Text("Or drag the card from the carousel onto a driver row.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .padding(.bottom, 6)
                 if drivers.isEmpty {
-                    EusoEmptyState(systemImage: "person.3", title: "No available drivers", subtitle: "All drivers are on a load or off-duty.")
+                    EusoEmptyState(
+                        systemImage: "person.3",
+                        title: "No available drivers",
+                        subtitle: "All drivers are on a load or off-duty."
+                    )
                 } else {
                     ForEach(drivers) { d in
-                        Button { Task { await assign(loadId: l.id, driverId: d.id) } } label: {
+                        Button {
+                            Task { await assign(loadId: l.id, driverId: d.id) }
+                        } label: {
                             LifecycleCard {
                                 LifecycleSection(label: d.name.uppercased(), icon: "person")
                                 LifecycleRow(label: "Status",   value: d.status.uppercased())
@@ -133,6 +324,8 @@ private struct LoadAssignBody: View {
             .padding(14)
         }.background(palette.bgPage)
     }
+
+    // MARK: - Network
 
     private func loadAll() async {
         loading = true; loadError = nil
@@ -149,21 +342,29 @@ private struct LoadAssignBody: View {
     }
 
     private func assign(loadId: String, driverId: String) async {
-        assigning = driverId; actionError = nil
+        await MainActor.run { assigning = driverId; actionError = nil }
         struct In: Encodable { let loadId: String; let driverId: String }
         struct Out: Decodable { let success: Bool? }
+        let pickedLabel = pickFor?.loadNumber ?? loads.first(where: { $0.id == loadId })?.loadNumber ?? loadId
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation("dispatch.assignDriver", input: In(loadId: loadId, driverId: driverId))
-            lastAssigned = "Assigned · driver \(driverId) → \(pickFor?.loadNumber ?? loadId)"
-            pickFor = nil
+            let _: Out = try await EusoTripAPI.shared.mutation(
+                "dispatch.assignDriver",
+                input: In(loadId: loadId, driverId: driverId)
+            )
+            await MainActor.run {
+                lastAssigned = "Assigned · driver \(driverId) → \(pickedLabel)"
+                pickFor = nil
+                draggingLoadId = nil
+            }
             await loadAll()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            await MainActor.run {
+                actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            }
         }
-        assigning = nil
+        await MainActor.run { assigning = nil }
     }
 }
 
 #Preview("702 · Load assign · Night") { DispatchLoadAssignmentScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
 #Preview("702 · Load assign · Afternoon") { DispatchLoadAssignmentScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
-
