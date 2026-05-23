@@ -104,6 +104,7 @@ enum HomeWidgetCatalog {
         .init(id: "activeLoads",        name: "Active loads",       summary: "Live load board",                      icon: "shippingbox.fill",        category: .operations,     roles: ["SHIPPER"], defaultSize: (12, 8), iosRenderable: true),
         .init(id: "esang",              name: "ESANG strip",        summary: "AI live signals",                      icon: "sparkles",                category: .analytics,      roles: ["SHIPPER"], defaultSize: (12, 6), iosRenderable: true),
         .init(id: "spend_summary",      name: "Spend summary",      summary: "Monthly spend + bids + on-time rate",  icon: "dollarsign.circle.fill",  category: .financial,      roles: ["SHIPPER"], defaultSize: (10, 6), iosRenderable: true),
+        .init(id: "attention_alerts",   name: "Attention alerts",   summary: "Loads needing immediate action",        icon: "exclamationmark.triangle.fill", category: .operations, roles: ["SHIPPER"], defaultSize: (12, 6), iosRenderable: true),
     ]
 
     /// Catalyst-specific widgets.

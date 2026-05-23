@@ -73,17 +73,18 @@ struct ShipperHome: View {
 
     // ── Home-widget customization — uses shared HomeWidgetGrid + HomeWidgetCatalog. ──
     private let widgetLayoutKey = "shipper.home.widgetOrder"
-    private let shipperCanonicalOrder: [String] = ["activeLoads", "esang", "spend_summary", "recent", "news"]
+    private let shipperCanonicalOrder: [String] = ["activeLoads", "esang", "spend_summary", "attention_alerts", "recent", "news"]
 
     @ViewBuilder
     private func shipperHomeRender(_ id: String) -> AnyView {
         switch id {
-        case "activeLoads":   AnyView(activeLoadsSection)
-        case "esang":         AnyView(esangStrip)
-        case "spend_summary": AnyView(spendSummaryWidget)
-        case "recent":        AnyView(recentActivitySection)
-        case "news":          AnyView(NewsCarouselWidget())
-        default:              AnyView(EmptyView())
+        case "activeLoads":       AnyView(activeLoadsSection)
+        case "esang":             AnyView(esangStrip)
+        case "spend_summary":     AnyView(spendSummaryWidget)
+        case "attention_alerts":  AnyView(attentionAlertsWidget)
+        case "recent":            AnyView(recentActivitySection)
+        case "news":              AnyView(NewsCarouselWidget())
+        default:                  AnyView(EmptyView())
         }
     }
 
@@ -1173,6 +1174,59 @@ struct ShipperHome: View {
             statTile(label: "On-time",     value: percent(s.onTimeRate),
                      trail: "delivery rate",  trailColor: Brand.success,
                      gradientNumeral: true)
+        }
+    }
+
+    // MARK: - Attention alerts widget
+
+    @ViewBuilder
+    private var attentionAlertsWidget: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Brand.danger)
+                Text("ATTENTION ALERTS")
+                    .font(EType.micro).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                if case .loaded(let rows) = alerts.state, !rows.isEmpty {
+                    Text("\(rows.count)")
+                        .font(.system(size: 9, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(Brand.danger))
+                }
+            }
+            switch alerts.state {
+            case .loading:
+                listSkeleton
+            case .loaded(let rows):
+                if rows.isEmpty {
+                    EusoEmptyState(systemImage: "checkmark.circle", title: "All clear",
+                                   subtitle: "No loads need attention right now.")
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(rows.prefix(3).enumerated()), id: \.element.id) { idx, r in
+                            attentionRow(loadId: r.id,
+                                         meta: "\(r.loadNumber) · \(r.message)",
+                                         title: r.issue.uppercased())
+                            if idx < min(rows.count, 3) - 1 {
+                                Divider().overlay(palette.borderFaint)
+                            }
+                        }
+                    }
+                    .background(palette.bgCard)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                                .strokeBorder(Brand.danger.opacity(0.45), lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+                }
+            case .empty:
+                EusoEmptyState(systemImage: "checkmark.circle", title: "All clear",
+                               subtitle: "No loads need attention right now.")
+            case .error(let e):
+                inlineError(e) { Task { await alerts.refresh() } }
+            }
         }
     }
 
