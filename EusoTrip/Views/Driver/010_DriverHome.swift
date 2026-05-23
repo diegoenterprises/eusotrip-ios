@@ -96,6 +96,7 @@ enum HomeWidgetCatalog {
         .init(id: "compliance",         name: "Compliance countdown", summary: "CDL / medical / hazmat / TWIC expiry", icon: "checkmark.shield.fill", category: .compliance,    roles: ["DRIVER"], defaultSize: (12, 4),  iosRenderable: true),
         .init(id: "hotZones",           name: "Hot zones",          summary: "Live load-to-truck ratios + surges",   icon: "flame.fill",              category: .analytics,      roles: ["DRIVER"], defaultSize: (12, 8),  iosRenderable: true),
         .init(id: "performance_score",  name: "Performance score",  summary: "Safety · on-time rate · fleet rank",   icon: "chart.line.uptrend.xyaxis", category: .performance,  roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
+        .init(id: "mileage_tracker",    name: "Mileage tracker",    summary: "Monthly miles + current load distance", icon: "road.lanes",                 category: .analytics,    roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
     ]
 
     /// Shipper-specific widgets.
@@ -430,7 +431,7 @@ struct DriverHome: View {
     private let driverHomeCanonicalOrder: [String] = [
         "next_delivery", "hos_tracker", "earnings_summary", "weather_alerts",
         "messages", "notifications", "haul", "compliance", "news", "recent", "hotZones",
-        "performance_score", "vehicle_health",
+        "performance_score", "vehicle_health", "mileage_tracker",
     ]
 
     /// Maps a catalog widget id → the concrete iOS tile view this
@@ -452,6 +453,7 @@ struct DriverHome: View {
         case "hotZones":        AnyView(HotZonesWidget())
         case "performance_score": AnyView(PerformanceScoreWidget())
         case "vehicle_health":  AnyView(VehicleHealthWidget())
+        case "mileage_tracker": AnyView(MileageTrackerWidget(currentLoadMiles: vm.activeLoad?.distanceValue))
         default:                AnyView(EmptyView())
         }
     }
@@ -1878,6 +1880,116 @@ private struct HosTile: View {
         .padding(Space.s4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .eusoCard(radius: Radius.lg)
+    }
+}
+
+// MARK: - MileageTrackerWidget (catalog widget id: "mileage_tracker")
+//
+// Monthly miles tile. Pulls `totalMiles` from `drivers.getPerformanceMetrics`
+// for the month-to-date figure. Also surfaces the active load's distance
+// (passed from the home VM) so the driver can see their current-haul
+// mileage at a glance alongside the rolling monthly total.
+
+struct MileageTrackerWidget: View {
+    @Environment(\.palette) private var palette
+    @EnvironmentObject private var session: EusoTripSession
+
+    /// Miles on the current active load — nil when the driver is between loads.
+    let currentLoadMiles: Double?
+
+    @State private var monthlyMiles: Double? = nil
+    @State private var totalLoads: Int? = nil
+    @State private var loading = true
+    @State private var loadError: String? = nil
+
+    private static let miFormatter: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 0
+        return f
+    }()
+
+    private func fmt(_ miles: Double) -> String {
+        Self.miFormatter.string(from: NSNumber(value: miles)) ?? String(Int(miles))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "road.lanes")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("MILEAGE · THIS MONTH")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 0)
+                if let loads = totalLoads {
+                    Text("\(loads) LOADS")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                }
+            }
+            if loading {
+                Text("Loading mileage…")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 6)
+            } else if let err = loadError {
+                Text(err)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+                    .lineLimit(2)
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(monthlyMiles.map { fmt($0) } ?? "—")
+                        .font(.system(size: 36, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                        .monospacedDigit()
+                    Text("mi")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(palette.textSecondary)
+                }
+                if let loadMi = currentLoadMiles, loadMi > 0 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.right.circle.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(LinearGradient.diagonal)
+                        Text("Current haul: \(fmt(loadMi)) mi")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                } else if monthlyMiles == nil {
+                    Text("No mileage data yet for this period.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(.top, 2)
+                }
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .task { await load() }
+    }
+
+    private func load() async {
+        loading = true; loadError = nil
+        let userId = session.user?.id ?? ""
+        guard !userId.isEmpty else { loading = false; return }
+        do {
+            let sc = try await EusoTripAPI.shared.drivers.getPerformanceMetrics(
+                driverId: userId, period: .month
+            )
+            monthlyMiles = sc.metrics.totalMiles
+            totalLoads = sc.metrics.totalLoads
+            loading = false
+        } catch {
+            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loading = false
+        }
     }
 }
 
