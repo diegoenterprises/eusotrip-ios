@@ -21,6 +21,358 @@ import SwiftUI
 import UIKit
 #endif
 
+// MARK: - Home Widget Catalog (mirrors web `client/src/lib/widgetLibrary.ts`)
+//
+// Single iOS-side source of truth for the home-widget customization
+// surface. Widget IDs are kept identical to the web catalog so a
+// layout saved via `users.saveDashboardLayout` on iOS hydrates
+// correctly on web and vice versa.
+//
+// iosRenderable=true means an iOS tile-view exists for this widget
+// id and the home screen's render closure will map to it. false
+// means it shows in the catalog (gated by role) but iOS has no tile
+// view yet — the picker can still surface it as "Coming on iOS"
+// when we wire the per-role widget picker in a follow-up.
+
+/// Mirrors web's `WidgetCategory`.
+enum HomeWidgetCategory: String, Codable, CaseIterable {
+    case analytics, operations, financial, communication
+    case productivity, safety, compliance, performance
+    case planning, tracking, reporting, management
+}
+
+/// Mirrors web's `WidgetDefinition`. `id` is the cross-platform key.
+struct HomeWidgetDef: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let summary: String
+    let icon: String                    // SF Symbol
+    let category: HomeWidgetCategory
+    let roles: Set<String>              // role enum strings — RBAC
+    let defaultSize: (w: Int, h: Int)   // matches web grid (12-col)
+    let iosRenderable: Bool
+
+    /// Equatable + Hashable manual (defaultSize tuple isn't auto-hashable).
+    static func == (lhs: HomeWidgetDef, rhs: HomeWidgetDef) -> Bool { lhs.id == rhs.id }
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+}
+
+/// Static catalog of all known iOS home widgets — UNIVERSAL + every
+/// active iOS role's slate. Web's full 379-widget catalog is the
+/// long-term ceiling; iOS catalog grows as tile-views ship.
+enum HomeWidgetCatalog {
+
+    /// Universal widgets — available to every role. Mirrors web's
+    /// `UNIVERSAL_WIDGETS` (client/src/lib/widgetLibrary.ts:57).
+    static let universal: [HomeWidgetDef] = [
+        .init(id: "weather",            name: "Weather",            summary: "Live weather with 5-day forecast",     icon: "sun.max.fill",            category: .productivity,   roles: allRoles, defaultSize: (6, 6), iosRenderable: true),
+        .init(id: "calendar",           name: "Calendar",           summary: "Schedule and appointments",            icon: "calendar",                category: .productivity,   roles: allRoles, defaultSize: (12, 8), iosRenderable: false),
+        .init(id: "notes",              name: "Quick Notes",        summary: "Sticky notes and reminders",           icon: "note.text",               category: .productivity,   roles: allRoles, defaultSize: (6, 6), iosRenderable: false),
+        .init(id: "tasks",              name: "Tasks",              summary: "Personal to-dos",                      icon: "checklist",               category: .productivity,   roles: allRoles, defaultSize: (6, 6), iosRenderable: false),
+        .init(id: "notifications",      name: "Notifications",      summary: "Recent platform alerts",               icon: "bell.fill",               category: .communication,  roles: allRoles, defaultSize: (12, 6), iosRenderable: false),
+        .init(id: "messages",           name: "Messages",           summary: "Unread + active threads",              icon: "message.fill",            category: .communication,  roles: allRoles, defaultSize: (12, 6), iosRenderable: false),
+        .init(id: "quick_actions",      name: "Quick Actions",      summary: "Role-aware shortcuts",                 icon: "bolt.fill",               category: .productivity,   roles: allRoles, defaultSize: (12, 4), iosRenderable: false),
+        .init(id: "search",             name: "Search",             summary: "Loads / docs / contacts",              icon: "magnifyingglass",         category: .productivity,   roles: allRoles, defaultSize: (12, 4), iosRenderable: false),
+        .init(id: "recent_activity",    name: "Recent activity",    summary: "Latest movements + events",            icon: "list.bullet.rectangle",   category: .reporting,      roles: allRoles, defaultSize: (12, 8), iosRenderable: true),
+        .init(id: "performance_summary", name: "Performance",       summary: "Score / rank / trend",                 icon: "chart.line.uptrend.xyaxis", category: .performance, roles: allRoles, defaultSize: (8, 6), iosRenderable: false),
+        .init(id: "live_map",           name: "Live map",           summary: "Fleet / assets / loads on map",        icon: "map.fill",                category: .tracking,       roles: allRoles, defaultSize: (12, 10), iosRenderable: false),
+        .init(id: "news",               name: "Intel feed",         summary: "Role-prioritized rotating headlines",  icon: "newspaper.fill",          category: .reporting,      roles: allRoles, defaultSize: (12, 6), iosRenderable: true),
+        .init(id: "spectra_match",      name: "Spectra match",      summary: "Cross-role lane/carrier match score",  icon: "sparkles",                category: .analytics,      roles: allRoles, defaultSize: (12, 6), iosRenderable: false),
+    ]
+
+    /// Driver-specific widgets (mirrors web DRIVER_WIDGETS:240). iOS
+    /// tile views ship incrementally — current renderables are the
+    /// 5 originally wired in 010_DriverHome.
+    static let driver: [HomeWidgetDef] = [
+        .init(id: "current_route",      name: "Current route",      summary: "Active route navigation",              icon: "location.north.line.fill", category: .operations,    roles: ["DRIVER"], defaultSize: (12, 10), iosRenderable: false),
+        .init(id: "hos_tracker",        name: "HOS tracker",        summary: "Hours of service compliance",          icon: "clock.fill",              category: .compliance,     roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: false),
+        .init(id: "earnings_summary",   name: "Earnings",           summary: "Pay and bonuses",                      icon: "dollarsign.circle.fill",  category: .financial,      roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: false),
+        .init(id: "next_delivery",      name: "Next delivery",      summary: "Upcoming delivery details",            icon: "mappin.circle.fill",      category: .operations,     roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: false),
+        .init(id: "fuel_stations",      name: "Fuel stations",      summary: "Nearby fuel stops",                    icon: "fuelpump.fill",           category: .planning,       roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: false),
+        .init(id: "rest_areas",         name: "Rest areas",         summary: "Nearby rest stops",                    icon: "bed.double.fill",         category: .planning,       roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: false),
+        .init(id: "vehicle_health",     name: "Vehicle health",     summary: "Truck diagnostics",                    icon: "wrench.and.screwdriver.fill", category: .operations,  roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: false),
+        .init(id: "haul",               name: "The Haul weekly",    summary: "XP ring + missions + rank",            icon: "rosette",                 category: .performance,    roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: true),
+        .init(id: "compliance",         name: "Compliance countdown", summary: "CDL / medical / hazmat / TWIC expiry", icon: "checkmark.shield.fill", category: .compliance,    roles: ["DRIVER"], defaultSize: (12, 4),  iosRenderable: true),
+        .init(id: "hotZones",           name: "Hot zones",          summary: "Live load-to-truck ratios + surges",   icon: "flame.fill",              category: .analytics,      roles: ["DRIVER"], defaultSize: (12, 8),  iosRenderable: true),
+    ]
+
+    /// Shipper-specific widgets.
+    static let shipper: [HomeWidgetDef] = [
+        .init(id: "activeLoads",        name: "Active loads",       summary: "Live load board",                      icon: "shippingbox.fill",        category: .operations,     roles: ["SHIPPER"], defaultSize: (12, 8), iosRenderable: true),
+        .init(id: "esang",              name: "ESANG strip",        summary: "AI live signals",                      icon: "sparkles",                category: .analytics,      roles: ["SHIPPER"], defaultSize: (12, 6), iosRenderable: true),
+    ]
+
+    /// Catalyst-specific widgets.
+    static let catalyst: [HomeWidgetDef] = [
+        .init(id: "activeMatches",      name: "Active matches",     summary: "Match board + bid landscape",          icon: "person.line.dotted.person.fill", category: .operations, roles: ["CATALYST"], defaultSize: (12, 8), iosRenderable: true),
+    ]
+
+    /// Broker-specific widgets.
+    static let broker: [HomeWidgetDef] = [
+        .init(id: "openTenders",        name: "Open tenders",       summary: "Pending tender pile",                  icon: "tray.full.fill",          category: .operations,     roles: ["BROKER"], defaultSize: (12, 8), iosRenderable: true),
+    ]
+
+    /// Dispatch-specific widgets.
+    static let dispatch: [HomeWidgetDef] = [
+        .init(id: "priority",           name: "Priority queue",     summary: "Top exception driving the day",        icon: "exclamationmark.triangle.fill", category: .operations, roles: ["DISPATCH"], defaultSize: (12, 6), iosRenderable: true),
+        .init(id: "hosWatch",           name: "HOS watchlist",      summary: "Drivers approaching HOS limits",       icon: "clock.badge.exclamationmark.fill", category: .compliance, roles: ["DISPATCH"], defaultSize: (12, 6), iosRenderable: true),
+    ]
+
+    /// Carrier-specific widgets (CATALYST + DISPATCH role overlap on web).
+    static let carrier: [HomeWidgetDef] = [
+        .init(id: "carrierActiveLoads", name: "Active loads",       summary: "Loads under this carrier",             icon: "shippingbox.fill",        category: .operations,     roles: ["CATALYST", "DISPATCH"], defaultSize: (12, 8), iosRenderable: true),
+    ]
+
+    /// Terminal-specific widgets.
+    static let terminal: [HomeWidgetDef] = [
+        .init(id: "activeMovements",    name: "Active movements",   summary: "Yard arrivals / departures live",      icon: "arrow.triangle.swap",     category: .operations,     roles: ["TERMINAL_MANAGER"], defaultSize: (12, 8), iosRenderable: true),
+    ]
+
+    /// Escort-specific widgets.
+    static let escort: [HomeWidgetDef] = [
+        .init(id: "activeAssignments",  name: "Active assignments", summary: "Live escort jobs",                     icon: "car.2.fill",              category: .operations,     roles: ["ESCORT"], defaultSize: (12, 8), iosRenderable: true),
+    ]
+
+    /// Admin-specific widgets.
+    static let admin: [HomeWidgetDef] = [
+        .init(id: "openTickets",        name: "Open tickets",       summary: "Support queue + status",               icon: "ticket.fill",             category: .management,     roles: ["ADMIN", "SUPER_ADMIN"], defaultSize: (12, 8), iosRenderable: true),
+    ]
+
+    /// Compliance-specific widgets.
+    static let compliance: [HomeWidgetDef] = [
+        .init(id: "expiringDocs",       name: "Expiring docs",      summary: "60-day rolling expiry watch",          icon: "doc.badge.clock.fill",    category: .compliance,     roles: ["COMPLIANCE_OFFICER"], defaultSize: (12, 6), iosRenderable: true),
+    ]
+
+    /// All widgets across every role bucket.
+    static let all: [String: HomeWidgetDef] = {
+        var dict: [String: HomeWidgetDef] = [:]
+        for set in [universal, driver, shipper, catalyst, broker, dispatch, carrier, terminal, escort, admin, compliance] {
+            for w in set { dict[w.id] = w }
+        }
+        return dict
+    }()
+
+    /// Widgets a given role is allowed to surface (RBAC).
+    static func allowed(for role: String) -> [HomeWidgetDef] {
+        all.values.filter { $0.roles.contains(role) }.sorted { $0.name < $1.name }
+    }
+
+    /// Widgets a given role is allowed to surface AND have an iOS
+    /// tile-view shipped for. The picker shows allowed-but-not-yet-
+    /// renderable as a "Coming on iOS" stub in a follow-up.
+    static func renderable(for role: String) -> [HomeWidgetDef] {
+        allowed(for: role).filter { $0.iosRenderable }
+    }
+
+    /// All 24 canonical role strings (web extended role set). Used by
+    /// the universal-widget RBAC.
+    static let allRoles: Set<String> = [
+        "SHIPPER","CATALYST","BROKER","DRIVER","DISPATCH","ESCORT",
+        "TERMINAL_MANAGER","COMPLIANCE_OFFICER","SAFETY_MANAGER","FACTORING",
+        "ADMIN","SUPER_ADMIN",
+        "RAIL_SHIPPER","RAIL_CATALYST","RAIL_DISPATCHER","RAIL_ENGINEER","RAIL_CONDUCTOR","RAIL_BROKER",
+        "VESSEL_SHIPPER","VESSEL_OPERATOR","PORT_MASTER","SHIP_CAPTAIN","VESSEL_BROKER","CUSTOMS_BROKER",
+    ]
+}
+
+// MARK: - Shared HomeWidgetGrid (DnD reorder, edit toggle, save/load)
+//
+// Single canonical component for every role home's reorderable
+// secondary widget zone. Consumers pass their canonical ordered
+// widget id list + a render closure mapping id → tile view. The
+// grid owns: edit-mode toggle, drag/drop reorder, hover-stroke
+// feedback, RESET button, hydrate from `users.getDashboardLayout`
+// + UserDefaults cache, persist on edit exit, slot-set reconciliation.
+//
+// Replaces the per-home enum + toolbar + secondaryWidget(for:) +
+// hydrate/persist/reconcile duplication that originally shipped in
+// the 10 home screens. Migrations land file-by-file; the original
+// per-home helpers stay alive until each home is moved over.
+
+struct HomeWidgetGrid: View {
+    @Environment(\.palette) private var palette
+
+    /// Canonical default order for this role's home — used when no
+    /// saved layout exists and as the universe-of-slots reference
+    /// for `reconcile()` (so widgets shipped after a layout save
+    /// still appear).
+    let canonicalOrder: [String]
+    /// Role string for the save/load endpoint (`users.saveDashboardLayout`).
+    let role: String
+    /// Per-user storage key (UserDefaults cache mirror).
+    let storageKey: String
+    /// Render closure: widget id → tile view. Returns EmptyView when
+    /// the host doesn't recognize the id (e.g. a stale saved layout
+    /// references a widget that's since been removed). The grid skips
+    /// rendering when EmptyView is returned.
+    let render: (String) -> AnyView
+
+    @State private var order: [String] = []
+    @State private var editing: Bool = false
+    @State private var hoverSlot: String? = nil
+    @State private var hydrated: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            toolbar
+            ForEach(order, id: \.self) { slotId in
+                slotView(slotId)
+            }
+        }
+        .task {
+            guard !hydrated else { return }
+            hydrated = true
+            order = canonicalOrder
+            await hydrate()
+        }
+    }
+
+    private var toolbar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: editing ? "checkmark.circle.fill" : "rectangle.3.group.bubble")
+                .font(.system(size: 11, weight: .heavy))
+            Text(editing ? "DONE · Tap to save layout" : "CUSTOMIZE WIDGETS")
+                .font(.system(size: 10, weight: .heavy)).tracking(0.6)
+            Spacer(minLength: 0)
+            if editing {
+                Button {
+                    withAnimation(.easeOut(duration: 0.18)) { order = canonicalOrder }
+                } label: {
+                    Text("RESET")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(palette.bgCard, in: Capsule())
+                }.buttonStyle(.plain)
+            }
+        }
+        .foregroundStyle(editing ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(
+            Capsule().strokeBorder(
+                editing ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint),
+                lineWidth: 1
+            )
+        )
+        .contentShape(Capsule())
+        .onTapGesture {
+            withAnimation(.easeOut(duration: 0.18)) {
+                if editing { editing = false; Task { await persist() } }
+                else { editing = true }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func slotView(_ id: String) -> some View {
+        let inner = render(id)
+        if editing {
+            let isHover = hoverSlot == id
+            let label = HomeWidgetCatalog.all[id]?.name ?? id
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
+                    .padding(.top, 10)
+                inner
+            }
+            .overlay(alignment: .topTrailing) {
+                Text(label.uppercased())
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(LinearGradient.diagonal)
+                    .clipShape(Capsule())
+                    .padding(6)
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(
+                        isHover ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint),
+                        lineWidth: isHover ? 2 : 1
+                    )
+                    .animation(.easeOut(duration: 0.12), value: hoverSlot)
+            )
+            .draggable(id) {
+                Text(label)
+                    .font(.system(size: 13, weight: .heavy))
+                    .padding(10)
+                    .background(palette.surface, in: Capsule())
+                    .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
+            }
+            .dropDestination(for: String.self) { droppedIds, _ in
+                guard let dropped = droppedIds.first,
+                      dropped != id,
+                      let fromIdx = order.firstIndex(of: dropped),
+                      let toIdx = order.firstIndex(of: id)
+                else { return false }
+                withAnimation(.easeOut(duration: 0.18)) {
+                    let item = order.remove(at: fromIdx)
+                    order.insert(item, at: min(toIdx, order.count))
+                }
+                return true
+            } isTargeted: { hovering in
+                hoverSlot = hovering ? id : (hoverSlot == id ? nil : hoverSlot)
+            }
+        } else {
+            inner
+        }
+    }
+
+    private func hydrate() async {
+        if let data = UserDefaults.standard.data(forKey: storageKey),
+           let cached = try? JSONDecoder().decode([String].self, from: data),
+           !cached.isEmpty {
+            order = reconcile(cached)
+        }
+        struct In: Encodable { let role: String }
+        struct Slot: Decodable { let widgetId: String }
+        struct Out: Decodable { let layout: [Slot]?; let updatedAt: String? }
+        do {
+            let r: Out = try await EusoTripAPI.shared.query("users.getDashboardLayout", input: In(role: role))
+            if let server = r.layout, !server.isEmpty {
+                let parsed = server.map { $0.widgetId }
+                let merged = reconcile(parsed)
+                await MainActor.run { order = merged }
+                if let data = try? JSONEncoder().encode(merged) {
+                    UserDefaults.standard.set(data, forKey: storageKey)
+                }
+            }
+        } catch { /* offline / unauth — local cache or canonical default holds */ }
+    }
+
+    private func persist() async {
+        if let data = try? JSONEncoder().encode(order) {
+            UserDefaults.standard.set(data, forKey: storageKey)
+        }
+        struct Slot: Encodable { let widgetId: String; let x: Int; let y: Int; let w: Int; let h: Int }
+        struct In: Encodable { let role: String; let layout: [Slot] }
+        struct Out: Decodable { let success: Bool? }
+        let payload = order.enumerated().map { idx, id -> Slot in
+            let def = HomeWidgetCatalog.all[id]
+            return Slot(widgetId: id, x: 0, y: idx, w: def?.defaultSize.w ?? 12, h: def?.defaultSize.h ?? 4)
+        }
+        do {
+            let _: Out = try await EusoTripAPI.shared.mutation(
+                "users.saveDashboardLayout",
+                input: In(role: role, layout: payload)
+            )
+        } catch { /* server unreachable — local cache holds */ }
+    }
+
+    private func reconcile(_ saved: [String]) -> [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        for s in saved where !seen.contains(s) && canonicalOrder.contains(s) {
+            out.append(s); seen.insert(s)
+        }
+        for s in canonicalOrder where !seen.contains(s) {
+            out.append(s)
+        }
+        return out
+    }
+}
+
 // MARK: - Screen
 
 struct DriverHome: View {
