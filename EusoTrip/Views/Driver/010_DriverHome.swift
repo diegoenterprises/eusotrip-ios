@@ -980,6 +980,12 @@ private struct HosTile: View {
 /// Which tab is currently selected from the BottomNav. The Driver nav has
 /// four slots (home/trips/wallet/me) with the center slot reserved for the
 /// ESANG orb, which opens the ESANG chat rather than switching tabs.
+/// SINGLE SOURCE OF TRUTH for the Driver bottom-nav tabs (label + SF Symbol).
+/// Screens MUST build their nav slots from these computed properties, e.g.
+///   NavSlot(label: DriverTab.wallet.label, systemImage: DriverTab.wallet.systemImage, isCurrent: …)
+/// Do NOT hardcode nav labels/icons inside a screen — that caused the
+/// Wallet→Loads label drift and the Trips icon drift (swept 2026-05-22).
+/// Renaming a tab here now propagates to every screen automatically.
 enum DriverTab: String, CaseIterable, Identifiable {
     case home, trips, wallet, me
     var id: String { rawValue }

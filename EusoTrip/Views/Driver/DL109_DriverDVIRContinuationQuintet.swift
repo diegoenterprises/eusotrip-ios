@@ -40,10 +40,10 @@ private struct DVIRSectionAckShell<Content: View>: View {
     var body: some View {
         Shell(theme: theme) { content() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",  systemImage: "house",            isCurrent: false),
-                          NavSlot(label: "Trips", systemImage: "shippingbox.fill", isCurrent: true)],
-                trailing: [NavSlot(label: "Wallet", systemImage: "creditcard.fill", isCurrent: false),
-                           NavSlot(label: "Me",     systemImage: "person",          isCurrent: false)],
+                leading: [NavSlot(label: DriverTab.home.label,  systemImage: DriverTab.home.systemImage,  isCurrent: false),
+                          NavSlot(label: DriverTab.trips.label, systemImage: DriverTab.trips.systemImage, isCurrent: true)],
+                trailing: [NavSlot(label: DriverTab.wallet.label, systemImage: DriverTab.wallet.systemImage, isCurrent: false),
+                           NavSlot(label: DriverTab.me.label,     systemImage: DriverTab.me.systemImage,     isCurrent: false)],
                 orbState: .idle
             )
         }

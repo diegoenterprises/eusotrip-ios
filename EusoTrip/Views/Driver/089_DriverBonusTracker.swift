@@ -63,10 +63,10 @@ struct DriverBonusTrackerScreen: View {
     var body: some View {
         Shell(theme: theme) { BonusTrackerBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",  systemImage: "house",            isCurrent: false),
-                          NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false)],
-                trailing: [NavSlot(label: "Wallet", systemImage: "creditcard.fill", isCurrent: false),
-                           NavSlot(label: "Me",    systemImage: "person",          isCurrent: true)],
+                leading: [NavSlot(label: DriverTab.home.label,  systemImage: DriverTab.home.systemImage,  isCurrent: false),
+                          NavSlot(label: DriverTab.trips.label, systemImage: DriverTab.trips.systemImage, isCurrent: false)],
+                trailing: [NavSlot(label: DriverTab.wallet.label, systemImage: DriverTab.wallet.systemImage, isCurrent: false),
+                           NavSlot(label: DriverTab.me.label,    systemImage: DriverTab.me.systemImage,     isCurrent: true)],
                 orbState: .idle
             )
         }
