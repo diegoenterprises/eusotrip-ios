@@ -151,6 +151,8 @@ enum HomeWidgetCatalog {
     /// Admin-specific widgets.
     static let admin: [HomeWidgetDef] = [
         .init(id: "openTickets",        name: "Open tickets",       summary: "Support queue + status",               icon: "ticket.fill",             category: .management,     roles: ["ADMIN", "SUPER_ADMIN"], defaultSize: (12, 8), iosRenderable: true),
+        .init(id: "system_health",      name: "System health",      summary: "Health score + tenants + active users", icon: "waveform.path.ecg",      category: .analytics,      roles: ["ADMIN", "SUPER_ADMIN"], defaultSize: (10, 6), iosRenderable: true),
+        .init(id: "pending_approvals",  name: "Pending approvals",  summary: "Platform approvals requiring action",   icon: "checklist.unchecked",    category: .management,     roles: ["ADMIN", "SUPER_ADMIN"], defaultSize: (12, 6), iosRenderable: true),
     ]
 
     /// Compliance-specific widgets.

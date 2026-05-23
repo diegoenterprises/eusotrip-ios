@@ -94,15 +94,17 @@ struct AdminHome: View {
 
     // ── Home-widget customization — uses shared HomeWidgetGrid. ──
     private let widgetLayoutKey = "admin.home.widgetOrder"
-    private let adminCanonicalOrder: [String] = ["openTickets", "recent", "news"]
+    private let adminCanonicalOrder: [String] = ["openTickets", "system_health", "pending_approvals", "recent", "news"]
 
     @ViewBuilder
     private func adminHomeRender(_ id: String) -> AnyView {
         switch id {
-        case "openTickets": AnyView(openTicketsCard)
-        case "recent":      AnyView(recentActivityCard)
-        case "news":        AnyView(NewsCarouselWidget())
-        default:            AnyView(EmptyView())
+        case "openTickets":       AnyView(openTicketsCard)
+        case "system_health":     AnyView(systemHealthWidget)
+        case "pending_approvals": AnyView(pendingApprovalsWidget)
+        case "recent":            AnyView(recentActivityCard)
+        case "news":              AnyView(NewsCarouselWidget())
+        default:                  AnyView(EmptyView())
         }
     }
 
@@ -615,6 +617,82 @@ struct AdminHome: View {
                         RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                             .strokeBorder(palette.borderFaint)
                     )
+            }
+        }
+    }
+
+    // MARK: - System health widget
+
+    @ViewBuilder
+    private var systemHealthWidget: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "waveform.path.ecg")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("SYSTEM HEALTH")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+            }
+            switch dashboard.state {
+            case .loading:
+                listSkeleton
+            case .loaded(let maybe):
+                if let s = maybe {
+                    HStack(spacing: Space.s2) {
+                        kpiTile(label: "HEALTH SCORE", value: String(format: "%.0f%%", s.systemHealthScore * 100), sub: "platform health")
+                        kpiTile(label: "TENANTS",      value: "\(s.activeTenants)",      sub: "active tenants")
+                        kpiTile(label: "USERS · 7D",   value: "\(s.activeUsersThisWeek)", sub: "active this week")
+                    }
+                }
+            case .empty:
+                EusoEmptyState(systemImage: "waveform.path.ecg", title: "No health data",
+                               subtitle: "Platform metrics will appear here once the system is active.")
+            case .error(let e):
+                inlineError(e) { Task { await dashboard.refresh() } }
+            }
+        }
+    }
+
+    // MARK: - Pending approvals widget
+
+    @ViewBuilder
+    private var pendingApprovalsWidget: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "checklist.unchecked")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Brand.warning)
+                Text("PENDING APPROVALS")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                if case .loaded(let rows) = alerts.state, !rows.isEmpty {
+                    Text("\(rows.count)")
+                        .font(.system(size: 9, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(Brand.warning))
+                }
+            }
+            switch alerts.state {
+            case .loading:
+                listSkeleton
+            case .loaded(let rows):
+                if rows.isEmpty {
+                    EusoEmptyState(systemImage: "checkmark.circle", title: "Nothing pending",
+                                   subtitle: "No approvals require action right now.")
+                } else {
+                    VStack(spacing: Space.s2) {
+                        ForEach(rows.prefix(3)) { alertRow($0) }
+                    }
+                }
+            case .empty:
+                EusoEmptyState(systemImage: "checkmark.circle", title: "Nothing pending",
+                               subtitle: "No approvals require action right now.")
+            case .error(let e):
+                inlineError(e) { Task { await alerts.refresh() } }
             }
         }
     }
