@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 @main
 struct EusoTripApp: App {
