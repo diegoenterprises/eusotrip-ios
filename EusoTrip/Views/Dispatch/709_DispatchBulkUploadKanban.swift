@@ -78,6 +78,9 @@ private struct BulkBody: View {
     @State private var workingId: Int? = nil
     @State private var actionError: String? = nil
     @State private var lastAction: String? = nil
+    /// Drop-zone hover state for the lane the dispatcher is dragging
+    /// a job toward. Drives a gradient stroke on the target column.
+    @State private var dragHoverColumn: String? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -148,6 +151,7 @@ private struct BulkBody: View {
 
     private func column(_ col: BulkColumn) -> some View {
         let cards = jobs.filter { ($0.status ?? "") == col.id }
+        let isHover = dragHoverColumn == col.id
         return ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s3) {
                 HStack {
@@ -162,12 +166,53 @@ private struct BulkBody: View {
                     EusoEmptyState(systemImage: col.icon, title: "Empty stage", subtitle: "No jobs in this stage right now.")
                 } else {
                     ForEach(cards) { j in
-                        Button { sheetJob = j } label: { cardView(j, col: col) }.buttonStyle(.plain)
+                        Button { sheetJob = j } label: { cardView(j, col: col) }
+                            .buttonStyle(.plain)
+                            // 2026-05-23 — Drag the job card to fire
+                            // the SOURCE column's action without
+                            // opening the sheet. Drop target = any
+                            // column body; the action that runs is
+                            // the source-column's action (validateJob
+                            // for UPLOADED, executeJob for VALIDATED,
+                            // retryFailedRows for FAILED). Transient
+                            // stages (VALIDATING / IMPORTING) have
+                            // no source action; dragging from those
+                            // is a no-op.
+                            .draggable(String(j.id)) {
+                                cardView(j, col: col)
+                                    .frame(maxWidth: 320)
+                                    .opacity(0.92)
+                                    .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
+                            }
                     }
                 }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 6)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(
+                    isHover ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(Color.clear),
+                    lineWidth: isHover ? 2 : 0
+                )
+                .padding(.horizontal, 8)
+                .animation(.easeOut(duration: 0.12), value: isHover)
+        )
+        .dropDestination(for: String.self) { droppedIds, _ in
+            guard let idStr = droppedIds.first, let jobId = Int(idStr) else { return false }
+            guard let job = jobs.first(where: { $0.id == jobId }) else { return false }
+            guard let sourceCol = bulkColumns.first(where: { $0.id == (job.status ?? "") }) else { return false }
+            // Drop on the same column = no-op (the source action
+            // already runs from the sheet; drag is the shortcut).
+            if sourceCol.id == col.id { return false }
+            // Source column must have an action wired — transient
+            // VALIDATING / IMPORTING stages bail honestly.
+            guard let proc = sourceCol.action else { return false }
+            Task { await runAction(proc: proc, on: job) }
+            return true
+        } isTargeted: { hovering in
+            dragHoverColumn = hovering ? col.id : (dragHoverColumn == col.id ? nil : dragHoverColumn)
         }
     }
 
