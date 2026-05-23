@@ -84,7 +84,7 @@ enum HomeWidgetCatalog {
     /// tile views ship incrementally — current renderables are the
     /// 5 originally wired in 010_DriverHome.
     static let driver: [HomeWidgetDef] = [
-        .init(id: "current_route",      name: "Current route",      summary: "Active route navigation",              icon: "location.north.line.fill", category: .operations,    roles: ["DRIVER"], defaultSize: (12, 10), iosRenderable: false),
+        .init(id: "current_route",      name: "Current route",      summary: "Active route navigation",              icon: "location.north.line.fill", category: .operations,    roles: ["DRIVER"], defaultSize: (12, 10), iosRenderable: true),
         .init(id: "hos_tracker",        name: "HOS tracker",        summary: "Hours of service compliance",          icon: "clock.fill",              category: .compliance,     roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: true),
         .init(id: "earnings_summary",   name: "Earnings",           summary: "Pay and bonuses",                      icon: "dollarsign.circle.fill",  category: .financial,      roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
         .init(id: "next_delivery",      name: "Next delivery",      summary: "Upcoming delivery details",            icon: "mappin.circle.fill",      category: .operations,     roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: true),
@@ -429,7 +429,7 @@ struct DriverHome: View {
     // reconciliation, and the UserDefaults offline cache.
     private let widgetLayoutKey = "driver.home.widgetOrder"
     private let driverHomeCanonicalOrder: [String] = [
-        "next_delivery", "hos_tracker", "earnings_summary", "weather_alerts",
+        "current_route", "next_delivery", "hos_tracker", "earnings_summary", "weather_alerts",
         "messages", "notifications", "haul", "compliance", "news", "recent", "hotZones",
         "performance_score", "vehicle_health", "mileage_tracker",
     ]
@@ -440,6 +440,7 @@ struct DriverHome: View {
     @ViewBuilder
     private func driverHomeRender(_ id: String) -> AnyView {
         switch id {
+        case "current_route":   AnyView(CurrentRouteWidget(load: vm.activeLoad))
         case "next_delivery":   AnyView(NextDeliveryWidget(summary: vm.activeLoadSummary))
         case "hos_tracker":     AnyView(HosTrackerWidget())
         case "earnings_summary":AnyView(EarningsSummaryWidget(available: vm.walletAvailable, availableDisplay: vm.walletAvailableDisplay))
@@ -2205,6 +2206,93 @@ struct PerformanceScoreWidget: View {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
             loading = false
         }
+    }
+}
+
+// MARK: - CurrentRouteWidget (catalog widget id: "current_route")
+//
+// Active-route glance: origin → destination lane, distance, and pickup
+// date sourced from the Load the home VM already fetched. No extra
+// network call — pure display of vm.activeLoad.
+
+struct CurrentRouteWidget: View {
+    @Environment(\.palette) private var palette
+    let load: Load?
+
+    private var statusColor: Color {
+        switch load?.status.lowercased() {
+        case "in_transit":  return .green
+        case "assigned":    return Brand.warning
+        case "delivered":   return palette.textTertiary
+        default:            return palette.textTertiary
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "location.north.line.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("CURRENT ROUTE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 0)
+                if let l = load {
+                    Text(l.status.uppercased().replacingOccurrences(of: "_", with: " "))
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(statusColor)
+                }
+            }
+            if let l = load {
+                Text(l.loadNumber)
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                HStack(alignment: .center, spacing: 4) {
+                    Text(l.pickupLocation?.cityState ?? "—")
+                        .font(.system(size: 15, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text(l.deliveryLocation?.cityState ?? "—")
+                        .font(.system(size: 15, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                HStack(spacing: 4) {
+                    Image(systemName: "road.lanes")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(palette.textTertiary)
+                    Text(l.distanceValue > 0 ? "\(Int(l.distanceValue)) mi" : "— mi")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(palette.textSecondary)
+                    Spacer(minLength: 0)
+                    Image(systemName: "calendar")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(palette.textTertiary)
+                    Text(l.pickupDate ?? "—")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(palette.textTertiary)
+                }
+            } else {
+                Text("No active route. Accept a tender to populate.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 8)
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 }
 
