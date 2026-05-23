@@ -7,7 +7,9 @@
 //
 
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#endif
 
 @main
 struct EusoTripApp: App {
@@ -24,8 +26,13 @@ struct EusoTripApp: App {
     /// TableView, plus any UIKit-backed inputs. Swiping down on the
     /// keyboard now follows the finger and dismisses, matching
     /// system Messages / Mail behavior.
+    ///
+    /// Guarded with `#if canImport(UIKit)` so the same struct still
+    /// compiles for the watchOS target (which doesn't ship UIKit).
     init() {
+        #if canImport(UIKit)
         UIScrollView.appearance().keyboardDismissMode = .interactive
+        #endif
     }
 
     @StateObject private var session = EusoTripSession()
