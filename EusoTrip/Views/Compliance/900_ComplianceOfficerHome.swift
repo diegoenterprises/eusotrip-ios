@@ -41,16 +41,25 @@ private struct ExpiringDocPriority: Decodable, Identifiable, Hashable {
     let daysRemaining: Int?
 }
 
+private struct DriverComplianceRow: Decodable, Identifiable {
+    let id: String
+    let name: String?
+    let status: String?
+    let expiringCount: Int?
+    let violationCount: Int?
+}
+
 private struct ComplianceHomeBody: View {
     @Environment(\.palette) private var palette
     @State private var dash: ComplianceDash? = nil
     @State private var topExpiring: ExpiringDocPriority? = nil
+    @State private var driverCompliance: [DriverComplianceRow] = []
     @State private var loading = true
     @State private var loadError: String? = nil
 
     // ── Home-widget customization — uses shared HomeWidgetGrid. ──
     private let widgetLayoutKey = "compliance.home.widgetOrder"
-    private let complianceCanonicalOrder: [String] = ["expiringDocs", "violations_overview", "news"]
+    private let complianceCanonicalOrder: [String] = ["expiringDocs", "violations_overview", "driver_compliance", "news"]
 
     @ViewBuilder
     private func complianceHomeRender(_ id: String) -> AnyView {
@@ -59,6 +68,8 @@ private struct ComplianceHomeBody: View {
             if let e = topExpiring { AnyView(expiringWidget(e)) } else { AnyView(EmptyView()) }
         case "violations_overview":
             AnyView(violationsOverviewWidget)
+        case "driver_compliance":
+            AnyView(driverComplianceWidget)
         case "news":
             AnyView(NewsCarouselWidget())
         default:
@@ -179,15 +190,95 @@ private struct ComplianceHomeBody: View {
         }
     }
 
+    // MARK: - Driver compliance widget
+
+    @ViewBuilder
+    private var driverComplianceWidget: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "person.crop.circle.badge.checkmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("DRIVER COMPLIANCE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                if !driverCompliance.isEmpty {
+                    Text("\(driverCompliance.count)")
+                        .font(.system(size: 9, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                }
+            }
+            if loading {
+                VStack(spacing: Space.s2) {
+                    ForEach(0..<3, id: \.self) { _ in
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .fill(palette.bgCardSoft).frame(height: 52)
+                            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                        .strokeBorder(palette.borderFaint))
+                    }
+                }
+            } else if driverCompliance.isEmpty {
+                EusoEmptyState(systemImage: "person.crop.circle.badge.checkmark",
+                               title: "No driver records",
+                               subtitle: "Driver compliance records will appear here once loaded.")
+            } else {
+                VStack(spacing: Space.s2) {
+                    ForEach(driverCompliance.prefix(5)) { row in
+                        driverComplianceRow(row)
+                    }
+                }
+            }
+        }
+    }
+
+    private func driverComplianceRow(_ row: DriverComplianceRow) -> some View {
+        let statusColor: Color = {
+            switch (row.status ?? "").lowercased() {
+            case "compliant":   return Brand.success
+            case "expiring":    return Brand.warning
+            case "violation":   return Brand.danger
+            default:            return palette.textTertiary
+            }
+        }()
+        return HStack(spacing: Space.s3) {
+            Circle().fill(statusColor).frame(width: 8, height: 8)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(row.name ?? "—")
+                    .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                HStack(spacing: 6) {
+                    if let exp = row.expiringCount, exp > 0 {
+                        Text("\(exp) expiring").font(EType.caption).foregroundStyle(Brand.warning)
+                    }
+                    if let viol = row.violationCount, viol > 0 {
+                        Text("\(viol) violation\(viol == 1 ? "" : "s")").font(EType.caption).foregroundStyle(Brand.danger)
+                    }
+                }
+            }
+            Spacer()
+            Text((row.status ?? "—").uppercased())
+                .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                .foregroundStyle(statusColor)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .overlay(Capsule().strokeBorder(statusColor.opacity(0.5), lineWidth: 1))
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
     private func load() async {
         loading = true; loadError = nil
         struct In: Encodable { let limit: Int }
         do {
             async let d: ComplianceDash = EusoTripAPI.shared.queryNoInput("compliance.getDashboardStats")
             async let exp: [ExpiringDocPriority] = EusoTripAPI.shared.query("compliance.getExpiringItems", input: In(limit: 10))
-            let (dash, items) = try await (d, exp)
+            async let drivers: [DriverComplianceRow] = EusoTripAPI.shared.queryNoInput("compliance.getDriverComplianceList")
+            let (dash, items, driverList) = try await (d, exp, drivers)
             self.dash = dash
             self.topExpiring = items.sorted { ($0.daysRemaining ?? 999) < ($1.daysRemaining ?? 999) }.first
+            self.driverCompliance = driverList
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
