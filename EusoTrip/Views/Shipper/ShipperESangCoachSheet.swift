@@ -34,6 +34,17 @@ struct ShippereSangCoachSheet: View {
     @EnvironmentObject private var session: EusoTripSession
     @FocusState private var composerFocused: Bool
 
+    /// Push-to-talk voice pipeline — Speech + AVAudioEngine. Shared
+    /// controller with the driver sheet so the shipper's voice path
+    /// terminates at the same `esang.chat` mutation. Final transcript
+    /// is handed back via `onFinalTranscript` (wired in `.onAppear`)
+    /// and shipped through the same `send(_:)` used by the text
+    /// composer. Closes the parity gap the founder called out:
+    ///   > YOU TOOK AWAY THE VOICE SPEECH TO TEXT CAPABILTIES IN
+    ///   > ESANG CHAT. IM IN SHIPPER AND ITS MISSING. IT NEEDS TO BE
+    ///   > FOR ALL USERS.
+    @StateObject private var voice = eSangVoiceInputController()
+
     struct Msg: Identifiable, Equatable {
         let id = UUID()
         let role: Role
@@ -76,6 +87,22 @@ struct ShippereSangCoachSheet: View {
         .background(palette.bgPage)
         .contentShape(Rectangle())
         .onTapGesture { composerFocused = false }
+        // Wire the voice pipeline's final transcript through the same
+        // `send(_:)` used by the text composer. Voice + text converge
+        // on one backend call, so `esang.chat` doesn't care which path
+        // the user took to get there.
+        .onAppear {
+            voice.onFinalTranscript = { transcript in
+                Task { @MainActor in
+                    send(transcript)
+                }
+            }
+        }
+        // Cancel any in-flight recording cleanly on dismiss so the mic
+        // and audio session release without a leak.
+        .onDisappear {
+            voice.cancel()
+        }
     }
 
     // MARK: Header
@@ -198,17 +225,32 @@ struct ShippereSangCoachSheet: View {
     private var composer: some View {
         HStack(spacing: Space.s2) {
             HStack(spacing: 8) {
-                TextField("Ask ESANG…", text: $draft, axis: .vertical)
+                // While the mic is hot we bind the field to the live
+                // partial transcript so the shipper SEES what ESANG is
+                // about to receive. Driver parity (DriverTabPanes:4672).
+                TextField("Ask ESANG…", text: voice.isRecording ? $voice.transcript : $draft, axis: .vertical)
                     .focused($composerFocused)
                     .font(EType.body)
                     .lineLimit(1...4)
                     .submitLabel(.send)
                     .onSubmit { sendDraft() }
+                    .disabled(voice.isRecording)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background(palette.bgCardSoft)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(voice.isRecording ? Brand.magenta.opacity(0.55) : Color.clear,
+                                  lineWidth: voice.isRecording ? 1.2 : 0)
+            )
+
+            // Push-to-talk mic — shared component with the driver sheet.
+            // Tap to start; tap again to stop. Final transcript is shipped
+            // through `send(_:)` via the `onFinalTranscript` closure wired
+            // in `.onAppear` above.
+            eSangVoiceInputButton(controller: voice)
 
             Button(action: sendDraft) {
                 Image(systemName: "arrow.up")
