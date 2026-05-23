@@ -39,8 +39,6 @@
 //
 
 import SwiftUI
-import CoreImage
-import CoreImage.CIFilterBuiltins
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -120,10 +118,8 @@ struct MeReferrals: View {
                 // black-on-white QR.
                 let items: [Any] = {
                     var arr: [Any] = [shareMessage(for: code)]
-                    if let img = renderGradientQR(deeplink(for: code)) {
+                    if let img = renderQRImage(deeplink(for: code)) {
                         arr.append(img)
-                    } else if let plain = QRGenerator.image(for: deeplink(for: code)) {
-                        arr.append(plain)
                     }
                     return arr
                 }()
@@ -145,14 +141,14 @@ struct MeReferrals: View {
         "https://eusotrip.com/ref/\(code)"
     }
 
-    /// Renders `GradientQRView` to a UIImage so the system share
+    /// Renders `EusoQRView` to a UIImage so the system share
     /// sheet ships the same brand-tinted QR the user sees in-app.
     /// `ImageRenderer` is iOS 16+. We pass `scale = 3` so the
     /// shared image is retina-sharp on any recipient device.
     @MainActor
-    private func renderGradientQR(_ url: String) -> UIImage? {
+    private func renderQRImage(_ url: String) -> UIImage? {
         let renderer = ImageRenderer(
-            content: GradientQRView(text: url, size: 600)
+            content: EusoQRView(kind: .raw(text: url), role: .driver, size: 600, cornerRadius: 0)
         )
         renderer.scale = 3
         return renderer.uiImage
@@ -247,7 +243,7 @@ struct MeReferrals: View {
                 // use the EusoTrip blue→magenta gradient per direct
                 // user direction (2026-04-25).
                 Button { showingQR = true } label: {
-                    GradientQRView(text: deeplink(for: code.code), size: 96)
+                    EusoQRView(kind: .raw(text: deeplink(for: code.code)), role: .driver, size: 96, cornerRadius: 16)
                         .overlay(
                             RoundedRectangle(cornerRadius: 16)
                                 .strokeBorder(palette.borderFaint, lineWidth: 1)
@@ -469,80 +465,6 @@ private struct ShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
-// MARK: - QR generator
-//
-// Native CoreImage `CIQRCodeGenerator` filter — no third-party SDK,
-// no network round-trip. Returns a UIImage suitable for both an
-// inline thumbnail (96pt) and a full-screen poster (200–300pt). We
-// upscale via `transformed(by: scale)` so the QR stays crisp at any
-// size and disable interpolation on the SwiftUI `Image` so individual
-// modules render as sharp squares (default linear interpolation
-// blurs them into unscannable mush at large sizes).
-//
-// Error correction level "H" (high — 30% recoverable) is used so the
-// brand logo overlay in the poster doesn't break the scan even when
-// a chunk of the QR is occluded.
-
-private enum QRGenerator {
-    /// Returns a square monochrome QR for `text`. Set `scale` to
-    /// upscale before SwiftUI sees it — defaults to 10× which gives
-    /// a ~370pt image for a typical short URL, plenty of headroom.
-    static func image(for text: String, scale: CGFloat = 10) -> UIImage? {
-        let filter = CIFilter.qrCodeGenerator()
-        filter.message = Data(text.utf8)
-        filter.correctionLevel = "H"
-        guard let ci = filter.outputImage else { return nil }
-        let upscaled = ci.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        let context = CIContext()
-        guard let cg = context.createCGImage(upscaled, from: upscaled.extent) else {
-            return nil
-        }
-        return UIImage(cgImage: cg)
-    }
-}
-
-// MARK: - GradientQRView
-//
-// Renders a QR code whose ON-modules are filled with the EusoTrip
-// brand gradient (Brand.blue → Brand.magenta) instead of standard
-// black. The white background stays pure white so scanners get the
-// contrast they need. SwiftUI `.mask()` does the heavy lifting:
-// the gradient fills the full square, the QR (black-on-white) acts
-// as the mask — the gradient only shows where the QR's modules are
-// "on."
-//
-// Per direct user direction (2026-04-25):
-//
-//     > make the qr code points our gradient
-//
-// Note: gradient-tinted QR codes scan fine as long as the contrast
-// between modules and background is preserved AND the corner finder
-// patterns remain visible. Brand.blue (dark) → Brand.magenta (dark)
-// against white preserves both. We tested by scanning a sample
-// poster from a phone camera at 18in distance — clean read.
-
-struct GradientQRView: View {
-    let text: String
-    var size: CGFloat = 240
-
-    var body: some View {
-        ZStack {
-            // White background — required for QR contrast.
-            Color.white
-            if let qr = QRGenerator.image(for: text) {
-                LinearGradient.diagonal
-                    .mask(
-                        Image(uiImage: qr)
-                            .interpolation(.none)
-                            .resizable()
-                    )
-            }
-        }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
-}
-
 // MARK: - QRPosterSheet
 //
 // Full-screen "scan me" poster opened from the Invite & Earn hero
@@ -574,7 +496,7 @@ private struct QRPosterSheet: View {
                     .font(EType.micro).tracking(1.4)
                     .foregroundStyle(palette.textTertiary)
 
-                GradientQRView(text: deeplink, size: 280)
+                EusoQRView(kind: .raw(text: deeplink), role: .driver, size: 280, cornerRadius: 16)
                     .shadow(color: Color.black.opacity(0.22), radius: 14, y: 6)
 
                 VStack(spacing: 4) {
