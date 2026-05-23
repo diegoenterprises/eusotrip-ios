@@ -411,6 +411,12 @@ struct DriverHome: View {
     ///   > when you press it it takes you to the load details when you
     ///   > arent in an active load.
     @State private var selectedSuggestedLoad: AvailableLoad? = nil
+    /// Presents the notifications inbox sheet over Home when the
+    /// `NotificationsWidget` tile is tapped (or any other surface posts
+    /// `.eusoOpenNotificationsRequested`). Wraps the existing
+    /// `MeNotificationsView` body so the inbox surface stays in sync
+    /// with what the Me sub-route renders.
+    @State private var showNotificationsSheet: Bool = false
 
     // ── Home-widget customization (2026-05-23 founder ask) ──────
     // Migrated to shared HomeWidgetGrid + HomeWidgetCatalog
@@ -585,6 +591,17 @@ struct DriverHome: View {
                 await suggestedLoadsStore.refresh()
             }
         }
+        // Home-widget tap routing — closes the dead-tap gap on the
+        // MessagesWidget + NotificationsWidget tiles (they fire these
+        // names with no other local effect, so without a listener the
+        // taps would be true dead-taps per the observability-vs-dead
+        // doctrine).
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("eusoOpenMessagesRequested"))) { _ in
+            showMessages = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("eusoOpenNotificationsRequested"))) { _ in
+            showNotificationsSheet = true
+        }
         // Load Details sheet for the active/assigned load. Reuses the
         // canonical LoadDetailSheet the Eusoboards surface renders so
         // drivers get the same route map, rate breakdown, and broker
@@ -649,6 +666,16 @@ struct DriverHome: View {
         //   > when you press it it takes you to the load details
         .sheet(item: $selectedSuggestedLoad) { load in
             LoadDetailSheet(load: load)
+                .environment(\.palette, palette)
+                .eusoSheetX()
+        }
+        // Notifications inbox surfaced from the home NotificationsWidget
+        // tile (and any other tile that posts the same name in future).
+        // Wraps the body-only MeNotificationsView with a header + scroll
+        // chrome so it stands alone — the MeDetailContainer normally
+        // owns chrome for this view inside the Me sub-route.
+        .sheet(isPresented: $showNotificationsSheet) {
+            DriverHomeNotificationsSheet()
                 .environment(\.palette, palette)
                 .eusoSheetX()
         }
@@ -1343,6 +1370,51 @@ struct MessagesWidget: View {
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - DriverHomeNotificationsSheet (wraps MeNotificationsView)
+//
+// MeNotificationsView is body-only (the MeDetailContainer normally
+// supplies the title bar + xmark). This wrapper adds a header strip
+// + ScrollView so the same surface stands on its own when presented
+// directly from Home.
+
+struct DriverHomeNotificationsSheet: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "bell.fill")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("NOTIFICATIONS")
+                    .font(.system(size: 11, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 0)
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(8)
+                        .background(palette.bgCard, in: Circle())
+                }.buttonStyle(.plain)
+            }
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, Space.s3)
+            IridescentHairline()
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s3) {
+                    MeNotificationsView()
+                    Color.clear.frame(height: 32)
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, Space.s3)
+            }
+        }
+        .background(palette.bg.ignoresSafeArea())
     }
 }
 
