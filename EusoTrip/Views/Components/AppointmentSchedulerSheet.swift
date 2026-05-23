@@ -186,26 +186,37 @@ public struct AppointmentSchedulerSheet: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(appointmentKanbanColumns) { col in
-                    Button {
-                        withAnimation(.easeOut(duration: 0.18)) { selected = col.id }
-                    } label: {
-                        VStack(spacing: 2) {
-                            HStack(spacing: 4) {
-                                Image(systemName: col.icon).font(.system(size: 9, weight: .heavy))
-                                Text(col.label).font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                            }
-                            Text("\(byColumn[col.id]?.count ?? 0)")
-                                .font(.system(size: 13, weight: .heavy)).monospacedDigit()
-                        }
-                        .foregroundStyle(selected == col.id ? Color.white : Color.secondary)
-                        .padding(.horizontal, 10).padding(.vertical, 6)
-                        .background(selected == col.id ? AnyShapeStyle(tintFor(col)) : AnyShapeStyle(Color(.secondarySystemBackground)))
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    }.buttonStyle(.plain)
+                    scrubberChip(col)
                 }
                 Spacer(minLength: 0)
             }
         }
+    }
+
+    private func scrubberChip(_ col: AppointmentKanbanColumn) -> some View {
+        let isSelected = (selected == col.id)
+        let count = byColumn[col.id]?.count ?? 0
+        let bg: AnyShapeStyle = isSelected
+            ? AnyShapeStyle(tintFor(col))
+            : AnyShapeStyle(Color(.secondarySystemBackground))
+        let fg: Color = isSelected ? .white : .secondary
+        return Button {
+            withAnimation(.easeOut(duration: 0.18)) { selected = col.id }
+        } label: {
+            VStack(spacing: 2) {
+                HStack(spacing: 4) {
+                    Image(systemName: col.icon).font(.system(size: 9, weight: .heavy))
+                    Text(col.label).font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                }
+                Text("\(count)")
+                    .font(.system(size: 13, weight: .heavy)).monospacedDigit()
+            }
+            .foregroundStyle(fg)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(bg)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private var columnPager: some View {
