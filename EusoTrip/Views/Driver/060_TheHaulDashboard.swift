@@ -159,6 +159,31 @@ struct TheHaulDashboard: View {
                 rewardBanner = nil
             }
         }
+        // Territory coverage progress from HERE locationAnalytics rolls
+        // into badges + the leaderboard. Surface a coverage banner and
+        // refresh those stores so the new states / metros / km show
+        // immediately. Previously this notification was posted from
+        // `HereHaulBridge.recordCoverage` but had no listener.
+        .onReceive(NotificationCenter.default.publisher(for: .eusoHaulTerritory)) { note in
+            guard let event = note.object as? HaulTerritoryEvent else { return }
+            let stateCount = event.states.count
+            let metroCount = event.metros.count
+            let summary: String = {
+                switch (stateCount, metroCount) {
+                case (0, 0): return "Territory updated · \(Int(event.totalKm)) km"
+                case (let s, 0): return "Territory · \(s) state\(s == 1 ? "" : "s") covered"
+                case (0, let m): return "Territory · \(m) metro\(m == 1 ? "" : "s") covered"
+                case (let s, let m): return "Territory · \(s) state\(s == 1 ? "" : "s") · \(m) metro\(m == 1 ? "" : "s")"
+                }
+            }()
+            rewardBanner = summary
+            Task {
+                await badgesStore.refresh()
+                await leaderboardStore.refresh()
+                try? await Task.sleep(nanoseconds: 3_500_000_000)
+                rewardBanner = nil
+            }
+        }
     }
 
     private func refreshAll() async {
