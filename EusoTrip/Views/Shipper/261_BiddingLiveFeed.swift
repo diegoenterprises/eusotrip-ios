@@ -7,6 +7,13 @@
 //  `shippers.acceptBid`, refreshes both stores, advances the load to
 //  AWARDED via the same call.
 //
+//  Reshaped 2026-05-23 with a single-drop-zone-above-list pattern.
+//  An "AWARD LOAD" tile sits above the bid feed card; drag a bid row
+//  up onto it to fire shippers.acceptBid in one gesture. Per-row
+//  green-check accept button preserved as tap fallback. Same DnD
+//  shape as 310_CarrierAssignDriver (per-load context, many
+//  incoming candidates).
+//
 
 import SwiftUI
 
@@ -36,17 +43,87 @@ private struct BiddingBody: View {
     @StateObject private var bids = ShipperBidsStore()
     @State private var processingBidId: String? = nil
     @State private var actionError: String? = nil
+    @State private var lastAwarded: String? = nil
+    @State private var dropHover: Bool = false
+    /// Sticky reference to the bid being dragged so the drop zone can
+    /// label its hover state with the carrier name + amount.
+    @State private var draggingBidId: String? = nil
+
+    private var loadedBids: [ShipperAPI.Bid] {
+        if case .loaded(let rows) = bids.state { return rows }
+        return []
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             summaryStrip
             LifecycleMapCard(live: live, label: "LANE PREVIEW", mode: .lane)
+            if !loadedBids.isEmpty { awardDropZone }
+            if let m = lastAwarded {
+                LifecycleCard(accentGradient: true) {
+                    Text(m).font(EType.caption).foregroundStyle(palette.textPrimary)
+                }
+            }
             bidFeedCard
             if let err = actionError { errorBanner(err) }
         }
         .task {
             bids.setLoadId(loadId)
             await bids.refresh()
+        }
+    }
+
+    private var awardDropZone: some View {
+        let hoveringBid = draggingBidId.flatMap { id in loadedBids.first(where: { $0.id == id }) }
+        return HStack(spacing: 10) {
+            Image(systemName: "trophy.fill")
+                .font(.system(size: 18, weight: .heavy))
+                .foregroundStyle(LinearGradient.diagonal)
+                .frame(width: 38, height: 38)
+                .background(palette.bgCardSoft, in: Circle())
+            VStack(alignment: .leading, spacing: 2) {
+                Text("AWARD LOAD")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(LinearGradient.diagonal)
+                if dropHover, let b = hoveringBid {
+                    Text("Release to award \(usd(b.amount)) to \(b.catalystName)")
+                        .font(EType.caption)
+                        .foregroundStyle(LinearGradient.diagonal)
+                        .lineLimit(2)
+                } else {
+                    Text("Drag a bid card here to accept + advance to AWARDED")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(2)
+                }
+            }
+            Spacer(minLength: 0)
+            if processingBidId != nil {
+                ProgressView().scaleEffect(0.8)
+            } else {
+                Image(systemName: "arrow.up.circle")
+                    .font(.system(size: 18, weight: .heavy))
+                    .foregroundStyle(dropHover ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard, in: RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(
+                    dropHover ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint),
+                    lineWidth: dropHover ? 2 : 1
+                )
+                .animation(.easeOut(duration: 0.12), value: dropHover)
+        )
+        .dropDestination(for: String.self) { droppedIds, _ in
+            guard let bidId = droppedIds.first else { return false }
+            guard loadedBids.contains(where: { $0.id == bidId }) else { return false }
+            Task { await accept(bidId: bidId) }
+            return true
+        } isTargeted: { hovering in
+            dropHover = hovering
         }
     }
 
@@ -77,7 +154,19 @@ private struct BiddingBody: View {
             LifecycleCard {
                 LifecycleSection(label: "LIVE BID FEED", icon: "hand.raised")
                 VStack(spacing: 8) {
-                    ForEach(rows) { bid in bidRow(bid) }
+                    ForEach(rows) { bid in
+                        bidRow(bid)
+                            .draggable(bid.id) {
+                                bidRow(bid)
+                                    .frame(maxWidth: 320)
+                                    .opacity(0.92)
+                                    .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
+                            }
+                            .onDrag {
+                                draggingBidId = bid.id
+                                return NSItemProvider(object: bid.id as NSString)
+                            }
+                    }
                 }
             }
         case .error(let err):
@@ -145,15 +234,21 @@ private struct BiddingBody: View {
     }
 
     private func accept(bidId: String) async {
-        processingBidId = bidId
-        actionError = nil
+        await MainActor.run { processingBidId = bidId; actionError = nil }
+        let label = loadedBids.first(where: { $0.id == bidId }).map { "\($0.catalystName) · \(usd($0.amount))" } ?? "bid \(bidId)"
         do {
             _ = try await EusoTripAPI.shared.shipper.acceptBid(loadId: loadId, bidId: bidId)
+            await MainActor.run {
+                lastAwarded = "AWARDED to \(label) · load advances to AWARDED"
+                draggingBidId = nil
+            }
             await bids.refresh()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            await MainActor.run {
+                actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            }
         }
-        processingBidId = nil
+        await MainActor.run { processingBidId = nil }
     }
 
     private func initials(_ name: String) -> String {
