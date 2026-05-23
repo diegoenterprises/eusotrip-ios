@@ -71,6 +71,24 @@ struct ShipperHome: View {
     /// widget for shipper or driver role".
     @State private var weatherNeedsLocation: Bool = false
 
+    // ── Home-widget customization (parity with Driver 010 · 2026-05-23) ──
+    enum ShipperWidgetSlot: String, CaseIterable, Codable, Identifiable {
+        case activeLoads, esang, recent, news
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .activeLoads: return "Active loads"
+            case .esang:       return "ESANG strip"
+            case .recent:      return "Recent activity"
+            case .news:        return "Shipper intel"
+            }
+        }
+    }
+    @State private var widgetOrder: [ShipperWidgetSlot] = ShipperWidgetSlot.allCases
+    @State private var editingLayout: Bool = false
+    @State private var dropHoverSlot: ShipperWidgetSlot? = nil
+    private let widgetLayoutKey = "shipper.home.widgetOrder"
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
@@ -90,24 +108,23 @@ struct ShipperHome: View {
                     collapsibleAttentionCard
                     ctaRow
                     statRow
-                    activeLoadsSection
-                    esangStrip
-                    recentActivitySection
-                    // "Shipper Intel" rotating-headline carousel — same
-                    // NewsCarouselWidget the driver home uses, but with
-                    // a role-aware eyebrow ("SHIPPER INTEL") and the
-                    // server's role-prioritized morning brief slice.
-                    // Per home-widget doctrine the news carousel sits
-                    // last in the column so glanceable role-relevant
-                    // headlines close out the dashboard.
-                    NewsCarouselWidget()
+                    // Reorderable secondary-widget zone — drag to
+                    // rearrange in edit mode. Persists per-shipper via
+                    // users.saveDashboardLayout("SHIPPER", …).
+                    widgetZoneToolbar
+                    ForEach(widgetOrder) { slot in
+                        secondaryWidget(for: slot)
+                    }
                     Color.clear.frame(height: 96) // bottom-nav clearance
                 }
                 .padding(.horizontal, Space.s5)
                 .padding(.top, Space.s4)
             }
         }
-        .task { await refreshAll() }
+        .task {
+            await refreshAll()
+            await hydrateWidgetLayout()
+        }
         .refreshable { await refreshAll() }
         // After the user taps Allow / Deny on the iOS location
         // prompt, WeatherService posts this — re-run the dashboard
@@ -1122,6 +1139,161 @@ struct ShipperHome: View {
     private func percent(_ v: Double) -> String { String(format: "%.1f%%", v * 100) }
     private func trail(forActive count: Int) -> String { "+3 this wk" }
     private func trailVsLastMonth(_ rpm: Double) -> String { "−6% vs Mar" }
+
+    // MARK: - Reorderable secondary-widget zone
+
+    private var widgetZoneToolbar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: editingLayout ? "checkmark.circle.fill" : "rectangle.3.group.bubble")
+                .font(.system(size: 11, weight: .heavy))
+            Text(editingLayout ? "DONE · Tap to save layout" : "CUSTOMIZE WIDGETS")
+                .font(.system(size: 10, weight: .heavy)).tracking(0.6)
+            Spacer(minLength: 0)
+            if editingLayout {
+                Button {
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        widgetOrder = ShipperWidgetSlot.allCases
+                    }
+                } label: {
+                    Text("RESET")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(palette.bgCard, in: Capsule())
+                }.buttonStyle(.plain)
+            }
+        }
+        .foregroundStyle(editingLayout ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
+        .padding(.horizontal, Space.s3).padding(.vertical, 8)
+        .background(
+            Capsule().strokeBorder(
+                editingLayout ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint),
+                lineWidth: 1
+            )
+        )
+        .contentShape(Capsule())
+        .onTapGesture {
+            withAnimation(.easeOut(duration: 0.18)) {
+                if editingLayout {
+                    editingLayout = false
+                    Task { await persistWidgetLayout() }
+                } else {
+                    editingLayout = true
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func secondaryWidget(for slot: ShipperWidgetSlot) -> some View {
+        let inner: AnyView = {
+            switch slot {
+            case .activeLoads: return AnyView(activeLoadsSection)
+            case .esang:       return AnyView(esangStrip)
+            case .recent:      return AnyView(recentActivitySection)
+            case .news:        return AnyView(NewsCarouselWidget())
+            }
+        }()
+        if editingLayout {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
+                    .padding(.top, 10)
+                inner
+            }
+            .overlay(alignment: .topTrailing) {
+                Text(slot.label.uppercased())
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(LinearGradient.diagonal)
+                    .clipShape(Capsule())
+                    .padding(6)
+            }
+            .background(
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(
+                        dropHoverSlot == slot ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint),
+                        lineWidth: dropHoverSlot == slot ? 2 : 1
+                    )
+                    .animation(.easeOut(duration: 0.12), value: dropHoverSlot)
+            )
+            .draggable(slot.rawValue) {
+                Text(slot.label)
+                    .font(.system(size: 13, weight: .heavy))
+                    .padding(10)
+                    .background(palette.surface, in: Capsule())
+                    .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
+            }
+            .dropDestination(for: String.self) { droppedIds, _ in
+                guard let raw = droppedIds.first,
+                      let dropped = ShipperWidgetSlot(rawValue: raw),
+                      dropped != slot,
+                      let fromIdx = widgetOrder.firstIndex(of: dropped),
+                      let toIdx = widgetOrder.firstIndex(of: slot)
+                else { return false }
+                withAnimation(.easeOut(duration: 0.18)) {
+                    let item = widgetOrder.remove(at: fromIdx)
+                    widgetOrder.insert(item, at: min(toIdx, widgetOrder.count))
+                }
+                return true
+            } isTargeted: { hovering in
+                dropHoverSlot = hovering ? slot : (dropHoverSlot == slot ? nil : dropHoverSlot)
+            }
+        } else {
+            inner
+        }
+    }
+
+    private func hydrateWidgetLayout() async {
+        if let data = UserDefaults.standard.data(forKey: widgetLayoutKey),
+           let cached = try? JSONDecoder().decode([ShipperWidgetSlot].self, from: data),
+           !cached.isEmpty {
+            widgetOrder = reconcile(cached)
+        }
+        struct In: Encodable { let role: String }
+        struct Slot: Decodable { let widgetId: String }
+        struct Out: Decodable { let layout: [Slot]?; let updatedAt: String? }
+        do {
+            let r: Out = try await EusoTripAPI.shared.query("users.getDashboardLayout", input: In(role: "SHIPPER"))
+            if let server = r.layout, !server.isEmpty {
+                let parsed = server.compactMap { ShipperWidgetSlot(rawValue: $0.widgetId) }
+                if !parsed.isEmpty {
+                    let merged = reconcile(parsed)
+                    await MainActor.run { widgetOrder = merged }
+                    if let data = try? JSONEncoder().encode(merged) {
+                        UserDefaults.standard.set(data, forKey: widgetLayoutKey)
+                    }
+                }
+            }
+        } catch { /* offline / unauth */ }
+    }
+
+    private func persistWidgetLayout() async {
+        if let data = try? JSONEncoder().encode(widgetOrder) {
+            UserDefaults.standard.set(data, forKey: widgetLayoutKey)
+        }
+        struct Slot: Encodable { let widgetId: String; let x: Int; let y: Int; let w: Int; let h: Int }
+        struct In: Encodable { let role: String; let layout: [Slot] }
+        struct Out: Decodable { let success: Bool? }
+        let payload = widgetOrder.enumerated().map { idx, slot in
+            Slot(widgetId: slot.rawValue, x: 0, y: idx, w: 12, h: 4)
+        }
+        do {
+            let _: Out = try await EusoTripAPI.shared.mutation(
+                "users.saveDashboardLayout",
+                input: In(role: "SHIPPER", layout: payload)
+            )
+        } catch { /* server unreachable — local cache holds */ }
+    }
+
+    private func reconcile(_ saved: [ShipperWidgetSlot]) -> [ShipperWidgetSlot] {
+        var seen = Set<ShipperWidgetSlot>(); var out: [ShipperWidgetSlot] = []
+        for s in saved where !seen.contains(s) { out.append(s); seen.insert(s) }
+        for s in ShipperWidgetSlot.allCases where !seen.contains(s) { out.append(s) }
+        return out
+    }
 }
 
 // MARK: - Notification names (canonical CTA hooks for the Shipper Home)
