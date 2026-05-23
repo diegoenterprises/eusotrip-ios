@@ -1366,6 +1366,13 @@ struct ShipperPostLoad: View {
         var permitTypeRaw: String = "none"
         var weightUnitRaw: String = "lbs"
         var savedAt: Double = 0
+        // v3 (2026-05-23) — persist transportMode so restoring an
+        // autosaved vessel draft doesn't render with default truck
+        // mode + vessel equipment (founder bug: VESSEL ghost-state
+        // after restore). Older drafts without this field decode to
+        // the default value and the post-hydrate equipment-compat
+        // check below snaps equipment to a mode-coherent option.
+        var transportModeRaw: String = "truck"
     }
 
     /// Single hash of every autosaved field. Drives one `.onChange`
@@ -1453,7 +1460,8 @@ struct ShipperPostLoad: View {
             oversizePermits: oversizePermits,
             permitTypeRaw: permitType.rawValue,
             weightUnitRaw: weightUnit.rawValue,
-            savedAt: Date().timeIntervalSince1970
+            savedAt: Date().timeIntervalSince1970,
+            transportModeRaw: transportMode.rawValue
         )
         if let data = try? JSONEncoder().encode(snap) {
             UserDefaults.standard.set(data, forKey: draftStorageKey)
@@ -1521,6 +1529,21 @@ struct ShipperPostLoad: View {
         }
         if let unit = MeasurementUnit(rawValue: snap.weightUnitRaw) {
             weightUnit = unit
+        }
+        // Restore transport mode (v3+). Falls back to .truck when the
+        // draft predates the field.
+        if let restoredMode = TransportMode(rawValue: snap.transportModeRaw) {
+            transportMode = restoredMode
+        }
+        // Post-hydrate safety net — if the restored equipmentType is
+        // not mode-compatible (e.g. v1/v2 draft with vesselBulk +
+        // default truck mode), snap to the mode's canonical default.
+        // Same logic as autoSnapEquipmentForMode but executed
+        // synchronously so the first render is already consistent.
+        if !equipmentType.compatible(with: transportMode) {
+            let snapped = cargoType.defaultEquipment(currentEquipment: equipmentType, mode: transportMode)
+                ?? cargoType.defaultEquipmentFallback(mode: transportMode)
+            equipmentType = snapped
         }
     }
 
@@ -2812,7 +2835,12 @@ struct ShipperPostLoad: View {
                     .font(EType.micro).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: 0)
-                Text(equipmentType.vertical.uppercased())
+                // 2026-05-23 — read from transportMode (the chip-strip
+                // filter source of truth), not equipmentType.vertical.
+                // The two could drift after an autosave restore where
+                // equipmentType retained a vessel value but the new
+                // session's mode was truck. Founder VESSEL-ghost bug.
+                Text(transportMode.displayName.uppercased())
                     .font(.system(size: 8, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(LinearGradient.diagonal)
             }
@@ -5550,10 +5578,41 @@ fileprivate extension ShipperPostLoad.EquipmentChoice {
 
 struct ShipperPostLoadScreen: View {
     let theme: Theme.Palette
+    @EnvironmentObject private var session: EusoTripSession
+
+    /// nil = entry-gate shown (founder asked for a list-of-drafts +
+    /// new-load-post screen BEFORE the wizard so the autosaved draft
+    /// from a previous session doesn't silently load when they meant
+    /// to start a fresh post). Resume / Fresh both transition to the
+    /// wizard; the gate never re-shows in the same screen instance.
+    @State private var entryChoice: EntryChoice? = nil
+
+    private enum EntryChoice { case resume, fresh }
+
+    private var draftStorageKey: String {
+        let uid = session.user?.id ?? "anon"
+        return "shipper.postLoadDraft.\(uid)"
+    }
 
     var body: some View {
         Shell(theme: theme) {
-            ShipperPostLoad()
+            if let _ = entryChoice {
+                // Wizard takes over. `clearDraft` was called by the
+                // .fresh branch before this state flip, so the wizard's
+                // hydrate pass finds nothing.
+                ShipperPostLoad()
+            } else {
+                PostLoadDraftsEntryBody(
+                    storageKey: draftStorageKey,
+                    onResume: { entryChoice = .resume },
+                    onFresh: {
+                        UserDefaults.standard.removeObject(forKey: draftStorageKey)
+                        NSUbiquitousKeyValueStore.default.removeObject(forKey: draftStorageKey)
+                        NSUbiquitousKeyValueStore.default.synchronize()
+                        entryChoice = .fresh
+                    }
+                )
+            }
         } nav: {
             BottomNav(
                 leading: shipperNavLeading_204(),
@@ -5561,6 +5620,177 @@ struct ShipperPostLoadScreen: View {
                 orbState: .idle
             )
         }
+    }
+}
+
+/// Entry gate for Post-a-Load — surfaces the single autosaved draft
+/// (if any) plus a New-load-post CTA. Reads the wizard's own storage
+/// key directly (UserDefaults + iCloud KVS) so there's one source of
+/// truth and no separate draft-list service to maintain. Multi-draft
+/// support is a follow-up; this entry contract stays the same.
+private struct PostLoadDraftsEntryBody: View {
+    @Environment(\.palette) private var palette
+    let storageKey: String
+    let onResume: () -> Void
+    let onFresh: () -> Void
+
+    /// Minimal summary used for the draft card — decodes a subset of
+    /// the wizard's PostLoadDraftSnapshot fields (Codable matches by
+    /// key name; extra fields in the source are ignored).
+    private struct DraftSummary: Codable {
+        var origin: String = ""
+        var destination: String = ""
+        var cargoTypeRaw: String = "general"
+        var transportModeRaw: String = "truck"
+        var equipmentTypeRaw: String = "dry_van"
+        var savedAt: Double = 0
+    }
+
+    @State private var summary: DraftSummary? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s4) {
+            // Eyebrow + title — mirrors the wizard header so the
+            // visual rhythm matches when the gate hands off.
+            VStack(alignment: .leading, spacing: Space.s1) {
+                Text("✦ SHIPPER · POST A LOAD")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("Drafts")
+                    .font(.system(size: 28, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+            }
+            .padding(.top, Space.s4)
+            .padding(.horizontal, Space.s4)
+
+            if let s = summary, hasUsefulFields(s) {
+                draftCard(s)
+                    .padding(.horizontal, Space.s4)
+            } else {
+                emptyDraftsCard
+                    .padding(.horizontal, Space.s4)
+            }
+
+            // Always-visible "+ New load post" CTA. Tap wipes the
+            // autosave first (in onFresh) so the wizard mounts clean.
+            Button(action: onFresh) {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 17, weight: .heavy))
+                    Text("New load post")
+                        .font(.system(size: 15, weight: .heavy))
+                }
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .foregroundStyle(.white)
+                .background(LinearGradient.diagonal, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, Space.s4)
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear { summary = loadSummary() }
+    }
+
+    private func hasUsefulFields(_ s: DraftSummary) -> Bool {
+        !s.origin.isEmpty || !s.destination.isEmpty || s.savedAt > 0
+    }
+
+    private var emptyDraftsCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("NO SAVED DRAFTS")
+                .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            Text("Start a new load post and the wizard autosaves as you fill it in. You can come back here to pick up where you left off.")
+                .font(.system(size: 13))
+                .foregroundStyle(palette.textSecondary)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 14).fill(palette.surface))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(palette.borderFaint))
+    }
+
+    private func draftCard(_ s: DraftSummary) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Text("DRAFT · AUTOSAVED")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 0)
+                Text(s.transportModeRaw.uppercased())
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                row(label: "ORIGIN", value: s.origin.isEmpty ? "—" : s.origin)
+                row(label: "DESTINATION", value: s.destination.isEmpty ? "—" : s.destination)
+                row(label: "CARGO", value: s.cargoTypeRaw.replacingOccurrences(of: "_", with: " ").capitalized)
+                row(label: "EQUIPMENT", value: s.equipmentTypeRaw.replacingOccurrences(of: "_", with: " ").capitalized)
+                row(label: "SAVED", value: savedAtLabel(s.savedAt))
+            }
+            Button(action: onResume) {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.clockwise.circle.fill")
+                        .font(.system(size: 15, weight: .heavy))
+                    Text("Resume draft")
+                        .font(.system(size: 14, weight: .heavy))
+                }
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .foregroundStyle(.white)
+                .background(LinearGradient.diagonal, in: Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 14).fill(palette.surface))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(LinearGradient.diagonal.opacity(0.4), lineWidth: 1)
+        )
+    }
+
+    private func row(label: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label)
+                .font(.system(size: 10, weight: .heavy)).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+                .frame(width: 96, alignment: .leading)
+            Text(value)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(1)
+        }
+    }
+
+    private func savedAtLabel(_ unix: Double) -> String {
+        guard unix > 0 else { return "—" }
+        let date = Date(timeIntervalSince1970: unix)
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f.localizedString(for: date, relativeTo: Date())
+    }
+
+    private func loadSummary() -> DraftSummary? {
+        // Prefer iCloud KVS over local UserDefaults (same precedence
+        // the wizard uses in hydrateDraftIfPresent).
+        let cloud = NSUbiquitousKeyValueStore.default.data(forKey: storageKey)
+        let local = UserDefaults.standard.data(forKey: storageKey)
+        let chosen: Data? = {
+            switch (cloud, local) {
+            case (let c?, let l?):
+                let cs = (try? JSONDecoder().decode(DraftSummary.self, from: c))?.savedAt ?? 0
+                let ls = (try? JSONDecoder().decode(DraftSummary.self, from: l))?.savedAt ?? 0
+                return cs >= ls ? c : l
+            case (let c?, nil): return c
+            case (nil, let l?): return l
+            default: return nil
+            }
+        }()
+        guard let data = chosen else { return nil }
+        return try? JSONDecoder().decode(DraftSummary.self, from: data)
     }
 }
 
