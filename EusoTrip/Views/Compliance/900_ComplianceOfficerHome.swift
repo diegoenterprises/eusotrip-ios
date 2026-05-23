@@ -50,13 +50,15 @@ private struct ComplianceHomeBody: View {
 
     // ── Home-widget customization — uses shared HomeWidgetGrid. ──
     private let widgetLayoutKey = "compliance.home.widgetOrder"
-    private let complianceCanonicalOrder: [String] = ["expiringDocs", "news"]
+    private let complianceCanonicalOrder: [String] = ["expiringDocs", "violations_overview", "news"]
 
     @ViewBuilder
     private func complianceHomeRender(_ id: String) -> AnyView {
         switch id {
         case "expiringDocs":
             if let e = topExpiring { AnyView(expiringWidget(e)) } else { AnyView(EmptyView()) }
+        case "violations_overview":
+            AnyView(violationsOverviewWidget)
         case "news":
             AnyView(NewsCarouselWidget())
         default:
@@ -143,6 +145,38 @@ private struct ComplianceHomeBody: View {
                 }
             }
         }.buttonStyle(.plain)
+    }
+
+    // MARK: - Violations overview widget
+
+    @ViewBuilder
+    private var violationsOverviewWidget: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Brand.danger)
+                Text("VIOLATIONS")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+            }
+            if loading {
+                LifecycleCard { Text("Loading…").font(EType.caption).foregroundStyle(palette.textSecondary) }
+            } else if let d = dash {
+                HStack(spacing: Space.s2) {
+                    LifecycleStatTile(label: "VIOLATIONS", value: "\(d.violations ?? 0)",
+                                      icon: "exclamationmark.triangle", danger: (d.violations ?? 0) > 0)
+                    LifecycleStatTile(label: "OVERDUE",    value: "\(d.overdueItems ?? 0)",
+                                      icon: "calendar.badge.exclamationmark", danger: (d.overdueItems ?? 0) > 0)
+                    LifecycleStatTile(label: "TREND",      value: (d.trend ?? "—").uppercased(),
+                                      icon: "arrow.up.right")
+                }
+            } else {
+                EusoEmptyState(systemImage: "checkmark.shield", title: "No violations data",
+                               subtitle: "Violations and overdue items will appear here.")
+            }
+        }
     }
 
     private func load() async {

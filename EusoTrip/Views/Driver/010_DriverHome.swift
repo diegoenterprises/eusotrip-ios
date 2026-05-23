@@ -158,6 +158,8 @@ enum HomeWidgetCatalog {
     /// Compliance-specific widgets.
     static let compliance: [HomeWidgetDef] = [
         .init(id: "expiringDocs",       name: "Expiring docs",      summary: "60-day rolling expiry watch",          icon: "doc.badge.clock.fill",    category: .compliance,     roles: ["COMPLIANCE_OFFICER"], defaultSize: (12, 6), iosRenderable: true),
+        .init(id: "violations_overview", name: "Violations",        summary: "Open violations + overdue + trend",    icon: "exclamationmark.triangle.fill", category: .compliance, roles: ["COMPLIANCE_OFFICER"], defaultSize: (10, 6), iosRenderable: true),
+        .init(id: "driver_compliance",  name: "Driver compliance",  summary: "Per-driver status + expiry watchlist", icon: "person.crop.circle.badge.checkmark", category: .compliance, roles: ["COMPLIANCE_OFFICER"], defaultSize: (12, 8), iosRenderable: true),
     ]
 
     /// All widgets across every role bucket.
