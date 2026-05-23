@@ -1317,19 +1317,14 @@ extension Notification.Name {
 }
 
 // MARK: - Shell wrapper + Shipper BottomNav (Me current)
-
-private func shipperNavLeading() -> [NavSlot] {
-    [
-        NavSlot(label: "Home",  systemImage: "house.fill",   isCurrent: false),
-        NavSlot(label: "Loads", systemImage: "shippingbox",  isCurrent: false),
-    ]
-}
-private func shipperNavTrailing() -> [NavSlot] {
-    [
-        NavSlot(label: "My Loads", systemImage: "creditcard",   isCurrent: false),
-        NavSlot(label: "Me",     systemImage: "person.fill",  isCurrent: true),
-    ]
-}
+//
+// 2026-05-22 founder ask: every screen's bottom nav must show the
+// SAME canonical icons as the home screen (Home / Create Load / Loads /
+// Me). The Wallet surface was rendering its own ad-hoc nav that swapped
+// the Loads slot for a credit-card icon and replaced "Create Load" with
+// nothing — making the bar look like a totally different app the moment
+// you opened Apple Pay Wallet. Now routes through the single source of
+// truth `shipperLifecycleNav(currentSlot:)` so the icons never change.
 
 struct ShipperApplePayWalletScreen: View {
     let theme: Theme.Palette
@@ -1337,9 +1332,7 @@ struct ShipperApplePayWalletScreen: View {
         Shell(theme: theme) {
             ShipperApplePayWallet()
         } nav: {
-            BottomNav(leading: shipperNavLeading(),
-                      trailing: shipperNavTrailing(),
-                      orbState: .idle)
+            shipperLifecycleNav(currentSlot: .me)
         }
     }
 }

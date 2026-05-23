@@ -813,7 +813,7 @@ private func shipperNavLeading() -> [NavSlot] {
 }
 private func shipperNavTrailing() -> [NavSlot] {
     [
-        NavSlot(label: "My Loads", systemImage: "creditcard",   isCurrent: false),
+        NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
         NavSlot(label: "Me",     systemImage: "person.fill",  isCurrent: true),
     ]
 }
