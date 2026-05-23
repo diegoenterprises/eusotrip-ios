@@ -142,6 +142,8 @@ enum HomeWidgetCatalog {
     /// Escort-specific widgets.
     static let escort: [HomeWidgetDef] = [
         .init(id: "activeAssignments",  name: "Active assignments", summary: "Live escort jobs",                     icon: "car.2.fill",              category: .operations,     roles: ["ESCORT"], defaultSize: (12, 8), iosRenderable: true),
+        .init(id: "escort_revenue",     name: "Escort revenue",     summary: "Weekly revenue + on-time + miles",     icon: "banknote.fill",           category: .financial,      roles: ["ESCORT"], defaultSize: (10, 6), iosRenderable: true),
+        .init(id: "escort_alerts",      name: "Escort alerts",      summary: "Assignments needing immediate action", icon: "exclamationmark.triangle.fill", category: .operations, roles: ["ESCORT"], defaultSize: (12, 6), iosRenderable: true),
     ]
 
     /// Admin-specific widgets.

@@ -72,12 +72,14 @@ struct EscortHome: View {
 
     // ── Home-widget customization — uses shared HomeWidgetGrid. ──
     private let widgetLayoutKey = "escort.home.widgetOrder"
-    private let escortCanonicalOrder: [String] = ["activeAssignments", "recent", "news"]
+    private let escortCanonicalOrder: [String] = ["activeAssignments", "escort_revenue", "escort_alerts", "recent", "news"]
 
     @ViewBuilder
     private func escortHomeRender(_ id: String) -> AnyView {
         switch id {
         case "activeAssignments": AnyView(activeAssignmentsCard)
+        case "escort_revenue":    AnyView(escortRevenueWidget)
+        case "escort_alerts":     AnyView(escortAlertsWidget)
         case "recent":            AnyView(recentActivityCard)
         case "news":              AnyView(NewsCarouselWidget())
         default:                  AnyView(EmptyView())
@@ -565,6 +567,82 @@ struct EscortHome: View {
                         RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                             .strokeBorder(palette.borderFaint)
                     )
+            }
+        }
+    }
+
+    // MARK: - Escort revenue widget
+
+    @ViewBuilder
+    private var escortRevenueWidget: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "banknote.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("REVENUE SUMMARY")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+            }
+            switch dashboard.state {
+            case .loading:
+                listSkeleton
+            case .loaded(let maybe):
+                if let s = maybe {
+                    HStack(spacing: Space.s2) {
+                        kpiTile(label: "REVENUE · 7D", value: dollars(s.revenueThisWeek), sub: "net this week")
+                        kpiTile(label: "ON-TIME",      value: String(format: "%.1f%%", s.onTimeRate * 100), sub: "delivery rate")
+                        kpiTile(label: "MILES · 7D",   value: "\(s.milesThisWeek) mi", sub: "driven this week")
+                    }
+                }
+            case .empty:
+                EusoEmptyState(systemImage: "banknote", title: "No revenue data",
+                               subtitle: "Complete an assignment and this week's revenue will appear here.")
+            case .error(let e):
+                inlineError(e) { Task { await dashboard.refresh() } }
+            }
+        }
+    }
+
+    // MARK: - Escort alerts widget
+
+    @ViewBuilder
+    private var escortAlertsWidget: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Brand.danger)
+                Text("ESCORT ALERTS")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                if case .loaded(let rows) = alerts.state, !rows.isEmpty {
+                    Text("\(rows.count)")
+                        .font(.system(size: 9, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(Brand.danger))
+                }
+            }
+            switch alerts.state {
+            case .loading:
+                listSkeleton
+            case .loaded(let rows):
+                if rows.isEmpty {
+                    EusoEmptyState(systemImage: "checkmark.circle", title: "All clear",
+                                   subtitle: "No assignments need attention right now.")
+                } else {
+                    VStack(spacing: Space.s2) {
+                        ForEach(rows.prefix(3)) { alertRow($0) }
+                    }
+                }
+            case .empty:
+                EusoEmptyState(systemImage: "checkmark.circle", title: "All clear",
+                               subtitle: "No assignments need attention right now.")
+            case .error(let e):
+                inlineError(e) { Task { await alerts.refresh() } }
             }
         }
     }
