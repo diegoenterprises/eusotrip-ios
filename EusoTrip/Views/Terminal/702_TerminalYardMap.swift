@@ -63,6 +63,15 @@ struct TerminalYardMap: View {
     /// Per-slot in-flight state for the "Release" CTA. Indexed by slot
     /// id so a failed release on slot B doesn't disturb slot A.
     @State private var releaseInFlight: Set<String> = []
+    /// 2026-05-23 — drag-and-drop state for the yard map.
+    /// dropHoverSlotId tracks which empty slot is the active drop
+    /// candidate so it can highlight; moveInFlight gates the source
+    /// tile during the mutation; moveError surfaces a per-tile error
+    /// inline so an in-flight failure on slot A doesn't disturb the
+    /// idle UX on slot B.
+    @State private var dropHoverSlotId: String? = nil
+    @State private var moveInFlight: Set<String> = []
+    @State private var moveError: [String: String] = [:]
     /// Per-slot error message (post-mutation). Cleared when the slot's
     /// CTA is tapped again or the yard refresh fires.
     @State private var releaseError: [String: String] = [:]
@@ -271,7 +280,7 @@ struct TerminalYardMap: View {
                     spacing: Space.s2
                 ) {
                     ForEach(zone.slots) { slot in
-                        slotTile(slot)
+                        slotTile(slot, in: zone)
                     }
                 }
             }
@@ -304,13 +313,15 @@ struct TerminalYardMap: View {
 
     // MARK: - Slot tile
 
-    private func slotTile(_ raw: TerminalAPI.YardSlot) -> some View {
+    private func slotTile(_ raw: TerminalAPI.YardSlot, in zone: TerminalAPI.YardZone) -> some View {
         // Local-released override carries the post-mutation snapshot so
         // the tile re-paints immediately without waiting for refresh.
         let slot = localReleased[raw.id] ?? raw
         let occupied = isOccupied(slot)
         let inFlight = releaseInFlight.contains(slot.id)
-        let errMsg = releaseError[slot.id]
+        let errMsg = releaseError[slot.id] ?? moveError[slot.id]
+        let moving = moveInFlight.contains(slot.id)
+        let isDropHover = dropHoverSlotId == slot.id
 
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
@@ -406,9 +417,86 @@ struct TerminalYardMap: View {
         .background(palette.bgCardSoft)
         .overlay(
             RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
+                .strokeBorder(
+                    isDropHover ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint),
+                    lineWidth: isDropHover ? 2 : 1
+                )
+                .animation(.easeOut(duration: 0.12), value: dropHoverSlotId)
         )
+        .opacity(moving ? 0.55 : 1.0)
         .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+        // Draggable when occupied — drag the trailer to another spot.
+        // Drop on empty spots fires yardManagement.moveTrailer.
+        .modifier(YardSlotDnDModifier(
+            slot: slot,
+            zone: zone,
+            occupied: occupied,
+            onDrop: { sourceSlotId in
+                guard let sourceZone = currentZone(slotId: sourceSlotId, in: zone) ?? lookupZone(forSlot: sourceSlotId),
+                      let sourceSlot = sourceZone.slots.first(where: { $0.id == sourceSlotId })
+                else { return false }
+                if sourceSlot.id == slot.id { return false }
+                Task { await commitMove(from: sourceSlot, fromZone: sourceZone, to: slot, toZone: zone) }
+                return true
+            },
+            isDropHovered: { dropHoverSlotId == slot.id },
+            setDropHovered: { hovering in
+                dropHoverSlotId = hovering ? slot.id : (dropHoverSlotId == slot.id ? nil : dropHoverSlotId)
+            }
+        ))
+    }
+
+    /// Find the zone that contains a given slot id — first checks
+    /// the passed-in zone, then falls back to scanning the full
+    /// envelope (cross-zone moves).
+    private func currentZone(slotId: String, in zone: TerminalAPI.YardZone) -> TerminalAPI.YardZone? {
+        zone.slots.contains(where: { $0.id == slotId }) ? zone : nil
+    }
+    private func lookupZone(forSlot slotId: String) -> TerminalAPI.YardZone? {
+        guard case .loaded(let env) = yard.state, let v = env else { return nil }
+        return v.zones.first(where: { z in z.slots.contains(where: { $0.id == slotId }) })
+    }
+
+    /// commitMove — fires yardManagement.moveTrailer for a drag from
+    /// `from` (occupied) to `to` (empty). Optimistically marks the
+    /// source as moving + surfaces inline error on the destination if
+    /// the mutation fails. The store's next refresh re-syncs.
+    private func commitMove(
+        from src: TerminalAPI.YardSlot,
+        fromZone srcZone: TerminalAPI.YardZone,
+        to dest: TerminalAPI.YardSlot,
+        toZone destZone: TerminalAPI.YardZone
+    ) async {
+        moveInFlight.insert(src.id)
+        moveError[dest.id] = nil
+        defer { moveInFlight.remove(src.id) }
+        struct In: Encodable {
+            let trailerId: String
+            let trailerNumber: String?
+            let fromSpot: String
+            let toSpot: String
+            let locationId: String
+            let reason: String?
+        }
+        struct Out: Decodable { let success: Bool? }
+        do {
+            let _: Out = try await EusoTripAPI.shared.mutation(
+                "yardManagement.moveTrailer",
+                input: In(
+                    trailerId: src.loadNumber.isEmpty ? src.id : src.loadNumber,
+                    trailerNumber: src.loadNumber.isEmpty ? nil : src.loadNumber,
+                    fromSpot: src.label.isEmpty ? src.id : src.label,
+                    toSpot: dest.label.isEmpty ? dest.id : dest.label,
+                    locationId: destZone.id,
+                    reason: "reposition"
+                )
+            )
+            await yard.refresh()
+        } catch {
+            await MainActor.run {
+                moveError[dest.id] = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            }
+        }
     }
 
     /// Authority check — server is the source of truth for occupancy.
@@ -532,6 +620,44 @@ struct TerminalYardMap: View {
 //         for the same reason 701's AssignDockInputSheet is split —
 //         keeps `@FocusState` / `@State` from being trapped inside
 //         the parent's `@ViewBuilder` closure)
+
+/// Conditional drag/drop modifier for yard slot tiles. Adds
+/// `.draggable(slot.id)` when the tile is occupied; adds
+/// `.dropDestination(for: String.self)` when the tile is empty. Keeps
+/// the tile's tap interactions intact (the existing Release button
+/// still works inside the draggable wrapper).
+private struct YardSlotDnDModifier: ViewModifier {
+    let slot: TerminalAPI.YardSlot
+    let zone: TerminalAPI.YardZone
+    let occupied: Bool
+    let onDrop: (String) -> Bool
+    let isDropHovered: () -> Bool
+    let setDropHovered: (Bool) -> Void
+
+    func body(content: Content) -> some View {
+        if occupied {
+            content
+                .draggable(slot.id) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(slot.label).font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                        Text(slot.loadNumber.isEmpty ? "—" : slot.loadNumber)
+                            .font(.system(size: 13, weight: .heavy))
+                    }
+                    .padding(8)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
+                }
+        } else {
+            content
+                .dropDestination(for: String.self) { droppedIds, _ in
+                    guard let sourceId = droppedIds.first else { return false }
+                    return onDrop(sourceId)
+                } isTargeted: { hovering in
+                    setDropHovered(hovering)
+                }
+        }
+    }
+}
 
 private struct ReleaseSlotSheet: View {
     @Environment(\.palette) private var palette
