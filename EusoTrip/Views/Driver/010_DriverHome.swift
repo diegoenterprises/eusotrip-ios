@@ -110,6 +110,8 @@ enum HomeWidgetCatalog {
     /// Catalyst-specific widgets.
     static let catalyst: [HomeWidgetDef] = [
         .init(id: "activeMatches",      name: "Active matches",     summary: "Match board + bid landscape",          icon: "person.line.dotted.person.fill", category: .operations, roles: ["CATALYST"], defaultSize: (12, 8), iosRenderable: true),
+        .init(id: "gmv_summary",        name: "GMV summary",        summary: "Weekly GMV + fit score + matched",     icon: "chart.bar.fill",                 category: .analytics,  roles: ["CATALYST"], defaultSize: (10, 6), iosRenderable: true),
+        .init(id: "catalyst_alerts",    name: "Catalyst alerts",    summary: "Matches needing immediate action",     icon: "exclamationmark.triangle.fill",  category: .operations, roles: ["CATALYST"], defaultSize: (12, 6), iosRenderable: true),
     ]
 
     /// Broker-specific widgets.

@@ -84,12 +84,13 @@ struct CatalystHome: View {
 
     // ── Home-widget customization — uses shared HomeWidgetGrid. ──
     private let widgetLayoutKey = "catalyst.home.widgetOrder"
-    private let catalystCanonicalOrder: [String] = ["activeMatches", "recent", "news"]
+    private let catalystCanonicalOrder: [String] = ["activeMatches", "gmv_summary", "recent", "news"]
 
     @ViewBuilder
     private func catalystHomeRender(_ id: String) -> AnyView {
         switch id {
         case "activeMatches": AnyView(activeMatchesCard)
+        case "gmv_summary":   AnyView(gmvSummaryWidget)
         case "recent":        AnyView(recentActivityCard)
         case "news":          AnyView(NewsCarouselWidget())
         default:              AnyView(EmptyView())
@@ -750,6 +751,42 @@ struct CatalystHome: View {
                             .strokeBorder(palette.borderFaint)
                     )
             }
+        }
+    }
+
+    // MARK: - GMV summary widget
+
+    @ViewBuilder
+    private var gmvSummaryWidget: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "chart.bar.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("GMV SUMMARY")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+            }
+            switch dashboard.state {
+            case .loading:
+                listSkeleton
+            case .loaded(let maybe):
+                if let s = maybe { gmvTiles(s) }
+            case .empty:
+                EusoEmptyState(systemImage: "chart.bar", title: "No GMV data",
+                               subtitle: "Run a match agent and this week's GMV will appear here.")
+            case .error(let e):
+                inlineError(e) { Task { await dashboard.refresh() } }
+            }
+        }
+    }
+
+    private func gmvTiles(_ s: CatalystAPI.DashboardStats) -> some View {
+        HStack(spacing: Space.s2) {
+            kpiTile(label: "GMV · 7D",    value: dollars(s.gmvThisWeek),   sub: "gross move value")
+            kpiTile(label: "AVG FIT",     value: String(format: "%.0f%%", s.avgFitScore * 100), sub: "SpectraMatch score")
+            kpiTile(label: "MATCHED · 7D", value: "\(s.matchedThisWeek)", sub: "loads matched")
         }
     }
 
