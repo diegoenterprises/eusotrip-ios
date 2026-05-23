@@ -4,11 +4,19 @@
 //
 //  Pixel-match to `03 Catalyst/Dark-SVG/301 Dispatch Board.svg`.
 //  Owner-op single-truck dispatch lens — "1 truck · today" view
-//  of pending tenders + active load + driver assignment.
+//  of pending tenders + assigned + in-transit + delivered.
+//
+//  Reshaped 2026-05-23 from a chip-filter linear list into a true
+//  4-column Kanban with paged columns + drag-to-advance, matching
+//  the 708_DispatchKanbanBoard pattern. Drop fires the canonical
+//  `dispatch.updateLoadStatus` mutation.
 //
 //  Wire bindings (all real, no stubs):
-//    loads.list(status: "in_transit"|"accepted"|"assigned")
-//    loads.list(status: "pending"|"posted")
+//    loads.list(status: "pending")
+//    loads.list(status: "assigned")
+//    loads.list(status: "in_transit")
+//    loads.list(status: "delivered")
+//    dispatch.updateLoadStatus (drag-to-advance)
 //
 
 import SwiftUI
@@ -38,6 +46,21 @@ private struct DispatchLoadsEnvelope: Decodable {
     var rows: [DispatchLoad] { loads ?? items ?? [] }
 }
 
+private struct CatalystKanbanColumn: Identifiable, Hashable {
+    let id: String
+    let label: String
+    let icon: String
+    let status: String
+    let nextStatus: String?
+}
+
+private let catalystKanbanColumns: [CatalystKanbanColumn] = [
+    .init(id: "pending",   label: "PENDING",    icon: "tray",                  status: "pending",     nextStatus: "assigned"),
+    .init(id: "assigned",  label: "ASSIGNED",   icon: "person.fill.checkmark", status: "assigned",    nextStatus: "in_transit"),
+    .init(id: "transit",   label: "IN TRANSIT", icon: "truck.box",             status: "in_transit",  nextStatus: "delivered"),
+    .init(id: "delivered", label: "DELIVERED",  icon: "checkmark.seal.fill",   status: "delivered",   nextStatus: nil),
+]
+
 struct CatalystDispatchBoardScreen: View {
     let theme: Theme.Palette
     var body: some View {
@@ -56,40 +79,48 @@ struct CatalystDispatchBoardScreen: View {
 private struct DispatchBoardBody: View {
     @Environment(\.palette) private var palette
 
-    enum Filter: String, CaseIterable {
-        case all = "All", pending = "Pending", active = "Active", awarded = "Awarded", closed = "Closed"
-    }
-
-    @State private var active: [DispatchLoad] = []
-    @State private var pending: [DispatchLoad] = []
-    @State private var filter: Filter = .all
+    @State private var byColumn: [String: [DispatchLoad]] = [:]
     @State private var loading: Bool = true
-    @State private var error: String?
+    @State private var loadError: String? = nil
+    @State private var selected: String = "pending"
+    @State private var dragHoverColumn: String? = nil
+    @State private var advancing: String? = nil
+    @State private var actionError: String? = nil
+    @State private var lastAdvance: String? = nil
 
+    private var totalAll: Int { byColumn.values.reduce(0) { $0 + $1.count } }
     private var expiringSoon: Int {
-        pending.filter { expiresWithin($0.expiresAt, hours: 6) }.count
+        (byColumn["pending"] ?? []).filter { expiresWithin($0.expiresAt, hours: 6) }.count
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                header
-                filterTabs
-                if loading && active.isEmpty && pending.isEmpty {
-                    LifecycleCard { Text("Loading dispatch board…").font(EType.caption).foregroundStyle(palette.textSecondary) }
-                } else if let err = error {
-                    LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
-                } else {
-                    if filter == .all || filter == .active {
-                        activeSection
-                    }
-                    if filter == .all || filter == .pending {
-                        pendingSection
-                    }
-                }
-                Color.clear.frame(height: 96)
+        VStack(spacing: 0) {
+            header.padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 6)
+            scrubber.padding(.bottom, 6)
+            if loading && byColumn.isEmpty {
+                LifecycleCard {
+                    Text("Loading dispatch board…")
+                        .font(EType.caption).foregroundStyle(palette.textSecondary)
+                }.padding(.horizontal, 14)
+                Spacer(minLength: 0)
+            } else if let err = loadError {
+                LifecycleCard(accentDanger: true) {
+                    Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+                }.padding(.horizontal, 14)
+                Spacer(minLength: 0)
+            } else {
+                columnPager
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            if let m = lastAdvance {
+                LifecycleCard(accentGradient: true) {
+                    Text(m).font(EType.caption).foregroundStyle(palette.textPrimary)
+                }.padding(.horizontal, 14).padding(.top, 6)
+            }
+            if let e = actionError {
+                LifecycleCard(accentDanger: true) {
+                    Text(e).font(EType.caption).foregroundStyle(Brand.danger)
+                }.padding(.horizontal, 14).padding(.top, 6)
+            }
         }
         .task { await loadAll() }
         .refreshable { await loadAll() }
@@ -98,84 +129,153 @@ private struct DispatchBoardBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text("CATALYST · DISPATCH BOARD · LIVE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+                Image(systemName: "sparkle")
+                    .font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("CATALYST · DISPATCH BOARD · LIVE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 0)
+                Text("\(totalAll) LOADS")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(palette.textSecondary)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(palette.bgCard).clipShape(Capsule())
             }
-            Text("Dispatch board").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("1 truck · today").font(EType.caption).foregroundStyle(palette.textSecondary)
-            Text("\(active.count) ACTIVE · \(pending.count) PENDING · \(expiringSoon) EXPIRING")
-                .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textSecondary)
+            Text("Dispatch board")
+                .font(.system(size: 22, weight: .heavy))
+                .foregroundStyle(palette.textPrimary)
+            Text("1 truck · today · drag to advance stage")
+                .font(EType.caption).foregroundStyle(palette.textSecondary)
+            if expiringSoon > 0 {
+                Text("\(expiringSoon) TENDER\(expiringSoon == 1 ? "" : "S") EXPIRING < 6H")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(Brand.danger)
+            }
         }
     }
 
-    private var filterTabs: some View {
-        HStack(spacing: 6) {
-            ForEach(Filter.allCases, id: \.self) { f in
-                let count: Int = {
-                    switch f {
-                    case .all:     return active.count + pending.count
-                    case .pending: return pending.count
-                    case .active:  return active.count
-                    case .awarded: return 0
-                    case .closed:  return 0
+    private var scrubber: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(catalystKanbanColumns) { col in
+                    Button {
+                        withAnimation(.easeOut(duration: 0.18)) { selected = col.id }
+                    } label: {
+                        VStack(spacing: 2) {
+                            HStack(spacing: 4) {
+                                Image(systemName: col.icon).font(.system(size: 9, weight: .heavy))
+                                Text(col.label).font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                            }
+                            Text("\(byColumn[col.id]?.count ?? 0)")
+                                .font(.system(size: 13, weight: .heavy)).monospacedDigit()
+                        }
+                        .foregroundStyle(selected == col.id ? .white : palette.textSecondary)
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(selected == col.id ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCard))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    }.buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 14)
+        }
+    }
+
+    private var columnPager: some View {
+        TabView(selection: $selected) {
+            ForEach(catalystKanbanColumns) { col in
+                column(col).tag(col.id)
+            }
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+    }
+
+    private func column(_ col: CatalystKanbanColumn) -> some View {
+        let cards = byColumn[col.id] ?? []
+        let isHover = dragHoverColumn == col.id
+        return ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                HStack {
+                    Text(col.label)
+                        .font(.system(size: 13, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(palette.textPrimary)
+                    Text("\(cards.count)")
+                        .font(.system(size: 11, weight: .heavy)).foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(LinearGradient.diagonal).clipShape(Capsule())
+                    Spacer(minLength: 0)
+                    if let next = col.nextStatus {
+                        Text("→ \(next.replacingOccurrences(of: "_", with: " ").uppercased())")
+                            .font(.system(size: 9, weight: .heavy))
+                            .foregroundStyle(palette.textTertiary)
                     }
-                }()
-                Button { filter = f } label: {
-                    HStack(spacing: 4) {
-                        Text(f.rawValue).font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                        if count > 0 { Text("· \(count)").font(.system(size: 9, weight: .heavy)).foregroundStyle(palette.textTertiary) }
+                }
+                if cards.isEmpty {
+                    EusoEmptyState(
+                        systemImage: col.icon,
+                        title: "Column empty",
+                        subtitle: "No loads in this stage right now."
+                    )
+                } else {
+                    ForEach(cards) { l in
+                        cardView(l, col: col)
+                            .draggable(l.id) {
+                                cardView(l, col: col)
+                                    .frame(maxWidth: 320)
+                                    .opacity(0.92)
+                                    .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
+                            }
                     }
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .foregroundStyle(filter == f ? .white : palette.textSecondary)
-                    .background(filter == f ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCard))
-                    .clipShape(Capsule())
-                }.buttonStyle(.plain)
+                }
+                Color.clear.frame(height: 96)
             }
-            Spacer(minLength: 0)
+            .padding(.horizontal, 14).padding(.top, 6)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(
+                    isHover ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(Color.clear),
+                    lineWidth: isHover ? 2 : 0
+                )
+                .padding(.horizontal, 8)
+                .animation(.easeOut(duration: 0.12), value: isHover)
+        )
+        .dropDestination(for: String.self) { droppedIds, _ in
+            guard let droppedId = droppedIds.first else { return false }
+            guard let load = byColumn.values.flatMap({ $0 }).first(where: { $0.id == droppedId }) else { return false }
+            if (load.status ?? "") == col.status { return false }
+            Task { await advance(load: load, to: col.status) }
+            return true
+        } isTargeted: { hovering in
+            dragHoverColumn = hovering ? col.id : (dragHoverColumn == col.id ? nil : dragHoverColumn)
         }
     }
 
-    private var activeSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("ACTIVE · ASSIGNED TO YOU")
-                .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-            if active.isEmpty {
-                LifecycleCard { Text("No active loads.").font(EType.caption).foregroundStyle(palette.textSecondary) }
-            } else {
-                ForEach(active) { l in activeCard(l) }
-            }
-        }
-    }
-
-    private var pendingSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("PENDING TENDERS · \(pending.count) · \(expiringSoon) EXPIRING SOON")
-                .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-            if pending.isEmpty {
-                LifecycleCard { Text("No pending tenders.").font(EType.caption).foregroundStyle(palette.textSecondary) }
-            } else {
-                ForEach(pending) { l in pendingCard(l) }
-            }
-        }
-    }
-
-    private func activeCard(_ l: DispatchLoad) -> some View {
-        LifecycleCard(accentGradient: true) {
+    private func cardView(_ l: DispatchLoad, col: CatalystKanbanColumn) -> some View {
+        let isExpiringSoon = col.id == "pending" && expiresWithin(l.expiresAt, hours: 6)
+        return LifecycleCard(accentDanger: isExpiringSoon, accentGradient: col.id == "transit") {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text("IN TRANSIT")
+                    Text(col.label)
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                         .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Capsule().fill(Color.green.opacity(0.18)))
-                        .foregroundStyle(Color.green)
-                    if let h = l.hazmatClass {
-                        Text("UN\(h) · PG II")
+                        .background(Capsule().fill(stageTint(col).opacity(0.18)))
+                        .foregroundStyle(stageTint(col))
+                    if let h = l.hazmatClass, !h.isEmpty {
+                        Text("HAZ \(h)")
                             .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(Capsule().fill(Color.orange.opacity(0.18)))
                             .foregroundStyle(Color.orange)
                     }
                     Spacer()
+                    if isExpiringSoon, let exp = l.expiresAt, let hours = hoursUntil(exp) {
+                        Text("⏱ \(hours)h LEFT")
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Capsule().fill(Color.red.opacity(0.18)))
+                            .foregroundStyle(Color.red)
+                    }
                 }
                 Text(l.loadNumber ?? "LD-\(l.id)")
                     .font(.caption.monospaced().weight(.semibold))
@@ -191,7 +291,9 @@ private struct DispatchBoardBody: View {
                         .font(.title3.weight(.heavy).monospacedDigit())
                         .foregroundStyle(palette.textPrimary)
                     if let rpm = l.ratePerMile {
-                        Text("$\(rpm)/mi").font(.caption.monospacedDigit()).foregroundStyle(palette.textTertiary)
+                        Text("$\(rpm)/mi")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(palette.textTertiary)
                     }
                     Spacer()
                     if let tt = l.trailerType {
@@ -200,9 +302,9 @@ private struct DispatchBoardBody: View {
                             .foregroundStyle(palette.textTertiary)
                     }
                 }
-                if let d = l.assignedDriverName {
+                if let d = l.assignedDriverName, !d.isEmpty {
                     HStack(spacing: 6) {
-                        Text("ME")
+                        Text("DRIVER")
                             .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(Capsule().fill(palette.bgCardSoft))
@@ -211,34 +313,25 @@ private struct DispatchBoardBody: View {
                     }
                     .padding(.top, 4)
                 }
+                if advancing == l.id {
+                    HStack(spacing: 6) {
+                        ProgressView().scaleEffect(0.6)
+                        Text("Advancing…")
+                            .font(.system(size: 10, weight: .heavy)).tracking(0.6)
+                            .foregroundStyle(palette.textSecondary)
+                    }.padding(.top, 4)
+                }
             }
         }
     }
 
-    private func pendingCard(_ l: DispatchLoad) -> some View {
-        let isExpiringSoon = expiresWithin(l.expiresAt, hours: 6)
-        return LifecycleCard(accentDanger: isExpiringSoon) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(l.loadNumber ?? "LD-\(l.id)")
-                        .font(.caption.monospaced().weight(.semibold))
-                        .foregroundStyle(palette.textPrimary)
-                    Spacer()
-                    if isExpiringSoon, let exp = l.expiresAt, let hours = hoursUntil(exp) {
-                        Text("⏱ \(hours)h LEFT")
-                            .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Capsule().fill(Color.red.opacity(0.18)))
-                            .foregroundStyle(Color.red)
-                    }
-                }
-                Text("\(l.pickupCity ?? "—") → \(l.destCity ?? "—") · \(l.trailerType ?? "—")")
-                    .font(EType.body.weight(.semibold))
-                    .foregroundStyle(palette.textPrimary)
-                if let r = l.rate {
-                    Text("$\(r)").font(.body.monospacedDigit().weight(.semibold)).foregroundStyle(palette.textPrimary)
-                }
-            }
+    private func stageTint(_ col: CatalystKanbanColumn) -> Color {
+        switch col.id {
+        case "pending":   return .orange
+        case "assigned":  return .blue
+        case "transit":   return .green
+        case "delivered": return .gray
+        default:          return .gray
         }
     }
 
@@ -259,33 +352,55 @@ private struct DispatchBoardBody: View {
     }
 
     private func loadAll() async {
-        loading = true; error = nil
-        async let a: Void = loadActive()
-        async let p: Void = loadPending()
-        _ = await (a, p)
+        loading = true; loadError = nil
+        async let p:  [DispatchLoad] = fetch(status: "pending")
+        async let a:  [DispatchLoad] = fetch(status: "assigned")
+        async let t:  [DispatchLoad] = fetch(status: "in_transit")
+        async let d:  [DispatchLoad] = fetch(status: "delivered")
+        let (pending, assigned, transit, delivered) = await (p, a, t, d)
+        byColumn = [
+            "pending":   pending,
+            "assigned":  assigned,
+            "transit":   transit,
+            "delivered": delivered,
+        ]
         loading = false
     }
 
-    private func loadActive() async {
-        struct In: Encodable { let status: String?; let limit: Int }
+    private func fetch(status: String) async -> [DispatchLoad] {
+        struct In: Encodable { let status: String; let limit: Int }
         do {
             let r: DispatchLoadsEnvelope = try await EusoTripAPI.shared.query(
-                "loads.list", input: In(status: "in_transit", limit: 25)
+                "loads.list", input: In(status: status, limit: 50)
             )
-            active = r.rows
+            return r.rows
         } catch {
-            self.error = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+            await MainActor.run {
+                self.loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            }
+            return []
         }
     }
 
-    private func loadPending() async {
-        struct In: Encodable { let status: String?; let limit: Int }
+    private func advance(load: DispatchLoad, to next: String) async {
+        await MainActor.run { advancing = load.id; actionError = nil }
+        struct In: Encodable { let loadId: String; let status: String }
+        struct Out: Decodable { let success: Bool? }
         do {
-            let r: DispatchLoadsEnvelope = try await EusoTripAPI.shared.query(
-                "loads.list", input: In(status: "pending", limit: 25)
+            let _: Out = try await EusoTripAPI.shared.mutation(
+                "dispatch.updateLoadStatus",
+                input: In(loadId: load.id, status: next)
             )
-            pending = r.rows
-        } catch { /* */ }
+            await MainActor.run {
+                lastAdvance = "\(load.loadNumber ?? "LD-\(load.id)") → \(next.replacingOccurrences(of: "_", with: " ").uppercased())"
+            }
+            await loadAll()
+        } catch {
+            await MainActor.run {
+                actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            }
+        }
+        await MainActor.run { advancing = nil }
     }
 }
 
