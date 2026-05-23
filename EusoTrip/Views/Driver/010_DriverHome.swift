@@ -70,7 +70,7 @@ enum HomeWidgetCatalog {
         .init(id: "notes",              name: "Quick Notes",        summary: "Sticky notes and reminders",           icon: "note.text",               category: .productivity,   roles: allRoles, defaultSize: (6, 6), iosRenderable: false),
         .init(id: "tasks",              name: "Tasks",              summary: "Personal to-dos",                      icon: "checklist",               category: .productivity,   roles: allRoles, defaultSize: (6, 6), iosRenderable: false),
         .init(id: "notifications",      name: "Notifications",      summary: "Recent platform alerts",               icon: "bell.fill",               category: .communication,  roles: allRoles, defaultSize: (12, 6), iosRenderable: false),
-        .init(id: "messages",           name: "Messages",           summary: "Unread + active threads",              icon: "message.fill",            category: .communication,  roles: allRoles, defaultSize: (12, 6), iosRenderable: false),
+        .init(id: "messages",           name: "Messages",           summary: "Unread + active threads",              icon: "message.fill",            category: .communication,  roles: allRoles, defaultSize: (12, 6), iosRenderable: true),
         .init(id: "quick_actions",      name: "Quick Actions",      summary: "Role-aware shortcuts",                 icon: "bolt.fill",               category: .productivity,   roles: allRoles, defaultSize: (12, 4), iosRenderable: false),
         .init(id: "search",             name: "Search",             summary: "Loads / docs / contacts",              icon: "magnifyingglass",         category: .productivity,   roles: allRoles, defaultSize: (12, 4), iosRenderable: false),
         .init(id: "recent_activity",    name: "Recent activity",    summary: "Latest movements + events",            icon: "list.bullet.rectangle",   category: .reporting,      roles: allRoles, defaultSize: (12, 8), iosRenderable: true),
@@ -422,7 +422,7 @@ struct DriverHome: View {
     private let widgetLayoutKey = "driver.home.widgetOrder"
     private let driverHomeCanonicalOrder: [String] = [
         "next_delivery", "hos_tracker", "earnings_summary", "weather_alerts",
-        "haul", "compliance", "news", "recent", "hotZones",
+        "messages", "haul", "compliance", "news", "recent", "hotZones",
     ]
 
     /// Maps a catalog widget id → the concrete iOS tile view this
@@ -435,6 +435,7 @@ struct DriverHome: View {
         case "hos_tracker":     AnyView(HosTrackerWidget())
         case "earnings_summary":AnyView(EarningsSummaryWidget(available: vm.walletAvailable, availableDisplay: vm.walletAvailableDisplay))
         case "weather_alerts":  AnyView(WeatherAlertsWidget(snapshot: vm.weather))
+        case "messages":        AnyView(MessagesWidget())
         case "haul":            AnyView(TheHaulWeeklyTile())
         case "compliance":      AnyView(ComplianceCountdownStrip())
         case "news":            AnyView(NewsCarouselWidget())
@@ -1278,6 +1279,70 @@ struct DriverHome: View {
     // HomeWidgetGrid component (defined at file scope above).
     // canonicalOrder + render closure are declared at the top of
     // this struct; nothing else lives here.
+}
+
+// MARK: - MessagesWidget (catalog widget id: "messages" · UNIVERSAL)
+//
+// Universal across all 24 roles. Reads the canonical
+// UnreadMessageStore.shared total. Tap dispatches the same
+// eusoLogoutRequested-pattern notification every role's topbar
+// chat glyph fires, so the universal MessagesScreen surfaces from
+// the same path regardless of role context.
+
+struct MessagesWidget: View {
+    @Environment(\.palette) private var palette
+    @ObservedObject private var unread = UnreadMessageStore.shared
+
+    var body: some View {
+        Button {
+            NotificationCenter.default.post(
+                name: Notification.Name("eusoOpenMessagesRequested"),
+                object: nil
+            )
+        } label: {
+            HStack(spacing: Space.s3) {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: "message.fill")
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                        .frame(width: 44, height: 44)
+                        .background(palette.bgCardSoft, in: Circle())
+                    if unread.total > 0 {
+                        Text(unread.total > 99 ? "99+" : "\(unread.total)")
+                            .font(.system(size: 9, weight: .heavy))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5).padding(.vertical, 2)
+                            .background(Brand.danger, in: Capsule())
+                            .offset(x: 6, y: -4)
+                    }
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("MESSAGES")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text(unread.total == 0 ? "Inbox clean" : "\(unread.total) unread thread\(unread.total == 1 ? "" : "s")")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Tap to open inbox")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(palette.bgCard)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 // MARK: - WeatherAlertsWidget (catalog widget id: "weather_alerts")
