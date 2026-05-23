@@ -103,75 +103,79 @@ struct ShipperApplePayWallet: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            topBar
-                .padding(.top, Space.s5)
-            titleBlock
-                .padding(.top, Space.s3)
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 0) {
+                topBar
+                    .padding(.top, Space.s5)
+                titleBlock
+                    .padding(.top, Space.s3)
 
-            IridescentHairline()
-                .padding(.top, Space.s3)
+                IridescentHairline()
+                    .padding(.top, Space.s3)
 
-            // ── Active pass hero ───────────────────────────────────
-            // Renders the gradient pickup-credential card with QR +
-            // Add-to-Wallet CTA when the shipper has a live load.
-            // Empty state when none — never a fake hardcoded pass.
-            if let pass = activePass {
-                sectionLabel(pass.matrixRowLabel ?? "ACTIVE PASS")
+                // ── Active pass hero ───────────────────────────────────
+                // Renders the gradient pickup-credential card with QR +
+                // Add-to-Wallet CTA when the shipper has a live load.
+                // Empty state when none — never a fake hardcoded pass.
+                if let pass = activePass {
+                    sectionLabel(pass.matrixRowLabel ?? "ACTIVE PASS")
+                        .padding(.top, Space.s5)
+                    heroPassCard(for: pass)
+                        .padding(.horizontal, Space.s5)
+                        .padding(.top, Space.s2)
+                } else if snapshotPhase == .empty {
+                    sectionLabel("ACTIVE PASS")
+                        .padding(.top, Space.s5)
+                    emptyHeroCard
+                        .padding(.horizontal, Space.s5)
+                        .padding(.top, Space.s2)
+                } else if snapshotPhase == .loading {
+                    sectionLabel("ACTIVE PASS")
+                        .padding(.top, Space.s5)
+                    loadingHeroCard
+                        .padding(.horizontal, Space.s5)
+                        .padding(.top, Space.s2)
+                } else if case .error(let msg) = snapshotPhase {
+                    sectionLabel("ACTIVE PASS")
+                        .padding(.top, Space.s5)
+                    errorHeroCard(message: msg)
+                        .padding(.horizontal, Space.s5)
+                        .padding(.top, Space.s2)
+                }
+
+                // ── Pass list ──────────────────────────────────────────
+                if !passes.isEmpty {
+                    sectionLabel("PASSES · \(passes.count) IN WALLET")
+                        .padding(.top, Space.s5)
+                    passesCard
+                        .padding(.horizontal, Space.s5)
+                        .padding(.top, Space.s2)
+                }
+
+                // ── Apple Pay methods ──────────────────────────────────
+                sectionLabel("APPLE PAY · \(paymentMethods.count) METHODS")
                     .padding(.top, Space.s5)
-                heroPassCard(for: pass)
+                if paymentMethods.isEmpty {
+                    emptyPaymentMethodsCard
+                        .padding(.horizontal, Space.s5)
+                        .padding(.top, Space.s2)
+                } else {
+                    paymentMethodsCard
+                        .padding(.horizontal, Space.s5)
+                        .padding(.top, Space.s2)
+                }
+
+                settingsPointerLink
                     .padding(.horizontal, Space.s5)
-                    .padding(.top, Space.s2)
-            } else if snapshotPhase == .empty {
-                sectionLabel("ACTIVE PASS")
-                    .padding(.top, Space.s5)
-                emptyHeroCard
-                    .padding(.horizontal, Space.s5)
-                    .padding(.top, Space.s2)
-            } else if snapshotPhase == .loading {
-                sectionLabel("ACTIVE PASS")
-                    .padding(.top, Space.s5)
-                loadingHeroCard
-                    .padding(.horizontal, Space.s5)
-                    .padding(.top, Space.s2)
-            } else if case .error(let msg) = snapshotPhase {
-                sectionLabel("ACTIVE PASS")
-                    .padding(.top, Space.s5)
-                errorHeroCard(message: msg)
-                    .padding(.horizontal, Space.s5)
-                    .padding(.top, Space.s2)
+                    .padding(.top, Space.s4)
+
+                footer
+                    .padding(.top, Space.s4)
+                    .padding(.bottom, Space.s5)
             }
-
-            // ── Pass list ──────────────────────────────────────────
-            if !passes.isEmpty {
-                sectionLabel("PASSES · \(passes.count) IN WALLET")
-                    .padding(.top, Space.s5)
-                passesCard
-                    .padding(.horizontal, Space.s5)
-                    .padding(.top, Space.s2)
-            }
-
-            // ── Apple Pay methods ──────────────────────────────────
-            sectionLabel("APPLE PAY · \(paymentMethods.count) METHODS")
-                .padding(.top, Space.s5)
-            if paymentMethods.isEmpty {
-                emptyPaymentMethodsCard
-                    .padding(.horizontal, Space.s5)
-                    .padding(.top, Space.s2)
-            } else {
-                paymentMethodsCard
-                    .padding(.horizontal, Space.s5)
-                    .padding(.top, Space.s2)
-            }
-
-            settingsPointerLink
-                .padding(.horizontal, Space.s5)
-                .padding(.top, Space.s4)
-
-            footer
-                .padding(.top, Space.s4)
-                .padding(.bottom, Space.s5)
         }
+        .overlay(alignment: .top) { passBannerOverlay }
+        .animation(.easeInOut(duration: 0.2), value: passBannerText)
         .task { await loadAll() }
         .refreshable { await loadAll() }
     }
@@ -668,6 +672,37 @@ struct ShipperApplePayWallet: View {
         }
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(.horizontal, Space.s5)
+    }
+
+    // MARK: - Banner overlay
+
+    @ViewBuilder
+    private var passBannerOverlay: some View {
+        if let text = passBannerText {
+            walletBanner(text, kind: passBannerKind)
+                .padding(.top, Space.s3)
+                .padding(.horizontal, Space.s4)
+        }
+    }
+
+    @ViewBuilder
+    private func walletBanner(_ text: String, kind: WalletBannerKind) -> some View {
+        HStack(alignment: .top, spacing: Space.s2) {
+            Image(systemName: kind == .success ? "checkmark.circle.fill" : kind == .error ? "exclamationmark.triangle.fill" : "info.circle.fill")
+                .foregroundStyle(kind == .success ? Brand.success : kind == .error ? Brand.danger : palette.textSecondary)
+                .font(.system(size: 14, weight: .semibold))
+                .padding(.top, 2)
+            Text(text)
+                .font(EType.caption)
+                .foregroundStyle(palette.textPrimary)
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+        .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
+        .transition(.move(edge: .top).combined(with: .opacity))
     }
 
     // MARK: - Tap handlers (§20.4 no dead buttons)
