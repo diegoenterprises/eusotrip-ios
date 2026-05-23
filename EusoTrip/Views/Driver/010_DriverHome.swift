@@ -95,6 +95,7 @@ enum HomeWidgetCatalog {
         .init(id: "haul",               name: "The Haul weekly",    summary: "XP ring + missions + rank",            icon: "rosette",                 category: .performance,    roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: true),
         .init(id: "compliance",         name: "Compliance countdown", summary: "CDL / medical / hazmat / TWIC expiry", icon: "checkmark.shield.fill", category: .compliance,    roles: ["DRIVER"], defaultSize: (12, 4),  iosRenderable: true),
         .init(id: "hotZones",           name: "Hot zones",          summary: "Live load-to-truck ratios + surges",   icon: "flame.fill",              category: .analytics,      roles: ["DRIVER"], defaultSize: (12, 8),  iosRenderable: true),
+        .init(id: "performance_score",  name: "Performance score",  summary: "Safety · on-time rate · fleet rank",   icon: "chart.line.uptrend.xyaxis", category: .performance,  roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
     ]
 
     /// Shipper-specific widgets.
@@ -429,6 +430,7 @@ struct DriverHome: View {
     private let driverHomeCanonicalOrder: [String] = [
         "next_delivery", "hos_tracker", "earnings_summary", "weather_alerts",
         "messages", "notifications", "haul", "compliance", "news", "recent", "hotZones",
+        "performance_score",
     ]
 
     /// Maps a catalog widget id → the concrete iOS tile view this
@@ -448,6 +450,7 @@ struct DriverHome: View {
         case "news":            AnyView(NewsCarouselWidget())
         case "recent":          AnyView(recentSection)
         case "hotZones":        AnyView(HotZonesWidget())
+        case "performance_score": AnyView(PerformanceScoreWidget())
         default:                AnyView(EmptyView())
         }
     }
@@ -1877,6 +1880,112 @@ private struct HosTile: View {
     }
 }
 
+// MARK: - PerformanceScoreWidget (catalog widget id: "performance_score")
+//
+// Monthly driver scorecard tile. Reads safetyScore + onTimeDeliveryRate
+// + fleet rank from `drivers.getPerformanceMetrics`. Self-fetches on
+// appear using the signed-in user's id from the session environment.
+
+struct PerformanceScoreWidget: View {
+    @Environment(\.palette) private var palette
+    @EnvironmentObject private var session: EusoTripSession
+
+    private struct Snapshot {
+        let safetyScore: Double
+        let onTimeRate: Double
+        let rank: Int
+        let totalDrivers: Int
+    }
+
+    @State private var snap: Snapshot? = nil
+    @State private var loading = true
+    @State private var loadError: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("PERFORMANCE · MONTHLY")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 0)
+                if let s = snap {
+                    Text("#\(s.rank) of \(s.totalDrivers)")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                }
+            }
+            if loading {
+                Text("Loading score…")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 6)
+            } else if let err = loadError {
+                Text(err)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+                    .lineLimit(2)
+            } else if let s = snap {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(String(format: "%.0f", s.safetyScore))
+                        .font(.system(size: 36, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                        .monospacedDigit()
+                    Text("/ 100")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                    Spacer(minLength: 0)
+                    Text("SAFETY SCORE")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                }
+                HStack(spacing: 12) {
+                    Label(String(format: "%.0f%%", s.onTimeRate), systemImage: "checkmark.circle.fill")
+                    Text("on-time")
+                }
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(palette.textSecondary)
+            } else {
+                Text("No performance data yet for this period.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 6)
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .task { await load() }
+    }
+
+    private func load() async {
+        loading = true; loadError = nil
+        let userId = session.user?.id ?? ""
+        guard !userId.isEmpty else { loading = false; return }
+        do {
+            let sc = try await EusoTripAPI.shared.drivers.getPerformanceMetrics(
+                driverId: userId, period: .month
+            )
+            snap = Snapshot(
+                safetyScore: sc.metrics.safetyScore,
+                onTimeRate: sc.metrics.onTimeDeliveryRate,
+                rank: sc.rankings.overall,
+                totalDrivers: sc.rankings.totalDrivers
+            )
+            loading = false
+        } catch {
+            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loading = false
+        }
+    }
+}
+
 // MARK: - Screen wrapped in Shell + Driver nav
 
 /// Which tab is currently selected from the BottomNav. The Driver nav has
@@ -2245,6 +2354,7 @@ struct SuggestedLoadCard: View {
 #Preview("Driver Home · Dark") {
     DriverHomeScreen(theme: Theme.dark)
         .environmentObject(DriverProfileStore())
+        .environmentObject(EusoTripSession())
         .preferredColorScheme(.dark)
         .padding(24)
         .background(Theme.dark.bgPage)
@@ -2253,6 +2363,7 @@ struct SuggestedLoadCard: View {
 #Preview("Driver Home · Light") {
     DriverHomeScreen(theme: Theme.light)
         .environmentObject(DriverProfileStore())
+        .environmentObject(EusoTripSession())
         .preferredColorScheme(.light)
         .padding(24)
         .background(Theme.light.bgPage)
