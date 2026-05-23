@@ -125,6 +125,7 @@ enum HomeWidgetCatalog {
     static let dispatch: [HomeWidgetDef] = [
         .init(id: "priority",           name: "Priority queue",     summary: "Top exception driving the day",        icon: "exclamationmark.triangle.fill", category: .operations, roles: ["DISPATCH"], defaultSize: (12, 6), iosRenderable: true),
         .init(id: "hosWatch",           name: "HOS watchlist",      summary: "Drivers approaching HOS limits",       icon: "clock.badge.exclamationmark.fill", category: .compliance, roles: ["DISPATCH"], defaultSize: (12, 6), iosRenderable: true),
+        .init(id: "exceptions_list",    name: "Exceptions list",    summary: "Top open exceptions with severity",    icon: "list.triangle",                  category: .operations, roles: ["DISPATCH"], defaultSize: (12, 8), iosRenderable: true),
     ]
 
     /// Carrier-specific widgets (CATALYST + DISPATCH role overlap on web).

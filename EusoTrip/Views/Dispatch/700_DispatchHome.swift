@@ -59,13 +59,14 @@ private struct DispatchHomeBody: View {
     @Environment(\.palette) private var palette
     @State private var kpi: DispatchKPI? = nil
     @State private var topException: PriorityException? = nil
+    @State private var allExceptions: [PriorityException] = []
     @State private var hosWatchlist: [PriorityHOSDriver] = []
     @State private var loading = true
     @State private var loadError: String? = nil
 
     // ── Home-widget customization — uses shared HomeWidgetGrid. ──
     private let widgetLayoutKey = "dispatch.home.widgetOrder"
-    private let dispatchCanonicalOrder: [String] = ["priority", "hosWatch", "news"]
+    private let dispatchCanonicalOrder: [String] = ["priority", "hosWatch", "exceptions_list", "news"]
 
     @ViewBuilder
     private func dispatchHomeRender(_ id: String) -> AnyView {
@@ -74,6 +75,8 @@ private struct DispatchHomeBody: View {
             if let e = topException { AnyView(priorityWidget(e)) } else { AnyView(EmptyView()) }
         case "hosWatch":
             if !hosWatchlist.isEmpty { AnyView(hosWidget) } else { AnyView(EmptyView()) }
+        case "exceptions_list":
+            AnyView(exceptionsListWidget)
         case "news":
             AnyView(NewsCarouselWidget())
         default:
@@ -206,6 +209,79 @@ private struct DispatchHomeBody: View {
         }
     }
 
+    // MARK: - Exceptions list widget
+
+    private var exceptionsListWidget: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "list.triangle")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("EXCEPTIONS LIST")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                if !allExceptions.isEmpty {
+                    Text("\(allExceptions.count)")
+                        .font(.system(size: 9, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(allExceptions.isEmpty ? palette.textTertiary : Brand.danger))
+                }
+            }
+            if loading {
+                VStack(spacing: Space.s2) {
+                    ForEach(0..<3, id: \.self) { _ in
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .fill(palette.bgCardSoft).frame(height: 56)
+                            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                        .strokeBorder(palette.borderFaint))
+                    }
+                }
+            } else if allExceptions.isEmpty {
+                EusoEmptyState(systemImage: "checkmark.circle", title: "No open exceptions",
+                               subtitle: "All loads are running smoothly.")
+            } else {
+                VStack(spacing: Space.s2) {
+                    ForEach(allExceptions.prefix(3)) { e in
+                        exceptionRow(e)
+                    }
+                }
+            }
+        }
+    }
+
+    private func exceptionRow(_ e: PriorityException) -> some View {
+        let severityColor: Color = {
+            switch (e.severity ?? "").lowercased() {
+            case "critical", "high": return Brand.danger
+            case "medium":           return Brand.warning
+            default:                 return palette.textTertiary
+            }
+        }()
+        return HStack(spacing: Space.s3) {
+            Circle().fill(severityColor).frame(width: 8, height: 8)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(e.type ?? "Open exception")
+                    .font(EType.bodyStrong).foregroundStyle(palette.textPrimary).lineLimit(1)
+                Text("\(e.driverName ?? "—") · \(e.loadNumber ?? "—")")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary).lineLimit(1)
+            }
+            Spacer()
+            if let s = e.severity {
+                Text(s.uppercased())
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(severityColor)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .overlay(Capsule().strokeBorder(severityColor.opacity(0.5), lineWidth: 1))
+            }
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
     private func load() async {
         loading = true; loadError = nil
         struct DriverIn: Encodable { let limit: Int }
@@ -215,6 +291,7 @@ private struct DispatchHomeBody: View {
             async let driversR: [PriorityHOSDriver] = EusoTripAPI.shared.query("dispatch.getDriverStatuses", input: DriverIn(limit: 100))
             let (k, issues, drivers) = try await (kpiR, issuesR, driversR)
             kpi = k
+            allExceptions = issues
             topException = issues.first { ($0.severity?.lowercased() == "high" || $0.severity?.lowercased() == "critical") } ?? issues.first
             hosWatchlist = drivers
                 .filter { ($0.hoursRemaining ?? 999) < 4 }
