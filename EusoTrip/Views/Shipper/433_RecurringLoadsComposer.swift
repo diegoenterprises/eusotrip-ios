@@ -22,6 +22,7 @@ private struct RecurringComposerBody: View {
     @State private var rate: Double? = nil
     @State private var sending = false
     @State private var saved = false
+    @State private var actionError: String? = nil
 
     private let cadences = ["daily", "weekly", "biweekly", "monthly"]
     private let days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
@@ -31,6 +32,7 @@ private struct RecurringComposerBody: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
                 if saved { LifecycleCard(accentGradient: true) { Text("Recurring schedule saved.").font(EType.body).foregroundStyle(palette.textPrimary) } }
+                if let err = actionError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
                 fieldsCard
                 cadenceCard
                 rateCard
@@ -115,13 +117,27 @@ private struct RecurringComposerBody: View {
     }
 
     private func save() async {
-        sending = true
+        await MainActor.run { sending = true; saved = false; actionError = nil }
         struct In: Encodable { let lane: String; let startISO: String; let endISO: String; let cadence: String; let dayOfWeek: String?; let rate: Double }
-        struct Out: Decodable { let success: Bool; let scheduleId: String? }
+        struct Out: Decodable { let success: Bool?; let scheduleId: String? }
         let f = ISO8601DateFormatter()
-        let _ : Out = (try? await EusoTripAPI.shared.mutation("recurringLoads.create", input: In(lane: lane, startISO: f.string(from: startDate), endISO: f.string(from: endDate), cadence: cadence, dayOfWeek: cadence.contains("week") ? dayOfWeek : nil, rate: rate ?? 0))) ?? Out(success: false, scheduleId: nil)
-        saved = true
-        sending = false
+        do {
+            let _: Out = try await EusoTripAPI.shared.mutation(
+                "recurringLoads.create",
+                input: In(lane: lane,
+                          startISO: f.string(from: startDate),
+                          endISO: f.string(from: endDate),
+                          cadence: cadence,
+                          dayOfWeek: cadence.contains("week") ? dayOfWeek : nil,
+                          rate: rate ?? 0)
+            )
+            await MainActor.run { saved = true }
+        } catch {
+            await MainActor.run {
+                actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            }
+        }
+        await MainActor.run { sending = false }
     }
 }
 

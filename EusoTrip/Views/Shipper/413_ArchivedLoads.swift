@@ -28,11 +28,23 @@ private struct ArchivedBody: View {
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var restoring: String? = nil
+    @State private var actionError: String? = nil
+    @State private var lastRestored: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
+                if let m = lastRestored {
+                    LifecycleCard(accentGradient: true) {
+                        Text(m).font(EType.caption).foregroundStyle(palette.textPrimary)
+                    }
+                }
+                if let e = actionError {
+                    LifecycleCard(accentDanger: true) {
+                        Text(e).font(EType.caption).foregroundStyle(Brand.danger)
+                    }
+                }
                 searchBar
                 content
                 Color.clear.frame(height: 96)
@@ -40,6 +52,7 @@ private struct ArchivedBody: View {
             .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
+        .refreshable { await load() }
     }
 
     private var header: some View {
@@ -104,12 +117,20 @@ private struct ArchivedBody: View {
     }
 
     private func restore(_ id: String) async {
-        restoring = id
+        await MainActor.run { restoring = id; actionError = nil }
+        let label = rows.first(where: { $0.id == id })?.loadNumber ?? "load \(id)"
         struct In: Encodable { let id: String }
-        struct Out: Decodable { let success: Bool }
-        let _ : Out = (try? await EusoTripAPI.shared.mutation("loads.restoreArchive", input: In(id: id))) ?? Out(success: false)
-        await load()
-        restoring = nil
+        struct Out: Decodable { let success: Bool? }
+        do {
+            let _: Out = try await EusoTripAPI.shared.mutation("loads.restoreArchive", input: In(id: id))
+            await MainActor.run { lastRestored = "\(label) → RESTORED to active loads" }
+            await load()
+        } catch {
+            await MainActor.run {
+                actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            }
+        }
+        await MainActor.run { restoring = nil }
     }
 }
 

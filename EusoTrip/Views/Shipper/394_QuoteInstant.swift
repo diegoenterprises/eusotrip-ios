@@ -30,6 +30,8 @@ private struct QuoteBody: View {
     @State private var loading = false
     @State private var result: QuoteResult? = nil
     @State private var actionError: String? = nil
+    @State private var saving: Bool = false
+    @State private var saveAck: String? = nil
 
     private let equipmentChoices = ["53' Dry Van", "53' Reefer", "Flatbed 48'", "MC-306 Tanker", "MC-331 Tanker", "Container 40' HC", "Power Only"]
 
@@ -39,6 +41,7 @@ private struct QuoteBody: View {
                 header
                 inputCard
                 if let err = actionError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
+                if let ack = saveAck { LifecycleCard(accentGradient: true) { Text(ack).font(EType.caption).foregroundStyle(palette.textPrimary) } }
                 if let r = result { resultCard(r) }
                 ctaRow
                 Color.clear.frame(height: 96)
@@ -115,11 +118,18 @@ private struct QuoteBody: View {
             }.buttonStyle(.plain).disabled(loading || origin.isEmpty || destination.isEmpty)
             if result != nil {
                 Button { Task { await save() } } label: {
-                    Image(systemName: "bookmark.fill").font(.system(size: 13, weight: .heavy)).foregroundStyle(palette.textPrimary)
-                        .frame(width: 44, height: 44).background(palette.bgCard)
-                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-                }.buttonStyle(.plain)
+                    if saving {
+                        ProgressView().tint(palette.textPrimary)
+                            .frame(width: 44, height: 44).background(palette.bgCard)
+                            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+                            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    } else {
+                        Image(systemName: "bookmark.fill").font(.system(size: 13, weight: .heavy)).foregroundStyle(palette.textPrimary)
+                            .frame(width: 44, height: 44).background(palette.bgCard)
+                            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+                            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    }
+                }.buttonStyle(.plain).disabled(saving)
             }
         }
     }
@@ -137,9 +147,23 @@ private struct QuoteBody: View {
     }
 
     private func save() async {
+        await MainActor.run { saving = true; saveAck = nil; actionError = nil }
         struct In: Encodable { let origin: String; let destination: String; let equipmentType: String; let weight: Double? }
-        struct Out: Decodable { let success: Bool }
-        let _ : Out = (try? await EusoTripAPI.shared.mutation("predictivePricing.saveQuote", input: In(origin: origin, destination: destination, equipmentType: equipmentType, weight: weight))) ?? Out(success: false)
+        struct Out: Decodable { let success: Bool? }
+        do {
+            let _: Out = try await EusoTripAPI.shared.mutation(
+                "predictivePricing.saveQuote",
+                input: In(origin: origin, destination: destination, equipmentType: equipmentType, weight: weight)
+            )
+            await MainActor.run {
+                saveAck = "Quote saved · \(origin) → \(destination) · \(equipmentType)"
+            }
+        } catch {
+            await MainActor.run {
+                actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            }
+        }
+        await MainActor.run { saving = false }
     }
 }
 

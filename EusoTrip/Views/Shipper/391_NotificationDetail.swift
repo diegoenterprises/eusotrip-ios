@@ -89,14 +89,27 @@ private struct NotifDetailBody: View {
         do {
             let d: NotifDetail = try await EusoTripAPI.shared.query("notifications.getById", input: In(id: notificationId))
             detail = d
-            // Mark as read on first view.
-            struct MarkIn: Encodable { let id: String }
-            struct MarkOut: Decodable { let success: Bool }
-            let _ : MarkOut = (try? await EusoTripAPI.shared.mutation("notifications.markAsRead", input: MarkIn(id: notificationId))) ?? MarkOut(success: false)
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
+        // Mark as read is a fire-and-forget side effect of viewing the
+        // detail — don't lie about success/failure. If the mutation
+        // fails (network drop, etc.) the badge will simply re-count on
+        // next inbox load. The user took no explicit action to surface
+        // an error against, so we drop it silently here BUT no longer
+        // fake a 'success: false' envelope that downstream code might
+        // misread as a real reply.
+        struct MarkIn: Encodable { let id: String }
+        struct MarkOut: Decodable { let success: Bool? }
+        do {
+            let _: MarkOut = try await EusoTripAPI.shared.mutation(
+                "notifications.markAsRead",
+                input: MarkIn(id: notificationId)
+            )
+        } catch {
+            // intentional: see comment above
+        }
     }
 }
 
