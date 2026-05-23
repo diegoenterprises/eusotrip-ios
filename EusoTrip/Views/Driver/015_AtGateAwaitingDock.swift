@@ -119,6 +119,7 @@ struct AtGateAwaitingDock: View {
                 facilityStrip
                 queueCard
                 metadataGrid
+                if loadIDText != "—" { gateCredentialCard }
                 esangIdleWatchCard
                 footerActions
                 Color.clear.frame(height: 96)
@@ -330,6 +331,38 @@ struct AtGateAwaitingDock: View {
                 .strokeBorder(palette.borderFaint)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    // MARK: Gate credential QR
+
+    private var gateCredentialCard: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            Text("GATE CREDENTIAL")
+                .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                .foregroundStyle(palette.textTertiary)
+            HStack {
+                Spacer()
+                EusoQRView(
+                    kind: .loadCredential(loadId: loadIDText, mode: .credential),
+                    role: .driver,
+                    size: 200,
+                    cornerRadius: 12
+                )
+                Spacer()
+            }
+            Text("Show to guard or scan at reader — pickup credential for \(loadIDText)")
+                .font(EType.mono(.micro)).tracking(0.4)
+                .foregroundStyle(palette.textSecondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+        }
+        .padding(Space.s4)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
     // MARK: ESANG idle-watch
