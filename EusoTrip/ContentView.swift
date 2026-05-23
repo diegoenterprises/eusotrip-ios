@@ -2718,38 +2718,29 @@ struct ContentView: View {
 
         // Me-detail sub-routes — switch tab + post the open-detail
         // notification consumed by `DriverMePane`.
+        //
+        // `zeun.report-breakdown` / `zeun.find-provider` are observability-only:
+        // the Zeun Mechanics sheet that fires them already opens its own
+        // sub-sheet (`showReporter` / `showProviders`) inline. Re-posting
+        // `.esangOpenMeDetail` here would re-mount the Zeun parent and
+        // collapse the just-presented sub-sheet — the founder bug where
+        // tapping "Find a repair shop" appeared to kick the user back home.
+        // Telemetry haptic already fired in `MeAction.fire(_:)`.
         case "zeun.report-breakdown", "zeun.find-provider":
-            nav.currentTab = .me
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-                NotificationCenter.default.post(
-                    name: .esangOpenMeDetail,
-                    object: MeDetailRoute.zeun.rawValue
-                )
-            }
-        case "carrier.attach-request":
-            nav.currentTab = .me
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-                NotificationCenter.default.post(
-                    name: .esangOpenMeDetail,
-                    object: MeDetailRoute.carrier.rawValue
-                )
-            }
-        case "tax.download-1099", "earnings.1099.download":
-            nav.currentTab = .me
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-                NotificationCenter.default.post(
-                    name: .esangOpenMeDetail,
-                    object: MeDetailRoute.tax.rawValue
-                )
-            }
-        case "availability.export-ics":
-            nav.currentTab = .me
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-                NotificationCenter.default.post(
-                    name: .esangOpenMeDetail,
-                    object: MeDetailRoute.availability.rawValue
-                )
-            }
+            break
+        // `carrier.attach-request` / `tax.download-1099` / `earnings.1099.download`
+        // / `availability.export-ics` are fired from inside the corresponding
+        // Me sub-sheet (Carrier, Tax, Availability) by buttons that already
+        // open a sub-sheet (attach composer, PDF preview) or invoke an
+        // external opener (ICS download). Re-posting `.esangOpenMeDetail`
+        // re-mounts the parent sheet and collapses the sub-sheet — same
+        // root cause as the Zeun "Find a repair shop" founder bug. The
+        // local effect handles navigation; the notification is telemetry.
+        case "carrier.attach-request",
+             "tax.download-1099",
+             "earnings.1099.download",
+             "availability.export-ics":
+            break
 
         // DVIR start: routed separately via `.eusoStartPretripDVIR`;
         // accepting here so the audit doesn't flag the key as
