@@ -71,6 +71,10 @@ private struct MatchedLoadsBody: View {
     @State private var error: String?
     @State private var acceptingId: String?
     @State private var acceptAck: String?
+    /// True while a load card is hovering over the ACCEPTED stat tile.
+    /// Drives the gradient stroke + label flip so the catalyst sees
+    /// where the drop will land before releasing.
+    @State private var dragHoverAccepted: Bool = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -110,8 +114,52 @@ private struct MatchedLoadsBody: View {
     private func statsRow(_ s: MatchStats) -> some View {
         HStack(spacing: Space.s2) {
             LifecycleStatTile(label: "PENDING",  value: "\(s.pending ?? 0)",  icon: "hourglass")
-            LifecycleStatTile(label: "ACCEPTED", value: "\(s.accepted ?? 0)", icon: "checkmark.seal.fill")
+            acceptedDropTile(value: "\(s.accepted ?? 0)")
             LifecycleStatTile(label: "AVG RATE", value: "$\(Int(s.avgRate ?? 0))", icon: "dollarsign.circle")
+        }
+    }
+
+    /// ACCEPTED stat tile doubles as a .dropDestination — drag a matched
+    /// load card onto it to fire dispatchRole.acceptLoad in one gesture.
+    /// Mirrors the 406_BrokerCatalystVetting stat-tile-drop-zone shape.
+    private func acceptedDropTile(value: String) -> some View {
+        let isHover = dragHoverAccepted
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(Brand.success)
+                Text("ACCEPTED")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Text(value)
+                .font(.system(size: 22, weight: .heavy).monospacedDigit())
+                .foregroundStyle(Brand.success)
+            Text(isHover ? "RELEASE TO ACCEPT" : "DROP TO ACCEPT")
+                .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                .foregroundStyle(isHover ? Brand.success : palette.textTertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(palette.bgCard, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(
+                    isHover ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(Brand.success.opacity(0.3)),
+                    lineWidth: isHover ? 2 : 1
+                )
+                .animation(.easeOut(duration: 0.12), value: isHover)
+        )
+        .dropDestination(for: String.self) { droppedIds, _ in
+            guard let loadId = droppedIds.first else { return false }
+            guard loads.contains(where: { $0.id == loadId }) else { return false }
+            Task { await accept(loadId) }
+            return true
+        } isTargeted: { hovering in
+            dragHoverAccepted = hovering
         }
     }
 
@@ -134,36 +182,13 @@ private struct MatchedLoadsBody: View {
             EusoEmptyState(systemImage: "tray", title: "No matches", subtitle: "When ESANG finds matches for your lanes they'll land here.")
         } else {
             ForEach(loads) { l in
-                LifecycleCard(accentGradient: (l.matchScore ?? 0) > 0.85) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(l.loadNumber ?? l.id).font(EType.body.weight(.bold))
-                            Spacer()
-                            if let s = l.matchScore {
-                                Text("\(Int(s * 100))% MATCH").font(.caption2.weight(.heavy)).tracking(0.6).foregroundStyle(LinearGradient.diagonal)
-                            }
-                        }
-                        Text("\(l.pickupCity ?? "—"), \(l.pickupState ?? "—") → \(l.destCity ?? "—"), \(l.destState ?? "—")").font(.caption).foregroundStyle(palette.textSecondary)
-                        HStack {
-                            if let c = l.cargoType { Text(c.uppercased()).font(.caption2.weight(.bold)).tracking(0.6).foregroundStyle(palette.textTertiary) }
-                            Spacer()
-                            if let r = l.rate { Text("$\(r)").font(.body.monospacedDigit().weight(.semibold)) }
-                        }
-                        Button { Task { await accept(l.id) } } label: {
-                            HStack(spacing: 6) {
-                                if acceptingId == l.id { ProgressView().tint(.white).controlSize(.mini) }
-                                Text(acceptingId == l.id ? "Accepting…" : "Accept Load")
-                                    .font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
-                            }
-                            .padding(.horizontal, 12).padding(.vertical, 8)
-                            .background(LinearGradient.diagonal)
-                            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(acceptingId != nil)
-                        .padding(.top, 4)
+                matchedCard(l)
+                    .draggable(l.id) {
+                        matchedCard(l)
+                            .frame(maxWidth: 320)
+                            .opacity(0.92)
+                            .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
                     }
-                }
             }
         }
     }
@@ -193,18 +218,65 @@ private struct MatchedLoadsBody: View {
         do { stats = try await EusoTripAPI.shared.queryNoInput("dispatchRole.getMatchStats") } catch { /* */ }
     }
 
+    private func matchedCard(_ l: MatchedLoadRow) -> some View {
+        LifecycleCard(accentGradient: (l.matchScore ?? 0) > 0.85) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(l.loadNumber ?? l.id).font(EType.body.weight(.bold))
+                    Spacer()
+                    if let s = l.matchScore {
+                        Text("\(Int(s * 100))% MATCH")
+                            .font(.caption2.weight(.heavy)).tracking(0.6)
+                            .foregroundStyle(LinearGradient.diagonal)
+                    }
+                }
+                Text("\(l.pickupCity ?? "—"), \(l.pickupState ?? "—") → \(l.destCity ?? "—"), \(l.destState ?? "—")")
+                    .font(.caption).foregroundStyle(palette.textSecondary)
+                HStack {
+                    if let c = l.cargoType {
+                        Text(c.uppercased())
+                            .font(.caption2.weight(.bold)).tracking(0.6)
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                    Spacer()
+                    if let r = l.rate {
+                        Text("$\(r)").font(.body.monospacedDigit().weight(.semibold))
+                    }
+                }
+                Button { Task { await accept(l.id) } } label: {
+                    HStack(spacing: 6) {
+                        if acceptingId == l.id { ProgressView().tint(.white).controlSize(.mini) }
+                        Text(acceptingId == l.id ? "Accepting…" : "Accept Load")
+                            .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                            .foregroundStyle(.white)
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(LinearGradient.diagonal)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(acceptingId != nil)
+                .padding(.top, 4)
+            }
+        }
+    }
+
     private func accept(_ id: String) async {
-        acceptingId = id
+        await MainActor.run { acceptingId = id }
         struct In: Encodable { let loadId: String }
         struct Out: Decodable { let success: Bool?; let acceptedAt: String? }
         do {
             let _: Out = try await EusoTripAPI.shared.mutation("dispatchRole.acceptLoad", input: In(loadId: id))
-            acceptAck = "Accepted load \(id) — status flipped to ACCEPTED."
+            await MainActor.run {
+                acceptAck = "Accepted load \(id) — status flipped to ACCEPTED."
+            }
             await loadAll()
         } catch let err {
-            error = (err as? LocalizedError)?.errorDescription ?? "\(err)"
+            await MainActor.run {
+                error = (err as? LocalizedError)?.errorDescription ?? "\(err)"
+            }
         }
-        acceptingId = nil
+        await MainActor.run { acceptingId = nil }
     }
 }
 
