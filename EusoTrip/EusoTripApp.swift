@@ -14,6 +14,19 @@ struct EusoTripApp: App {
     /// `didRegisterForRemoteNotificationsWithDeviceToken` callbacks.
     @UIApplicationDelegateAdaptor(EusoTripAppDelegate.self) private var appDelegate
 
+    /// Universal keyboard dismiss-on-swipe (founder bug 2026-05-23 —
+    /// keyboard would appear and get stuck on screen on every form,
+    /// blocking the screen even when the user no longer needed to
+    /// type). Setting `keyboardDismissMode = .interactive` on the
+    /// UIScrollView appearance proxy propagates to every
+    /// UIScrollView-backed surface: SwiftUI ScrollView, List, Form,
+    /// TableView, plus any UIKit-backed inputs. Swiping down on the
+    /// keyboard now follows the finger and dismisses, matching
+    /// system Messages / Mail behavior.
+    init() {
+        UIScrollView.appearance().keyboardDismissMode = .interactive
+    }
+
     @StateObject private var session = EusoTripSession()
     /// Session-scoped driver profile (name / email / CDL / phone / avatar).
     /// Injected here so Home greeting, Me tab header, and Settings ACCOUNT
