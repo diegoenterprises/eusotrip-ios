@@ -19,6 +19,13 @@
 //  `dispatch.getAvailableDrivers`, recommendations from
 //  `dispatch.getRecommendations`.
 //
+//  Reshaped 2026-05-23 with drag-to-assign — the AWARDED citation
+//  pill at the top doubles as a .dropDestination labeled with the
+//  load context. Drag a driver row from the available list up onto
+//  it to fire dispatch.assignDriver in one gesture. Same DnD shape
+//  as 310_CarrierAssignDriver (per-load context, many candidates).
+//  Tap-to-select + bottom Assign button preserved as fallback.
+//
 
 import SwiftUI
 
@@ -84,6 +91,12 @@ private struct ADBody: View {
     @State private var inFlight = false
     @State private var ack: String?
     @State private var err: String?
+    /// True while a driver row is hovering over the citation pill
+    /// drop zone. Drives the gradient stroke + label flip so the
+    /// dispatcher sees the impending commit target before release.
+    @State private var dropHover: Bool = false
+    /// Sticky reference to the driver currently being dragged.
+    @State private var draggingDriverId: Int? = nil
 
     private var loadNumberDisplay: String { load?.loadNumber ?? "—" }
     private var laneDisplay: String? {
@@ -158,11 +171,22 @@ private struct ADBody: View {
     }
 
     private var citationPill: some View {
-        LifecycleCard(accentGradient: true) {
+        let hoveringDriver = draggingDriverId.flatMap { id in drivers.first(where: { $0.id == id }) }
+        return LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("AWARDED · COMMIT VERB · dispatch.assignDriver")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                    .foregroundStyle(palette.textTertiary)
+                HStack(spacing: 6) {
+                    Text("AWARDED · COMMIT VERB · dispatch.assignDriver")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(palette.textTertiary)
+                    Spacer(minLength: 0)
+                    if inFlight {
+                        ProgressView().scaleEffect(0.7)
+                    } else {
+                        Image(systemName: dropHover ? "checkmark.circle.fill" : "arrow.up.circle")
+                            .font(.system(size: 14, weight: .heavy))
+                            .foregroundStyle(dropHover ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
+                    }
+                }
                 Text("\(loadNumberDisplay) · \(equipmentDisplay) · \(rateDisplay)")
                     .font(EType.caption.weight(.semibold))
                     .foregroundStyle(palette.textPrimary)
@@ -171,7 +195,34 @@ private struct ADBody: View {
                     Text("\(lane) · \(distanceDisplay)")
                         .font(.caption2).foregroundStyle(palette.textSecondary)
                 }
+                if dropHover, let d = hoveringDriver {
+                    Text("Release to commit \(d.userName ?? "driver #\(d.id)") to \(loadNumberDisplay)")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(LinearGradient.diagonal)
+                        .padding(.top, 4)
+                } else {
+                    Text("Drag a driver row up here to assign + run compliance gates.")
+                        .font(.caption2)
+                        .foregroundStyle(palette.textTertiary)
+                        .padding(.top, 4)
+                }
             }
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(
+                    dropHover ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(Color.clear),
+                    lineWidth: dropHover ? 2 : 0
+                )
+                .animation(.easeOut(duration: 0.12), value: dropHover)
+        )
+        .dropDestination(for: String.self) { droppedIds, _ in
+            guard let raw = droppedIds.first, let driverIdInt = Int(raw) else { return false }
+            guard drivers.contains(where: { $0.id == driverIdInt }) else { return false }
+            Task { await assign(driverIdOverride: driverIdInt) }
+            return true
+        } isTargeted: { hovering in
+            dropHover = hovering
         }
     }
 
@@ -219,6 +270,16 @@ private struct ADBody: View {
                             driverRow(d, selected: d.id == selectedDriverId)
                         }
                         .buttonStyle(.plain)
+                        .draggable(String(d.id)) {
+                            driverRow(d, selected: false)
+                                .frame(maxWidth: 320)
+                                .opacity(0.92)
+                                .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
+                        }
+                        .onDrag {
+                            draggingDriverId = d.id
+                            return NSItemProvider(object: String(d.id) as NSString)
+                        }
                     }
                 }
             }
@@ -342,10 +403,11 @@ private struct ADBody: View {
         } catch { /* tolerated; UI shows empty */ }
     }
 
-    private func assign() async {
-        guard let driverId = selectedDriverId else { return }
-        inFlight = true; ack = nil; err = nil
-        defer { inFlight = false }
+    /// Two entry points — bottom CTA uses selectedDriverId, drag-to-pill
+    /// uses driverIdOverride. Same wire + same commit semantics either way.
+    private func assign(driverIdOverride: Int? = nil) async {
+        guard let driverId = driverIdOverride ?? selectedDriverId else { return }
+        await MainActor.run { inFlight = true; ack = nil; err = nil }
         struct In: Encodable {
             let loadId: String
             let driverId: String
@@ -362,15 +424,19 @@ private struct ADBody: View {
                 input: In(loadId: loadId, driverId: String(driverId))
             )
             if resp.success != false {
-                let name = selectedDriver?.userName ?? "driver #\(driverId)"
-                ack = "Assigned · \(name) committed · compliance gates passed · loadLifecycle fan-out fired."
+                let name = drivers.first(where: { $0.id == driverId })?.userName ?? "driver #\(driverId)"
+                await MainActor.run {
+                    ack = "Assigned · \(name) committed · compliance gates passed · loadLifecycle fan-out fired."
+                    draggingDriverId = nil
+                }
                 await loadCtx()
             } else {
-                err = resp.message ?? "Assignment returned no success flag."
+                await MainActor.run { err = resp.message ?? "Assignment returned no success flag." }
             }
         } catch let e {
-            err = (e as? LocalizedError)?.errorDescription ?? "Assign failed: \(e)"
+            await MainActor.run { err = (e as? LocalizedError)?.errorDescription ?? "Assign failed: \(e)" }
         }
+        await MainActor.run { inFlight = false }
     }
 }
 
