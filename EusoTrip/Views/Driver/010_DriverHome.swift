@@ -88,7 +88,7 @@ enum HomeWidgetCatalog {
         .init(id: "hos_tracker",        name: "HOS tracker",        summary: "Hours of service compliance",          icon: "clock.fill",              category: .compliance,     roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: true),
         .init(id: "earnings_summary",   name: "Earnings",           summary: "Pay and bonuses",                      icon: "dollarsign.circle.fill",  category: .financial,      roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
         .init(id: "next_delivery",      name: "Next delivery",      summary: "Upcoming delivery details",            icon: "mappin.circle.fill",      category: .operations,     roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: true),
-        .init(id: "fuel_stations",      name: "Fuel stations",      summary: "Nearby fuel stops",                    icon: "fuelpump.fill",           category: .planning,       roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: false),
+        .init(id: "fuel_stations",      name: "Fuel stations",      summary: "Nearby fuel stops",                    icon: "fuelpump.fill",           category: .planning,       roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
         .init(id: "rest_areas",         name: "Rest areas",         summary: "Nearby rest stops",                    icon: "bed.double.fill",         category: .planning,       roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: false),
         .init(id: "vehicle_health",     name: "Vehicle health",     summary: "Truck diagnostics",                    icon: "wrench.and.screwdriver.fill", category: .operations,  roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
         .init(id: "weather_alerts",     name: "Weather alerts",     summary: "Route weather conditions",             icon: "cloud.rain.fill",         category: .safety,         roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
@@ -431,7 +431,7 @@ struct DriverHome: View {
     private let driverHomeCanonicalOrder: [String] = [
         "current_route", "next_delivery", "hos_tracker", "earnings_summary", "weather_alerts",
         "messages", "notifications", "haul", "compliance", "news", "recent", "hotZones",
-        "performance_score", "vehicle_health", "mileage_tracker",
+        "performance_score", "vehicle_health", "mileage_tracker", "fuel_stations",
     ]
 
     /// Maps a catalog widget id → the concrete iOS tile view this
@@ -455,6 +455,7 @@ struct DriverHome: View {
         case "performance_score": AnyView(PerformanceScoreWidget())
         case "vehicle_health":  AnyView(VehicleHealthWidget())
         case "mileage_tracker": AnyView(MileageTrackerWidget(currentLoadMiles: vm.activeLoad?.distanceValue))
+        case "fuel_stations":   AnyView(FuelStationsWidget())
         default:                AnyView(EmptyView())
         }
     }
@@ -2201,6 +2202,137 @@ struct PerformanceScoreWidget: View {
                 rank: sc.rankings.overall,
                 totalDrivers: sc.rankings.totalDrivers
             )
+            loading = false
+        } catch {
+            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loading = false
+        }
+    }
+}
+
+// MARK: - FuelStationsWidget (catalog widget id: "fuel_stations")
+//
+// Top-3 diesel stops within 40 km of the driver's current position.
+// Uses DriverLocationResolver.shared for a cached GPS coordinate, then
+// queries HereFuelPricesClient.nearby. Sorted cheapest-first on diesel
+// price; falls back to distance when price data is absent.
+
+struct FuelStationsWidget: View {
+    @Environment(\.palette) private var palette
+
+    @State private var stations: [HereFuelStation] = []
+    @State private var loading = true
+    @State private var loadError: String? = nil
+    @State private var locationDenied = false
+
+    private func fmtDist(_ meters: Int) -> String {
+        let miles = Double(meters) / 1609.34
+        if miles < 0.1 { return "< 0.1 mi" }
+        if miles < 10  { return String(format: "%.1f mi", miles) }
+        return "\(Int(miles)) mi"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "fuelpump.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("FUEL STATIONS · NEARBY")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 0)
+                Text("DIESEL")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            if loading {
+                Text("Locating fuel stops…")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 6)
+            } else if locationDenied {
+                Text("Enable location access to see nearby fuel stops.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+            } else if let err = loadError {
+                Text(err)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+                    .lineLimit(2)
+            } else if stations.isEmpty {
+                Text("No diesel stops found within 25 mi.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+            } else {
+                VStack(spacing: 4) {
+                    ForEach(stations.prefix(3), id: \.id) { station in
+                        HStack(spacing: 6) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(station.name)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(palette.textPrimary)
+                                    .lineLimit(1)
+                                if let brand = station.brand, !brand.isEmpty {
+                                    Text(brand)
+                                        .font(.system(size: 10, weight: .regular))
+                                        .foregroundStyle(palette.textTertiary)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                            VStack(alignment: .trailing, spacing: 1) {
+                                if let price = station.cheapestDieselPrice {
+                                    Text(String(format: "$%.3f", price.price))
+                                        .font(.system(size: 13, weight: .heavy))
+                                        .foregroundStyle(LinearGradient.diagonal)
+                                        .monospacedDigit()
+                                }
+                                if let dist = station.distance {
+                                    Text(fmtDist(dist))
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundStyle(palette.textTertiary)
+                                }
+                            }
+                        }
+                        if station.id != stations.prefix(3).last?.id {
+                            Divider().opacity(0.4)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .task { await load() }
+    }
+
+    private func load() async {
+        loading = true; loadError = nil; locationDenied = false
+        guard let coord = await DriverLocationResolver.shared.currentCoordinate() else {
+            locationDenied = true; loading = false; return
+        }
+        do {
+            let raw = try await HereFuelPricesClient.shared.nearby(
+                center: coord, radiusMeters: 40_000, fuelTypes: ["diesel"]
+            )
+            stations = raw
+                .sorted {
+                    let p0 = $0.cheapestDieselPrice?.price ?? Double.greatestFiniteMagnitude
+                    let p1 = $1.cheapestDieselPrice?.price ?? Double.greatestFiniteMagnitude
+                    if p0 != p1 { return p0 < p1 }
+                    return ($0.distance ?? Int.max) < ($1.distance ?? Int.max)
+                }
             loading = false
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
