@@ -87,7 +87,7 @@ enum HomeWidgetCatalog {
         .init(id: "current_route",      name: "Current route",      summary: "Active route navigation",              icon: "location.north.line.fill", category: .operations,    roles: ["DRIVER"], defaultSize: (12, 10), iosRenderable: false),
         .init(id: "hos_tracker",        name: "HOS tracker",        summary: "Hours of service compliance",          icon: "clock.fill",              category: .compliance,     roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: true),
         .init(id: "earnings_summary",   name: "Earnings",           summary: "Pay and bonuses",                      icon: "dollarsign.circle.fill",  category: .financial,      roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: false),
-        .init(id: "next_delivery",      name: "Next delivery",      summary: "Upcoming delivery details",            icon: "mappin.circle.fill",      category: .operations,     roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: false),
+        .init(id: "next_delivery",      name: "Next delivery",      summary: "Upcoming delivery details",            icon: "mappin.circle.fill",      category: .operations,     roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: true),
         .init(id: "fuel_stations",      name: "Fuel stations",      summary: "Nearby fuel stops",                    icon: "fuelpump.fill",           category: .planning,       roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: false),
         .init(id: "rest_areas",         name: "Rest areas",         summary: "Nearby rest stops",                    icon: "bed.double.fill",         category: .planning,       roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: false),
         .init(id: "vehicle_health",     name: "Vehicle health",     summary: "Truck diagnostics",                    icon: "wrench.and.screwdriver.fill", category: .operations,  roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: false),
@@ -420,7 +420,7 @@ struct DriverHome: View {
     // reconciliation, and the UserDefaults offline cache.
     private let widgetLayoutKey = "driver.home.widgetOrder"
     private let driverHomeCanonicalOrder: [String] = [
-        "hos_tracker", "haul", "compliance", "news", "recent", "hotZones",
+        "next_delivery", "hos_tracker", "haul", "compliance", "news", "recent", "hotZones",
     ]
 
     /// Maps a catalog widget id → the concrete iOS tile view this
@@ -429,13 +429,14 @@ struct DriverHome: View {
     @ViewBuilder
     private func driverHomeRender(_ id: String) -> AnyView {
         switch id {
-        case "hos_tracker": AnyView(HosTrackerWidget())
-        case "haul":        AnyView(TheHaulWeeklyTile())
-        case "compliance":  AnyView(ComplianceCountdownStrip())
-        case "news":        AnyView(NewsCarouselWidget())
-        case "recent":      AnyView(recentSection)
-        case "hotZones":    AnyView(HotZonesWidget())
-        default:            AnyView(EmptyView())
+        case "next_delivery": AnyView(NextDeliveryWidget(summary: vm.activeLoadSummary))
+        case "hos_tracker":   AnyView(HosTrackerWidget())
+        case "haul":          AnyView(TheHaulWeeklyTile())
+        case "compliance":    AnyView(ComplianceCountdownStrip())
+        case "news":          AnyView(NewsCarouselWidget())
+        case "recent":        AnyView(recentSection)
+        case "hotZones":      AnyView(HotZonesWidget())
+        default:              AnyView(EmptyView())
         }
     }
 
@@ -1273,6 +1274,76 @@ struct DriverHome: View {
     // HomeWidgetGrid component (defined at file scope above).
     // canonicalOrder + render closure are declared at the top of
     // this struct; nothing else lives here.
+}
+
+// MARK: - NextDeliveryWidget (catalog widget id: "next_delivery")
+//
+// Glanceable next-delivery tile pulled from the same LoadSummary the
+// home's hero activeLoadCard renders. Composes a tight 3-line card:
+// load number + lane + pickup date so the driver has the destination
+// + ETA at the top of the customizable widget zone without the full
+// hero card weight.
+
+struct NextDeliveryWidget: View {
+    @Environment(\.palette) private var palette
+    let summary: LoadSummary?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "mappin.circle.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("NEXT DELIVERY")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 0)
+                if let s = summary {
+                    Text(s.status.uppercased())
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+            if let s = summary {
+                Text(s.loadNumber)
+                    .font(.system(size: 18, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                Text("\(s.origin)  →  \(s.destination)")
+                    .font(EType.body)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(2)
+                HStack(spacing: 4) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(palette.textTertiary)
+                    Text(s.pickupDate)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(palette.textTertiary)
+                    Spacer(minLength: 0)
+                    if s.rate > 0 {
+                        Text("$\(Int(s.rate).formatted())")
+                            .font(.system(size: 13, weight: .heavy))
+                            .foregroundStyle(LinearGradient.diagonal)
+                            .monospacedDigit()
+                    }
+                }
+            } else {
+                Text("No load assigned. Accept a tender to populate.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 8)
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
 }
 
 // MARK: - HosTrackerWidget (catalog widget id: "hos_tracker")
