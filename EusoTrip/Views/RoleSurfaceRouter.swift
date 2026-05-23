@@ -509,25 +509,37 @@ private struct ShipperBackOverlay: ViewModifier {
     let currentScreenId: String
 
     func body(content: Content) -> some View {
-        content.overlay(alignment: .topLeading) {
+        // 2026-05-22 founder ask — the back chevron was rendered as
+        // an .overlay(alignment: .topLeading) on top of the screen
+        // content, which obscured the eyebrow text on every Shipper
+        // sub-page (Analytics / Live Tracking / Settlements / Reports
+        // / Sustainability / Wallet / Allocations / …). Moving the
+        // overlay to a `.safeAreaInset(edge: .top)` band gives the
+        // chevron its own non-overlapping header strip that pushes
+        // screen content down — eyebrow + title now paint cleanly
+        // below the back affordance.
+        content.safeAreaInset(edge: .top, spacing: 0) {
             if stackDepth > 1, !Self.screensWithOwnBack.contains(currentScreenId) {
-                Button {
-                    NotificationCenter.default.post(
-                        name: .eusoShipperNavBack, object: nil
-                    )
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .padding(10)
-                        .background(.black.opacity(0.55), in: Circle())
-                        .overlay(Circle().strokeBorder(.white.opacity(0.18), lineWidth: 1))
-                        .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                HStack(spacing: 0) {
+                    Button {
+                        NotificationCenter.default.post(
+                            name: .eusoShipperNavBack, object: nil
+                        )
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .heavy))
+                            .foregroundStyle(.white)
+                            .padding(10)
+                            .background(.black.opacity(0.55), in: Circle())
+                            .overlay(Circle().strokeBorder(.white.opacity(0.18), lineWidth: 1))
+                            .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Back")
+                    Spacer(minLength: 0)
                 }
-                .buttonStyle(.plain)
-                .padding(.leading, 12)
-                .padding(.top, 8)
-                .accessibilityLabel("Back")
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
             }
         }
     }
@@ -1350,25 +1362,32 @@ private struct RoleNavBackOverlay: ViewModifier {
     let screensWithOwnBack: Set<String>
 
     func body(content: Content) -> some View {
-        content.overlay(alignment: .topLeading) {
+        // 2026-05-22 — same fix as ShipperBackOverlay: switched from
+        // .overlay(alignment: .topLeading) to .safeAreaInset so the
+        // chevron has its own header band and never sits on top of
+        // the screen's eyebrow / title row.
+        content.safeAreaInset(edge: .top, spacing: 0) {
             if stackDepth > 1, !screensWithOwnBack.contains(currentScreenId) {
-                Button {
-                    NotificationCenter.default.post(
-                        name: .eusoRoleNavBack, object: nil
-                    )
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .padding(10)
-                        .background(.black.opacity(0.55), in: Circle())
-                        .overlay(Circle().strokeBorder(.white.opacity(0.18), lineWidth: 1))
-                        .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                HStack(spacing: 0) {
+                    Button {
+                        NotificationCenter.default.post(
+                            name: .eusoRoleNavBack, object: nil
+                        )
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .heavy))
+                            .foregroundStyle(.white)
+                            .padding(10)
+                            .background(.black.opacity(0.55), in: Circle())
+                            .overlay(Circle().strokeBorder(.white.opacity(0.18), lineWidth: 1))
+                            .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Back")
+                    Spacer(minLength: 0)
                 }
-                .buttonStyle(.plain)
-                .padding(.leading, 12)
-                .padding(.top, 8)
-                .accessibilityLabel("Back")
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
             }
         }
     }
