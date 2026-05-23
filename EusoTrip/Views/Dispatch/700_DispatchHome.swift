@@ -68,7 +68,6 @@ private struct DispatchHomeBody: View {
     private let widgetLayoutKey = "dispatch.home.widgetOrder"
     private let dispatchCanonicalOrder: [String] = ["priority", "hosWatch", "exceptions_list", "news"]
 
-    @ViewBuilder
     private func dispatchHomeRender(_ id: String) -> AnyView {
         switch id {
         case "priority":

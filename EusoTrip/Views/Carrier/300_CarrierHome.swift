@@ -65,7 +65,6 @@ struct CarrierHome: View {
     private let widgetLayoutKey = "carrier.home.widgetOrder"
     private let carrierCanonicalOrder: [String] = ["activeLoads", "revenue_summary", "carrier_alerts", "recent", "news"]
 
-    @ViewBuilder
     private func carrierHomeRender(_ id: String) -> AnyView {
         switch id {
         case "activeLoads":     AnyView(activeLoadsCard)

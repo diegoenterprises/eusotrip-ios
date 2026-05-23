@@ -86,7 +86,6 @@ struct CatalystHome: View {
     private let widgetLayoutKey = "catalyst.home.widgetOrder"
     private let catalystCanonicalOrder: [String] = ["activeMatches", "gmv_summary", "catalyst_alerts", "recent", "news"]
 
-    @ViewBuilder
     private func catalystHomeRender(_ id: String) -> AnyView {
         switch id {
         case "activeMatches":   AnyView(activeMatchesCard)

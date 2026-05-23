@@ -88,7 +88,6 @@ struct TerminalHome: View {
     private let widgetLayoutKey = "terminal.home.widgetOrder"
     private let terminalCanonicalOrder: [String] = ["activeMovements", "throughput_summary", "terminal_alerts", "recent", "news"]
 
-    @ViewBuilder
     private func terminalHomeRender(_ id: String) -> AnyView {
         switch id {
         case "activeMovements":    AnyView(activeMovementsCard)

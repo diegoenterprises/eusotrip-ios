@@ -70,7 +70,6 @@ struct BrokerHome: View {
     private let widgetLayoutKey = "broker.home.widgetOrder"
     private let brokerCanonicalOrder: [String] = ["openTenders", "margin_summary", "broker_alerts", "recent", "news"]
 
-    @ViewBuilder
     private func brokerHomeRender(_ id: String) -> AnyView {
         switch id {
         case "openTenders":    AnyView(openTendersCard)

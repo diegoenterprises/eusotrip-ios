@@ -61,7 +61,6 @@ private struct ComplianceHomeBody: View {
     private let widgetLayoutKey = "compliance.home.widgetOrder"
     private let complianceCanonicalOrder: [String] = ["expiringDocs", "violations_overview", "driver_compliance", "news"]
 
-    @ViewBuilder
     private func complianceHomeRender(_ id: String) -> AnyView {
         switch id {
         case "expiringDocs":

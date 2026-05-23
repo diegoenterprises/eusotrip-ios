@@ -74,7 +74,6 @@ struct EscortHome: View {
     private let widgetLayoutKey = "escort.home.widgetOrder"
     private let escortCanonicalOrder: [String] = ["activeAssignments", "escort_revenue", "escort_alerts", "recent", "news"]
 
-    @ViewBuilder
     private func escortHomeRender(_ id: String) -> AnyView {
         switch id {
         case "activeAssignments": AnyView(activeAssignmentsCard)

@@ -75,7 +75,6 @@ struct ShipperHome: View {
     private let widgetLayoutKey = "shipper.home.widgetOrder"
     private let shipperCanonicalOrder: [String] = ["activeLoads", "esang", "spend_summary", "attention_alerts", "recent", "news"]
 
-    @ViewBuilder
     private func shipperHomeRender(_ id: String) -> AnyView {
         switch id {
         case "activeLoads":       AnyView(activeLoadsSection)

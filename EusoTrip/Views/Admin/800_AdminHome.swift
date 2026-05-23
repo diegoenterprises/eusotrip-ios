@@ -96,7 +96,6 @@ struct AdminHome: View {
     private let widgetLayoutKey = "admin.home.widgetOrder"
     private let adminCanonicalOrder: [String] = ["openTickets", "system_health", "pending_approvals", "recent", "news"]
 
-    @ViewBuilder
     private func adminHomeRender(_ id: String) -> AnyView {
         switch id {
         case "openTickets":       AnyView(openTicketsCard)
