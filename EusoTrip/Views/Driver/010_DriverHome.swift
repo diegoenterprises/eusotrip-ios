@@ -85,7 +85,7 @@ enum HomeWidgetCatalog {
     /// 5 originally wired in 010_DriverHome.
     static let driver: [HomeWidgetDef] = [
         .init(id: "current_route",      name: "Current route",      summary: "Active route navigation",              icon: "location.north.line.fill", category: .operations,    roles: ["DRIVER"], defaultSize: (12, 10), iosRenderable: false),
-        .init(id: "hos_tracker",        name: "HOS tracker",        summary: "Hours of service compliance",          icon: "clock.fill",              category: .compliance,     roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: false),
+        .init(id: "hos_tracker",        name: "HOS tracker",        summary: "Hours of service compliance",          icon: "clock.fill",              category: .compliance,     roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: true),
         .init(id: "earnings_summary",   name: "Earnings",           summary: "Pay and bonuses",                      icon: "dollarsign.circle.fill",  category: .financial,      roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: false),
         .init(id: "next_delivery",      name: "Next delivery",      summary: "Upcoming delivery details",            icon: "mappin.circle.fill",      category: .operations,     roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: false),
         .init(id: "fuel_stations",      name: "Fuel stations",      summary: "Nearby fuel stops",                    icon: "fuelpump.fill",           category: .planning,       roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: false),
@@ -420,7 +420,7 @@ struct DriverHome: View {
     // reconciliation, and the UserDefaults offline cache.
     private let widgetLayoutKey = "driver.home.widgetOrder"
     private let driverHomeCanonicalOrder: [String] = [
-        "haul", "compliance", "news", "recent", "hotZones",
+        "hos_tracker", "haul", "compliance", "news", "recent", "hotZones",
     ]
 
     /// Maps a catalog widget id → the concrete iOS tile view this
@@ -429,12 +429,13 @@ struct DriverHome: View {
     @ViewBuilder
     private func driverHomeRender(_ id: String) -> AnyView {
         switch id {
-        case "haul":       AnyView(TheHaulWeeklyTile())
-        case "compliance": AnyView(ComplianceCountdownStrip())
-        case "news":       AnyView(NewsCarouselWidget())
-        case "recent":     AnyView(recentSection)
-        case "hotZones":   AnyView(HotZonesWidget())
-        default:           AnyView(EmptyView())
+        case "hos_tracker": AnyView(HosTrackerWidget())
+        case "haul":        AnyView(TheHaulWeeklyTile())
+        case "compliance":  AnyView(ComplianceCountdownStrip())
+        case "news":        AnyView(NewsCarouselWidget())
+        case "recent":      AnyView(recentSection)
+        case "hotZones":    AnyView(HotZonesWidget())
+        default:            AnyView(EmptyView())
         }
     }
 
@@ -1272,6 +1273,61 @@ struct DriverHome: View {
     // HomeWidgetGrid component (defined at file scope above).
     // canonicalOrder + render closure are declared at the top of
     // this struct; nothing else lives here.
+}
+
+// MARK: - HosTrackerWidget (catalog widget id: "hos_tracker")
+//
+// First port of a web-catalog widget to an iOS tile-card. Wraps the
+// existing HosTile primitive with a card shell + tap-to-open the
+// full 019_HosDutyStatus surface. Reads live data from
+// HOSClockService.shared (already booted by EusoTripApp).
+
+struct HosTrackerWidget: View {
+    @Environment(\.palette) private var palette
+    @ObservedObject private var hos = HOSClockService.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "clock.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("HOS · LIVE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 0)
+                if let s = hos.status {
+                    Text(s.canDrive ? "CAN DRIVE" : "BREAK DUE")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(s.canDrive ? Color.green.opacity(0.85) : Brand.danger)
+                        .clipShape(Capsule())
+                }
+            }
+            if let s = hos.status {
+                HStack(spacing: Space.s2) {
+                    HosTile(value: s.drivingRemainingDisplay, label: "DRIVE")
+                    HosTile(value: s.onDutyRemainingDisplay, label: "ON-DUTY")
+                    HosTile(value: s.cycleRemainingDisplay, label: "CYCLE")
+                }
+            } else {
+                Text("Loading HOS…")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 8)
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
 }
 
 /// Tapped-state styling for activity rows — soft scale + flash so the
