@@ -63,13 +63,14 @@ struct CarrierHome: View {
 
     // ── Home-widget customization — uses shared HomeWidgetGrid. ──
     private let widgetLayoutKey = "carrier.home.widgetOrder"
-    private let carrierCanonicalOrder: [String] = ["activeLoads", "revenue_summary", "recent", "news"]
+    private let carrierCanonicalOrder: [String] = ["activeLoads", "revenue_summary", "carrier_alerts", "recent", "news"]
 
     @ViewBuilder
     private func carrierHomeRender(_ id: String) -> AnyView {
         switch id {
         case "activeLoads":     AnyView(activeLoadsCard)
         case "revenue_summary": AnyView(revenueSummaryWidget)
+        case "carrier_alerts":  AnyView(carrierAlertsWidget)
         case "recent":          AnyView(recentActivityCard)
         case "news":            AnyView(NewsCarouselWidget())
         default:                AnyView(EmptyView())
@@ -593,6 +594,48 @@ struct CarrierHome: View {
                         RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                             .strokeBorder(palette.borderFaint)
                     )
+            }
+        }
+    }
+
+    // MARK: - Carrier alerts widget
+
+    @ViewBuilder
+    private var carrierAlertsWidget: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Brand.danger)
+                Text("CARRIER ALERTS")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                if case .loaded(let rows) = alerts.state, !rows.isEmpty {
+                    Text("\(rows.count)")
+                        .font(.system(size: 9, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(Brand.danger))
+                }
+            }
+            switch alerts.state {
+            case .loading:
+                listSkeleton
+            case .loaded(let rows):
+                if rows.isEmpty {
+                    EusoEmptyState(systemImage: "checkmark.circle", title: "All clear",
+                                   subtitle: "No loads need attention right now.")
+                } else {
+                    VStack(spacing: Space.s2) {
+                        ForEach(rows.prefix(3)) { alertRow($0) }
+                    }
+                }
+            case .empty:
+                EusoEmptyState(systemImage: "checkmark.circle", title: "All clear",
+                               subtitle: "No loads need attention right now.")
+            case .error(let e):
+                inlineError(e) { Task { await alerts.refresh() } }
             }
         }
     }
