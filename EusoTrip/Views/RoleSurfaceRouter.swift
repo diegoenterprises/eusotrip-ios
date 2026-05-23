@@ -107,8 +107,7 @@ struct RoleSurfaceRouter: View {
             WebContinuationSurface(role: role, palette: palette,
                                    pathSlug: "rail/dispatch")
         case .railEngineer:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "rail/engineer")
+            RailEngineerSurface(palette: palette)
         case .railConductor:
             WebContinuationSurface(role: role, palette: palette,
                                    pathSlug: "rail/conductor")
@@ -119,8 +118,7 @@ struct RoleSurfaceRouter: View {
             WebContinuationSurface(role: role, palette: palette,
                                    pathSlug: "vessel/shipper")
         case .vesselOperator:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "vessel/operator")
+            VesselOperatorSurface(palette: palette)
         case .portMaster:
             WebContinuationSurface(role: role, palette: palette,
                                    pathSlug: "vessel/port-master")
@@ -1349,6 +1347,136 @@ struct ComplianceSurface: View {
     }
 }
 
+// MARK: - Rail Engineer surface
+
+/// Top-level Rail Engineer container. First native iOS Rail surface.
+/// RBAC-gated through `RoleAccess.canRender(role:.railEngineer)`.
+struct RailEngineerSurface: View {
+    let palette: Theme.Palette
+
+    @EnvironmentObject var session: EusoTripSession
+    @State private var screenStack: [String] = ["Rail550"]
+    @State private var showeSang: Bool = false
+    private static let tabRoots: Set<String> = ["Rail550", "Rail551", "Rail552", "Rail553"]
+
+    private var currentScreenId: String { screenStack.last ?? "Rail550" }
+
+    private var current: ProductionScreen {
+        ScreenRegistry.forRole(.railEngineer).first { $0.id == currentScreenId }
+            ?? ScreenRegistry.forRole(.railEngineer).first { $0.id == "Rail550" }
+            ?? ScreenRegistry.forRole(.railEngineer).first
+            ?? ProductionScreen(id: "Rail550",
+                                title: "Rail Engineer · Home",
+                                role: .railEngineer) { p in
+                                    AnyView(RailEngineerHomeScreen(theme: p))
+                                }
+    }
+
+    private func pushOrTab(_ id: String) {
+        if Self.tabRoots.contains(id) { screenStack = [id]; return }
+        if screenStack.last == id { return }
+        screenStack.append(id)
+    }
+    private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
+
+    var body: some View {
+        current.view(palette)
+            .id("rail-\(currentScreenId)")
+            .transition(.opacity)
+            .modifier(RoleNavBackOverlay(
+                stackDepth: screenStack.count,
+                currentScreenId: currentScreenId,
+                screensWithOwnBack: Self.tabRoots
+            ))
+            .environment(\.driverNavHandler, nil)
+            .environment(\.shipperNavHandler, nil)
+            .environment(\.railEngineerNavHandler) { label in
+                RailEngineerNavDispatcher.handle(label)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoRailNavSwap)) { note in
+                guard let id = note.userInfo?["screenId"] as? String else { return }
+                guard RoleAccess.canRender(role: .railEngineer, screenId: id) else {
+                    screenStack = ["Rail550"]; return
+                }
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
+                withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoRaileSangTapped)) { _ in
+                showeSang = true
+            }
+            .sheet(isPresented: $showeSang) {
+                DrivereSangCoachSheet().environment(\.palette, palette)
+            }
+    }
+}
+
+// MARK: - Vessel Operator surface
+
+/// Top-level Vessel Operator container. First native iOS Vessel surface.
+/// RBAC-gated through `RoleAccess.canRender(role:.vesselOperator)`.
+struct VesselOperatorSurface: View {
+    let palette: Theme.Palette
+
+    @EnvironmentObject var session: EusoTripSession
+    @State private var screenStack: [String] = ["Vesl650"]
+    @State private var showeSang: Bool = false
+    private static let tabRoots: Set<String> = ["Vesl650", "Vesl651", "Vesl652", "Vesl653"]
+
+    private var currentScreenId: String { screenStack.last ?? "Vesl650" }
+
+    private var current: ProductionScreen {
+        ScreenRegistry.forRole(.vesselOperator).first { $0.id == currentScreenId }
+            ?? ScreenRegistry.forRole(.vesselOperator).first { $0.id == "Vesl650" }
+            ?? ScreenRegistry.forRole(.vesselOperator).first
+            ?? ProductionScreen(id: "Vesl650",
+                                title: "Vessel Operator · Home",
+                                role: .vesselOperator) { p in
+                                    AnyView(VesselOperatorHomeScreen(theme: p))
+                                }
+    }
+
+    private func pushOrTab(_ id: String) {
+        if Self.tabRoots.contains(id) { screenStack = [id]; return }
+        if screenStack.last == id { return }
+        screenStack.append(id)
+    }
+    private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
+
+    var body: some View {
+        current.view(palette)
+            .id("vessel-\(currentScreenId)")
+            .transition(.opacity)
+            .modifier(RoleNavBackOverlay(
+                stackDepth: screenStack.count,
+                currentScreenId: currentScreenId,
+                screensWithOwnBack: Self.tabRoots
+            ))
+            .environment(\.driverNavHandler, nil)
+            .environment(\.shipperNavHandler, nil)
+            .environment(\.vesselOperatorNavHandler) { label in
+                VesselOperatorNavDispatcher.handle(label)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoVesselNavSwap)) { note in
+                guard let id = note.userInfo?["screenId"] as? String else { return }
+                guard RoleAccess.canRender(role: .vesselOperator, screenId: id) else {
+                    screenStack = ["Vesl650"]; return
+                }
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
+                withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoVesseleSangTapped)) { _ in
+                showeSang = true
+            }
+            .sheet(isPresented: $showeSang) {
+                DrivereSangCoachSheet().environment(\.palette, palette)
+            }
+    }
+}
+
 // MARK: - Shared role-stack back overlay
 //
 // Founder mandate 2026-05-05 — every leaf screen across every role
@@ -1565,7 +1693,8 @@ enum RoleAccess {
         // Carrier-track backend roles can navigate into both the
         // canonical Carrier registry (300-320) AND the Catalyst
         // SpectraMatch sub-surface (500-502).
-        case .catalyst, .railCatalyst, .vesselOperator: return [.carrier, .catalyst]
+        case .catalyst, .railCatalyst:                  return [.carrier, .catalyst]
+        case .vesselOperator:                           return [.vesselOperator]
         case .broker, .railBroker, .vesselBroker,
              .customsBroker:                            return [.broker]
         case .escort:                                   return [.escort]
@@ -1573,13 +1702,14 @@ enum RoleAccess {
         case .admin, .superAdmin:                       return [.admin]
         case .compliance:                               return [.compliance]
         case .dispatch:                                 return [.dispatch]
+        case .railEngineer:                             return [.railEngineer]
         // Roles below have no native chrome — they route to web
         // continuation in `RoleSurfaceRouter`. Empty list means
         // every cross-role swap is denied for them, which is the
         // correct outcome since their surface lives outside the
         // app entirely.
         case .safety, .factoring,
-             .railDispatch, .railEngineer, .railConductor,
+             .railDispatch, .railConductor,
              .shipCaptain:                              return []
         }
     }
@@ -1594,20 +1724,22 @@ enum RoleAccess {
         case .driver:                return .driver
         case .shipper, .railShipper, .vesselShipper:
                                      return .shipper
-        case .catalyst, .railCatalyst, .vesselOperator:
+        case .catalyst, .railCatalyst:
                                      return .carrier
+        case .vesselOperator:        return .vesselOperator
         case .broker, .railBroker, .vesselBroker, .customsBroker:
                                      return .broker
         case .escort:                return .escort
         case .terminal, .portMaster: return .terminal
         case .admin, .superAdmin:    return .admin
+        case .railEngineer:          return .railEngineer
         // Roles below have no chrome-role analog; map to a sentinel
         // (.driver) but RoleAccess.canRender still returns false for
         // them because none of their screen IDs are registered against
         // .driver. The router routes these to web continuation, never
         // through the registry path.
         case .dispatch, .compliance, .safety, .factoring,
-             .railDispatch, .railEngineer, .railConductor,
+             .railDispatch, .railConductor,
              .shipCaptain:
                                      return .driver
         }

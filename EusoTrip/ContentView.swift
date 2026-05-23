@@ -67,6 +67,8 @@ struct ProductionScreen: Identifiable {
         case admin = "Admin"
         case compliance = "Compliance"
         case dispatch = "Dispatch"
+        case railEngineer = "RailEngineer"
+        case vesselOperator = "VesselOperator"
         var id: String { rawValue }
     }
 }
@@ -1940,6 +1942,16 @@ enum ScreenRegistry {
             .init(id: "SH267", title: "Shipper · M-04 On-Site",          role: .shipper) { p in AnyView(ShipperM04OnSiteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "SH268", title: "Shipper · M-04 In-Transit",       role: .shipper) { p in AnyView(ShipperM04InTransitScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "SH269", title: "Shipper · M-04 At Delivery",      role: .shipper) { p in AnyView(ShipperM04AtDeliveryScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+        ])
+
+        // Rail Engineer surface (Rail550+). First native iOS rail screen.
+        list.append(contentsOf: [
+            .init(id: "Rail550", title: "Rail Engineer · Home",       role: .railEngineer) { p in AnyView(RailEngineerHomeScreen(theme: p)) },
+        ])
+
+        // Vessel Operator surface (Vesl650+). First native iOS vessel screen.
+        list.append(contentsOf: [
+            .init(id: "Vesl650", title: "Vessel Operator · Home",     role: .vesselOperator) { p in AnyView(VesselOperatorHomeScreen(theme: p)) },
         ])
 
         return list

@@ -693,23 +693,30 @@ struct BottomNav: View {
     @Environment(\.escortNavHandler)     var escortNavHandler
     @Environment(\.terminalNavHandler)   var terminalNavHandler
     @Environment(\.adminNavHandler)      var adminNavHandler
-    @Environment(\.complianceNavHandler) var complianceNavHandler
-    @Environment(\.dispatchNavHandler)   var dispatchNavHandler
+    @Environment(\.complianceNavHandler)    var complianceNavHandler
+    @Environment(\.dispatchNavHandler)      var dispatchNavHandler
+    @Environment(\.railEngineerNavHandler)  var railEngineerNavHandler
+    @Environment(\.vesselOperatorNavHandler) var vesselOperatorNavHandler
 
     /// Resolves the first injected handler in priority order. Only
     /// one role's handler is ever in the env at a time (each surface
     /// injects exactly one), so this just returns the active one
     /// without ambiguity.
     private var activeNavHandler: ((String) -> Void)? {
-        driverNavHandler
-        ?? shipperNavHandler
-        ?? carrierNavHandler
-        ?? brokerNavHandler
-        ?? escortNavHandler
-        ?? terminalNavHandler
-        ?? adminNavHandler
-        ?? complianceNavHandler
-        ?? dispatchNavHandler
+        // Split into sub-expressions to keep the type-checker fast —
+        // a single 11-term ?? chain exceeded the tractable budget.
+        let truckHandlers: ((String) -> Void)? = driverNavHandler
+            ?? shipperNavHandler
+            ?? carrierNavHandler
+            ?? brokerNavHandler
+            ?? escortNavHandler
+        let platformHandlers: ((String) -> Void)? = terminalNavHandler
+            ?? adminNavHandler
+            ?? complianceNavHandler
+            ?? dispatchNavHandler
+        let modalHandlers: ((String) -> Void)? = railEngineerNavHandler
+            ?? vesselOperatorNavHandler
+        return truckHandlers ?? platformHandlers ?? modalHandlers
     }
 
     var body: some View {
