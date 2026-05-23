@@ -91,6 +91,7 @@ enum HomeWidgetCatalog {
         .init(id: "fuel_stations",      name: "Fuel stations",      summary: "Nearby fuel stops",                    icon: "fuelpump.fill",           category: .planning,       roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: false),
         .init(id: "rest_areas",         name: "Rest areas",         summary: "Nearby rest stops",                    icon: "bed.double.fill",         category: .planning,       roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: false),
         .init(id: "vehicle_health",     name: "Vehicle health",     summary: "Truck diagnostics",                    icon: "wrench.and.screwdriver.fill", category: .operations,  roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: false),
+        .init(id: "weather_alerts",     name: "Weather alerts",     summary: "Route weather conditions",             icon: "cloud.rain.fill",         category: .safety,         roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
         .init(id: "haul",               name: "The Haul weekly",    summary: "XP ring + missions + rank",            icon: "rosette",                 category: .performance,    roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: true),
         .init(id: "compliance",         name: "Compliance countdown", summary: "CDL / medical / hazmat / TWIC expiry", icon: "checkmark.shield.fill", category: .compliance,    roles: ["DRIVER"], defaultSize: (12, 4),  iosRenderable: true),
         .init(id: "hotZones",           name: "Hot zones",          summary: "Live load-to-truck ratios + surges",   icon: "flame.fill",              category: .analytics,      roles: ["DRIVER"], defaultSize: (12, 8),  iosRenderable: true),
@@ -420,7 +421,8 @@ struct DriverHome: View {
     // reconciliation, and the UserDefaults offline cache.
     private let widgetLayoutKey = "driver.home.widgetOrder"
     private let driverHomeCanonicalOrder: [String] = [
-        "next_delivery", "hos_tracker", "earnings_summary", "haul", "compliance", "news", "recent", "hotZones",
+        "next_delivery", "hos_tracker", "earnings_summary", "weather_alerts",
+        "haul", "compliance", "news", "recent", "hotZones",
     ]
 
     /// Maps a catalog widget id → the concrete iOS tile view this
@@ -432,6 +434,7 @@ struct DriverHome: View {
         case "next_delivery":   AnyView(NextDeliveryWidget(summary: vm.activeLoadSummary))
         case "hos_tracker":     AnyView(HosTrackerWidget())
         case "earnings_summary":AnyView(EarningsSummaryWidget(available: vm.walletAvailable, availableDisplay: vm.walletAvailableDisplay))
+        case "weather_alerts":  AnyView(WeatherAlertsWidget(snapshot: vm.weather))
         case "haul":            AnyView(TheHaulWeeklyTile())
         case "compliance":      AnyView(ComplianceCountdownStrip())
         case "news":            AnyView(NewsCarouselWidget())
@@ -1275,6 +1278,63 @@ struct DriverHome: View {
     // HomeWidgetGrid component (defined at file scope above).
     // canonicalOrder + render closure are declared at the top of
     // this struct; nothing else lives here.
+}
+
+// MARK: - WeatherAlertsWidget (catalog widget id: "weather_alerts")
+//
+// Tight route-relevant weather card — surfaces the next actionable
+// alert (e.g. "Light rain in 5h around pickup window") + visibility
+// + wind gust risk. Reads from the same WeatherSnapshot the hero
+// WeatherCard renders — composable, no second fetch.
+
+struct WeatherAlertsWidget: View {
+    @Environment(\.palette) private var palette
+    let snapshot: WeatherSnapshot?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: snapshot?.symbol ?? "cloud.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("WEATHER · ROUTE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 0)
+                if let s = snapshot { Text(s.city).font(.system(size: 9, weight: .heavy)).tracking(0.4).foregroundStyle(palette.textTertiary) }
+            }
+            if let s = snapshot {
+                if let alert = s.nextAlert, !alert.isEmpty {
+                    Text(alert)
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(2)
+                } else {
+                    Text("\(s.tempF)°F · \(s.condition)")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                }
+                HStack(spacing: 12) {
+                    Label("\(s.windMph) mph", systemImage: "wind")
+                    Label("\(s.visibilityMi) mi", systemImage: "eye")
+                }
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(palette.textSecondary)
+            } else {
+                Text("Enable location for live route weather.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
 }
 
 // MARK: - EarningsSummaryWidget (catalog widget id: "earnings_summary")
