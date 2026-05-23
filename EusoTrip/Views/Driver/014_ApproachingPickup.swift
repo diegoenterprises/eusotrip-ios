@@ -50,6 +50,11 @@ struct ApproachingPickup: View {
 
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: Load?
+    /// Driver help launcher — opens the ESANG coach sheet so the
+    /// push-to-talk mic in the footer has a real surface to route
+    /// voice through. Per [feedback_esang_canonical_voice] every voice
+    /// path on the platform terminates at the canonical ESANG sheet.
+    @Environment(\.driverShowHelp) private var showHelp
     /// Per-row completion state. Seeded from the driver's pre-gate
     /// defaults + anything already marked on the server checklist
     /// (future: `loadLifecycle.getChecklist`).
@@ -436,8 +441,16 @@ struct ApproachingPickup: View {
     private var footerActions: some View {
         HStack(spacing: Space.s3) {
             Button {
-                // Push-to-talk to dispatch (future: wires into
-                // driverConversationView on the same thread).
+                // Push-to-talk surface — routes through the canonical
+                // ESANG coach sheet, which owns the Speech/AVAudioEngine
+                // pipeline (eSangVoiceInputController). The sheet's
+                // composer renders the mic button at-the-ready; tapping
+                // it kicks off recording and ships the transcript through
+                // `esang.chat` for the dispatch-routed reply. Per
+                // [feedback_esang_canonical_voice], Siri/CarPlay/Watch/
+                // any-mic-on-the-platform routes through `esang.chat`,
+                // never fires tRPC mutations directly.
+                showHelp?("approach.dispatch.voice")
             } label: {
                 Image(systemName: "mic.fill")
                     .font(.system(size: 18, weight: .bold))
@@ -447,7 +460,7 @@ struct ApproachingPickup: View {
                     .overlay(Circle().strokeBorder(palette.borderSoft))
                     .clipShape(Circle())
             }
-            .accessibilityLabel("Hold to talk to dispatch")
+            .accessibilityLabel("Open ESANG to talk to dispatch")
 
             // §B.4 — canonical CTAButton primitive. Press recipe
             // (easeOut(0.12) + scale 0.985 + hueRotation), success

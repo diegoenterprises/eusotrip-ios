@@ -1259,38 +1259,35 @@ struct LoadBoardCard: View {
                     .lineLimit(1)
             }
 
-            // Action row
+            // Action row — visual call-to-action chrome only. The whole
+            // card is wrapped in a tap-handling Button (see Eusoboards
+            // body at line 1054); nesting Buttons here used to steal the
+            // tap target AND ran empty closures (`// book-load hook`,
+            // `// view-details hook`). The outer Button now opens the
+            // booking detail sheet via `selectedLoadID`, so this row is
+            // just CTA visualization — no inner tap targets.
             HStack(spacing: Space.s2) {
-                Button {
-                    // book-load hook
-                } label: {
-                    Text("Book now")
-                        .font(EType.bodyStrong)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                                .fill(LinearGradient.diagonal)
-                        )
-                }
-                .buttonStyle(.plain)
+                Text("Book now")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .fill(LinearGradient.diagonal)
+                    )
 
-                Button {
-                    // view-details hook
-                } label: {
-                    Image(systemName: "info.circle")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(palette.textPrimary)
-                        .frame(width: 40, height: 40)
-                        .background(palette.bgCardSoft)
-                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                                    .strokeBorder(palette.borderFaint))
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Load details")
+                Image(systemName: "info.circle")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .frame(width: 40, height: 40)
+                    .background(palette.bgCardSoft)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                .strokeBorder(palette.borderFaint))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    .accessibilityHidden(true)
             }
+            .allowsHitTesting(false)
         }
         .padding(Space.s4)
         .eusoCard(radius: Radius.lg)
