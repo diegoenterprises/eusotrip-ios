@@ -5708,7 +5708,7 @@ private struct PostLoadDraftsEntryBody: View {
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 14).fill(palette.surface))
+        .background(RoundedRectangle(cornerRadius: 14).fill(palette.bgCard))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(palette.borderFaint))
     }
 
@@ -5745,7 +5745,7 @@ private struct PostLoadDraftsEntryBody: View {
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 14).fill(palette.surface))
+        .background(RoundedRectangle(cornerRadius: 14).fill(palette.bgCard))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
                 .strokeBorder(LinearGradient.diagonal.opacity(0.4), lineWidth: 1)

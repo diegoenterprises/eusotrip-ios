@@ -354,7 +354,7 @@ struct HomeWidgetGrid: View {
                 Text(label)
                     .font(.system(size: 13, weight: .heavy))
                     .padding(10)
-                    .background(palette.surface, in: Capsule())
+                    .background(palette.bgCard, in: Capsule())
                     .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
             }
             .dropDestination(for: String.self) { droppedIds, _ in
@@ -563,7 +563,6 @@ struct DriverHome: View {
     /// Maps a catalog widget id → the concrete iOS tile view this
     /// driver-home wires today. Future widget ports just add a case;
     /// the grid + catalog handle the rest.
-    @ViewBuilder
     private func driverHomeRender(_ id: String) -> AnyView {
         switch id {
         case "current_route":   AnyView(CurrentRouteWidget(load: vm.activeLoad))
@@ -1549,7 +1548,7 @@ struct DriverHomeNotificationsSheet: View {
                 .padding(.top, Space.s3)
             }
         }
-        .background(palette.bg.ignoresSafeArea())
+        .background(palette.bgPrimary.ignoresSafeArea())
     }
 }
 
@@ -2518,7 +2517,7 @@ struct FuelStationsWidget: View {
                     ForEach(stations.prefix(3), id: \.id) { station in
                         HStack(spacing: 6) {
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(station.name)
+                                Text(station.name ?? "")
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(palette.textPrimary)
                                     .lineLimit(1)
