@@ -89,7 +89,7 @@ enum HomeWidgetCatalog {
         .init(id: "earnings_summary",   name: "Earnings",           summary: "Pay and bonuses",                      icon: "dollarsign.circle.fill",  category: .financial,      roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
         .init(id: "next_delivery",      name: "Next delivery",      summary: "Upcoming delivery details",            icon: "mappin.circle.fill",      category: .operations,     roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: true),
         .init(id: "fuel_stations",      name: "Fuel stations",      summary: "Nearby fuel stops",                    icon: "fuelpump.fill",           category: .planning,       roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
-        .init(id: "rest_areas",         name: "Rest areas",         summary: "Nearby rest stops",                    icon: "bed.double.fill",         category: .planning,       roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: false),
+        .init(id: "rest_areas",         name: "Rest areas",         summary: "Nearby rest stops",                    icon: "bed.double.fill",         category: .planning,       roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
         .init(id: "vehicle_health",     name: "Vehicle health",     summary: "Truck diagnostics",                    icon: "wrench.and.screwdriver.fill", category: .operations,  roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
         .init(id: "weather_alerts",     name: "Weather alerts",     summary: "Route weather conditions",             icon: "cloud.rain.fill",         category: .safety,         roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
         .init(id: "haul",               name: "The Haul weekly",    summary: "XP ring + missions + rank",            icon: "rosette",                 category: .performance,    roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: true),
@@ -431,7 +431,7 @@ struct DriverHome: View {
     private let driverHomeCanonicalOrder: [String] = [
         "current_route", "next_delivery", "hos_tracker", "earnings_summary", "weather_alerts",
         "messages", "notifications", "haul", "compliance", "news", "recent", "hotZones",
-        "performance_score", "vehicle_health", "mileage_tracker", "fuel_stations",
+        "performance_score", "vehicle_health", "mileage_tracker", "fuel_stations", "rest_areas",
     ]
 
     /// Maps a catalog widget id → the concrete iOS tile view this
@@ -456,6 +456,7 @@ struct DriverHome: View {
         case "vehicle_health":  AnyView(VehicleHealthWidget())
         case "mileage_tracker": AnyView(MileageTrackerWidget(currentLoadMiles: vm.activeLoad?.distanceValue))
         case "fuel_stations":   AnyView(FuelStationsWidget())
+        case "rest_areas":      AnyView(RestAreasWidget())
         default:                AnyView(EmptyView())
         }
     }
@@ -2201,6 +2202,123 @@ struct PerformanceScoreWidget: View {
                 onTimeRate: sc.metrics.onTimeDeliveryRate,
                 rank: sc.rankings.overall,
                 totalDrivers: sc.rankings.totalDrivers
+            )
+            loading = false
+        } catch {
+            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loading = false
+        }
+    }
+}
+
+// MARK: - RestAreasWidget (catalog widget id: "rest_areas")
+//
+// Top-3 truck stops within 40 km of the driver's current position.
+// Uses DriverLocationResolver.shared for a cached GPS coordinate, then
+// queries HereParkingClient.parkingNearby with category "400-4100-0199"
+// (truck stops in the HERE Places taxonomy).
+
+struct RestAreasWidget: View {
+    @Environment(\.palette) private var palette
+
+    @State private var stops: [HereBrowseParkingItem] = []
+    @State private var loading = true
+    @State private var loadError: String? = nil
+    @State private var locationDenied = false
+
+    private func fmtDist(_ meters: Int) -> String {
+        let miles = Double(meters) / 1609.34
+        if miles < 0.1 { return "< 0.1 mi" }
+        if miles < 10  { return String(format: "%.1f mi", miles) }
+        return "\(Int(miles)) mi"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "bed.double.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("REST AREAS · NEARBY")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 0)
+                Text("TRUCK STOPS")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            if loading {
+                Text("Locating rest areas…")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 6)
+            } else if locationDenied {
+                Text("Enable location access to see nearby rest areas.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+            } else if let err = loadError {
+                Text(err)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+                    .lineLimit(2)
+            } else if stops.isEmpty {
+                Text("No truck stops found within 25 mi.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+            } else {
+                VStack(spacing: 4) {
+                    ForEach(stops.prefix(3), id: \.id) { stop in
+                        HStack(spacing: 6) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(stop.title)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(palette.textPrimary)
+                                    .lineLimit(1)
+                                if let addr = stop.address?.city, !addr.isEmpty {
+                                    Text(addr)
+                                        .font(.system(size: 10, weight: .regular))
+                                        .foregroundStyle(palette.textTertiary)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                            if let dist = stop.distance {
+                                Text(fmtDist(dist))
+                                    .font(.system(size: 12, weight: .heavy))
+                                    .foregroundStyle(LinearGradient.diagonal)
+                                    .monospacedDigit()
+                            }
+                        }
+                        if stop.id != stops.prefix(3).last?.id {
+                            Divider().opacity(0.4)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .task { await load() }
+    }
+
+    private func load() async {
+        loading = true; loadError = nil; locationDenied = false
+        guard let coord = await DriverLocationResolver.shared.currentCoordinate() else {
+            locationDenied = true; loading = false; return
+        }
+        do {
+            stops = try await HereParkingClient.shared.parkingNearby(
+                center: coord, categories: ["400-4100-0199"], limit: 5
             )
             loading = false
         } catch {
