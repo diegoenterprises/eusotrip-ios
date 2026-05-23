@@ -498,7 +498,16 @@ private struct ShipperBackOverlay: ViewModifier {
         // their own (audit 2026-05-05). Suppressing surface overlay
         // here prevents the floating circle from overlapping the
         // screen's own chevron.
-        "227", "228", "229", "230", "230b",
+        //
+        // Founder bug 2026-05-22: 228/229/230/230b were in this list
+        // but DON'T actually draw a header back chevron — they were
+        // false-positive matches (229's "chevron.left" is its
+        // date-picker prev-day arrow, not a nav back). With suppression
+        // they had NO back button at all, matching the founder's
+        // "ALLOCATION HAS NO BACK BUTTON" report. Removed; the
+        // safeAreaInset-banded surface back now renders for them
+        // without overlapping content.
+        "227",
         // Founder back-button audit 2026-05-08 — both 203 (Bids)
         // and 223 (Agreements) draw their own header chevron AND
         // were getting the floating overlay on top. Added here so
