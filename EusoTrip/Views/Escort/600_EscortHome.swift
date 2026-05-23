@@ -70,20 +70,42 @@ struct EscortHome: View {
     /// firing alongside the 601 brick.
     @State private var detailRow: EscortAPI.ActiveAssignment? = nil
 
+    // ── Home-widget customization (2026-05-23 · DnD parity) ──
+    enum EscortWidgetSlot: String, CaseIterable, Codable, Identifiable {
+        case activeAssignments, recent, news
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .activeAssignments: return "Active assignments"
+            case .recent:            return "Recent activity"
+            case .news:              return "Escort intel"
+            }
+        }
+    }
+    @State private var widgetOrder: [EscortWidgetSlot] = EscortWidgetSlot.allCases
+    @State private var editingLayout: Bool = false
+    @State private var dropHoverSlot: EscortWidgetSlot? = nil
+    private let widgetLayoutKey = "escort.home.widgetOrder"
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
                 kpiStrip
                 attentionStrip
-                activeAssignmentsCard
-                recentActivityCard
+                widgetZoneToolbar
+                ForEach(widgetOrder) { slot in
+                    secondaryWidget(for: slot)
+                }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14)
             .padding(.top, 8)
         }
-        .task { await refreshAll() }
+        .task {
+            await refreshAll()
+            await hydrateWidgetLayout()
+        }
         .refreshable { await refreshAll() }
         .screenTileRoot()
         // 601_EscortAssignmentDetail sheet — opened by tapping an
@@ -582,6 +604,154 @@ struct EscortHome: View {
                 .strokeBorder(Brand.danger.opacity(0.4), lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    // MARK: - Reorderable secondary-widget zone (DnD parity)
+
+    private var widgetZoneToolbar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: editingLayout ? "checkmark.circle.fill" : "rectangle.3.group.bubble")
+                .font(.system(size: 11, weight: .heavy))
+            Text(editingLayout ? "DONE · Tap to save layout" : "CUSTOMIZE WIDGETS")
+                .font(.system(size: 10, weight: .heavy)).tracking(0.6)
+            Spacer(minLength: 0)
+            if editingLayout {
+                Button {
+                    withAnimation(.easeOut(duration: 0.18)) { widgetOrder = EscortWidgetSlot.allCases }
+                } label: {
+                    Text("RESET")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(palette.bgCard, in: Capsule())
+                }.buttonStyle(.plain)
+            }
+        }
+        .foregroundStyle(editingLayout ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
+        .padding(.horizontal, Space.s3).padding(.vertical, 8)
+        .background(
+            Capsule().strokeBorder(
+                editingLayout ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint),
+                lineWidth: 1
+            )
+        )
+        .contentShape(Capsule())
+        .onTapGesture {
+            withAnimation(.easeOut(duration: 0.18)) {
+                if editingLayout { editingLayout = false; Task { await persistWidgetLayout() } }
+                else { editingLayout = true }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func secondaryWidget(for slot: EscortWidgetSlot) -> some View {
+        let inner: AnyView = {
+            switch slot {
+            case .activeAssignments: return AnyView(activeAssignmentsCard)
+            case .recent:            return AnyView(recentActivityCard)
+            case .news:              return AnyView(NewsCarouselWidget())
+            }
+        }()
+        if editingLayout {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
+                    .padding(.top, 10)
+                inner
+            }
+            .overlay(alignment: .topTrailing) {
+                Text(slot.label.uppercased())
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(LinearGradient.diagonal)
+                    .clipShape(Capsule())
+                    .padding(6)
+            }
+            .background(
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(
+                        dropHoverSlot == slot ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint),
+                        lineWidth: dropHoverSlot == slot ? 2 : 1
+                    )
+                    .animation(.easeOut(duration: 0.12), value: dropHoverSlot)
+            )
+            .draggable(slot.rawValue) {
+                Text(slot.label)
+                    .font(.system(size: 13, weight: .heavy))
+                    .padding(10)
+                    .background(palette.surface, in: Capsule())
+                    .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
+            }
+            .dropDestination(for: String.self) { droppedIds, _ in
+                guard let raw = droppedIds.first,
+                      let dropped = EscortWidgetSlot(rawValue: raw),
+                      dropped != slot,
+                      let fromIdx = widgetOrder.firstIndex(of: dropped),
+                      let toIdx = widgetOrder.firstIndex(of: slot)
+                else { return false }
+                withAnimation(.easeOut(duration: 0.18)) {
+                    let item = widgetOrder.remove(at: fromIdx)
+                    widgetOrder.insert(item, at: min(toIdx, widgetOrder.count))
+                }
+                return true
+            } isTargeted: { hovering in
+                dropHoverSlot = hovering ? slot : (dropHoverSlot == slot ? nil : dropHoverSlot)
+            }
+        } else {
+            inner
+        }
+    }
+
+    private func hydrateWidgetLayout() async {
+        if let data = UserDefaults.standard.data(forKey: widgetLayoutKey),
+           let cached = try? JSONDecoder().decode([EscortWidgetSlot].self, from: data),
+           !cached.isEmpty {
+            widgetOrder = reconcile(cached)
+        }
+        struct In: Encodable { let role: String }
+        struct Slot: Decodable { let widgetId: String }
+        struct Out: Decodable { let layout: [Slot]?; let updatedAt: String? }
+        do {
+            let r: Out = try await EusoTripAPI.shared.query("users.getDashboardLayout", input: In(role: "ESCORT"))
+            if let server = r.layout, !server.isEmpty {
+                let parsed = server.compactMap { EscortWidgetSlot(rawValue: $0.widgetId) }
+                if !parsed.isEmpty {
+                    let merged = reconcile(parsed)
+                    await MainActor.run { widgetOrder = merged }
+                    if let data = try? JSONEncoder().encode(merged) {
+                        UserDefaults.standard.set(data, forKey: widgetLayoutKey)
+                    }
+                }
+            }
+        } catch { }
+    }
+
+    private func persistWidgetLayout() async {
+        if let data = try? JSONEncoder().encode(widgetOrder) {
+            UserDefaults.standard.set(data, forKey: widgetLayoutKey)
+        }
+        struct Slot: Encodable { let widgetId: String; let x: Int; let y: Int; let w: Int; let h: Int }
+        struct In: Encodable { let role: String; let layout: [Slot] }
+        struct Out: Decodable { let success: Bool? }
+        let payload = widgetOrder.enumerated().map { idx, slot in
+            Slot(widgetId: slot.rawValue, x: 0, y: idx, w: 12, h: 4)
+        }
+        do {
+            let _: Out = try await EusoTripAPI.shared.mutation(
+                "users.saveDashboardLayout",
+                input: In(role: "ESCORT", layout: payload)
+            )
+        } catch { }
+    }
+
+    private func reconcile(_ saved: [EscortWidgetSlot]) -> [EscortWidgetSlot] {
+        var seen = Set<EscortWidgetSlot>(); var out: [EscortWidgetSlot] = []
+        for s in saved where !seen.contains(s) { out.append(s); seen.insert(s) }
+        for s in EscortWidgetSlot.allCases where !seen.contains(s) { out.append(s) }
+        return out
     }
 }
 
