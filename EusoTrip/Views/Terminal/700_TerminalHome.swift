@@ -86,15 +86,17 @@ struct TerminalHome: View {
 
     // ── Home-widget customization — uses shared HomeWidgetGrid. ──
     private let widgetLayoutKey = "terminal.home.widgetOrder"
-    private let terminalCanonicalOrder: [String] = ["activeMovements", "recent", "news"]
+    private let terminalCanonicalOrder: [String] = ["activeMovements", "throughput_summary", "terminal_alerts", "recent", "news"]
 
     @ViewBuilder
     private func terminalHomeRender(_ id: String) -> AnyView {
         switch id {
-        case "activeMovements": AnyView(activeMovementsCard)
-        case "recent":          AnyView(recentActivityCard)
-        case "news":            AnyView(NewsCarouselWidget())
-        default:                AnyView(EmptyView())
+        case "activeMovements":    AnyView(activeMovementsCard)
+        case "throughput_summary": AnyView(throughputSummaryWidget)
+        case "terminal_alerts":    AnyView(terminalAlertsWidget)
+        case "recent":             AnyView(recentActivityCard)
+        case "news":               AnyView(NewsCarouselWidget())
+        default:                   AnyView(EmptyView())
         }
     }
 
@@ -586,6 +588,82 @@ struct TerminalHome: View {
                         RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                             .strokeBorder(palette.borderFaint)
                     )
+            }
+        }
+    }
+
+    // MARK: - Throughput summary widget
+
+    @ViewBuilder
+    private var throughputSummaryWidget: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "gauge.with.dots.needle.33percent")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("THROUGHPUT SUMMARY")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+            }
+            switch dashboard.state {
+            case .loading:
+                listSkeleton
+            case .loaded(let maybe):
+                if let s = maybe {
+                    HStack(spacing: Space.s2) {
+                        kpiTile(label: "THROUGHPUT · 7D", value: "\(s.throughputThisWeek)", sub: "movements this week")
+                        kpiTile(label: "GATE UTIL",       value: String(format: "%.0f%%", s.gateUtilization * 100), sub: "gate utilization")
+                        kpiTile(label: "AVG DWELL",       value: String(format: "%.1fh", s.avgDwellHoursThisWeek), sub: "avg dwell · 7d")
+                    }
+                }
+            case .empty:
+                EusoEmptyState(systemImage: "gauge.with.dots.needle.33percent", title: "No throughput data",
+                               subtitle: "Complete a movement and this week's metrics will appear here.")
+            case .error(let e):
+                inlineError(e) { Task { await dashboard.refresh() } }
+            }
+        }
+    }
+
+    // MARK: - Terminal alerts widget
+
+    @ViewBuilder
+    private var terminalAlertsWidget: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Brand.danger)
+                Text("TERMINAL ALERTS")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                if case .loaded(let rows) = alerts.state, !rows.isEmpty {
+                    Text("\(rows.count)")
+                        .font(.system(size: 9, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(Brand.danger))
+                }
+            }
+            switch alerts.state {
+            case .loading:
+                listSkeleton
+            case .loaded(let rows):
+                if rows.isEmpty {
+                    EusoEmptyState(systemImage: "checkmark.circle", title: "All clear",
+                                   subtitle: "No movements need attention right now.")
+                } else {
+                    VStack(spacing: Space.s2) {
+                        ForEach(rows.prefix(3)) { alertRow($0) }
+                    }
+                }
+            case .empty:
+                EusoEmptyState(systemImage: "checkmark.circle", title: "All clear",
+                               subtitle: "No movements need attention right now.")
+            case .error(let e):
+                inlineError(e) { Task { await alerts.refresh() } }
             }
         }
     }

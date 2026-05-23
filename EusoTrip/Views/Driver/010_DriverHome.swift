@@ -137,6 +137,8 @@ enum HomeWidgetCatalog {
     /// Terminal-specific widgets.
     static let terminal: [HomeWidgetDef] = [
         .init(id: "activeMovements",    name: "Active movements",   summary: "Yard arrivals / departures live",      icon: "arrow.triangle.swap",     category: .operations,     roles: ["TERMINAL_MANAGER"], defaultSize: (12, 8), iosRenderable: true),
+        .init(id: "throughput_summary", name: "Throughput summary", summary: "Weekly throughput + gate util + dwell", icon: "gauge.with.dots.needle.33percent", category: .analytics, roles: ["TERMINAL_MANAGER"], defaultSize: (10, 6), iosRenderable: true),
+        .init(id: "terminal_alerts",    name: "Terminal alerts",    summary: "Movements needing immediate action",   icon: "exclamationmark.triangle.fill", category: .operations, roles: ["TERMINAL_MANAGER"], defaultSize: (12, 6), iosRenderable: true),
     ]
 
     /// Escort-specific widgets.
