@@ -73,16 +73,17 @@ struct ShipperHome: View {
 
     // ── Home-widget customization — uses shared HomeWidgetGrid + HomeWidgetCatalog. ──
     private let widgetLayoutKey = "shipper.home.widgetOrder"
-    private let shipperCanonicalOrder: [String] = ["activeLoads", "esang", "recent", "news"]
+    private let shipperCanonicalOrder: [String] = ["activeLoads", "esang", "spend_summary", "recent", "news"]
 
     @ViewBuilder
     private func shipperHomeRender(_ id: String) -> AnyView {
         switch id {
-        case "activeLoads": AnyView(activeLoadsSection)
-        case "esang":       AnyView(esangStrip)
-        case "recent":      AnyView(recentActivitySection)
-        case "news":        AnyView(NewsCarouselWidget())
-        default:            AnyView(EmptyView())
+        case "activeLoads":   AnyView(activeLoadsSection)
+        case "esang":         AnyView(esangStrip)
+        case "spend_summary": AnyView(spendSummaryWidget)
+        case "recent":        AnyView(recentActivitySection)
+        case "news":          AnyView(NewsCarouselWidget())
+        default:              AnyView(EmptyView())
         }
     }
 
@@ -1134,6 +1135,46 @@ struct ShipperHome: View {
     private func percent(_ v: Double) -> String { String(format: "%.1f%%", v * 100) }
     private func trail(forActive count: Int) -> String { "+3 this wk" }
     private func trailVsLastMonth(_ rpm: Double) -> String { "−6% vs Mar" }
+
+    // MARK: - Spend summary widget
+
+    @ViewBuilder
+    private var spendSummaryWidget: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "dollarsign.circle.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("SPEND SUMMARY")
+                    .font(EType.micro).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+            }
+            switch dashboard.state {
+            case .loading:
+                listSkeleton
+            case .loaded(let maybe):
+                if let s = maybe { spendTiles(s) } else { spendTiles(canonStats) }
+            case .empty:
+                spendTiles(canonStats)
+            case .error(let e):
+                inlineError(e) { Task { await dashboard.refresh() } }
+            }
+        }
+    }
+
+    private func spendTiles(_ s: ShipperAPI.DashboardStats) -> some View {
+        HStack(spacing: Space.s2) {
+            statTile(label: "This month",  value: dollars(s.totalSpendThisMonth),
+                     trail: "total spend",    trailColor: palette.textSecondary,
+                     gradientNumeral: true, valueSize: 18)
+            statTile(label: "Bids open",   value: "\(s.pendingBids)",
+                     trail: "awaiting award", trailColor: palette.textSecondary)
+            statTile(label: "On-time",     value: percent(s.onTimeRate),
+                     trail: "delivery rate",  trailColor: Brand.success,
+                     gradientNumeral: true)
+        }
+    }
 
     // Reorderable secondary-widget zone moved to shared HomeWidgetGrid.
 }
