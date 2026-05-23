@@ -69,7 +69,7 @@ enum HomeWidgetCatalog {
         .init(id: "calendar",           name: "Calendar",           summary: "Schedule and appointments",            icon: "calendar",                category: .productivity,   roles: allRoles, defaultSize: (12, 8), iosRenderable: false),
         .init(id: "notes",              name: "Quick Notes",        summary: "Sticky notes and reminders",           icon: "note.text",               category: .productivity,   roles: allRoles, defaultSize: (6, 6), iosRenderable: false),
         .init(id: "tasks",              name: "Tasks",              summary: "Personal to-dos",                      icon: "checklist",               category: .productivity,   roles: allRoles, defaultSize: (6, 6), iosRenderable: false),
-        .init(id: "notifications",      name: "Notifications",      summary: "Recent platform alerts",               icon: "bell.fill",               category: .communication,  roles: allRoles, defaultSize: (12, 6), iosRenderable: false),
+        .init(id: "notifications",      name: "Notifications",      summary: "Recent platform alerts",               icon: "bell.fill",               category: .communication,  roles: allRoles, defaultSize: (12, 6), iosRenderable: true),
         .init(id: "messages",           name: "Messages",           summary: "Unread + active threads",              icon: "message.fill",            category: .communication,  roles: allRoles, defaultSize: (12, 6), iosRenderable: true),
         .init(id: "quick_actions",      name: "Quick Actions",      summary: "Role-aware shortcuts",                 icon: "bolt.fill",               category: .productivity,   roles: allRoles, defaultSize: (12, 4), iosRenderable: false),
         .init(id: "search",             name: "Search",             summary: "Loads / docs / contacts",              icon: "magnifyingglass",         category: .productivity,   roles: allRoles, defaultSize: (12, 4), iosRenderable: false),
@@ -422,7 +422,7 @@ struct DriverHome: View {
     private let widgetLayoutKey = "driver.home.widgetOrder"
     private let driverHomeCanonicalOrder: [String] = [
         "next_delivery", "hos_tracker", "earnings_summary", "weather_alerts",
-        "messages", "haul", "compliance", "news", "recent", "hotZones",
+        "messages", "notifications", "haul", "compliance", "news", "recent", "hotZones",
     ]
 
     /// Maps a catalog widget id → the concrete iOS tile view this
@@ -436,6 +436,7 @@ struct DriverHome: View {
         case "earnings_summary":AnyView(EarningsSummaryWidget(available: vm.walletAvailable, availableDisplay: vm.walletAvailableDisplay))
         case "weather_alerts":  AnyView(WeatherAlertsWidget(snapshot: vm.weather))
         case "messages":        AnyView(MessagesWidget())
+        case "notifications":   AnyView(NotificationsWidget())
         case "haul":            AnyView(TheHaulWeeklyTile())
         case "compliance":      AnyView(ComplianceCountdownStrip())
         case "news":            AnyView(NewsCarouselWidget())
@@ -1342,6 +1343,152 @@ struct MessagesWidget: View {
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - NotificationsWidget (catalog widget id: "notifications")
+//
+// Universal tile — top 3 platform alerts via `notifications.list(limit: 5)`
+// with an unread-count badge. Tap posts `eusoOpenNotificationsRequested`
+// so each role's shell can route to its own notifications screen.
+
+struct NotificationsWidget: View {
+    @Environment(\.palette) private var palette
+
+    private struct AlertItem: Decodable, Identifiable, Hashable {
+        let id: String
+        let title: String
+        let message: String?
+        let timeAgo: String?
+        let isRead: Bool?
+    }
+    private struct Page: Decodable {
+        let notifications: [AlertItem]
+        let total: Int?
+    }
+    private struct In: Encodable { let limit: Int; let archived: Bool }
+
+    @State private var items: [AlertItem] = []
+    @State private var totalUnread: Int = 0
+    @State private var loading: Bool = true
+    @State private var loadError: String? = nil
+
+    var body: some View {
+        Button {
+            NotificationCenter.default.post(
+                name: Notification.Name("eusoOpenNotificationsRequested"),
+                object: nil
+            )
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "bell.fill")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text("NOTIFICATIONS")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Spacer(minLength: 0)
+                    if totalUnread > 0 {
+                        Text(totalUnread > 99 ? "99+ NEW" : "\(totalUnread) NEW")
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Brand.danger, in: Capsule())
+                    } else if !loading && loadError == nil {
+                        Text("ALL READ")
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                }
+                if loading {
+                    Text("Loading alerts…")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 6)
+                } else if let err = loadError {
+                    Text(err)
+                        .font(EType.caption)
+                        .foregroundStyle(Brand.danger)
+                        .lineLimit(2)
+                } else if items.isEmpty {
+                    Text("Inbox clean. No platform alerts.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 6)
+                } else {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(items.prefix(3)) { n in
+                            HStack(alignment: .top, spacing: 8) {
+                                Circle()
+                                    .fill((n.isRead ?? true) ? palette.borderFaint : Brand.danger)
+                                    .frame(width: 6, height: 6)
+                                    .padding(.top, 6)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(n.title)
+                                        .font(EType.bodyStrong)
+                                        .foregroundStyle(palette.textPrimary)
+                                        .lineLimit(1)
+                                    if let m = n.message, !m.isEmpty {
+                                        Text(m)
+                                            .font(EType.caption)
+                                            .foregroundStyle(palette.textSecondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                                if let t = n.timeAgo, !t.isEmpty {
+                                    Text(t.uppercased())
+                                        .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                                        .foregroundStyle(palette.textTertiary)
+                                }
+                            }
+                        }
+                    }
+                }
+                HStack(spacing: 4) {
+                    Spacer(minLength: 0)
+                    Text("OPEN INBOX")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                }
+            }
+            .padding(Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(palette.bgCard)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .task { await load() }
+    }
+
+    private func load() async {
+        loading = true; loadError = nil
+        do {
+            let page: Page = try await EusoTripAPI.shared.query(
+                "notifications.list",
+                input: In(limit: 5, archived: false)
+            )
+            await MainActor.run {
+                self.items = page.notifications
+                self.totalUnread = page.notifications.filter { !($0.isRead ?? true) }.count
+                self.loading = false
+            }
+        } catch {
+            await MainActor.run {
+                self.loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+                self.loading = false
+            }
+        }
     }
 }
 
