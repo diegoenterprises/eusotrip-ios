@@ -412,41 +412,31 @@ struct DriverHome: View {
     @State private var selectedSuggestedLoad: AvailableLoad? = nil
 
     // ── Home-widget customization (2026-05-23 founder ask) ──────
-    // Mirrors web's PremiumDashboard / widgetLibrary: drag-to-reorder
-    // the secondary widget zone (below the hero metric row), saved
-    // per-role via `users.saveDashboardLayout` + restored via
-    // `users.getDashboardLayout`. The hero zone (greeting → ESANG
-    // brief → weather → active load → metric row) stays fixed per
-    // the Home widget doctrine; what reorders below is the optional
-    // intel/widget pile.
-    enum HomeWidgetSlot: String, CaseIterable, Codable, Identifiable {
-        case haul, compliance, news, recent, hotZones
-        var id: String { rawValue }
-        var label: String {
-            switch self {
-            case .haul: return "The Haul"
-            case .compliance: return "Compliance"
-            case .news: return "News"
-            case .recent: return "Recent activity"
-            case .hotZones: return "Hot Zones"
-            }
-        }
-        var icon: String {
-            switch self {
-            case .haul: return "rosette"
-            case .compliance: return "checkmark.shield"
-            case .news: return "newspaper"
-            case .recent: return "list.bullet.rectangle"
-            case .hotZones: return "flame"
-            }
+    // Migrated to shared HomeWidgetGrid + HomeWidgetCatalog
+    // (defined at file scope above). This struct just declares the
+    // canonical slot order + the render mapping for this role's
+    // tiles. The grid handles edit mode, drag/drop, RESET, hydrate
+    // / persist via users.saveDashboardLayout("DRIVER", …),
+    // reconciliation, and the UserDefaults offline cache.
+    private let widgetLayoutKey = "driver.home.widgetOrder"
+    private let driverHomeCanonicalOrder: [String] = [
+        "haul", "compliance", "news", "recent", "hotZones",
+    ]
+
+    /// Maps a catalog widget id → the concrete iOS tile view this
+    /// driver-home wires today. Future widget ports just add a case;
+    /// the grid + catalog handle the rest.
+    @ViewBuilder
+    private func driverHomeRender(_ id: String) -> AnyView {
+        switch id {
+        case "haul":       AnyView(TheHaulWeeklyTile())
+        case "compliance": AnyView(ComplianceCountdownStrip())
+        case "news":       AnyView(NewsCarouselWidget())
+        case "recent":     AnyView(recentSection)
+        case "hotZones":   AnyView(HotZonesWidget())
+        default:           AnyView(EmptyView())
         }
     }
-    @State private var widgetOrder: [HomeWidgetSlot] = HomeWidgetSlot.allCases
-    @State private var editingLayout: Bool = false
-    @State private var draggingSlot: HomeWidgetSlot? = nil
-    @State private var dropHoverSlot: HomeWidgetSlot? = nil
-    @State private var layoutSavedAt: String? = nil
-    private let widgetLayoutKey = "driver.home.widgetOrder"
 
     /// Live suggestions feed — `loads.search(status:"available")` via
     /// `LoadBoardStore`. Every seeded `[AvailableLoad]` literal that
@@ -521,20 +511,27 @@ struct DriverHome: View {
                             noActiveLoadCard
                         }
                         metricRow
-                        // Reorderable secondary-widget zone — drag to
-                        // rearrange in edit mode. Order persists per
-                        // user via `users.saveDashboardLayout`.
-                        widgetZoneToolbar
-                        ForEach(widgetOrder) { slot in
-                            secondaryWidget(for: slot)
-                        }
+                        // Reorderable secondary-widget zone via the
+                        // shared HomeWidgetGrid. Canonical order +
+                        // RBAC + persistence all flow through the
+                        // single component; the render closure maps
+                        // catalog widget IDs to the concrete iOS
+                        // tile views this screen wires.
+                        HomeWidgetGrid(
+                            canonicalOrder: driverHomeCanonicalOrder,
+                            role: "DRIVER",
+                            storageKey: widgetLayoutKey,
+                            render: { id in driverHomeRender(id) }
+                        )
                     case .error(let message):
                         errorState(message)
                         metricRow
-                        widgetZoneToolbar
-                        ForEach(widgetOrder) { slot in
-                            secondaryWidget(for: slot)
-                        }
+                        HomeWidgetGrid(
+                            canonicalOrder: driverHomeCanonicalOrder,
+                            role: "DRIVER",
+                            storageKey: widgetLayoutKey,
+                            render: { id in driverHomeRender(id) }
+                        )
                     }
                     // Reserve clearance under the floating BottomNav
                     // pill so the recent section doesn't tuck behind it.
@@ -557,7 +554,6 @@ struct DriverHome: View {
         .task {
             await vm.load()
             await suggestedLoadsStore.refresh()
-            await hydrateWidgetLayout()
         }
         // RealtimeService → live updates from the driver's load
         // assignments / reassignments / surface refresh events trigger
@@ -1272,188 +1268,10 @@ struct DriverHome: View {
         .contentShape(Rectangle())
     }
 
-    // MARK: - Reorderable secondary-widget zone
-
-    /// Toolbar pill that flips edit mode. Persists the layout
-    /// (server + local) when the user exits edit mode.
-    private var widgetZoneToolbar: some View {
-        HStack(spacing: 8) {
-            Image(systemName: editingLayout ? "checkmark.circle.fill" : "rectangle.3.group.bubble")
-                .font(.system(size: 11, weight: .heavy))
-            Text(editingLayout ? "DONE · Tap to save layout" : "CUSTOMIZE WIDGETS")
-                .font(.system(size: 10, weight: .heavy)).tracking(0.6)
-            Spacer(minLength: 0)
-            if editingLayout {
-                Button {
-                    withAnimation(.easeOut(duration: 0.18)) {
-                        widgetOrder = HomeWidgetSlot.allCases
-                    }
-                } label: {
-                    Text("RESET")
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                        .foregroundStyle(palette.textSecondary)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(palette.bgCard, in: Capsule())
-                }.buttonStyle(.plain)
-            }
-        }
-        .foregroundStyle(editingLayout ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
-        .padding(.horizontal, Space.s3).padding(.vertical, 8)
-        .background(
-            Capsule().strokeBorder(
-                editingLayout ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint),
-                lineWidth: 1
-            )
-        )
-        .contentShape(Capsule())
-        .onTapGesture {
-            withAnimation(.easeOut(duration: 0.18)) {
-                if editingLayout {
-                    editingLayout = false
-                    Task { await persistWidgetLayout() }
-                } else {
-                    editingLayout = true
-                }
-            }
-        }
-    }
-
-    /// Render the canonical widget for one slot, wrapped in the
-    /// edit-mode chrome (drag handle + drop target) when the user
-    /// is customizing the layout.
-    @ViewBuilder
-    private func secondaryWidget(for slot: HomeWidgetSlot) -> some View {
-        let inner: AnyView = {
-            switch slot {
-            case .haul:       return AnyView(TheHaulWeeklyTile())
-            case .compliance: return AnyView(ComplianceCountdownStrip())
-            case .news:       return AnyView(NewsCarouselWidget())
-            case .recent:     return AnyView(recentSection)
-            case .hotZones:   return AnyView(HotZonesWidget())
-            }
-        }()
-        if editingLayout {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(palette.textTertiary)
-                    .padding(.top, 10)
-                inner
-            }
-            .overlay(alignment: .topTrailing) {
-                Text(slot.label.uppercased())
-                    .font(.system(size: 9, weight: .heavy))
-                    .tracking(0.6)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(LinearGradient.diagonal)
-                    .clipShape(Capsule())
-                    .padding(6)
-            }
-            .background(
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .strokeBorder(
-                        dropHoverSlot == slot
-                            ? AnyShapeStyle(LinearGradient.diagonal)
-                            : AnyShapeStyle(palette.borderFaint),
-                        lineWidth: dropHoverSlot == slot ? 2 : 1
-                    )
-                    .animation(.easeOut(duration: 0.12), value: dropHoverSlot)
-            )
-            .opacity(draggingSlot == slot ? 0.45 : 1.0)
-            .draggable(slot.rawValue) {
-                Text(slot.label)
-                    .font(.system(size: 13, weight: .heavy))
-                    .padding(10)
-                    .background(palette.surface, in: Capsule())
-                    .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
-            }
-            .dropDestination(for: String.self) { droppedIds, _ in
-                guard let raw = droppedIds.first,
-                      let dropped = HomeWidgetSlot(rawValue: raw),
-                      dropped != slot,
-                      let fromIdx = widgetOrder.firstIndex(of: dropped),
-                      let toIdx = widgetOrder.firstIndex(of: slot)
-                else { return false }
-                withAnimation(.easeOut(duration: 0.18)) {
-                    let item = widgetOrder.remove(at: fromIdx)
-                    let insertAt = (toIdx > fromIdx) ? toIdx : toIdx
-                    widgetOrder.insert(item, at: min(insertAt, widgetOrder.count))
-                }
-                return true
-            } isTargeted: { hovering in
-                dropHoverSlot = hovering ? slot : (dropHoverSlot == slot ? nil : dropHoverSlot)
-            }
-        } else {
-            inner
-        }
-    }
-
-    /// Hydrate the saved layout for this role. Falls back to the
-    /// canonical default order when nothing is saved or the call
-    /// fails. Local UserDefaults mirrors the server so the layout
-    /// is correct on first paint even when offline.
-    private func hydrateWidgetLayout() async {
-        if let data = UserDefaults.standard.data(forKey: widgetLayoutKey),
-           let cached = try? JSONDecoder().decode([HomeWidgetSlot].self, from: data),
-           !cached.isEmpty {
-            widgetOrder = reconcile(cached)
-        }
-        struct In: Encodable { let role: String }
-        struct Slot: Decodable { let widgetId: String }
-        struct Out: Decodable { let layout: [Slot]?; let updatedAt: String? }
-        do {
-            let r: Out = try await EusoTripAPI.shared.query("users.getDashboardLayout", input: In(role: "DRIVER"))
-            if let server = r.layout, !server.isEmpty {
-                let parsed = server.compactMap { HomeWidgetSlot(rawValue: $0.widgetId) }
-                if !parsed.isEmpty {
-                    let merged = reconcile(parsed)
-                    await MainActor.run { widgetOrder = merged }
-                    if let data = try? JSONEncoder().encode(merged) {
-                        UserDefaults.standard.set(data, forKey: widgetLayoutKey)
-                    }
-                }
-                if let when = r.updatedAt { await MainActor.run { layoutSavedAt = when } }
-            }
-        } catch { /* offline / unauth — local cache or default already in place */ }
-    }
-
-    /// Persist the current order to the server + local cache. Called
-    /// when the user toggles edit-mode OFF.
-    private func persistWidgetLayout() async {
-        if let data = try? JSONEncoder().encode(widgetOrder) {
-            UserDefaults.standard.set(data, forKey: widgetLayoutKey)
-        }
-        struct Slot: Encodable { let widgetId: String; let x: Int; let y: Int; let w: Int; let h: Int }
-        struct In: Encodable { let role: String; let layout: [Slot] }
-        struct Out: Decodable { let success: Bool? }
-        let payload = widgetOrder.enumerated().map { idx, slot in
-            Slot(widgetId: slot.rawValue, x: 0, y: idx, w: 12, h: 4)
-        }
-        do {
-            let _: Out = try await EusoTripAPI.shared.mutation(
-                "users.saveDashboardLayout",
-                input: In(role: "DRIVER", layout: payload)
-            )
-            await MainActor.run { layoutSavedAt = ISO8601DateFormatter().string(from: Date()) }
-        } catch { /* server unreachable — local cache holds */ }
-    }
-
-    /// Merge a stored order with the current canonical slot set so
-    /// new widgets shipped after the layout was saved show up at the
-    /// bottom of the user's customized order, and slots that have
-    /// since been removed are dropped silently.
-    private func reconcile(_ saved: [HomeWidgetSlot]) -> [HomeWidgetSlot] {
-        var seen = Set<HomeWidgetSlot>()
-        var out: [HomeWidgetSlot] = []
-        for s in saved where !seen.contains(s) {
-            out.append(s); seen.insert(s)
-        }
-        for s in HomeWidgetSlot.allCases where !seen.contains(s) {
-            out.append(s)
-        }
-        return out
-    }
+    // Reorderable secondary-widget zone moved to the shared
+    // HomeWidgetGrid component (defined at file scope above).
+    // canonicalOrder + render closure are declared at the top of
+    // this struct; nothing else lives here.
 }
 
 /// Tapped-state styling for activity rows — soft scale + flash so the
