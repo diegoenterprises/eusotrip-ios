@@ -31,6 +31,41 @@
 import SwiftUI
 
 // MARK: - Inbox
+//
+// 2026-05-23 re-axis (path B per the parallel-Claude triage): the
+// surface was sliced by `categoryKind` (TYPE of dispute — detention,
+// damage, POD, etc.) which surfaced a single flat list with chip
+// filter on top. The real persisted axis the disputes server cares
+// about is the LIFECYCLE STATUS (filed → under_review → responded
+// → escalated → resolved/denied/paid/voided). The new layout makes
+// the lifecycle the primary axis (status column pager + scrubber)
+// and demotes category to a secondary cross-column filter strip.
+//
+// Drag-to-escalate is wired: dragging a card from FILED / UNDER
+// REVIEW / RESPONDED onto the ESCALATED column fires the real
+// `disputes.escalate(id, reason:)` mutation with a default reason
+// ("Escalating for arbitration" — same fallback the
+// DisputeDetailView toolbar button uses). RESOLVED is a terminal
+// bucket — drag onto it is a no-op (resolution outcomes come from
+// arbitration ruling, not a manual drag).
+
+private struct DisputeKanbanColumn: Identifiable, Hashable {
+    let id: String           // canonical bucket key
+    let label: String
+    let icon: String
+    let statuses: [String]   // server status values that bucket here
+    let tint: ColorTint
+
+    enum ColorTint { case warning, info, neutral, danger, success }
+}
+
+private let disputeKanbanColumns: [DisputeKanbanColumn] = [
+    .init(id: "filed",     label: "FILED",        icon: "envelope.fill",                 statuses: ["filed"],                                   tint: .warning),
+    .init(id: "review",    label: "UNDER REVIEW", icon: "magnifyingglass",                statuses: ["under_review"],                            tint: .info),
+    .init(id: "responded", label: "RESPONDED",    icon: "bubble.left.and.bubble.right.fill", statuses: ["responded"],                           tint: .neutral),
+    .init(id: "escalated", label: "ESCALATED",    icon: "exclamationmark.triangle.fill",  statuses: ["escalated"],                              tint: .danger),
+    .init(id: "resolved",  label: "RESOLVED",     icon: "checkmark.seal.fill",            statuses: ["resolved", "denied", "paid", "voided"],   tint: .success),
+]
 
 struct DisputeListView: View {
     @Environment(\.palette) private var palette
@@ -38,44 +73,65 @@ struct DisputeListView: View {
 
     @State private var rows: [DisputesAPI.Dispute] = []
     @State private var selectedCategory: DisputesAPI.Category? = nil
+    @State private var selectedColumn: String = "filed"
     @State private var loading: Bool = false
     @State private var error: String? = nil
     @State private var detail: DisputesAPI.Dispute? = nil
+    @State private var dragHoverColumn: String? = nil
+    @State private var escalating: String? = nil
+    @State private var actionError: String? = nil
+    @State private var lastEscalated: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             categoryChips
                 .padding(.horizontal, Space.s4)
                 .padding(.bottom, Space.s2)
+            statusScrubber
+                .padding(.horizontal, Space.s4)
+                .padding(.bottom, Space.s2)
             IridescentHairline()
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: Space.s3) {
-                    if loading && rows.isEmpty {
+            if loading && rows.isEmpty {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: Space.s3) {
                         skeletonStack
-                    } else if rows.isEmpty {
-                        emptyState
-                    } else {
-                        ForEach(visibleRows) { row in
-                            Button {
-                                detail = row
-                            } label: {
-                                rowCard(row)
-                            }
-                            .buttonStyle(.plain)
-                        }
+                        Color.clear.frame(height: 96)
                     }
+                    .padding(.horizontal, Space.s4)
+                    .padding(.top, Space.s3)
+                }
+            } else if rows.isEmpty {
+                ScrollView {
+                    emptyState
+                        .padding(.top, Space.s5)
+                        .padding(.horizontal, Space.s4)
                     if let err = error {
                         errorBanner(err)
+                            .padding(.horizontal, Space.s4)
+                            .padding(.top, Space.s3)
                     }
                     Color.clear.frame(height: 96)
                 }
-                .padding(.horizontal, Space.s4)
-                .padding(.top, Space.s3)
+            } else {
+                columnPager
+                if let m = lastEscalated {
+                    Text(m)
+                        .font(EType.caption).fontWeight(.semibold)
+                        .foregroundStyle(palette.textPrimary)
+                        .padding(.horizontal, Space.s4).padding(.vertical, Space.s2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(LinearGradient.diagonal.opacity(0.18))
+                }
+                if let e = actionError {
+                    errorBanner(e)
+                        .padding(.horizontal, Space.s4)
+                        .padding(.bottom, Space.s2)
+                }
             }
-            .refreshable { await load() }
         }
         .background(palette.bgPrimary.ignoresSafeArea())
         .task { await load() }
+        .refreshable { await load() }
         .sheet(item: $detail) { d in
             DisputeDetailView(initial: d, onChanged: { Task { await load() } })
                 .environment(\.palette, palette)
@@ -84,12 +140,37 @@ struct DisputeListView: View {
         }
     }
 
-    private var visibleRows: [DisputesAPI.Dispute] {
+    /// Rows after category filter (cross-column).
+    private var categoryFiltered: [DisputesAPI.Dispute] {
         if let c = selectedCategory {
             return rows.filter { $0.categoryKind == c }
         }
         return rows
     }
+
+    /// Rows bucketed by column id, after the cross-column category filter.
+    private var byColumn: [String: [DisputesAPI.Dispute]] {
+        var out: [String: [DisputesAPI.Dispute]] = [:]
+        for r in categoryFiltered {
+            let key = columnId(for: r.status) ?? "filed"
+            out[key, default: []].append(r)
+        }
+        return out
+    }
+
+    /// Resolve a server status string to its bucket id. Returns nil
+    /// when the status doesn't map cleanly (the bucketizer falls back
+    /// to "filed" so the row stays visible).
+    private func columnId(for status: String) -> String? {
+        let s = status.lowercased()
+        return disputeKanbanColumns.first(where: { $0.statuses.contains(s) })?.id
+    }
+
+    private func column(byId id: String) -> DisputeKanbanColumn {
+        disputeKanbanColumns.first(where: { $0.id == id }) ?? disputeKanbanColumns[0]
+    }
+
+    // MARK: Category chips (secondary cross-column filter)
 
     private var categoryChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -104,6 +185,161 @@ struct DisputeListView: View {
                 }
             }
             .padding(.vertical, 8)
+        }
+    }
+
+    // MARK: Status scrubber (primary column pager target)
+
+    private var statusScrubber: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(disputeKanbanColumns) { col in
+                    Button {
+                        withAnimation(.easeOut(duration: 0.18)) { selectedColumn = col.id }
+                    } label: {
+                        VStack(spacing: 2) {
+                            HStack(spacing: 4) {
+                                Image(systemName: col.icon).font(.system(size: 9, weight: .heavy))
+                                Text(col.label).font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                            }
+                            Text("\(byColumn[col.id]?.count ?? 0)")
+                                .font(.system(size: 13, weight: .heavy)).monospacedDigit()
+                        }
+                        .foregroundStyle(selectedColumn == col.id ? .white : palette.textSecondary)
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(selectedColumn == col.id ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCard))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 6)
+        }
+    }
+
+    // MARK: Column pager
+
+    private var columnPager: some View {
+        TabView(selection: $selectedColumn) {
+            ForEach(disputeKanbanColumns) { col in
+                columnView(col).tag(col.id)
+            }
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+    }
+
+    private func columnView(_ col: DisputeKanbanColumn) -> some View {
+        let cards = byColumn[col.id] ?? []
+        let isHover = dragHoverColumn == col.id
+        return ScrollView(showsIndicators: false) {
+            LazyVStack(alignment: .leading, spacing: Space.s3) {
+                columnHeader(col, count: cards.count)
+                if cards.isEmpty {
+                    Text(emptySubtitle(col))
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(.top, Space.s4)
+                } else {
+                    ForEach(cards) { r in
+                        Button {
+                            detail = r
+                        } label: {
+                            rowCard(r)
+                        }
+                        .buttonStyle(.plain)
+                        .draggable(r.id) {
+                            rowCard(r)
+                                .frame(maxWidth: 320)
+                                .opacity(0.92)
+                                .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
+                        }
+                        .overlay(alignment: .topTrailing) {
+                            if escalating == r.id {
+                                HStack(spacing: 4) {
+                                    ProgressView().scaleEffect(0.6)
+                                    Text("ESCALATING…")
+                                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                                        .foregroundStyle(palette.textSecondary)
+                                }
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(palette.bgCard, in: Capsule())
+                                .padding(6)
+                            }
+                        }
+                    }
+                }
+                Color.clear.frame(height: 96)
+            }
+            .padding(.horizontal, Space.s4)
+            .padding(.top, Space.s3)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(
+                    isHover ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(Color.clear),
+                    lineWidth: isHover ? 2 : 0
+                )
+                .padding(.horizontal, 4)
+                .animation(.easeOut(duration: 0.12), value: isHover)
+        )
+        .dropDestination(for: String.self) { droppedIds, _ in
+            guard let droppedId = droppedIds.first else { return false }
+            guard let src = rows.first(where: { $0.id == droppedId }) else { return false }
+            // Only one transition is user-driven: any open state →
+            // ESCALATED. Other column drops are no-ops (RESOLVED is
+            // arbitration-driven; UNDER REVIEW + RESPONDED happen
+            // server-side after evidence flows; FILED is already the
+            // initial state).
+            guard col.id == "escalated" else { return false }
+            // Skip when already escalated/terminal.
+            let s = src.status.lowercased()
+            guard s == "filed" || s == "under_review" || s == "responded" else { return false }
+            Task { await escalate(dispute: src) }
+            return true
+        } isTargeted: { hovering in
+            dragHoverColumn = hovering ? col.id : (dragHoverColumn == col.id ? nil : dragHoverColumn)
+        }
+    }
+
+    private func columnHeader(_ col: DisputeKanbanColumn, count: Int) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: col.icon)
+                .font(.system(size: 11, weight: .heavy))
+                .foregroundStyle(tintColor(col))
+            Text(col.label)
+                .font(.system(size: 12, weight: .heavy)).tracking(0.8)
+                .foregroundStyle(palette.textPrimary)
+            Text("\(count)")
+                .font(.system(size: 10, weight: .heavy)).foregroundStyle(.white)
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .background(LinearGradient.diagonal).clipShape(Capsule())
+            Spacer(minLength: 0)
+            if col.id == "escalated" {
+                Text("DROP HERE TO ESCALATE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+        }
+    }
+
+    private func tintColor(_ col: DisputeKanbanColumn) -> Color {
+        switch col.tint {
+        case .warning: return .orange
+        case .info:    return .blue
+        case .neutral: return palette.textSecondary
+        case .danger:  return Brand.danger
+        case .success: return Brand.success
+        }
+    }
+
+    private func emptySubtitle(_ col: DisputeKanbanColumn) -> String {
+        switch col.id {
+        case "filed":     return "No newly-filed disputes in this category."
+        case "review":    return "Nothing under counterparty review."
+        case "responded": return "No disputes awaiting your next move."
+        case "escalated": return "No disputes in arbitration. Drag a card here to escalate."
+        case "resolved":  return "No closed disputes yet."
+        default:          return "Empty."
         }
     }
 
@@ -225,6 +461,37 @@ struct DisputeListView: View {
         } catch {
             self.error = (error as NSError).localizedDescription
         }
+    }
+
+    /// Fires the real `disputes.escalate` mutation when the user drops
+    /// a card on the ESCALATED column. Reason is the same default the
+    /// DisputeDetailView toolbar uses when the response composer is
+    /// empty — keeps the two surfaces aligned on the no-prose path.
+    /// On success, refreshes the inbox so the card visually flips
+    /// columns. On failure, surfaces the error banner so the dispatcher
+    /// can re-try from the detail view.
+    private func escalate(dispute: DisputesAPI.Dispute) async {
+        await MainActor.run { escalating = dispute.id; actionError = nil }
+        do {
+            _ = try await EusoTripAPI.shared.disputes
+                .escalate(id: dispute.id, reason: "Escalating for arbitration")
+            await MainActor.run {
+                lastEscalated = "\(dispute.id) → ESCALATED for arbitration"
+            }
+            await load()
+            // Snap the column pager to the destination so the dispatcher
+            // sees where the card landed.
+            await MainActor.run {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    selectedColumn = "escalated"
+                }
+            }
+        } catch {
+            await MainActor.run {
+                actionError = (error as NSError).localizedDescription
+            }
+        }
+        await MainActor.run { escalating = nil }
     }
 
     private func currency(_ v: Double) -> String {
