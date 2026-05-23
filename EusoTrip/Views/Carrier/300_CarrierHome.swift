@@ -63,15 +63,16 @@ struct CarrierHome: View {
 
     // ── Home-widget customization — uses shared HomeWidgetGrid. ──
     private let widgetLayoutKey = "carrier.home.widgetOrder"
-    private let carrierCanonicalOrder: [String] = ["activeLoads", "recent", "news"]
+    private let carrierCanonicalOrder: [String] = ["activeLoads", "revenue_summary", "recent", "news"]
 
     @ViewBuilder
     private func carrierHomeRender(_ id: String) -> AnyView {
         switch id {
-        case "activeLoads": AnyView(activeLoadsCard)
-        case "recent":      AnyView(recentActivityCard)
-        case "news":        AnyView(NewsCarouselWidget())
-        default:            AnyView(EmptyView())
+        case "activeLoads":     AnyView(activeLoadsCard)
+        case "revenue_summary": AnyView(revenueSummaryWidget)
+        case "recent":          AnyView(recentActivityCard)
+        case "news":            AnyView(NewsCarouselWidget())
+        default:                AnyView(EmptyView())
         }
     }
 
@@ -593,6 +594,42 @@ struct CarrierHome: View {
                             .strokeBorder(palette.borderFaint)
                     )
             }
+        }
+    }
+
+    // MARK: - Revenue summary widget
+
+    @ViewBuilder
+    private var revenueSummaryWidget: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "banknote.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("REVENUE SUMMARY")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+            }
+            switch dashboard.state {
+            case .loading:
+                listSkeleton
+            case .loaded(let maybe):
+                if let s = maybe { revenueTiles(s) }
+            case .empty:
+                EusoEmptyState(systemImage: "banknote", title: "No revenue data",
+                               subtitle: "Deliver a load and this week's revenue will appear here.")
+            case .error(let e):
+                inlineError(e) { Task { await dashboard.refresh() } }
+            }
+        }
+    }
+
+    private func revenueTiles(_ s: CarrierAPI.DashboardStats) -> some View {
+        HStack(spacing: Space.s2) {
+            kpiTile(label: "REVENUE · 7D", value: dollars(s.weeklyRevenue), sub: "net this week")
+            kpiTile(label: "OPEN OFFERS",  value: "\(s.openOffers)",        sub: "awaiting accept")
+            kpiTile(label: "ON-TIME",      value: String(format: "%.1f%%", s.onTimeRate * 100), sub: "delivery rate")
         }
     }
 

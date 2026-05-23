@@ -126,6 +126,8 @@ enum HomeWidgetCatalog {
     /// Carrier-specific widgets (CATALYST + DISPATCH role overlap on web).
     static let carrier: [HomeWidgetDef] = [
         .init(id: "carrierActiveLoads", name: "Active loads",       summary: "Loads under this carrier",             icon: "shippingbox.fill",        category: .operations,     roles: ["CATALYST", "DISPATCH"], defaultSize: (12, 8), iosRenderable: true),
+        .init(id: "revenue_summary",    name: "Revenue summary",    summary: "Weekly revenue + rate + on-time",      icon: "banknote.fill",           category: .financial,      roles: ["CARRIER"],             defaultSize: (10, 6), iosRenderable: true),
+        .init(id: "carrier_alerts",     name: "Carrier alerts",     summary: "Loads needing immediate action",       icon: "exclamationmark.triangle.fill", category: .operations, roles: ["CARRIER"],            defaultSize: (12, 6), iosRenderable: true),
     ]
 
     /// Terminal-specific widgets.
