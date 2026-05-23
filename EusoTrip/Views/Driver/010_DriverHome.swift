@@ -214,6 +214,7 @@ struct HomeWidgetGrid: View {
     @State private var editing: Bool = false
     @State private var hoverSlot: String? = nil
     @State private var hydrated: Bool = false
+    @State private var showAddSheet: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -222,6 +223,7 @@ struct HomeWidgetGrid: View {
                 slotView(slotId)
             }
         }
+        .sheet(isPresented: $showAddSheet) { addSheet }
         .task {
             guard !hydrated else { return }
             hydrated = true
@@ -230,40 +232,63 @@ struct HomeWidgetGrid: View {
         }
     }
 
+    /// Widgets in canonicalOrder that the user has removed from their
+    /// active grid and could add back.
+    private var addableWidgets: [String] {
+        canonicalOrder.filter { !order.contains($0) }
+    }
+
     private var toolbar: some View {
         HStack(spacing: 8) {
-            Image(systemName: editing ? "checkmark.circle.fill" : "rectangle.3.group.bubble")
-                .font(.system(size: 11, weight: .heavy))
-            Text(editing ? "DONE · Tap to save layout" : "CUSTOMIZE WIDGETS")
-                .font(.system(size: 10, weight: .heavy)).tracking(0.6)
-            Spacer(minLength: 0)
-            if editing {
-                Button {
-                    withAnimation(.easeOut(duration: 0.18)) { order = canonicalOrder }
-                } label: {
-                    Text("RESET")
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                        .foregroundStyle(palette.textSecondary)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(palette.bgCard, in: Capsule())
-                }.buttonStyle(.plain)
+            // Tap the pill itself to toggle edit / done+save
+            HStack(spacing: 8) {
+                Image(systemName: editing ? "checkmark.circle.fill" : "rectangle.3.group.bubble")
+                    .font(.system(size: 11, weight: .heavy))
+                Text(editing ? "DONE · Tap to save" : "CUSTOMIZE WIDGETS")
+                    .font(.system(size: 10, weight: .heavy)).tracking(0.6)
+                Spacer(minLength: 0)
+                if editing {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.18)) { order = canonicalOrder }
+                    } label: {
+                        Text("RESET")
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                            .foregroundStyle(palette.textSecondary)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(palette.bgCard, in: Capsule())
+                    }.buttonStyle(.plain)
+                }
             }
-        }
-        .foregroundStyle(editing ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
-        .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(
-            Capsule().strokeBorder(
-                editing ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint),
-                lineWidth: 1
+            .foregroundStyle(editing ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(
+                Capsule().strokeBorder(
+                    editing ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint),
+                    lineWidth: 1
+                )
             )
-        )
-        .contentShape(Capsule())
-        .onTapGesture {
-            withAnimation(.easeOut(duration: 0.18)) {
-                if editing { editing = false; Task { await persist() } }
-                else { editing = true }
+            .contentShape(Capsule())
+            .onTapGesture {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    if editing { editing = false; Task { await persist() } }
+                    else { editing = true }
+                }
+            }
+            // "+" add button — only visible in edit mode when there are off-grid widgets
+            if editing && !addableWidgets.isEmpty {
+                Button { showAddSheet = true } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .frame(width: 34, height: 34)
+                        .background(LinearGradient.diagonal)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .transition(.scale.combined(with: .opacity))
             }
         }
+        .animation(.easeOut(duration: 0.18), value: editing)
     }
 
     @ViewBuilder
@@ -280,13 +305,25 @@ struct HomeWidgetGrid: View {
                 inner
             }
             .overlay(alignment: .topTrailing) {
-                Text(label.uppercased())
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(LinearGradient.diagonal)
-                    .clipShape(Capsule())
-                    .padding(6)
+                HStack(spacing: 6) {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.18)) {
+                            order.removeAll { $0 == id }
+                        }
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                            .font(.system(size: 20))
+                            .symbolRenderingMode(.multicolor)
+                    }
+                    .buttonStyle(.plain)
+                    Text(label.uppercased())
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(LinearGradient.diagonal)
+                        .clipShape(Capsule())
+                }
+                .padding(6)
             }
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -320,6 +357,78 @@ struct HomeWidgetGrid: View {
         } else {
             inner
         }
+    }
+
+    // MARK: - Add widget sheet
+
+    private var addSheet: some View {
+        NavigationStack {
+            Group {
+                if addableWidgets.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 36, weight: .semibold))
+                            .foregroundStyle(LinearGradient.diagonal)
+                        Text("All widgets are on your home screen.")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(palette.textPrimary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    List {
+                        Section {
+                            ForEach(addableWidgets, id: \.self) { id in
+                                if let def = HomeWidgetCatalog.all[id] {
+                                    Button {
+                                        withAnimation(.easeOut(duration: 0.18)) {
+                                            order.append(id)
+                                        }
+                                        if addableWidgets.count <= 1 { showAddSheet = false }
+                                    } label: {
+                                        HStack(spacing: 14) {
+                                            Image(systemName: def.icon)
+                                                .font(.system(size: 18, weight: .semibold))
+                                                .foregroundStyle(LinearGradient.diagonal)
+                                                .frame(width: 36)
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(def.name)
+                                                    .font(.system(size: 14, weight: .semibold))
+                                                    .foregroundStyle(palette.textPrimary)
+                                                Text(def.summary)
+                                                    .font(.system(size: 12, weight: .regular))
+                                                    .foregroundStyle(palette.textSecondary)
+                                            }
+                                            Spacer(minLength: 0)
+                                            Image(systemName: "plus.circle.fill")
+                                                .font(.system(size: 20))
+                                                .foregroundStyle(LinearGradient.diagonal)
+                                        }
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        } header: {
+                            Text("TAP TO ADD")
+                                .font(.system(size: 10, weight: .heavy)).tracking(0.8)
+                        }
+                    }
+                    .listStyle(.insetGrouped)
+                }
+            }
+            .navigationTitle("Add Widget")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showAddSheet = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .environment(\.palette, palette)
     }
 
     private func hydrate() async {
