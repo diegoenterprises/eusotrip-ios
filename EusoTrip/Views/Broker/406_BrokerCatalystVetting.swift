@@ -9,6 +9,19 @@
 //  commit pair (`brokers.{getVettingStats, approveCatalyst,
 //  rejectCatalyst}`) so this screen never renders fake data.
 //
+//  Reshaped 2026-05-23 from a flat pending list (with per-card
+//  Approve / Reject buttons) into a stat-tile-drop-zone pattern.
+//  The APPROVED + REJECTED stat tiles at the top now double as
+//  .dropDestination targets: drag a pending applicant card up onto
+//  either tile to fire the canonical brokers.{approveCatalyst,
+//  rejectCatalyst} mutation in one gesture. Per-card buttons stay
+//  as tap fallbacks.
+//
+//  Drag-on-stat-tile is a different shape than the column-pager
+//  Kanban (301/308/404/426/435/902) and the carousel/list pair-
+//  drop pattern (702). It fits surfaces where the destination
+//  buckets are tiny summary cards rather than full column views.
+//
 //  Doctrine refs:
 //    • feedback_zero_stubs_doctrine — every button must wire to a
 //      real action.
@@ -75,6 +88,11 @@ private struct CatalystVettingBody: View {
     @State private var loading: Bool = true
     @State private var error: String?
     @State private var actingCatalystId: String? = nil
+    @State private var actionError: String? = nil
+    @State private var lastAction: String? = nil
+    /// Drop-target highlight state. `"approved"` / `"rejected"` when a
+    /// card is hovering over the matching stat tile; nil otherwise.
+    @State private var dragHoverTile: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -82,6 +100,16 @@ private struct CatalystVettingBody: View {
                 header
                 if let s = stats {
                     statsRow(s)
+                }
+                if let m = lastAction {
+                    LifecycleCard(accentGradient: true) {
+                        Text(m).font(EType.caption).foregroundStyle(palette.textPrimary)
+                    }
+                }
+                if let e = actionError {
+                    LifecycleCard(accentDanger: true) {
+                        Text(e).font(EType.caption).foregroundStyle(Brand.danger)
+                    }
                 }
                 searchField
                 content
@@ -101,7 +129,7 @@ private struct CatalystVettingBody: View {
                 Image(systemName: "checkmark.shield.fill")
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("BROKER · CATALYST VETTING")
+                Text("BROKER · CATALYST VETTING · LIVE")
                     .font(.system(size: 9, weight: .heavy))
                     .tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
@@ -109,7 +137,7 @@ private struct CatalystVettingBody: View {
             Text("Pending applications")
                 .font(.system(size: 22, weight: .heavy))
                 .foregroundStyle(palette.textPrimary)
-            Text("Approve or reject catalyst onboarding requests. Decisions chain into the audit ledger.")
+            Text("Drag a card onto the APPROVED or REJECTED tile to decide in one gesture. Tap-buttons stay on every card.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -118,10 +146,90 @@ private struct CatalystVettingBody: View {
 
     private func statsRow(_ s: BrokerVettingStats) -> some View {
         HStack(spacing: Space.s2) {
-            LifecycleStatTile(label: "PENDING",  value: "\(s.pending)",  icon: "clock")
-            LifecycleStatTile(label: "APPROVED", value: "\(s.approved)", icon: "checkmark.seal.fill")
-            LifecycleStatTile(label: "REJECTED", value: "\(s.rejected)", icon: "xmark.octagon.fill",
-                              danger: s.rejected > 0)
+            statTile(
+                id: "pending",
+                label: "PENDING",
+                value: "\(s.pending)",
+                icon: "clock",
+                tint: .orange,
+                isDropTarget: false
+            )
+            statTile(
+                id: "approved",
+                label: "APPROVED",
+                value: "\(s.approved)",
+                icon: "checkmark.seal.fill",
+                tint: Brand.success,
+                isDropTarget: true
+            )
+            statTile(
+                id: "rejected",
+                label: "REJECTED",
+                value: "\(s.rejected)",
+                icon: "xmark.octagon.fill",
+                tint: Brand.danger,
+                isDropTarget: true
+            )
+        }
+    }
+
+    private func statTile(
+        id: String,
+        label: String,
+        value: String,
+        icon: String,
+        tint: Color,
+        isDropTarget: Bool
+    ) -> some View {
+        let isHover = dragHoverTile == id
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(tint)
+                Text(label)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Text(value)
+                .font(.system(size: 22, weight: .heavy).monospacedDigit())
+                .foregroundStyle(tint)
+            if isDropTarget {
+                Text(isHover ? "RELEASE TO \(label)" : "DROP CARDS HERE")
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(isHover ? tint : palette.textTertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(palette.bgCard, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(
+                    isHover ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(tint.opacity(isDropTarget ? 0.3 : 0.18)),
+                    lineWidth: isHover ? 2 : 1
+                )
+                .animation(.easeOut(duration: 0.12), value: isHover)
+        )
+        .dropDestination(for: String.self) { droppedIds, _ in
+            guard isDropTarget else { return false }
+            guard let catalystId = droppedIds.first else { return false }
+            guard items.contains(where: { $0.catalystId == catalystId }) else { return false }
+            switch id {
+            case "approved":
+                Task { await approve(catalystId) }
+                return true
+            case "rejected":
+                Task { await reject(catalystId) }
+                return true
+            default:
+                return false
+            }
+        } isTargeted: { hovering in
+            guard isDropTarget else { return }
+            dragHoverTile = hovering ? id : (dragHoverTile == id ? nil : dragHoverTile)
         }
     }
 
@@ -176,6 +284,12 @@ private struct CatalystVettingBody: View {
                     vettingCard(item)
                 }
                 .buttonStyle(.plain)
+                .draggable(item.catalystId) {
+                    vettingCard(item)
+                        .frame(maxWidth: 320)
+                        .opacity(0.92)
+                        .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
+                }
             }
         }
     }
@@ -267,8 +381,9 @@ private struct CatalystVettingBody: View {
     }
 
     private func approve(_ catalystId: String) async {
-        actingCatalystId = catalystId
-        defer { actingCatalystId = nil }
+        await MainActor.run { actingCatalystId = catalystId; actionError = nil }
+        defer { Task { await MainActor.run { actingCatalystId = nil } } }
+        let label = items.first(where: { $0.catalystId == catalystId })?.name ?? "catalyst \(catalystId)"
         struct In: Encodable { let catalystId: String }
         struct Out: Decodable { let success: Bool; let catalystId: String }
         do {
@@ -276,15 +391,19 @@ private struct CatalystVettingBody: View {
                 "brokers.approveCatalyst",
                 input: In(catalystId: catalystId)
             )
+            await MainActor.run { lastAction = "\(label) → APPROVED" }
             await loadAll()
         } catch {
-            self.error = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+            await MainActor.run {
+                actionError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+            }
         }
     }
 
     private func reject(_ catalystId: String) async {
-        actingCatalystId = catalystId
-        defer { actingCatalystId = nil }
+        await MainActor.run { actingCatalystId = catalystId; actionError = nil }
+        defer { Task { await MainActor.run { actingCatalystId = nil } } }
+        let label = items.first(where: { $0.catalystId == catalystId })?.name ?? "catalyst \(catalystId)"
         struct In: Encodable { let catalystId: String; let reason: String? }
         struct Out: Decodable { let success: Bool; let catalystId: String }
         do {
@@ -292,9 +411,12 @@ private struct CatalystVettingBody: View {
                 "brokers.rejectCatalyst",
                 input: In(catalystId: catalystId, reason: nil)
             )
+            await MainActor.run { lastAction = "\(label) → REJECTED" }
             await loadAll()
         } catch {
-            self.error = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+            await MainActor.run {
+                actionError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+            }
         }
     }
 
