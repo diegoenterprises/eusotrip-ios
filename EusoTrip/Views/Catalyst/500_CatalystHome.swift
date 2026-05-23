@@ -84,16 +84,17 @@ struct CatalystHome: View {
 
     // ── Home-widget customization — uses shared HomeWidgetGrid. ──
     private let widgetLayoutKey = "catalyst.home.widgetOrder"
-    private let catalystCanonicalOrder: [String] = ["activeMatches", "gmv_summary", "recent", "news"]
+    private let catalystCanonicalOrder: [String] = ["activeMatches", "gmv_summary", "catalyst_alerts", "recent", "news"]
 
     @ViewBuilder
     private func catalystHomeRender(_ id: String) -> AnyView {
         switch id {
-        case "activeMatches": AnyView(activeMatchesCard)
-        case "gmv_summary":   AnyView(gmvSummaryWidget)
-        case "recent":        AnyView(recentActivityCard)
-        case "news":          AnyView(NewsCarouselWidget())
-        default:              AnyView(EmptyView())
+        case "activeMatches":   AnyView(activeMatchesCard)
+        case "gmv_summary":     AnyView(gmvSummaryWidget)
+        case "catalyst_alerts": AnyView(catalystAlertsWidget)
+        case "recent":          AnyView(recentActivityCard)
+        case "news":            AnyView(NewsCarouselWidget())
+        default:                AnyView(EmptyView())
         }
     }
 
@@ -750,6 +751,48 @@ struct CatalystHome: View {
                         RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                             .strokeBorder(palette.borderFaint)
                     )
+            }
+        }
+    }
+
+    // MARK: - Catalyst alerts widget
+
+    @ViewBuilder
+    private var catalystAlertsWidget: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Brand.danger)
+                Text("CATALYST ALERTS")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                if case .loaded(let rows) = alerts.state, !rows.isEmpty {
+                    Text("\(rows.count)")
+                        .font(.system(size: 9, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(Brand.danger))
+                }
+            }
+            switch alerts.state {
+            case .loading:
+                listSkeleton
+            case .loaded(let rows):
+                if rows.isEmpty {
+                    EusoEmptyState(systemImage: "checkmark.circle", title: "All clear",
+                                   subtitle: "No matches need attention right now.")
+                } else {
+                    VStack(spacing: Space.s2) {
+                        ForEach(rows.prefix(3)) { alertRow($0) }
+                    }
+                }
+            case .empty:
+                EusoEmptyState(systemImage: "checkmark.circle", title: "All clear",
+                               subtitle: "No matches need attention right now.")
+            case .error(let e):
+                inlineError(e) { Task { await alerts.refresh() } }
             }
         }
     }
