@@ -90,7 +90,7 @@ enum HomeWidgetCatalog {
         .init(id: "next_delivery",      name: "Next delivery",      summary: "Upcoming delivery details",            icon: "mappin.circle.fill",      category: .operations,     roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: true),
         .init(id: "fuel_stations",      name: "Fuel stations",      summary: "Nearby fuel stops",                    icon: "fuelpump.fill",           category: .planning,       roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: false),
         .init(id: "rest_areas",         name: "Rest areas",         summary: "Nearby rest stops",                    icon: "bed.double.fill",         category: .planning,       roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: false),
-        .init(id: "vehicle_health",     name: "Vehicle health",     summary: "Truck diagnostics",                    icon: "wrench.and.screwdriver.fill", category: .operations,  roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: false),
+        .init(id: "vehicle_health",     name: "Vehicle health",     summary: "Truck diagnostics",                    icon: "wrench.and.screwdriver.fill", category: .operations,  roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
         .init(id: "weather_alerts",     name: "Weather alerts",     summary: "Route weather conditions",             icon: "cloud.rain.fill",         category: .safety,         roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
         .init(id: "haul",               name: "The Haul weekly",    summary: "XP ring + missions + rank",            icon: "rosette",                 category: .performance,    roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: true),
         .init(id: "compliance",         name: "Compliance countdown", summary: "CDL / medical / hazmat / TWIC expiry", icon: "checkmark.shield.fill", category: .compliance,    roles: ["DRIVER"], defaultSize: (12, 4),  iosRenderable: true),
@@ -430,7 +430,7 @@ struct DriverHome: View {
     private let driverHomeCanonicalOrder: [String] = [
         "next_delivery", "hos_tracker", "earnings_summary", "weather_alerts",
         "messages", "notifications", "haul", "compliance", "news", "recent", "hotZones",
-        "performance_score",
+        "performance_score", "vehicle_health",
     ]
 
     /// Maps a catalog widget id → the concrete iOS tile view this
@@ -451,6 +451,7 @@ struct DriverHome: View {
         case "recent":          AnyView(recentSection)
         case "hotZones":        AnyView(HotZonesWidget())
         case "performance_score": AnyView(PerformanceScoreWidget())
+        case "vehicle_health":  AnyView(VehicleHealthWidget())
         default:                AnyView(EmptyView())
         }
     }
@@ -1877,6 +1878,115 @@ private struct HosTile: View {
         .padding(Space.s4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .eusoCard(radius: Radius.lg)
+    }
+}
+
+// MARK: - VehicleHealthWidget (catalog widget id: "vehicle_health")
+//
+// Driver's assigned-truck glance card. Reads `vehicle.getAssigned` for
+// unit number, year/make/model, fuel level, odometer, and status.
+// Odometer + fuelLevel are 0 until the telematics ELD integration ships
+// (vehicle.ts:138) — the view surfaces a disclosure row when both are
+// zero rather than printing "0 mi / 0%". No fake data.
+
+struct VehicleHealthWidget: View {
+    @Environment(\.palette) private var palette
+
+    private typealias Vehicle = VehicleAPI.AssignedVehicle
+
+    @State private var vehicle: Vehicle? = nil
+    @State private var loading = true
+    @State private var loadError: String? = nil
+
+    private var statusColor: Color {
+        switch vehicle?.status.lowercased() {
+        case "active":       return .green
+        case "maintenance":  return Brand.warning
+        case "out_of_service": return Brand.danger
+        default:             return palette.textTertiary
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "wrench.and.screwdriver.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("VEHICLE · HEALTH")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 0)
+                if let v = vehicle, !v.isUnassigned {
+                    Text(v.status.uppercased().replacingOccurrences(of: "_", with: " "))
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(statusColor, in: Capsule())
+                }
+            }
+            if loading {
+                Text("Loading vehicle…")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 6)
+            } else if let err = loadError {
+                Text(err)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+                    .lineLimit(2)
+            } else if let v = vehicle, !v.isUnassigned {
+                Text("\(v.year) \(v.make) \(v.model)")
+                    .font(.system(size: 18, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                Text("Unit \(v.unitNumber)  ·  \(v.licensePlate)")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                if v.fuelLevel > 0 || v.odometer > 0 {
+                    HStack(spacing: 12) {
+                        if v.fuelLevel > 0 {
+                            Label(String(format: "%.0f%% fuel", v.fuelLevel * 100), systemImage: "fuelpump.fill")
+                        }
+                        if v.odometer > 0 {
+                            Label("\(v.odometer.formatted()) mi", systemImage: "gauge.with.dots.needle.33percent")
+                        }
+                    }
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.textSecondary)
+                } else {
+                    Text("Telematics pending — ELD sync not yet active.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textTertiary)
+                        .padding(.top, 2)
+                }
+            } else {
+                Text("No vehicle assigned.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 6)
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .task { await load() }
+    }
+
+    private func load() async {
+        loading = true; loadError = nil
+        do {
+            let v = try await EusoTripAPI.shared.vehicle.getAssigned()
+            vehicle = v
+            loading = false
+        } catch {
+            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loading = false
+        }
     }
 }
 
