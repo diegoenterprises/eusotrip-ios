@@ -174,10 +174,13 @@ private struct CatalystDriverProfile: View {
     private var titleRowWithEdit: some View {
         HStack(alignment: .center) {
             Button {
-                NotificationCenter.default.post(
-                    name: Notification.Name("eusoCatalystBack"),
-                    object: nil
-                )
+                // `eusoCatalystBack` had no listener anywhere in the
+                // codebase — the back tap silently dropped. Post the
+                // canonical .eusoRoleNavBack which CarrierSurface (the
+                // catalyst host) listens for at RoleSurfaceRouter:935
+                // → popOne(). Same dead-back pattern as 305 + the
+                // Shipper Allocations founder bug (2026-05-22).
+                NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
             } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 18, weight: .heavy))

@@ -244,7 +244,14 @@ private struct CatalystLoadDetail: View {
     private var titleRow: some View {
         HStack(alignment: .center) {
             Button {
-                dismiss()
+                // 305 is push-presented inside CarrierSurface's screenStack
+                // swap (not a sheet), so `dismiss()` has no presentation
+                // context to dismiss — it was a dead tap. Post the
+                // canonical .eusoRoleNavBack which CarrierSurface listens
+                // for at RoleSurfaceRouter:935 → popOne(). Matches the
+                // back-chevron founder bug pattern (the Shipper Allocations
+                // version got fixed 2026-05-22).
+                NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
             } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 18, weight: .heavy))
