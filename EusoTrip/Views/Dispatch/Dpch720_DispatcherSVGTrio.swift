@@ -68,6 +68,9 @@ private struct TenderQueueBody: View {
     @State private var err: String? = nil
     @State private var counterFor: PendingTender? = nil
     @State private var counterAmount: String = ""
+    /// `"accept"` / `"decline"` when a tender card is hovering over the
+    /// matching drop tile. Drives the gradient stroke + label flip.
+    @State private var dragHoverTile: String? = nil
 
     private var expiringSoon: Int {
         tenders.filter { expiresWithin($0.expiresAt, hours: 1) }.count
@@ -86,12 +89,21 @@ private struct TenderQueueBody: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
                 sortStrip
+                if !tenders.isEmpty { tripDropZones }
                 if loading && tenders.isEmpty {
                     LifecycleCard { Text("Loading queue…").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 } else if sorted.isEmpty {
                     EusoEmptyState(systemImage: "tray", title: "Queue is clear", subtitle: "Pending tenders land here as shippers submit them.")
                 } else {
-                    ForEach(sorted) { t in tenderCard(t) }
+                    ForEach(sorted) { t in
+                        tenderCard(t)
+                            .draggable(t.id) {
+                                tenderCard(t)
+                                    .frame(maxWidth: 320)
+                                    .opacity(0.92)
+                                    .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
+                            }
+                    }
                 }
                 Color.clear.frame(height: 96)
             }
@@ -143,6 +155,59 @@ private struct TenderQueueBody: View {
                 }.buttonStyle(.plain)
             }
             Spacer(minLength: 0)
+        }
+    }
+
+    /// Twin drop-zone bar — drag a tender card onto ACCEPT or DECLINE to
+    /// fire dispatchRole.{acceptLoad, declineLoad} in one gesture.
+    /// COUNTER stays on the card because it needs a rate text input
+    /// (can't be expressed in a pure drag). Same DnD shape as
+    /// 305_CarrierCounterResponse.
+    private var tripDropZones: some View {
+        HStack(spacing: Space.s2) {
+            tripTile(id: "accept",  label: "ACCEPT",  hint: "Take the tender + fire compliance gates", icon: "checkmark.seal.fill", tint: Brand.success)
+            tripTile(id: "decline", label: "DECLINE", hint: "Pass — shipper sees decline + can re-tender", icon: "xmark.octagon.fill",   tint: Brand.danger)
+        }
+    }
+
+    private func tripTile(id: String, label: String, hint: String, icon: String, tint: Color) -> some View {
+        let isHover = dragHoverTile == id
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(tint)
+                Text(label)
+                    .font(.system(size: 10, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 0)
+            }
+            Text(isHover ? "RELEASE TO \(label)" : hint)
+                .font(EType.caption)
+                .foregroundStyle(isHover ? tint : palette.textSecondary)
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, minHeight: 60, alignment: .topLeading)
+        .padding(10)
+        .background(palette.bgCard, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(
+                    isHover ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(tint.opacity(0.3)),
+                    lineWidth: isHover ? 2 : 1
+                )
+                .animation(.easeOut(duration: 0.12), value: isHover)
+        )
+        .dropDestination(for: String.self) { droppedIds, _ in
+            guard let tid = droppedIds.first else { return false }
+            guard let t = tenders.first(where: { $0.id == tid }) else { return false }
+            switch id {
+            case "accept":  Task { await acceptTender(t) };  return true
+            case "decline": Task { await declineTender(t) }; return true
+            default: return false
+            }
+        } isTargeted: { hovering in
+            dragHoverTile = hovering ? id : (dragHoverTile == id ? nil : dragHoverTile)
         }
     }
 

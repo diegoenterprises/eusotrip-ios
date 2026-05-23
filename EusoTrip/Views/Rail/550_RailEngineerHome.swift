@@ -1,0 +1,276 @@
+//
+//  550_RailEngineerHome.swift
+//  EusoTrip — Rail Engineer · Home (KPI hero + shipment overview).
+//
+
+import SwiftUI
+
+struct RailEngineerHomeScreen: View {
+    let theme: Theme.Palette
+    var body: some View {
+        Shell(theme: theme) { RailEngineerHomeBody() } nav: {
+            BottomNav(
+                leading: [NavSlot(label: "Home",      systemImage: "house",              isCurrent: true),
+                          NavSlot(label: "Shipments", systemImage: "shippingbox",        isCurrent: false)],
+                trailing: [NavSlot(label: "Compliance", systemImage: "checkmark.shield", isCurrent: false),
+                           NavSlot(label: "Me",          systemImage: "person",          isCurrent: false)],
+                orbState: .idle
+            )
+        }
+    }
+}
+
+// MARK: - Data shapes
+
+private struct RailDash: Decodable {
+    let activeShipments: Int?
+    let carsInTransit: Int?
+    let avgTransitDays: Double?
+    let revenue: Double?
+}
+
+private struct RailCompliance: Decodable {
+    let inspections: Int?
+    let hazmatPermits: Int?
+    let status: String?
+    let totalInspections: Int?
+    let failedCount: Int?
+}
+
+private struct RailCrewHOS: Decodable {
+    let onDuty: Int?
+    let offDuty: Int?
+    let approaching: Int?
+}
+
+// MARK: - Body
+
+private struct RailEngineerHomeBody: View {
+    @Environment(\.palette) private var palette
+    @State private var dash: RailDash? = nil
+    @State private var compliance: RailCompliance? = nil
+    @State private var crewHOS: RailCrewHOS? = nil
+    @State private var loading = true
+    @State private var loadError: String? = nil
+
+    private let widgetLayoutKey = "rail.engineer.home.widgetOrder"
+    private let canonicalOrder: [String] = ["shipments_overview", "compliance_status", "crew_hos", "news"]
+
+    private func widgetRender(_ id: String) -> AnyView {
+        switch id {
+        case "shipments_overview":  AnyView(shipmentsWidget)
+        case "compliance_status":   AnyView(complianceWidget)
+        case "crew_hos":            AnyView(crewWidget)
+        case "news":                AnyView(NewsCarouselWidget())
+        default:                    AnyView(EmptyView())
+        }
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: Space.s4) {
+                header
+                RoleHomeIntro()
+                if loading {
+                    LifecycleCard {
+                        Text("Loading rail dashboard…").font(EType.caption).foregroundStyle(palette.textSecondary)
+                    }
+                } else if let err = loadError {
+                    LifecycleCard(accentDanger: true) {
+                        Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+                    }
+                } else if let d = dash {
+                    hero(d)
+                    statsGrid(d)
+                    HomeWidgetGrid(
+                        canonicalOrder: canonicalOrder,
+                        role: "RAIL_ENGINEER",
+                        storageKey: widgetLayoutKey,
+                        render: { id in widgetRender(id) }
+                    )
+                }
+                Color.clear.frame(height: 96)
+            }
+            .padding(.horizontal, 14).padding(.top, 8)
+        }
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "tram.fill")
+                    .font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("RAIL ENGINEER · HOME")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(LinearGradient.diagonal)
+            }
+            Text("Rail operations").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+        }
+    }
+
+    private func hero(_ d: RailDash) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("CARS IN TRANSIT")
+                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                .foregroundStyle(.white.opacity(0.85))
+            Text("\(d.carsInTransit ?? 0)")
+                .font(.system(size: 36, weight: .heavy))
+                .foregroundStyle(.white).monospacedDigit()
+            HStack(spacing: 8) {
+                Text("ACTIVE \(d.activeShipments ?? 0)")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(.white.opacity(0.18)).clipShape(Capsule())
+                if let avg = d.avgTransitDays {
+                    Text(String(format: "AVG %.1f DAYS", avg))
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(.white.opacity(0.18)).clipShape(Capsule())
+                }
+            }
+        }
+        .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+        .background(LinearGradient.diagonal)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    private func statsGrid(_ d: RailDash) -> some View {
+        let rev = d.revenue ?? 0
+        let revStr = rev >= 1_000_000
+            ? String(format: "$%.1fM", rev / 1_000_000)
+            : String(format: "$%.0fK", rev / 1_000)
+        return HStack(spacing: Space.s2) {
+            LifecycleStatTile(label: "SHIPMENTS", value: "\(d.activeShipments ?? 0)", icon: "shippingbox")
+            LifecycleStatTile(label: "CARS",      value: "\(d.carsInTransit ?? 0)",   icon: "tram.fill")
+            LifecycleStatTile(label: "REVENUE",   value: revStr,                       icon: "dollarsign.circle")
+        }
+    }
+
+    // MARK: - Shipments widget
+
+    @ViewBuilder
+    private var shipmentsWidget: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "shippingbox.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("ACTIVE SHIPMENTS")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                if let n = dash?.activeShipments {
+                    Text("\(n)").font(.system(size: 9, weight: .heavy)).foregroundStyle(palette.textTertiary)
+                }
+            }
+            if loading {
+                LifecycleCard { Text("Loading…").font(EType.caption).foregroundStyle(palette.textSecondary) }
+            } else if let d = dash {
+                HStack(spacing: Space.s2) {
+                    LifecycleStatTile(label: "ACTIVE",  value: "\(d.activeShipments ?? 0)", icon: "shippingbox")
+                    LifecycleStatTile(label: "CARS",    value: "\(d.carsInTransit ?? 0)",   icon: "tram.fill")
+                    if let avg = d.avgTransitDays {
+                        LifecycleStatTile(label: "AVG DAYS", value: String(format: "%.1f", avg), icon: "clock")
+                    }
+                }
+            } else {
+                EusoEmptyState(systemImage: "shippingbox", title: "No shipment data",
+                               subtitle: "Active rail shipments will appear here.")
+            }
+        }
+    }
+
+    // MARK: - Compliance widget
+
+    @ViewBuilder
+    private var complianceWidget: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.shield.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("COMPLIANCE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                if let status = compliance?.status {
+                    Text(status.uppercased())
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(status.lowercased() == "compliant" ? Brand.success : Brand.warning)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .overlay(Capsule().strokeBorder(
+                            (status.lowercased() == "compliant" ? Brand.success : Brand.warning).opacity(0.5), lineWidth: 1))
+                }
+            }
+            if loading {
+                LifecycleCard { Text("Loading…").font(EType.caption).foregroundStyle(palette.textSecondary) }
+            } else if let c = compliance {
+                HStack(spacing: Space.s2) {
+                    LifecycleStatTile(label: "INSPECTIONS",   value: "\(c.totalInspections ?? c.inspections ?? 0)", icon: "doc.text.magnifyingglass")
+                    LifecycleStatTile(label: "HAZMAT PERMITS", value: "\(c.hazmatPermits ?? 0)",                     icon: "exclamationmark.triangle")
+                    LifecycleStatTile(label: "FAILED",         value: "\(c.failedCount ?? 0)",                       icon: "xmark.circle",
+                                      danger: (c.failedCount ?? 0) > 0)
+                }
+            } else {
+                EusoEmptyState(systemImage: "checkmark.shield", title: "No compliance data",
+                               subtitle: "Rail compliance status will appear here.")
+            }
+        }
+    }
+
+    // MARK: - Crew HOS widget
+
+    @ViewBuilder
+    private var crewWidget: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "person.2.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("CREW HOS")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+            }
+            if loading {
+                LifecycleCard { Text("Loading…").font(EType.caption).foregroundStyle(palette.textSecondary) }
+            } else if let h = crewHOS {
+                HStack(spacing: Space.s2) {
+                    LifecycleStatTile(label: "ON DUTY",    value: "\(h.onDuty ?? 0)",     icon: "checkmark.circle")
+                    LifecycleStatTile(label: "OFF DUTY",   value: "\(h.offDuty ?? 0)",    icon: "moon.fill")
+                    LifecycleStatTile(label: "NEAR LIMIT", value: "\(h.approaching ?? 0)", icon: "exclamationmark.circle",
+                                      danger: (h.approaching ?? 0) > 0)
+                }
+            } else {
+                EusoEmptyState(systemImage: "person.2", title: "No crew data",
+                               subtitle: "Crew hours of service will appear here.")
+            }
+        }
+    }
+
+    // MARK: - Load
+
+    private func load() async {
+        loading = true; loadError = nil
+        do {
+            async let d: RailDash = EusoTripAPI.shared.queryNoInput("railShipments.getRailDashboardStats")
+            async let c: RailCompliance = EusoTripAPI.shared.queryNoInput("railShipments.getRailCompliance")
+            async let h: RailCrewHOS = EusoTripAPI.shared.queryNoInput("railShipments.getCrewHOS")
+            let (dash, comp, crew) = try await (d, c, h)
+            self.dash = dash
+            self.compliance = comp
+            self.crewHOS = crew
+        } catch {
+            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        loading = false
+    }
+}
+
+#Preview("550 · Rail Engineer Home · Night")  { RailEngineerHomeScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
+#Preview("550 · Rail Engineer Home · Light")  { RailEngineerHomeScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
