@@ -1944,14 +1944,18 @@ enum ScreenRegistry {
             .init(id: "SH269", title: "Shipper · M-04 At Delivery",      role: .shipper) { p in AnyView(ShipperM04AtDeliveryScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
         ])
 
-        // Rail Engineer surface (Rail550+). First native iOS rail screen.
+        // Rail Engineer surface (Rail550–552).
         list.append(contentsOf: [
             .init(id: "Rail550", title: "Rail Engineer · Home",       role: .railEngineer) { p in AnyView(RailEngineerHomeScreen(theme: p)) },
+            .init(id: "Rail551", title: "Rail Engineer · Shipments",  role: .railEngineer) { p in AnyView(RailShipmentsScreen(theme: p)) },
+            .init(id: "Rail552", title: "Rail Engineer · Compliance", role: .railEngineer) { p in AnyView(RailComplianceScreen(theme: p)) },
         ])
 
-        // Vessel Operator surface (Vesl650+). First native iOS vessel screen.
+        // Vessel Operator surface (Vesl650–652).
         list.append(contentsOf: [
-            .init(id: "Vesl650", title: "Vessel Operator · Home",     role: .vesselOperator) { p in AnyView(VesselOperatorHomeScreen(theme: p)) },
+            .init(id: "Vesl650", title: "Vessel Operator · Home",       role: .vesselOperator) { p in AnyView(VesselOperatorHomeScreen(theme: p)) },
+            .init(id: "Vesl651", title: "Vessel Operator · Shipments",  role: .vesselOperator) { p in AnyView(VesselShipmentsScreen(theme: p)) },
+            .init(id: "Vesl652", title: "Vessel Operator · Compliance", role: .vesselOperator) { p in AnyView(VesselComplianceScreen(theme: p)) },
         ])
 
         return list

@@ -645,6 +645,10 @@
 		FD97CEC72FC1D4BC0016DF5F /* VesselOperatorNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CEC62FC1D4BC0016DF5F /* VesselOperatorNavController.swift */; };
 		FD97CEC92FC1D5110016DF5F /* 550_RailEngineerHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CEC82FC1D5110016DF5F /* 550_RailEngineerHome.swift */; };
 		FD97CECB2FC1D5120016DF5F /* 650_VesselOperatorHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */; };
+		FD97CECD2FC1D7C70016DF5F /* 551_RailShipments.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */; };
+		FD97CECF2FC1D7C80016DF5F /* 552_RailCompliance.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECE2FC1D7C80016DF5F /* 552_RailCompliance.swift */; };
+		FD97CED12FC1D8040016DF5F /* 651_VesselShipments.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CED02FC1D8040016DF5F /* 651_VesselShipments.swift */; };
+		FD97CED32FC1D8050016DF5F /* 652_VesselCompliance.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CED22FC1D8050016DF5F /* 652_VesselCompliance.swift */; };
 		FDCA0D262F96F83F0057AC19 /* EusoTrip Pulse Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = FDCA0D062F96F83E0057AC19 /* EusoTrip Pulse Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		FLCD2026051800000011A1 /* FMCSALookupCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FLCD2026051800000012A1 /* FMCSALookupCard.swift */; };
 		FPSH20260521000001 /* FacilityProfileSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FPSH20260521000002 /* FacilityProfileSheet.swift */; };
@@ -1380,6 +1384,10 @@
 		FD97CEC62FC1D4BC0016DF5F /* VesselOperatorNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VesselOperatorNavController.swift; sourceTree = "<group>"; };
 		FD97CEC82FC1D5110016DF5F /* 550_RailEngineerHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 550_RailEngineerHome.swift; sourceTree = "<group>"; };
 		FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 650_VesselOperatorHome.swift; sourceTree = "<group>"; };
+		FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 551_RailShipments.swift; sourceTree = "<group>"; };
+		FD97CECE2FC1D7C80016DF5F /* 552_RailCompliance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 552_RailCompliance.swift; sourceTree = "<group>"; };
+		FD97CED02FC1D8040016DF5F /* 651_VesselShipments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 651_VesselShipments.swift; sourceTree = "<group>"; };
+		FD97CED22FC1D8050016DF5F /* 652_VesselCompliance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 652_VesselCompliance.swift; sourceTree = "<group>"; };
 		FDCA0D062F96F83E0057AC19 /* EusoTrip Pulse Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "EusoTrip Pulse Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		FDCA0D122F96F83F0057AC19 /* EusoTrip Pulse Watch AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "EusoTrip Pulse Watch AppTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		FDCA0D1C2F96F83F0057AC19 /* EusoTrip Pulse Watch AppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "EusoTrip Pulse Watch AppUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -2308,6 +2316,8 @@
 			children = (
 				FD97CEC42FC1D4BC0016DF5F /* RailEngineerNavController.swift */,
 				FD97CEC82FC1D5110016DF5F /* 550_RailEngineerHome.swift */,
+				FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */,
+				FD97CECE2FC1D7C80016DF5F /* 552_RailCompliance.swift */,
 			);
 			path = Rail;
 			sourceTree = "<group>";
@@ -2317,6 +2327,8 @@
 			children = (
 				FD97CEC62FC1D4BC0016DF5F /* VesselOperatorNavController.swift */,
 				FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */,
+				FD97CED02FC1D8040016DF5F /* 651_VesselShipments.swift */,
+				FD97CED22FC1D8050016DF5F /* 652_VesselCompliance.swift */,
 			);
 			path = Vessel;
 			sourceTree = "<group>";
@@ -2601,6 +2613,7 @@
 				A36A9C7F5E4D3B2A1C988888 /* 036_ESangSmartStop.swift in Sources */,
 				A37A9C7F5E4D3B2A1C988900 /* 037_ApproachingReceiver.swift in Sources */,
 				A38A9C7F5E4D3B2A1C988902 /* 038_AtReceiverGate.swift in Sources */,
+				FD97CED12FC1D8040016DF5F /* 651_VesselShipments.swift in Sources */,
 				A39A9C7F5E4D3B2A1C988904 /* 039_BackingAssistReceiver.swift in Sources */,
 				A40D0FA0CE1A4B7E0000D001 /* 040_DischargeInProgress.swift in Sources */,
 				A41D0FA0CE1A4B7E0000D003 /* 041_DischargeComplete.swift in Sources */,
@@ -2856,6 +2869,7 @@
 				D1A11111111111111111EISAF01 /* EusoInAppSafari.swift in Sources */,
 				D1A11111111111111111SD01 /* 205_ShipperLoadDetail.swift in Sources */,
 				D1A11111111111111111CCC1 /* ShipperLoadCycleView.swift in Sources */,
+				FD97CECD2FC1D7C70016DF5F /* 551_RailShipments.swift in Sources */,
 				D2120000000000000021CT /* 212_ShipperControlTower.swift in Sources */,
 				D2130000000000000021CS /* 213_ShipperCatalystScorecard.swift in Sources */,
 				D2280000000000000000ABFF /* LifecycleScaffold.swift in Sources */,
@@ -2900,6 +2914,7 @@
 				D2H0700000000000000ABFB /* 307_RateConSign.swift in Sources */,
 				D2H0800000000000000ABFB /* 308_PodPhotoCapture.swift in Sources */,
 				D2H0900000000000000ABFB /* 309_WalletPass.swift in Sources */,
+				FD97CECF2FC1D7C80016DF5F /* 552_RailCompliance.swift in Sources */,
 				D2I0000000000000000ABFA /* 310_EsangThreadList.swift in Sources */,
 				D2I0100000000000000ABFA /* 311_EsangThread.swift in Sources */,
 				D2I0200000000000000ABFA /* 312_EsangAttachmentPicker.swift in Sources */,
@@ -3195,6 +3210,7 @@
 				D1A11111111111111111TQ01 /* 701_TerminalGateQueue.swift in Sources */,
 				D1A11111111111111111YM01 /* 702_TerminalYardMap.swift in Sources */,
 				D1A11111111111111111AH01 /* 800_AdminHome.swift in Sources */,
+				FD97CED32FC1D8050016DF5F /* 652_VesselCompliance.swift in Sources */,
 				D1A11111111111111111ANC1 /* AdminNavController.swift in Sources */,
 				D1A11111111111111111CT01 /* 801_AdminControlTower.swift in Sources */,
 				D1A11111111111111111AT01 /* 802_AdminTenants.swift in Sources */,
