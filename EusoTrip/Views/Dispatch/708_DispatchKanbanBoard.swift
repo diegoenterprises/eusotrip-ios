@@ -107,6 +107,10 @@ private struct KanbanBody: View {
     @State private var advancing: Int? = nil
     @State private var actionError: String? = nil
     @State private var lastAdvance: String? = nil
+    /// True while a card is being dragged across lanes. Drives the
+    /// drop-zone highlight on the destination column so the user
+    /// gets clear feedback that the drop will land.
+    @State private var dragHoverColumn: String? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -178,6 +182,7 @@ private struct KanbanBody: View {
 
     private func column(_ col: KanbanColumn) -> some View {
         let cards = byColumn[col.id] ?? []
+        let isHover = dragHoverColumn == col.id
         return ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s3) {
                 HStack {
@@ -192,12 +197,53 @@ private struct KanbanBody: View {
                     EusoEmptyState(systemImage: col.icon, title: "Column empty", subtitle: "No loads in this stage right now.")
                 } else {
                     ForEach(cards) { l in
-                        Button { sheetLoad = l } label: { cardView(l, col: col) }.buttonStyle(.plain)
+                        Button { sheetLoad = l } label: { cardView(l, col: col) }
+                            .buttonStyle(.plain)
+                            // 2026-05-23 — Drag-to-advance. Drag any
+                            // card across the snap pager onto another
+                            // lane's body to flip status via the same
+                            // dispatch.updateLoadStatus mutation the
+                            // sheet's Advance button fires. Payload is
+                            // the stringified load id; resolved back to
+                            // the live KanbanLoad on drop.
+                            .draggable(String(l.id)) {
+                                cardView(l, col: col)
+                                    .frame(maxWidth: 320)
+                                    .opacity(0.92)
+                                    .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
+                            }
                     }
                 }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 6)
+        }
+        // Drop target spans the full column body — landing anywhere
+        // inside the lane triggers the flip. Visual highlight tracks
+        // hover state so the dispatcher knows the drop will land.
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(
+                    isHover ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(Color.clear),
+                    lineWidth: isHover ? 2 : 0
+                )
+                .padding(.horizontal, 8)
+                .animation(.easeOut(duration: 0.12), value: isHover)
+        )
+        .dropDestination(for: String.self) { droppedIds, _ in
+            guard let idStr = droppedIds.first, let droppedId = Int(idStr) else { return false }
+            // Find the live KanbanLoad across all lanes.
+            guard let load = byColumn.values.flatMap({ $0 }).first(where: { $0.id == droppedId }) else { return false }
+            // Skip when dropped on the same lane — no transition needed.
+            if let sourceCol = currentColumn(for: load.status), sourceCol.id == col.id { return false }
+            // Target status — use the column's first canonical status
+            // so dragging onto "AT PICKUP" lands the load as
+            // `at_pickup` and not `pickup_checkin` etc.
+            guard let target = col.statuses.first else { return false }
+            Task { await advance(load: load, to: target) }
+            return true
+        } isTargeted: { hovering in
+            dragHoverColumn = hovering ? col.id : (dragHoverColumn == col.id ? nil : dragHoverColumn)
         }
     }
 
