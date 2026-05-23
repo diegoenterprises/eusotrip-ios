@@ -92,22 +92,19 @@ struct AdminHome: View {
     /// 700/701/702 and Catalyst 500/501/502).
     @State private var controlTowerOpen: Bool = false
 
-    // ── Home-widget customization (2026-05-23 · DnD parity) ──
-    enum AdminWidgetSlot: String, CaseIterable, Codable, Identifiable {
-        case openTickets, recent, news
-        var id: String { rawValue }
-        var label: String {
-            switch self {
-            case .openTickets: return "Open tickets"
-            case .recent:      return "Recent activity"
-            case .news:        return "Admin intel"
-            }
+    // ── Home-widget customization — uses shared HomeWidgetGrid. ──
+    private let widgetLayoutKey = "admin.home.widgetOrder"
+    private let adminCanonicalOrder: [String] = ["openTickets", "recent", "news"]
+
+    @ViewBuilder
+    private func adminHomeRender(_ id: String) -> AnyView {
+        switch id {
+        case "openTickets": AnyView(openTicketsCard)
+        case "recent":      AnyView(recentActivityCard)
+        case "news":        AnyView(NewsCarouselWidget())
+        default:            AnyView(EmptyView())
         }
     }
-    @State private var widgetOrder: [AdminWidgetSlot] = AdminWidgetSlot.allCases
-    @State private var editingLayout: Bool = false
-    @State private var dropHoverSlot: AdminWidgetSlot? = nil
-    private let widgetLayoutKey = "admin.home.widgetOrder"
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -117,19 +114,18 @@ struct AdminHome: View {
                 controlTowerLink
                 tenantsLink
                 attentionStrip
-                widgetZoneToolbar
-                ForEach(widgetOrder) { slot in
-                    secondaryWidget(for: slot)
-                }
+                HomeWidgetGrid(
+                    canonicalOrder: adminCanonicalOrder,
+                    role: "ADMIN",
+                    storageKey: widgetLayoutKey,
+                    render: { id in adminHomeRender(id) }
+                )
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14)
             .padding(.top, 8)
         }
-        .task {
-            await refreshAll()
-            await hydrateWidgetLayout()
-        }
+        .task { await refreshAll() }
         .refreshable { await refreshAll() }
         .screenTileRoot()
         // 802_AdminTenants sheet — opened by the ACTIVE TENANTS
@@ -654,154 +650,6 @@ struct AdminHome: View {
                 .strokeBorder(Brand.danger.opacity(0.4), lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-    }
-
-    // MARK: - Reorderable secondary-widget zone (DnD parity)
-
-    private var widgetZoneToolbar: some View {
-        HStack(spacing: 8) {
-            Image(systemName: editingLayout ? "checkmark.circle.fill" : "rectangle.3.group.bubble")
-                .font(.system(size: 11, weight: .heavy))
-            Text(editingLayout ? "DONE · Tap to save layout" : "CUSTOMIZE WIDGETS")
-                .font(.system(size: 10, weight: .heavy)).tracking(0.6)
-            Spacer(minLength: 0)
-            if editingLayout {
-                Button {
-                    withAnimation(.easeOut(duration: 0.18)) { widgetOrder = AdminWidgetSlot.allCases }
-                } label: {
-                    Text("RESET")
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                        .foregroundStyle(palette.textSecondary)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(palette.bgCard, in: Capsule())
-                }.buttonStyle(.plain)
-            }
-        }
-        .foregroundStyle(editingLayout ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
-        .padding(.horizontal, Space.s3).padding(.vertical, 8)
-        .background(
-            Capsule().strokeBorder(
-                editingLayout ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint),
-                lineWidth: 1
-            )
-        )
-        .contentShape(Capsule())
-        .onTapGesture {
-            withAnimation(.easeOut(duration: 0.18)) {
-                if editingLayout { editingLayout = false; Task { await persistWidgetLayout() } }
-                else { editingLayout = true }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func secondaryWidget(for slot: AdminWidgetSlot) -> some View {
-        let inner: AnyView = {
-            switch slot {
-            case .openTickets: return AnyView(openTicketsCard)
-            case .recent:      return AnyView(recentActivityCard)
-            case .news:        return AnyView(NewsCarouselWidget())
-            }
-        }()
-        if editingLayout {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(palette.textTertiary)
-                    .padding(.top, 10)
-                inner
-            }
-            .overlay(alignment: .topTrailing) {
-                Text(slot.label.uppercased())
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(LinearGradient.diagonal)
-                    .clipShape(Capsule())
-                    .padding(6)
-            }
-            .background(
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .strokeBorder(
-                        dropHoverSlot == slot ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint),
-                        lineWidth: dropHoverSlot == slot ? 2 : 1
-                    )
-                    .animation(.easeOut(duration: 0.12), value: dropHoverSlot)
-            )
-            .draggable(slot.rawValue) {
-                Text(slot.label)
-                    .font(.system(size: 13, weight: .heavy))
-                    .padding(10)
-                    .background(palette.surface, in: Capsule())
-                    .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
-            }
-            .dropDestination(for: String.self) { droppedIds, _ in
-                guard let raw = droppedIds.first,
-                      let dropped = AdminWidgetSlot(rawValue: raw),
-                      dropped != slot,
-                      let fromIdx = widgetOrder.firstIndex(of: dropped),
-                      let toIdx = widgetOrder.firstIndex(of: slot)
-                else { return false }
-                withAnimation(.easeOut(duration: 0.18)) {
-                    let item = widgetOrder.remove(at: fromIdx)
-                    widgetOrder.insert(item, at: min(toIdx, widgetOrder.count))
-                }
-                return true
-            } isTargeted: { hovering in
-                dropHoverSlot = hovering ? slot : (dropHoverSlot == slot ? nil : dropHoverSlot)
-            }
-        } else {
-            inner
-        }
-    }
-
-    private func hydrateWidgetLayout() async {
-        if let data = UserDefaults.standard.data(forKey: widgetLayoutKey),
-           let cached = try? JSONDecoder().decode([AdminWidgetSlot].self, from: data),
-           !cached.isEmpty {
-            widgetOrder = reconcile(cached)
-        }
-        struct In: Encodable { let role: String }
-        struct Slot: Decodable { let widgetId: String }
-        struct Out: Decodable { let layout: [Slot]?; let updatedAt: String? }
-        do {
-            let r: Out = try await EusoTripAPI.shared.query("users.getDashboardLayout", input: In(role: "ADMIN"))
-            if let server = r.layout, !server.isEmpty {
-                let parsed = server.compactMap { AdminWidgetSlot(rawValue: $0.widgetId) }
-                if !parsed.isEmpty {
-                    let merged = reconcile(parsed)
-                    await MainActor.run { widgetOrder = merged }
-                    if let data = try? JSONEncoder().encode(merged) {
-                        UserDefaults.standard.set(data, forKey: widgetLayoutKey)
-                    }
-                }
-            }
-        } catch { }
-    }
-
-    private func persistWidgetLayout() async {
-        if let data = try? JSONEncoder().encode(widgetOrder) {
-            UserDefaults.standard.set(data, forKey: widgetLayoutKey)
-        }
-        struct Slot: Encodable { let widgetId: String; let x: Int; let y: Int; let w: Int; let h: Int }
-        struct In: Encodable { let role: String; let layout: [Slot] }
-        struct Out: Decodable { let success: Bool? }
-        let payload = widgetOrder.enumerated().map { idx, slot in
-            Slot(widgetId: slot.rawValue, x: 0, y: idx, w: 12, h: 4)
-        }
-        do {
-            let _: Out = try await EusoTripAPI.shared.mutation(
-                "users.saveDashboardLayout",
-                input: In(role: "ADMIN", layout: payload)
-            )
-        } catch { }
-    }
-
-    private func reconcile(_ saved: [AdminWidgetSlot]) -> [AdminWidgetSlot] {
-        var seen = Set<AdminWidgetSlot>(); var out: [AdminWidgetSlot] = []
-        for s in saved where !seen.contains(s) { out.append(s); seen.insert(s) }
-        for s in AdminWidgetSlot.allCases where !seen.contains(s) { out.append(s) }
-        return out
     }
 }
 
