@@ -1,6 +1,6 @@
 //
 //  550_RailEngineerHome.swift
-//  EusoTrip — Rail Engineer · Home (KPI hero + shipment overview).
+//  EusoTrip — Rail Engineer · Home (KPI hero + dashboard).
 //
 
 import SwiftUI
@@ -29,7 +29,7 @@ private struct RailDash: Decodable {
     let revenue: Double?
 }
 
-private struct RailCompliance: Decodable {
+private struct RailCompliance550: Decodable {
     let inspections: Int?
     let hazmatPermits: Int?
     let status: String?
@@ -37,7 +37,7 @@ private struct RailCompliance: Decodable {
     let failedCount: Int?
 }
 
-private struct RailCrewHOS: Decodable {
+private struct RailCrewHOS550: Decodable {
     let onDuty: Int?
     let offDuty: Int?
     let approaching: Int?
@@ -47,9 +47,10 @@ private struct RailCrewHOS: Decodable {
 
 private struct RailEngineerHomeBody: View {
     @Environment(\.palette) private var palette
+    @EnvironmentObject private var session: EusoTripSession
     @State private var dash: RailDash? = nil
-    @State private var compliance: RailCompliance? = nil
-    @State private var crewHOS: RailCrewHOS? = nil
+    @State private var compliance: RailCompliance550? = nil
+    @State private var crewHOS: RailCrewHOS550? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
 
@@ -68,86 +69,160 @@ private struct RailEngineerHomeBody: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                header
-                RoleHomeIntro()
-                if loading {
-                    LifecycleCard {
-                        Text("Loading rail dashboard…").font(EType.caption).foregroundStyle(palette.textSecondary)
+            VStack(alignment: .leading, spacing: 0) {
+                topBar
+                IridescentHairline()
+                    .padding(.horizontal, Space.s5)
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    RoleHomeIntro()
+                    if loading {
+                        LifecycleCard {
+                            Text("Loading rail dashboard…").font(EType.caption).foregroundStyle(palette.textSecondary)
+                        }
+                    } else if let err = loadError {
+                        LifecycleCard(accentDanger: true) {
+                            Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+                        }
+                    } else if let d = dash {
+                        hero(d)
+                        statStrip(d)
+                        HomeWidgetGrid(
+                            canonicalOrder: canonicalOrder,
+                            role: "RAIL_ENGINEER",
+                            storageKey: widgetLayoutKey,
+                            render: { id in widgetRender(id) }
+                        )
                     }
-                } else if let err = loadError {
-                    LifecycleCard(accentDanger: true) {
-                        Text(err).font(EType.caption).foregroundStyle(Brand.danger)
-                    }
-                } else if let d = dash {
-                    hero(d)
-                    statsGrid(d)
-                    HomeWidgetGrid(
-                        canonicalOrder: canonicalOrder,
-                        role: "RAIL_ENGINEER",
-                        storageKey: widgetLayoutKey,
-                        render: { id in widgetRender(id) }
-                    )
+                    Color.clear.frame(height: 96)
                 }
-                Color.clear.frame(height: 96)
+                .padding(.horizontal, Space.s5)
+                .padding(.top, Space.s4)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
         .refreshable { await load() }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: "tram.fill")
-                    .font(.system(size: 9, weight: .heavy))
-                    .foregroundStyle(LinearGradient.diagonal)
-                Text("RAIL ENGINEER · HOME")
-                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                    .foregroundStyle(LinearGradient.diagonal)
-            }
-            Text("Rail operations").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-        }
-    }
+    // MARK: - Top bar
 
-    private func hero(_ d: RailDash) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("CARS IN TRANSIT")
-                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                .foregroundStyle(.white.opacity(0.85))
-            Text("\(d.carsInTransit ?? 0)")
-                .font(.system(size: 36, weight: .heavy))
-                .foregroundStyle(.white).monospacedDigit()
-            HStack(spacing: 8) {
-                Text("ACTIVE \(d.activeShipments ?? 0)")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(.white.opacity(0.18)).clipShape(Capsule())
-                if let avg = d.avgTransitDays {
-                    Text(String(format: "AVG %.1f DAYS", avg))
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(.white.opacity(0.18)).clipShape(Capsule())
+    private var topBar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                HStack(spacing: 5) {
+                    Image(systemName: "tram.fill")
+                        .font(.system(size: 8, weight: .heavy))
+                        .foregroundStyle(LinearGradient.primary)
+                    Text("✦  RAIL ENGINEER · DASHBOARD")
+                        .font(EType.micro).tracking(1.0)
+                        .foregroundStyle(LinearGradient.primary)
+                }
+                Spacer()
+                if let n = dash?.activeShipments {
+                    Text("\(n) active")
+                        .font(EType.micro).tracking(0.8)
+                        .foregroundStyle(palette.textTertiary)
                 }
             }
+            HStack(alignment: .firstTextBaseline) {
+                Text(headline)
+                    .font(EType.display)
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(2).minimumScaleFactor(0.65)
+                Spacer(minLength: 8)
+            }
+            .padding(.top, Space.s2)
+            Text("Rail operations · in-yard consist + crew HOS")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .padding(.top, 2)
         }
-        .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
-        .background(LinearGradient.diagonal)
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .padding(.horizontal, Space.s5)
+        .padding(.top, Space.s5)
+        .padding(.bottom, Space.s3)
     }
 
-    private func statsGrid(_ d: RailDash) -> some View {
+    private var headline: String {
+        let first = session.user?.firstName
+            .flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
+        let hour = Calendar.current.component(.hour, from: Date())
+        let sal: String
+        switch hour {
+        case 5..<12:  sal = "Good morning"
+        case 12..<17: sal = "Good afternoon"
+        case 17..<22: sal = "Good evening"
+        default:      sal = "Welcome back"
+        }
+        if let first { return "\(sal), \(first)" }
+        return sal
+    }
+
+    // MARK: - Hero
+
+    private func hero(_ d: RailDash) -> some View {
+        ZStack(alignment: .topTrailing) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 6) {
+                    Image(systemName: "tram.fill")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(.white.opacity(0.85))
+                    Text("CARS IN TRANSIT")
+                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+                Text("\(d.carsInTransit ?? 0)")
+                    .font(.system(size: 42, weight: .heavy))
+                    .foregroundStyle(.white).monospacedDigit()
+                HStack(spacing: 8) {
+                    Text("ACTIVE \(d.activeShipments ?? 0)")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .background(.white.opacity(0.18)).clipShape(Capsule())
+                    if let avg = d.avgTransitDays {
+                        Text(String(format: "AVG %.1fd", avg))
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(.white.opacity(0.18)).clipShape(Capsule())
+                    }
+                    if let c = compliance, (c.failedCount ?? 0) > 0 {
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 8, weight: .heavy))
+                            Text("\(c.failedCount ?? 0) FAILED")
+                                .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .background(Brand.danger.opacity(0.35)).clipShape(Capsule())
+                    }
+                }
+            }
+            .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+            .background(LinearGradient.diagonal)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            // Subtle compliance dot in top-right
+            if let c = compliance {
+                let isGood = (c.failedCount ?? 0) == 0
+                Image(systemName: isGood ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.30))
+                    .padding(Space.s4)
+            }
+        }
+    }
+
+    // MARK: - Stat strip (MetricTile row)
+
+    private func statStrip(_ d: RailDash) -> some View {
         let rev = d.revenue ?? 0
         let revStr = rev >= 1_000_000
             ? String(format: "$%.1fM", rev / 1_000_000)
             : String(format: "$%.0fK", rev / 1_000)
         return HStack(spacing: Space.s2) {
-            LifecycleStatTile(label: "SHIPMENTS", value: "\(d.activeShipments ?? 0)", icon: "shippingbox")
-            LifecycleStatTile(label: "CARS",      value: "\(d.carsInTransit ?? 0)",   icon: "tram.fill")
-            LifecycleStatTile(label: "REVENUE",   value: revStr,                       icon: "dollarsign.circle")
+            MetricTile(label: "SHIPMENTS", value: "\(d.activeShipments ?? 0)", gradientNumeral: true)
+            MetricTile(label: "CARS",      value: "\(d.carsInTransit ?? 0)")
+            MetricTile(label: "REVENUE",   value: revStr)
         }
     }
 
@@ -156,18 +231,7 @@ private struct RailEngineerHomeBody: View {
     @ViewBuilder
     private var shipmentsWidget: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
-            HStack(spacing: 6) {
-                Image(systemName: "shippingbox.fill")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(LinearGradient.diagonal)
-                Text("ACTIVE SHIPMENTS")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                    .foregroundStyle(palette.textPrimary)
-                Spacer()
-                if let n = dash?.activeShipments {
-                    Text("\(n)").font(.system(size: 9, weight: .heavy)).foregroundStyle(palette.textTertiary)
-                }
-            }
+            widgetHeader(icon: "shippingbox.fill", label: "ACTIVE SHIPMENTS", count: dash?.activeShipments)
             if loading {
                 LifecycleCard { Text("Loading…").font(EType.caption).foregroundStyle(palette.textSecondary) }
             } else if let d = dash {
@@ -190,28 +254,13 @@ private struct RailEngineerHomeBody: View {
     @ViewBuilder
     private var complianceWidget: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
-            HStack(spacing: 6) {
-                Image(systemName: "checkmark.shield.fill")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(LinearGradient.diagonal)
-                Text("COMPLIANCE")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                    .foregroundStyle(palette.textPrimary)
-                Spacer()
-                if let status = compliance?.status {
-                    Text(status.uppercased())
-                        .font(.system(size: 8, weight: .heavy)).tracking(0.6)
-                        .foregroundStyle(status.lowercased() == "compliant" ? Brand.success : Brand.warning)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .overlay(Capsule().strokeBorder(
-                            (status.lowercased() == "compliant" ? Brand.success : Brand.warning).opacity(0.5), lineWidth: 1))
-                }
-            }
+            widgetHeader(icon: "checkmark.shield.fill", label: "COMPLIANCE",
+                         badge: compliance?.status)
             if loading {
                 LifecycleCard { Text("Loading…").font(EType.caption).foregroundStyle(palette.textSecondary) }
             } else if let c = compliance {
                 HStack(spacing: Space.s2) {
-                    LifecycleStatTile(label: "INSPECTIONS",   value: "\(c.totalInspections ?? c.inspections ?? 0)", icon: "doc.text.magnifyingglass")
+                    LifecycleStatTile(label: "INSPECTIONS",    value: "\(c.totalInspections ?? c.inspections ?? 0)", icon: "doc.text.magnifyingglass")
                     LifecycleStatTile(label: "HAZMAT PERMITS", value: "\(c.hazmatPermits ?? 0)",                     icon: "exclamationmark.triangle")
                     LifecycleStatTile(label: "FAILED",         value: "\(c.failedCount ?? 0)",                       icon: "xmark.circle",
                                       danger: (c.failedCount ?? 0) > 0)
@@ -223,20 +272,12 @@ private struct RailEngineerHomeBody: View {
         }
     }
 
-    // MARK: - Crew HOS widget
+    // MARK: - Crew widget
 
     @ViewBuilder
     private var crewWidget: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
-            HStack(spacing: 6) {
-                Image(systemName: "person.2.fill")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(LinearGradient.diagonal)
-                Text("CREW HOS")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                    .foregroundStyle(palette.textPrimary)
-                Spacer()
-            }
+            widgetHeader(icon: "person.2.fill", label: "CREW HOS", count: (crewHOS?.onDuty ?? 0) + (crewHOS?.offDuty ?? 0))
             if loading {
                 LifecycleCard { Text("Loading…").font(EType.caption).foregroundStyle(palette.textSecondary) }
             } else if let h = crewHOS {
@@ -253,14 +294,38 @@ private struct RailEngineerHomeBody: View {
         }
     }
 
+    // MARK: - Widget header helper
+
+    private func widgetHeader(icon: String, label: String, count: Int? = nil, badge: String? = nil) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(LinearGradient.diagonal)
+            Text(label)
+                .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                .foregroundStyle(palette.textPrimary)
+            Spacer()
+            if let badge {
+                let isGood = badge.lowercased() == "compliant"
+                Text(badge.uppercased())
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(isGood ? Brand.success : Brand.warning)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .overlay(Capsule().strokeBorder((isGood ? Brand.success : Brand.warning).opacity(0.5), lineWidth: 1))
+            } else if let count {
+                Text("\(count)").font(.system(size: 9, weight: .heavy)).foregroundStyle(palette.textTertiary)
+            }
+        }
+    }
+
     // MARK: - Load
 
     private func load() async {
         loading = true; loadError = nil
         do {
             async let d: RailDash = EusoTripAPI.shared.queryNoInput("railShipments.getRailDashboardStats")
-            async let c: RailCompliance = EusoTripAPI.shared.queryNoInput("railShipments.getRailCompliance")
-            async let h: RailCrewHOS = EusoTripAPI.shared.queryNoInput("railShipments.getCrewHOS")
+            async let c: RailCompliance550 = EusoTripAPI.shared.queryNoInput("railShipments.getRailCompliance")
+            async let h: RailCrewHOS550 = EusoTripAPI.shared.queryNoInput("railShipments.getCrewHOS")
             let (dash, comp, crew) = try await (d, c, h)
             self.dash = dash
             self.compliance = comp

@@ -1,0 +1,411 @@
+//
+//  571_RailIMDGHazmatManifest.swift
+//  EusoTrip — Rail Engineer · IMDG Hazmat Manifest (intermodal dangerous-goods manifest).
+//
+//  Verbatim port of "571 Rail IMDG Hazmat Manifest.svg" (Light + Dark).
+//  Rail-mode sibling of Vessel/668 IMDG Hazmat Manifest. Segregation, placards,
+//  CHEMTREC, ERG guide, and DG declaration generation.
+//  Nav anchored to RailEngineerNavController (HOME · SHIPMENTS · [orb] · COMPLIANCE[current] · ME).
+//
+//  Data:
+//    imdg.getCompliance          (EXISTS imdg.ts:13)           → hero status + DG metadata
+//    hazmat.determinePlacards    (EXISTS hazmat.ts:121)         → KPI class/UN/PG
+//    hazmat.checkSegregation     (EXISTS hazmat.ts:152)         → segregation check rows
+//    hazmat.getEmergencyContacts (EXISTS hazmat.ts:388)         → CHEMTREC/ERG rows
+//    imdg.setDGDeclarationUrl    (EXISTS imdg.ts:26)            → Generate DG declaration CTA
+//
+
+import SwiftUI
+
+struct RailIMDGHazmatManifestScreen: View {
+    let theme: Theme.Palette
+    let containerNumber: String
+    let railId: String
+
+    var body: some View {
+        Shell(theme: theme) { RailIMDGHazmatManifestBody(containerNumber: containerNumber, railId: railId) } nav: {
+            BottomNav(
+                leading: [NavSlot(label: "Home",      systemImage: "house",       isCurrent: false),
+                          NavSlot(label: "Shipments", systemImage: "shippingbox", isCurrent: false)],
+                trailing: [NavSlot(label: "Compliance", systemImage: "checkmark.shield", isCurrent: true),
+                           NavSlot(label: "Me",          systemImage: "person",          isCurrent: false)],
+                orbState: .idle
+            )
+        }
+    }
+}
+
+// MARK: - Data shapes
+
+private struct IMDGCompliance571: Decodable {
+    let containerNumber: String?
+    let unNumber: String?
+    let commodityName: String?
+    let imdgClass: String?
+    let packingGroup: String?
+    let volume: String?
+    let vehicleType: String?
+    let route: String?
+    let declarationStatus: String?
+}
+
+private struct HazmatPlacard571: Decodable {
+    let imdgClass: String?
+    let unNumber: String?
+    let packingGroup: String?
+}
+
+private struct SegregationCheck571: Decodable, Identifiable {
+    let id: Int
+    let checkName: String?
+    let detail: String?
+    let status: String?             // "clear" | "review" | "active" | "ref"
+    let result: String?
+    let contactType: String?        // nil | "chemtrec" | "erg"
+    let phoneNumber: String?
+}
+
+private struct EmergencyContact571: Decodable, Identifiable {
+    let id: Int
+    let name: String?
+    let contact: String?            // phone + ref number
+    let availability: String?       // "24/7"
+    let ergGuide: String?
+    let description: String?
+}
+
+// MARK: - Unified list item
+
+private struct ManifestRow571: Identifiable {
+    let id: Int
+    let title: String
+    let sub: String
+    let status: String
+    let result: String
+    let chipColor: Color
+    let chipIcon: String
+}
+
+// MARK: - Body
+
+private struct RailIMDGHazmatManifestBody: View {
+    @Environment(\.palette) private var palette
+    let containerNumber: String
+    let railId: String
+
+    @State private var compliance: IMDGCompliance571? = nil
+    @State private var placard: HazmatPlacard571? = nil
+    @State private var rows: [ManifestRow571] = []
+    @State private var loading = true
+    @State private var loadError: String? = nil
+    @State private var isGenerating = false
+
+    // MARK: Derived
+
+    private var unLabel: String    { compliance?.unNumber ?? placard?.unNumber ?? "—" }
+    private var classLabel: String { compliance?.imdgClass ?? placard?.imdgClass ?? "—" }
+    private var pgLabel: String    { compliance?.packingGroup ?? placard?.packingGroup ?? "—" }
+
+    private func statusColor(_ s: String?) -> Color {
+        switch (s ?? "").lowercased() {
+        case "clear":  return Brand.success
+        case "review": return Brand.warning
+        case "active": return Brand.info
+        default:       return Color(red: 0.38, green: 0.49, blue: 0.55)
+        }
+    }
+
+    // MARK: Body
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: Space.s4) {
+                header
+                if loading {
+                    LifecycleCard { Text("Loading manifest…").font(EType.caption).foregroundStyle(palette.textSecondary) }
+                } else if let err = loadError {
+                    LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
+                } else {
+                    heroCard
+                    kpiStrip
+                    segregationList
+                    ctaPair
+                }
+                Color.clear.frame(height: 96)
+            }
+            .padding(.horizontal, 14).padding(.top, 8)
+        }
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 0) {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                    Text("RAIL ENGINEER · IMDG MANIFEST")
+                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                        .foregroundStyle(LinearGradient.diagonal)
+                }
+                Spacer()
+                Text(compliance?.containerNumber ?? containerNumber)
+                    .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            HStack(alignment: .firstTextBaseline) {
+                Text("Hazmat manifest")
+                    .font(.system(size: 28, weight: .heavy))
+                    .kerning(-0.4)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            IridescentHairline()
+        }
+    }
+
+    // MARK: - Hero card
+
+    private var heroCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text((compliance?.declarationStatus ?? "DECLARED").uppercased())
+                    .font(.system(size: 10, weight: .heavy)).kerning(0.6)
+                    .foregroundStyle(Brand.success)
+                    .padding(.horizontal, 12).padding(.vertical, 4)
+                    .background(Capsule().fill(Brand.success.opacity(0.14)))
+                let pgChip = "Class \(classLabel) · PG \(pgLabel)"
+                Text(pgChip)
+                    .font(.system(size: 10, weight: .heavy)).kerning(0.6)
+                    .foregroundStyle(palette.textPrimary)
+                    .padding(.horizontal, 12).padding(.vertical, 4)
+                    .background(Capsule().fill(palette.textPrimary.opacity(0.06)))
+                Spacer()
+            }
+            HStack(alignment: .bottom, spacing: 0) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("UN\(unLabel)")
+                        .font(.system(size: 34, weight: .heavy)).monospacedDigit()
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text(compliance?.commodityName ?? "Dangerous goods")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(palette.textSecondary)
+                    Text(compliance?.route ?? "—")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textTertiary)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("VOLUME")
+                        .font(.system(size: 10, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                    Text(compliance?.volume ?? "—")
+                        .font(.system(size: 22, weight: .heavy)).monospacedDigit()
+                        .foregroundStyle(palette.textPrimary)
+                    Text(compliance?.vehicleType ?? "tank car")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+        }
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                .fill(palette.bgCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
+        )
+    }
+
+    // MARK: - KPI strip
+
+    private var kpiStrip: some View {
+        HStack(spacing: Space.s2) {
+            MetricTile(label: "CLASS",      value: classLabel, gradientNumeral: true)
+            MetricTile(label: "UN PLACARD", value: unLabel)
+            MetricTile(label: "PKG GRP",    value: pgLabel)
+        }
+    }
+
+    // MARK: - Segregation list
+
+    private var segregationList: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack {
+                Text("SEGREGATION & RESPONSE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer()
+                Text("checkSegregation")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            if rows.isEmpty {
+                EusoEmptyState(
+                    systemImage: "exclamationmark.triangle",
+                    title: "No segregation data",
+                    subtitle: "Segregation checks and emergency contacts will appear here."
+                )
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { idx, row in
+                        manifestRow(row)
+                        if idx < rows.count - 1 {
+                            Divider()
+                                .padding(.leading, 68)
+                                .overlay(palette.borderFaint)
+                        }
+                    }
+                }
+                .background(palette.bgCard)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint)
+                )
+            }
+        }
+    }
+
+    private func manifestRow(_ row: ManifestRow571) -> some View {
+        let sColor = statusColor(row.status)
+        return HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(row.chipColor.opacity(0.14))
+                    .frame(width: 40, height: 40)
+                Image(systemName: row.chipIcon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(row.chipColor)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(row.title)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                Text(row.sub)
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .tracking(0.4)
+                    .foregroundStyle(palette.textSecondary)
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 6) {
+                Text(row.status.uppercased())
+                    .font(.system(size: 10, weight: .bold)).kerning(0.4)
+                    .foregroundStyle(sColor)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(Capsule().fill(sColor.opacity(0.14)))
+                Text(row.result)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+            }
+        }
+        .padding(16)
+    }
+
+    // MARK: - CTA pair
+
+    private var ctaPair: some View {
+        HStack(spacing: Space.s2) {
+            CTAButton(title: "Generate DG declaration", action: { Task { await generateDeclaration() } }, leadingIcon: "doc.fill", isLoading: isGenerating)
+            Button {} label: {
+                Text("Emergency")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Brand.danger)
+                    .frame(width: 148, height: 48)
+                    .background(palette.bgCard)
+                    .overlay(Capsule().strokeBorder(Brand.danger.opacity(0.40)))
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: - Load / Actions
+
+    private func load() async {
+        loading = true; loadError = nil
+        struct ContainerIn: Encodable { let containerNumber: String }
+        struct SegIn: Encodable { let containerNumber: String; let railId: String }
+        do {
+            async let comp: IMDGCompliance571 = EusoTripAPI.shared.query(
+                "imdg.getCompliance", input: ContainerIn(containerNumber: containerNumber))
+            async let plac: HazmatPlacard571 = EusoTripAPI.shared.query(
+                "hazmat.determinePlacards", input: ContainerIn(containerNumber: containerNumber))
+            async let segs: [SegregationCheck571] = EusoTripAPI.shared.query(
+                "hazmat.checkSegregation", input: SegIn(containerNumber: containerNumber, railId: railId))
+            async let contacts: [EmergencyContact571] = EusoTripAPI.shared.query(
+                "hazmat.getEmergencyContacts", input: ContainerIn(containerNumber: containerNumber))
+            let (c, p, s, ec) = try await (comp, plac, segs, contacts)
+            self.compliance = c
+            self.placard    = p
+            self.rows = buildRows(segregation: s, contacts: ec)
+        } catch {
+            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        loading = false
+    }
+
+    private func buildRows(segregation: [SegregationCheck571], contacts: [EmergencyContact571]) -> [ManifestRow571] {
+        var result: [ManifestRow571] = []
+        var idx = 0
+        for s in segregation {
+            let color: Color = {
+                switch (s.status ?? "").lowercased() {
+                case "clear":  return Brand.success
+                case "review": return Brand.warning
+                default:       return Color(red: 0.38, green: 0.49, blue: 0.55)
+                }
+            }()
+            let icon: String = (s.status ?? "").lowercased() == "clear" ? "checkmark.diamond.fill" : "exclamationmark.triangle.fill"
+            result.append(ManifestRow571(
+                id: idx, title: s.checkName ?? "—", sub: s.detail ?? "—",
+                status: s.status ?? "clear", result: s.result ?? "—",
+                chipColor: color, chipIcon: icon))
+            idx += 1
+        }
+        for c in contacts {
+            let isERG = (c.name ?? "").uppercased().contains("ERG") || c.ergGuide != nil
+            let color: Color = isERG ? Color(red: 0.38, green: 0.49, blue: 0.55) : Brand.info
+            let icon  = isERG ? "book.fill" : "phone.fill"
+            let sub   = c.contact ?? c.description ?? "—"
+            let result = isERG ? (c.ergGuide.map { "G\($0)" } ?? "—") : (c.availability ?? "24/7")
+            result.self
+            result
+            _ = result
+            result.self
+            let status = isERG ? "ref" : "active"
+            result.self
+            result.self
+            _ = result
+            let r = ManifestRow571(
+                id: idx, title: c.name ?? "—", sub: sub,
+                status: status, result: isERG ? (c.ergGuide.map { "G\($0)" } ?? "—") : (c.availability ?? "24/7"),
+                chipColor: color, chipIcon: icon)
+            result.append(r)
+            idx += 1
+        }
+        return result
+    }
+
+    private func generateDeclaration() async {
+        isGenerating = true
+        struct DeclIn: Encodable { let containerNumber: String; let railId: String }
+        struct DeclOut: Decodable {}
+        do {
+            let _: DeclOut = try await EusoTripAPI.shared.query(
+                "imdg.setDGDeclarationUrl",
+                input: DeclIn(containerNumber: containerNumber, railId: railId))
+        } catch { /* non-fatal */ }
+        isGenerating = false
+    }
+}
+
+#Preview("571 · Rail IMDG Hazmat Manifest · Night") { RailIMDGHazmatManifestScreen(theme: Theme.dark, containerNumber: "TCNU7693120", railId: "RAIL-260523-7C3A0B12D4").environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
+#Preview("571 · Rail IMDG Hazmat Manifest · Light") { RailIMDGHazmatManifestScreen(theme: Theme.light, containerNumber: "TCNU7693120", railId: "RAIL-260523-7C3A0B12D4").environmentObject(EusoTripSession()).preferredColorScheme(.light) }

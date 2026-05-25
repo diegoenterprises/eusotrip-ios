@@ -32,7 +32,7 @@ private struct VesselInspection: Decodable, Identifiable {
     let deficiencies: Int?
 }
 
-private struct VesselCertificate: Decodable, Identifiable {
+private struct VesselCertificate652: Decodable, Identifiable {
     let id: String
     let name: String?
     let issuedBy: String?
@@ -45,7 +45,7 @@ private struct VesselCertificate: Decodable, Identifiable {
 private struct VesselComplianceBody: View {
     @Environment(\.palette) private var palette
     @State private var inspections: [VesselInspection] = []
-    @State private var certificates: [VesselCertificate] = []
+    @State private var certificates: [VesselCertificate652] = []
     @State private var loading = true
     @State private var loadError: String? = nil
 
@@ -55,10 +55,25 @@ private struct VesselComplianceBody: View {
     }
     @State private var activeTab: Tab = .inspections
 
+    private var passedCount:   Int { inspections.filter { ($0.status ?? "").lowercased() == "passed" || ($0.deficiencies ?? 0) == 0 }.count }
+    private var failedCount:   Int { inspections.count - passedCount }
+    private var expiringCerts: Int {
+        certificates.filter { cert in
+            guard let exp = cert.expiresAt,
+                  let date = {
+                      let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f.date(from: exp)
+                  }() else { return false }
+            return date.timeIntervalSinceNow < 60 * 86400
+        }.count
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
+                if !loading && loadError == nil {
+                    kpiStrip
+                }
                 tabPicker
                 if loading {
                     ForEach(0..<3, id: \.self) { _ in
@@ -79,11 +94,13 @@ private struct VesselComplianceBody: View {
                 }
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .padding(.horizontal, 16).padding(.top, 8)
         }
         .task { await load() }
         .refreshable { await load() }
     }
+
+    // MARK: - Header
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -95,9 +112,34 @@ private struct VesselComplianceBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
             }
-            Text("Compliance").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            HStack(alignment: .firstTextBaseline) {
+                Text("Compliance")
+                    .font(.system(size: 26, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                if !inspections.isEmpty {
+                    let status = failedCount == 0 ? "COMPLIANT" : "\(failedCount) DEFICIENCIES"
+                    Text(status)
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(failedCount == 0 ? Brand.success : Brand.danger)
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .overlay(Capsule().strokeBorder((failedCount == 0 ? Brand.success : Brand.danger).opacity(0.5), lineWidth: 1))
+                }
+            }
         }
     }
+
+    // MARK: - KPI strip
+
+    private var kpiStrip: some View {
+        HStack(spacing: Space.s2) {
+            MetricTile(label: "PASSED",      value: "\(passedCount)",   gradientNumeral: passedCount > 0 && failedCount == 0)
+            MetricTile(label: "DEFICIENCIES", value: "\(failedCount)",   accent: failedCount > 0 ? Brand.danger : nil)
+            MetricTile(label: "CERTS EXPIRING", value: "\(expiringCerts)", accent: expiringCerts > 0 ? Brand.warning : nil)
+        }
+    }
+
+    // MARK: - Tab picker
 
     private var tabPicker: some View {
         HStack(spacing: 0) {
@@ -122,6 +164,8 @@ private struct VesselComplianceBody: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
+    // MARK: - Inspections
+
     @ViewBuilder
     private var inspectionsContent: some View {
         if inspections.isEmpty {
@@ -134,6 +178,47 @@ private struct VesselComplianceBody: View {
             }
         }
     }
+
+    private func inspectionRow(_ ins: VesselInspection) -> some View {
+        let passed = (ins.status ?? "").lowercased() == "passed" || (ins.deficiencies ?? 0) == 0
+        let statusColor: Color = passed ? Brand.success : Brand.danger
+        let defCount = ins.deficiencies ?? 0
+        return HStack(spacing: Space.s3) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(statusColor.opacity(0.12))
+                    .frame(width: 40, height: 40)
+                Image(systemName: passed ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(statusColor)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(ins.type ?? "PSC Inspection")
+                    .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                HStack(spacing: 6) {
+                    if let port = ins.port { Text(port).font(EType.caption).foregroundStyle(palette.textSecondary) }
+                    if let date = ins.date { Text("· \(date)").font(EType.caption).foregroundStyle(palette.textSecondary) }
+                    if defCount > 0 {
+                        Text("· \(defCount) deficienc\(defCount == 1 ? "y" : "ies")")
+                            .font(EType.caption).foregroundStyle(Brand.danger)
+                    }
+                }
+            }
+            Spacer()
+            if let auth = ins.authority {
+                Text(auth.uppercased())
+                    .font(.system(size: 7, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(palette.textTertiary)
+            }
+        }
+        .padding(Space.s3)
+        .background(passed ? palette.bgCard : Brand.danger.opacity(0.04))
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+            .strokeBorder(passed ? palette.borderFaint : Brand.danger.opacity(0.35)))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    // MARK: - Certificates
 
     @ViewBuilder
     private var certificatesContent: some View {
@@ -148,84 +233,60 @@ private struct VesselComplianceBody: View {
         }
     }
 
-    private func inspectionRow(_ ins: VesselInspection) -> some View {
-        let passed = (ins.status ?? "").lowercased() == "passed" || (ins.deficiencies ?? 0) == 0
-        let statusColor: Color = passed ? Brand.success : Brand.danger
-        return HStack(spacing: Space.s3) {
-            Image(systemName: passed ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(statusColor)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(ins.type ?? "PSC Inspection").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                HStack(spacing: 6) {
-                    if let port = ins.port { Text(port).font(EType.caption).foregroundStyle(palette.textSecondary) }
-                    if let date = ins.date { Text("· \(date)").font(EType.caption).foregroundStyle(palette.textSecondary) }
-                    if let d = ins.deficiencies, d > 0 {
-                        Text("· \(d) deficiencies").font(EType.caption).foregroundStyle(Brand.warning)
-                    }
-                }
-            }
-            Spacer()
-            if let auth = ins.authority {
-                Text(auth.uppercased())
-                    .font(.system(size: 7, weight: .heavy)).tracking(0.5)
-                    .foregroundStyle(palette.textTertiary)
-            }
-        }
-        .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-    }
-
-    private func certificateRow(_ cert: VesselCertificate) -> some View {
+    private func certificateRow(_ cert: VesselCertificate652) -> some View {
         let isExpiringSoon: Bool = {
-            guard let exp = cert.expiresAt else { return false }
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd"
-            guard let date = formatter.date(from: exp) else { return false }
+            guard let exp = cert.expiresAt,
+                  let date = { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f.date(from: exp) }()
+            else { return false }
             return date.timeIntervalSinceNow < 60 * 86400
         }()
-        let statusColor: Color = isExpiringSoon ? Brand.warning : Brand.success
+        let color: Color = isExpiringSoon ? Brand.warning : Brand.success
         return HStack(spacing: Space.s3) {
-            Image(systemName: "scroll")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(statusColor)
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(color.opacity(0.12))
+                    .frame(width: 40, height: 40)
+                Image(systemName: "scroll")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(color)
+            }
             VStack(alignment: .leading, spacing: 2) {
-                Text(cert.name ?? "Certificate").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                Text(cert.name ?? "Certificate")
+                    .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
                 HStack(spacing: 6) {
-                    if let issuer = cert.issuedBy { Text(issuer).font(EType.caption).foregroundStyle(palette.textSecondary) }
+                    if let issuer = cert.issuedBy {
+                        Text(issuer).font(EType.caption).foregroundStyle(palette.textSecondary)
+                    }
                     if let exp = cert.expiresAt {
-                        Text("· Exp \(exp)").font(EType.caption).foregroundStyle(isExpiringSoon ? Brand.warning : palette.textSecondary)
+                        Text("· Exp \(exp)").font(EType.caption)
+                            .foregroundStyle(isExpiringSoon ? Brand.warning : palette.textSecondary)
                     }
                 }
             }
             Spacer()
             Text((cert.status ?? "Valid").uppercased())
                 .font(.system(size: 8, weight: .heavy)).tracking(0.6)
-                .foregroundStyle(statusColor)
+                .foregroundStyle(color)
                 .padding(.horizontal, 8).padding(.vertical, 3)
-                .overlay(Capsule().strokeBorder(statusColor.opacity(0.5), lineWidth: 1))
+                .overlay(Capsule().strokeBorder(color.opacity(0.5), lineWidth: 1))
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(
-            isExpiringSoon ? Brand.warning.opacity(0.35) : palette.borderFaint))
+        .background(isExpiringSoon ? Brand.warning.opacity(0.04) : palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+            .strokeBorder(isExpiringSoon ? Brand.warning.opacity(0.35) : palette.borderFaint))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
+
+    // MARK: - Load
 
     private func load() async {
         loading = true; loadError = nil
         struct ListIn: Encodable { let limit: Int }
         do {
             async let ins: [VesselInspection] = EusoTripAPI.shared.query(
-                "vesselShipments.getVesselInspections",
-                input: ListIn(limit: 50)
-            )
-            async let certs: [VesselCertificate] = EusoTripAPI.shared.query(
-                "vesselShipments.getVesselCertificates",
-                input: ListIn(limit: 50)
-            )
+                "vesselShipments.getVesselInspections", input: ListIn(limit: 50))
+            async let certs: [VesselCertificate652] = EusoTripAPI.shared.query(
+                "vesselShipments.getVesselCertificates", input: ListIn(limit: 50))
             let (insp, certList) = try await (ins, certs)
             self.inspections = insp
             self.certificates = certList

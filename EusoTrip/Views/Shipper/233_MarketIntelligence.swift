@@ -36,6 +36,27 @@ struct MarketIntelligenceScreen: View {
 
 // MARK: - Wire types (mirror frontend/server/routers/marketPricing.ts)
 
+/// Numeric fields on the commodity feed are stringified by some
+/// upstream sources (CommodityPriceAPI returns "71.25" instead of
+/// 71.25 on a fraction of symbols; FRED's tail values too). A strict
+/// Double decoder crashed the entire screen on
+/// `commodities[5].price` whenever a single symbol from a 30+ row
+/// list happened to come in as a string. This decoder accepts both
+/// representations transparently. Founder bug 2026-05-24.
+private func decodeFlexibleDouble(_ container: KeyedDecodingContainer<CommodityRow.CodingKeys>, _ key: CommodityRow.CodingKeys) throws -> Double {
+    if let d = try? container.decode(Double.self, forKey: key) { return d }
+    if let s = try? container.decode(String.self, forKey: key), let d = Double(s) { return d }
+    if let i = try? container.decode(Int.self, forKey: key) { return Double(i) }
+    throw DecodingError.dataCorruptedError(forKey: key, in: container, debugDescription: "Expected number or numeric string for \(key.stringValue)")
+}
+
+private func decodeFlexibleDoubleOpt(_ container: KeyedDecodingContainer<CommodityRow.CodingKeys>, _ key: CommodityRow.CodingKeys) -> Double? {
+    if let d = try? container.decode(Double.self, forKey: key) { return d }
+    if let s = try? container.decode(String.self, forKey: key), let d = Double(s) { return d }
+    if let i = try? container.decode(Int.self, forKey: key) { return Double(i) }
+    return nil
+}
+
 private struct CommodityRow: Decodable, Hashable, Identifiable {
     let symbol: String
     let name: String
@@ -54,6 +75,39 @@ private struct CommodityRow: Decodable, Hashable, Identifiable {
     let unit: String?
     let sparkline: [Double]?
     var id: String { symbol }
+
+    enum CodingKeys: String, CodingKey {
+        case symbol, name, category, price, change, changePercent
+        case previousClose, open, high, low, volume
+        case intraday, daily, weekly, unit, sparkline
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        symbol         = try c.decode(String.self, forKey: .symbol)
+        name           = try c.decode(String.self, forKey: .name)
+        category       = try c.decode(String.self, forKey: .category)
+        price          = try decodeFlexibleDouble(c, .price)
+        change         = try decodeFlexibleDouble(c, .change)
+        changePercent  = try decodeFlexibleDouble(c, .changePercent)
+        previousClose  = decodeFlexibleDoubleOpt(c, .previousClose)
+        open           = decodeFlexibleDoubleOpt(c, .open)
+        high           = decodeFlexibleDoubleOpt(c, .high)
+        low            = decodeFlexibleDoubleOpt(c, .low)
+        volume         = try? c.decode(String.self, forKey: .volume)
+        intraday       = try? c.decode(String.self, forKey: .intraday)
+        daily          = try? c.decode(String.self, forKey: .daily)
+        weekly         = try? c.decode(String.self, forKey: .weekly)
+        unit           = try? c.decode(String.self, forKey: .unit)
+        // Sparkline can come in as [Double] or [String] — be lenient there too.
+        if let arr = try? c.decode([Double].self, forKey: .sparkline) {
+            sparkline = arr
+        } else if let arr = try? c.decode([String].self, forKey: .sparkline) {
+            sparkline = arr.compactMap { Double($0) }
+        } else {
+            sparkline = nil
+        }
+    }
 }
 
 private struct MarketBreadth: Decodable, Hashable {

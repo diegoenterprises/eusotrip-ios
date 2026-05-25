@@ -32,6 +32,16 @@ private struct RailShipment: Decodable, Identifiable {
     let commodity: String?
     let estimatedArrival: String?
     let carrierName: String?
+    let hazmat: Bool?
+}
+
+// MARK: - Filter
+
+private enum RailShipmentFilter: String, CaseIterable {
+    case all       = "All"
+    case inTransit = "In Transit"
+    case delayed   = "Delayed"
+    case delivered = "Delivered"
 }
 
 // MARK: - Body
@@ -42,11 +52,19 @@ private struct RailShipmentsBody: View {
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var searchText: String = ""
+    @State private var activeFilter: RailShipmentFilter = .all
 
     private var filtered: [RailShipment] {
-        guard !searchText.isEmpty else { return shipments }
+        var list = shipments
+        switch activeFilter {
+        case .all:       break
+        case .inTransit: list = list.filter { ["in_transit", "active"].contains(($0.status ?? "").lowercased()) }
+        case .delayed:   list = list.filter { ($0.status ?? "").lowercased() == "delayed" }
+        case .delivered: list = list.filter { ($0.status ?? "").lowercased() == "delivered" }
+        }
+        guard !searchText.isEmpty else { return list }
         let q = searchText.lowercased()
-        return shipments.filter {
+        return list.filter {
             ($0.origin ?? "").lowercased().contains(q) ||
             ($0.destination ?? "").lowercased().contains(q) ||
             ($0.commodity ?? "").lowercased().contains(q) ||
@@ -58,11 +76,11 @@ private struct RailShipmentsBody: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
-                searchBar
+                searchAndFilter
                 if loading {
                     ForEach(0..<4, id: \.self) { _ in
                         RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .fill(palette.bgCardSoft).frame(height: 80)
+                            .fill(palette.bgCardSoft).frame(height: 96)
                             .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                                         .strokeBorder(palette.borderFaint))
                     }
@@ -72,7 +90,7 @@ private struct RailShipmentsBody: View {
                     }
                 } else if filtered.isEmpty {
                     EusoEmptyState(
-                        systemImage: "shippingbox",
+                        systemImage: "tram.fill",
                         title: searchText.isEmpty ? "No shipments" : "No results for \(searchText)",
                         subtitle: searchText.isEmpty
                             ? "Rail shipments assigned to you will appear here."
@@ -85,11 +103,13 @@ private struct RailShipmentsBody: View {
                 }
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .padding(.horizontal, 16).padding(.top, 8)
         }
         .task { await load() }
         .refreshable { await load() }
     }
+
+    // MARK: - Header
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -101,69 +121,121 @@ private struct RailShipmentsBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
             }
-            HStack {
-                Text("Rail shipments").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            HStack(alignment: .firstTextBaseline) {
+                Text("Rail shipments")
+                    .font(.system(size: 26, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
                 Spacer()
                 if !shipments.isEmpty {
-                    Text("\(shipments.count) total")
-                        .font(.system(size: 11, weight: .semibold))
+                    Text("\(shipments.count)")
+                        .font(.system(size: 22, weight: .heavy)).monospacedDigit()
                         .foregroundStyle(palette.textTertiary)
+                }
+            }
+            if !shipments.isEmpty {
+                let inTransit = shipments.filter { ["in_transit","active"].contains(($0.status ?? "").lowercased()) }.count
+                let delayed   = shipments.filter { ($0.status ?? "").lowercased() == "delayed" }.count
+                HStack(spacing: 8) {
+                    if inTransit > 0 {
+                        Text("\(inTransit) in transit").font(EType.caption).foregroundStyle(Brand.success)
+                    }
+                    if delayed > 0 {
+                        Text("· \(delayed) delayed").font(EType.caption).foregroundStyle(Brand.warning)
+                    }
                 }
             }
         }
     }
 
-    private var searchBar: some View {
-        HStack(spacing: Space.s2) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(palette.textTertiary)
-            TextField("Search origin, destination, commodity…", text: $searchText)
-                .font(EType.body)
-                .foregroundStyle(palette.textPrimary)
-            if !searchText.isEmpty {
-                Button { searchText = "" } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 13))
-                        .foregroundStyle(palette.textTertiary)
+    // MARK: - Search + Filter
+
+    private var searchAndFilter: some View {
+        VStack(spacing: Space.s2) {
+            // Search field
+            HStack(spacing: Space.s2) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(palette.textTertiary)
+                TextField("Search origin, destination, commodity…", text: $searchText)
+                    .font(EType.body)
+                    .foregroundStyle(palette.textPrimary)
+                if !searchText.isEmpty {
+                    Button { searchText = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                }
+            }
+            .padding(Space.s3)
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+
+            // Filter chips
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(RailShipmentFilter.allCases, id: \.self) { f in
+                        let isActive = activeFilter == f
+                        Button { withAnimation(.easeInOut(duration: 0.15)) { activeFilter = f } } label: {
+                            Text(f.rawValue)
+                                .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                                .foregroundStyle(isActive ? .white : palette.textSecondary)
+                                .padding(.horizontal, 14).padding(.vertical, 7)
+                                .background(isActive ? AnyShapeStyle(LinearGradient.primary) : AnyShapeStyle(palette.bgCard))
+                                .overlay(Capsule().strokeBorder(isActive ? Color.clear : palette.borderFaint))
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
         }
-        .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
+
+    // MARK: - Shipment row
 
     private func shipmentRow(_ s: RailShipment) -> some View {
-        let statusColor: Color = {
+        let statusKind: StatusPill.Kind = {
             switch (s.status ?? "").lowercased() {
-            case "in_transit", "active":  return Brand.success
-            case "delayed":               return Brand.warning
-            case "exception":             return Brand.danger
-            case "delivered":             return palette.textTertiary
-            default:                      return palette.textSecondary
+            case "in_transit", "active": return .success
+            case "delayed":              return .warning
+            case "exception":            return .danger
+            case "delivered":            return .neutral
+            default:                     return .info
             }
         }()
-        return VStack(alignment: .leading, spacing: Space.s2) {
-            HStack(spacing: Space.s2) {
-                VStack(alignment: .leading, spacing: 2) {
+        let isDanger = (s.status ?? "").lowercased() == "exception"
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                // Mode glyph
+                modeBadge(for: s)
+                // Route + commodity
+                VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 4) {
-                        Text(s.origin ?? "—").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                        Image(systemName: "arrow.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(palette.textTertiary)
-                        Text(s.destination ?? "—").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                        Text(s.origin ?? "—")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(palette.textPrimary)
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(LinearGradient.diagonal)
+                        Text(s.destination ?? "—")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(palette.textPrimary)
                     }
                     if let commodity = s.commodity {
-                        Text(commodity).font(EType.caption).foregroundStyle(palette.textSecondary)
+                        Text(commodity)
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
                     }
                 }
                 Spacer()
-                Text((s.status ?? "—").replacingOccurrences(of: "_", with: " ").uppercased())
-                    .font(.system(size: 8, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(statusColor)
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .overlay(Capsule().strokeBorder(statusColor.opacity(0.5), lineWidth: 1))
+                StatusPill(text: (s.status ?? "—").replacingOccurrences(of: "_", with: " ").uppercased(),
+                           kind: statusKind)
             }
+            // Lifecycle progress strip
+            lifecycleStrip(status: s.status ?? "")
+            // Meta row
             HStack(spacing: Space.s3) {
                 if let cars = s.carsCount {
                     Label("\(cars) cars", systemImage: "tram.fill")
@@ -180,10 +252,67 @@ private struct RailShipmentsBody: View {
             }
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+        .background(isDanger ? Brand.danger.opacity(0.04) : palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+            .strokeBorder(isDanger ? Brand.danger.opacity(0.40) : palette.borderFaint))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
+
+    // MARK: - Mode badge
+
+    private func modeBadge(for s: RailShipment) -> some View {
+        let (icon, color): (String, Color) = {
+            if s.hazmat == true { return ("exclamationmark.triangle.fill", Brand.hazmat) }
+            let c = (s.commodity ?? "").lowercased()
+            if c.contains("grain") || c.contains("bulk") || c.contains("hopper") { return ("cylinder.fill", Brand.neutral) }
+            if c.contains("tank") || c.contains("liquid") { return ("drop.fill", Brand.info) }
+            return ("tram.fill", Brand.rail)
+        }()
+        return ZStack {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(color.opacity(0.12))
+                .frame(width: 38, height: 38)
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(color)
+        }
+    }
+
+    // MARK: - Lifecycle strip
+
+    private func lifecycleStrip(status: String) -> some View {
+        let stages = 7
+        let idx = stageIndex(status)
+        return HStack(spacing: 0) {
+            ForEach(0..<stages, id: \.self) { i in
+                Circle()
+                    .fill(i <= idx ? AnyShapeStyle(LinearGradient.primary) : AnyShapeStyle(palette.bgCardSoft))
+                    .frame(width: i == idx ? 8 : 5, height: i == idx ? 8 : 5)
+                if i < stages - 1 {
+                    Rectangle()
+                        .fill(i < idx ? AnyShapeStyle(LinearGradient.primary) : AnyShapeStyle(palette.bgCardSoft))
+                        .frame(height: 1.5)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .frame(height: 10)
+    }
+
+    private func stageIndex(_ status: String) -> Int {
+        switch status.lowercased() {
+        case "posted":                      return 0
+        case "assigned":                    return 1
+        case "in_yard":                     return 2
+        case "in_transit", "active":        return 3
+        case "delayed":                     return 4
+        case "arrived":                     return 5
+        case "delivered", "settled":        return 6
+        default:                            return 3
+        }
+    }
+
+    // MARK: - Load
 
     private func load() async {
         loading = true; loadError = nil

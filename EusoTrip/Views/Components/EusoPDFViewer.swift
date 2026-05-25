@@ -25,6 +25,7 @@
 import SwiftUI
 import PDFKit
 import UIKit
+import UniformTypeIdentifiers
 
 /// What to render. URL covers downloaded files; Data covers
 /// in-memory PDFs (e.g. `eusoTicket.generateBOLPDF` returns a
@@ -82,6 +83,14 @@ struct EusoPDFViewer: View {
     @State private var walletBusy: Bool = false
     @State private var walletAck: String? = nil
     @State private var savedAck: String? = nil
+    /// Drives the SwiftUI fileExporter for Download. Was previously
+    /// a manual UIDocumentPickerViewController presentation that
+    /// walked the UIWindowScene topmost VC and presented on top of
+    /// the already-sheet'd PDF viewer. iOS 17/18 punished that
+    /// with the "presenting view controller already presenting"
+    /// path that the founder reported as the download-glitch /
+    /// must-force-close-app symptom on 2026-05-24.
+    @State private var showFileExporter: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -108,11 +117,19 @@ struct EusoPDFViewer: View {
                 EusoShareSheet(items: [url])
             }
         }
-        .sheet(item: Binding(
-            get: { fileURLForExport.map { ExportTarget(url: $0) } },
-            set: { _ in }
-        )) { _ in
-            EmptyView()
+        .fileExporter(
+            isPresented: $showFileExporter,
+            document: PDFExportDocument(data: fetchedData ?? doc?.dataRepresentation() ?? Data()),
+            contentType: .pdf,
+            defaultFilename: title.replacingOccurrences(of: "/", with: "-")
+        ) { result in
+            switch result {
+            case .success:
+                savedAck = "Saved to Files"
+            case .failure(let err):
+                savedAck = "Save canceled — \(err.localizedDescription)"
+            }
+            scheduleAckClear()
         }
         .overlay(alignment: .bottom) {
             VStack(spacing: 6) {
@@ -170,8 +187,13 @@ struct EusoPDFViewer: View {
                 .buttonStyle(.plain)
                 .disabled(walletBusy)
             }
-            // Download — saves into the iOS Files app via UIDocumentPicker.
-            Button { Task { await downloadPDF() } } label: {
+            // Download — surfaces SwiftUI's fileExporter (system Files
+            // picker) instead of presenting UIDocumentPickerViewController
+            // manually on top of the already-presented sheet. Bug
+            // 2026-05-24 ("download glitches the app, must force close")
+            // was caused by the previous manual presentation racing
+            // with the sheet's own presentation chain.
+            Button { showFileExporter = true } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.down.doc")
                         .font(.system(size: 13, weight: .heavy))
@@ -391,6 +413,28 @@ private struct EusoShareSheet: UIViewControllerRepresentable {
         UIActivityViewController(activityItems: items, applicationActivities: nil)
     }
     func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
+}
+
+/// FileDocument wrapper for SwiftUI's `.fileExporter` modifier.
+/// Backs the Download button — replaces the manual UIDocumentPicker
+/// presentation that glitched the app (founder bug 2026-05-24).
+private struct PDFExportDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.pdf] }
+    static var writableContentTypes: [UTType] { [.pdf] }
+
+    let data: Data
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        self.data = configuration.file.regularFileContents ?? Data()
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
 }
 
 // MARK: - PDFKit bridge

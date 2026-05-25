@@ -56,10 +56,25 @@ private struct RailComplianceBody: View {
     }
     @State private var activeTab: Tab = .inspections
 
+    private var passedCount:  Int { inspections.filter { $0.passed ?? ($0.status?.lowercased() == "passed") }.count }
+    private var failedCount:  Int { inspections.count - passedCount }
+    private var expiringSoon: Int {
+        hazmatPermits.filter { p in
+            guard let exp = p.expiresAt,
+                  let date = ISO8601DateFormatter().date(from: exp) ?? {
+                      let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f.date(from: exp)
+                  }() else { return false }
+            return date.timeIntervalSinceNow < 30 * 86400
+        }.count
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
+                if !loading && loadError == nil {
+                    kpiStrip
+                }
                 tabPicker
                 if loading {
                     ForEach(0..<3, id: \.self) { _ in
@@ -80,11 +95,13 @@ private struct RailComplianceBody: View {
                 }
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .padding(.horizontal, 16).padding(.top, 8)
         }
         .task { await load() }
         .refreshable { await load() }
     }
+
+    // MARK: - Header
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -96,9 +113,34 @@ private struct RailComplianceBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
             }
-            Text("Compliance").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            HStack(alignment: .firstTextBaseline) {
+                Text("Compliance")
+                    .font(.system(size: 26, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                if !inspections.isEmpty {
+                    let status = failedCount == 0 ? "COMPLIANT" : "\(failedCount) FAILED"
+                    Text(status)
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(failedCount == 0 ? Brand.success : Brand.danger)
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .overlay(Capsule().strokeBorder((failedCount == 0 ? Brand.success : Brand.danger).opacity(0.5), lineWidth: 1))
+                }
+            }
         }
     }
+
+    // MARK: - KPI strip
+
+    private var kpiStrip: some View {
+        HStack(spacing: Space.s2) {
+            MetricTile(label: "PASSED",   value: "\(passedCount)",   gradientNumeral: passedCount > 0 && failedCount == 0)
+            MetricTile(label: "FAILED",   value: "\(failedCount)",   accent: failedCount > 0 ? Brand.danger : nil)
+            MetricTile(label: "EXPIRING", value: "\(expiringSoon)",  accent: expiringSoon > 0 ? Brand.warning : nil)
+        }
+    }
+
+    // MARK: - Tab picker
 
     private var tabPicker: some View {
         HStack(spacing: 0) {
@@ -123,6 +165,8 @@ private struct RailComplianceBody: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
+    // MARK: - Inspections
+
     @ViewBuilder
     private var inspectionsContent: some View {
         if inspections.isEmpty {
@@ -135,6 +179,49 @@ private struct RailComplianceBody: View {
             }
         }
     }
+
+    private func inspectionRow(_ ins: RailInspection) -> some View {
+        let passed = ins.passed ?? (ins.status?.lowercased() == "passed")
+        let statusColor: Color = passed ? Brand.success : Brand.danger
+        return HStack(spacing: Space.s3) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(statusColor.opacity(0.12))
+                    .frame(width: 40, height: 40)
+                Image(systemName: passed ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(statusColor)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(ins.type ?? "Inspection")
+                    .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                HStack(spacing: 6) {
+                    if let date = ins.date {
+                        Text(date).font(EType.caption).foregroundStyle(palette.textSecondary)
+                    }
+                    if let loc = ins.location {
+                        Text("· \(loc)").font(EType.caption).foregroundStyle(palette.textSecondary)
+                    }
+                    if let notes = ins.notes, !notes.isEmpty, !passed {
+                        Text("· \(notes)").font(EType.caption).foregroundStyle(Brand.danger).lineLimit(1)
+                    }
+                }
+            }
+            Spacer()
+            Text((ins.status ?? (passed ? "Passed" : "Failed")).uppercased())
+                .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                .foregroundStyle(statusColor)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .overlay(Capsule().strokeBorder(statusColor.opacity(0.5), lineWidth: 1))
+        }
+        .padding(Space.s3)
+        .background(passed ? palette.bgCard : Brand.danger.opacity(0.04))
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+            .strokeBorder(passed ? palette.borderFaint : Brand.danger.opacity(0.35)))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    // MARK: - Hazmat
 
     @ViewBuilder
     private var hazmatContent: some View {
@@ -149,87 +236,60 @@ private struct RailComplianceBody: View {
         }
     }
 
-    private func inspectionRow(_ ins: RailInspection) -> some View {
-        let passed = ins.passed ?? (ins.status?.lowercased() == "passed")
-        let statusColor: Color = passed ? Brand.success : Brand.danger
-        return HStack(spacing: Space.s3) {
-            Image(systemName: passed ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(statusColor)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(ins.type ?? "Inspection").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                HStack(spacing: 6) {
-                    if let date = ins.date {
-                        Text(date).font(EType.caption).foregroundStyle(palette.textSecondary)
-                    }
-                    if let loc = ins.location {
-                        Text("· \(loc)").font(EType.caption).foregroundStyle(palette.textSecondary)
-                    }
-                }
-            }
-            Spacer()
-            Text((ins.status ?? (passed ? "Passed" : "Failed")).uppercased())
-                .font(.system(size: 8, weight: .heavy)).tracking(0.6)
-                .foregroundStyle(statusColor)
-                .padding(.horizontal, 8).padding(.vertical, 3)
-                .overlay(Capsule().strokeBorder(statusColor.opacity(0.5), lineWidth: 1))
-        }
-        .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-    }
-
     private func hazmatRow(_ permit: RailHazmatPermit) -> some View {
         let isExpiringSoon: Bool = {
             guard let exp = permit.expiresAt else { return false }
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd"
-            guard let date = formatter.date(from: exp) else { return false }
+            let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+            guard let date = f.date(from: exp) else { return false }
             return date.timeIntervalSinceNow < 30 * 86400
         }()
+        let color: Color = isExpiringSoon ? Brand.warning : Brand.success
         return HStack(spacing: Space.s3) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(isExpiringSoon ? Brand.warning : Brand.success)
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(color.opacity(0.12))
+                    .frame(width: 40, height: 40)
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(color)
+            }
             VStack(alignment: .leading, spacing: 2) {
-                Text(permit.commodity ?? "Hazmat Commodity").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                Text(permit.commodity ?? "Hazmat Commodity")
+                    .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
                 HStack(spacing: 6) {
                     if let num = permit.permitNumber {
                         Text(num).font(EType.mono(.micro)).tracking(0.4).foregroundStyle(palette.textSecondary)
                     }
                     if let exp = permit.expiresAt {
-                        Text("· Expires \(exp)").font(EType.caption).foregroundStyle(isExpiringSoon ? Brand.warning : palette.textSecondary)
+                        Text("· Expires \(exp)").font(EType.caption)
+                            .foregroundStyle(isExpiringSoon ? Brand.warning : palette.textSecondary)
                     }
                 }
             }
             Spacer()
             Text((permit.status ?? "Active").uppercased())
                 .font(.system(size: 8, weight: .heavy)).tracking(0.6)
-                .foregroundStyle(isExpiringSoon ? Brand.warning : Brand.success)
+                .foregroundStyle(color)
                 .padding(.horizontal, 8).padding(.vertical, 3)
-                .overlay(Capsule().strokeBorder(
-                    (isExpiringSoon ? Brand.warning : Brand.success).opacity(0.5), lineWidth: 1))
+                .overlay(Capsule().strokeBorder(color.opacity(0.5), lineWidth: 1))
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(
-            isExpiringSoon ? Brand.warning.opacity(0.35) : palette.borderFaint))
+        .background(isExpiringSoon ? Brand.warning.opacity(0.04) : palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+            .strokeBorder(isExpiringSoon ? Brand.warning.opacity(0.35) : palette.borderFaint))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
+
+    // MARK: - Load
 
     private func load() async {
         loading = true; loadError = nil
         struct ListIn: Encodable { let limit: Int }
         do {
             async let ins: [RailInspection] = EusoTripAPI.shared.query(
-                "railShipments.getRailInspections",
-                input: ListIn(limit: 50)
-            )
+                "railShipments.getRailInspections", input: ListIn(limit: 50))
             async let haz: [RailHazmatPermit] = EusoTripAPI.shared.query(
-                "railShipments.getRailHazmatPermits",
-                input: ListIn(limit: 50)
-            )
+                "railShipments.getRailHazmatPermits", input: ListIn(limit: 50))
             let (insp, permits) = try await (ins, haz)
             self.inspections = insp
             self.hazmatPermits = permits

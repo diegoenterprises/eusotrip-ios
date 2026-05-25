@@ -961,41 +961,85 @@ private struct DispatchDetailSheet: View {
     }
 
     /// Real action: post a status-check message to the load
-    /// conversation via `messaging.sendMessage`. The server resolves
-    /// or creates a load-scoped conversation per loadId so every
-    /// participant (shipper, catalyst, driver, dispatcher) lands on
-    /// the same thread.
+    /// conversation. Two-step:
+    ///   1. Resolve (or create) the load-scoped conversation via
+    ///      `messages.getOrCreateLoadConversation` so the catalyst /
+    ///      driver are participants.
+    ///   2. Send the status-check via the canonical `messages.sendMessage`
+    ///      with `{conversationId, content, type}` — the deprecated
+    ///      `messaging.sendMessage` route accepted `{to, content,
+    ///      messageType}` but is no longer wired, which is why this
+    ///      action silently no-op'd before (founder bug 2026-05-24).
     private func notifyCarrier() async {
-        struct In: Encodable {
-            let to: String
-            let content: String
-            let messageType: String
-        }
-        struct Out: Decodable { let id: String? }
+        struct ConvIn: Encodable { let loadId: String }
+        struct ConvOut: Decodable { let id: String }
+        struct SendIn: Encodable { let conversationId: String; let content: String; let type: String }
+        struct SendOut: Decodable { let id: String? }
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation(
-                "messaging.sendMessage",
-                input: In(
-                    to: load.id,
-                    content: "Status check on load \(load.loadNumber): can you confirm where you are and your current ETA?",
-                    messageType: "text"
-                )
+            let conv: ConvOut = try await EusoTripAPI.shared.mutation(
+                "messages.getOrCreateLoadConversation",
+                input: ConvIn(loadId: load.id)
+            )
+            let body = "Status check on load \(load.loadNumber): can you confirm where you are and your current ETA?"
+            let _: SendOut = try await EusoTripAPI.shared.mutation(
+                "messages.sendMessage",
+                input: SendIn(conversationId: conv.id, content: body, type: "text")
             )
         } catch {
-            // Surface failures via a toast on the next screen render.
-            // Silent error is preferable to a broken stub here — the
-            // founder will see the conversation populate on success.
+            // No safe place to surface — leave silent rather than
+            // crash the dispatch detail sheet. Next conversation open
+            // shows the actual delivery status.
         }
     }
 
-    /// Real action: jump to 310 eSangThreadList so the shipper can
-    /// pick up the load conversation immediately. Replaces the prior
-    /// MeAction.fire("dispatch.open-thread") observability stub.
+    /// Real action: resolve (or create) the load-scoped conversation
+    /// between shipper / catalyst / driver via the canonical
+    /// `messages.getOrCreateLoadConversation` proc, then jump
+    /// directly into 311 with that real conversationId.
+    ///
+    /// Founder bug 2026-05-24: previous impl posted screenId="310"
+    /// with loadId in userInfo, but 310 ignored the loadId and just
+    /// listed every ESANG thread the user owned. The shipper landed
+    /// on a generic list that had nothing to do with the load they
+    /// just tapped from — the "random ESANG chat" symptom.
     private func openLoadThread() {
-        NotificationCenter.default.post(
-            name: .eusoShipperNavSwap, object: nil,
-            userInfo: ["screenId": "310", "loadId": load.id]
-        )
+        struct In: Encodable { let loadId: String }
+        struct Out: Decodable {
+            let id: String
+            let existing: Bool?
+            let loadId: String?
+            let loadNumber: String?
+        }
+        Task {
+            do {
+                let r: Out = try await EusoTripAPI.shared.mutation(
+                    "messages.getOrCreateLoadConversation",
+                    input: In(loadId: load.id)
+                )
+                await MainActor.run {
+                    // Stash the resolved conversationId on the shared
+                    // bus — the screen registry constructs 311 with
+                    // conversationId="" so we can't pass it via the
+                    // nav-swap notification alone.
+                    LoadConversationContext.shared.pendingConversationId = r.id
+                    LoadConversationContext.shared.pendingLoadNumber = r.loadNumber ?? load.loadNumber
+                    NotificationCenter.default.post(
+                        name: .eusoShipperNavSwap, object: nil,
+                        userInfo: ["screenId": "311"]
+                    )
+                }
+            } catch {
+                // Server unreachable / load not found / not a participant.
+                // Fall back to the inbox list so the shipper can at
+                // least pick a thread manually.
+                await MainActor.run {
+                    NotificationCenter.default.post(
+                        name: .eusoShipperNavSwap, object: nil,
+                        userInfo: ["screenId": "310"]
+                    )
+                }
+            }
+        }
     }
 
     /// Real action: jump to 318 ESANG dispatch escalation with the

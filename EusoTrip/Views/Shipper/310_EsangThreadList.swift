@@ -59,10 +59,19 @@ private struct ThreadListBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkles").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text("SHIPPER · ESANG · THREADS").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+                Image(systemName: "bubble.left.and.bubble.right.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                // Rebranded 2026-05-24: founder mandate — this screen is
+                // the load + dispatch + broker + peer inbox, NOT the
+                // ESANG AI surface. ESANG AI lives at the orb. Calling
+                // it "eSang chat" made every conversation here look
+                // like an AI thread, which is what triggered the
+                // "what's the difference between Messages and ESANG"
+                // confusion.
+                Text("SHIPPER · MESSAGES · INBOX").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
-            Text("eSang chat").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            Text("Messages").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            Text("Conversations with dispatch, carriers, brokers, and load participants.")
+                .font(EType.caption).foregroundStyle(palette.textSecondary)
         }
     }
 
