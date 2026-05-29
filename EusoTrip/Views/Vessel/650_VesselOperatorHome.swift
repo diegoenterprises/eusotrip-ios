@@ -142,8 +142,8 @@ private struct VesselOperatorHomeBody: View {
     }
 
     private var headline: String {
-        let first = session.user?.firstName
-            .flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
+        let rawFirst = session.user?.firstName
+        let first: String? = rawFirst.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
         let hour = Calendar.current.component(.hour, from: Date())
         let sal: String
         switch hour {

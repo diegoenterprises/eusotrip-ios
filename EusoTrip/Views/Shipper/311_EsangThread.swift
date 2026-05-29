@@ -150,7 +150,7 @@ private struct eSangThreadBody: View {
                 Text("Couldn't load messages").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
                 Text(err).font(EType.caption).foregroundStyle(Brand.danger)
                 Button("Retry") { Task { await load() } }
-                    .font(EType.captionStrong)
+                    .font(EType.caption)
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(palette.bgCard)
                     .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(palette.borderFaint))
@@ -195,7 +195,7 @@ private struct eSangThreadBody: View {
                     Text(err).font(EType.caption).foregroundStyle(Brand.danger)
                     Spacer()
                     Button("Dismiss") { sendError = nil }
-                        .font(EType.captionStrong)
+                        .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                 }
                 .padding(.horizontal, 14).padding(.vertical, 6)
