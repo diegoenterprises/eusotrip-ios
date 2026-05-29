@@ -167,12 +167,12 @@ private struct VesselStatusUpdateBody: View {
 
     private func confirm() async {
         submitting = true; errorText = nil
-        struct StatusIn: Encodable { let id: Int; let status: String }
+        struct StatusIn: Encodable { let id: Int; let newStatus: String }
         struct Empty657: Decodable {}
         do {
             let _: Empty657 = try await EusoTripAPI.shared.mutation(
                 "vesselShipments.updateVesselShipmentStatus",
-                input: StatusIn(id: bookingId, status: selected))
+                input: StatusIn(id: bookingId, newStatus: selected))
             done = true
         } catch {
             errorText = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

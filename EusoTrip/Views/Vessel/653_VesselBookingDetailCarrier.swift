@@ -242,12 +242,12 @@ private struct VesselBookingDetailCarrierBody: View {
 
     private func updateStatus() async {
         updating = true
-        struct StatusIn: Encodable { let id: Int; let status: String }
+        struct StatusIn: Encodable { let id: Int; let newStatus: String }
         struct Empty653: Decodable {}
         do {
             let _: Empty653 = try await EusoTripAPI.shared.mutation(
                 "vesselShipments.updateVesselShipmentStatus",
-                input: StatusIn(id: shipmentId, status: "arrived"))
+                input: StatusIn(id: shipmentId, newStatus: "arrived"))
             await load()
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
