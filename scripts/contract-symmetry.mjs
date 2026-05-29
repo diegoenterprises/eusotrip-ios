@@ -35,6 +35,7 @@ const arg = (k, d) => {
   return hit ? hit.slice(k.length + 3) : d;
 };
 const JSON_OUT = process.argv.includes("--json");
+const SUMMARY = process.argv.includes("--summary"); // id-field drift census
 const IOS_ROOT = path.resolve(arg("ios", "."));
 const WEB_ROOT = path.resolve(arg("web", path.join(IOS_ROOT, "..", "eusoronetechnologiesinc")));
 const ROUTERS_DIR = path.join(WEB_ROOT, "frontend", "server", "routers");
@@ -183,6 +184,60 @@ function parseZod() {
   }
   return byProc;
 }
+
+// ── --summary: id-field type-drift census ───────────────────────────────────
+// Population scan (ALL `<x>Id` fields, not just matched inputs) of iOS String/Int
+// vs server z.string/number/coerce. Shows the DRIFT SURFACE: where the iOS and
+// server type populations conflict (iOS String → z.number, or iOS Int →
+// z.string, both of which fail Zod). It does NOT pair specific callsites to
+// specific procs (that's the per-proc diff above, which is precision-limited);
+// it's the upper-bound surface to prioritise a per-field audit.
+function summarize() {
+  const ios = {};
+  for (const f of walk(IOS_SRC, (p) => p.endsWith(".swift"))) {
+    const txt = fs.readFileSync(f, "utf8");
+    const re = /\blet\s+([A-Za-z_]\w*Id)\s*:\s*(String|Int)\b/g;
+    let m; while ((m = re.exec(txt))) ((ios[m[1]] ??= { String: 0, Int: 0 })[m[2]]++);
+  }
+  const srv = {};
+  for (const f of walk(ROUTERS_DIR, (p) => p.endsWith(".ts"))) {
+    const txt = fs.readFileSync(f, "utf8");
+    const re = /\b([A-Za-z_]\w*Id)\s*:\s*z\.(coerce\.number|number|string)\(\)/g;
+    let m; while ((m = re.exec(txt))) {
+      const k = m[2] === "coerce.number" ? "coerce" : m[2];
+      ((srv[m[1]] ??= { string: 0, number: 0, coerce: 0 })[k]++);
+    }
+  }
+  const rows = [...new Set([...Object.keys(ios), ...Object.keys(srv)])].map((fld) => {
+    const i = ios[fld] || { String: 0, Int: 0 };
+    const s = srv[fld] || { string: 0, number: 0, coerce: 0 };
+    const strToNum = i.String > 0 && s.number > 0; // iOS String → z.number FAILS
+    const intToStr = i.Int > 0 && s.string > 0;     // iOS Int → z.string FAILS
+    return { fld, i, s, risk: strToNum || intToStr, strToNum, intToStr };
+  }).filter((r) => (r.i.String + r.i.Int) > 0 && (r.s.string + r.s.number + r.s.coerce) > 0)
+    .sort((a, b) => (b.risk - a.risk) || ((b.i.String + b.i.Int) - (a.i.String + a.i.Int)));
+
+  if (JSON_OUT) { console.log(JSON.stringify(rows, null, 2)); return; }
+  const C = { red: "\x1b[31m", yel: "\x1b[33m", grn: "\x1b[32m", dim: "\x1b[2m", rst: "\x1b[0m", b: "\x1b[1m" };
+  console.log(`${C.b}id-field type-drift census${C.rst}  (iOS String/Int  vs  server z.string/number/coerce)\n`);
+  console.log(`${C.dim}field                iOS S/I        server str/num/coerce   verdict${C.rst}`);
+  let atRisk = 0;
+  for (const r of rows) {
+    const iosCol = `${r.i.String}/${r.i.Int}`.padEnd(13);
+    const srvCol = `${r.s.string}/${r.s.number}/${r.s.coerce}`.padEnd(22);
+    let v;
+    if (r.strToNum && r.intToStr) v = `${C.red}BIDIRECTIONAL drift${C.rst}`;
+    else if (r.strToNum) v = `${C.red}iOS String → z.number (fails)${C.rst}`;
+    else if (r.intToStr) v = `${C.red}iOS Int → z.string (fails)${C.rst}`;
+    else if (r.s.number > 0 && r.s.coerce > 0) v = `${C.yel}server mixes number+coerce${C.rst}`;
+    else v = `${C.grn}aligned${C.rst}`;
+    if (r.risk) atRisk++;
+    console.log(`${r.fld.padEnd(20)} ${iosCol} ${srvCol} ${v}`);
+  }
+  console.log(`\n${C.b}${atRisk}${C.rst} id-fields with a type-drift surface (iOS+server populations conflict).`);
+  console.log(`${C.dim}Surface ≠ confirmed bugs: a field can be z.string in proc A (iOS sends String) and z.number in proc B (iOS sends Int) and be fine per-proc. Use the per-proc diff (default mode) to confirm specific callsites; widen numeric-PK ids to z.coerce.number() (like loadId) where the underlying column is int.${C.rst}`);
+}
+if (SUMMARY) { summarize(); process.exit(0); }
 
 // ── diff ─────────────────────────────────────────────────────────────────────
 const ios = parseIOS();
