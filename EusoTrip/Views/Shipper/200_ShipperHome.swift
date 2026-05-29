@@ -70,6 +70,10 @@ struct ShipperHome: View {
     /// doesn't ask for my location so it doesn't load the weather
     /// widget for shipper or driver role".
     @State private var weatherNeedsLocation: Bool = false
+    /// The signed-in user's avatar photo (users.profilePicture, stored as a
+    /// base64 data URL by profile.updateAvatar). Fetched on appear + on
+    /// .eusoProfileUpdated; duAvatar renders it, falling back to initials.
+    @State private var avatarImage: UIImage? = nil
 
     // ── Home-widget customization — uses shared HomeWidgetGrid + HomeWidgetCatalog. ──
     private let widgetLayoutKey = "shipper.home.widgetOrder"
@@ -142,6 +146,11 @@ struct ShipperHome: View {
         .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
             Task { await refreshAll() }
         }
+        // Avatar changed (this device's upload posts .eusoProfileUpdated, or a
+        // remote profile edit arrives via RealtimeService) — re-fetch the photo.
+        .onReceive(NotificationCenter.default.publisher(for: .eusoProfileUpdated)) { _ in
+            Task { await loadAvatar() }
+        }
         .fullScreenCover(isPresented: $showMessages) {
             MessagesScreen()
                 .environment(\.palette, palette)
@@ -154,9 +163,10 @@ struct ShipperHome: View {
         async let b: Void = alerts.refresh()
         async let c: Void = active.refresh()
         async let d: Void = recent.refresh()
+        async let av: Void = loadAvatar()
         async let w: WeatherSnapshot? = WeatherService.shared.fetchCurrent()
         let snap = await w
-        _ = await (a, b, c, d)
+        _ = await (a, b, c, d, av)
         weather = snap
         // Resolve CTA visibility from the post-fetch authorization
         // status so the home renders an "Enable location" affordance
@@ -296,6 +306,27 @@ struct ShipperHome: View {
     /// hardcoded fallback shipped the founder's name to every cold-
     /// start screen, which was the "discombobulated welcome back" the
     /// user flagged 2026-05-04).
+    /// Fetch the signed-in user's avatar (users.profilePicture, a base64 data
+    /// URL written by profile.updateAvatar) via profile.getMyProfile and decode
+    /// it for duAvatar. Cosmetic — any failure silently keeps the initials.
+    private func loadAvatar() async {
+        struct Out: Decodable { let avatar: String? }
+        do {
+            let out: Out = try await EusoTripAPI.shared.queryNoInput("profile.getMyProfile")
+            let img = Self.decodeAvatarDataURL(out.avatar)
+            await MainActor.run { avatarImage = img }
+        } catch {
+            // Cosmetic — leave the initials fallback in place.
+        }
+    }
+
+    private static func decodeAvatarDataURL(_ s: String?) -> UIImage? {
+        guard let s, !s.isEmpty else { return nil }
+        let b64 = s.contains(",") ? String(s.split(separator: ",").last ?? "") : s
+        guard let data = Data(base64Encoded: b64), let img = UIImage(data: data) else { return nil }
+        return img
+    }
+
     private var headline: String {
         let first = (session.user?.firstName)
             .flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
@@ -358,10 +389,21 @@ struct ShipperHome: View {
         } label: {
             ZStack(alignment: .topTrailing) {
                 ZStack {
-                    Circle().fill(LinearGradient.diagonal)
-                    Text(initials)
-                        .font(.system(size: 14, weight: .bold)).tracking(0.4)
-                        .foregroundStyle(.white)
+                    if let avatarImage {
+                        // Uploaded photo (decoded from users.profilePicture's
+                        // base64 data URL) with a brand-gradient ring.
+                        Image(uiImage: avatarImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 40, height: 40)
+                            .clipShape(Circle())
+                            .overlay(Circle().strokeBorder(LinearGradient.diagonal, lineWidth: 1.5))
+                    } else {
+                        Circle().fill(LinearGradient.diagonal)
+                        Text(initials)
+                            .font(.system(size: 14, weight: .bold)).tracking(0.4)
+                            .foregroundStyle(.white)
+                    }
                 }
                 .frame(width: 40, height: 40)
 
