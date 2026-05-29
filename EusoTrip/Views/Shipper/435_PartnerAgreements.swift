@@ -65,6 +65,12 @@ private struct PartnerAgreementsBody: View {
     @State private var selected: String = "awaitingMe"
     @State private var dragHoverColumn: String? = nil
     @State private var presentedPDF: EusoPDFPresentation? = nil
+    /// The agreement awaiting a drawn signature — drives the gradient
+    /// signature pad. Both the drag-to-SIGNED drop and the card "Sign"
+    /// button open the pad; `agreements.sign` fires only after the user
+    /// draws. (The server REQUIRES a Gradient-Ink `signatureData` +
+    /// `signatureRole`, so the prior signature-less drag could never sign.)
+    @State private var signPadFor: AgreementRow? = nil
 
     private func columnId(for status: String) -> String {
         let s = status.lowercased()
@@ -119,6 +125,18 @@ private struct PartnerAgreementsBody: View {
         .refreshable { await load() }
         .fullScreenCover(item: $presentedPDF) { p in
             EusoPDFViewer(title: p.title, subtitle: p.subtitle, source: .url(p.url))
+        }
+        .sheet(item: $signPadFor) { row in
+            // Bespoke gradient signature pad (EusoSignaturePadSheet) — the same
+            // on-screen gradient-ink capture the agreements PDF viewer uses.
+            // Returns the drawn signature as a PNG; we base64 it for
+            // agreements.sign (the server requires a real signatureData).
+            EusoSignaturePadSheet { image in
+                signPadFor = nil
+                let b64 = image.pngData()?.base64EncodedString() ?? ""
+                Task { await sign(row, signatureData: b64) }
+            }
+            .presentationDetents([.large])
         }
     }
 
@@ -237,7 +255,7 @@ private struct PartnerAgreementsBody: View {
             guard col.id == "signed", src.status.lowercased() == "pending_shipper" else {
                 return false
             }
-            Task { await sign(src) }
+            signPadFor = src
             return true
         } isTargeted: { hovering in
             dragHoverColumn = hovering ? col.id : (dragHoverColumn == col.id ? nil : dragHoverColumn)
@@ -279,7 +297,7 @@ private struct PartnerAgreementsBody: View {
                         }.buttonStyle(.plain)
                     }
                     if columnId == "awaitingMe" {
-                        Button { Task { await sign(a) } } label: {
+                        Button { signPadFor = a } label: {
                             HStack(spacing: 6) {
                                 if isSigning { ProgressView().tint(.white) }
                                 Text(isSigning ? "Signing…" : "Sign")
@@ -346,14 +364,23 @@ private struct PartnerAgreementsBody: View {
         loading = false
     }
 
-    private func sign(_ a: AgreementRow) async {
+    private func sign(_ a: AgreementRow, signatureData: String) async {
         await MainActor.run { signing = a.id; actionError = nil }
-        struct In: Encodable { let agreementId: String }
-        struct Out: Decodable { let success: Bool? }
+        // agreements.sign REQUIRES a Gradient-Ink signatureData (base64 PNG)
+        // + signatureRole + a NUMERIC agreementId. The prior call sent only a
+        // String agreementId and no signature, so it failed Zod validation
+        // every time — drag-to-sign never actually signed. Send the drawn
+        // signature via the typed accessor.
+        guard let idNum = Int(a.id) else {
+            await MainActor.run { actionError = "Couldn't resolve agreement id."; signing = nil }
+            return
+        }
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation(
-                "agreements.sign",
-                input: In(agreementId: a.id)
+            _ = try await EusoTripAPI.shared.agreements.sign(
+                agreementId: idNum,
+                signatureBase64: signatureData,
+                signatureRole: "shipper",
+                signerName: nil
             )
             await MainActor.run {
                 lastSigned = "Signed \(a.agreementNumber) · counterparty sees AGREEMENT_SIGNED"
