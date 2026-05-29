@@ -504,7 +504,11 @@ struct EusoSignaturePadSheet: View {
                         context.stroke(
                             path,
                             with: .linearGradient(
-                                Gradient(colors: [Brand.blue, Brand.magenta]),
+                                // Canonical 3-stop EusoTrip brand gradient
+                                // (#1473FF → #7B3AFF → #BE01FF) — matches
+                                // GradientSignaturePad so every signing surface
+                                // renders the identical brand ink.
+                                Gradient(colors: [Brand.blue, Color(hex: 0x7B3AFF), Brand.magenta]),
                                 startPoint: .zero,
                                 endPoint: CGPoint(x: size.width, y: size.height)
                             ),
@@ -601,14 +605,13 @@ struct EusoSignaturePadSheet: View {
             cg.setLineWidth(3 / max(scaleX, 1))
             cg.setLineCap(.round)
             cg.setLineJoin(.round)
-            // Gradient ink: render each stroke segment with a linear
-            // gradient. Keep simple — UIKit doesn't expose
-            // CGContext.linearGradient on a stroked path directly,
-            // so use brand magenta as the rasterized ink color
-            // (the SwiftUI canvas already shows the gradient
-            // preview).
+            // Gradient ink: clip to the stroked path and fill with the
+            // canonical 3-stop EusoTrip brand gradient so the rasterized
+            // signature matches the on-screen gradient ink exactly
+            // (#1473FF → #7B3AFF → #BE01FF).
             let cgColors = [
                 UIColor(Brand.blue).cgColor,
+                UIColor(Color(hex: 0x7B3AFF)).cgColor,
                 UIColor(Brand.magenta).cgColor
             ]
             for stroke in strokes {
@@ -623,7 +626,7 @@ struct EusoSignaturePadSheet: View {
                 if let grad = CGGradient(
                     colorsSpace: CGColorSpaceCreateDeviceRGB(),
                     colors: cgColors as CFArray,
-                    locations: [0.0, 1.0]
+                    locations: [0.0, 0.5, 1.0]
                 ) {
                     cg.drawLinearGradient(
                         grad,

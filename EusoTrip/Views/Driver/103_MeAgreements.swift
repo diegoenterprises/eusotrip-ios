@@ -558,13 +558,23 @@ private struct SignSheet: View {
 
     private var signaturePad: some View {
         Canvas { ctx, size in
+            // Gradient ink — strokes render in the EusoTrip brand gradient
+            // (#1473FF → #7B3AFF → #BE01FF) in real time as the driver draws,
+            // matching GradientSignaturePad + the founder signature-ink mandate.
+            // Was `.color(.primary)` (solid system ink) despite this screen's
+            // "Gradient-Ink signature" label — the label now tells the truth.
+            let shading = GraphicsContext.Shading.linearGradient(
+                Gradient(colors: [Brand.blue, Color(hex: 0x7B3AFF), Brand.magenta]),
+                startPoint: .zero,
+                endPoint: CGPoint(x: size.width, y: 0)
+            )
             for stroke in strokes where stroke.count > 1 {
                 var path = Path()
                 path.move(to: stroke[0])
                 for pt in stroke.dropFirst() {
                     path.addLine(to: pt)
                 }
-                ctx.stroke(path, with: .color(.primary), lineWidth: 2)
+                ctx.stroke(path, with: shading, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
             }
         }
         .gesture(
@@ -582,20 +592,39 @@ private struct SignSheet: View {
     /// the server can SHA-256 the bytes and stash them as the
     /// agreement's signature hash.
     private func encodeSignatureBase64() -> String {
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 200))
+        let size = CGSize(width: 600, height: 200)
+        let renderer = UIGraphicsImageRenderer(size: size)
         let image = renderer.image { ctx in
             UIColor.white.setFill()
-            ctx.fill(CGRect(x: 0, y: 0, width: 600, height: 200))
-            UIColor.black.setStroke()
-            let path = UIBezierPath()
-            path.lineWidth = 2
+            ctx.fill(CGRect(origin: .zero, size: size))
+            // Gradient ink — clip to the stroked path and fill with the
+            // EusoTrip brand gradient so the saved (and server-SHA-256'd)
+            // signature image matches the on-screen gradient (was solid black).
+            let cg = ctx.cgContext
+            let cgPath = CGMutablePath()
             for stroke in strokes where stroke.count > 1 {
-                path.move(to: stroke[0])
+                cgPath.move(to: stroke[0])
                 for pt in stroke.dropFirst() {
-                    path.addLine(to: pt)
+                    cgPath.addLine(to: pt)
                 }
             }
-            path.stroke()
+            cg.addPath(cgPath)
+            cg.setLineWidth(3)
+            cg.setLineCap(.round)
+            cg.setLineJoin(.round)
+            cg.replacePathWithStrokedPath()
+            cg.clip()
+            if let grad = CGGradient(
+                colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                colors: [
+                    UIColor(red: 20/255,  green: 115/255, blue: 255/255, alpha: 1).cgColor,
+                    UIColor(red: 123/255, green: 58/255,  blue: 255/255, alpha: 1).cgColor,
+                    UIColor(red: 190/255, green: 1/255,   blue: 255/255, alpha: 1).cgColor,
+                ] as CFArray,
+                locations: [0, 0.5, 1]
+            ) {
+                cg.drawLinearGradient(grad, start: .zero, end: CGPoint(x: size.width, y: 0), options: [])
+            }
         }
         return image.pngData()?.base64EncodedString() ?? ""
     }
