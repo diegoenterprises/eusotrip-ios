@@ -50,6 +50,65 @@ private struct Scorecard574: Decodable {
     let tenderAcceptDelta: Double?
     let billingAccuracyPercent: Double?
     let billingAccuracyDelta: Double?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Try direct flat mapping first (for backward compatibility)
+        compositeScore = try? c.decode(Double.self, forKey: .compositeScore)
+        compositeGrade = try? c.decode(String.self, forKey: .compositeGrade)
+        qoqDelta = try? c.decode(Double.self, forKey: .qoqDelta)
+        carrierCount = try? c.decode(Int.self, forKey: .carrierCount)
+        carCount = try? c.decode(Int.self, forKey: .carCount)
+        period = try? c.decode(String.self, forKey: .period)
+        ontimePercent = try? c.decode(Double.self, forKey: .ontimePercent)
+        ontimeDelta = try? c.decode(Double.self, forKey: .ontimeDelta)
+        claimsFreePercent = try? c.decode(Double.self, forKey: .claimsFreePercent)
+        claimsFreeDelta = try? c.decode(Double.self, forKey: .claimsFreeDelta)
+        tenderAcceptPercent = try? c.decode(Double.self, forKey: .tenderAcceptPercent)
+        tenderAcceptDelta = try? c.decode(Double.self, forKey: .tenderAcceptDelta)
+        billingAccuracyPercent = try? c.decode(Double.self, forKey: .billingAccuracyPercent)
+        billingAccuracyDelta = try? c.decode(Double.self, forKey: .billingAccuracyDelta)
+        
+        // If flat fields not present, map from server's actual shape:
+        // overallScore → compositeScore, grade → compositeGrade, metrics.* → percent fields
+        if compositeScore == nil {
+            compositeScore = try? c.decode(Double.self, forKey: CodingKeys(stringValue: "overallScore") ?? .compositeScore)
+        }
+        if compositeGrade == nil {
+            compositeGrade = try? c.decode(String.self, forKey: CodingKeys(stringValue: "grade") ?? .compositeGrade)
+        }
+        if ontimePercent == nil, let metrics = try? c.nestedContainer(keyedBy: MetricsCodingKeys.self, forKey: CodingKeys(stringValue: "metrics") ?? .compositeScore),
+           let onTimeDelivery = try? metrics.nestedContainer(keyedBy: MetricsFieldCodingKeys.self, forKey: .onTimeDelivery) {
+            ontimePercent = try? onTimeDelivery.decode(Double.self, forKey: .rate)
+        }
+        if claimsFreePercent == nil, let metrics = try? c.nestedContainer(keyedBy: MetricsCodingKeys.self, forKey: CodingKeys(stringValue: "metrics") ?? .compositeScore),
+           let safety = try? metrics.nestedContainer(keyedBy: MetricsFieldCodingKeys.self, forKey: .safety) {
+            claimsFreePercent = try? safety.decode(Double.self, forKey: .score)
+        }
+        if tenderAcceptPercent == nil, let metrics = try? c.nestedContainer(keyedBy: MetricsCodingKeys.self, forKey: CodingKeys(stringValue: "metrics") ?? .compositeScore),
+           let bidAcceptance = try? metrics.nestedContainer(keyedBy: MetricsFieldCodingKeys.self, forKey: .bidAcceptance) {
+            tenderAcceptPercent = try? bidAcceptance.decode(Double.self, forKey: .rate)
+        }
+        if billingAccuracyPercent == nil, let metrics = try? c.nestedContainer(keyedBy: MetricsCodingKeys.self, forKey: CodingKeys(stringValue: "metrics") ?? .compositeScore),
+           let completionRate = try? metrics.nestedContainer(keyedBy: MetricsFieldCodingKeys.self, forKey: .completionRate) {
+            billingAccuracyPercent = try? completionRate.decode(Double.self, forKey: .rate)
+        }
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case compositeScore, compositeGrade, qoqDelta, carrierCount, carCount, period
+        case ontimePercent, ontimeDelta, claimsFreePercent, claimsFreeDelta
+        case tenderAcceptPercent, tenderAcceptDelta, billingAccuracyPercent, billingAccuracyDelta
+    }
+    
+    enum MetricsCodingKeys: String, CodingKey {
+        case onTimeDelivery, safety, compliance, completionRate, bidAcceptance, hazmat
+    }
+    
+    enum MetricsFieldCodingKeys: String, CodingKey {
+        case rate, score
+    }
 }
 
 private struct TrendData574: Decodable {
@@ -426,7 +485,14 @@ private struct RailCarrierScorecardBody: View {
     private func compareCarriers() async {
         isComparing = true
         struct EmptyIn: Encodable {}
-        struct CompareOut: Decodable {}
+        struct CompareOut: Decodable {
+            init(from decoder: Decoder) throws {
+                // Server returns a bare array of carrier comparison objects.
+                // Decode and discard — we don't use the data yet.
+                let c = try decoder.singleValueContainer()
+                _ = try c.decode([AnyCodable].self)
+            }
+        }
         do {
             let _: CompareOut = try await EusoTripAPI.shared.query(
                 "carrierScorecard.compareScorecards", input: EmptyIn())

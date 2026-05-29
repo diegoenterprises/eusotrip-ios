@@ -55,6 +55,26 @@ private struct RailShipmentDetail553: Decodable {
     let consistNumber: String?
     let events: [RailEvent553]?
     let demurrage: [RailDemurrageRow553]?
+    
+    enum CodingKeys: String, CodingKey {
+        case id, loadId, origin, destination, status, carsCount, commodity, estimatedArrival, carrierName, consistNumber, events, demurrage
+    }
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(Int.self, forKey: .id)
+        self.loadId = try c.decodeIfPresent(String.self, forKey: .loadId)
+        self.origin = try c.decodeIfPresent(String.self, forKey: .origin)
+        self.destination = try c.decodeIfPresent(String.self, forKey: .destination)
+        self.status = try c.decodeIfPresent(String.self, forKey: .status)
+        self.carsCount = try c.decodeIfPresent(Int.self, forKey: .carsCount)
+        self.commodity = try c.decodeIfPresent(String.self, forKey: .commodity)
+        self.estimatedArrival = try c.decodeIfPresent(String.self, forKey: .estimatedArrival)
+        self.carrierName = try c.decodeIfPresent(String.self, forKey: .carrierName)
+        self.consistNumber = try c.decodeIfPresent(String.self, forKey: .consistNumber)
+        self.events = try c.decodeIfPresent([RailEvent553].self, forKey: .events)
+        self.demurrage = try c.decodeIfPresent([RailDemurrageRow553].self, forKey: .demurrage)
+    }
 }
 
 private struct RailShipmentDetailCarrierBody: View {

@@ -156,7 +156,20 @@ private struct RailStatusUpdateBody: View {
     private func confirm() async {
         submitting = true; errorText = nil
         struct StatusIn: Encodable { let id: Int; let status: String }
-        struct Empty557: Decodable {}
+        struct Empty557: Decodable {
+            let success: Bool
+            let newStatus: String
+            
+            private enum CodingKeys: String, CodingKey {
+                case success, newStatus
+            }
+            
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                self.success = try c.decode(Bool.self, forKey: .success)
+                self.newStatus = try c.decode(String.self, forKey: .newStatus)
+            }
+        }
         do {
             _ = try await EusoTripAPI.shared.mutation(
                 "railShipments.updateRailShipmentStatus",

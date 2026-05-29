@@ -42,6 +42,83 @@ private struct CustodyBlock567: Decodable, Identifiable {
     let previousBlockHash: String?
     let timestamp: String?
     let blockIndex: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id, eventType, eventData, blockHash, previousBlockHash, timestamp, blockIndex
+        case loadId  // Present in server response but not decoded into struct
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id                 = try c.decode(Int.self, forKey: .id)
+        self.eventType          = try c.decodeIfPresent(String.self, forKey: .eventType)
+        self.blockHash          = try c.decodeIfPresent(String.self, forKey: .blockHash)
+        self.previousBlockHash  = try c.decodeIfPresent(String.self, forKey: .previousBlockHash)
+        self.timestamp          = try c.decodeIfPresent(String.self, forKey: .timestamp)
+        self.blockIndex         = try c.decodeIfPresent(Int.self, forKey: .blockIndex)
+        // Server returns eventData as either String or parsed JSON object.
+        // Try String first, then fall back to decoding as Any and JSON-encoding it back.
+        if let s = try c.decodeIfPresent(String.self, forKey: .eventData) {
+            self.eventData = s
+        } else if let obj = try c.decodeIfPresent(AnyCodable.self, forKey: .eventData) {
+            // If server sent a JSON object, encode it back to string
+            if let data = try? JSONEncoder().encode(obj),
+               let jsonStr = String(data: data, encoding: .utf8) {
+                self.eventData = jsonStr
+            } else {
+                self.eventData = nil
+            }
+        } else {
+            self.eventData = nil
+        }
+    }
+}
+
+// AnyCodable helper for decoding unknown JSON structures
+private struct AnyCodable: Codable {
+    let value: Any
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() {
+            self.value = NSNull()
+        } else if let b = try? c.decode(Bool.self) {
+            self.value = b
+        } else if let i = try? c.decode(Int.self) {
+            self.value = i
+        } else if let d = try? c.decode(Double.self) {
+            self.value = d
+        } else if let s = try? c.decode(String.self) {
+            self.value = s
+        } else if let arr = try? c.decode([AnyCodable].self) {
+            self.value = arr.map { $0.value }
+        } else if let dict = try? c.decode([String: AnyCodable].self) {
+            self.value = dict.mapValues { $0.value }
+        } else {
+            throw DecodingError.dataCorruptedError(in: c, debugDescription: "Unable to decode AnyCodable")
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        if value is NSNull {
+            try c.encodeNil()
+        } else if let b = value as? Bool {
+            try c.encode(b)
+        } else if let i = value as? Int {
+            try c.encode(i)
+        } else if let d = value as? Double {
+            try c.encode(d)
+        } else if let s = value as? String {
+            try c.encode(s)
+        } else if let arr = value as? [Any] {
+            try c.encode(arr.map { AnyCodable(value: $0) })
+        } else if let dict = value as? [String: Any] {
+            try c.encode(dict.mapValues { AnyCodable(value: $0) })
+        } else {
+            throw EncodingError.invalidValue(value, EncodingError.Context(codingPath: [], debugDescription: "Unable to encode value of type \(type(of: value))"))
+        }
+    }
 }
 
 private struct ChainVerification567: Decodable {
@@ -51,6 +128,36 @@ private struct ChainVerification567: Decodable {
     let lastVerifiedAt: String?
     let genesisIntact: Bool?
     let consistInfo: String?
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // Map server's "valid" → iOS "isValid"
+        self.isValid = try c.decodeIfPresent(Bool.self, forKey: .isValid)
+        // Server does not send blocksVerified; derive from blockCount if present
+        if let blockCount = try c.decodeIfPresent(Int.self, forKey: .blocksVerified) {
+            self.blocksVerified = blockCount
+        } else {
+            self.blocksVerified = nil
+        }
+        // Map server's "issues" array length → iOS "breakCount"
+        if let issues = try c.decodeIfPresent([String].self, forKey: .breakCount) {
+            self.breakCount = issues.count
+        } else {
+            self.breakCount = nil
+        }
+        self.lastVerifiedAt = try c.decodeIfPresent(String.self, forKey: .lastVerifiedAt)
+        self.genesisIntact = try c.decodeIfPresent(Bool.self, forKey: .genesisIntact)
+        self.consistInfo = try c.decodeIfPresent(String.self, forKey: .consistInfo)
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case isValid = "valid"
+        case blocksVerified = "blockCount"
+        case breakCount = "issues"
+        case lastVerifiedAt
+        case genesisIntact
+        case consistInfo
+    }
 }
 
 // MARK: - Body

@@ -40,12 +40,92 @@ private struct DieselIndex577: Decodable {
     let wowDeltaCents: Double?
     let fscRate: Double?
     let updatedDay: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case source, weekOf, nationalAverage, padd1, padd2, padd3, padd4, padd5, note
+    }
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        pricePerGallon = try c.decodeIfPresent(Double.self, forKey: .nationalAverage)
+        weekLabel = try c.decodeIfPresent(String.self, forKey: .weekOf)
+        wowDeltaCents = nil  // Server does not provide week-over-week delta
+        fscRate = nil        // Server does not provide FSC rate; calculateSteppedFsc endpoint provides that
+        updatedDay = try c.decodeIfPresent(String.self, forKey: .weekOf)
+    }
 }
 
 private struct FscTracking577: Decodable {
     let appliedMtdUsd: Double?
     let perMileUsd: Double?
     let laneCount: Int?
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Try to decode as flat object first (for iOS-only responses)
+        if let mtd = try? container.decode(Double?.self, forKey: .appliedMtdUsd) {
+            self.appliedMtdUsd = mtd
+            self.perMileUsd = try? container.decode(Double?.self, forKey: .perMileUsd)
+            self.laneCount = try? container.decode(Int?.self, forKey: .laneCount)
+            return
+        }
+        
+        // Otherwise decode server envelope: { surcharges: [...], summary: {...} }
+        struct Envelope: Decodable {
+            struct Summary: Decodable {
+                let total: Int?
+                let totalAmount: Double?
+                let avgRate: Double?
+                let currentDOEPrice: Double?
+            }
+            let summary: Summary?
+        }
+        
+        let envelope = try Envelope(from: decoder)
+        self.appliedMtdUsd = envelope.summary?.totalAmount
+        self.perMileUsd = envelope.summary?.avgRate
+        self.laneCount = envelope.summary?.total
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case appliedMtdUsd
+        case perMileUsd
+        case laneCount
+    }
+}
+
+/// Wrapper to decode server's FSC calculation envelope and adapt to array interface.
+/// Server returns: {carrier, method, dieselPrice, baselinePrice, dieselOverBaseCents,
+/// stepsAboveBase, centsPerMile, mileage, fscPerCar, railcarCount, totalFsc}.
+/// iOS expects [FscBand577] with band details. We decode the envelope, synthesize a
+/// single FscBand577 from the calculation result, and return it wrapped in an array.
+private struct FscCalcEnvelope: Decodable {
+    let carrier: String?
+    let method: String?
+    let dieselPrice: Double?
+    let baselinePrice: Double?
+    let dieselOverBaseCents: Int?
+    let stepsAboveBase: Int?
+    let centsPerMile: Double?
+    let mileage: Double?
+    let fscPerCar: Double?
+    let railcarCount: Int?
+    let totalFsc: Double?
+    
+    /// Convert envelope to a single FscBand577 for backwards compatibility with the
+    /// iOS view expecting [FscBand577].
+    func asBand() -> FscBand577 {
+        FscBand577(
+            id: Int(mileage ?? 0),
+            bandNumber: stepsAboveBase,
+            bandName: "Stepped FSC",
+            minPriceGal: baselinePrice,
+            maxPriceGal: dieselPrice,
+            surchargePercent: centsPerMile.map { $0 * 100 },
+            isActive: true
+        )
+    }
 }
 
 private struct FscBand577: Decodable, Identifiable {

@@ -40,7 +40,7 @@ private struct FinancialSummary581: Decodable {
 
 private struct Settlement581: Decodable, Identifiable {
     let id: Int
-    let loadId: String?
+    let loadId: Int?
     let shipmentNumber: String?
     let origin: String?
     let destination: String?

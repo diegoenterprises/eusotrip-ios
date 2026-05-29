@@ -66,6 +66,53 @@ private struct VesselShipmentDetail653: Decodable {
     let events: [VesselEvent653]?
     let containers: [OceanContainer653]?
     let demurrage: [VesselDemurrageRow653]?
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(Int.self, forKey: .id)
+        self.bookingNumber = try c.decodeIfPresent(String.self, forKey: .bookingNumber)
+        self.status = try c.decodeIfPresent(String.self, forKey: .status)
+        self.voyageNumber = try c.decodeIfPresent(String.self, forKey: .voyageNumber)
+        self.events = try c.decodeIfPresent([VesselEvent653].self, forKey: .events)
+        self.containers = try c.decodeIfPresent([OceanContainer653].self, forKey: .containers)
+        self.demurrage = try c.decodeIfPresent([VesselDemurrageRow653].self, forKey: .demurrage)
+        
+        // Extract port names from port objects
+        if let originPortObj = try c.decodeIfPresent([String: AnyCodable].self, forKey: .originPort) {
+            self.origin = originPortObj["name"]?.stringValue
+        } else {
+            self.origin = try c.decodeIfPresent(String.self, forKey: .origin)
+        }
+        
+        if let destPortObj = try c.decodeIfPresent([String: AnyCodable].self, forKey: .destinationPort) {
+            self.destination = destPortObj["name"]?.stringValue
+        } else {
+            self.destination = try c.decodeIfPresent(String.self, forKey: .destination)
+        }
+        
+        // Map vesselId to vessel name (server only sends ID, extract from vesselId field as fallback)
+        self.vesselName = try c.decodeIfPresent(String.self, forKey: .vesselName)
+        
+        // Map numberOfContainers to teuCount
+        if let numContainers = try c.decodeIfPresent(Int.self, forKey: .numberOfContainers) {
+            self.teuCount = numContainers
+        } else {
+            self.teuCount = try c.decodeIfPresent(Int.self, forKey: .teuCount)
+        }
+        
+        // Map eta to estimatedArrival
+        if let eta = try c.decodeIfPresent(String.self, forKey: .eta) {
+            self.estimatedArrival = eta
+        } else {
+            self.estimatedArrival = try c.decodeIfPresent(String.self, forKey: .estimatedArrival)
+        }
+    }
+    
+    private enum CodingKeys: String, CodingKey {
+        case id, bookingNumber, status, voyageNumber, events, containers, demurrage
+        case origin, destination, vesselName, teuCount, estimatedArrival
+        case originPort, destinationPort, numberOfContainers, eta
+    }
 }
 
 // MARK: - Body

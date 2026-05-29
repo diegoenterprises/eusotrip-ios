@@ -43,6 +43,55 @@ private struct ShipmentDetail576: Decodable {
     let lifecycleCaption: String?
     let amendmentAllowed: Bool?
     let impactNote: String?
+
+    enum CodingKeys: String, CodingKey {
+        case railId = "id"
+        case lifecycleStatus = "status"
+        case numberOfCars, originRailroad, destinationRailroad
+        case waybills, events, demurrage, originYard, destinationYard
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // id comes as number from server; convert to String for iOS
+        if let idNum = try? c.decode(Int.self, forKey: .railId) {
+            self.railId = String(idNum)
+        } else if let idStr = try? c.decode(String.self, forKey: .railId) {
+            self.railId = idStr
+        } else {
+            self.railId = nil
+        }
+        
+        // status → lifecycleStatus mapping (e.g., "in_transit" → "IN_TRANSIT")
+        if let status = try? c.decode(String.self, forKey: .lifecycleStatus) {
+            self.lifecycleStatus = status.uppercased().replacingOccurrences(of: "_", with: " ")
+        } else {
+            self.lifecycleStatus = nil
+        }
+        
+        // serviceMode: derive from originRailroad + destinationRailroad if available
+        let originRR = try? c.decodeIfPresent(String.self, forKey: .originRailroad)
+        let destRR = try? c.decodeIfPresent(String.self, forKey: .destinationRailroad)
+        if let origin = originRR, let dest = destRR {
+            self.serviceMode = "\(origin) → \(dest)"
+        } else if let origin = originRR {
+            self.serviceMode = origin
+        } else {
+            self.serviceMode = nil
+        }
+        
+        // carrier: not in response; hardcode for now
+        self.carrier = nil
+        
+        // carCount: numberOfCars from server
+        self.carCount = try? c.decodeIfPresent(Int.self, forKey: .numberOfCars)
+        
+        // lifecycleCaption, amendmentAllowed, impactNote: not in response; set defaults
+        self.lifecycleCaption = nil
+        self.amendmentAllowed = true  // Default: allow amendment
+        self.impactNote = nil
+    }
 }
 
 private struct AmendmentChange576: Decodable, Identifiable {
@@ -416,7 +465,10 @@ private struct RailShipmentAmendmentBody: View {
     private func submitAmendment() async {
         isSubmitting = true
         struct SubmitIn: Encodable { let railId: String }
-        struct SubmitOut: Decodable {}
+        struct SubmitOut: Decodable {
+            let success: Bool
+            let newStatus: String
+        }
         do {
             let _: SubmitOut = try await EusoTripAPI.shared.query(
                 "railShipments.updateRailShipmentStatus", input: SubmitIn(railId: railId))

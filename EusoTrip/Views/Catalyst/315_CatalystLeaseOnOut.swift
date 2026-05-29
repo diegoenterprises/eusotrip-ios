@@ -25,6 +25,36 @@ private struct LeaseRow: Decodable, Hashable, Identifiable {
     let grossWtd: Double?
     let expiresAt: String?
     let signedAt: String?
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(String.self, forKey: .id)
+        self.status = try c.decodeIfPresent(String.self, forKey: .status)
+        
+        // Compute direction from isLessor/isLessee flags
+        let isLessor = try c.decodeIfPresent(Bool.self, forKey: .isLessor) ?? false
+        let isLessee = try c.decodeIfPresent(Bool.self, forKey: .isLessee) ?? false
+        if isLessor {
+            self.direction = "lease_out"
+        } else if isLessee {
+            self.direction = "lease_on"
+        } else {
+            self.direction = nil
+        }
+        
+        // Fields not provided by server; set to nil
+        self.counterpartyName = nil
+        self.summary = nil
+        self.termMonths = nil
+        self.splitPercent = nil
+        self.grossWtd = nil
+        self.expiresAt = nil
+        self.signedAt = nil
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case id, status, isLessor, isLessee
+    }
 }
 
 private struct LeaseStats: Decodable, Hashable {
@@ -33,6 +63,22 @@ private struct LeaseStats: Decodable, Hashable {
     let leaseOutCount: Int?
     let grossWtd: Double?
     let expiringWithin14d: Int?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // Server may use alternate key names (active/asLessee/asLessor) — fall back to them in one assignment.
+        self.activeLeases = (try c.decodeIfPresent(Int.self, forKey: .activeLeases)) ?? (try? c.decode(Int.self, forKey: .active))
+        self.leaseOnCount = (try c.decodeIfPresent(Int.self, forKey: .leaseOnCount)) ?? (try? c.decode(Int.self, forKey: .asLessee))
+        self.leaseOutCount = (try c.decodeIfPresent(Int.self, forKey: .leaseOutCount)) ?? (try? c.decode(Int.self, forKey: .asLessor))
+        self.grossWtd = try c.decodeIfPresent(Double.self, forKey: .grossWtd)
+        self.expiringWithin14d = try c.decodeIfPresent(Int.self, forKey: .expiringWithin14d)
+        // grossWtd and expiringWithin14d have no server equivalent; leave as nil
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case activeLeases, leaseOnCount, leaseOutCount, grossWtd, expiringWithin14d
+        case active, asLessee, asLessor
+    }
 }
 
 struct CatalystLeaseOnOutScreen: View {

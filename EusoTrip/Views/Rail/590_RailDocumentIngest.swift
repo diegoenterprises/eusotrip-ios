@@ -49,6 +49,40 @@ private struct ExtractedFields590: Decodable {
     let containerDesc: String?
     let commodity: String?
     let terms: String?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Try to decode as flat structure first (direct field access)
+        waybillNumber = try? c.decodeIfPresent(String.self, forKey: .waybillNumber)
+        carrierName = try? c.decodeIfPresent(String.self, forKey: .carrierName)
+        trainSymbol = try? c.decodeIfPresent(String.self, forKey: .trainSymbol)
+        lane = try? c.decodeIfPresent(String.self, forKey: .lane)
+        etdLabel = try? c.decodeIfPresent(String.self, forKey: .etdLabel)
+        etaLabel = try? c.decodeIfPresent(String.self, forKey: .etaLabel)
+        containerDesc = try? c.decodeIfPresent(String.self, forKey: .containerDesc)
+        commodity = try? c.decodeIfPresent(String.self, forKey: .commodity)
+        terms = try? c.decodeIfPresent(String.self, forKey: .terms)
+        
+        // If all fields are nil, try to decode server envelope (extractedData key)
+        if waybillNumber == nil && carrierName == nil && trainSymbol == nil {
+            if let extractedDataDict = try? c.decodeIfPresent([String: AnyCodable].self, forKey: CodingKeys(stringValue: "extractedData")) {
+                waybillNumber = (extractedDataDict["waybillNumber"]?.value as? String)
+                carrierName = (extractedDataDict["carrierName"]?.value as? String)
+                trainSymbol = (extractedDataDict["trainSymbol"]?.value as? String)
+                lane = (extractedDataDict["lane"]?.value as? String)
+                etdLabel = (extractedDataDict["etdLabel"]?.value as? String)
+                etaLabel = (extractedDataDict["etaLabel"]?.value as? String)
+                containerDesc = (extractedDataDict["containerDesc"]?.value as? String)
+                commodity = (extractedDataDict["commodity"]?.value as? String)
+                terms = (extractedDataDict["terms"]?.value as? String)
+            }
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case waybillNumber, carrierName, trainSymbol, lane, etdLabel, etaLabel, containerDesc, commodity, terms
+    }
 }
 
 private struct DraftShipment590: Decodable {
@@ -58,8 +92,26 @@ private struct DraftShipment590: Decodable {
 }
 
 private struct DocDashboard590: Decodable {
-    let docsToday: Int?
-    let docsStatusLabel: String?
+    let totalDocuments: Int?
+    let pendingReview: Int?
+    let expiringSoon: Int?
+    let expired: Int?
+    let recentUploads: [[String: AnyCodable]]?
+    let byCategory: [[String: AnyCodable]]?
+    let byType: [[String: AnyCodable]]?
+    let byStatus: [[String: AnyCodable]]?
+    let activeWorkflows: Int?
+    let pendingSignatures: Int?
+    let templatesAvailable: Int?
+
+    // Backward-compat computed properties for the view
+    var docsToday: Int? { totalDocuments }
+    var docsStatusLabel: String? {
+        if let pending = pendingReview, pending > 0 {
+            return "\(pending) pending review"
+        }
+        return nil
+    }
 }
 
 private struct DocIdIn590: Encodable { let documentId: String }

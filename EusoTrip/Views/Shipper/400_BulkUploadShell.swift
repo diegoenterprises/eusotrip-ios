@@ -34,6 +34,27 @@ private struct EntityType: Decodable, Identifiable, Hashable {
     let templateCsvUrl: String?
     let columns: [String]?
     var id: String { key }
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // Server sends "type", iOS property is "key"
+        self.key = try c.decode(String.self, forKey: .type)
+        self.label = try c.decode(String.self, forKey: .label)
+        // Server sends "templateUrl", iOS property is "templateCsvUrl"
+        self.templateCsvUrl = try c.decodeIfPresent(String.self, forKey: .templateUrl)
+        // Server returns requiredFields + optionalFields; iOS expects merged "columns"
+        let req = try c.decodeIfPresent([String].self, forKey: .requiredFields) ?? []
+        let opt = try c.decodeIfPresent([String].self, forKey: .optionalFields) ?? []
+        self.columns = (req + opt).isEmpty ? nil : (req + opt)
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case type, label, templateUrl, requiredFields, optionalFields
+    }
+}
+
+private struct SupportedEntityTypesResponse: Decodable {
+    let entityTypes: [EntityType]
 }
 
 private struct UploadJob: Decodable, Identifiable, Hashable {
@@ -44,6 +65,38 @@ private struct UploadJob: Decodable, Identifiable, Hashable {
     let processed: Int?
     let errors: Int?
     let createdAt: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case id = "jobId"
+        case status
+        case entityType
+        case total = "totalRows"
+        case processed = "successCount"
+        case errors = "failCount"
+        case createdAt
+    }
+    
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = String(try c.decode(Int.self, forKey: .id))
+        status = try c.decode(String.self, forKey: .status)
+        entityType = try c.decodeIfPresent(String.self, forKey: .entityType)
+        total = try c.decodeIfPresent(Int.self, forKey: .total)
+        processed = try c.decodeIfPresent(Int.self, forKey: .processed)
+        errors = try c.decodeIfPresent(Int.self, forKey: .errors)
+        createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
+    }
+
+    /// Local optimistic placeholder built on submit (the server response
+    /// decodes via init(from:) above, mapping jobId/totalRows/successCount).
+    init(id: String, status: String, entityType: String?, total: Int?, processed: Int?, errors: Int?, createdAt: String?) {
+        self.id = id; self.status = status; self.entityType = entityType
+        self.total = total; self.processed = processed; self.errors = errors; self.createdAt = createdAt
+    }
+}
+
+private struct BulkHistoryResponse: Decodable {
+    let jobs: [UploadJob]
 }
 
 private struct BulkUploadShellBody: View {
@@ -368,9 +421,9 @@ private struct BulkUploadShellBody: View {
     private func loadEntityTypes() async {
         loading = true; actionError = nil
         do {
-            let r: [EntityType] = try await EusoTripAPI.shared.queryNoInput("bulkUpload.getSupportedEntityTypes")
-            entityTypes = r
-            selected = r.first
+            let resp: SupportedEntityTypesResponse = try await EusoTripAPI.shared.queryNoInput("bulkUpload.getSupportedEntityTypes")
+            entityTypes = resp.entityTypes
+            selected = resp.entityTypes.first
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
@@ -379,8 +432,8 @@ private struct BulkUploadShellBody: View {
 
     private func loadHistory() async {
         do {
-            let r: [UploadJob] = try await EusoTripAPI.shared.queryNoInput("bulkUpload.getJobHistory")
-            jobHistory = r
+            let resp: BulkHistoryResponse = try await EusoTripAPI.shared.queryNoInput("bulkUpload.getJobHistory")
+            jobHistory = resp.jobs
         } catch let apiErr as EusoTripAPIError {
             // History is a secondary panel; record the error to the
             // shared `actionError` only when nothing else has populated
@@ -398,20 +451,19 @@ private struct BulkUploadShellBody: View {
     private func submit() async {
         guard let entity = selected else { return }
         uploading = true; actionError = nil
-        struct In: Encodable { let entityType: String; let payload: String; let payloadKind: String }
-        struct Out: Decodable { let success: Bool; let jobId: String? }
-        // payloadKind drives the server-side parser: 'csv' for
-        // deterministic CSV; 'ai-parse' for ESANG/Gemini structured
-        // extraction which handles XLS/XLSX/PDF + messy CSV.
-        let kind = aiParseEnabled ? "ai-parse" : "csv"
+        struct Opts: Encodable { let aiMapping: Bool }
+        struct In: Encodable { let entityType: String; let csvText: String; let fileName: String; let options: Opts }
+        struct Out: Decodable { let jobId: Int? }
+        // options.aiMapping picks the server parser: false = deterministic CSV;
+        // true = ESANG/Gemini structured extraction (XLS/XLSX/PDF + messy CSV).
         do {
             let r: Out = try await EusoTripAPI.shared.mutation(
                 "bulkUpload.uploadAndProcess",
-                input: In(entityType: entity.key, payload: rawCsv, payloadKind: kind)
+                input: In(entityType: entity.key, csvText: rawCsv, fileName: "bulk_\(entity.key).csv", options: Opts(aiMapping: aiParseEnabled))
             )
-            if let id = r.jobId {
-                lastJob = UploadJob(id: id, status: "queued", entityType: entity.key, total: rowCount, processed: 0, errors: 0, createdAt: ISO8601DateFormatter().string(from: Date()))
-                await pollJob(id)
+            if let jid = r.jobId {
+                lastJob = UploadJob(id: String(jid), status: "queued", entityType: entity.key, total: rowCount, processed: 0, errors: 0, createdAt: ISO8601DateFormatter().string(from: Date()))
+                await pollJob(jid)
             }
             await loadHistory()
         } catch {
@@ -420,12 +472,12 @@ private struct BulkUploadShellBody: View {
         uploading = false
     }
 
-    private func pollJob(_ id: String) async {
-        struct In: Encodable { let id: String }
+    private func pollJob(_ jobId: Int) async {
+        struct In: Encodable { let jobId: Int }
         for _ in 0..<10 {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             do {
-                let j: UploadJob = try await EusoTripAPI.shared.query("bulkUpload.getJobStatus", input: In(id: id))
+                let j: UploadJob = try await EusoTripAPI.shared.query("bulkUpload.getJobStatus", input: In(jobId: jobId))
                 lastJob = j
                 if j.status == "completed" || j.status == "failed" { return }
             } catch { return }

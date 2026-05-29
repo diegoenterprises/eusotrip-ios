@@ -62,6 +62,25 @@ private struct ShipperSummary572: Decodable {
     let totalCo2Tonnes: Double?
     let intensityGPerTonMile: Double?
     let co2SavedTonnes: Double?
+
+    private enum CodingKeys: String, CodingKey {
+        case totalCo2Tonnes
+        case intensityKgPerMile
+        case co2SavedTonnes
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.totalCo2Tonnes = try c.decodeIfPresent(Double.self, forKey: .totalCo2Tonnes)
+        self.co2SavedTonnes = try c.decodeIfPresent(Double.self, forKey: .co2SavedTonnes)
+        // Server returns intensityKgPerMile (kg/mile); convert to intensityGPerTonMile (g/ton-mile).
+        // Conversion: kg/mile * 1000 / 20 = g/ton-mile (assuming 20-ton canonical weight).
+        if let kgPerMile = try c.decodeIfPresent(Double.self, forKey: .intensityKgPerMile) {
+            self.intensityGPerTonMile = kgPerMile * 50
+        } else {
+            self.intensityGPerTonMile = nil
+        }
+    }
 }
 
 // MARK: - Display row

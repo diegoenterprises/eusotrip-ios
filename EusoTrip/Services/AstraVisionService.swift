@@ -156,6 +156,7 @@ public enum AstraStructuredValue: Codable, Hashable, Sendable {
         // Arrays + objects collapse to their JSON string so the row
         // can still render them — the verbatim audit chain entry
         // server-side has the full structure.
+        if let arr = try? c.decode([String].self)           { self = .string(String(describing: arr)); return }
         if let any = try? c.decode([String: String].self)   { self = .string(String(describing: any)); return }
         self = .null
     }

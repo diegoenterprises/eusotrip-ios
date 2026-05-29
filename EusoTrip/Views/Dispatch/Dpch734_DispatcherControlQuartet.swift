@@ -549,7 +549,28 @@ private struct ReloadOfferBody: View {
         loading = true; defer { loading = false }
         // Pull nearby pending loads as reload candidates.
         struct In: Encodable { let status: String; let limit: Int }
-        struct Out: Decodable { let loads: [ReloadCandidate]?; let items: [ReloadCandidate]? }
+        struct Out: Decodable {
+            let loads: [ReloadCandidate]?
+            let items: [ReloadCandidate]?
+            
+            init(from decoder: Decoder) throws {
+                // Server returns a BARE array of loads; tolerate either that or a
+                // {loads}/{items} envelope. Each stored prop is assigned once per path.
+                if let bare = try? decoder.singleValueContainer().decode([ReloadCandidate].self) {
+                    self.loads = bare
+                    self.items = nil
+                } else {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    self.loads = try container.decodeIfPresent([ReloadCandidate].self, forKey: .loads)
+                    self.items = try container.decodeIfPresent([ReloadCandidate].self, forKey: .items)
+                }
+            }
+            
+            enum CodingKeys: String, CodingKey {
+                case loads
+                case items
+            }
+        }
         do {
             let r: Out = try await EusoTripAPI.shared.query("loads.list", input: In(status: "pending", limit: 6))
             candidates = r.loads ?? r.items ?? []

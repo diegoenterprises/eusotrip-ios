@@ -118,7 +118,44 @@ private struct NotificationPrefsBody: View {
     private func load() async {
         loading = true
         struct Channel: Decodable { let push: Bool?; let email: Bool?; let sms: Bool? }
-        struct Out: Decodable { let prefs: [String: Channel]? }
+        struct Out: Decodable {
+            let prefs: [String: Channel]?
+            
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                // Try to decode `prefs` directly (if server wraps in envelope).
+                if let p = try c.decodeIfPresent([String: Channel].self, forKey: .prefs) {
+                    prefs = p
+                } else {
+                    // Server returns flat 11-boolean object. Map to per-category defaults.
+                    // Since server doesn't return category-level preferences, we treat all
+                    // global toggles as enabled for all default categories and map the global
+                    // "emailNotifications" → all categories' email channel, etc.
+                    let emailEnabled = try c.decodeIfPresent(Bool.self, forKey: .emailNotifications) ?? true
+                    let pushEnabled = try c.decodeIfPresent(Bool.self, forKey: .pushNotifications) ?? true
+                    let smsEnabled = try c.decodeIfPresent(Bool.self, forKey: .smsNotifications) ?? false
+                    
+                    // Populate categories with global channel toggles.
+                    var categoryMap: [String: Channel] = [:]
+                    let categoryKeys = [
+                        "bid_received", "bid_awarded", "load_status_changed",
+                        "geofence_event", "settlement_paid", "settlement_disputed",
+                        "doc_uploaded", "compliance_expiring", "ai_recommendation"
+                    ]
+                    for key in categoryKeys {
+                        categoryMap[key] = Channel(push: pushEnabled, email: emailEnabled, sms: smsEnabled)
+                    }
+                    prefs = categoryMap
+                }
+            }
+            
+            enum CodingKeys: String, CodingKey {
+                case prefs
+                case emailNotifications, pushNotifications, smsNotifications, inAppNotifications
+                case loadUpdates, bidAlerts, paymentAlerts, messageAlerts, missionAlerts
+                case promotionalAlerts, weeklyDigest
+            }
+        }
         do {
             let r: Out = try await EusoTripAPI.shared.queryNoInput("users.getNotificationPreferences")
             for (k, v) in (r.prefs ?? [:]) {

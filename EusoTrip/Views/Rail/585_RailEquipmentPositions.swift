@@ -45,6 +45,11 @@ private struct PositionsSummary585: Decodable {
     let progressFraction: Double?
 }
 
+private struct RailcarsEnvelope: Decodable {
+    let railcars: [RailcarPosition585]
+    let total: Int
+}
+
 private struct RailcarPosition585: Decodable, Identifiable {
     var id: String { carNumber ?? "\(UUID())" }
     let carNumber: String?
@@ -54,6 +59,23 @@ private struct RailcarPosition585: Decodable, Identifiable {
     let speedMph: Int?
     let dwellHours: Int?
     let progressFraction: Double?
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.carNumber = try c.decodeIfPresent(String.self, forKey: .carNumber)
+        self.location = try c.decodeIfPresent(String.self, forKey: .location)
+        self.containerNumber = try c.decodeIfPresent(String.self, forKey: .containerNumber)
+        self.status = try c.decodeIfPresent(String.self, forKey: .status)
+        self.speedMph = try c.decodeIfPresent(Int.self, forKey: .speedMph)
+        self.dwellHours = try c.decodeIfPresent(Int.self, forKey: .dwellHours)
+        self.progressFraction = try c.decodeIfPresent(Double.self, forKey: .progressFraction)
+    }
+    
+    private enum CodingKeys: String, CodingKey {
+        case carNumber = "railcarNumber"
+        case location = "currentLocation"
+        case containerNumber, status, speedMph, dwellHours, progressFraction
+    }
 }
 
 private struct ContainerTracking585: Decodable {
@@ -62,6 +84,23 @@ private struct ContainerTracking585: Decodable {
     let lastReadMinutesAgo: Int?
     let additionalUnits: Int?
     let iso6346Verified: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case containerNumber
+        case lastAEILocation
+        case lastReadMinutesAgo
+        case additionalUnits
+        case iso6346Verified
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.containerNumber = try c.decodeIfPresent(String.self, forKey: .containerNumber)
+        self.lastAEILocation = try c.decodeIfPresent(String.self, forKey: .lastAEILocation)
+        self.lastReadMinutesAgo = try c.decodeIfPresent(Int.self, forKey: .lastReadMinutesAgo)
+        self.additionalUnits = try c.decodeIfPresent(Int.self, forKey: .additionalUnits)
+        self.iso6346Verified = try c.decodeIfPresent(Bool.self, forKey: .iso6346Verified)
+    }
 }
 
 private struct RailIdIn585: Encodable { let railId: String }
@@ -75,6 +114,11 @@ private struct RailEquipmentPositionsBody: View {
     @State private var summary: PositionsSummary585? = nil
     @State private var positions: [RailcarPosition585] = []
     @State private var container: ContainerTracking585? = nil
+    
+    private struct RailcarsEnvelope585: Decodable {
+        let railcars: [RailcarPosition585]
+        let total: Int
+    }
 
     // MARK: Derived
 

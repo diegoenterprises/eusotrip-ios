@@ -36,20 +36,138 @@ private struct FleetSummary588: Decodable {
     let openWorkOrders: Int?
     let fleetStatus: String?
     let poolSize: Int?
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Server returns: totalVehicles, riskBreakdown { critical, high, medium, low },
+        // componentAnalysis, lastUpdated. Map to iOS shape.
+        let totalVehicles = (try? c.decodeIfPresent(Int.self, forKey: .poolSize)) ?? 0
+        
+        // Try to decode server's actual shape
+        struct ServerShape: Decodable {
+            let totalVehicles: Int?
+            let riskBreakdown: RiskBreakdown?
+            let lastUpdated: String?
+            
+            struct RiskBreakdown: Decodable {
+                let critical: Int?
+                let high: Int?
+                let medium: Int?
+                let low: Int?
+            }
+        }
+        
+        let server = try ServerShape(from: decoder)
+        let total = server.totalVehicles ?? totalVehicles
+        let breakdown = server.riskBreakdown
+        
+        // Calculate health metrics from risk breakdown
+        let criticalCount = breakdown?.critical ?? 0
+        let highCount = breakdown?.high ?? 0
+        let mediumCount = breakdown?.medium ?? 0
+        let healthyCount = breakdown?.low ?? 0
+        
+        // Availability: (total - critical - high) / total
+        let availableCount = max(0, total - criticalCount - highCount)
+        let availability = total > 0 ? Double(availableCount) / Double(total) * 100 : 100
+        
+        // Determine fleet status
+        let fleetStatus: String
+        if criticalCount > 0 {
+            fleetStatus = "critical"
+        } else if highCount > 0 {
+            fleetStatus = "degraded"
+        } else {
+            fleetStatus = "stable"
+        }
+        
+        self.poolSize = total
+        self.availabilityPct = availability
+        self.healthyCount = healthyCount
+        self.watchCount = mediumCount
+        self.downCount = criticalCount + highCount
+        self.openWorkOrders = nil
+        self.fleetStatus = fleetStatus
+    }
+    
+    private enum CodingKeys: String, CodingKey {
+        case poolSize = "totalVehicles"
+    }
+}
+
+private struct AssetComponentStatus588: Decodable {
+    let component: String?
+    let condition: String?
+    let lastInspectionDate: String?
+    let notes: String?
+}
+
+private struct MaintenanceAlert588: Decodable {
+    let alertId: String?
+    let severity: String?
+    let description: String?
+    let dueDate: String?
+    let component: String?
 }
 
 private struct AssetHealthClass588: Decodable {
-    let className: String?
-    let unitCount: Int?
-    let avgHealth: Int?
-    let detail: String?
-    let status: String?
+    let railcarNumber: String?
+    let overallCondition: String?
+    let mechanicalCondition: String?
+    let maintenanceAlerts: [MaintenanceAlert588]?
+    let componentStatus: [AssetComponentStatus588]?
+    let lastInspectionDate: String?
+    let nextInspectionDue: String?
 }
 
 private struct FleetPredictions588: Decodable {
     let flagCount: Int?
     let openWorkOrders: Int?
     let worstFlagDescription: String?
+    
+    init(from decoder: Decoder) throws {
+        // Server returns array of { vehicleId, vehicleUnit, currentMileage, predictions: [...] }
+        // Decode as array and aggregate summary flags from all vehicle predictions
+        var container = try decoder.unkeyedContainer()
+        var totalCriticalFlags = 0
+        var worstFlagDesc: String?
+        
+        // Process each vehicle in the array
+        while !container.isAtEnd {
+            let vehicleDecoder = try container.superDecoder()
+            let vehicleContainer = try vehicleDecoder.container(keyedBy: VehicleKeys.self)
+            
+            // Decode predictions array
+            var predictionsContainer = try vehicleContainer.nestedUnkeyedContainer(forKey: .predictions)
+            while !predictionsContainer.isAtEnd {
+                let predDecoder = try predictionsContainer.superDecoder()
+                let predContainer = try predDecoder.container(keyedBy: PredictionKeys.self)
+                
+                let riskLevel = try predContainer.decodeIfPresent(String.self, forKey: .riskLevel) ?? "low"
+                let component = try predContainer.decodeIfPresent(String.self, forKey: .component) ?? "unknown"
+                
+                if riskLevel == "critical" || riskLevel == "high" {
+                    totalCriticalFlags += 1
+                    if worstFlagDesc == nil || riskLevel == "critical" {
+                        worstFlagDesc = "\(component) (\(riskLevel))"
+                    }
+                }
+            }
+        }
+        
+        self.flagCount = totalCriticalFlags > 0 ? totalCriticalFlags : nil
+        self.openWorkOrders = nil
+        self.worstFlagDescription = worstFlagDesc
+    }
+    
+    private enum VehicleKeys: String, CodingKey {
+        case vehicleId, vehicleUnit, currentMileage, predictions
+    }
+    
+    private enum PredictionKeys: String, CodingKey {
+        case component, riskLevel, confidenceScore, predictedFailureMileage, predictedFailureDate, lastServiceMileage, lastServiceDate
+    }
 }
 
 private struct RailIdIn588: Encodable { let railId: String }

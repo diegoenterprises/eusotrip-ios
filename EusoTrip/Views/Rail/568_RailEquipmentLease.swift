@@ -55,6 +55,32 @@ private struct LeaseDashboard568: Decodable {
     let totalAccruedCostUsd: Double?
     let consistId: String?
     let leases: [LeasedUnit568]?
+
+    enum CodingKeys: String, CodingKey {
+        case summary, upcomingRenewals, leasesByLessor, note
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Extract from server's summary object
+        if let summaryContainer = try? container.nestedContainer(keyedBy: SummaryKeys.self, forKey: .summary) {
+            self.totalLeasesActive = try summaryContainer.decodeIfPresent(Int.self, forKey: .activeLeases)
+            self.totalPerDiemPerDay = nil  // Server doesn't provide this; caller computes from leases
+            self.totalAccruedCostUsd = nil // Server doesn't provide this; caller computes from leases
+        } else {
+            self.totalLeasesActive = nil
+            self.totalPerDiemPerDay = nil
+            self.totalAccruedCostUsd = nil
+        }
+        
+        self.consistId = nil  // Server doesn't provide this
+        self.leases = try container.decodeIfPresent([LeasedUnit568].self, forKey: .leasesByLessor)
+    }
+
+    private enum SummaryKeys: String, CodingKey {
+        case activeLeases, totalCarsLeased, monthlyLeasePayment, renewalsNext30Days, renewalsNext90Days
+    }
 }
 
 private struct RenewalEvent568: Decodable, Identifiable {
@@ -68,6 +94,22 @@ private struct RenewalEvent568: Decodable, Identifiable {
 private struct RenewalCalendar568: Decodable {
     let renewals: [RenewalEvent568]?
     let renewalsInNext30Days: Int?
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.renewals = try c.decodeIfPresent([RenewalEvent568].self, forKey: .renewals)
+        // Server returns next30/next60/next90/next180 arrays; map next30.count to renewalsInNext30Days
+        if let next30 = try c.decodeIfPresent([RenewalEvent568].self, forKey: .next30) {
+            self.renewalsInNext30Days = next30.count
+        } else {
+            self.renewalsInNext30Days = nil
+        }
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case renewals
+        case next30
+    }
 }
 
 // MARK: - Body

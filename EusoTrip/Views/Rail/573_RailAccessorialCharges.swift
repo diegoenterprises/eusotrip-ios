@@ -45,6 +45,75 @@ private struct AccessorialBilling573: Decodable {
     let pendingUsd: Double?
     let disputedUsd: Double?
     let routeSummary: String?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Server returns { pendingCharges: [...], batchSummary: {...} }
+        // Try to decode as envelope; fall back to direct key access
+        if let envC = try? decoder.container(keyedBy: EnvelopeCodingKeys.self),
+           let charges = try? envC.decodeIfPresent([PendingCharge].self, forKey: .pendingCharges),
+           let summary = try? envC.decodeIfPresent(BatchSummary.self, forKey: .batchSummary) {
+            // Extract KPIs from envelope
+            self.totalAmountUsd = Double(summary.totalAmount ?? 0)
+            self.status = "pending" // Default status since server doesn't explicitly return it
+            self.dwellHours = nil
+            self.lineCount = summary.totalItems ?? 0
+            self.shipperName = charges.first?.shipperName
+            self.billedMtdUsd = nil
+            self.pendingUsd = Double(summary.totalAmount ?? 0)
+            self.disputedUsd = nil
+            self.routeSummary = nil
+        } else {
+            // Fall back to direct key decoding for flat response
+            self.totalAmountUsd = try c.decodeIfPresent(Double.self, forKey: .totalAmountUsd)
+            self.status = try c.decodeIfPresent(String.self, forKey: .status)
+            self.dwellHours = try c.decodeIfPresent(Double.self, forKey: .dwellHours)
+            self.lineCount = try c.decodeIfPresent(Int.self, forKey: .lineCount)
+            self.shipperName = try c.decodeIfPresent(String.self, forKey: .shipperName)
+            self.billedMtdUsd = try c.decodeIfPresent(Double.self, forKey: .billedMtdUsd)
+            self.pendingUsd = try c.decodeIfPresent(Double.self, forKey: .pendingUsd)
+            self.disputedUsd = try c.decodeIfPresent(Double.self, forKey: .disputedUsd)
+            self.routeSummary = try c.decodeIfPresent(String.self, forKey: .routeSummary)
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case totalAmountUsd, status, dwellHours, lineCount, shipperName
+        case billedMtdUsd, pendingUsd, disputedUsd, routeSummary
+    }
+
+    private enum EnvelopeCodingKeys: String, CodingKey {
+        case pendingCharges, batchSummary
+    }
+
+    private struct PendingCharge: Decodable {
+        let id: Int?
+        let loadId: Int?
+        let type: String?
+        let amount: Double?
+        let status: String?
+        let facilityName: String?
+        let shipperName: String?
+        let carrierName: String?
+        let origin: String?
+        let destination: String?
+        let createdAt: String?
+        let selected: Bool?
+    }
+
+    private struct BatchSummary: Decodable {
+        let totalItems: Int?
+        let totalAmount: Int?
+        let byType: [TypeSummary]?
+        let readyToInvoice: Int?
+    }
+
+    private struct TypeSummary: Decodable {
+        let type: String?
+        let count: Int?
+        let total: Int?
+    }
 }
 
 private struct AccessorialLine573: Decodable, Identifiable {
@@ -358,7 +427,7 @@ private struct RailAccessorialChargesBody: View {
         do {
             async let billingResult: AccessorialBilling573 = EusoTripAPI.shared.query(
                 "detentionAccessorials.getAccessorialBilling", input: RailIn(railId: railId))
-            async let catalogResult: [AccessorialLine573] = EusoTripAPI.shared.query(
+            async let catalogResult: AccessorialCatalogResponse = EusoTripAPI.shared.query(
                 "detentionAccessorials.getAccessorialCatalog", input: RailIn(railId: railId))
             let (b, c) = try await (billingResult, catalogResult)
             self.billing = b
@@ -378,7 +447,13 @@ private struct RailAccessorialChargesBody: View {
         guard !isLineApplied(line) else { return }
         applyingLines.insert(line.id)
         struct ApplyIn: Encodable { let railId: String; let accessorialCode: String }
-        struct ApplyOut: Decodable {}
+        struct ApplyOut: Decodable {
+            let success: Bool
+            let loadId: Int
+            let chargeCode: String
+            let amount: Double
+            let status: String
+        }
         do {
             let _: ApplyOut = try await EusoTripAPI.shared.query(
                 "detentionAccessorials.applyAccessorial",

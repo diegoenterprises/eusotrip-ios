@@ -32,6 +32,35 @@ private struct MyAuthorityResponse: Decodable, Hashable {
     let lastMcs150: String?
     let oosCount: Int?
     let basicScore: Int?
+    
+    private struct ServerEnvelope: Decodable {
+        let ownAuthority: OwnAuthority?
+        let complianceScore: Int?
+        
+        struct OwnAuthority: Decodable {
+            let mcNumber: String?
+            let dotNumber: String?
+            let complianceStatus: String?
+        }
+    }
+    
+    init(from decoder: Decoder) throws {
+        let envelope = try ServerEnvelope(from: decoder)
+        
+        self.mcNumber = envelope.ownAuthority?.mcNumber
+        self.dotNumber = envelope.ownAuthority?.dotNumber
+        self.usdot = envelope.ownAuthority?.dotNumber
+        self.operatingAuthorityType = nil
+        self.grantedAt = nil
+        self.standing = envelope.ownAuthority?.complianceStatus.flatMap { $0 == "active" ? "ACTIVE" : "INACTIVE" }
+        self.bmc91x = nil
+        self.boc3 = nil
+        self.suretyBond = nil
+        self.safetyRating = nil
+        self.lastMcs150 = nil
+        self.oosCount = nil
+        self.basicScore = envelope.complianceScore
+    }
 }
 
 private struct InsurancePolicy: Decodable, Hashable, Identifiable {
@@ -44,6 +73,24 @@ private struct InsurancePolicy: Decodable, Hashable, Identifiable {
     let effectiveDate: String?
     let expirationDate: String?
     let status: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, policyType, policyNumber, effectiveDate, expirationDate, status
+        case carrier = "providerName"  // Server sends providerName, iOS expects carrier
+        case coverageAmount = "perOccurrenceLimit"  // Server sends perOccurrenceLimit, iOS expects coverageAmount
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(Int.self, forKey: .id)
+        policyType = try container.decodeIfPresent(String.self, forKey: .policyType)
+        policyNumber = try container.decodeIfPresent(String.self, forKey: .policyNumber)
+        carrier = try container.decodeIfPresent(String.self, forKey: .carrier)
+        coverageAmount = try container.decodeIfPresent(String.self, forKey: .coverageAmount)
+        effectiveDate = try container.decodeIfPresent(String.self, forKey: .effectiveDate)
+        expirationDate = try container.decodeIfPresent(String.self, forKey: .expirationDate)
+        status = try container.decodeIfPresent(String.self, forKey: .status)
+    }
 }
 
 private struct InsuranceStats: Decodable, Hashable {
@@ -52,6 +99,26 @@ private struct InsuranceStats: Decodable, Hashable {
     let expiringPolicies: Int?
     let renewalsYTD: Int?
     let poolGrade: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case totalPolicies
+        case activePolicies = "active"
+        case expiringPolicies = "expiring"
+        case renewalsYTD
+        case poolGrade
+        case activeClaims      // tolerate server's actual keys
+        case totalCoverage
+        case expired
+    }
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.totalPolicies = try c.decodeIfPresent(Int.self, forKey: .totalPolicies)
+        self.activePolicies = try c.decodeIfPresent(Int.self, forKey: .activePolicies)
+        self.expiringPolicies = try c.decodeIfPresent(Int.self, forKey: .expiringPolicies)
+        self.renewalsYTD = try c.decodeIfPresent(Int.self, forKey: .renewalsYTD)
+        self.poolGrade = try c.decodeIfPresent(String.self, forKey: .poolGrade)
+    }
 }
 
 // MARK: - Screen

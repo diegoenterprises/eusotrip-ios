@@ -1387,7 +1387,22 @@ struct LoadsAPI {
     struct LoadStatusUpdateResult: Decodable {
         let success: Bool?
         let loadId: String?
-        let status: String?
+        let newStatus: String?
+        let previousStatus: String?
+        let updatedAt: String?
+        
+        enum CodingKeys: String, CodingKey {
+            case success, loadId, newStatus, previousStatus, updatedAt
+        }
+        
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.success = try c.decodeIfPresent(Bool.self, forKey: .success)
+            self.loadId = try c.decodeIfPresent(String.self, forKey: .loadId)
+            self.newStatus = try c.decodeIfPresent(String.self, forKey: .newStatus)
+            self.previousStatus = try c.decodeIfPresent(String.self, forKey: .previousStatus)
+            self.updatedAt = try c.decodeIfPresent(String.self, forKey: .updatedAt)
+        }
     }
 
     /// `loads.updateLoadStatus` — flips the `loads.status` column and
@@ -2575,6 +2590,31 @@ struct RegistrationAPI {
         try await api.mutation("registration.registerCustomsBroker", input: input)
     }
 
+    /// Container demurrage accrual response from `vesselShipments.calculateVesselDemurrage`.
+    /// Maps server keys {demurrage, dwellDays, freeTimeDays, chargeableDays, containerCount}
+    /// to iOS properties {chargeUsd, metersStarted, freeDays, accruedDays}.
+    struct VesselDemurrage: Decodable {
+        let freeDays: Int?
+        let accruedDays: Int?
+        let chargeUsd: Double?
+        let metersStarted: Int?
+
+        private enum CodingKeys: String, CodingKey {
+            case freeDays = "freeTimeDays"
+            case accruedDays = "chargeableDays"
+            case chargeUsd = "demurrage"
+            case metersStarted = "dwellDays"
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.freeDays = try c.decodeIfPresent(Int.self, forKey: .freeDays)
+            self.accruedDays = try c.decodeIfPresent(Int.self, forKey: .accruedDays)
+            self.chargeUsd = try c.decodeIfPresent(Double.self, forKey: .chargeUsd)
+            self.metersStarted = try c.decodeIfPresent(Int.self, forKey: .metersStarted)
+        }
+    }
+
     // MARK: Financial / platform (Factoring, Super-Admin)
 
     struct FactoringRegistration: Encodable {
@@ -2994,6 +3034,35 @@ struct WalletAPI {
         let totalReceived: Double?
         let totalSpent: Double?
         let monthVolume: Double?
+        let stripeBalance: StripeBalance?
+
+        struct StripeBalance: Codable {
+            let available: Double
+            let pending: Double
+            let instantAvailable: Double
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case available, pending, reserved, escrow, total, currency
+            case lastUpdated, paymentMethods, totalReceived, totalSpent, monthVolume
+            case stripeBalance
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.available = try c.decode(Double.self, forKey: .available)
+            self.pending = try c.decode(Double.self, forKey: .pending)
+            self.reserved = try c.decode(Double.self, forKey: .reserved)
+            self.escrow = try c.decode(Double.self, forKey: .escrow)
+            self.total = try c.decode(Double.self, forKey: .total)
+            self.currency = try c.decode(String.self, forKey: .currency)
+            self.lastUpdated = try c.decodeIfPresent(String.self, forKey: .lastUpdated)
+            self.paymentMethods = try c.decodeIfPresent(Int.self, forKey: .paymentMethods)
+            self.totalReceived = try c.decodeIfPresent(Double.self, forKey: .totalReceived)
+            self.totalSpent = try c.decodeIfPresent(Double.self, forKey: .totalSpent)
+            self.monthVolume = try c.decodeIfPresent(Double.self, forKey: .monthVolume)
+            self.stripeBalance = try c.decodeIfPresent(StripeBalance.self, forKey: .stripeBalance)
+        }
     }
 
     func getBalance() async throws -> WalletBalance {
@@ -6001,6 +6070,23 @@ struct GamificationAPI {
         let category: String?
         let available: Bool?
         let image: String?
+        
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.id = try c.decode(String.self, forKey: .id)
+            self.name = try c.decode(String.self, forKey: .name)
+            // Server sends 'pointsCost' not 'cost'; map it
+            self.cost = try c.decodeIfPresent(Int.self, forKey: .cost) 
+                     ?? (try c.decodeIfPresent(Int.self, forKey: .pointsCost))
+            self.category = try c.decodeIfPresent(String.self, forKey: .category)
+            self.available = try c.decodeIfPresent(Bool.self, forKey: .available)
+            self.image = try c.decodeIfPresent(String.self, forKey: .image)
+        }
+        
+        enum CodingKeys: String, CodingKey {
+            case id, name, category, available, image
+            case cost, pointsCost
+        }
     }
 
     struct RewardsCatalogResponse: Decodable {
@@ -6136,6 +6222,46 @@ struct FleetCanonicalAPI {
         let status: String?
         let plate: String?
         let odometer: Int?
+
+        enum CodingKeys: String, CodingKey {
+            // Server sends `id` as String, `vin` as the plate field, `mileage` as odometer.
+            case id
+            case unitNumber
+            case type
+            case make
+            case model
+            case year
+            case status
+            case vin
+            case mileage
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            
+            // Decode unitNumber, type, make, model, year, status from standard keys
+            self.unitNumber = try c.decodeIfPresent(String.self, forKey: .unitNumber)
+            self.type = try c.decodeIfPresent(String.self, forKey: .type)
+            self.make = try c.decodeIfPresent(String.self, forKey: .make)
+            self.model = try c.decodeIfPresent(String.self, forKey: .model)
+            self.year = try c.decodeIfPresent(Int.self, forKey: .year)
+            self.status = try c.decodeIfPresent(String.self, forKey: .status)
+            
+            // Server sends `id` as String; convert to Int
+            if let idStr = try c.decodeIfPresent(String.self, forKey: .id) {
+                self.id = Int(idStr)
+            } else if let idInt = try c.decodeIfPresent(Int.self, forKey: .id) {
+                self.id = idInt
+            } else {
+                self.id = nil
+            }
+            
+            // Server sends `vin` in the response; map to `plate`
+            self.plate = try c.decodeIfPresent(String.self, forKey: .vin)
+
+            // Server sends `mileage` in the response; map to `odometer`
+            self.odometer = try c.decodeIfPresent(Int.self, forKey: .mileage)
+        }
     }
 
     struct GetVehiclesInput: Encodable {
@@ -7705,6 +7831,31 @@ struct TrainingAPI {
         let score: Int?
         /// Server label — "safety" / "hazmat" / "compliance" / etc.
         let category: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case id, status, progress, completedAt, score, category
+            case courseName, courseId, dueDate, assignedAt
+            // Server field names that need mapping
+            case moduleId, startedAt
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.id = try c.decode(String.self, forKey: .id)
+            self.status = try c.decode(String.self, forKey: .status)
+            self.progress = try c.decode(Int.self, forKey: .progress)
+            self.completedAt = try c.decodeIfPresent(String.self, forKey: .completedAt)
+            self.score = try c.decodeIfPresent(Int.self, forKey: .score)
+            self.category = try c.decodeIfPresent(String.self, forKey: .category)
+            // courseName: server omits it, so provide empty default
+            self.courseName = try c.decodeIfPresent(String.self, forKey: .courseName) ?? ""
+            // dueDate: server omits it
+            self.dueDate = try c.decodeIfPresent(String.self, forKey: .dueDate)
+            // courseId: server sends moduleId instead
+            self.courseId = try c.decodeIfPresent(String.self, forKey: .courseId) ?? (try c.decodeIfPresent(String.self, forKey: .moduleId))
+            // assignedAt: server sends startedAt instead
+            self.assignedAt = try c.decodeIfPresent(String.self, forKey: .assignedAt) ?? (try c.decodeIfPresent(String.self, forKey: .startedAt))
+        }
     }
 
     struct AssignmentSummary: Decodable, Equatable {
@@ -7735,6 +7886,42 @@ struct TrainingAPI {
 
     struct CertificatesResponse: Decodable, Equatable {
         let certificates: [Certificate]
+
+        init(from decoder: Decoder) throws {
+            // Server returns a bare array: [{ certificate: {...}, courseTitle, courseSlug, courseCategory }, ...]
+            // Flatten to Certificate objects.
+            let c = try decoder.singleValueContainer()
+            let rows = try c.decode([CertificateWireRow].self)
+            self.certificates = rows.map { row in
+                Certificate(
+                    id: String(row.certificate.id),
+                    courseName: row.courseTitle,
+                    certificateNumber: row.certificate.certificateNumber,
+                    issuedAt: row.certificate.issuedAt,
+                    expiresAt: row.certificate.expiresAt,
+                    status: row.certificate.status,
+                    verificationCode: row.certificate.verificationCode
+                )
+            }
+        }
+
+        /// Wire row from the server's select join.
+        private struct CertificateWireRow: Decodable {
+            let certificate: CertificateDBRow
+            let courseTitle: String
+            let courseSlug: String
+            let courseCategory: String
+        }
+
+        /// Represents the flattened user_certificates table row.
+        private struct CertificateDBRow: Decodable {
+            let id: Int
+            let certificateNumber: String
+            let issuedAt: String?
+            let expiresAt: String?
+            let status: String
+            let verificationCode: String?
+        }
     }
 
     /// "Pending mandatory" row from `training.getPendingMandatoryTraining`
@@ -7747,6 +7934,14 @@ struct TrainingAPI {
         let progress: Int
         /// Whether this is past its due date.
         let overdue: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case id
+            case courseName
+            case dueDate
+            case progress
+            case overdue = "isOverdue"
+        }
     }
 
     struct PendingResponse: Decodable, Equatable {
@@ -8364,6 +8559,66 @@ struct FMCSACarrierLookup: Decodable, Hashable {
     let insurance: Insurance?
     let hazmat: Hazmat?
 
+    // MARK: Decodable
+
+    enum CodingKeys: String, CodingKey {
+        case verified, error, noApiKey, isBlocked, blockReason, warnings, fetchedAt, fromCache
+        case companyProfile, authority, safety, insurance, hazmat
+        case results  // MC search envelope
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        // Try standard profile shape (lookupByDOT).
+        if let verified = try container.decodeIfPresent(Bool.self, forKey: .verified) {
+            self.verified = verified
+            self.error = try container.decodeIfPresent(String.self, forKey: .error)
+            self.noApiKey = try container.decodeIfPresent(Bool.self, forKey: .noApiKey)
+            self.isBlocked = try container.decodeIfPresent(Bool.self, forKey: .isBlocked)
+            self.blockReason = try container.decodeIfPresent(String.self, forKey: .blockReason)
+            self.warnings = try container.decodeIfPresent([String].self, forKey: .warnings)
+            self.fetchedAt = try container.decodeIfPresent(String.self, forKey: .fetchedAt)
+            self.fromCache = try container.decodeIfPresent(Bool.self, forKey: .fromCache)
+            self.companyProfile = try container.decodeIfPresent(CompanyProfile.self, forKey: .companyProfile)
+            self.authority = try container.decodeIfPresent(Authority.self, forKey: .authority)
+            self.safety = try container.decodeIfPresent(Safety.self, forKey: .safety)
+            self.insurance = try container.decodeIfPresent(Insurance.self, forKey: .insurance)
+            self.hazmat = try container.decodeIfPresent(Hazmat.self, forKey: .hazmat)
+        } else if container.contains(.results) {
+            // MC search envelope: `{ results: [...], error?, noApiKey? }`.
+            // Set verified=false since this is a search result array, not a profile.
+            self.verified = false
+            self.error = try container.decodeIfPresent(String.self, forKey: .error)
+            self.noApiKey = try container.decodeIfPresent(Bool.self, forKey: .noApiKey)
+            self.isBlocked = nil
+            self.blockReason = nil
+            self.warnings = nil
+            self.fetchedAt = nil
+            self.fromCache = try container.decodeIfPresent(Bool.self, forKey: .fromCache)
+            self.companyProfile = nil
+            self.authority = nil
+            self.safety = nil
+            self.insurance = nil
+            self.hazmat = nil
+        } else {
+            // Fallback: missing/invalid top-level shape.
+            self.verified = false
+            self.error = "Invalid FMCSA response envelope"
+            self.noApiKey = nil
+            self.isBlocked = nil
+            self.blockReason = nil
+            self.warnings = nil
+            self.fetchedAt = nil
+            self.fromCache = nil
+            self.companyProfile = nil
+            self.authority = nil
+            self.safety = nil
+            self.insurance = nil
+            self.hazmat = nil
+        }
+    }
+
     struct CompanyProfile: Decodable, Hashable {
         let legalName: String
         let dba: String?
@@ -8521,6 +8776,23 @@ struct CsaScoresAPI {
         let inspectionCount24Months: Int
         let driverOOSRate: Double
         let vehicleOOSRate: Double
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.outOfServiceRate = try c.decodeIfPresent(Double.self, forKey: .outOfServiceRate) ?? 0
+            self.nationalAverage = try c.decodeIfPresent(Double.self, forKey: .nationalAverage) ?? 0
+            self.inspectionCount24Months = try c.decodeIfPresent(Int.self, forKey: .inspectionCount24Months) ?? 0
+            self.driverOOSRate = try c.decodeIfPresent(Double.self, forKey: .driverOOSRate) ?? 0
+            self.vehicleOOSRate = try c.decodeIfPresent(Double.self, forKey: .vehicleOOSRate) ?? 0
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case outOfServiceRate
+            case nationalAverage
+            case inspectionCount24Months
+            case driverOOSRate
+            case vehicleOOSRate
+        }
     }
 
     /// FMCSA crashes 24-month summary. Nil when the USDOT isn't on
@@ -15079,13 +15351,13 @@ struct VIGAAPI {
     /// POD_VERIFICATION shape.
     struct PODVerification: Decodable {
         let deliveryConfirmed: Bool
-        let siteCondition: String?
-        let visibleEvidence: [String]?
-        let discrepancies: [String]?
+        let siteCondition: String
+        let visibleEvidence: [String]
+        let discrepancies: [String]
         let signatureVisible: Bool
         let timestampEvidence: String?
         let confidence: Double
-        let visualNotes: String?
+        let visualNotes: String
     }
 
     /// FACILITY_MAPPING shape.
@@ -15591,8 +15863,23 @@ struct AdaptiveFeeAPI {
     struct FeeResult: Decodable, Hashable {
         let effectiveRate: Double
         let feeAmount: Double
-        let carrierPayment: Double
-        let breakdown: FeeBreakdown
+        let carrierPayment: Double?
+        let breakdown: FeeBreakdown?
+        
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.effectiveRate = try c.decode(Double.self, forKey: .effectiveRate)
+            self.feeAmount = try c.decode(Double.self, forKey: .feeAmount)
+            self.carrierPayment = try c.decodeIfPresent(Double.self, forKey: .carrierPayment)
+            self.breakdown = try c.decodeIfPresent(FeeBreakdown.self, forKey: .breakdown)
+        }
+        
+        enum CodingKeys: String, CodingKey {
+            case effectiveRate
+            case feeAmount
+            case carrierPayment
+            case breakdown
+        }
     }
 
     // MARK: - estimate (driver-facing live preview)
@@ -19188,6 +19475,45 @@ struct LaneAgentAPI {
 // Cortex fanout (perception parses FMCSA snapshot, memory pulls
 // EusoTrip scorecard, guardian emits the verdict) returning the
 // vetting envelope.
+
+// MARK: - railDemurrageAutoRouter (Rail demurrage automation)
+//
+// Mirrors `frontend/server/routers/railDemurrageAuto.ts`. Automated
+// demurrage accrual, bulk reporting, dispute tracking, and waiver
+// workflows. Country-specific free-time rules (US 48h, CA 48h, MX 24h).
+
+struct RailDemurrageAutoAPI {
+    unowned let api: EusoTripAPI
+
+    /// `railDemurrageAuto.reportByDwellReason` — query dwell reasons
+    /// and accrual aggregates. Server returns `{ reasons: [...] }`;
+    /// iOS decodes as `[DwellReasonItem]` via custom init(from:).
+    struct DwellReasonItem: Decodable {
+        let reason: String
+        let count: Int
+        let totalCharges: Double
+        let avgHours: Double
+    }
+
+    struct DwellReasonResponse: Decodable {
+        let reasons: [DwellReasonItem]
+    }
+
+    /// `railDemurrageAuto.reportByDwellReason` — aggregated dwell
+    /// reasons over the period.
+    struct ReportByDwellReasonInput: Encodable {
+        let periodDays: Int?
+    }
+
+    func reportByDwellReason(periodDays: Int? = nil) async throws -> [DwellReasonItem] {
+        struct Input: Encodable { let periodDays: Int? }
+        let resp: DwellReasonResponse = try await api.query(
+            "railDemurrageAuto.reportByDwellReason",
+            input: Input(periodDays: periodDays)
+        )
+        return resp.reasons
+    }
+}
 
 struct CarrierVetAgentAPI {
     unowned let api: EusoTripAPI

@@ -41,6 +41,40 @@ private struct PRLoadCtx: Decodable, Hashable {
     let driver: PRParty?
     let catalyst: PRParty?
     let shipper: PRParty?
+    
+    enum CodingKeys: String, CodingKey {
+        case id, loadNumber, status, distance, rate
+        case driverId, catalystId, shipperId
+        case pickupLocation, deliveryLocation, deliveryDate
+        case driver, catalyst, shipper
+    }
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // Server returns id as String (e.g., "123"), convert to Int?
+        if let idStr = try? c.decode(String.self, forKey: .id),
+           let idInt = Int(idStr) {
+            self.id = idInt
+        } else if let idInt = try? c.decode(Int.self, forKey: .id) {
+            self.id = idInt
+        } else {
+            self.id = nil
+        }
+        self.loadNumber = try c.decodeIfPresent(String.self, forKey: .loadNumber)
+        self.status = try c.decodeIfPresent(String.self, forKey: .status)
+        self.distance = try c.decodeIfPresent(Double.self, forKey: .distance)
+        self.rate = try c.decodeIfPresent(String.self, forKey: .rate)
+        self.driverId = try c.decodeIfPresent(Int.self, forKey: .driverId)
+        self.catalystId = try c.decodeIfPresent(Int.self, forKey: .catalystId)
+        self.shipperId = try c.decodeIfPresent(Int.self, forKey: .shipperId)
+        self.pickupLocation = try c.decodeIfPresent(PRCityState.self, forKey: .pickupLocation)
+        self.deliveryLocation = try c.decodeIfPresent(PRCityState.self, forKey: .deliveryLocation)
+        self.deliveryDate = try c.decodeIfPresent(String.self, forKey: .deliveryDate)
+        self.driver = try c.decodeIfPresent(PRParty.self, forKey: .driver)
+        self.catalyst = try c.decodeIfPresent(PRParty.self, forKey: .catalyst)
+        self.shipper = try c.decodeIfPresent(PRParty.self, forKey: .shipper)
+    }
+    
     struct PRCityState: Decodable, Hashable {
         let city: String?
         let state: String?

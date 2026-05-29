@@ -59,7 +59,7 @@ private struct RailShipmentDetail564: Decodable {
 }
 
 private struct RailInterchangePoint564: Decodable {
-    let id: Int
+    let id: String
     let name: String?
     let countryA: String?
     let countryB: String?

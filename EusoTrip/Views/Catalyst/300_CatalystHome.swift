@@ -35,6 +35,19 @@ private struct CHProfile: Decodable, Hashable {
     let mcNumber: String?
     let tier: String?
     let fleetSize: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case companyName, dotNumber, mcNumber, tier, fleetSize
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.companyName = try c.decodeIfPresent(String.self, forKey: .companyName)
+        self.dotNumber = try c.decodeIfPresent(String.self, forKey: .dotNumber)
+        self.mcNumber = try c.decodeIfPresent(String.self, forKey: .mcNumber)
+        self.tier = try c.decodeIfPresent(String.self, forKey: .tier)
+        self.fleetSize = try c.decodeIfPresent(Int.self, forKey: .fleetSize)
+    }
 }
 
 private struct CHStats: Decodable, Hashable {
@@ -44,6 +57,44 @@ private struct CHStats: Decodable, Hashable {
     let onTimeRate: Double?
     let gmvThisWeek: Double?
     let avgFitScore: Double?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Map server's activeLoads to iOS activeMatches
+        activeMatches = try container.decodeIfPresent(Int.self, forKey: .activeLoads)
+        
+        // Map server's availableCapacity to iOS matchedThisWeek
+        matchedThisWeek = try container.decodeIfPresent(Int.self, forKey: .availableCapacity)
+        
+        // Server doesn't send deliveredThisWeek; leave nil
+        deliveredThisWeek = nil
+        
+        // Map server's onTimeRate (number 0-100) to Double (0.0-1.0)
+        if let otRate = try container.decodeIfPresent(Int.self, forKey: .onTimeRate) {
+            onTimeRate = Double(otRate) / 100.0
+        } else {
+            onTimeRate = try container.decodeIfPresent(Double.self, forKey: .onTimeRate)
+        }
+        
+        // Map server's weeklyRevenue to iOS gmvThisWeek
+        gmvThisWeek = try container.decodeIfPresent(Double.self, forKey: .weeklyRevenue)
+        
+        // Map server's safetyScore (0-100) to iOS avgFitScore (normalize to 0-1)
+        if let score = try container.decodeIfPresent(Int.self, forKey: .safetyScore) {
+            avgFitScore = Double(score) / 100.0
+        } else {
+            avgFitScore = try container.decodeIfPresent(Double.self, forKey: .safetyScore)
+        }
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case activeLoads = "activeLoads"
+        case availableCapacity = "availableCapacity"
+        case onTimeRate = "onTimeRate"
+        case weeklyRevenue = "weeklyRevenue"
+        case safetyScore = "safetyScore"
+    }
 }
 
 private struct CHLoad: Decodable, Hashable, Identifiable {
@@ -59,9 +110,49 @@ private struct CHLoad: Decodable, Hashable, Identifiable {
     let pickupDate: String?
     let hazmatClass: String?
     let unNumber: String?
+    
     struct CHCityState: Decodable, Hashable {
         let city: String?
         let state: String?
+    }
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // Server returns id as String; coerce to Int
+        let idStr = try c.decode(String.self, forKey: .id)
+        self.id = Int(idStr) ?? 0
+        self.loadNumber = try c.decodeIfPresent(String.self, forKey: .loadNumber)
+        self.status = try c.decodeIfPresent(String.self, forKey: .status)
+        self.rate = try c.decodeIfPresent(Double.self, forKey: .rate)
+        self.distance = try c.decodeIfPresent(Double.self, forKey: .distance)
+        self.cargoType = try c.decodeIfPresent(String.self, forKey: .cargoType)
+        self.equipmentType = try c.decodeIfPresent(String.self, forKey: .equipmentType)
+        self.pickupDate = try c.decodeIfPresent(String.self, forKey: .pickupDate)
+        self.hazmatClass = try c.decodeIfPresent(String.self, forKey: .hazmatClass)
+        self.unNumber = try c.decodeIfPresent(String.self, forKey: .unNumber)
+        
+        // Server returns origin/destination as computed strings; parse into CHCityState
+        // Format: "City, State" or "Unknown"
+        let originStr = try c.decodeIfPresent(String.self, forKey: .origin) ?? ""
+        let destinationStr = try c.decodeIfPresent(String.self, forKey: .destination) ?? ""
+        
+        self.pickupLocation = Self.parseLocation(originStr)
+        self.deliveryLocation = Self.parseLocation(destinationStr)
+    }
+    
+    private static func parseLocation(_ locationStr: String) -> CHCityState? {
+        guard !locationStr.isEmpty, locationStr != "Unknown" else { return nil }
+        let parts = locationStr.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        if parts.count == 2 {
+            return CHCityState(city: parts[0], state: parts[1])
+        }
+        return CHCityState(city: locationStr, state: nil)
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case id, loadNumber, status, rate, distance, cargoType, equipmentType
+        case pickupLocation, deliveryLocation, pickupDate, hazmatClass, unNumber
+        case origin, destination
     }
 }
 

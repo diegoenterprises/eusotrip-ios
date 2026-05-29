@@ -41,6 +41,32 @@ struct FacilityRatingsSummary: Decodable, Hashable {
     let avgRating: Double?
     let totalRatings: Int?
     let categories: [String: Double]?
+    
+    enum CodingKeys: String, CodingKey {
+        case summary
+        case ratings
+    }
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Server returns { summary: { avg, total }, ratings: [...] }
+        // Extract summary nested object
+        if let summaryContainer = try? c.nestedContainer(keyedBy: SummaryKeys.self, forKey: .summary) {
+            self.avgRating = try? summaryContainer.decodeIfPresent(Double.self, forKey: .avg)
+            self.totalRatings = try? summaryContainer.decodeIfPresent(Int.self, forKey: .total)
+        } else {
+            self.avgRating = nil
+            self.totalRatings = nil
+        }
+        
+        self.categories = nil
+    }
+    
+    enum SummaryKeys: String, CodingKey {
+        case avg
+        case total
+    }
 }
 
 struct FacilityRequirement: Decodable, Hashable, Identifiable {
@@ -49,6 +75,25 @@ struct FacilityRequirement: Decodable, Hashable, Identifiable {
     let label: String?
     let description: String?
     let isMandatory: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case id, category, label, description, isMandatory
+        case requirementType, requirementValue, isRequired, notes
+        case facilityId, createdAt, updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(Int.self, forKey: .id)
+        // Server sends requirementType → map to category
+        self.category = try c.decodeIfPresent(String.self, forKey: .requirementType)
+        // Server sends requirementValue → map to label
+        self.label = try c.decodeIfPresent(String.self, forKey: .requirementValue)
+        // Server sends notes → map to description
+        self.description = try c.decodeIfPresent(String.self, forKey: .notes)
+        // Server sends isRequired → map to isMandatory
+        self.isMandatory = try c.decodeIfPresent(Bool.self, forKey: .isRequired)
+    }
 }
 
 // MARK: - Sheet

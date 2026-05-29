@@ -440,9 +440,13 @@ private struct RailIntermodalTransferBody: View {
         guard let t = activeTransfer else { return }
         isAdvancing = true
         struct AdvIn: Encodable { let intermodalShipmentId: Int; let fromSegmentId: Int; let toSegmentId: Int }
+        struct AdvanceSegmentResponse: Decodable {
+            let success: Bool
+            let nextSegmentId: Int?
+            let newStatus: String
+        }
         do {
-            struct Empty: Decodable {}
-            let _: Empty = try await EusoTripAPI.shared.query(
+            let result: AdvanceSegmentResponse = try await EusoTripAPI.shared.query(
                 "intermodal.advanceSegment",
                 input: AdvIn(intermodalShipmentId: shipmentId, fromSegmentId: t.fromSegmentId ?? 0, toSegmentId: t.toSegmentId ?? 0))
             await load()

@@ -45,6 +45,28 @@ private struct AssetHealthFleet575: Decodable {
     let avgMilesToOverhaul: Int?
     let healthyPercent: Double?
     let divisionName: String?
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.healthIndex = try c.decodeIfPresent(Double.self, forKey: .healthIndex)
+        self.carCount = try c.decodeIfPresent(Int.self, forKey: .carCount)
+        self.shoppedCount = try c.decodeIfPresent(Int.self, forKey: .shoppedCount)
+        self.dueServiceCount = try c.decodeIfPresent(Int.self, forKey: .dueServiceCount)
+        self.healthyCount = try c.decodeIfPresent(Int.self, forKey: .healthyCount)
+        self.watchCount = try c.decodeIfPresent(Int.self, forKey: .watchCount)
+        self.defectCount = try c.decodeIfPresent(Int.self, forKey: .defectCount)
+        self.avgMilesToOverhaul = try c.decodeIfPresent(Int.self, forKey: .avgMilesToOverhaul)
+        self.healthyPercent = try c.decodeIfPresent(Double.self, forKey: .healthyPercent)
+        self.divisionName = try c.decodeIfPresent(String.self, forKey: .divisionName)
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case healthIndex, carCount, shoppedCount, dueServiceCount, healthyCount
+        case watchCount, defectCount, avgMilesToOverhaul, healthyPercent, divisionName
+        // Server's per-railcar fields (tolerate but ignore)
+        case railcarNumber, overallCondition, mechanicalCondition, maintenanceAlerts
+        case componentStatus, lastInspectionDate, nextInspectionDue
+    }
 }
 
 private struct RailcarHealth575: Decodable, Identifiable {
@@ -56,6 +78,30 @@ private struct RailcarHealth575: Decodable, Identifiable {
     let mileage: String?
     let additionalInfo: String?
     let healthPercent: Int?
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case reportingMark = "railcarNumber"
+        case equipmentType = "carType"
+        case condition
+        case componentNote
+        case mileage
+        case additionalInfo
+        case healthPercent
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Server returns UMLEREquipmentSpecs: map railcarNumber -> reportingMark, carType -> equipmentType
+        self.id = (try container.decodeIfPresent(String.self, forKey: .reportingMark))?.hashValue ?? 0
+        self.reportingMark = try container.decodeIfPresent(String.self, forKey: .reportingMark)
+        self.equipmentType = try container.decodeIfPresent(String.self, forKey: .equipmentType)
+        self.condition = try container.decodeIfPresent(String.self, forKey: .condition)
+        self.componentNote = try container.decodeIfPresent(String.self, forKey: .componentNote)
+        self.mileage = try container.decodeIfPresent(String.self, forKey: .mileage)
+        self.additionalInfo = try container.decodeIfPresent(String.self, forKey: .additionalInfo)
+        self.healthPercent = try container.decodeIfPresent(Int.self, forKey: .healthPercent)
+    }
 }
 
 // MARK: - Body

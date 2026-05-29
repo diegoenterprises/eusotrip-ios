@@ -42,6 +42,28 @@ private struct RailInspection563: Decodable {
     let location: String?
     let defectCode: String?
     let timestamp: String?
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decodeIfPresent(Int.self, forKey: .id)
+        if let result = try c.decodeIfPresent(String.self, forKey: .result) {
+            self.status = result
+        } else if let insType = try c.decodeIfPresent(String.self, forKey: .inspectionType) {
+            self.status = insType
+        } else {
+            self.status = nil
+        }
+        self.description = try c.decodeIfPresent(String.self, forKey: .defectsFound)
+        self.railcarNumber = nil
+        self.location = try c.decodeIfPresent(String.self, forKey: .notes)
+        self.defectCode = nil
+        self.timestamp = try c.decodeIfPresent(String.self, forKey: .inspectionDate)
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case id, result, inspectionType, defectsFound, notes, inspectionDate
+        case railcarId, inspectorId, nextDueDate
+    }
 }
 
 private struct RailCompliance563: Decodable {
@@ -49,6 +71,18 @@ private struct RailCompliance563: Decodable {
     let status: String?
     let totalInspections: Int?
     let failedCount: Int?
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.inspections = try c.decodeIfPresent([RailInspection563].self, forKey: .inspections) ?? []
+        self.status = try c.decodeIfPresent(String.self, forKey: .status)
+        self.totalInspections = try c.decodeIfPresent(Int.self, forKey: .totalInspections)
+        self.failedCount = try c.decodeIfPresent(Int.self, forKey: .failedCount)
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case inspections, status, totalInspections, failedCount, hazmatPermits
+    }
 }
 
 private struct FRAViolation563: Decodable {
@@ -62,6 +96,32 @@ private struct FRASafety563: Decodable {
     let status: String?
     let violationCount: Int?
     let violations: [FRAViolation563]?
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // Server returns totalViolations (Int); map to violationCount
+        self.violationCount = try c.decodeIfPresent(Int.self, forKey: .totalViolations)
+        // Server returns overallRating (String); map to status
+        self.status = try c.decodeIfPresent(String.self, forKey: .overallRating)
+        // Server returns violationsByCategory: [{category, count, trend}]
+        // Convert to [FRAViolation563] by treating category as type
+        if let catArray = try c.decodeIfPresent([[String: String]].self, forKey: .violationsByCategory) {
+            self.violations = catArray.map { cat in
+                FRAViolation563(
+                    type: cat["category"],
+                    description: cat["trend"],
+                    severity: nil,
+                    reviewDue: nil
+                )
+            }
+        } else {
+            self.violations = nil
+        }
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case totalViolations, overallRating, violationsByCategory
+    }
 }
 
 private struct LiveDemurrage563: Decodable {
