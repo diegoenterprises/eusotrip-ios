@@ -1951,11 +1951,12 @@ enum ScreenRegistry {
             .init(id: "Rail552", title: "Rail Engineer · Compliance", role: .railEngineer) { p in AnyView(RailComplianceScreen(theme: p)) },
         ])
 
-        // Vessel Operator surface (Vesl650–652).
+        // Vessel Operator surface (Vesl650–652 tab roots; Vesl659 drill-in leaf).
         list.append(contentsOf: [
             .init(id: "Vesl650", title: "Vessel Operator · Home",       role: .vesselOperator) { p in AnyView(VesselOperatorHomeScreen(theme: p)) },
             .init(id: "Vesl651", title: "Vessel Operator · Shipments",  role: .vesselOperator) { p in AnyView(VesselShipmentsScreen(theme: p)) },
             .init(id: "Vesl652", title: "Vessel Operator · Compliance", role: .vesselOperator) { p in AnyView(VesselComplianceScreen(theme: p)) },
+            .init(id: "Vesl659", title: "Vessel Operator · Bunker FSC", role: .vesselOperator) { p in AnyView(VesselBunkerFSCScreen(theme: p)) },
         ])
 
         return list
