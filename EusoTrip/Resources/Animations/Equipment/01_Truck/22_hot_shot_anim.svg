@@ -340,7 +340,8 @@
   </g>
 
   <!-- ========== EUSOTRIP BRAND LOCKUP ========== -->
-  
-  
+
+
   <!-- EUSOTRIP-FIX-2026-05-17 -->
+  </g><!-- close g.chassis-bob (was unclosed; WKWebView auto-closed here, native parser is strict) -->
 </svg>

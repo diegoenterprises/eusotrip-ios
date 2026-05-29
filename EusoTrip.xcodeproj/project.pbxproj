@@ -637,6 +637,14 @@
 		EE0000000000000000000B04 /* ShipperLoadActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111LAA2 /* ShipperLoadActivityAttributes.swift */; };
 		EE0000000000000000000B05 /* EusoTripiOSWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = EE0000000000000000000F06 /* EusoTripiOSWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		EQAN0001ANIMATIONFILE001 /* EquipmentAnimation.swift in Sources */ = {isa = PBXBuildFile; fileRef = EQAN0002ANIMATIONFILE002 /* EquipmentAnimation.swift */; };
+		5CB000000000000000000000 /* SVGCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CR000000000000000000000 /* SVGCore.swift */; };
+		5CB010000000000000000000 /* SVGPathParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CR010000000000000000000 /* SVGPathParser.swift */; };
+		5CB020000000000000000000 /* SVGModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CR020000000000000000000 /* SVGModel.swift */; };
+		5CB030000000000000000000 /* SVGCSSParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CR030000000000000000000 /* SVGCSSParser.swift */; };
+		5CB040000000000000000000 /* SVGParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CR040000000000000000000 /* SVGParser.swift */; };
+		5CB050000000000000000000 /* SVGAnimation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CR050000000000000000000 /* SVGAnimation.swift */; };
+		5CB060000000000000000000 /* SVGRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CR060000000000000000000 /* SVGRenderer.swift */; };
+		5CB070000000000000000000 /* NativeSVGView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CR070000000000000000000 /* NativeSVGView.swift */; };
 		EQPR20260521000001 /* EquipmentRecommenderWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = EQPR20260521000002 /* EquipmentRecommenderWidget.swift */; };
 		EWAP2026051700000011A1 /* EusoWalletApplePayProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = EWAP2026051700000012A1 /* EusoWalletApplePayProvider.swift */; };
 		EWST2026051700000011A1 /* EusoWalletStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EWST2026051700000012A1 /* EusoWalletStore.swift */; };
@@ -1336,6 +1344,14 @@
 		EE0000000000000000000F05 /* EusoTripiOSWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = EusoTripiOSWidgets.entitlements; sourceTree = "<group>"; };
 		EE0000000000000000000F06 /* EusoTripiOSWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = EusoTripiOSWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		EQAN0002ANIMATIONFILE002 /* EquipmentAnimation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EquipmentAnimation.swift; path = EusoTrip/Views/Components/EquipmentAnimation.swift; sourceTree = SOURCE_ROOT; };
+		5CR000000000000000000000 /* SVGCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SVGCore.swift; path = EusoTrip/Views/Components/SVGNative/SVGCore.swift; sourceTree = SOURCE_ROOT; };
+		5CR010000000000000000000 /* SVGPathParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SVGPathParser.swift; path = EusoTrip/Views/Components/SVGNative/SVGPathParser.swift; sourceTree = SOURCE_ROOT; };
+		5CR020000000000000000000 /* SVGModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SVGModel.swift; path = EusoTrip/Views/Components/SVGNative/SVGModel.swift; sourceTree = SOURCE_ROOT; };
+		5CR030000000000000000000 /* SVGCSSParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SVGCSSParser.swift; path = EusoTrip/Views/Components/SVGNative/SVGCSSParser.swift; sourceTree = SOURCE_ROOT; };
+		5CR040000000000000000000 /* SVGParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SVGParser.swift; path = EusoTrip/Views/Components/SVGNative/SVGParser.swift; sourceTree = SOURCE_ROOT; };
+		5CR050000000000000000000 /* SVGAnimation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SVGAnimation.swift; path = EusoTrip/Views/Components/SVGNative/SVGAnimation.swift; sourceTree = SOURCE_ROOT; };
+		5CR060000000000000000000 /* SVGRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SVGRenderer.swift; path = EusoTrip/Views/Components/SVGNative/SVGRenderer.swift; sourceTree = SOURCE_ROOT; };
+		5CR070000000000000000000 /* NativeSVGView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NativeSVGView.swift; path = EusoTrip/Views/Components/SVGNative/NativeSVGView.swift; sourceTree = SOURCE_ROOT; };
 		EQPR20260521000002 /* EquipmentRecommenderWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EquipmentRecommenderWidget.swift; path = EusoTrip/Views/Components/EquipmentRecommenderWidget.swift; sourceTree = SOURCE_ROOT; };
 		EWAP2026051700000012A1 /* EusoWalletApplePayProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EusoWalletApplePayProvider.swift; path = EusoTrip/Services/EusoWalletApplePayProvider.swift; sourceTree = SOURCE_ROOT; };
 		EWST2026051700000012A1 /* EusoWalletStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EusoWalletStore.swift; path = EusoTrip/ViewModels/EusoWalletStore.swift; sourceTree = SOURCE_ROOT; };
@@ -2304,6 +2320,14 @@
 				B1A31111111111111111AA02 /* EusoQR.swift */,
 				B1A51111111111111111AA02 /* EusoTicketCanvas.swift */,
 				EQAN0002ANIMATIONFILE002 /* EquipmentAnimation.swift */,
+				5CR000000000000000000000 /* SVGCore.swift */,
+				5CR010000000000000000000 /* SVGPathParser.swift */,
+				5CR020000000000000000000 /* SVGModel.swift */,
+				5CR030000000000000000000 /* SVGCSSParser.swift */,
+				5CR040000000000000000000 /* SVGParser.swift */,
+				5CR050000000000000000000 /* SVGAnimation.swift */,
+				5CR060000000000000000000 /* SVGRenderer.swift */,
+				5CR070000000000000000000 /* NativeSVGView.swift */,
 				PDFV0002VIEWERFILE002AAA /* EusoPDFViewer.swift */,
 				B1A61111111111111111AA02 /* 106B_DriverEusoTicketRenderer.swift */,
 				A1F1100000000000000011AA /* WeatherKit.framework */,
@@ -2808,6 +2832,14 @@
 				B1A31111111111111111AA01 /* EusoQR.swift in Sources */,
 				B1A51111111111111111AA01 /* EusoTicketCanvas.swift in Sources */,
 				EQAN0001ANIMATIONFILE001 /* EquipmentAnimation.swift in Sources */,
+				5CB000000000000000000000 /* SVGCore.swift in Sources */,
+				5CB010000000000000000000 /* SVGPathParser.swift in Sources */,
+				5CB020000000000000000000 /* SVGModel.swift in Sources */,
+				5CB030000000000000000000 /* SVGCSSParser.swift in Sources */,
+				5CB040000000000000000000 /* SVGParser.swift in Sources */,
+				5CB050000000000000000000 /* SVGAnimation.swift in Sources */,
+				5CB060000000000000000000 /* SVGRenderer.swift in Sources */,
+				5CB070000000000000000000 /* NativeSVGView.swift in Sources */,
 				BINDANIM0010CE0FF1ABCD03 /* BindableEquipmentAnimation.swift in Sources */,
 				LANIMCTX0010CE0FF1ABCD01 /* LoadAnimationContext.swift in Sources */,
 				SHIPMENT0010CE0FF1AAAA01 /* Shipment.swift in Sources */,

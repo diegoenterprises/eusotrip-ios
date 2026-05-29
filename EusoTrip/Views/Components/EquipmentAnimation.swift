@@ -36,7 +36,6 @@
 
 import SwiftUI
 import UIKit
-import WebKit
 
 // MARK: - Public input enums (caller-facing)
 
@@ -377,79 +376,6 @@ final class EquipmentAnimationCache {
     }
 }
 
-// MARK: - WKWebView host
-
-/// Transparent SVG-rendering web view. The SVG carries its own
-/// SMIL / CSS animations + brand lockup + `prefers-reduced-motion`
-/// query — iOS just hosts the document. All scrolling + bouncing is
-/// disabled so the document never moves inside its tile.
-private struct EquipmentAnimationWebView: UIViewRepresentable {
-    let svgString: String
-    let colorScheme: ColorScheme
-
-    func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        // No JS bridge needed; the SVG runs SMIL natively. Block
-        // navigation entirely — taps stay with the SwiftUI host.
-        // iOS 14+ uses WKWebpagePreferences.allowsContentJavaScript;
-        // the older WKPreferences.javaScriptEnabled was deprecated.
-        let pagePrefs = WKWebpagePreferences()
-        pagePrefs.allowsContentJavaScript = false
-        config.defaultWebpagePreferences = pagePrefs
-        config.suppressesIncrementalRendering = true
-
-        let view = WKWebView(frame: .zero, configuration: config)
-        view.isOpaque = false
-        view.backgroundColor = .clear
-        view.scrollView.isScrollEnabled = false
-        view.scrollView.bounces = false
-        view.scrollView.contentInsetAdjustmentBehavior = .never
-        view.scrollView.showsVerticalScrollIndicator = false
-        view.scrollView.showsHorizontalScrollIndicator = false
-        view.scrollView.isUserInteractionEnabled = false
-        view.isUserInteractionEnabled = false   // pass touches to host
-        return view
-    }
-
-    func updateUIView(_ view: WKWebView, context: Context) {
-        // Forward the SwiftUI color scheme to WebKit so the SVG's
-        // `@media (prefers-color-scheme: dark)` rules actually fire.
-        // Without this, WKWebView inherits the system trait, which on
-        // a dark-themed app screen with light system style produces a
-        // light-mode SVG rendering — exactly the "sticks out like a
-        // sore thumb" mismatch the founder flagged 2026-05-16.
-        view.overrideUserInterfaceStyle = (colorScheme == .dark) ? .dark : .light
-        // Wrap the bare SVG markup in an HTML document with a
-        // transparent body so the rendered surface composites
-        // cleanly under SwiftUI's hierarchy. width=device-width
-        // viewport prevents WebKit from upscaling the SVG.
-        let html = """
-        <!DOCTYPE html>
-        <html><head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-        <style>
-          html, body {
-            margin: 0; padding: 0;
-            background: transparent;
-            width: 100%; height: 100%;
-            overflow: hidden;
-            -webkit-touch-callout: none;
-            -webkit-user-select: none;
-          }
-          svg {
-            display: block;
-            width: 100%; height: 100%;
-          }
-        </style>
-        </head><body>
-        \(svgString)
-        </body></html>
-        """
-        view.loadHTMLString(html, baseURL: Bundle.main.bundleURL)
-    }
-}
-
 // MARK: - Public SwiftUI entry
 
 /// Drop-in replacement for the v1 SwiftUI-shape silhouettes. Picks
@@ -606,7 +532,7 @@ struct EquipmentAnimation: View {
     @ViewBuilder
     private var content: some View {
         if let svg = EquipmentAnimationCache.shared.svg(for: equipment) {
-            EquipmentAnimationWebView(svgString: svg, colorScheme: colorScheme)
+            NativeSVGView(svgString: svg)
                 .padding(2)
         } else {
             // Honest fallback — never a fabricated silhouette.
