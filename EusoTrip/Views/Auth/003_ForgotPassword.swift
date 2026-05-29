@@ -11,9 +11,14 @@ import SwiftUI
 struct ForgotPasswordView: View {
     @Environment(\.palette) var palette
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var vm = ForgotPasswordViewModel()
     @FocusState private var focused: Bool
     @State private var showReset = false
+    // Drives the success-checkmark settle: flips true once the real
+    // `.sent` phase lands, so the bounce + spring scale-in are bound to
+    // actual backend success rather than a hardcoded value.
+    @State private var sentLanded = false
 
     var body: some View {
         ZStack {
@@ -109,8 +114,21 @@ struct ForgotPasswordView: View {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 36, weight: .medium))
                     .foregroundStyle(Brand.success)
-                    .symbolEffect(.bounce, value: true)
+                    // Bounce is bound to the *real* landed-success flag,
+                    // not a constant, so it only fires when the backend
+                    // returns .sent. Suppressed entirely under reduce-motion.
+                    .symbolEffect(.bounce, value: reduceMotion ? false : sentLanded)
             }
+            // Spring settle: the success glyph scales up from 0.6→1 with a
+            // gentle overshoot the moment .sent lands. Reduce-motion shows the
+            // final state (scale 1, full opacity) with no motion.
+            .scaleEffect(reduceMotion || sentLanded ? 1 : 0.6)
+            .opacity(reduceMotion || sentLanded ? 1 : 0)
+            .animation(
+                reduceMotion ? nil
+                             : .spring(response: 0.5, dampingFraction: 0.62),
+                value: sentLanded
+            )
             Text("Check your inbox")
                 .font(EType.h2)
                 .foregroundStyle(palette.textPrimary)
@@ -121,6 +139,13 @@ struct ForgotPasswordView: View {
             CTAButton(title: "Back to sign in") { dismiss() }
         }
         .sensoryFeedback(.success, trigger: vm.phase)
+        // The card only renders when phase == .sent, so onAppear here is the
+        // exact moment real success lands — wire the settle/bounce trigger to it.
+        .onAppear {
+            if reduceMotion { sentLanded = true }
+            else { DispatchQueue.main.async { sentLanded = true } }
+        }
+        .onDisappear { sentLanded = false }
     }
 
     private var closeButton: some View {

@@ -63,12 +63,18 @@ private struct RailIdIn587: Encodable { let railId: String }
 
 private struct RailFRASafetyBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let railId: String
 
     @State private var compliance: FRASafetyCompliance587? = nil
     @State private var accidents: FRAAccidentReports587? = nil
     @State private var regulatoryItems: [RailComplianceItem587] = []
     @State private var isFiling = false
+
+    /// The fraction the score arc currently animates toward. Starts at 0 so the
+    /// ring sweeps up into the real `scoreFraction` on appear and re-sweeps when
+    /// fresh compliance data lands. Reduce-motion snaps straight to the value.
+    @State private var shownFraction: Double = 0
 
     // MARK: Derived
 
@@ -215,19 +221,41 @@ private struct RailFRASafetyBody: View {
             Circle()
                 .stroke(statusColor.opacity(0.16), lineWidth: 8)
                 .frame(width: 80, height: 80)
-            // Compliance arc
+            // Compliance arc — trims to the live, animated fraction so the
+            // sweep tracks the real 0-100 regulatory health score.
             Circle()
-                .trim(from: 0, to: scoreFraction)
+                .trim(from: 0, to: shownFraction)
                 .stroke(statusColor, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .frame(width: 80, height: 80)
             VStack(spacing: 1) {
-                Text(scoreLabel)
+                // Numeral counts up in lockstep with the arc (both driven by
+                // the same `shownFraction`), so the digits and ring agree.
+                Text("\(Int((shownFraction * 100).rounded()))")
                     .font(.system(size: 18, weight: .heavy)).monospacedDigit()
                     .foregroundStyle(statusColor)
+                    .contentTransition(.numericText(value: shownFraction * 100))
                 Text("SCORE")
                     .font(.system(size: 7.5, weight: .heavy)).kerning(0.5)
                     .foregroundStyle(palette.textTertiary)
+            }
+        }
+        // Sweep from 0 → real fraction on first paint; re-sweep when the live
+        // score changes. Reduce-motion snaps straight to the final value.
+        .onAppear { animateScore(to: scoreFraction) }
+        .onChange(of: scoreFraction) { _, newValue in animateScore(to: newValue) }
+        .accessibilityElement()
+        .accessibilityLabel("Compliance score \(scoreLabel) of 100, \(statusLabel)")
+    }
+
+    /// Drives the score arc + numeral toward the real fraction with a natural
+    /// decelerating settle. Gated by Reduce Motion (snaps to the final state).
+    private func animateScore(to target: Double) {
+        if reduceMotion {
+            shownFraction = target
+        } else {
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
+                shownFraction = target
             }
         }
     }

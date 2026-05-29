@@ -73,8 +73,23 @@ private enum SafetyBand {
 
 struct MeSafetyScore: View {
     @Environment(\.palette) var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var session: EusoTripSession
     @StateObject private var store = DriverSafetyScoreStore()
+
+    // MARK: - Dial sweep state
+    //
+    // A single normalized sweep (0 → 1) drives every dial on the screen
+    // in lockstep: the hero ring's trim, the hero numeral count-up, and
+    // each category mini-bar fill. Each consumer multiplies its OWN real
+    // fraction (score/100, cat.score/100) by `sweep`, so the motion is a
+    // pure reveal of the live value — the resting state is always the
+    // real data, never a decorative target. Reduce-motion pins sweep at
+    // 1 so the final/static state shows with no animation.
+    @State private var sweep: CGFloat = 0
+    /// Tracks the score the sweep was last armed for, so a refresh that
+    /// changes the real number replays the reveal instead of snapping.
+    @State private var armedScore: Int = -1
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -198,24 +213,30 @@ struct MeSafetyScore: View {
         if band == .noData {
             return AnyView(emptyHero)
         }
+        // Real fraction off the live composite score (0-100). The arc
+        // reveals this value via `sweep`; resting state == real fraction.
         let fraction = max(0.0, min(1.0, Double(score) / 100.0))
+        // Live count-up: the numeral rides the same sweep so digits land
+        // exactly when the arc completes. Rounds to the real score at 1.0.
+        let shownScore = reduceMotion ? score : Int((Double(score) * Double(sweep)).rounded())
         return AnyView(
             VStack(spacing: Space.s3) {
                 ZStack {
                     Circle()
                         .stroke(palette.tintNeutral.opacity(0.4), lineWidth: 10)
                     Circle()
-                        .trim(from: 0, to: fraction)
+                        .trim(from: 0, to: CGFloat(fraction) * (reduceMotion ? 1 : sweep))
                         .stroke(
                             LinearGradient.diagonal,
                             style: StrokeStyle(lineWidth: 10, lineCap: .round)
                         )
                         .rotationEffect(.degrees(-90))
                     VStack(spacing: 2) {
-                        Text("\(score)")
+                        Text("\(shownScore)")
                             .font(EType.numeric)
                             .foregroundStyle(LinearGradient.diagonal)
                             .monospacedDigit()
+                            .contentTransition(.numericText())
                         Text("/ 100")
                             .font(EType.caption)
                             .foregroundStyle(palette.textTertiary)
@@ -234,7 +255,30 @@ struct MeSafetyScore: View {
             .frame(maxWidth: .infinity)
             .padding(Space.s4)
             .eusoCard(radius: Radius.lg)
+            // Arm / replay the shared sweep keyed to the REAL score. A
+            // refresh that changes the number replays the reveal; an
+            // identical refresh is a no-op (no re-snap).
+            .onAppear { armSweep(for: score) }
+            .onChange(of: score) { _, newScore in armSweep(for: newScore) }
         )
+    }
+
+    /// Drive the shared dial sweep 0 → 1 on the material-standard
+    /// decelerate curve `cubic-bezier(0.4, 0, 0.2, 1)`. Every dial
+    /// (hero ring, hero numeral, category bars) multiplies its own real
+    /// fraction by this sweep, so one eased reveal animates them all in
+    /// lockstep. Reduce-motion settles to the final state with no motion.
+    private func armSweep(for score: Int) {
+        guard armedScore != score else { return }
+        armedScore = score
+        guard !reduceMotion else {
+            sweep = 1
+            return
+        }
+        sweep = 0
+        withAnimation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.9)) {
+            sweep = 1
+        }
     }
 
     @ViewBuilder
@@ -278,16 +322,25 @@ struct MeSafetyScore: View {
                     .tracking(1.4)
                     .foregroundStyle(palette.textTertiary)
                 HStack(spacing: Space.s2) {
-                    ForEach(d.categories) { cat in
-                        categoryTile(cat)
+                    ForEach(Array(d.categories.enumerated()), id: \.element.id) { idx, cat in
+                        categoryTile(cat, index: idx)
                     }
                 }
             }
         }
     }
 
-    private func categoryTile(_ cat: SafetyAPI.ScoreCategory) -> some View {
+    private func categoryTile(_ cat: SafetyAPI.ScoreCategory, index: Int) -> some View {
+        // Real per-category fraction (0-100 → 0…1). The bar fill rests at
+        // this exact value; `sweep` only reveals it.
         let fraction = max(0.0, min(1.0, Double(cat.score) / 100.0))
+        // Gentle per-row cascade: each tile lags the previous by a small
+        // share of the sweep so the three bars stagger in instead of
+        // snapping together. Clamped 0…1 → never overshoots real value.
+        let stagger = CGFloat(index) * 0.18
+        let local = reduceMotion ? CGFloat(1)
+            : max(0, min(1, (sweep - stagger) / max(0.0001, 1 - stagger)))
+        let shownCatScore = reduceMotion ? cat.score : Int((Double(cat.score) * Double(local)).rounded())
         return VStack(alignment: .leading, spacing: Space.s1) {
             Text(cat.name.uppercased())
                 .font(EType.micro)
@@ -295,17 +348,18 @@ struct MeSafetyScore: View {
                 .foregroundStyle(palette.textTertiary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-            Text("\(cat.score)")
+            Text("\(shownCatScore)")
                 .font(EType.numeric)
                 .foregroundStyle(LinearGradient.diagonal)
                 .monospacedDigit()
+                .contentTransition(.numericText())
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(palette.tintNeutral.opacity(0.4))
                     RoundedRectangle(cornerRadius: 2)
                         .fill(LinearGradient.diagonal)
-                        .frame(width: geo.size.width * fraction)
+                        .frame(width: geo.size.width * CGFloat(fraction) * local)
                 }
             }
             .frame(height: 4)

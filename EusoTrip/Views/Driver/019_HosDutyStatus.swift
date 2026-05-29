@@ -33,6 +33,7 @@ import SwiftUI
 struct HosDutyStatus: View {
     @Environment(\.palette) var palette
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var session: EusoTripSession
     @StateObject private var store = HOSLiveStore()
 
@@ -625,7 +626,14 @@ struct HosDutyStatus: View {
                     .foregroundStyle(palette.textSecondary)
             }
 
-            // Countdown rail — progress fills as the driver logs off-duty time
+            // Countdown rail — progress fills as the driver logs off-duty time.
+            // Width is the REAL fraction breakElapsedMinutes / 30 (FMCSA
+            // §395.3(a)(3)(ii) — the 30-minute break clock), never decorative.
+            // The wall-clock ticker bumps `breakProgress` once a second, so we
+            // glide each increment on the material decel curve (0.4,0,0.2,1)
+            // instead of letting the bar snap — and freeze to the final filled
+            // width under Reduce Motion. LINEAR is intentionally avoided: this
+            // is a settling fill, not a continuous ambient loop.
             VStack(spacing: 6) {
                 GeometryReader { g in
                     ZStack(alignment: .leading) {
@@ -634,10 +642,19 @@ struct HosDutyStatus: View {
                             .frame(height: 6)
                         Capsule()
                             .fill(LinearGradient.diagonal)
-                            .frame(width: g.size.width * breakProgress, height: 6)
+                            .frame(width: min(g.size.width, g.size.width * breakProgress), height: 6)
+                            .animation(
+                                reduceMotion
+                                    ? nil
+                                    : .timingCurve(0.4, 0, 0.2, 1, duration: 0.6),
+                                value: breakProgress
+                            )
                     }
                 }
                 .frame(height: 6)
+                .accessibilityElement()
+                .accessibilityLabel("30-minute break progress")
+                .accessibilityValue("\(Int((breakProgress * 100).rounded())) percent of 30-minute break logged")
 
                 HStack {
                     let elapsedH = breakElapsedMinutes / 60

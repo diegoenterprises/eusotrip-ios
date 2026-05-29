@@ -70,11 +70,17 @@ private struct RailIdIn585: Encodable { let railId: String }
 
 private struct RailEquipmentPositionsBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let railId: String
 
     @State private var summary: PositionsSummary585? = nil
     @State private var positions: [RailcarPosition585] = []
     @State private var container: ContainerTracking585? = nil
+
+    /// Fraction the completed arc + entering pucks animate toward. Starts at 0
+    /// so the route sweeps origin→current on appear (and on any data refresh),
+    /// always settling on the REAL `routeProgress`. Reduce-motion snaps to it.
+    @State private var shownProgress: Double = 0
 
     // MARK: Derived
 
@@ -89,7 +95,10 @@ private struct RailEquipmentPositionsBody: View {
     private var routeLabel: String   { summary?.routeLabel      ?? "BNSF Transcon" }
     private var originLabel: String  { summary?.originLabel     ?? "Chicago, IL" }
     private var destLabel: String    { summary?.destinationLabel ?? "Los Angeles, CA" }
-    private var routeProgress: Double { summary?.progressFraction ?? 0.42 }
+    // Real route fraction (origin→current) straight from the realtime feed.
+    // Falls back to 0 — never a decorative constant — so a loading/empty route
+    // shows no completed arc until the true `progressFraction` lands.
+    private var routeProgress: Double { summary?.progressFraction ?? 0.0 }
 
     // MARK: View
 
@@ -140,82 +149,18 @@ private struct RailEquipmentPositionsBody: View {
     // MARK: Route arc canvas (hero)
 
     private var routeCanvas: some View {
-        Canvas { ctx, size in
-            let w = size.width, h = size.height
-            let pad: CGFloat = 32
-            let midY = h * 0.52
-
-            // Arc control point (Bézier gives the railway curve shape)
-            let cp = CGPoint(x: w / 2, y: midY - 38)
-            let startPt = CGPoint(x: pad, y: midY)
-            let endPt   = CGPoint(x: w - pad, y: midY)
-
-            // Background track (dashed gray — full route)
-            var trackPath = Path()
-            trackPath.move(to: startPt)
-            trackPath.addQuadCurve(to: endPt, control: cp)
-            ctx.stroke(trackPath, with: .color(Color(red: 0.55, green: 0.60, blue: 0.68).opacity(0.35)),
-                       style: StrokeStyle(lineWidth: 3, dash: [6, 5]))
-
-            // Completed portion (solid primary gradient, up to routeProgress)
-            let completedEnd = arcPoint(t: routeProgress, start: startPt, end: endPt, control: cp)
-            var completedPath = Path()
-            completedPath.move(to: startPt)
-            // Approximate with multiple small segments
-            let steps = 40
-            for i in 1...steps {
-                let t = routeProgress * Double(i) / Double(steps)
-                let pt = arcPoint(t: t, start: startPt, end: endPt, control: cp)
-                completedPath.addLine(to: pt)
+        // TimelineView drives ONLY the seamless halo breathing on live pucks.
+        // The arc-grow + puck-entry sweep is driven by `shownProgress` (a single
+        // decel spring toward the real `routeProgress`), not the timeline, so the
+        // route always settles exactly on the true fraction. Reduce-motion freezes
+        // the pulse phase to 0 and snaps the sweep to its final state.
+        TimelineView(.animation(minimumInterval: reduceMotion ? nil : 1.0 / 60.0, paused: reduceMotion)) { timeline in
+            Canvas { ctx, size in
+                let t = timeline.date.timeIntervalSinceReferenceDate
+                // Seamless 2.4s sine breath (start==end); flat at 0 under reduce-motion.
+                let pulse = reduceMotion ? 0.0 : (sin(t * (2.0 * .pi / 2.4)) * 0.5 + 0.5)
+                drawRoute(ctx: ctx, size: size, sweep: shownProgress, pulse: pulse)
             }
-            ctx.stroke(completedPath, with: .linearGradient(
-                Gradient(colors: [Color(red: 0.22, green: 0.55, blue: 1.0), Color(red: 0.72, green: 0.28, blue: 1.0)]),
-                startPoint: CGPoint(x: pad, y: midY), endPoint: completedEnd),
-                       style: StrokeStyle(lineWidth: 4, lineCap: .round))
-
-            // Origin pin (filled gradient circle)
-            let originRect = CGRect(x: startPt.x - 8, y: startPt.y - 8, width: 16, height: 16)
-            ctx.fill(Path(ellipseIn: originRect), with: .linearGradient(
-                Gradient(colors: [Color(red: 0.22, green: 0.55, blue: 1.0), Color(red: 0.72, green: 0.28, blue: 1.0)]),
-                startPoint: CGPoint(x: originRect.minX, y: originRect.midY),
-                endPoint: CGPoint(x: originRect.maxX, y: originRect.midY)))
-
-            // Destination pin (hollow ring)
-            let destRect = CGRect(x: endPt.x - 6, y: endPt.y - 6, width: 12, height: 12)
-            ctx.stroke(Path(ellipseIn: destRect),
-                       with: .color(Color(red: 0.55, green: 0.60, blue: 0.68).opacity(0.6)),
-                       lineWidth: 2)
-
-            // Live position pucks (in-motion railcars)
-            let motionCars = positions.filter { ($0.status ?? "").lowercased() == "in_motion" }
-            for car in motionCars.prefix(5) {
-                let t = car.progressFraction ?? routeProgress
-                let pt = arcPoint(t: t, start: startPt, end: endPt, control: cp)
-                // Halo
-                let haloRect = CGRect(x: pt.x - 12, y: pt.y - 12, width: 24, height: 24)
-                ctx.fill(Path(ellipseIn: haloRect), with: .color(Color(red: 0.72, green: 0.28, blue: 1.0).opacity(0.18)))
-                // Puck
-                let puckRect = CGRect(x: pt.x - 7, y: pt.y - 7, width: 14, height: 14)
-                ctx.fill(Path(ellipseIn: puckRect), with: .color(Color.white))
-                // Inner dot
-                let dotRect = CGRect(x: pt.x - 3, y: pt.y - 3, width: 6, height: 6)
-                ctx.fill(Path(ellipseIn: dotRect), with: .linearGradient(
-                    Gradient(colors: [Color(red: 0.22, green: 0.55, blue: 1.0), Color(red: 0.72, green: 0.28, blue: 1.0)]),
-                    startPoint: CGPoint(x: dotRect.minX, y: dotRect.midY),
-                    endPoint: CGPoint(x: dotRect.maxX, y: dotRect.midY)))
-            }
-
-            // Origin label
-            ctx.draw(Text(originLabel).font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(Color(red: 0.55, green: 0.60, blue: 0.68)),
-                at: CGPoint(x: startPt.x, y: midY + 20), anchor: .leading)
-            // Destination label
-            ctx.draw(Text(destLabel).font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(Color(red: 0.55, green: 0.60, blue: 0.68)),
-                at: CGPoint(x: endPt.x, y: midY + 20), anchor: .trailing)
-            // Route label centered
-            ctx.draw(Text(routeLabel).font(.system(size: 9, weight: .heavy)).foregroundStyle(Color(red: 0.55, green: 0.60, blue: 0.68)),
-                at: CGPoint(x: w / 2, y: 16), anchor: .center)
         }
         .frame(height: 110)
         .background(
@@ -224,6 +169,114 @@ private struct RailEquipmentPositionsBody: View {
                 .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
                     .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5))
         )
+        .onAppear { settleSweep(to: routeProgress) }
+        .onChange(of: routeProgress) { _, new in settleSweep(to: new) }
+        .accessibilityElement()
+        .accessibilityLabel("Route \(routeLabel), \(Int((routeProgress * 100).rounded())) percent complete, \(inMotionCount) railcars in motion")
+    }
+
+    /// Animate the arc + puck-entry sweep toward the real route fraction.
+    private func settleSweep(to target: Double) {
+        let clamped = max(0, min(1, target))
+        if reduceMotion {
+            shownProgress = clamped
+        } else {
+            // Natural decel settle (no easeInOut on meaningful motion).
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.88)) {
+                shownProgress = clamped
+            }
+        }
+    }
+
+    /// Pure draw pass. `sweep` is the animated fraction of the route that is
+    /// "lit" (origin → current). `pulse` ∈ [0,1] breathes the live-puck halos.
+    private func drawRoute(ctx: GraphicsContext, size: CGSize, sweep: Double, pulse: Double) {
+        let blue    = Color(red: 0.22, green: 0.55, blue: 1.0)
+        let magenta = Color(red: 0.72, green: 0.28, blue: 1.0)
+        let muted   = Color(red: 0.55, green: 0.60, blue: 0.68)
+
+        let w = size.width, h = size.height
+        let pad: CGFloat = 32
+        let midY = h * 0.52
+
+        // Arc control point (Bézier gives the railway curve shape)
+        let cp = CGPoint(x: w / 2, y: midY - 38)
+        let startPt = CGPoint(x: pad, y: midY)
+        let endPt   = CGPoint(x: w - pad, y: midY)
+
+        // Background track (dashed gray — full route)
+        var trackPath = Path()
+        trackPath.move(to: startPt)
+        trackPath.addQuadCurve(to: endPt, control: cp)
+        ctx.stroke(trackPath, with: .color(muted.opacity(0.35)),
+                   style: StrokeStyle(lineWidth: 3, dash: [6, 5]))
+
+        // Completed portion (solid primary gradient, up to the animated `sweep`,
+        // which settles on the real routeProgress).
+        let completedEnd = arcPoint(t: sweep, start: startPt, end: endPt, control: cp)
+        var completedPath = Path()
+        completedPath.move(to: startPt)
+        let steps = 40
+        if sweep > 0.0001 {
+            for i in 1...steps {
+                let tt = sweep * Double(i) / Double(steps)
+                let pt = arcPoint(t: tt, start: startPt, end: endPt, control: cp)
+                completedPath.addLine(to: pt)
+            }
+        }
+        ctx.stroke(completedPath, with: .linearGradient(
+            Gradient(colors: [blue, magenta]),
+            startPoint: CGPoint(x: pad, y: midY), endPoint: completedEnd),
+                   style: StrokeStyle(lineWidth: 4, lineCap: .round))
+
+        // Origin pin (filled gradient circle)
+        let originRect = CGRect(x: startPt.x - 8, y: startPt.y - 8, width: 16, height: 16)
+        ctx.fill(Path(ellipseIn: originRect), with: .linearGradient(
+            Gradient(colors: [blue, magenta]),
+            startPoint: CGPoint(x: originRect.minX, y: originRect.midY),
+            endPoint: CGPoint(x: originRect.maxX, y: originRect.midY)))
+
+        // Destination pin (hollow ring)
+        let destRect = CGRect(x: endPt.x - 6, y: endPt.y - 6, width: 12, height: 12)
+        ctx.stroke(Path(ellipseIn: destRect),
+                   with: .color(muted.opacity(0.6)),
+                   lineWidth: 2)
+
+        // Live position pucks (in-motion railcars).
+        // Each puck sits at its REAL interpolated arc position (car.progressFraction);
+        // on entry it slides in along the route by the same `sweep` fraction so it
+        // never appears ahead of the lit segment, then rests at its true position.
+        let entryScale = routeProgress > 0.0001 ? min(1.0, sweep / routeProgress) : 1.0
+        let motionCars = positions.filter { ($0.status ?? "").lowercased() == "in_motion" }
+        for car in motionCars.prefix(5) {
+            let trueT = car.progressFraction ?? routeProgress
+            let pt = arcPoint(t: trueT * entryScale, start: startPt, end: endPt, control: cp)
+            // Breathing halo — radius/opacity track the seamless pulse.
+            let haloR: CGFloat = 11 + 3 * CGFloat(pulse)
+            let haloRect = CGRect(x: pt.x - haloR, y: pt.y - haloR, width: haloR * 2, height: haloR * 2)
+            ctx.fill(Path(ellipseIn: haloRect), with: .color(magenta.opacity(0.14 + 0.12 * pulse)))
+            // Puck
+            let puckRect = CGRect(x: pt.x - 7, y: pt.y - 7, width: 14, height: 14)
+            ctx.fill(Path(ellipseIn: puckRect), with: .color(Color.white))
+            // Inner dot
+            let dotRect = CGRect(x: pt.x - 3, y: pt.y - 3, width: 6, height: 6)
+            ctx.fill(Path(ellipseIn: dotRect), with: .linearGradient(
+                Gradient(colors: [blue, magenta]),
+                startPoint: CGPoint(x: dotRect.minX, y: dotRect.midY),
+                endPoint: CGPoint(x: dotRect.maxX, y: dotRect.midY)))
+        }
+
+        // Origin label
+        ctx.draw(Text(originLabel).font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(muted),
+            at: CGPoint(x: startPt.x, y: midY + 20), anchor: .leading)
+        // Destination label
+        ctx.draw(Text(destLabel).font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(muted),
+            at: CGPoint(x: endPt.x, y: midY + 20), anchor: .trailing)
+        // Route label centered
+        ctx.draw(Text(routeLabel).font(.system(size: 9, weight: .heavy)).foregroundStyle(muted),
+            at: CGPoint(x: w / 2, y: 16), anchor: .center)
     }
 
     // Quadratic Bézier interpolation

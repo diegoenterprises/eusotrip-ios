@@ -113,6 +113,47 @@ private struct RailLiveTrackingBody: View {
             ?? "En route"
     }
 
+    /// Real journey progress (0…1) — origin yard → destination yard.
+    ///
+    /// Strongest signal is the tracking event chain: a departure scan marks the
+    /// shipment off-origin, intermediate AEI scans / interchanges advance it, and
+    /// an arrival/spotting marks it on-destination. We map the most-advanced
+    /// milestone seen to a fraction. When no events are present yet we fall back
+    /// to the shipment status. This is what the completed gradient arc and the
+    /// dashed-remaining continuation are bound to — never a hardcoded position.
+    private var journeyProgress: Double {
+        // 1) Event-chain milestone — pick the furthest-along event type seen.
+        if let events = tracking?.events, !events.isEmpty {
+            var best = 0.04 // booked but tracked
+            for e in events {
+                let t = e.eventType.lowercased()
+                let v: Double
+                switch t {
+                case "arrival", "arrived",
+                     "spotted", "unloading", "delivered":      v = 1.0
+                case "interchange", "at_interchange":          v = 0.62
+                case "scan", "aei_scan":                       v = 0.50
+                case "departure", "departed":                  v = 0.14
+                case "hold", "on_hold", "derailment_hold",
+                     "exception", "hazmat_exception":          v = max(best, 0.30) // holds don't rewind
+                default:                                       v = best
+                }
+                best = max(best, v)
+            }
+            return min(max(best, 0), 1)
+        }
+        // 2) Status fallback when the event feed is empty.
+        switch (detail?.status ?? "").lowercased() {
+        case "delivered", "completed", "arrived", "unloaded": return 1.0
+        case "in_transit", "in-transit", "enroute", "en_route": return 0.5
+        case "spotted", "at_destination":                     return 0.9
+        case "interchange":                                   return 0.62
+        case "departed", "released":                          return 0.14
+        case "pending", "scheduled", "booked":                return 0.04
+        default:                                              return 0.45
+        }
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -170,7 +211,8 @@ private struct RailLiveTrackingBody: View {
         }
     }
 
-    // MARK: Route Arc Card (stylised canvas — real coords pending liveTrackShipment feed)
+    // MARK: Route Arc Card — completed gradient arc + dashed continuation,
+    // bound to real journeyProgress (origin → live position → destination).
 
     private var routeArcCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
@@ -184,47 +226,7 @@ private struct RailLiveTrackingBody: View {
                         RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                             .strokeBorder(palette.borderFaint, lineWidth: 1)
                     )
-                GeometryReader { geo in
-                    let w = geo.size.width, h = geo.size.height
-                    ZStack(alignment: .topLeading) {
-                        // Solid gradient arc: origin → live marker
-                        Path { p in
-                            p.move(to: CGPoint(x: 0.10*w, y: 0.78*h))
-                            p.addCurve(to: CGPoint(x: 0.52*w, y: 0.40*h),
-                                       control1: CGPoint(x: 0.26*w, y: 0.50*h),
-                                       control2: CGPoint(x: 0.40*w, y: 0.41*h))
-                        }
-                        .stroke(LinearGradient.primary, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-
-                        // Dashed arc: live marker → destination
-                        Path { p in
-                            p.move(to: CGPoint(x: 0.52*w, y: 0.40*h))
-                            p.addCurve(to: CGPoint(x: 0.90*w, y: 0.58*h),
-                                       control1: CGPoint(x: 0.67*w, y: 0.39*h),
-                                       control2: CGPoint(x: 0.82*w, y: 0.44*h))
-                        }
-                        .stroke(palette.textTertiary.opacity(0.5),
-                                style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [4, 5]))
-
-                        // Origin pin
-                        Circle().fill(LinearGradient.diagonal)
-                            .frame(width: 11, height: 11)
-                            .position(x: 0.10*w, y: 0.78*h)
-
-                        // Destination pin
-                        Circle().strokeBorder(palette.textTertiary, lineWidth: 2)
-                            .frame(width: 11, height: 11)
-                            .position(x: 0.90*w, y: 0.58*h)
-
-                        // Live position — halo + filled dot
-                        Circle().fill(LinearGradient.diagonal).opacity(0.18)
-                            .frame(width: 22, height: 22)
-                            .position(x: 0.52*w, y: 0.40*h)
-                        Circle().fill(LinearGradient.diagonal)
-                            .frame(width: 12, height: 12)
-                            .position(x: 0.52*w, y: 0.40*h)
-                    }
-                }
+                RouteArc560(progress: journeyProgress, palette: palette)
                 // Overlay chips + labels
                 VStack(alignment: .leading) {
                     HStack {
@@ -409,6 +411,135 @@ private struct RailLiveTrackingBody: View {
         let out = DateFormatter()
         out.dateFormat = "MM/dd HH:mm"
         return out.string(from: date)
+    }
+}
+
+// MARK: - Route Arc (completed gradient + dashed continuation), AAA
+
+/// The route canvas: one continuous bezier from the origin pin to the
+/// destination pin. The completed portion (origin → live position) is drawn as a
+/// solid brand-gradient stroke trimmed to the **real** `progress` fraction; the
+/// remaining portion (live position → destination) is a dashed continuation.
+/// The live marker sits exactly on the path at the progress boundary.
+///
+/// Motion:
+///   • Completed arc draws on with a decelerating spring on appear / on data
+///     change (transform-free, GPU-friendly trim animation).
+///   • Dashed remainder marches continuously and LINEARLY (a true loop — the
+///     correct case for linear), seamless via a phase that wraps the dash period.
+///   • The live marker's halo breathes gently (ambient ease-in-out loop).
+///   • Reduce-motion: final static state — arc fully drawn to `progress`, no
+///     march, no breathing.
+private struct RouteArc560: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Real origin→destination fraction (0…1) from the data model.
+    let progress: Double
+    let palette: Theme.Palette
+
+    /// The fraction the completed arc currently animates toward; starts at 0 so
+    /// the route draws on from the origin into its true live position.
+    @State private var shown: Double = 0
+    /// Continuous marching-ants phase for the dashed remainder.
+    @State private var march = false
+    /// Ambient halo breathing.
+    @State private var breathing = false
+
+    // Dash geometry — pattern period drives the seamless march distance.
+    private let dash: [CGFloat] = [4, 5]
+    private var dashPeriod: CGFloat { dash.reduce(0, +) } // 9pt — one full cycle
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width, h = geo.size.height
+            // Anchor points in canvas space.
+            let origin = CGPoint(x: 0.10 * w, y: 0.78 * h)
+            let dest   = CGPoint(x: 0.90 * w, y: 0.58 * h)
+            // Single continuous route path origin → destination.
+            let route = Path { p in
+                p.move(to: origin)
+                p.addCurve(to: dest,
+                           control1: CGPoint(x: 0.34 * w, y: 0.34 * h),
+                           control2: CGPoint(x: 0.66 * w, y: 0.36 * h))
+            }
+            // Exact live-marker point on the path at the current shown fraction.
+            let livePoint = pointOnPath(route, at: shown) ?? origin
+
+            ZStack(alignment: .topLeading) {
+                // Dashed remainder: live position → destination (the "to go").
+                route
+                    .trim(from: shown, to: 1)
+                    .stroke(palette.textTertiary.opacity(0.5),
+                            style: StrokeStyle(lineWidth: 2, lineCap: .round,
+                                               dash: dash,
+                                               dashPhase: march ? -dashPeriod : 0))
+
+                // Completed segment: origin → live position, real progress.
+                route
+                    .trim(from: 0, to: shown)
+                    .stroke(LinearGradient.primary,
+                            style: StrokeStyle(lineWidth: 3, lineCap: .round))
+
+                // Origin pin (filled — departed).
+                Circle().fill(LinearGradient.diagonal)
+                    .frame(width: 11, height: 11)
+                    .position(origin)
+
+                // Destination pin (hollow — pending arrival).
+                Circle().strokeBorder(palette.textTertiary, lineWidth: 2)
+                    .frame(width: 11, height: 11)
+                    .position(dest)
+
+                // Live position — breathing halo + filled dot, on the real point.
+                Circle().fill(LinearGradient.diagonal)
+                    .opacity(breathing ? 0.30 : 0.16)
+                    .frame(width: breathing ? 26 : 20, height: breathing ? 26 : 20)
+                    .position(livePoint)
+                Circle().fill(LinearGradient.diagonal)
+                    .frame(width: 12, height: 12)
+                    .position(livePoint)
+            }
+        }
+        .onAppear { settle(); startLoops() }
+        .onChange(of: progress) { _, _ in settle() }
+        .onChange(of: reduceMotion) { _, _ in settle(); startLoops() }
+    }
+
+    /// Settle the completed arc to its real fraction.
+    private func settle() {
+        if reduceMotion {
+            shown = progress
+            return
+        }
+        // Decelerating spring — the route draws on into its true live position.
+        withAnimation(.spring(response: 0.70, dampingFraction: 0.85)) {
+            shown = progress
+        }
+    }
+
+    /// Start (or stop) the continuous ambient loops.
+    private func startLoops() {
+        guard !reduceMotion else {
+            march = false
+            breathing = false
+            return
+        }
+        // Marching ants — continuous, linear, seamless (wraps one dash period).
+        march = false
+        withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) {
+            march = true
+        }
+        // Ambient halo breathing — gentle ease-in-out, autoreverses.
+        breathing = false
+        withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
+            breathing = true
+        }
+    }
+
+    /// Exact point on `path` at fraction `t` (0…1) using a trimmed sub-path.
+    private func pointOnPath(_ path: Path, at t: Double) -> CGPoint? {
+        let clamped = min(max(t, 0.0001), 1)
+        return path.trimmedPath(from: 0, to: CGFloat(clamped)).currentPoint
     }
 }
 

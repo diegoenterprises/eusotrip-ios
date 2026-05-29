@@ -294,17 +294,11 @@ struct EscortCorridorMap: View {
     }
 
     private func coverageBar(_ ratio: Double) -> some View {
-        let clamped = min(max(ratio, 0), 1)
-        return GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(palette.tintNeutral)
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(LinearGradient.diagonal)
-                    .frame(width: max(2, geo.size.width * clamped))
-            }
-        }
-        .frame(height: 4)
+        // Delegates to a self-contained view so the gradient fill can
+        // own its own `@State` sweep + reduce-motion gate. Keyed on the
+        // real `ratio` so the bar re-settles when coverage updates on a
+        // pull-to-refresh.
+        CoverageBar(ratio: ratio, track: palette.tintNeutral)
     }
 
     // MARK: - Milestones card
@@ -747,6 +741,64 @@ private struct FlowLayoutCompat: Layout {
             )
             x += s.width + spacing
             rowHeight = max(rowHeight, s.height)
+        }
+    }
+}
+
+// MARK: - CoverageBar — animated leg-coverage progress fill
+//
+// The gradient fill width is BOUND to the leg's real `coverage`
+// ratio (0…1) off `EscortAPI.CorridorLeg.coverage` — the proportion
+// of the leg already piloted by an escort vehicle. It is never a
+// decorative constant.
+//
+// Motion: on appear (and whenever the real ratio changes on a
+// pull-to-refresh) the fill eases from its prior value to the new
+// fraction on the decelerate cubic-bezier(0.4, 0, 0.2, 1) over a
+// 0.55s data-settle beat — a one-shot settle, not a loop. Width is
+// transform-cheap (single layer resize), 60fps.
+//
+// Reduce-motion: gated via @Environment(\.accessibilityReduceMotion)
+// — the fill snaps straight to the final fraction with no sweep.
+
+private struct CoverageBar: View {
+    let ratio: Double
+    let track: Color
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown: Double = 0
+
+    /// Real coverage fraction, NaN/∞-guarded and clamped to 0…1.
+    private var target: Double {
+        ratio.isFinite ? min(max(ratio, 0), 1) : 0
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(track)
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(LinearGradient.diagonal)
+                    // `max(2, …)` keeps a hairline of fill visible even
+                    // at 0% so the bar reads as "present but empty"
+                    // rather than absent, while still tracking the real
+                    // fraction for every value above the hairline.
+                    .frame(width: max(2, geo.size.width * CGFloat(shown)))
+            }
+        }
+        .frame(height: 4)
+        .onAppear { settle(to: target) }
+        .onChange(of: target) { _, newValue in settle(to: newValue) }
+    }
+
+    private func settle(to value: Double) {
+        guard !reduceMotion else {
+            shown = value
+            return
+        }
+        withAnimation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.55)) {
+            shown = value
         }
     }
 }

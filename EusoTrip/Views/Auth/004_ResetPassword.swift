@@ -10,8 +10,16 @@ import SwiftUI
 struct ResetPasswordView: View {
     @Environment(\.palette) var palette
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var vm = ResetPasswordViewModel()
     @FocusState private var focus: Field?
+
+    // Drives the shield-checkmark settle on the success card. Both flip
+    // when the real `.done` phase lands (the genuine `auth.resetPassword`
+    // success), so the spring scale-in and SF Symbol bounce celebrate the
+    // actual lifecycle beat — never a hardcoded/decorative `value: true`.
+    @State private var doneSettled = false
+    @State private var bounceTrigger = false
 
     enum Field { case token, password, confirm }
 
@@ -121,10 +129,22 @@ struct ResetPasswordView: View {
                 Circle()
                     .fill(Brand.success.opacity(0.15))
                     .frame(width: 72, height: 72)
+                // shield-checkmark-bounce — celebrates the genuine
+                // `auth.resetPassword` success (the real `.done` phase).
+                // Two coordinated beats:
+                //  1. A spring settle scales the shield from 0.6→1 so it
+                //     lands with weight (decel curve, ~natural overshoot).
+                //  2. The SF Symbol's built-in bounce fires exactly once on
+                //     the same real transition (driven by `bounceTrigger`,
+                //     not a constant).
+                // Reduce-motion: no scale-in, no bounce — the final static
+                // shield is shown immediately.
                 Image(systemName: "checkmark.shield.fill")
                     .font(.system(size: 36, weight: .medium))
                     .foregroundStyle(Brand.success)
-                    .symbolEffect(.bounce, value: true)
+                    .scaleEffect(reduceMotion ? 1 : (doneSettled ? 1 : 0.6))
+                    .opacity(reduceMotion ? 1 : (doneSettled ? 1 : 0))
+                    .symbolEffect(.bounce, value: reduceMotion ? false : bounceTrigger)
             }
             Text("Password updated")
                 .font(EType.h2)
@@ -136,6 +156,20 @@ struct ResetPasswordView: View {
             CTAButton(title: "Back to sign in") { dismiss() }
         }
         .sensoryFeedback(.success, trigger: vm.phase)
+        .onAppear {
+            guard !reduceMotion else { return }
+            // Spring settle: a gentle overshoot that reads as the shield
+            // "locking in." ~0.55s response with light damping.
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.7)) {
+                doneSettled = true
+            }
+            // Fire the SF Symbol bounce on the same real success beat.
+            bounceTrigger = true
+        }
+        .onDisappear {
+            doneSettled = false
+            bounceTrigger = false
+        }
     }
 
     private var passwordStrengthMeter: some View {

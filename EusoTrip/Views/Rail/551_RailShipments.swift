@@ -233,8 +233,9 @@ private struct RailShipmentsBody: View {
                 StatusPill(text: (s.status ?? "—").replacingOccurrences(of: "_", with: " ").uppercased(),
                            kind: statusKind)
             }
-            // Lifecycle progress strip
-            lifecycleStrip(status: s.status ?? "")
+            // Lifecycle progress strip — animates its filled segment into
+            // the real lifecycle stage resolved from `status`.
+            RailLifecycleStrip(stageIndex: stageIndex(s.status ?? ""), stages: 7)
             // Meta row
             HStack(spacing: Space.s3) {
                 if let cars = s.carsCount {
@@ -278,27 +279,6 @@ private struct RailShipmentsBody: View {
         }
     }
 
-    // MARK: - Lifecycle strip
-
-    private func lifecycleStrip(status: String) -> some View {
-        let stages = 7
-        let idx = stageIndex(status)
-        return HStack(spacing: 0) {
-            ForEach(0..<stages, id: \.self) { i in
-                Circle()
-                    .fill(i <= idx ? AnyShapeStyle(LinearGradient.primary) : AnyShapeStyle(palette.bgCardSoft))
-                    .frame(width: i == idx ? 8 : 5, height: i == idx ? 8 : 5)
-                if i < stages - 1 {
-                    Rectangle()
-                        .fill(i < idx ? AnyShapeStyle(LinearGradient.primary) : AnyShapeStyle(palette.bgCardSoft))
-                        .frame(height: 1.5)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-        }
-        .frame(height: 10)
-    }
-
     private func stageIndex(_ status: String) -> Int {
         switch status.lowercased() {
         case "posted":                      return 0
@@ -327,6 +307,92 @@ private struct RailShipmentsBody: View {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
+    }
+}
+
+// MARK: - Lifecycle strip
+
+/// Compact 7-dot lifecycle progress strip for a rail shipment row.
+///
+/// The filled segment is bound to the REAL lifecycle stage: `stageIndex`
+/// is resolved upstream from the server `status` enum (posted → assigned →
+/// in_yard → in_transit → delayed → arrived → delivered). Nothing here is
+/// decorative — the gradient fill always terminates at the dot for the
+/// shipment's actual stage.
+///
+/// Motion: on first appear (and on any status flip) the fill animates from
+/// stage 0 into the real `stageIndex` with a single decel spring, and the
+/// active dot pops with a soft spring + glow. Under Reduce Motion the strip
+/// renders straight into its final filled state with no spring or pulse.
+private struct RailLifecycleStrip: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Real lifecycle stage index resolved from the server status.
+    let stageIndex: Int
+    let stages: Int
+
+    /// The index the fill currently animates toward. Starts at 0 so the
+    /// gradient sweeps into the real stage on appear; reduce-motion snaps
+    /// straight to `stageIndex`.
+    @State private var shownIndex: Int = 0
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(0..<stages, id: \.self) { i in
+                let reached = i <= shownIndex
+                let isActive = i == shownIndex
+                Circle()
+                    .fill(reached ? AnyShapeStyle(LinearGradient.primary)
+                                  : AnyShapeStyle(palette.bgCardSoft))
+                    .frame(width: isActive ? 8 : 5, height: isActive ? 8 : 5)
+                    .shadow(color: isActive ? Brand.magenta.opacity(reduceMotion ? 0 : 0.45) : .clear,
+                            radius: isActive ? 4 : 0)
+                    .scaleEffect(isActive ? 1.0 : 0.92)
+                    .animation(reduceMotion ? nil
+                                            : .spring(response: 0.34, dampingFraction: 0.78),
+                               value: isActive)
+                if i < stages - 1 {
+                    GeometryReader { geo in
+                        // Backdrop hairline.
+                        Rectangle()
+                            .fill(palette.bgCardSoft)
+                            .frame(height: 1.5)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                        // Filled hairline — width tracks whether this segment
+                        // is behind the reached stage. Animates in with the
+                        // settle spring so the fill sweeps left→right.
+                        Rectangle()
+                            .fill(LinearGradient.primary)
+                            .frame(width: i < shownIndex ? geo.size.width : 0, height: 1.5)
+                            .frame(maxHeight: .infinity, alignment: .center)
+                    }
+                    .frame(height: 1.5)
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .frame(height: 10)
+        .onAppear {
+            if reduceMotion {
+                shownIndex = stageIndex
+            } else {
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.86)) {
+                    shownIndex = stageIndex
+                }
+            }
+        }
+        .onChange(of: stageIndex) { _, newValue in
+            if reduceMotion {
+                shownIndex = newValue
+            } else {
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.86)) {
+                    shownIndex = newValue
+                }
+            }
+        }
+        .accessibilityElement()
+        .accessibilityLabel("Lifecycle stage \(stageIndex + 1) of \(stages)")
     }
 }
 

@@ -376,6 +376,7 @@ struct PreTripDVIRStatusPill: View {
 struct TheHaulWeeklyTile: View {
     @Environment(\.palette) private var palette
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var store = HaulStore()
     @State private var ringAnim: Double = 0
     @State private var showFull: Bool = false
@@ -384,14 +385,25 @@ struct TheHaulWeeklyTile: View {
         Button { showFull = true } label: { tileBody }
             .buttonStyle(.plain)
             .task { await store.refresh() }
+            // The ring is driven from the real XP fraction. When the
+            // profile lands (or moves via realtime XP gains), spring the
+            // arc to the new fraction. Reduce-motion lands it instantly
+            // on the final value — no fill sweep.
             .onChange(of: xpFraction) { _, newValue in
-                withAnimation(.spring(response: 0.9, dampingFraction: 0.85)) {
-                    ringAnim = newValue
-                }
+                applyRing(to: newValue)
             }
             .onAppear {
-                withAnimation(.spring(response: 0.9, dampingFraction: 0.85).delay(0.15)) {
+                // Land directly on the real fraction. While the profile
+                // is still loading xpFraction == 0, so this seeds an
+                // empty ring; the .onChange above then sweeps it to the
+                // true value once data arrives — no animation to a
+                // stale 0.
+                if reduceMotion {
                     ringAnim = xpFraction
+                } else if xpFraction > 0 {
+                    withAnimation(.spring(response: 0.7, dampingFraction: 0.82).delay(0.12)) {
+                        ringAnim = xpFraction
+                    }
                 }
             }
             .sheet(isPresented: $showFull) {
@@ -418,10 +430,27 @@ struct TheHaulWeeklyTile: View {
 
     private var totalMissions: Int { store.missions.count }
 
+    /// Real progress toward the next level: currentXp / (currentXp +
+    /// xpToNextLevel). When the server reports xpToNextLevel == 0 the
+    /// driver is leveled out, so the ring reads full (not empty).
     private var xpFraction: Double {
-        guard let p = profile, p.xpToNextLevel > 0 else { return 0 }
+        guard let p = profile else { return 0 }
+        if p.xpToNextLevel <= 0 { return p.currentXp > 0 ? 1 : 0 }
         let total = Double(p.currentXp + p.xpToNextLevel)
+        guard total > 0 else { return 0 }
         return max(0, min(1, Double(p.currentXp) / total))
+    }
+
+    /// Settles the ring to a target fraction. Spring for the live fill,
+    /// or an instant set when Reduce Motion is on (final state only).
+    private func applyRing(to value: Double) {
+        if reduceMotion {
+            ringAnim = value
+        } else {
+            withAnimation(.spring(response: 0.7, dampingFraction: 0.82)) {
+                ringAnim = value
+            }
+        }
     }
 
     private var rankLabel: String {

@@ -18,6 +18,7 @@ struct DischargeInProgress: View {
     @Environment(\.palette) private var palette
     @Environment(\.lifecycleAdvance) private var advance
     @Environment(\.driverNavBack) private var navBack
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var lifecycle = TripLifecycleStore()
@@ -44,12 +45,21 @@ struct DischargeInProgress: View {
     private let fallbackTotal       = 6_800
     private let fallbackEtaRemain   = "ETA 15 MIN"
     private let fallbackFlowRate    = "165"
-    private let fallbackTruckPct    = 38.0
-    private let fallbackRecvPct     = 71.0
 
     private var transferredPct: Double {
-        Double(fallbackTransferred) / Double(fallbackTotal)
+        guard fallbackTotal > 0 else { return 0 }
+        return min(1, max(0, Double(fallbackTransferred) / Double(fallbackTotal)))
     }
+
+    // Both gauges express ONE physical truth: product is flowing
+    // truck → receiver. The receiver-side gauge rises with the
+    // transferred fraction; the truck-side (inverted) gauge falls
+    // with the remaining fraction. Wiring both to `transferredPct`
+    // (loaded/total from the data model) keeps the inverted-bar
+    // animation honest instead of using the old decorative
+    // `fallbackTruckPct` / `fallbackRecvPct` constants.
+    private var receiverFillPct: Double { transferredPct * 100 }
+    private var truckRemainPct: Double { (1 - transferredPct) * 100 }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -176,6 +186,12 @@ struct DischargeInProgress: View {
                     Capsule().fill(palette.bgCardSoft).frame(height: 6)
                     Capsule().fill(LinearGradient.diagonal)
                         .frame(width: geo.size.width * CGFloat(transferredPct), height: 6)
+                        // Same data-update settle as the gauges — bound to
+                        // the real transferred/total fraction.
+                        .animation(
+                            reduceMotion ? nil : .timingCurve(0.4, 0, 0.2, 1, duration: 0.5),
+                            value: transferredPct
+                        )
                 }
             }
             .frame(height: 6)
@@ -228,11 +244,11 @@ struct DischargeInProgress: View {
 
     private var gaugePair: some View {
         let badge = ctx.dischargeRateBadge(value: 165)
-        let truckSub = "\(badge) · 2,550 \(ctx.dischargeUnit) LEFT"
-        let recvSub  = "\(badge) · 60% FILLED"
+        let truckSub = "\(badge) · \(fallbackRemaining.formatted()) \(ctx.dischargeUnit) LEFT"
+        let recvSub  = "\(badge) · \(Int(receiverFillPct.rounded()))% FILLED"
         return HStack(spacing: Space.s2) {
-            gauge(label: truckGaugeLabel,    value: fallbackTruckPct, sub: truckSub, invert: true)
-            gauge(label: receiverGaugeLabel, value: fallbackRecvPct,  sub: recvSub,  invert: false)
+            gauge(label: truckGaugeLabel,    value: truckRemainPct,   sub: truckSub, invert: true)
+            gauge(label: receiverGaugeLabel, value: receiverFillPct,  sub: recvSub,  invert: false)
         }
     }
 
@@ -271,10 +287,23 @@ struct DischargeInProgress: View {
                     Rectangle().fill(palette.bgCardSoft).frame(height: 8)
                     Rectangle()
                         .fill(LinearGradient.diagonal)
-                        .frame(width: geo.size.width * CGFloat(value / 100), height: 8)
+                        .frame(width: geo.size.width * CGFloat(min(1, max(0, value / 100))), height: 8)
+                        // Data-update settle: the fill glides to its new
+                        // fraction on a cubic-bezier decel (0.4,0,0.2,1) so
+                        // the draining/filling reads as physical flow, not a
+                        // snap. Reduce-motion jumps straight to the final
+                        // width (nil animation), no glide.
+                        .animation(
+                            reduceMotion ? nil : .timingCurve(0.4, 0, 0.2, 1, duration: 0.5),
+                            value: value
+                        )
                 }
             }
             .frame(height: 8)
+            // Static orientation, not motion: the truck (source) gauge is
+            // flipped 180° so its bar drains from the right edge inward as
+            // product leaves the rig, mirroring the receiver gauge that
+            // fills from the left. The flip itself never animates.
             .rotationEffect(.degrees(invert ? 180 : 0))
             Text(sub)
                 .font(.system(size: 8, weight: .heavy)).tracking(0.4)
