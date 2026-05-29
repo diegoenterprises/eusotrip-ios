@@ -369,7 +369,9 @@ struct AuthUser: Codable, Hashable, Identifiable {
     /// `profileAdaptation` the web consumes is decoded here so iOS re-composes
     /// menus / capability gates / role surfaces from one source of truth.
     /// Optional so the app decodes cleanly against servers that predate the fold.
-    let profileAdaptation: ProfileAdaptation?
+    /// Defaulted to nil so the synthesized memberwise initializer stays
+    /// backward-compatible (e.g. the demo-user construction in EusoTripSession).
+    var profileAdaptation: ProfileAdaptation? = nil
 
     /// Parsed role, defaulting to .shipper if backend returns something unexpected.
     var roleEnum: EusoRole {
