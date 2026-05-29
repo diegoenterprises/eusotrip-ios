@@ -34,11 +34,16 @@
     }
     /* ============ CARGO HANDLING MOTION ============ */
 
-    .crane-ascend { animation: crane-ascend 6s ease-in-out infinite; }
+    /* STS hoist: spreader sits empty on the deck slot at start, latches the tank,
+       then hoists it clear. Accelerate-out-of-rest on lift (loaded inertia),
+       gentle settle on the empty return down. Loop joins at the deck pose
+       (0%/100% both translateY(0)) — no pop. */
+    .crane-ascend { animation: crane-ascend 6s infinite; }
     @keyframes crane-ascend {
       0%   { transform: translateY(0); }
-      35%  { transform: translateY(-180px); }
-      55%  { transform: translateY(-180px); }
+      14%  { transform: translateY(0);        animation-timing-function: cubic-bezier(0.4,0,0.6,1); }
+      40%  { transform: translateY(-180px); }
+      60%  { transform: translateY(-180px); animation-timing-function: cubic-bezier(0.33,0,0.2,1); }
       85%, 100% { transform: translateY(0); }
     }
     .trolley-traverse { animation: trolley-traverse 6s ease-in-out infinite; }
@@ -49,12 +54,41 @@
       100% { transform: translateX(0); }
     }
 
+    /* Twistlocks: spreader lands grey (open), ENGAGES (yellow) onto the deck
+       tank, then stays locked through the whole hoist while laden. */
     .twist-lock-pulse-r { animation: twist-lock-pulse-r 6s ease-in-out infinite; }
     @keyframes twist-lock-pulse-r {
-      0%, 50% { fill: #FFE680; }
-      55%, 75% { fill: #6A6F78; }
-      80%, 100% { fill: #6A6F78; }
+      0%, 8% { fill: #6A6F78; }
+      14%, 88% { fill: #FFE680; }
+      94%, 100% { fill: #6A6F78; }
     }
+
+    /* Picked tank: invisible until the spreader latches (lift start), then
+       rides up with the hoist; clears the frame as it lands at apex. */
+    .cargo-pick { animation: cargo-pick 6s ease-in-out infinite; }
+    @keyframes cargo-pick {
+      0%, 10% { opacity: 0; }
+      16%, 100% { opacity: 1; }
+    }
+    /* Deck slot 1 empties as the tank is lifted away. */
+    .slot-clear { animation: slot-clear 6s ease-in-out infinite; }
+    @keyframes slot-clear {
+      0%, 10% { opacity: 1; }
+      16%, 100% { opacity: 0; }
+    }
+
+    /* ===== COUNTRY-SWITCHABLE UN-ID MARKING (2026-05-29) =====
+       ISO tanks are regulated dangerous-goods packagings. The harmonised hazard
+       diamond is shared (IMDG/49 CFR/SCT/TDG); the UN-ID panel is the per-regime
+       variant the renderer toggles:
+         country-US — 49 CFR 172.332 orange ID panel
+         country-MX — SCT NOM-002/004 (UN labels adopted) + dual-designation tick
+         country-CA — TDG white square-on-point ID display
+       Renderer sets ONE root class: svg.classList = 'ctx-' + shipment.regulatoryRegion.
+       Default (no ctx-* set) = US. */
+    .country-US, .country-MX, .country-CA { opacity: 0; }
+    .ctx-US .country-US, .ctx-MX .country-MX, .ctx-CA .country-CA { opacity: 1; }
+    svg:not(.ctx-US):not(.ctx-MX):not(.ctx-CA) .country-US { opacity: 1; }
 
     @media (prefers-reduced-motion: reduce) {
       .brand-lockup,
@@ -62,6 +96,8 @@
       .brand-word,
       .chevron,
       .crane-ascend,
+      .cargo-pick,
+      .slot-clear,
       .load-pill,
       .progress-fill,
       .sky-shimmer,
@@ -69,6 +105,12 @@
       .twist-lock-pulse-r {
         animation: none !important;
       }
+      /* Reduced motion: hold mid-hoist — tank latched and lifted clear,
+         deck slot already emptied — a calm, legible still. */
+      .crane-ascend  { transform: translateY(-180px) !important; }
+      .cargo-pick    { opacity: 1 !important; }
+      .slot-clear    { opacity: 0 !important; }
+      .twist-lock-pulse-r { fill: #FFE680 !important; }
     }
 
   ]]></style>
@@ -193,10 +235,26 @@
     <rect x="380" y="490" width="800" height="36" fill="url(#hullDark)"/>
     <rect x="380" y="490" width="800" height="2" fill="#FFD23A" opacity="0.45"/>
 
-    <!-- Slot 1 — EMPTY (just lifted off by crane) -->
+    <!-- Slot 1 — the tank being lifted off ; underlying dashed slot is revealed as it clears -->
     <rect x="400" y="466" width="200" height="24" fill="#5A606D" opacity="0.3" stroke="#5A606D" stroke-width="1" stroke-dasharray="6 3"/>
-    <text x="500" y="482" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
-          font-weight="900" font-size="7" fill="#FFD23A" letter-spacing="0.6" opacity="0.85">JUST LIFTED</text>
+    <text class="cargo-pick" x="500" y="482" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="900" font-size="7" fill="#FFD23A" letter-spacing="0.6" opacity="0">JUST LIFTED</text>
+    <!-- Loaded tank that the crane is lifting — fades out as the hoist clears the deck (slot-clear) -->
+    <g class="slot-clear">
+      <rect x="400" y="466" width="200" height="24" fill="none" stroke="#5A606D" stroke-width="2"/>
+      <rect x="400" y="466" width="200" height="3" fill="#5A606D"/>
+      <rect x="400" y="487" width="200" height="3" fill="#5A606D"/>
+      <ellipse cx="412" cy="478" rx="6" ry="10" fill="url(#tankSilver)"/>
+      <rect x="412" y="468" width="176" height="20" fill="url(#tankSilver)"/>
+      <ellipse cx="588" cy="478" rx="6" ry="10" fill="url(#tankSilver)"/>
+      <g transform="translate(500 478)">
+        <g transform="rotate(45)">
+          <rect x="-7" y="-7" width="14" height="14" fill="#E5350D" stroke="#000000" stroke-width="0.6"/>
+        </g>
+        <text y="2" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+              font-weight="900" font-size="6" fill="#FFFFFF">3</text>
+      </g>
+    </g>
 
     <!-- Slot 2 — still loaded ISO tank (next to be lifted) -->
     <g>
@@ -275,25 +333,42 @@
       <rect x="32" y="200" width="116" height="14" rx="2" fill="#3A3F4A"/>
       <rect class="twist-lock-pulse-r" x="36" y="212" width="6" height="6"/>
       <rect class="twist-lock-pulse-r" x="138" y="212" width="6" height="6"/>
-      <!-- Rectangular frame -->
-      <rect x="32" y="216" width="116" height="100" fill="none" stroke="#5A606D" stroke-width="6"/>
-      <rect x="32" y="216" width="116" height="6" fill="#5A606D"/>
-      <rect x="32" y="310" width="116" height="6" fill="#5A606D"/>
-      <!-- Cylindrical tank inside the frame -->
-      <ellipse cx="48" cy="266" rx="14" ry="44" fill="url(#tankSilver)"/>
-      <rect x="48" y="222" width="84" height="88" fill="url(#tankSilver)"/>
-      <ellipse cx="132" cy="266" rx="14" ry="44" fill="url(#tankSilver)"/>
-      <rect x="48" y="222" width="84" height="6" fill="#FFFFFF" opacity="0.4"/>
-      <!-- Hazmat placard -->
-      <g transform="translate(90 266)">
-        <g transform="rotate(45)">
-          <rect x="-10" y="-10" width="20" height="20" fill="#E5350D" stroke="#000000" stroke-width="1"/>
+      <!-- Picked ISO tank — appears once the spreader latches, rides up with the hoist -->
+      <g class="cargo-pick">
+        <!-- Rectangular frame -->
+        <rect x="32" y="216" width="116" height="100" fill="none" stroke="#5A606D" stroke-width="6"/>
+        <rect x="32" y="216" width="116" height="6" fill="#5A606D"/>
+        <rect x="32" y="310" width="116" height="6" fill="#5A606D"/>
+        <!-- Cylindrical tank inside the frame -->
+        <ellipse cx="48" cy="266" rx="14" ry="44" fill="url(#tankSilver)"/>
+        <rect x="48" y="222" width="84" height="88" fill="url(#tankSilver)"/>
+        <ellipse cx="132" cy="266" rx="14" ry="44" fill="url(#tankSilver)"/>
+        <rect x="48" y="222" width="84" height="6" fill="#FFFFFF" opacity="0.4"/>
+        <!-- Hazmat placard (harmonised diamond, shared across regimes) -->
+        <g transform="translate(90 266)">
+          <g transform="rotate(45)">
+            <rect x="-10" y="-10" width="20" height="20" fill="#E5350D" stroke="#000000" stroke-width="1"/>
+          </g>
+          <text y="3" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+                font-weight="900" font-size="10" fill="#FFFFFF" data-bind="hazmat_class">3</text>
         </g>
-        <text y="3" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
-              font-weight="900" font-size="10" fill="#FFFFFF" data-bind="hazmat_class">8</text>
+        <!-- UN-ID panel — jurisdiction variant (renderer reveals one via ctx-* root class) -->
+        <g class="country-US" transform="translate(70 282)">
+          <rect x="0" y="0" width="40" height="11" fill="#F08000" stroke="#000000" stroke-width="0.6"/>
+          <text x="20" y="8.6" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="7" fill="#000000" data-bind="un_number">1993</text>
+        </g>
+        <g class="country-MX" transform="translate(70 282)">
+          <rect x="0" y="0" width="40" height="11" fill="#F08000" stroke="#000000" stroke-width="0.6"/>
+          <text x="20" y="8.6" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="7" fill="#000000" data-bind="un_number">1993</text>
+          <rect x="0" y="-2" width="40" height="1.6" fill="#006847"/>
+        </g>
+        <g class="country-CA" transform="translate(70 282)">
+          <g transform="translate(20 5.5) rotate(45)"><rect x="-7.5" y="-7.5" width="15" height="15" fill="#FFFFFF" stroke="#000000" stroke-width="0.6"/></g>
+          <text x="20" y="8.2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6" fill="#000000" data-bind="un_number">1993</text>
+        </g>
+        <text x="90" y="234" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+              font-weight="700" font-size="8" fill="#5B3FBF" letter-spacing="1.4">ISO TANK</text>
       </g>
-      <text x="90" y="234" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
-            font-weight="700" font-size="8" fill="#5B3FBF" letter-spacing="1.4">ISO TANK</text>
     </g>
   </g>
   </g>

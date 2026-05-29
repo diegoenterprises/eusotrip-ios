@@ -108,6 +108,14 @@
       .chassis-bob, .cab-sway, .mudflap, .streak, .bow-air, .tire-dust,
       .sheen, .wordmark, .badge-e, .headlight-glow, .airlines, .chevron,
       .sky-shimmer, .ground-line, .brand-mark, .brand-word { animation: none !important; }
+      /* Speed streaks / bow-haze are travel cues — hide them entirely when
+         the user prefers reduced motion so the rig reads as parked. */
+      .streak, .bow-air, .tire-dust { opacity: 0 !important; }
+      /* NOTE: the wheel spin + exhaust puffs are SMIL <animate>/<animateTransform>
+         loops, which CSS cannot pause. The host renderer should call
+         svgElement.pauseAnimations() (or set the root's `playbackState`) when
+         prefers-reduced-motion is active to freeze those, while CSS handles
+         the class-driven motion above. */
     }
   
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
@@ -237,17 +245,71 @@
       <rect x="848" y="425" width="14" height="12" rx="1"/>
       <rect x="993" y="425" width="14" height="12" rx="1"/>
     </g>
-    <!-- Hazmat placard (Class 3 flammable — petroleum products) -->
-    <g transform="translate(540 380) rotate(45)">
-      <rect x="-22" y="-22" width="44" height="44" fill="#E5350D" stroke="#000000" stroke-width="2"/>
-      <g transform="rotate(-45)">
-        <text y="2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="16" fill="#FFFFFF">3</text>
+    <!-- ============================================================
+         COUNTRY-SWITCHABLE HAZMAT PLACARD GROUP
+         Cargo: gasoline, UN 1203, Hazard Class 3 (flammable liquid).
+         The renderer shows exactly ONE of these groups by toggling the
+         CSS display of .country-US / .country-MX / .country-CA (or by
+         setting `display:none` on the two it does not want). Default =
+         US visible. Regs basis:
+           US  — 49 CFR 172.504/172.519: red Class 3 diamond (white flame
+                 + "3") with a separate orange UN-ID panel reading 1203.
+           CA  — TDG SOR/2001-286: same Class 3 diamond, NON-worded (Canada
+                 placards carry no English/French wording) + UN1203 inside
+                 a white ID box; accepted in the US via reciprocity.
+           MX  — NOM-004-SCT2 / NOM-002-SCT: Class 3 diamond with Spanish
+                 risk word "LÍQUIDO INFLAMABLE"; NA numbers are NOT valid in
+                 Mexico, so the UN number 1203 (per NOM-002) is shown.
+         All three keep the brand-true red #E5350D and pixel-identical
+         44x44 diamond at translate(540,380) so swapping is seamless. -->
+    <g class="placard-group">
+      <!-- ===== US (default) ===== -->
+      <g class="country-US">
+        <g transform="translate(540 380) rotate(45)">
+          <rect x="-22" y="-22" width="44" height="44" fill="#E5350D" stroke="#000000" stroke-width="2"/>
+          <rect x="-19" y="-19" width="38" height="38" fill="none" stroke="#FFFFFF" stroke-width="1" opacity="0.7"/>
+          <g transform="rotate(-45)">
+            <path d="M 0 -8 C -3 -2 -7 1 -5.5 6 C -7.5 5 -9 1.5 -8 -1 C -10.5 1.5 -11 7 -7 10.5 C -9 9 -9 5 -9 9 C -6.5 13 -3 14 0 14 C 3 14 6.5 13 9 9 C 9 5 9 9 7 10.5 C 11 7 10.5 1.5 8 -1 C 9 1.5 7.5 5 5.5 6 C 7 1 3 -2 0 -8 Z" fill="#FFFFFF"/>
+            <text y="17" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="10" fill="#FFFFFF">3</text>
+          </g>
+        </g>
+        <g>
+          <rect x="970" y="380" width="80" height="22" rx="2" fill="#F08222" stroke="#000000" stroke-width="1.5"/>
+          <text x="1010" y="396" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="13" fill="#000000" letter-spacing="1">1203</text>
+        </g>
       </g>
-    </g>
-    <!-- UN number for gasoline -->
-    <g>
-      <rect x="970" y="380" width="80" height="22" rx="2" fill="#FFFFFF" stroke="#000000" stroke-width="1.5"/>
-      <text x="1010" y="395" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="13" fill="#000000" letter-spacing="1">UN 1203</text>
+      <!-- ===== MX (hidden by default) ===== -->
+      <g class="country-MX" style="display:none">
+        <g transform="translate(540 380) rotate(45)">
+          <rect x="-22" y="-22" width="44" height="44" fill="#E5350D" stroke="#000000" stroke-width="2"/>
+          <rect x="-19" y="-19" width="38" height="38" fill="none" stroke="#FFFFFF" stroke-width="1" opacity="0.7"/>
+          <g transform="rotate(-45)">
+            <path d="M 0 -9 C -3 -3 -7 0 -5.5 5 C -7.5 4 -9 0.5 -8 -2 C -10.5 0.5 -11 6 -7 9.5 C -9 8 -9 4 -9 8 C -6.5 12 -3 13 0 13 C 3 13 6.5 12 9 8 C 9 4 9 8 7 9.5 C 11 6 10.5 0.5 8 -2 C 9 0.5 7.5 4 5.5 5 C 7 0 3 -3 0 -9 Z" fill="#FFFFFF"/>
+            <text y="9" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="3.6" fill="#FFFFFF" letter-spacing="0.2">LÍQUIDO</text>
+            <text y="13" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="3.6" fill="#FFFFFF" letter-spacing="0.2">INFLAMABLE</text>
+            <text y="19.5" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="9" fill="#FFFFFF">3</text>
+          </g>
+        </g>
+        <g>
+          <rect x="970" y="380" width="80" height="22" rx="2" fill="#FFFFFF" stroke="#000000" stroke-width="1.5"/>
+          <text x="1010" y="396" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="12" fill="#000000" letter-spacing="0.8">UN 1203</text>
+        </g>
+      </g>
+      <!-- ===== CA (hidden by default) ===== -->
+      <g class="country-CA" style="display:none">
+        <g transform="translate(540 380) rotate(45)">
+          <rect x="-22" y="-22" width="44" height="44" fill="#E5350D" stroke="#000000" stroke-width="2"/>
+          <rect x="-19" y="-19" width="38" height="38" fill="none" stroke="#FFFFFF" stroke-width="1" opacity="0.7"/>
+          <g transform="rotate(-45)">
+            <path d="M 0 -8 C -3 -2 -7 1 -5.5 6 C -7.5 5 -9 1.5 -8 -1 C -10.5 1.5 -11 7 -7 10.5 C -9 9 -9 5 -9 9 C -6.5 13 -3 14 0 14 C 3 14 6.5 13 9 9 C 9 5 9 9 7 10.5 C 11 7 10.5 1.5 8 -1 C 9 1.5 7.5 5 5.5 6 C 7 1 3 -2 0 -8 Z" fill="#FFFFFF"/>
+            <text y="17" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="10" fill="#FFFFFF">3</text>
+          </g>
+        </g>
+        <g>
+          <rect x="970" y="380" width="80" height="22" rx="2" fill="#FFFFFF" stroke="#000000" stroke-width="1.5"/>
+          <text x="1010" y="396" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="13" fill="#000000" letter-spacing="1">1203</text>
+        </g>
+      </g>
     </g>
   </g>
 
@@ -263,15 +325,19 @@
     <g stroke="#3A3F4A" stroke-width="2.5" stroke-linecap="round"><line x1="0" y1="-19" x2="0" y2="-9"/><line x1="18" y1="-6" x2="9" y2="-3"/><line x1="11" y1="16" x2="6" y2="8"/><line x1="-11" y1="16" x2="-6" y2="8"/><line x1="-18" y1="-6" x2="-9" y2="-3"/></g>
     <ellipse cx="-6" cy="-12" rx="6" ry="3" fill="#FFFFFF" opacity="0.35"/>
   </g>
+  <!-- Truck travels LEFT→RIGHT (speed streaks + exhaust trail behind, to the
+       left). Wheels must therefore spin FORWARD = clockwise = 0→+360 so the
+       rolling direction matches the implied travel. Linear is correct here:
+       a freely-rolling wheel turns at constant angular velocity. -->
   <g transform="translate(420 460)">
-    <g><use href="#wheelGroup"/><animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.6s" repeatCount="indefinite"/></g>
+    <g><use href="#wheelGroup"/><animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="1.6s" repeatCount="indefinite" calcMode="linear"/></g>
   </g><g transform="translate(280 460)">
-    <g><use href="#wheelGroup"/><animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.6s" repeatCount="indefinite"/></g>
+    <g><use href="#wheelGroup"/><animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="1.6s" repeatCount="indefinite" calcMode="linear"/></g>
   </g>
   <g transform="translate(950 460)">
-    <g><use href="#wheelGroup"/><animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.6s" repeatCount="indefinite"/></g>
+    <g><use href="#wheelGroup"/><animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="1.6s" repeatCount="indefinite" calcMode="linear"/></g>
   </g><g transform="translate(1020 460)">
-    <g><use href="#wheelGroup"/><animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.6s" repeatCount="indefinite"/></g>
+    <g><use href="#wheelGroup"/><animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="1.6s" repeatCount="indefinite" calcMode="linear"/></g>
   </g>
 
   <path d="M 458 380 Q 470 370 482 358" stroke="#FF8C00" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.85"/>

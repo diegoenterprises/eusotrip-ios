@@ -90,11 +90,17 @@
       50%  { opacity: 0.22; }
       to   { transform: translateX(40px); opacity: 0.12; }
     }
-    .rail-line { stroke-dasharray: 40 0;
-                  animation: rail-scroll 1.2s linear infinite; }
+    /* Rail texture scroll LOCKED to wheel roll: tire r=22 -> circumference 138.2px,
+       wheels spin 1 rev / 1.4s = 98.7 px/s. The railhead is near-solid steel with a thin
+       2px joint gap every 60px (dasharray 58 2); scrolling those joints -60px / 0.6s =
+       100 px/s tracks the wheels to ~1% (no wheel-slip), and a joint passes every 0.6s —
+       exactly the .rail-clack period, so each clack lands as a joint slides under a bogie.
+       (A solid "40 0" dash is invisible when scrolled — joints make the motion read.) */
+    .rail-line { stroke-dasharray: 58 2;
+                  animation: rail-scroll 0.6s linear infinite; }
     @keyframes rail-scroll {
       from { stroke-dashoffset: 0; }
-      to   { stroke-dashoffset: -100; }
+      to   { stroke-dashoffset: -60; }
     }
     .ballast { animation: ballast-drift 3s ease-in-out infinite; transform-box: fill-box; }
     @keyframes ballast-drift {

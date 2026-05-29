@@ -60,14 +60,19 @@
       65%, 100% { transform: translateX(480px); }
     }
 
+    /* Cable length at rest = 148px (anchor y122 -> spreader top y270). When the container
+       is hoisted 120px the spreader top rises to y150, so the visible rope must shrink to
+       (150-122)/148 = 0.189 or the wire-rope detaches from the headblock. scaleY is affine
+       in container-lift's translateY (1.0<->0px, 0.189<->-120px) and shares the same
+       ease-in-out + keyframe %s, so the rope tracks the spreader top exactly. */
     .cable-stretch { animation: cable-stretch 7s ease-in-out infinite;
                      transform-box: fill-box; transform-origin: center top; }
     @keyframes cable-stretch {
-      0%, 15%   { transform: scaleY(1); }
-      30%       { transform: scaleY(1); }
-      50%       { transform: scaleY(0.45); }
-      65%       { transform: scaleY(0.45); }
-      85%, 100% { transform: scaleY(1); }
+      0%, 15%   { transform: scaleY(1); }     /* seated on flatcar, rope paid out */
+      30%       { transform: scaleY(1); }     /* twist locks released, still seated */
+      50%       { transform: scaleY(0.189); } /* hoisted clear of flatcar deck */
+      65%       { transform: scaleY(0.189); } /* traversed over chassis, still high */
+      85%, 100% { transform: scaleY(1); }     /* lowered + seated on chassis */
     }
 
     /* Flatcar twist locks: locked at start (yellow), unlock during 15-30% */
@@ -164,6 +169,18 @@
         animation: none !important;
       }
     }
+
+    /* ============ COUNTRY-AWARE STENCIL UNITS (US default · MX · CA) ============
+       The container's weight/volume stencil swaps units by jurisdiction.
+       Renderer picks the locale by setting data-country on the root <svg>
+       (e.g. <svg data-country="MX">). US is the default when unset. The
+       display="inline/none" attributes on each group are the no-CSS fallback. */
+    .country-MX, .country-CA { display: none; }
+    .country-US { display: inline; }
+    [data-country="MX"] .country-US, [data-country="MX"] .country-CA { display: none; }
+    [data-country="MX"] .country-MX { display: inline; }
+    [data-country="CA"] .country-US, [data-country="CA"] .country-MX { display: none; }
+    [data-country="CA"] .country-CA { display: inline; }
 
   ]]></style>
 
@@ -1164,16 +1181,51 @@
         <text x="306" y="342" font-family="Inter, system-ui, sans-serif"
               font-weight="800" font-size="11" letter-spacing="1.6" fill="#FFFFFF"
               data-bind="iso_code">42G1</text>
-        <text x="306" y="356" font-family="Inter, system-ui, sans-serif"
-              font-weight="700" font-size="7.4" letter-spacing="1.2" fill="#FFFFFF" opacity="0.85">USA</text>
-        <text x="306" y="370" font-family="Inter, system-ui, sans-serif"
-              font-weight="700" font-size="6.4" letter-spacing="0.8" fill="#FFFFFF" opacity="0.78">MAX GROSS 67,200 LB</text>
-        <text x="306" y="380" font-family="Inter, system-ui, sans-serif"
-              font-weight="700" font-size="6.4" letter-spacing="0.8" fill="#FFFFFF" opacity="0.78">TARE 8,820 LB</text>
-        <text x="306" y="390" font-family="Inter, system-ui, sans-serif"
-              font-weight="700" font-size="6.4" letter-spacing="0.8" fill="#FFFFFF" opacity="0.78">NET 58,380 LB</text>
-        <text x="306" y="400" font-family="Inter, system-ui, sans-serif"
-              font-weight="700" font-size="5.8" letter-spacing="0.6" fill="#FFFFFF" opacity="0.55">CU CAP 2,390 CU FT</text>
+        <!-- ============================================================
+             COUNTRY-SWITCHABLE STENCIL BLOCK (consist weight/volume units)
+             Intermodal COFC is GENERAL freight (no hazmat placard) — the
+             regulatory consist units differ by jurisdiction:
+               US (FRA/AAR/PHMSA) ........ imperial: LB / CU FT
+               MX (SCT · NOM-012-SCT-2) .. metric SI: KG / M3
+               CA (Transport Canada/TDG) . metric SI: KG / M3
+             Renderer sets data-country on the root <svg> (US default); the
+             display="inline/none" attributes are the no-CSS fallback. ====== -->
+        <g class="country-US" data-country="US" display="inline">
+          <text x="306" y="356" font-family="Inter, system-ui, sans-serif"
+                font-weight="700" font-size="7.4" letter-spacing="1.2" fill="#FFFFFF" opacity="0.85">USA</text>
+          <text x="306" y="370" font-family="Inter, system-ui, sans-serif"
+                font-weight="700" font-size="6.4" letter-spacing="0.8" fill="#FFFFFF" opacity="0.78">MAX GROSS 67,200 LB</text>
+          <text x="306" y="380" font-family="Inter, system-ui, sans-serif"
+                font-weight="700" font-size="6.4" letter-spacing="0.8" fill="#FFFFFF" opacity="0.78">TARE 8,820 LB</text>
+          <text x="306" y="390" font-family="Inter, system-ui, sans-serif"
+                font-weight="700" font-size="6.4" letter-spacing="0.8" fill="#FFFFFF" opacity="0.78">NET 58,380 LB</text>
+          <text x="306" y="400" font-family="Inter, system-ui, sans-serif"
+                font-weight="700" font-size="5.8" letter-spacing="0.6" fill="#FFFFFF" opacity="0.55">CU CAP 2,390 CU FT</text>
+        </g>
+        <g class="country-MX" data-country="MX" display="none">
+          <text x="306" y="356" font-family="Inter, system-ui, sans-serif"
+                font-weight="700" font-size="7.4" letter-spacing="1.2" fill="#FFFFFF" opacity="0.85">MEXICO</text>
+          <text x="306" y="370" font-family="Inter, system-ui, sans-serif"
+                font-weight="700" font-size="6.4" letter-spacing="0.8" fill="#FFFFFF" opacity="0.78">MASA BRUTA 30 480 KG</text>
+          <text x="306" y="380" font-family="Inter, system-ui, sans-serif"
+                font-weight="700" font-size="6.4" letter-spacing="0.8" fill="#FFFFFF" opacity="0.78">TARA 4 000 KG</text>
+          <text x="306" y="390" font-family="Inter, system-ui, sans-serif"
+                font-weight="700" font-size="6.4" letter-spacing="0.8" fill="#FFFFFF" opacity="0.78">CARGA NETA 26 480 KG</text>
+          <text x="306" y="400" font-family="Inter, system-ui, sans-serif"
+                font-weight="700" font-size="5.8" letter-spacing="0.6" fill="#FFFFFF" opacity="0.55">CAP 67,7 M3 &#183; NOM-012-SCT-2</text>
+        </g>
+        <g class="country-CA" data-country="CA" display="none">
+          <text x="306" y="356" font-family="Inter, system-ui, sans-serif"
+                font-weight="700" font-size="7.4" letter-spacing="1.2" fill="#FFFFFF" opacity="0.85">CANADA</text>
+          <text x="306" y="370" font-family="Inter, system-ui, sans-serif"
+                font-weight="700" font-size="6.4" letter-spacing="0.8" fill="#FFFFFF" opacity="0.78">MAX GROSS 30 480 KG</text>
+          <text x="306" y="380" font-family="Inter, system-ui, sans-serif"
+                font-weight="700" font-size="6.4" letter-spacing="0.8" fill="#FFFFFF" opacity="0.78">TARE 4 000 KG</text>
+          <text x="306" y="390" font-family="Inter, system-ui, sans-serif"
+                font-weight="700" font-size="6.4" letter-spacing="0.8" fill="#FFFFFF" opacity="0.78">NET 26 480 KG</text>
+          <text x="306" y="400" font-family="Inter, system-ui, sans-serif"
+                font-weight="700" font-size="5.8" letter-spacing="0.6" fill="#FFFFFF" opacity="0.55">CAP 67,7 M3 &#183; TC/TDG</text>
+        </g>
 
         <!-- EUSOTRIP brand badge (right panel) -->
         <g>

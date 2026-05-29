@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg"  width="1200" height="600" viewBox="0 50 1200 480" preserveAspectRatio="xMidYMid slice">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600" preserveAspectRatio="xMidYMid meet">
   <style><![CDATA[
     /* ========== RAIL JOINT CLACK-CLACK ========== */
     .rail-clack    { animation: rail-clack 0.6s ease-in-out infinite; }
@@ -79,6 +79,13 @@
       0%, 100% { transform: translateX(0); opacity: 0.25; }
       50%      { transform: translateX(-8px); opacity: 0.32; }
     }
+    /* Rail bogie wheels — continuous spin (CSS so prefers-reduced-motion can still them; SMIL cannot be). */
+    .rail-wheel { transform-box: fill-box; transform-origin: center;
+                  animation: rail-wheel-spin 1.4s linear infinite; }
+    @keyframes rail-wheel-spin {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(-360deg); }
+    }
     /* ========== BRAND LOCKUP ========== */
     .brand-mark {
       transform-box: fill-box; transform-origin: center;
@@ -97,7 +104,7 @@
     @media (prefers-reduced-motion: reduce) {
       .rail-clack, .rail-yaw, .container-settle, .spray,
       .sheen, .wordmark, .twist-lock, .reporting, .iso-code,
-      .chevron, .sky-shimmer, .rail-line, .ballast, .brand-mark, .brand-word { animation: none !important; }
+      .chevron, .sky-shimmer, .rail-line, .ballast, .brand-mark, .brand-word, .rail-wheel { animation: none !important; }
     }
   
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
@@ -217,8 +224,10 @@
     <circle cx="0" cy="0" r="5" fill="#7A7F88"/>
     <ellipse cx="-3" cy="-7" rx="3" ry="2" fill="#FFFFFF" opacity="0.35"/>
   </g>
-  <g transform="translate(900 450)"><g><use href="#wheelSmall"/><animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.4s" repeatCount="indefinite"/></g></g>
-  <g transform="translate(945 450)"><g><use href="#wheelSmall"/><animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.4s" repeatCount="indefinite"/></g></g>
+  <!-- Trailer road wheels are OFF the ground / chocked on the flatcar deck — they do NOT spin in transit.
+       Only the rail bogie wheels (which contact the rail) rotate. Rendered static for operational truth. -->
+  <g transform="translate(900 450)"><use href="#wheelSmall"/></g>
+  <g transform="translate(945 450)"><use href="#wheelSmall"/></g>
 
   <!-- FLATCAR BOGIES -->
   
@@ -229,21 +238,19 @@
     <rect x="170" y="468" width="100" height="3" fill="#FFFFFF" opacity="0.35"/>
   </g>
   <g transform="translate(190 498)">
-    <g>
+    <g class="rail-wheel">
       <circle cx="0" cy="0" r="22" fill="#1A1A1A"/>
       <circle cx="0" cy="0" r="14" fill="url(#rim)"/>
       <circle cx="0" cy="0" r="5" fill="#7A7F88"/>
       <ellipse cx="-4" cy="-7" rx="4" ry="2" fill="#FFFFFF" opacity="0.35"/>
-      <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.4s" repeatCount="indefinite"/>
     </g>
   </g>
   <g transform="translate(250 498)">
-    <g>
+    <g class="rail-wheel">
       <circle cx="0" cy="0" r="22" fill="#1A1A1A"/>
       <circle cx="0" cy="0" r="14" fill="url(#rim)"/>
       <circle cx="0" cy="0" r="5" fill="#7A7F88"/>
       <ellipse cx="-4" cy="-7" rx="4" ry="2" fill="#FFFFFF" opacity="0.35"/>
-      <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.4s" repeatCount="indefinite"/>
     </g>
   </g>
   <g filter="url(#rigShadow)">
@@ -251,21 +258,19 @@
     <rect x="930" y="468" width="100" height="3" fill="#FFFFFF" opacity="0.35"/>
   </g>
   <g transform="translate(950 498)">
-    <g>
+    <g class="rail-wheel">
       <circle cx="0" cy="0" r="22" fill="#1A1A1A"/>
       <circle cx="0" cy="0" r="14" fill="url(#rim)"/>
       <circle cx="0" cy="0" r="5" fill="#7A7F88"/>
       <ellipse cx="-4" cy="-7" rx="4" ry="2" fill="#FFFFFF" opacity="0.35"/>
-      <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.4s" repeatCount="indefinite"/>
     </g>
   </g>
   <g transform="translate(1010 498)">
-    <g>
+    <g class="rail-wheel">
       <circle cx="0" cy="0" r="22" fill="#1A1A1A"/>
       <circle cx="0" cy="0" r="14" fill="url(#rim)"/>
       <circle cx="0" cy="0" r="5" fill="#7A7F88"/>
       <ellipse cx="-4" cy="-7" rx="4" ry="2" fill="#FFFFFF" opacity="0.35"/>
-      <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.4s" repeatCount="indefinite"/>
     </g>
   </g>
 

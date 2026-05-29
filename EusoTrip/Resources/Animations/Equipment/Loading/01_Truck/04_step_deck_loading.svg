@@ -38,14 +38,20 @@
     /* Crane-load cycle: hook + transformer descend slowly toward lower
        deck, hover for securement, then reset upward. Cargo is the load,
        so we move the entire transformer-rig group. */
-    .crane-cycle { animation: crane-cycle 7.2s ease-in-out infinite;
+    /* Crane lowers the transformer under control: steady descent that
+       decelerates into a soft touchdown (cubic-bezier decel), a brief
+       overshoot settle as the rig takes the deck, a securement hold, then
+       the empty hook resets up. 0%/100% match for a seamless loop. */
+    .crane-cycle { animation: crane-cycle 7.2s cubic-bezier(0.4,0,0.2,1) infinite;
                    transform-box: fill-box; transform-origin: center top; }
     @keyframes crane-cycle {
       0%   { transform: translateY(-90px); opacity: 0.95; }
-      30%  { transform: translateY(-30px); opacity: 1; }
-      55%  { transform: translateY(0);     opacity: 1; }
-      80%  { transform: translateY(0);     opacity: 1; }
-      90%  { transform: translateY(-90px); opacity: 0.95; }
+      30%  { transform: translateY(-34px); opacity: 1; }
+      52%  { transform: translateY(0);     opacity: 1; }
+      56%  { transform: translateY(-2.5px);opacity: 1; }   /* settle bounce  */
+      60%  { transform: translateY(0);     opacity: 1; }
+      80%  { transform: translateY(0);     opacity: 1; }    /* securement hold */
+      92%  { transform: translateY(-90px); opacity: 0.95; }
       100% { transform: translateY(-90px); opacity: 0.95; }
     }
 
@@ -68,14 +74,16 @@
                   transform-origin: center; transform-box: fill-box; }
     @keyframes wheel-spin { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
 
-    /* Securement straps cinch in time with cargo touchdown. */
+    /* Securement straps cinch over the cargo AFTER it is fully seated on the
+       dunnage (post-touchdown ~60%), snap taut, hold through the securement
+       window, then clear before the hook resets. */
     .strap-cinch { animation: strap-cinch 7.2s ease-in-out infinite;
                    transform-box: fill-box; transform-origin: top; }
     @keyframes strap-cinch {
-      0%, 55%   { transform: scaleY(0);    opacity: 0; }
-      65%       { transform: scaleY(1);    opacity: 0.95; }
-      80%, 95%  { transform: scaleY(1);    opacity: 0.95; }
-      100%      { transform: scaleY(0);    opacity: 0; }
+      0%, 60%   { transform: scaleY(0);    opacity: 0; }
+      68%       { transform: scaleY(1);    opacity: 0.95; }
+      80%, 90%  { transform: scaleY(1);    opacity: 0.95; }
+      96%, 100% { transform: scaleY(0);    opacity: 0; }
     }
 
     /* Ratchet handle wiggle (parity w/ flatbed pattern). */
@@ -484,6 +492,45 @@
           font-weight="800" font-size="6" fill="#FFD200" letter-spacing="0.6">ESTR-5302</text>
   </g>
 
+  <!-- ============================================================
+       COUNTRY-SWITCHABLE OVERSIZE-LOAD BANNER (front, on headboard)
+       A 28,000 lb / wide transformer triggers permit + banner rules.
+       Renderer shows exactly ONE group (default US):
+         US -> .country-US : "OVERSIZE LOAD", black on yellow reflective
+                             (FHWA / state DOT, 7'x18" banner convention)
+         CA -> .country-CA : bilingual "OVERSIZE / HORS NORMES",
+                             red on white reflective ("D" sign convention)
+         MX -> .country-MX : "CARGA SOBREDIMENSIONADA" (SCT / NOM-012)
+       ============================================================ -->
+  <g class="oversize-banner">
+    <g class="country-US">
+      <rect x="58" y="224" width="70" height="14" rx="1.5" fill="#FFD200"
+            stroke="#1A1F2E" stroke-width="0.8"/>
+      <rect x="58" y="224" width="70" height="2" fill="#FFFFFF" opacity="0.45"/>
+      <text x="93" y="234" text-anchor="middle"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="6" fill="#1A1F2E" letter-spacing="0.4">OVERSIZE LOAD</text>
+    </g>
+    <g class="country-CA" style="display:none">
+      <rect x="58" y="224" width="70" height="14" rx="1.5" fill="#FFFFFF"
+            stroke="#C8102E" stroke-width="0.8"/>
+      <text x="93" y="231" text-anchor="middle"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="4.6" fill="#C8102E" letter-spacing="0.3">OVERSIZE LOAD</text>
+      <text x="93" y="236.5" text-anchor="middle"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="4" fill="#C8102E" letter-spacing="0.2">CHARGE HORS NORMES</text>
+    </g>
+    <g class="country-MX" style="display:none">
+      <rect x="58" y="224" width="70" height="14" rx="1.5" fill="#FFD200"
+            stroke="#1A1F2E" stroke-width="0.8"/>
+      <rect x="58" y="224" width="70" height="2" fill="#FFFFFF" opacity="0.45"/>
+      <text x="93" y="234" text-anchor="middle"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="4.4" fill="#1A1F2E" letter-spacing="0.2">CARGA SOBREDIMENSIONADA</text>
+    </g>
+  </g>
+
   <!-- UPPER DECK (over kingpin/nose) -->
   <g filter="url(#rigShadow)">
     <rect x="122" y="420" width="208" height="20" fill="#3A3F4A"/>
@@ -749,14 +796,14 @@
       </g>
       <g stroke="#1A1F2E" stroke-width="2">
         <line x1="555" y1="256" x2="528" y2="288"/>
-        <line x1="613" y1="256" x2="618" y2="288"/>
-        <line x1="627" y1="256" x2="622" y2="288"/>
+        <line x1="613" y1="256" x2="600" y2="288"/>
+        <line x1="627" y1="256" x2="640" y2="288"/>
         <line x1="685" y1="256" x2="712" y2="288"/>
       </g>
       <g stroke="#9098A8" stroke-width="0.6" opacity="0.85">
         <line x1="555" y1="256" x2="528" y2="288"/>
-        <line x1="613" y1="256" x2="618" y2="288"/>
-        <line x1="627" y1="256" x2="622" y2="288"/>
+        <line x1="613" y1="256" x2="600" y2="288"/>
+        <line x1="627" y1="256" x2="640" y2="288"/>
         <line x1="685" y1="256" x2="712" y2="288"/>
       </g>
       <rect x="608" y="241" width="24" height="8" rx="1" fill="#1A1F2E"/>
@@ -841,10 +888,10 @@
       <g transform="translate(670 288) scale(0.85)"><use href="#bushing"/></g>
       <g transform="translate(694 288) scale(0.85)"><use href="#bushing"/></g>
 
-      <!-- Lifting eyes at 4 corners -->
+      <!-- Lifting eyes at 4 corners (splayed to match the 4-point sling legs) -->
       <g transform="translate(528 288)"><use href="#liftingEye"/></g>
-      <g transform="translate(618 288)"><use href="#liftingEye"/></g>
-      <g transform="translate(622 288)"><use href="#liftingEye"/></g>
+      <g transform="translate(600 288)"><use href="#liftingEye"/></g>
+      <g transform="translate(640 288)"><use href="#liftingEye"/></g>
       <g transform="translate(712 288)"><use href="#liftingEye"/></g>
 
       <!-- Lower-skirt: drain plug + radiator base -->
@@ -1578,13 +1625,37 @@
           font-weight="800" font-size="14" letter-spacing="1.8" fill="#FFFFFF">TRUCK</text>
   </g>
 
-  <!-- LBS unit badge (below TRUCK) -->
-  <g>
-    <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
-          fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
-    <text x="1102" y="112" text-anchor="middle"
-          font-family="Inter, system-ui, sans-serif"
-          font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">LBS</text>
+  <!-- ============================================================
+       COUNTRY-SWITCHABLE UNIT BADGE (below TRUCK)
+       Renderer shows exactly ONE of these groups by toggling a class on
+       a wrapping element (or by setting `display:none` on the others):
+         US  -> .country-US  (LBS · US DOT / FMCSA 49 CFR 393 securement)
+         MX  -> .country-MX  (KG  · SCT / NOM-012-SCT-2-2017 weights)
+         CA  -> .country-CA  (KG  · Transport Canada / NSC Std 10)
+       Default visible = US. Others carry display:none until selected.
+       ============================================================ -->
+  <g class="unit-badge">
+    <g class="country-US">
+      <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
+            fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+      <text x="1102" y="112" text-anchor="middle"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">LBS</text>
+    </g>
+    <g class="country-MX" style="display:none">
+      <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
+            fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+      <text x="1102" y="112" text-anchor="middle"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">KG</text>
+    </g>
+    <g class="country-CA" style="display:none">
+      <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
+            fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+      <text x="1102" y="112" text-anchor="middle"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">KG</text>
+    </g>
   </g>
 
   <!-- LOADING pill -->
@@ -1646,9 +1717,6 @@
     <path d="M 70 540 L 55 525 L 55 555 Z" fill="#9B7FD9"/>
   </g>
 
-  <!-- Iridescent rounded card border -->
-  <rect class="card-border" x="20" y="20" width="1160" height="560" rx="22"
-        fill="none" stroke="url(#brandIridescent)" stroke-width="2.5" pointer-events="none"/>
   <!-- Iridescent rounded card border -->
   <rect class="card-border" x="20" y="20" width="1160" height="560" rx="22"
         fill="none" stroke="url(#brandIridescent)" stroke-width="2.5" pointer-events="none"/>

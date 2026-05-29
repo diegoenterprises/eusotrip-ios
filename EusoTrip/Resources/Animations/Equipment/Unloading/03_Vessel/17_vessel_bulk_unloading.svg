@@ -33,30 +33,43 @@
       50%      { opacity: 0.65; }
     }
 
-    /* ============ BULK CARRIER GRAIN UNLOADING (synchronized 7s cycle) ============
-       Narrative: Container ship at port. Ship-to-shore (STS) gantry crane
-                  trolley slides along boom, spreader descends to yard pile,
-                  picks container, ascends, traverses over ship, descends
-                  into hold.
-         0  – 12% : trolley slides RIGHT to over yard pile
-         12 – 25% : spreader descends to pile
-         25 – 35% : picks container (locks engaged — green light)
-         35 – 50% : spreader ascends with container
-         50 – 75% : trolley slides LEFT to over ship
-         75 – 90% : spreader descends, releases container in hold
-         90 – 100%: returns
-       =================================================================== */
+    /* ============ BULK CARRIER GRAIN UNLOADING (continuous suction cycle) ============
+       Narrative: a Panamax bulk carrier is berthed at a grain IMPORT terminal.
+       A pneumatic continuous ship-unloader (vacuvator) lowers its suction head
+       into an open hold and lifts the grain UP through the telescoping nozzle to
+       a cyclone separator on the boom, which drops the grain onto the dock
+       conveyor while clean air returns to the vacuum pump. The grain heap inside
+       the hold shrinks as it is drawn down. This is a REAL bulk-discharge method
+       (the alternative being a grab-bucket crane) — a continuous granular stream
+       travelling UPWARD, NOT a container STS gantry releasing discrete boxes.
+         • suction column : continuous UPWARD grain flow (seamless loop)
+         • hold heaps      : .deck-stack-grow shrinks over the 7s discharge cycle
+         • cyclone/return  : separates grain from the lift air at the boom head
+       ============================================================================= */
 
-    /* Grain stream pulse (replaces trolley-slide for bulk loading) */
-    .grain-stream { animation: grain-stream 1.4s ease-in-out infinite; transform-box: fill-box; transform-origin: top; }
+    /* Continuous grain LIFT into the suction head — particles travel upward and
+       recycle seamlessly (0%/100% match) so the suction column never pops. */
+    .grain-stream { animation: grain-stream 1.1s linear infinite; transform-box: fill-box; transform-origin: bottom; }
     @keyframes grain-stream {
-      0%, 100% { opacity: 0.6;  transform: scaleY(0.9); }
-      50%      { opacity: 1;    transform: scaleY(1.1); }
+      0%   { opacity: 0.55; transform: translateY(3px)  scaleY(0.94); }
+      50%  { opacity: 1;    transform: translateY(0)    scaleY(1.06); }
+      100% { opacity: 0.55; transform: translateY(-3px) scaleY(0.94); }
+    }
+    /* Individual kernels rise up the nozzle and recycle (parallax depth). */
+    .grain-rise-a { animation: grain-rise 0.85s linear infinite; }
+    .grain-rise-b { animation: grain-rise 0.85s linear infinite -0.28s; }
+    .grain-rise-c { animation: grain-rise 0.85s linear infinite -0.56s; }
+    @keyframes grain-rise {
+      0%   { opacity: 0;   transform: translateY(10px); }
+      18%  { opacity: 0.9; }
+      82%  { opacity: 0.9; }
+      100% { opacity: 0;   transform: translateY(-12px); }
     }
 
-    /* Hold grain SHRINKS as it is extracted by suction */
+    /* Hold grain heap SHRINKS as the suction head draws it down.
+       Decel cubic-bezier so the heap eases down smoothly (brand motion token). */
     .deck-stack-grow { transform-box: fill-box; transform-origin: bottom;
-                       animation: deck-stack-shrink 7s ease-in-out infinite; }
+                       animation: deck-stack-shrink 7s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes deck-stack-shrink {
       0%, 12%   { transform: scaleY(1);   opacity: 1; }
       55%       { transform: scaleY(0.6); opacity: 0.85; }
@@ -105,7 +118,8 @@
       .sky-shimmer,
       .strobe-amber,
       .water-ripple,
-      .grain-stream {
+      .grain-stream,
+      .grain-rise-a, .grain-rise-b, .grain-rise-c {
         animation: none !important;
       }
     }
@@ -327,12 +341,12 @@
   <g class="grain-stream">
     <!-- Inverted column: wide at hold (y=432), narrow at suction head (y=414) -->
     <path d="M 1062 432 L 1070 432 L 1074 414 L 1058 414 Z" fill="url(#containerYellow)" opacity="0.92"/>
-    <!-- Rising grain particles -->
+    <!-- Rising grain particles — each lifts up the nozzle and recycles -->
     <g fill="#F2B27A" opacity="0.9">
-      <ellipse cx="1066" cy="418" rx="2.2" ry="1.6"/>
-      <ellipse cx="1064" cy="422" rx="2.4" ry="1.8"/>
-      <ellipse cx="1070" cy="426" rx="2" ry="1.5"/>
-      <ellipse cx="1062" cy="430" rx="2.2" ry="1.6"/>
+      <ellipse class="grain-rise-a" cx="1066" cy="418" rx="2.2" ry="1.6"/>
+      <ellipse class="grain-rise-b" cx="1064" cy="422" rx="2.4" ry="1.8"/>
+      <ellipse class="grain-rise-c" cx="1070" cy="426" rx="2" ry="1.5"/>
+      <ellipse class="grain-rise-b" cx="1062" cy="430" rx="2.2" ry="1.6"/>
     </g>
     <!-- Upward chevrons (flow direction = up) -->
     <g stroke="#FFFFFF" stroke-width="1" fill="none" opacity="0.85">
@@ -345,10 +359,21 @@
   </g>
 
   <!-- ============================================================
-       CONTAINER SHIP — large hull at the right side (x=320..1140)
-       Bow on right (pointed), stern on left (square). Bridge tower
-       on the stern (left side). Containers stacked on deck.
-       Hull deck at y=440, sea waterline at y=455.
+       BULK CARRIER — long flush-deck hull (x=320..1130). Bow on right,
+       stern superstructure (bridge + funnel) on the LEFT. Five open
+       cargo hatches across the weather deck (Panamax 5-hold layout).
+       Hull deck at y=440, waterline at y=490.
+
+       COUNTRY / REGULATORY NOTE (US · CA · MX):
+       Agricultural grain (corn/wheat) in bulk is NOT a DOT/PHMSA,
+       Transport Canada TDG, or SCT/NOM dangerous good — so NO national
+       hazmat placards apply to this rig. The only mandatory hull marking
+       is the INTERNATIONAL load line (Plimsoll mark, drawn below) carried
+       by every flag state under IMO; carriage is governed by the IMO
+       International Grain Code (1991), not road-mode placarding. Hence
+       there is no country-switchable placard group on this animation.
+       The cargo weight unit is metric tonnes (MT / DWT) — the universal
+       maritime unit across all three countries.
        ============================================================ -->
   <g class="ship-bob" filter="url(#rigShadow)">
     <!-- Hull (long horizontal shape with bow on right) -->
@@ -1132,7 +1157,8 @@
           font-weight="900" font-size="11" letter-spacing="2.2" fill="#FFFFFF">VESSEL</text>
   </g>
 
-  <!-- TEU chip (Twenty-foot Equivalent Unit — vessel container metric) -->
+  <!-- MT chip — metric tonnes, the bulk-carrier cargo unit (US/CA/MX universal).
+       NOT TEU: TEU is a container metric and does not apply to bulk grain. -->
   <g filter="url(#rigShadow)">
     <rect x="1078" y="92" width="56" height="22" rx="6"
           fill="#FFFFFF" stroke="url(#brandIridescent)" stroke-width="1.2"/>

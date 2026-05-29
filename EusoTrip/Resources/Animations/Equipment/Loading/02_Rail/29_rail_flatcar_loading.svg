@@ -34,42 +34,58 @@
     }
 
     /* ============ FLATCAR HEAVY-MACHINERY LOADING (synchronized 7s cycle) ============
-       Narrative: Open flat deck at heavy-haul depot. Yellow wheel loader
-                  drives up the ramp onto the deck, then tie-down chains
-                  deploy to secure the machine.
-         0  – 10% : ramp deploys
-         10 – 35% : machine drives up the ramp onto the deck
-         35 – 55% : machine secured in position
-         55 – 100%: tie-down chains tighten + hold
+       Operationally true "circus / drive-on" loading of an 89' chain-tie-down
+       flatcar: the spanner/end ramp drops to bridge deck-to-ground, a wheel
+       loader is driven up the incline onto the wood deck, then a minimum of
+       four chain tie-downs are tensioned (2 fore, 2 aft) per AAR Section 6.
+         0  –  9% : end ramp lowers into place (bridges deck to ground)
+         9  – 36% : loader climbs the ramp onto the deck (X falls, Y rises)
+        36  – 52% : loader rolls to its tie-down spot, wheels stop
+        52  – 90% : four tie-down chains snap taut + binders set
+        90  –100% : held secure, then a clean fade so the loop joins seamlessly
        =================================================================== */
 
-    /* Heavy machine drives up ramp from yard side (right) onto deck */
-    .machine-load { animation: machine-load 7s ease-in-out infinite; transform-box: fill-box; }
+    /* Heavy machine drives UP the ramp from the yard side (right) onto deck.
+       X carries it left onto the deck; Y lifts it as it climbs the incline,
+       settling to deck level (0) with a spring-like decel. */
+    .machine-load { animation: machine-load 7s cubic-bezier(0.4,0,0.2,1) infinite; transform-box: fill-box; }
     @keyframes machine-load {
-      0%, 8%   { transform: translateX(220px); opacity: 0; }
-      14%      { transform: translateX(220px); opacity: 1; }
-      35%      { transform: translateX(0);     opacity: 1; }
-      100%     { transform: translateX(0);     opacity: 1; }
+      0%, 6%   { transform: translate(220px, 26px); opacity: 0; }
+      11%      { transform: translate(220px, 26px); opacity: 1; }
+      36%      { transform: translate(0, 0);        opacity: 1; }
+      90%      { transform: translate(0, 0);        opacity: 1; }
+      97%,100% { transform: translate(0, 0);        opacity: 0; }
     }
 
+    /* Wheels turn only while the loader is moving (0–36%), then lock at rest. */
     .wheel-spin { transform-box: fill-box; transform-origin: center;
-                  animation: wheel-spin 1.4s linear infinite; }
-    @keyframes wheel-spin { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
-
-    /* Tie-down chains tighten in last phase */
-    .tiedown-chain { animation: tiedown-tighten 7s ease-in-out infinite; }
-    @keyframes tiedown-tighten {
-      0%, 50%   { opacity: 0;    transform: scaleY(1.1); }
-      65%       { opacity: 0.9;  transform: scaleY(1); }
-      100%      { opacity: 0.9;  transform: scaleY(1); }
+                  animation: wheel-spin 7s linear infinite; }
+    @keyframes wheel-spin {
+      0%   { transform: rotate(0deg); }
+      36%  { transform: rotate(-900deg); }
+      100% { transform: rotate(-900deg); }
     }
 
-    /* Ramp deploys in first 10% */
-    .ramp-deploy { transform-box: fill-box; transform-origin: 940px 405px;
-                   animation: ramp-deploy 7s ease-in-out infinite; }
+    /* Tie-down chains snap taut after the loader is spotted (52%), with a
+       brief overshoot so the binder "bites", then hold. */
+    .tiedown-chain { transform-box: fill-box; transform-origin: center bottom;
+                     animation: tiedown-tighten 7s cubic-bezier(0.34,1.56,0.64,1) infinite; }
+    @keyframes tiedown-tighten {
+      0%, 48%   { opacity: 0;    transform: scaleY(1.18); }
+      58%       { opacity: 0.95; transform: scaleY(0.96); }   /* snap + overshoot */
+      66%       { opacity: 0.95; transform: scaleY(1.0); }    /* settle taut */
+      90%       { opacity: 0.95; transform: scaleY(1.0); }
+      97%,100%  { opacity: 0;    transform: scaleY(1.0); }
+    }
+
+    /* End ramp lowers into place over the first 9% (bridges deck to ground),
+       pivoting about its hinge at the deck edge. */
+    .ramp-deploy { transform-box: fill-box; transform-origin: 940px 397px;
+                   animation: ramp-deploy 7s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes ramp-deploy {
-      0%, 4%    { transform: rotate(-12deg); }
-      10%, 100% { transform: rotate(0deg); }
+      0%        { transform: rotate(-22deg); }
+      9%, 92%   { transform: rotate(0deg); }
+      98%, 100% { transform: rotate(-22deg); }
     }
 
     /* Operator subtle sway */
@@ -109,7 +125,18 @@
       .wheel-spin {
         animation: none !important;
       }
+      /* Calm, legible end-state: loader spotted on deck, chains taut, ramp
+         stowed flush — no looping motion. */
+      .machine-load  { transform: translate(0,0) !important; opacity: 1 !important; }
+      .tiedown-chain { opacity: 0.95 !important; transform: scaleY(1) !important; }
+      .ramp-deploy   { transform: rotate(0deg) !important; }
     }
+
+    /* Country stencil switch: the app shows exactly one capacity-stencil
+       group. Default = US (LB / AAR). For CA toggle .country-CA visible
+       (kg / Transport Canada); for MX toggle .country-MX (kg / SCT). */
+    .country-CA, .country-MX { display: none; }
+    .country-US { display: inline; }
 
   ]]></style>
 
@@ -274,9 +301,19 @@
             font-weight="900" font-size="5" fill="#1A1F2E" letter-spacing="0.3">FM</text>
     </g>
 
-    <!-- Capacity stencil on side of deck -->
-    <text x="380" y="398" font-family="Inter, system-ui, sans-serif"
-          font-weight="700" font-size="6" fill="#FFD23A" opacity="0.9" letter-spacing="0.6">CAPY 100 TON · LD LMT 220,000 LB · IL 89' 0"</text>
+    <!-- Capacity stencil on side of deck (country-switchable unit) -->
+    <g class="country-US">
+      <text x="380" y="398" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6" fill="#FFD23A" opacity="0.9" letter-spacing="0.6">CAPY 100 TON · LD LMT 220,000 LB · IL 89' 0"</text>
+    </g>
+    <g class="country-CA">
+      <text x="380" y="398" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6" fill="#FFD23A" opacity="0.9" letter-spacing="0.6">CAP 90,7 t · LIM CHARGE 99 800 kg · LI 27,1 m · TC</text>
+    </g>
+    <g class="country-MX">
+      <text x="380" y="398" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6" fill="#FFD23A" opacity="0.9" letter-spacing="0.6">CAP 90,7 t · LIM 99 800 kg · LI 27,1 m · SCT</text>
+    </g>
 
     <!-- "EUSOTRIP HEAVY HAUL" branding on deck side -->
     <text x="800" y="397" font-family="Inter, system-ui, sans-serif"
@@ -479,18 +516,27 @@
   </g>
 
   <!-- ============================================================
-       LOADING RAMP from end of deck down to ground (right side)
+       END RAMP / SPANNER — inclined plane bridging deck edge (940,397)
+       down to ground level (1064,490). Hinged at the deck edge so it
+       can be lowered into place. This is the drive-on surface.
        ============================================================ -->
   <g class="ramp-deploy" filter="url(#rigShadow)">
-    <polygon points="940,395 1020,395 1020,492 940,492" fill="#5A606D" stroke="#3A3F4A" stroke-width="0.6"/>
-    <polygon points="940,395 1020,395 1020,398 940,398" fill="#7A7F88"/>
-    <g stroke="#3A3F4A" stroke-width="0.4" opacity="0.55">
-      <line x1="952" y1="410" x2="956" y2="414"/>
-      <line x1="982" y1="430" x2="986" y2="434"/>
-      <line x1="1000" y1="450" x2="1004" y2="454"/>
-      <line x1="960" y1="460" x2="964" y2="464"/>
+    <!-- Ramp slab (wedge): deck-edge top, ground-level toe -->
+    <polygon points="940,392 952,392 1064,486 1064,494 1052,494 940,400"
+             fill="#5A606D" stroke="#3A3F4A" stroke-width="0.8"/>
+    <!-- Top running surface highlight along the incline -->
+    <polygon points="940,392 952,392 1064,486 1056,486" fill="#7A7F88"/>
+    <!-- Cleats / traction ribs across the running surface -->
+    <g stroke="#3A3F4A" stroke-width="1" opacity="0.7" stroke-linecap="round">
+      <line x1="968" y1="404" x2="978" y2="404"/>
+      <line x1="996" y1="428" x2="1006" y2="428"/>
+      <line x1="1024" y1="452" x2="1034" y2="452"/>
+      <line x1="1048" y1="474" x2="1058" y2="474"/>
     </g>
-    <line x1="940" y1="488" x2="1020" y2="488" stroke="#FFD23A" stroke-width="2.4" opacity="0.85" stroke-dasharray="6 4"/>
+    <!-- Hazard edge stripe along the ramp toe -->
+    <line x1="1052" y1="492" x2="1064" y2="492" stroke="#FFD23A" stroke-width="3" opacity="0.9"/>
+    <!-- Side curb so the loader tracks straight up the incline -->
+    <line x1="940" y1="400" x2="1064" y2="494" stroke="#3A3F4A" stroke-width="1.4" opacity="0.8"/>
   </g>
 
   <!-- YARD SUPERVISOR -->

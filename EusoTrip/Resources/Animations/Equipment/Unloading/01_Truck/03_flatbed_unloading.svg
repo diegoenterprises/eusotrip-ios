@@ -42,15 +42,29 @@
        deck-side coil mid-release + empty cradles + dangling chains +
        loose strap remnant + deposited coil already in the staging rack.
        Forklift sweeps in/out during animation cycle to show transfer. */
-    .forklift-cycle-unload { animation: forklift-cycle-unload 6s ease-in-out infinite; }
+    .forklift-cycle-unload { animation: forklift-cycle-unload 6s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes forklift-cycle-unload {
       0%   { transform: translateX(0);     opacity: 0; }
       8%   { transform: translateX(0);     opacity: 0; }
-      18%  { transform: translateX(-130px); opacity: 1; }
-      45%  { transform: translateX(-130px); opacity: 1; }
-      62%  { transform: translateX(40px);  opacity: 1; }
+      18%  { transform: translateX(-130px); opacity: 1; }  /* ram threaded into the eye, at the coil */
+      45%  { transform: translateX(-130px); opacity: 1; }  /* dwell while the carriage lifts the coil */
+      62%  { transform: translateX(40px);  opacity: 1; }   /* reverse out toward the staging rack */
       72%  { transform: translateX(40px);  opacity: 0; }
       100% { transform: translateX(0);     opacity: 0; }
+    }
+
+    /* Carriage lift (UNLOADING): the carriage + coil ram + payload coil rise
+       off the cradles once the ram is threaded through the eye, then stay
+       raised as the forklift backs away. Applied ONLY to the lift carriage so
+       the forklift chassis/wheels stay planted on the asphalt. Timed to the
+       forklift dwell window (~18%-62% of the 6s cycle). */
+    .carriage-lift { animation: carriage-lift 6s cubic-bezier(0.4,0,0.2,1) infinite;
+                     transform-box: fill-box; }
+    @keyframes carriage-lift {
+      0%, 18%   { transform: translateY(0); }
+      30%       { transform: translateY(-6px); }   /* LIFT — coil clears the cradles */
+      62%       { transform: translateY(-6px); }   /* held up while reversing out */
+      72%, 100% { transform: translateY(0); }
     }
 
     .wheel-spin { animation: wheel-spin 1.4s linear infinite;
@@ -135,6 +149,7 @@
       .brand-lockup,
       .brand-mark,
       .brand-word,
+      .carriage-lift,
       .chain-shimmer,
       .chevron,
       .forklift-cycle-unload,
@@ -1110,6 +1125,9 @@
       <rect x="-7.5" y="-122" width="2" height="116" fill="#7A7F88" opacity="0.8"/>
       <rect x="-7.5" y="-122" width="2" height="2"  fill="#FFFFFF" opacity="0.5"/>
 
+      <!-- ===== Carriage + ram + coil (rides the mast; .carriage-lift
+           raises it off the cradles before the forklift reverses out) ===== -->
+      <g class="carriage-lift">
       <!-- Carriage / fork backrest (RAISED) -->
       <rect x="-13" y="-118" width="14" height="22"
             fill="url(#forkliftBody)" stroke="#8C5500" stroke-width="0.5"/>
@@ -1140,6 +1158,7 @@
         <circle cx="0" cy="0" r="3" fill="#5A606D"/>
         <circle cx="0" cy="0" r="3" fill="none" stroke="#9098A8" stroke-width="0.4"/>
       </g>
+      </g><!-- /.carriage-lift -->
 
       <!-- Wheels: large drive at front, smaller steer at rear -->
       <g transform="translate(-3 -10)"><g class="wheel-spin"><circle cx="0" cy="0" r="11" fill="#1A1A1A"/><circle cx="0" cy="0" r="6" fill="url(#rim)"/><line x1="0" y1="-7" x2="0" y2="-3" stroke="#3A3F4A" stroke-width="1.4"/><line x1="6" y1="-2" x2="3" y2="-1" stroke="#3A3F4A" stroke-width="1.4"/><line x1="0" y1="7" x2="0" y2="3" stroke="#3A3F4A" stroke-width="1.4"/><line x1="-6" y1="-2" x2="-3" y2="-1" stroke="#3A3F4A" stroke-width="1.4"/></g></g>
@@ -1869,13 +1888,62 @@
           font-weight="800" font-size="14" letter-spacing="1.8" fill="#FFFFFF">TRUCK</text>
   </g>
 
-  <!-- LBS unit badge (below TRUCK) -->
-  <g>
-    <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
-          fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
-    <text x="1102" y="112" text-anchor="middle"
-          font-family="Inter, system-ui, sans-serif"
-          font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">LBS</text>
+  <!-- ============================================================
+       COUNTRY-SWITCHABLE UNITS + WLL MARKING (regulated rig)
+       Steel-coil securement is governed by the harmonized North American
+       Cargo Securement Standard, adopted as:
+         US  · FMCSA 49 CFR 393.120 (coils >=5,000 lb; total tiedown WLL
+               >= 50% of cargo weight; eye-crosswise must ride a cradle).
+         CA  · NSC Standard 10 (CCMTA); tiedown WLL must be MARKED on the
+               device; metric units (kg).
+         MX  · NOM-SCT2 series / Reglamento (harmonized w/ the NA standard);
+               metric units (kg).
+       RENDERER SELECTION: the host shows exactly ONE of the sibling groups
+       below by shipment origin/destination country. Default = country-US
+       visible; country-CA / country-MX carry inline display:none. The app
+       flips display:none<->inline on the matching .country-XX group (and
+       should also localize the weight/commodity tspans elsewhere in this
+       file via the data-bind hooks: weight_label / commodity_label).
+       Units badge differs (LBS vs KG); the small WLL line states the
+       50%-of-cargo securement floor in the local unit.
+       ============================================================ -->
+  <g class="country-units">
+    <!-- US (default visible): pounds -->
+    <g class="country-US" data-country="US">
+      <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
+            fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+      <text x="1102" y="112" text-anchor="middle"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">LBS</text>
+      <text data-bind="wll_label" x="1132" y="130" text-anchor="end"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="7" letter-spacing="0.8"
+            fill="#7A5AB8" opacity="0.85">WLL 22,500 LB</text>
+    </g>
+    <!-- CA: kilograms (NSC Std 10 — WLL marked) -->
+    <g class="country-CA" data-country="CA" style="display:none;">
+      <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
+            fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+      <text x="1102" y="112" text-anchor="middle"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">KG</text>
+      <text data-bind="wll_label" x="1132" y="130" text-anchor="end"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="7" letter-spacing="0.8"
+            fill="#7A5AB8" opacity="0.85">WLL 10 200 KG</text>
+    </g>
+    <!-- MX: kilograms (NOM-SCT2 — harmonized NA standard) -->
+    <g class="country-MX" data-country="MX" style="display:none;">
+      <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
+            fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+      <text x="1102" y="112" text-anchor="middle"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">KG</text>
+      <text data-bind="wll_label" x="1132" y="130" text-anchor="end"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="7" letter-spacing="0.8"
+            fill="#7A5AB8" opacity="0.85">CST 10 200 KG</text>
+    </g>
   </g>
 
   <!-- UNLOADING pill (amber) -->

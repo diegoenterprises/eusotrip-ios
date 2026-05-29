@@ -33,8 +33,8 @@
       50%      { opacity: 0.65; }
     }
 
-    /* ============ DOT-111 ETHANOL LOADING MOTION (synchronized 7s cycle) ============
-       Narrative: general-service tank car at corn ethanol plant top-loading rack.
+    /* ============ DOT-117J ETHANOL LOADING MOTION (synchronized 7s cycle) ============
+       Narrative: post-Lac-Mégantic HHFT tank car at corn ethanol plant top-loading rack.
          0  – 15% : static grounding cable connects (BONDED LED steady green)
          15 – 30% : vapor recovery hose attaches to vapor port (Stage I capture)
          30 – 45% : top-loading swing arm articulates from parked vertical to engaged
@@ -62,9 +62,10 @@
       100%     { opacity: 0; }
     }
 
-    /* Vapor recovery hose — attaches first 15-30% (gentle swing into place) */
+    /* Vapor recovery hose — attaches first 15-30% (gentle swing into place).
+       Decelerating settle (cubic-bezier 0.4,0,0.2,1) so the hose eases to rest. */
     .vapor-hose { transform-box: fill-box; transform-origin: 200px 240px;
-                  animation: vapor-hose-attach 7s ease-in-out infinite; }
+                  animation: vapor-hose-attach 7s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes vapor-hose-attach {
       0%, 14%   { transform: translateX(-10px) translateY(-6px); opacity: 0.7; }
       30%, 100% { transform: translateX(0) translateY(0);        opacity: 1; }
@@ -73,13 +74,13 @@
     /* Top-loading swing arm (single segment with flex hose) — engages 30-45%.
        Pivot at rack mount above tank. */
     .load-arm { transform-box: fill-box; transform-origin: 600px 188px;
-                animation: load-arm-engage 7s ease-in-out infinite; }
+                animation: load-arm-engage 7s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes load-arm-engage {
       0%, 30%   { transform: rotate(-46deg); }
       45%, 100% { transform: rotate(0deg); }
     }
     .flex-hose { transform-box: fill-box; transform-origin: 700px 240px;
-                 animation: flex-hose-droop 7s ease-in-out infinite; }
+                 animation: flex-hose-droop 7s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes flex-hose-droop {
       0%, 30%   { transform: translateY(-8px) scaleY(0.85); opacity: 0.85; }
       45%, 100% { transform: translateY(0)    scaleY(1);    opacity: 1; }
@@ -87,12 +88,12 @@
 
     /* Sight-glass amber level rise on tank side (45-90%) */
     .level-rise { transform-box: fill-box; transform-origin: bottom;
-                  animation: level-rise 7s ease-in-out infinite; }
+                  animation: level-rise 7s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes level-rise {
       0%, 45%   { transform: scaleY(0.10); }
       90%, 100% { transform: scaleY(0.94); }
     }
-    .level-meniscus { animation: level-meniscus 7s ease-in-out infinite; }
+    .level-meniscus { animation: level-meniscus 7s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes level-meniscus {
       0%, 45%   { transform: translateY(126px); opacity: 0.85; }
       90%, 100% { transform: translateY(8px);   opacity: 0.95; }
@@ -109,7 +110,7 @@
 
     /* Smith Meter — gallons tick up during fill phase */
     .meter-bar { transform-box: fill-box; transform-origin: left center;
-                 animation: meter-bar 7s ease-in-out infinite; }
+                 animation: meter-bar 7s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes meter-bar {
       0%, 45%   { transform: scaleX(0.05); }
       90%, 100% { transform: scaleX(0.95); }
@@ -185,7 +186,7 @@
       <stop offset="0%" stop-color="#7A5A40"/>
       <stop offset="100%" stop-color="#3F2F22"/>
     </linearGradient>
-    <!-- DOT-111 silver/grey carbon-steel tank shell (UNJACKETED, distinct from DOT-105 white) -->
+    <!-- DOT-117J silver/grey jacketed steel tank shell (distinct from DOT-105 white pressure car) -->
     <linearGradient id="tankShell111" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%"  stop-color="#E4E8ED"/>
       <stop offset="22%" stop-color="#C9CFD6"/>
@@ -974,7 +975,9 @@
   </g>
 
   <!-- ============================================================
-       TANK SIDE STENCILS, PLACARDS (DOT-111 / ETHANOL)
+       TANK SIDE STENCILS, PLACARDS (DOT-117J / ETHANOL · CLASS 3)
+       Placards are wrapped in country-switchable groups below
+       (country-US default, country-CA TDG, country-MX SCT/NOM-002).
        ============================================================ -->
 
   <!-- Reporting marks (left end) -->
@@ -982,7 +985,7 @@
         font-weight="900" font-size="14" fill="#1A1F2E" letter-spacing="2"
         data-bind="reporting_marks">EUSO 2287</text>
 
-  <!-- DOT-111 specification stencil -->
+  <!-- DOT-117J specification stencil -->
   <text x="282" y="446" font-family="Inter, system-ui, sans-serif"
         font-weight="700" font-size="7" fill="#1A1F2E" opacity="0.9"
         letter-spacing="1.2">DOT 117J100W · TEST 100 PSI</text>
@@ -1000,47 +1003,138 @@
         font-weight="700" font-size="6.4" fill="#1A1F2E" opacity="0.85"
         letter-spacing="1">DENATURED · UN1170 · CLASS 3</text>
 
-  <!-- Class 3 FLAMMABLE LIQUID placard (red diamond + flame) - LEFT SIDE -->
-  <g transform="translate(354 462)">
-    <g transform="rotate(45)">
-      <rect x="-18" y="-18" width="36" height="36" fill="#E5350D" stroke="#000000" stroke-width="1.6"/>
+  <!-- ============================================================
+       COUNTRY-SWITCHABLE CLASS 3 PLACARDS (regulated — flammable liquid)
+       The renderer shows exactly ONE of these groups by toggling
+       `display`: keep country-US visible (default) and set
+       country-CA / country-MX to display:none, or flip per the load's
+       jurisdiction. Class 3 placard art (red diamond + flame + "3") is
+       harmonized across US 49 CFR / Canada TDG (UN system) — both keep
+       the orange UN panel. Mexico SCT NOM-002-SCT uses the same UN
+       diamond but the Spanish proper shipping name ("ETANOL"/"LÍQUIDO
+       INFLAMABLE") and does NOT use the English "FLAMMABLE" wording;
+       NA numbers are not authorized, only the UN id panel.
+       ============================================================ -->
+
+  <!-- ===== country-US (DOT 49 CFR 172.504) — DEFAULT VISIBLE ===== -->
+  <g class="country-US">
+    <!-- Class 3 FLAMMABLE LIQUID placard (red diamond + flame) - LEFT SIDE -->
+    <g transform="translate(354 462)">
+      <g transform="rotate(45)">
+        <rect x="-18" y="-18" width="36" height="36" fill="#E5350D" stroke="#000000" stroke-width="1.6"/>
+      </g>
+      <!-- Flame icon (simple Class 3 pictogram) -->
+      <g transform="translate(0 -7)">
+        <path d="M 0 -5 Q -3 -2 -3 1 Q -3 4 0 4 Q 3 4 3 1 Q 3 -2 0 -5 Z"
+              fill="#1A1F2E"/>
+      </g>
+      <text y="6" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="8" fill="#FFFFFF">3</text>
+      <text y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="3.6" fill="#FFFFFF" letter-spacing="0.4">FLAMMABLE</text>
     </g>
-    <!-- Flame icon (simple Class 3 pictogram) -->
-    <g transform="translate(0 -7)">
-      <path d="M 0 -5 Q -3 -2 -3 1 Q -3 4 0 4 Q 3 4 3 1 Q 3 -2 0 -5 Z"
-            fill="#1A1F2E"/>
+    <!-- UN1170 orange ID panel below placard -->
+    <g transform="translate(354 488)">
+      <rect x="-22" y="-7" width="44" height="14" fill="#FF8A1F" stroke="#000000" stroke-width="1"/>
+      <text y="3" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="8" fill="#000000" letter-spacing="0.6"
+            data-bind="un_number">UN 1170</text>
     </g>
-    <text y="6" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
-          font-weight="900" font-size="8" fill="#FFFFFF">3</text>
-    <text y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
-          font-weight="800" font-size="3.6" fill="#FFFFFF" letter-spacing="0.4">FLAM LIQUID</text>
-  </g>
-  <!-- UN1170 orange ID panel below placard -->
-  <g transform="translate(354 488)">
-    <rect x="-22" y="-7" width="44" height="14" fill="#FF8A1F" stroke="#000000" stroke-width="1"/>
-    <text y="3" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
-          font-weight="900" font-size="8" fill="#000000" letter-spacing="0.6"
-          data-bind="un_number">UN 1170</text>
+    <!-- Class 3 placard (RIGHT SIDE) -->
+    <g transform="translate(820 462)">
+      <g transform="rotate(45)">
+        <rect x="-18" y="-18" width="36" height="36" fill="#E5350D" stroke="#000000" stroke-width="1.6"/>
+      </g>
+      <g transform="translate(0 -7)">
+        <path d="M 0 -5 Q -3 -2 -3 1 Q -3 4 0 4 Q 3 4 3 1 Q 3 -2 0 -5 Z"
+              fill="#1A1F2E"/>
+      </g>
+      <text y="6" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="8" fill="#FFFFFF">3</text>
+      <text y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="3.6" fill="#FFFFFF" letter-spacing="0.4">FLAMMABLE</text>
+    </g>
+    <g transform="translate(820 488)">
+      <rect x="-22" y="-7" width="44" height="14" fill="#FF8A1F" stroke="#000000" stroke-width="1"/>
+      <text y="3" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="8" fill="#000000" letter-spacing="0.6">UN 1170</text>
+    </g>
   </g>
 
-  <!-- Class 3 placard (RIGHT SIDE) -->
-  <g transform="translate(820 462)">
-    <g transform="rotate(45)">
-      <rect x="-18" y="-18" width="36" height="36" fill="#E5350D" stroke="#000000" stroke-width="1.6"/>
+  <!-- ===== country-CA (Transport Canada TDG — harmonized UN system) ===== -->
+  <g class="country-CA" display="none">
+    <g transform="translate(354 462)">
+      <g transform="rotate(45)">
+        <rect x="-18" y="-18" width="36" height="36" fill="#E5350D" stroke="#000000" stroke-width="1.6"/>
+      </g>
+      <g transform="translate(0 -7)">
+        <path d="M 0 -5 Q -3 -2 -3 1 Q -3 4 0 4 Q 3 4 3 1 Q 3 -2 0 -5 Z" fill="#1A1F2E"/>
+      </g>
+      <text y="6" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="8" fill="#FFFFFF">3</text>
+      <text y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="3.6" fill="#FFFFFF" letter-spacing="0.4">FLAMMABLE</text>
     </g>
-    <g transform="translate(0 -7)">
-      <path d="M 0 -5 Q -3 -2 -3 1 Q -3 4 0 4 Q 3 4 3 1 Q 3 -2 0 -5 Z"
-            fill="#1A1F2E"/>
+    <g transform="translate(354 488)">
+      <rect x="-22" y="-7" width="44" height="14" fill="#FF8A1F" stroke="#000000" stroke-width="1"/>
+      <text y="3" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="8" fill="#000000" letter-spacing="0.6">UN 1170</text>
     </g>
-    <text y="6" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
-          font-weight="900" font-size="8" fill="#FFFFFF">3</text>
-    <text y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
-          font-weight="800" font-size="3.6" fill="#FFFFFF" letter-spacing="0.4">FLAM LIQUID</text>
+    <g transform="translate(820 462)">
+      <g transform="rotate(45)">
+        <rect x="-18" y="-18" width="36" height="36" fill="#E5350D" stroke="#000000" stroke-width="1.6"/>
+      </g>
+      <g transform="translate(0 -7)">
+        <path d="M 0 -5 Q -3 -2 -3 1 Q -3 4 0 4 Q 3 4 3 1 Q 3 -2 0 -5 Z" fill="#1A1F2E"/>
+      </g>
+      <text y="6" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="8" fill="#FFFFFF">3</text>
+      <text y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="3.6" fill="#FFFFFF" letter-spacing="0.4">FLAMMABLE</text>
+    </g>
+    <g transform="translate(820 488)">
+      <rect x="-22" y="-7" width="44" height="14" fill="#FF8A1F" stroke="#000000" stroke-width="1"/>
+      <text y="3" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="8" fill="#000000" letter-spacing="0.6">UN 1170</text>
+    </g>
   </g>
-  <g transform="translate(820 488)">
-    <rect x="-22" y="-7" width="44" height="14" fill="#FF8A1F" stroke="#000000" stroke-width="1"/>
-    <text y="3" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
-          font-weight="900" font-size="8" fill="#000000" letter-spacing="0.6">UN 1170</text>
+
+  <!-- ===== country-MX (SCT NOM-002-SCT — Spanish PSN, no English wording) ===== -->
+  <g class="country-MX" display="none">
+    <g transform="translate(354 462)">
+      <g transform="rotate(45)">
+        <rect x="-18" y="-18" width="36" height="36" fill="#E5350D" stroke="#000000" stroke-width="1.6"/>
+      </g>
+      <g transform="translate(0 -7)">
+        <path d="M 0 -5 Q -3 -2 -3 1 Q -3 4 0 4 Q 3 4 3 1 Q 3 -2 0 -5 Z" fill="#1A1F2E"/>
+      </g>
+      <text y="6" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="8" fill="#FFFFFF">3</text>
+      <text y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="3.2" fill="#FFFFFF" letter-spacing="0.2">INFLAMABLE</text>
+    </g>
+    <g transform="translate(354 488)">
+      <rect x="-22" y="-7" width="44" height="14" fill="#FF8A1F" stroke="#000000" stroke-width="1"/>
+      <text y="3" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="8" fill="#000000" letter-spacing="0.6">UN 1170</text>
+    </g>
+    <g transform="translate(820 462)">
+      <g transform="rotate(45)">
+        <rect x="-18" y="-18" width="36" height="36" fill="#E5350D" stroke="#000000" stroke-width="1.6"/>
+      </g>
+      <g transform="translate(0 -7)">
+        <path d="M 0 -5 Q -3 -2 -3 1 Q -3 4 0 4 Q 3 4 3 1 Q 3 -2 0 -5 Z" fill="#1A1F2E"/>
+      </g>
+      <text y="6" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="8" fill="#FFFFFF">3</text>
+      <text y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="3.2" fill="#FFFFFF" letter-spacing="0.2">INFLAMABLE</text>
+    </g>
+    <g transform="translate(820 488)">
+      <rect x="-22" y="-7" width="44" height="14" fill="#FF8A1F" stroke="#000000" stroke-width="1"/>
+      <text y="3" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="8" fill="#000000" letter-spacing="0.6">UN 1170</text>
+    </g>
   </g>
 
   <!-- Reporting marks (right end) -->
@@ -1196,8 +1290,8 @@
 
   <!-- ============================================================
        TOP-LOADING SWING ARM with FLEXIBLE HOSE
-       (vs DOT-105's rigid Chiksan — DOT-111 is non-pressurized so
-        a simple swing arm with flex hose is standard).
+       (vs DOT-105's rigid Chiksan — DOT-117J ethanol service is
+        non-pressurized so a swing arm with flex drop tube is standard).
        Pivot at rack catwalk hub (600, 188).
        Engaged: arm reaches down into open manway (654, 380).
        ============================================================ -->

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg"  width="1200" height="600" viewBox="0 50 1200 480" preserveAspectRatio="xMidYMid slice">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600" preserveAspectRatio="xMidYMid meet">
   <style><![CDATA[
     /* ========== HULL PITCH — ocean swell, bow rises and falls ========== */
     .hull-pitch {
@@ -132,6 +132,23 @@
       50%      { opacity: 1; }
     }
 
+    /* ========== COUNTRY-SWITCHABLE HAZMAT MARKINGS (2026-05-29) ==========
+       ISO tank containers are regulated dangerous-goods packagings. The same
+       tank crosses regulatory regimes depending on the leg of the move:
+         · country-US — 49 CFR / PHMSA placard + orange UN-ID panel (172.326/.332)
+         · country-MX — SCT NOM-002/004-SCT placard; UN labels adopted, ID panel
+         · country-CA — Transport Canada TDG placard (wordless graphic, bilingual rule)
+       Maritime legs follow the IMDG Code; the diamond graphic is harmonised across
+       all three, so the country layer carries the ID-panel / wording variant.
+       Renderer selects ONE: set the root <svg> to class "ctx-US" | "ctx-MX" | "ctx-CA"
+       (e.g. svg.classList = 'ctx-' + shipment.regulatoryRegion). Default = US. */
+    .country-US, .country-MX, .country-CA { opacity: 0; }
+    .ctx-US .country-US,
+    .ctx-MX .country-MX,
+    .ctx-CA .country-CA { opacity: 1; }
+    /* Fallback when no ctx-* class is set on the root: show US. */
+    svg:not(.ctx-US):not(.ctx-MX):not(.ctx-CA) .country-US { opacity: 1; }
+
     @media (prefers-reduced-motion: reduce) {
       .hull-pitch, .hull-roll, .stack-settle, .antenna-arc,
       .bow-wave-1, .bow-wave-2, .bow-wave-3, .bow-spray,
@@ -139,6 +156,9 @@
       .sheen-band, .wordmark-breath, .badge-pulse, .chevron-pulse,
       .sky-drift, .bridge-window-pulse, .antenna-blink,
       .bow-pulse, .draft-fade, .brand-mark, .brand-word { animation: none !important; }
+      /* Calm the ocean entirely to a held swell-neutral pose. */
+      .hull-pitch { transform: rotate(0deg) !important; }
+      .hull-roll  { transform: none !important; }
     }
   
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
@@ -274,11 +294,28 @@
       <rect x="88" y="30" width="10" height="6" fill="#3A3F4A"/>
       <rect x="0" y="0" width="3" height="64" fill="#5A606D"/>
       <rect x="97" y="0" width="3" height="64" fill="#5A606D"/>
-      <!-- Class 8 corrosive placard (typical for ISO tank — chemical) -->
+      <!-- Class 8 corrosive placard (harmonised diamond — shared across US/MX/CA/IMDG) -->
       <g transform="translate(50 30) rotate(45)">
         <rect x="-10" y="-10" width="20" height="20" fill="#FFFFFF" stroke="#000000" stroke-width="0.7"/>
         <rect x="-10" y="-10" width="20" height="10" fill="#000000"/>
         <g transform="rotate(-45)"><text y="2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="9" fill="#FFFFFF">8</text></g>
+      </g>
+      <!-- UN-ID panel — jurisdiction variant (renderer reveals exactly one via ctx-* root class) -->
+      <!-- country-US: 49 CFR 172.332 orange ID panel, UN1830 (sulphuric acid example) -->
+      <g class="country-US" transform="translate(36 44)">
+        <rect x="0" y="0" width="28" height="8" fill="#F08000" stroke="#000000" stroke-width="0.5"/>
+        <text x="14" y="6.3" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="5" fill="#000000">1830</text>
+      </g>
+      <!-- country-MX: SCT NOM-004 / NOM-002 — same UN number, panel + dual designation tick -->
+      <g class="country-MX" transform="translate(36 44)">
+        <rect x="0" y="0" width="28" height="8" fill="#F08000" stroke="#000000" stroke-width="0.5"/>
+        <text x="14" y="6.3" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="5" fill="#000000">1830</text>
+        <rect x="0" y="-1.4" width="28" height="1.2" fill="#006847"/>
+      </g>
+      <!-- country-CA: TDG — UN number on white square-on-point (wordless graphic regime) -->
+      <g class="country-CA" transform="translate(36 44)">
+        <g transform="translate(14 4) rotate(45)"><rect x="-5.5" y="-5.5" width="11" height="11" fill="#FFFFFF" stroke="#000000" stroke-width="0.5"/></g>
+        <text x="14" y="6" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="4.4" fill="#000000">1830</text>
       </g>
     </g>
     <g transform="translate(410 280)">
@@ -378,9 +415,7 @@
   </g>
 
   <line x1="113" y1="396" x2="100" y2="468" stroke="#0AC2C2" stroke-width="2" opacity="0.7"/>
-  
-  <g opacity="0.75">
-  </g>
+
   <!-- ========== WAKE TRAIL (aft, drifts right) ========== -->
   <g filter="url(#foamBlur)">
     <ellipse class="wake-1" cx="1108" cy="488" rx="14" ry="4" fill="url(#foam)"/>

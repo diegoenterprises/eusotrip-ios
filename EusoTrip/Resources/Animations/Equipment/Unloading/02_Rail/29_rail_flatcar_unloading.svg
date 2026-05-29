@@ -34,41 +34,51 @@
     }
 
     /* ============ FLATCAR HEAVY-MACHINERY UNLOADING (synchronized 7s cycle) ============
-       Narrative: Open flat deck at construction site. Tie-down chains
-                  release first, then ramp deploys, then wheel loader drives
-                  DOWN the ramp off the deck to the site.
-         0  – 12% : tie-down chains release (fade out)
-         12 – 22% : ramp deploys
-         22 – 50% : machine drives DOWN the ramp off the deck
-         50 – 100%: hold empty
+       Operationally true reverse of the drive-on: the four chain tie-downs are
+       slacked and removed first (AAR rule — never move a vehicle while bound),
+       the end ramp/spanner is lowered, then the wheel loader is driven DOWN the
+       incline off the 89' deck to the ground.
+         0  – 11% : chains slack + release (binders backed off, chains drop)
+        11  – 21% : end ramp lowers into place
+        21  – 52% : loader rolls down the ramp off the deck (X rises, Y rises)
+        52  – 60% : loader clears frame (fade)
+        60  –100% : empty deck held, then ramp restows for a seamless loop
        =================================================================== */
 
-    /* Heavy machine drives DOWN the ramp off the deck (unloading) */
-    .machine-load { animation: machine-unload 7s ease-in-out infinite; transform-box: fill-box; }
+    /* Heavy machine drives DOWN the ramp off the deck. X carries it right
+       toward the yard; Y drops it as it descends the incline to ground. */
+    .machine-load { animation: machine-unload 7s cubic-bezier(0.4,0,0.2,1) infinite; transform-box: fill-box; }
     @keyframes machine-unload {
-      0%, 22%  { transform: translateX(0);     opacity: 1; }
-      50%      { transform: translateX(220px); opacity: 1; }
-      55%      { transform: translateX(220px); opacity: 0; }
-      100%     { transform: translateX(220px); opacity: 0; }
+      0%, 21%  { transform: translate(0, 0);        opacity: 1; }
+      52%      { transform: translate(220px, 26px); opacity: 1; }
+      60%,100% { transform: translate(220px, 26px); opacity: 0; }
     }
 
+    /* Wheels turn only while the loader is rolling off (21–52%); locked before. */
     .wheel-spin { transform-box: fill-box; transform-origin: center;
-                  animation: wheel-spin 1.4s linear infinite; }
-    @keyframes wheel-spin { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
-
-    /* Tie-down chains RELEASE first (fade out at start of cycle) */
-    .tiedown-chain { animation: tiedown-release 7s ease-in-out infinite; }
-    @keyframes tiedown-release {
-      0%, 5%    { opacity: 0.9;  transform: scaleY(1); }
-      12%, 100% { opacity: 0;    transform: scaleY(1.1); }
+                  animation: wheel-spin 7s linear infinite; }
+    @keyframes wheel-spin {
+      0%, 21% { transform: rotate(0deg); }
+      52%     { transform: rotate(900deg); }
+      100%    { transform: rotate(900deg); }
     }
 
-    /* Ramp deploys in first 10% */
-    .ramp-deploy { transform-box: fill-box; transform-origin: 940px 405px;
-                   animation: ramp-deploy 7s ease-in-out infinite; }
+    /* Tie-down chains RELEASE first: slack (scaleY grows) then drop away. */
+    .tiedown-chain { transform-box: fill-box; transform-origin: center bottom;
+                     animation: tiedown-release 7s cubic-bezier(0.4,0,0.2,1) infinite; }
+    @keyframes tiedown-release {
+      0%, 4%    { opacity: 0.95; transform: scaleY(1); }
+      8%        { opacity: 0.95; transform: scaleY(1.08); }   /* binder backed off, slack */
+      11%, 100% { opacity: 0;    transform: scaleY(1.18); }
+    }
+
+    /* End ramp lowers into place (11–21%), holds, then restows at loop end. */
+    .ramp-deploy { transform-box: fill-box; transform-origin: 940px 397px;
+                   animation: ramp-deploy 7s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes ramp-deploy {
-      0%, 4%    { transform: rotate(-12deg); }
-      10%, 100% { transform: rotate(0deg); }
+      0%, 11%   { transform: rotate(-22deg); }
+      21%, 90%  { transform: rotate(0deg); }
+      98%, 100% { transform: rotate(-22deg); }
     }
 
     /* Operator subtle sway */
@@ -108,7 +118,18 @@
       .wheel-spin {
         animation: none !important;
       }
+      /* Calm, legible pre-release state: loader still secured on deck,
+         chains taut, ramp stowed — the moment before unloading begins. */
+      .machine-load  { transform: translate(0,0) !important; opacity: 1 !important; }
+      .tiedown-chain { opacity: 0.95 !important; transform: scaleY(1) !important; }
+      .ramp-deploy   { transform: rotate(-22deg) !important; }
     }
+
+    /* Country stencil switch: the app shows exactly one capacity-stencil
+       group. Default = US (LB / AAR). For CA toggle .country-CA visible
+       (kg / Transport Canada); for MX toggle .country-MX (kg / SCT). */
+    .country-CA, .country-MX { display: none; }
+    .country-US { display: inline; }
 
   ]]></style>
 
@@ -273,9 +294,19 @@
             font-weight="900" font-size="5" fill="#1A1F2E" letter-spacing="0.3">FM</text>
     </g>
 
-    <!-- Capacity stencil on side of deck -->
-    <text x="380" y="398" font-family="Inter, system-ui, sans-serif"
-          font-weight="700" font-size="6" fill="#FFD23A" opacity="0.9" letter-spacing="0.6">CAPY 100 TON · LD LMT 220,000 LB · IL 89' 0"</text>
+    <!-- Capacity stencil on side of deck (country-switchable unit) -->
+    <g class="country-US">
+      <text x="380" y="398" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6" fill="#FFD23A" opacity="0.9" letter-spacing="0.6">CAPY 100 TON · LD LMT 220,000 LB · IL 89' 0"</text>
+    </g>
+    <g class="country-CA">
+      <text x="380" y="398" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6" fill="#FFD23A" opacity="0.9" letter-spacing="0.6">CAP 90,7 t · LIM CHARGE 99 800 kg · LI 27,1 m · TC</text>
+    </g>
+    <g class="country-MX">
+      <text x="380" y="398" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6" fill="#FFD23A" opacity="0.9" letter-spacing="0.6">CAP 90,7 t · LIM 99 800 kg · LI 27,1 m · SCT</text>
+    </g>
 
     <!-- "EUSOTRIP HEAVY HAUL" branding on deck side -->
     <text x="800" y="397" font-family="Inter, system-ui, sans-serif"
@@ -478,18 +509,27 @@
   </g>
 
   <!-- ============================================================
-       LOADING RAMP from end of deck down to ground (right side)
+       END RAMP / SPANNER — inclined plane bridging deck edge (940,397)
+       down to ground level (1064,490). Hinged at the deck edge so it
+       can be lowered into place. This is the drive-off surface.
        ============================================================ -->
   <g class="ramp-deploy" filter="url(#rigShadow)">
-    <polygon points="940,395 1020,395 1020,492 940,492" fill="#5A606D" stroke="#3A3F4A" stroke-width="0.6"/>
-    <polygon points="940,395 1020,395 1020,398 940,398" fill="#7A7F88"/>
-    <g stroke="#3A3F4A" stroke-width="0.4" opacity="0.55">
-      <line x1="952" y1="410" x2="956" y2="414"/>
-      <line x1="982" y1="430" x2="986" y2="434"/>
-      <line x1="1000" y1="450" x2="1004" y2="454"/>
-      <line x1="960" y1="460" x2="964" y2="464"/>
+    <!-- Ramp slab (wedge): deck-edge top, ground-level toe -->
+    <polygon points="940,392 952,392 1064,486 1064,494 1052,494 940,400"
+             fill="#5A606D" stroke="#3A3F4A" stroke-width="0.8"/>
+    <!-- Top running surface highlight along the incline -->
+    <polygon points="940,392 952,392 1064,486 1056,486" fill="#7A7F88"/>
+    <!-- Cleats / traction ribs across the running surface -->
+    <g stroke="#3A3F4A" stroke-width="1" opacity="0.7" stroke-linecap="round">
+      <line x1="968" y1="404" x2="978" y2="404"/>
+      <line x1="996" y1="428" x2="1006" y2="428"/>
+      <line x1="1024" y1="452" x2="1034" y2="452"/>
+      <line x1="1048" y1="474" x2="1058" y2="474"/>
     </g>
-    <line x1="940" y1="488" x2="1020" y2="488" stroke="#FFD23A" stroke-width="2.4" opacity="0.85" stroke-dasharray="6 4"/>
+    <!-- Hazard edge stripe along the ramp toe -->
+    <line x1="1052" y1="492" x2="1064" y2="492" stroke="#FFD23A" stroke-width="3" opacity="0.9"/>
+    <!-- Side curb so the loader tracks straight down the incline -->
+    <line x1="940" y1="400" x2="1064" y2="494" stroke="#3A3F4A" stroke-width="1.4" opacity="0.8"/>
   </g>
 
   <!-- YARD SUPERVISOR -->

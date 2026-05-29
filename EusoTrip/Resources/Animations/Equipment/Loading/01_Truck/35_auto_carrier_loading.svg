@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600" data-state="unloading">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600" data-state="loading">
   <style><![CDATA[
 
-    /* ============ FOUNDATION MOTION VOCAB (parity w/ v3 container loading) ============ */
+    /* ============ FOUNDATION MOTION VOCAB ============ */
     .brand-mark { transform-box: fill-box; transform-origin: center;
                   animation: brand-pulse 3.6s ease-in-out infinite; }
     @keyframes brand-pulse {
@@ -33,150 +33,88 @@
       50%      { opacity: 0.65; }
     }
 
-    /* ============ INTERMODAL CONTAINER UNLOADING MOTION (synchronized 7s cycle) ============
-       0-15%:  reach stacker spreader engaged on container TOP, container seated on chassis
-       15-30%: chassis twist locks rotate from 90° engaged BACK to 0° released (cam unlock)
-       30-50%: container LIFTS UP off chassis (translateY upward)
-       50-70%: reach stacker traverses RIGHT toward staging pad (translateX rightward)
-       70-90%: container DESCENDS onto staging pad (translateY downward at new X)
-       90-100%: hold + reset
-    ================================================================================= */
-
-    /* Reach-stacker de-van: break the load free, hoist clear of the chassis,
-       traverse to the staging pad, then a decelerated touchdown (feathered set-
-       down). Per-segment easing: lift accelerates then eases, traverse eases
-       in/out, set-down decelerates so the box "kisses" the pad. */
-    /* The spreader assembly hangs from the boom tip at rest (baseline 0 keeps
-       the hoist cable connected to the boom). The container is rigged ~46px
-       BELOW the spreader (see its translate on the inner <g>) so that at rest it
-       seats on the chassis twist-lock pads, and at the end it seats on the pad. */
-    .container-lift { animation: container-lift 7s infinite;
-                      transform-box: fill-box; transform-origin: center top; }
-    @keyframes container-lift {
-      0%, 15%   { transform: translate(0, 0);          animation-timing-function: cubic-bezier(0.4,0,0.6,1); }
-      30%       { transform: translate(0, -12px);      animation-timing-function: cubic-bezier(0.4,0,0.2,1); }
-      50%       { transform: translate(0, -150px);     animation-timing-function: cubic-bezier(0.45,0,0.55,1); }
-      70%       { transform: translate(96px, -150px);  animation-timing-function: cubic-bezier(0.33,0,0.2,1); }
-      88%       { transform: translate(96px, 4px); }   /* feathered over-travel onto pad */
-      92%, 100% { transform: translate(96px, 0); }     /* settled on staging pad */
+    /* ============ AUTO-CARRIER DRIVE-ON LOADING (cycle ~7.5s) ============
+       Real process: with the lower deck tilted down to the ground as a ramp,
+       the driver drives a car forward UP the ramp, then the deck rises level
+       under hydraulics and the car is chained at a nose-up angle.
+       1. Car rolls in from the right at ground level, wheels spinning.
+       2. Climbs the tilted lower deck (translate up-left along the ramp slope).
+       3. Settles into its deck slot; hydraulic ram raises the deck level;
+          the tie-down chain cinches taut; the car nose tips up.
+       Endpoints match (off-frame right, opacity 0) for a seamless loop. */
+    .car-drive { animation: car-drive 7.5s cubic-bezier(0.4,0,0.2,1) infinite;
+                 transform-box: fill-box; transform-origin: center; }
+    @keyframes car-drive {
+      0%   { transform: translate(330px, 18px); opacity: 0; }
+      8%   { transform: translate(300px, 18px); opacity: 1; }   /* fade-in at lot edge */
+      34%  { transform: translate(120px, 18px); opacity: 1; }   /* reaches ramp foot */
+      60%  { transform: translate(0px,    0px); opacity: 1; }   /* climbed onto deck slot */
+      82%  { transform: translate(0px,    0px); opacity: 1; }   /* dwell, chained */
+      90%  { transform: translate(0px,    0px); opacity: 1; }
+      100% { transform: translate(0px,    0px); opacity: 1; }   /* car stays — load grows */
     }
-
-    /* Cam snaps from LOCKED (90°) to RELEASED (0°) with a spring overshoot,
-       just before the box breaks free of the chassis. */
-    .twist-lock-release { animation: twist-lock-release 7s infinite;
-                          transform-box: fill-box; transform-origin: center; }
-    @keyframes twist-lock-release {
-      0%, 15%   { transform: rotate(90deg); fill: #FFD200; animation-timing-function: cubic-bezier(0.34,1.56,0.64,1); }
-      24%       { transform: rotate(-6deg); fill: #6A6F78; }
-      28%, 100% { transform: rotate(0deg);  fill: #6A6F78; }
+    .car-wheel { animation: car-wheel 0.9s linear infinite;
+                 transform-box: fill-box; transform-origin: center; }
+    @keyframes car-wheel { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
+    /* Lower deck (ramp) is down at the start, then lifts level once the car is aboard. */
+    .deck-lift { animation: deck-lift 7.5s cubic-bezier(0.4,0,0.2,1) infinite;
+                 transform-box: fill-box; transform-origin: left center; }
+    @keyframes deck-lift {
+      0%,  58%  { transform: rotate(0deg); }
+      72%       { transform: rotate(-9deg); }   /* hydraulics raise the ramp deck level */
+      100%      { transform: rotate(-9deg); }
     }
-
-    .twist-lock-flash { animation: twist-lock-flash 7s ease-in-out infinite;
-                        transform-box: fill-box; transform-origin: center; }
-    @keyframes twist-lock-flash {
-      0%, 15%   { opacity: 0;    transform: scale(0.6); }
-      22%       { opacity: 0.95; transform: scale(1.6); }
-      35%, 100% { opacity: 0;    transform: scale(0.6); }
+    .hyd-pulse { animation: hyd-pulse 3.4s ease-in-out infinite;
+                 transform-box: fill-box; transform-origin: center; }
+    @keyframes hyd-pulse {
+      0%,100% { opacity: 0.8;  transform: translateY(0); }
+      50%     { opacity: 1;    transform: translateY(-1px); }
     }
-
-    /* Boom takes the load weight as the box lifts, holds through the traverse,
-       then lowers back as the spreader sets the container on the pad. */
-    .boom-extend { animation: boom-extend 7s infinite;
-                   transform-box: fill-box; transform-origin: bottom right; }
-    @keyframes boom-extend {
-      0%, 15%   { transform: translate(0, 0)      scale(1);     animation-timing-function: cubic-bezier(0.4,0,0.2,1); }
-      35%       { transform: translate(0, -10px)  scale(1.005); animation-timing-function: cubic-bezier(0.4,0,0.2,1); }
-      50%, 70%  { transform: translate(0, -16px)  scale(1.01);  animation-timing-function: cubic-bezier(0.4,0,0.2,1); }
-      90%, 100% { transform: translate(0, 0)      scale(1); }
+    .chain-cinch { animation: chain-cinch 7.5s ease-in-out infinite;
+                   transform-box: fill-box; transform-origin: top; }
+    @keyframes chain-cinch {
+      0%,  60%  { transform: scaleY(0); opacity: 0; }
+      72%       { transform: scaleY(1); opacity: 0.95; }
+      92%       { transform: scaleY(1); opacity: 0.95; }
+      98%, 100% { transform: scaleY(0); opacity: 0; }
     }
-
-    .beacon-flash { animation: beacon-flash 1.1s ease-in-out infinite;
-                    transform-box: fill-box; transform-origin: center; }
-    @keyframes beacon-flash {
-      0%, 100% { opacity: 0.3; transform: scale(0.85); }
-      50%      { opacity: 1;   transform: scale(1.15); }
-    }
-
     .strobe-amber { animation: strobe-amber 1.2s ease-in-out infinite;
                     transform-box: fill-box; transform-origin: center; }
     @keyframes strobe-amber {
       0%, 100% { opacity: 0.25; transform: scale(0.85); }
       50%      { opacity: 1;    transform: scale(1.15); }
     }
-
-    .port-light { animation: port-light 4.2s ease-in-out infinite;
-                  transform-box: fill-box; transform-origin: center; }
-    @keyframes port-light {
-      0%, 100% { opacity: 0.45; }
-      50%      { opacity: 0.85; }
+    .signal-wave { animation: signal-wave 2.4s ease-in-out infinite;
+                   transform-box: fill-box; transform-origin: top right; }
+    @keyframes signal-wave {
+      0%,100% { transform: rotate(0deg); }
+      50%     { transform: rotate(-22deg); }
     }
-
-    .water-shimmer { animation: water-shimmer 5.6s ease-in-out infinite;
-                     transform-box: fill-box; transform-origin: center; }
-    @keyframes water-shimmer {
-      0%, 100% { opacity: 0.55; }
-      50%      { opacity: 0.85; }
+    .exhaust-puff { animation: exhaust-puff 7.5s ease-in-out infinite;
+                    transform-box: fill-box; transform-origin: center; }
+    @keyframes exhaust-puff {
+      0%,  6%   { opacity: 0; transform: translateY(0) scale(0.5); }
+      12%       { opacity: 0.5; transform: translateY(-6px) scale(1); }
+      28%       { opacity: 0; transform: translateY(-14px) scale(1.5); }
+      100%      { opacity: 0; }
     }
-
-    .sts-trolley { animation: sts-trolley 9s ease-in-out infinite;
-                   transform-box: fill-box; transform-origin: center; }
-    @keyframes sts-trolley {
-      0%, 100% { transform: translateX(0); }
-      50%      { transform: translateX(-32px); }
-    }
-
-    .vessel-bob { animation: vessel-bob 8s ease-in-out infinite;
-                  transform-box: fill-box; transform-origin: center; }
-    @keyframes vessel-bob {
-      0%, 100% { transform: translateY(0); }
-      50%      { transform: translateY(-1.4px); }
-    }
-
-    .worker-radio { animation: worker-radio 2.4s ease-in-out infinite;
-                    transform-box: fill-box; transform-origin: 50% 100%; }
-    @keyframes worker-radio {
-      0%, 100% { transform: rotate(0deg); }
-      50%      { transform: rotate(-4deg); }
-    }
-
-    .worker-signal { animation: worker-signal 2.8s ease-in-out infinite;
-                     transform-box: fill-box; transform-origin: 50% 100%; }
-    @keyframes worker-signal {
-      0%, 100% { transform: rotate(0deg); }
-      50%      { transform: rotate(6deg); }
-    }
-
-    /* ============ COUNTRY-SWITCHABLE DG PLACARD SELECTION ============
-       Renderer sets data-country (US|MX|CA) on the root <svg>; CSS shows the
-       one matching variant. Default markup = US visible, MX/CA display:none.
-       Hosts unable to style by attribute may toggle `display` on the groups. */
-    svg[data-country="US"] .placard-country:not(.country-US) { display: none; }
-    svg[data-country="US"] .placard-country.country-US       { display: inline; }
-    svg[data-country="MX"] .placard-country:not(.country-MX) { display: none; }
-    svg[data-country="MX"] .placard-country.country-MX       { display: inline; }
-    svg[data-country="CA"] .placard-country:not(.country-CA) { display: none; }
-    svg[data-country="CA"] .placard-country.country-CA       { display: inline; }
 
     @media (prefers-reduced-motion: reduce) {
-      .beacon-flash,
-      .boom-extend,
       .brand-lockup,
       .brand-mark,
       .brand-word,
+      .car-drive,
+      .car-wheel,
+      .chain-cinch,
       .chevron,
-      .container-lift,
+      .deck-lift,
+      .exhaust-puff,
+      .hyd-pulse,
       .load-pill,
-      .port-light,
       .progress-fill,
+      .signal-wave,
       .sky-shimmer,
-      .strobe-amber,
-      .sts-trolley,
-      .twist-lock-flash,
-      .twist-lock-release,
-      .vessel-bob,
-      .water-shimmer,
-      .worker-radio,
-      .worker-signal {
+      .strobe-amber {
         animation: none !important;
       }
     }
@@ -189,89 +127,55 @@
       <stop offset="50%" stop-color="#6E4DFF"/>
       <stop offset="100%" stop-color="#BE01FF"/>
     </linearGradient>
-    <linearGradient id="portSky" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%"  stop-color="#C8D4E4"/>
-      <stop offset="55%" stop-color="#A9BACE"/>
-      <stop offset="100%" stop-color="#7C8FA8"/>
+    <linearGradient id="yardSky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#D8DEE9"/>
+      <stop offset="55%" stop-color="#C4CCDA"/>
+      <stop offset="100%" stop-color="#9CA8B7"/>
     </linearGradient>
-    <linearGradient id="portWater" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%"  stop-color="#5B7FA0"/>
-      <stop offset="55%" stop-color="#3E5F80"/>
-      <stop offset="100%" stop-color="#26415C"/>
+    <linearGradient id="yardFloor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#6A707D"/>
+      <stop offset="100%" stop-color="#2E3340"/>
     </linearGradient>
-    <linearGradient id="portAsphalt" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#5A606D"/>
-      <stop offset="100%" stop-color="#2A2F3A"/>
+    <linearGradient id="frameSteel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#7A818C"/>
+      <stop offset="100%" stop-color="#3A3F4A"/>
     </linearGradient>
-    <linearGradient id="stagingPad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%"  stop-color="#9098A8"/>
-      <stop offset="100%" stop-color="#5A606D"/>
+    <linearGradient id="deckTop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#6A707A"/>
+      <stop offset="50%" stop-color="#4A4F58"/>
+      <stop offset="100%" stop-color="#3A3F4A"/>
     </linearGradient>
-    <linearGradient id="containerSkin" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%"  stop-color="#5C7AC6"/>
-      <stop offset="55%" stop-color="#3F5BA8"/>
-      <stop offset="100%" stop-color="#2A4180"/>
+    <linearGradient id="carGlass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#CFE0F5"/>
+      <stop offset="100%" stop-color="#6F8BB5"/>
     </linearGradient>
-    <linearGradient id="containerStackBlue" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#3F5BA8"/>
-      <stop offset="100%" stop-color="#1E3066"/>
-    </linearGradient>
-    <linearGradient id="containerStackRed" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#C2433A"/>
-      <stop offset="100%" stop-color="#7A2620"/>
-    </linearGradient>
-    <linearGradient id="containerStackGreen" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#3D8C5E"/>
-      <stop offset="100%" stop-color="#1F5236"/>
-    </linearGradient>
-    <linearGradient id="containerStackGrey" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#9098A8"/>
-      <stop offset="100%" stop-color="#5A606D"/>
-    </linearGradient>
-    <linearGradient id="containerStackOrange" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#E08A3A"/>
-      <stop offset="100%" stop-color="#9B5418"/>
-    </linearGradient>
-    <linearGradient id="reachStackerYellow" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#FFD03A"/>
-      <stop offset="55%" stop-color="#F2A800"/>
-      <stop offset="100%" stop-color="#A66B00"/>
-    </linearGradient>
-    <linearGradient id="boomSteel" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#FFD03A"/>
-      <stop offset="100%" stop-color="#C77A0A"/>
-    </linearGradient>
-    <linearGradient id="chassisSteel" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%"  stop-color="#5A606D"/>
-      <stop offset="55%" stop-color="#3A3F4A"/>
-      <stop offset="100%" stop-color="#1F2330"/>
-    </linearGradient>
-    <linearGradient id="stsBlue" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#5B7FB8"/>
-      <stop offset="100%" stop-color="#2E4E7A"/>
-    </linearGradient>
-    <linearGradient id="vesselHull" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#3D4860"/>
-      <stop offset="100%" stop-color="#161C2A"/>
+    <linearGradient id="hullDark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#2A3045"/>
+      <stop offset="100%" stop-color="#0F1320"/>
     </linearGradient>
     <radialGradient id="rim" cx="0.5" cy="0.5" r="0.5">
       <stop offset="0%" stop-color="#5A606D"/>
       <stop offset="80%" stop-color="#3A3F4A"/>
       <stop offset="100%" stop-color="#1F2330"/>
     </radialGradient>
+    <radialGradient id="carRim" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#D8DCE4"/>
+      <stop offset="65%" stop-color="#8A909C"/>
+      <stop offset="100%" stop-color="#4A4F58"/>
+    </radialGradient>
     <radialGradient id="strobeGlow" cx="0.5" cy="0.5" r="0.5">
       <stop offset="0%"   stop-color="#FFE066" stop-opacity="1"/>
       <stop offset="60%"  stop-color="#FF8A1F" stop-opacity="0.5"/>
       <stop offset="100%" stop-color="#FF8A1F" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="lockGlow" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0%"   stop-color="#FFE680" stop-opacity="1"/>
-      <stop offset="100%" stop-color="#FFE680" stop-opacity="0"/>
+    <radialGradient id="vaporCloud" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#C8CDD8" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#C8CDD8" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="lampGlow" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0%"   stop-color="#FFF6CC" stop-opacity="0.85"/>
-      <stop offset="100%" stop-color="#FFF6CC" stop-opacity="0"/>
-    </radialGradient>
+    <pattern id="conspicuityTape" x="0" y="0" width="14" height="6" patternUnits="userSpaceOnUse">
+      <rect width="14" height="6" fill="#FFFFFF"/>
+      <rect x="0" y="0" width="7" height="6" fill="#D11B1B"/>
+    </pattern>
     <filter id="rigShadow" x="-10%" y="-10%" width="120%" height="130%">
       <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
       <feOffset dx="0" dy="4" result="offsetBlur"/>
@@ -282,882 +186,247 @@
       <feGaussianBlur stdDeviation="3"/>
     </filter>
 
-    <symbol id="cornerCasting" overflow="visible">
-      <rect x="-7" y="-7" width="14" height="14" fill="#1A1F2E" stroke="#3A3F4A" stroke-width="0.6"/>
-      <rect x="-5" y="-5" width="10" height="10" fill="#0F1320"/>
-      <ellipse cx="0" cy="0" rx="3" ry="1.6" fill="#3A3F4A"/>
-      <rect x="-7" y="-7" width="14" height="1" fill="#FFFFFF" opacity="0.18"/>
-    </symbol>
-
-    <symbol id="twistLockCam" overflow="visible">
-      <rect x="-5" y="-3" width="10" height="6" fill="#2A2F3A" stroke="#0F1320" stroke-width="0.4"/>
-      <rect x="-3.4" y="-1.4" width="6.8" height="2.8" fill="#0F1320"/>
-    </symbol>
-
     <symbol id="wheelChock" overflow="visible">
       <polygon points="-9,0 9,0 0,-12" fill="#FF7A1F" stroke="#A35200" stroke-width="0.6"/>
       <polygon points="-9,0 9,0 0,-12" fill="none" stroke="#FFE066" stroke-width="0.4" opacity="0.7"/>
     </symbol>
-
-    <symbol id="portLightPole" overflow="visible">
-      <rect x="-1.6" y="0" width="3.2" height="160" fill="#3A3F4A"/>
-      <rect x="-10" y="-6" width="20" height="8" fill="#3A3F4A" stroke="#1A1F2E" stroke-width="0.4"/>
-      <rect x="-12" y="-7" width="24" height="3" fill="#5A606D"/>
-      <rect x="-1.6" y="156" width="3.2" height="6" fill="#1A1F2E"/>
+    <symbol id="safetyCone" overflow="visible">
+      <polygon points="-7,0 7,0 4.6,-12 -4.6,-12" fill="#FF7A1F"/>
+      <polygon points="-7,0 7,0 4.6,-12 -4.6,-12" fill="none" stroke="#A35200" stroke-width="0.4"/>
+      <polygon points="-5.4,-6 5.4,-6 4.6,-9 -4.6,-9" fill="#FFFFFF" opacity="0.85"/>
+      <polygon points="-3.4,-12 3.4,-12 3,-15 -3,-15" fill="#FF7A1F"/>
+      <ellipse cx="0" cy="0" rx="9" ry="2" fill="#1A1F2E" opacity="0.35"/>
+    </symbol>
+    <!-- A loaded (parked) car for the upper deck slots. color= sets paint. -->
+    <symbol id="deckCar" overflow="visible">
+      <path d="M -46 0 L -46 -14 Q -46 -20 -38 -21 L -26 -22 L -17 -34 Q -13 -38 -6 -38 L 16 -38 Q 25 -38 30 -32 L 39 -22 L 44 -21 Q 50 -20 50 -14 L 50 0 Z" fill="currentColor"/>
+      <path d="M -16 -34 L -7 -37 L 15 -37 Q 21 -37 26 -32 L 32 -24 L -22 -24 Z" fill="url(#carGlass)" opacity="0.92"/>
+      <line x1="5" y1="-37" x2="5" y2="-24" stroke="#2A2F3A" stroke-width="1.1" opacity="0.5"/>
+      <rect x="-44" y="-22" width="94" height="2.2" rx="1" fill="#FFFFFF" opacity="0.32"/>
+      <circle cx="-30" cy="0" r="11.5" fill="#0F1118"/>
+      <circle cx="34" cy="0" r="11.5" fill="#0F1118"/>
+      <circle cx="-30" cy="0" r="8" fill="url(#carRim)"/>
+      <circle cx="34" cy="0" r="8" fill="url(#carRim)"/>
+      <circle cx="-30" cy="0" r="2.6" fill="#3A3F4A"/>
+      <circle cx="34" cy="0" r="2.6" fill="#3A3F4A"/>
+      <ellipse cx="48" cy="-11" rx="2.6" ry="3.4" fill="#FFE9A8" opacity="0.9"/>
+      <ellipse cx="-44" cy="-11" rx="2.2" ry="3.4" fill="#E5350D" opacity="0.85"/>
     </symbol>
   </defs>
 
-  <!-- Card background -->
   <rect class="card-bg" x="20" y="20" width="1160" height="560" rx="22" fill="#FAFBFD"/>
 
   <!-- ============================================================
-       MARINE PORT EXPORT TERMINAL ATMOSPHERE
-       (cool maritime palette, ship + STS crane silhouettes, dock water)
+       VEHICLE-PROCESSING / DISTRIBUTION YARD ATMOSPHERE
        ============================================================ -->
-  <rect x="20" y="220" width="1160" height="200" fill="url(#portSky)" opacity="0.78"/>
-  <rect class="sky-shimmer" x="20" y="360" width="1160" height="50" fill="#FFFFFF" opacity="0.14"/>
+  <rect x="20" y="220" width="1160" height="240" fill="url(#yardSky)" opacity="0.7"/>
+  <rect class="sky-shimmer" x="20" y="380" width="1160" height="60" fill="#FFFFFF" opacity="0.16"/>
 
-  <!-- ===== Container vessel silhouette at the dock (background, far) ===== -->
-  <g class="vessel-bob" opacity="0.78">
-    <!-- Hull (long dark profile) -->
-    <path d="M 60 388 L 60 408 L 80 422 L 720 422 L 740 408 L 740 388 Z" fill="url(#vesselHull)"/>
-    <!-- Hull waterline highlight -->
-    <rect x="60" y="386" width="680" height="2" fill="#9098A8" opacity="0.45"/>
-    <!-- Container stack on deck (showing freight aboard) -->
-    <g>
-      <rect x="120" y="350" width="540" height="38" fill="#1A1F2E" opacity="0.82"/>
-      <!-- Container row 1 -->
-      <rect x="124" y="354" width="60" height="14" fill="url(#containerStackBlue)"/>
-      <rect x="186" y="354" width="60" height="14" fill="url(#containerStackRed)"/>
-      <rect x="248" y="354" width="60" height="14" fill="url(#containerStackGreen)"/>
-      <rect x="310" y="354" width="60" height="14" fill="url(#containerStackOrange)"/>
-      <rect x="372" y="354" width="60" height="14" fill="url(#containerStackBlue)"/>
-      <rect x="434" y="354" width="60" height="14" fill="url(#containerStackGrey)"/>
-      <rect x="496" y="354" width="60" height="14" fill="url(#containerStackRed)"/>
-      <rect x="558" y="354" width="60" height="14" fill="url(#containerStackGreen)"/>
-      <rect x="600" y="354" width="58" height="14" fill="url(#containerStackBlue)"/>
-      <!-- Container row 2 -->
-      <rect x="124" y="370" width="60" height="14" fill="url(#containerStackRed)"/>
-      <rect x="186" y="370" width="60" height="14" fill="url(#containerStackBlue)"/>
-      <rect x="248" y="370" width="60" height="14" fill="url(#containerStackGrey)"/>
-      <rect x="310" y="370" width="60" height="14" fill="url(#containerStackBlue)"/>
-      <rect x="372" y="370" width="60" height="14" fill="url(#containerStackGreen)"/>
-      <rect x="434" y="370" width="60" height="14" fill="url(#containerStackOrange)"/>
-      <rect x="496" y="370" width="60" height="14" fill="url(#containerStackBlue)"/>
-      <rect x="558" y="370" width="60" height="14" fill="url(#containerStackRed)"/>
-      <rect x="600" y="370" width="58" height="14" fill="url(#containerStackGreen)"/>
+  <!-- Distant marshalling-lot building + ranks of waiting cars -->
+  <g opacity="0.34" fill="#3A4250">
+    <rect x="60" y="284" width="520" height="100"/>
+    <rect x="60" y="284" width="520" height="4" fill="#5A606D"/>
+    <g fill="#1A1F2E">
+      <rect x="84" y="312" width="64" height="72"/>
+      <rect x="168" y="312" width="64" height="72"/>
+      <rect x="252" y="312" width="64" height="72"/>
+      <rect x="336" y="312" width="64" height="72"/>
+      <rect x="420" y="312" width="64" height="72"/>
+      <rect x="504" y="312" width="56" height="72"/>
     </g>
-    <!-- Bridge / superstructure (aft) -->
-    <rect x="660" y="318" width="74" height="70" fill="#3D4860"/>
-    <rect x="660" y="318" width="74" height="3"  fill="#7C8FA8" opacity="0.55"/>
-    <!-- Bridge windows -->
-    <g fill="#A9BACE" opacity="0.72">
-      <rect x="666" y="326" width="62" height="6"/>
-      <rect x="666" y="338" width="62" height="6"/>
-    </g>
-    <!-- Funnel / stack -->
-    <rect x="690" y="296" width="22" height="26" fill="#3D4860"/>
-    <rect x="690" y="296" width="22" height="3" fill="#C2433A" opacity="0.85"/>
-    <!-- Bow flare (left forward) -->
-    <polygon points="60,388 60,408 36,408 50,388" fill="url(#vesselHull)"/>
-    <!-- Vessel name stencil -->
-    <text x="200" y="404" font-family="Inter, system-ui, sans-serif"
-          font-weight="800" font-size="6" letter-spacing="1.6" fill="#FFFFFF" opacity="0.55">EUSO STAR · MV EUSORONE</text>
+    <rect x="60" y="296" width="520" height="14" fill="#FFD200" opacity="0.85"/>
+    <text x="80" y="307" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="9" letter-spacing="2.2" fill="#1A1F2E">EUSO VEHICLE PROCESSING</text>
+  </g>
+  <!-- Rows of waiting vehicles (silhouettes) on the marshalling apron -->
+  <g opacity="0.22" fill="#2A3045">
+    <g transform="translate(640 388)"><path d="M -22 0 L -22 -7 L -15 -16 L 12 -16 L 20 -7 L 20 0 Z"/></g>
+    <g transform="translate(700 388)"><path d="M -22 0 L -22 -7 L -15 -16 L 12 -16 L 20 -7 L 20 0 Z"/></g>
+    <g transform="translate(760 388)"><path d="M -22 0 L -22 -7 L -15 -16 L 12 -16 L 20 -7 L 20 0 Z"/></g>
+    <g transform="translate(960 384)"><path d="M -22 0 L -22 -7 L -15 -16 L 12 -16 L 20 -7 L 20 0 Z"/></g>
+    <g transform="translate(1020 384)"><path d="M -22 0 L -22 -7 L -15 -16 L 12 -16 L 20 -7 L 20 0 Z"/></g>
   </g>
 
-  <!-- ===== Ship-to-Shore (STS) gantry crane (iconic A-frame) ===== -->
-  <g opacity="0.62">
-    <!-- Two A-frame leg pairs (water side + land side) -->
-    <!-- Water-side legs (forward) -->
-    <line x1="166" y1="412" x2="180" y2="234" stroke="url(#stsBlue)" stroke-width="6" stroke-linecap="round"/>
-    <line x1="240" y1="412" x2="226" y2="234" stroke="url(#stsBlue)" stroke-width="6" stroke-linecap="round"/>
-    <!-- Land-side legs (aft) -->
-    <line x1="380" y1="412" x2="394" y2="234" stroke="url(#stsBlue)" stroke-width="6" stroke-linecap="round"/>
-    <line x1="454" y1="412" x2="440" y2="234" stroke="url(#stsBlue)" stroke-width="6" stroke-linecap="round"/>
-    <!-- Cross-bracing -->
-    <line x1="180" y1="280" x2="240" y2="280" stroke="#5B7FB8" stroke-width="3"/>
-    <line x1="394" y1="280" x2="440" y2="280" stroke="#5B7FB8" stroke-width="3"/>
-    <line x1="180" y1="340" x2="240" y2="340" stroke="#5B7FB8" stroke-width="3"/>
-    <line x1="394" y1="340" x2="440" y2="340" stroke="#5B7FB8" stroke-width="3"/>
-    <!-- Top platform (gantry beam horizontal) -->
-    <rect x="170" y="226" width="280" height="14" fill="url(#stsBlue)"/>
-    <rect x="170" y="226" width="280" height="3"  fill="#FFFFFF" opacity="0.32"/>
-    <!-- Boom extending OVER ship (cantilever to left) -->
-    <rect x="40"  y="208" width="146" height="10" fill="url(#stsBlue)"/>
-    <rect x="40"  y="208" width="146" height="2"  fill="#FFFFFF" opacity="0.32"/>
-    <!-- Boom support strut (back-stay) -->
-    <line x1="186" y1="208" x2="290" y2="172" stroke="#5B7FB8" stroke-width="4" stroke-linecap="round"/>
-    <line x1="290" y1="172" x2="450" y2="226" stroke="#5B7FB8" stroke-width="4" stroke-linecap="round"/>
-    <!-- A-frame apex tower -->
-    <line x1="290" y1="172" x2="290" y2="226" stroke="#5B7FB8" stroke-width="4"/>
-    <!-- Trolley / spreader hanging from gantry -->
-    <g class="sts-trolley">
-      <rect x="116" y="218" width="38" height="10" fill="#3A3F4A"/>
-      <line x1="135" y1="228" x2="135" y2="306" stroke="#1A1F2E" stroke-width="1.6"/>
-      <rect x="100" y="306" width="70" height="6" fill="#3A3F4A"/>
-      <!-- Container slung from trolley -->
-      <rect x="104" y="312" width="62" height="22" fill="url(#containerStackRed)"/>
-    </g>
-    <!-- Operator cab on landside -->
-    <rect x="396" y="244" width="34" height="22" fill="#2A2F3A"/>
-    <rect x="398" y="247" width="30" height="14" fill="#A9BACE" opacity="0.72"/>
-    <!-- Rail tracks for STS -->
-    <line x1="60" y1="412" x2="540" y2="412" stroke="#1A1F2E" stroke-width="1.6" opacity="0.55"/>
-    <line x1="60" y1="416" x2="540" y2="416" stroke="#1A1F2E" stroke-width="1.6" opacity="0.55"/>
+  <g class="chevron" fill="#9B7FD9" opacity="0.18">
+    <polygon points="200,250 220,240 220,260"/>
+    <polygon points="240,250 260,240 260,260"/>
+    <polygon points="280,250 300,240 300,260"/>
+    <polygon points="900,260 920,250 920,270"/>
+    <polygon points="940,260 960,250 960,270"/>
+    <polygon points="980,260 1000,250 1000,270"/>
   </g>
 
-  <!-- ===== Distant container stacks (port marshalling yard, far back-right) ===== -->
-  <g opacity="0.45" filter="url(#softBlur)">
-    <rect x="540" y="354" width="70" height="16" fill="url(#containerStackBlue)"/>
-    <rect x="540" y="370" width="70" height="16" fill="url(#containerStackRed)"/>
-    <rect x="540" y="386" width="70" height="16" fill="url(#containerStackGreen)"/>
-    <rect x="540" y="402" width="70" height="16" fill="url(#containerStackBlue)"/>
-    <rect x="618" y="362" width="70" height="16" fill="url(#containerStackOrange)"/>
-    <rect x="618" y="378" width="70" height="16" fill="url(#containerStackBlue)"/>
-    <rect x="618" y="394" width="70" height="16" fill="url(#containerStackGrey)"/>
-    <rect x="618" y="410" width="70" height="16" fill="url(#containerStackRed)"/>
+  <!-- LOADING PAD CONCRETE FLOOR -->
+  <rect x="20" y="460" width="1160" height="120" fill="url(#yardFloor)"/>
+  <line x1="20" y1="460" x2="1180" y2="460" stroke="#1A1F2E" stroke-width="1.4" opacity="0.6"/>
+  <g stroke="#1A1F2E" stroke-width="0.8" opacity="0.32">
+    <line x1="280" y1="460" x2="280" y2="580"/>
+    <line x1="540" y1="460" x2="540" y2="580"/>
+    <line x1="800" y1="460" x2="800" y2="580"/>
+    <line x1="1060" y1="460" x2="1060" y2="580"/>
   </g>
+  <line x1="60" y1="500" x2="1140" y2="500" stroke="#FFD200" stroke-width="2"
+        stroke-dasharray="22 14" opacity="0.5"/>
+  <rect x="40" y="476" width="1120" height="100" fill="none" stroke="#FFD200" stroke-width="1.2" stroke-dasharray="6 4" opacity="0.35"/>
 
-  <!-- ===== Port lighting masts (taller than intermodal yard) ===== -->
-  <g class="port-light">
-    <g transform="translate(80 252)"><use href="#portLightPole"/></g>
-    <g transform="translate(720 244)"><use href="#portLightPole"/></g>
-    <g transform="translate(1110 240)"><use href="#portLightPole"/></g>
-    <circle cx="80"   cy="248" r="16" fill="url(#lampGlow)"/>
-    <circle cx="720"  cy="240" r="16" fill="url(#lampGlow)"/>
-    <circle cx="1110" cy="236" r="16" fill="url(#lampGlow)"/>
-  </g>
-
-  <!-- ===== Water at dock edge (small horizontal band along the bottom-left) ===== -->
-  <g class="water-shimmer">
-    <rect x="20" y="420" width="540" height="26" fill="url(#portWater)"/>
-    <!-- Water reflection ripples -->
-    <g stroke="#A9BACE" stroke-width="0.8" opacity="0.45">
-      <line x1="40"  y1="428" x2="100" y2="428"/>
-      <line x1="140" y1="430" x2="200" y2="430"/>
-      <line x1="240" y1="426" x2="300" y2="426"/>
-      <line x1="340" y1="430" x2="400" y2="430"/>
-      <line x1="440" y1="428" x2="500" y2="428"/>
-      <line x1="80"  y1="436" x2="160" y2="436"/>
-      <line x1="220" y1="438" x2="300" y2="438"/>
-      <line x1="360" y1="436" x2="440" y2="436"/>
-    </g>
-  </g>
-  <!-- Dock edge / quay wall -->
-  <rect x="20" y="446" width="540" height="14" fill="#3A3F4A"/>
-  <rect x="20" y="446" width="540" height="2"  fill="#7C8FA8" opacity="0.55"/>
-  <!-- Bollard at quay edge -->
-  <g fill="#1A1F2E">
-    <rect x="220" y="438" width="6" height="10"/>
-    <ellipse cx="223" cy="438" rx="6" ry="2"/>
-    <rect x="380" y="438" width="6" height="10"/>
-    <ellipse cx="383" cy="438" rx="6" ry="2"/>
-  </g>
-
-  <!-- ===== Asphalt apron (port terminal pavement) ===== -->
-  <rect x="20" y="460" width="1160" height="120" fill="url(#portAsphalt)"/>
-  <rect x="560" y="446" width="620" height="14" fill="#3A3F4A"/>
-  <line x1="20" y1="460" x2="1180" y2="460" stroke="#1A1F2E" stroke-width="2" opacity="0.55"/>
-
-  <!-- Painted lane lines -->
-  <g stroke="#FFD200" stroke-width="2" opacity="0.42" stroke-dasharray="22 14">
-    <line x1="60" y1="494" x2="1140" y2="494"/>
-  </g>
-  <g stroke="#FFFFFF" stroke-width="1.4" opacity="0.30" stroke-dasharray="14 22">
-    <line x1="60" y1="540" x2="1140" y2="540"/>
-  </g>
-
-  <!-- ===== Port terminal signage (positioned in upper-right sky, away from boom path) ===== -->
-  <g>
-    <rect x="800" y="226" width="220" height="20" rx="3"
-          fill="#1A1F2E" stroke="#5B7FB8" stroke-width="1" opacity="0.85"/>
-    <rect x="800" y="226" width="220" height="2" fill="#FFD200" opacity="0.85"/>
-    <text x="910" y="240" text-anchor="middle"
-          font-family="Inter, system-ui, sans-serif"
-          font-weight="800" font-size="8.5" letter-spacing="1.8" fill="#FFFFFF">BERTH 2  CONTAINER TERMINAL</text>
-  </g>
-
-  <!-- ===== STAGING PAD (right side, where container lands) ===== -->
-  <g>
-    <!-- Pad base -->
-    <rect x="900" y="490" width="240" height="70" fill="url(#stagingPad)" opacity="0.85"/>
-    <rect x="900" y="490" width="240" height="3" fill="#C5C9D2" opacity="0.55"/>
-    <!-- Slot grid corner stencils -->
-    <g stroke="#FFD200" stroke-width="1.6" opacity="0.6" fill="none">
-      <path d="M 916 502 L 916 510 L 924 510"/>
-      <path d="M 1124 502 L 1124 510 L 1116 510"/>
-      <path d="M 916 552 L 916 544 L 924 544"/>
-      <path d="M 1124 552 L 1124 544 L 1116 544"/>
-    </g>
-    <!-- Slot stencil text -->
-    <text x="1020" y="544" text-anchor="middle"
-          font-family="Inter, system-ui, sans-serif"
-          font-weight="800" font-size="11" letter-spacing="3" fill="#FFD200" opacity="0.55">SLOT C-04</text>
-    <!-- Already-staged container in adjacent slot (right) -->
-    <g opacity="0.85">
-      <rect x="1062" y="478" width="78" height="22" fill="url(#containerStackGreen)"/>
-      <rect x="1062" y="478" width="78" height="2"  fill="#FFFFFF" opacity="0.4"/>
-    </g>
-  </g>
-
-  <!-- ============================================================
-       CONTAINER CHASSIS TRAILER (skeletal frame, broadside view)
-       Frame from x=160 to x=820, main rail at y=504
-       Kingpin end at LEFT, rear axles at RIGHT
-       (Preserved EXACTLY from v3 loading; wheels INLINED — no <use> refs)
-       ============================================================ -->
+  <!-- Safety cones marking the loading lane -->
   <g filter="url(#rigShadow)">
-
-    <!-- Ground drop shadow under trailer -->
-    <ellipse cx="490" cy="568" rx="380" ry="6" fill="#000000" opacity="0.28"/>
-
-    <!-- ===== Kingpin plate (left front) ===== -->
-    <rect x="160" y="498" width="60" height="14" fill="url(#chassisSteel)"/>
-    <rect x="160" y="498" width="60" height="2"  fill="#9098A8" opacity="0.55"/>
-    <rect x="184" y="512" width="6" height="6" fill="#1A1F2E"/>
-    <rect x="183" y="517" width="8" height="3" rx="1" fill="#3A3F4A"/>
-
-    <!-- ===== Landing gear ===== -->
-    <g>
-      <rect x="234" y="498" width="2" height="10" fill="#3A3F4A"/>
-      <circle cx="240" cy="503" r="2.5" fill="#5A606D"/>
-      <line x1="236" y1="503" x2="240" y2="503" stroke="#3A3F4A" stroke-width="1.4"/>
-      <rect x="226" y="510" width="6" height="46" fill="url(#chassisSteel)"/>
-      <rect x="246" y="510" width="6" height="46" fill="url(#chassisSteel)"/>
-      <rect x="226" y="510" width="6" height="2"  fill="#9098A8" opacity="0.55"/>
-      <rect x="246" y="510" width="6" height="2"  fill="#9098A8" opacity="0.55"/>
-      <rect x="232" y="528" width="14" height="3" fill="#3A3F4A"/>
-      <rect x="222" y="555" width="14" height="6" fill="#1A1F2E" stroke="#3A3F4A" stroke-width="0.4"/>
-      <rect x="242" y="555" width="14" height="6" fill="#1A1F2E" stroke="#3A3F4A" stroke-width="0.4"/>
-    </g>
-
-    <!-- ===== SKELETAL FRAME — main rails ===== -->
-    <rect x="170" y="500" width="650" height="6" fill="url(#chassisSteel)"/>
-    <rect x="170" y="500" width="650" height="1" fill="#9098A8" opacity="0.55"/>
-    <rect x="170" y="514" width="650" height="6" fill="url(#chassisSteel)"/>
-    <rect x="170" y="514" width="650" height="1" fill="#9098A8" opacity="0.55"/>
-    <rect x="170" y="506" width="650" height="8" fill="#1A1F2E" opacity="0.55"/>
-
-    <!-- Cross-rails -->
-    <g fill="#3A3F4A">
-      <rect x="220" y="506" width="4" height="8"/>
-      <rect x="290" y="506" width="4" height="8"/>
-      <rect x="360" y="506" width="4" height="8"/>
-      <rect x="430" y="506" width="4" height="8"/>
-      <rect x="500" y="506" width="4" height="8"/>
-      <rect x="570" y="506" width="4" height="8"/>
-      <rect x="640" y="506" width="4" height="8"/>
-      <rect x="710" y="506" width="4" height="8"/>
-      <rect x="780" y="506" width="4" height="8"/>
-    </g>
-
-    <!-- Conspicuity tape (red/white DOT) along the frame side -->
-    <g>
-      <rect x="170" y="520" width="650" height="3" fill="#C2433A"/>
-      <g fill="#FFFFFF">
-        <rect x="200" y="520" width="20" height="3"/>
-        <rect x="260" y="520" width="20" height="3"/>
-        <rect x="320" y="520" width="20" height="3"/>
-        <rect x="380" y="520" width="20" height="3"/>
-        <rect x="440" y="520" width="20" height="3"/>
-        <rect x="500" y="520" width="20" height="3"/>
-        <rect x="560" y="520" width="20" height="3"/>
-        <rect x="620" y="520" width="20" height="3"/>
-        <rect x="680" y="520" width="20" height="3"/>
-        <rect x="740" y="520" width="20" height="3"/>
-      </g>
-    </g>
-
-    <!-- Slider tandem rails -->
-    <g>
-      <rect x="600" y="524" width="220" height="4" fill="#2A2F3A"/>
-      <rect x="600" y="524" width="220" height="1" fill="#9098A8" opacity="0.4"/>
-      <g fill="#0F1320">
-        <circle cx="612" cy="526" r="1.4"/>
-        <circle cx="628" cy="526" r="1.4"/>
-        <circle cx="644" cy="526" r="1.4"/>
-        <circle cx="660" cy="526" r="1.4"/>
-        <circle cx="676" cy="526" r="1.4"/>
-        <circle cx="692" cy="526" r="1.4"/>
-        <circle cx="708" cy="526" r="1.4"/>
-        <circle cx="724" cy="526" r="1.4"/>
-        <circle cx="740" cy="526" r="1.4"/>
-        <circle cx="756" cy="526" r="1.4"/>
-        <circle cx="772" cy="526" r="1.4"/>
-        <circle cx="788" cy="526" r="1.4"/>
-        <circle cx="804" cy="526" r="1.4"/>
-      </g>
-      <rect x="666" y="528" width="120" height="14" fill="url(#chassisSteel)"/>
-      <rect x="666" y="528" width="120" height="2" fill="#9098A8" opacity="0.55"/>
-      <rect x="660" y="530" width="10" height="3" fill="#FF7A1F"/>
-      <circle cx="658" cy="531.5" r="2.2" fill="#A35200"/>
-    </g>
-
-    <!-- ===== TWIST-LOCK CORNER CASTING PLATES on chassis (NOW ANIMATING UNLOCK) ===== -->
-    <!-- LEFT-FRONT pad -->
-    <g>
-      <rect x="170" y="494" width="14" height="8" fill="#1A1F2E" stroke="#3A3F4A" stroke-width="0.4"/>
-      <g transform="translate(177 498)">
-        <g class="twist-lock-release"><use href="#twistLockCam"/></g>
-      </g>
-      <circle class="twist-lock-flash" cx="177" cy="498" r="9" fill="url(#lockGlow)"/>
-    </g>
-    <!-- RIGHT-REAR pad -->
-    <g>
-      <rect x="804" y="494" width="14" height="8" fill="#1A1F2E" stroke="#3A3F4A" stroke-width="0.4"/>
-      <g transform="translate(811 498)">
-        <g class="twist-lock-release"><use href="#twistLockCam"/></g>
-      </g>
-      <circle class="twist-lock-flash" cx="811" cy="498" r="9" fill="url(#lockGlow)"/>
-    </g>
-    <!-- 20-ft inner mount points -->
-    <g opacity="0.85">
-      <rect x="496" y="494" width="10" height="6" fill="#1A1F2E" stroke="#3A3F4A" stroke-width="0.3"/>
-      <rect x="498" y="496" width="6" height="2" fill="#0F1320"/>
-    </g>
-
-    <!-- ===== TANDEM AXLES + 4 WHEELS (INLINED — no <use> references) ===== -->
-    <g>
-      <!-- Axle housings -->
-      <rect x="676" y="540" width="110" height="6" fill="#3A3F4A"/>
-      <rect x="676" y="558" width="110" height="6" fill="#3A3F4A"/>
-      <!-- Air suspension struts -->
-      <rect x="688" y="544" width="6" height="14" fill="#5A606D"/>
-      <rect x="770" y="544" width="6" height="14" fill="#5A606D"/>
-      <!-- Brake chambers -->
-      <ellipse cx="691" cy="544" rx="6" ry="3" fill="#2A2F3A"/>
-      <ellipse cx="773" cy="544" rx="6" ry="3" fill="#2A2F3A"/>
-      <ellipse cx="691" cy="562" rx="6" ry="3" fill="#2A2F3A"/>
-      <ellipse cx="773" cy="562" rx="6" ry="3" fill="#2A2F3A"/>
-
-      <!-- Ground shadow under tandem -->
-      <ellipse cx="696" cy="572" rx="22" ry="4" fill="#000000" opacity="0.32"/>
-      <ellipse cx="772" cy="572" rx="22" ry="4" fill="#000000" opacity="0.32"/>
-      <!-- Dual-tire ellipse hint behind each wheel -->
-      <ellipse cx="690" cy="552" rx="20" ry="2.4" fill="#1A1A1A" opacity="0.6"/>
-      <ellipse cx="774" cy="552" rx="20" ry="2.4" fill="#1A1A1A" opacity="0.6"/>
-      <!-- INLINED wheel #1 -->
-      <g transform="translate(696 552)">
-        <circle cx="0" cy="0" r="24" fill="#1A1A1A"/>
-        <circle cx="0" cy="0" r="16" fill="url(#rim)"/>
-        <circle cx="0" cy="0" r="5" fill="#7A7F88"/>
-        <circle cx="0" cy="0" r="2" fill="#1A1F2E"/>
-        <g fill="#9098A8">
-          <circle cx="0" cy="-10" r="1.3"/>
-          <circle cx="9.5" cy="-3" r="1.3"/>
-          <circle cx="5.9" cy="8" r="1.3"/>
-          <circle cx="-5.9" cy="8" r="1.3"/>
-          <circle cx="-9.5" cy="-3" r="1.3"/>
-        </g>
-        <g stroke="#3A3F4A" stroke-width="2" stroke-linecap="round" opacity="0.85">
-          <line x1="0" y1="-21" x2="0" y2="-17"/>
-          <line x1="15" y1="-15" x2="12" y2="-12"/>
-          <line x1="21" y1="0" x2="17" y2="0"/>
-          <line x1="15" y1="15" x2="12" y2="12"/>
-          <line x1="0" y1="21" x2="0" y2="17"/>
-          <line x1="-15" y1="15" x2="-12" y2="12"/>
-          <line x1="-21" y1="0" x2="-17" y2="0"/>
-          <line x1="-15" y1="-15" x2="-12" y2="-12"/>
-        </g>
-        <ellipse cx="-5" cy="-9" rx="4" ry="2.4" fill="#FFFFFF" opacity="0.32"/>
-      </g>
-      <!-- INLINED wheel #2 -->
-      <g transform="translate(772 552)">
-        <circle cx="0" cy="0" r="24" fill="#1A1A1A"/>
-        <circle cx="0" cy="0" r="16" fill="url(#rim)"/>
-        <circle cx="0" cy="0" r="5" fill="#7A7F88"/>
-        <circle cx="0" cy="0" r="2" fill="#1A1F2E"/>
-        <g fill="#9098A8">
-          <circle cx="0" cy="-10" r="1.3"/>
-          <circle cx="9.5" cy="-3" r="1.3"/>
-          <circle cx="5.9" cy="8" r="1.3"/>
-          <circle cx="-5.9" cy="8" r="1.3"/>
-          <circle cx="-9.5" cy="-3" r="1.3"/>
-        </g>
-        <g stroke="#3A3F4A" stroke-width="2" stroke-linecap="round" opacity="0.85">
-          <line x1="0" y1="-21" x2="0" y2="-17"/>
-          <line x1="15" y1="-15" x2="12" y2="-12"/>
-          <line x1="21" y1="0" x2="17" y2="0"/>
-          <line x1="15" y1="15" x2="12" y2="12"/>
-          <line x1="0" y1="21" x2="0" y2="17"/>
-          <line x1="-15" y1="15" x2="-12" y2="12"/>
-          <line x1="-21" y1="0" x2="-17" y2="0"/>
-          <line x1="-15" y1="-15" x2="-12" y2="-12"/>
-        </g>
-        <ellipse cx="-5" cy="-9" rx="4" ry="2.4" fill="#FFFFFF" opacity="0.32"/>
-      </g>
-    </g>
-
-    <!-- Mud flap with EUSO stencil -->
-    <rect x="794" y="548" width="3" height="20" fill="#1A1F2E"/>
-    <rect x="797" y="554" width="20" height="18" fill="#0F1320"/>
-    <rect x="800" y="558" width="14" height="3" fill="#FFFFFF" opacity="0.4"/>
-    <text x="807" y="566" text-anchor="middle"
-          font-family="Inter, system-ui, sans-serif"
-          font-weight="800" font-size="4.5" letter-spacing="0.4" fill="#FFFFFF" opacity="0.7">EUSO</text>
-
-    <!-- ICC bar -->
-    <rect x="788" y="546" width="40" height="3" fill="url(#chassisSteel)"/>
-    <rect x="816" y="540" width="3" height="14" fill="url(#chassisSteel)"/>
-    <rect x="788" y="546" width="40" height="0.7" fill="#9098A8" opacity="0.55"/>
-
-    <!-- Tail lights + license plate -->
-    <g>
-      <rect x="822" y="518" width="14" height="8" fill="#FFFFFF" stroke="#1A1F2E" stroke-width="0.4"/>
-      <text x="829" y="524" text-anchor="middle"
-            font-family="Inter, system-ui, sans-serif"
-            font-weight="800" font-size="4.4" fill="#1A1F2E">EUSO Z</text>
-      <rect x="822" y="498" width="14" height="6" fill="#C2433A" stroke="#7A2620" stroke-width="0.4"/>
-      <rect x="822" y="506" width="14" height="6" fill="#FFC400" stroke="#A37500" stroke-width="0.4"/>
-    </g>
-
-    <!-- Marker lights (yellow side) -->
-    <g>
-      <circle cx="180" cy="495" r="1.4" fill="#FFC400"/>
-      <circle cx="280" cy="495" r="1.4" fill="#FFC400"/>
-      <circle cx="380" cy="495" r="1.4" fill="#FFC400"/>
-      <circle cx="480" cy="495" r="1.4" fill="#FFC400"/>
-      <circle cx="580" cy="495" r="1.4" fill="#FFC400"/>
-      <circle cx="680" cy="495" r="1.4" fill="#FFC400"/>
-      <circle cx="780" cy="495" r="1.4" fill="#FFC400"/>
-    </g>
-
-    <!-- Chassis ID stencil -->
-    <text x="280" y="513" font-family="Inter, system-ui, sans-serif"
-          font-weight="800" font-size="6" letter-spacing="1.2" fill="#FFFFFF" opacity="0.7">EUSZ 410258 0 . 40 FT INTERMODAL CHASSIS</text>
-
-    <!-- Wheel chocks (INLINED — no <use> refs) -->
-    <g transform="translate(660 568)">
-      <polygon points="-9,0 9,0 0,-12" fill="#FF7A1F" stroke="#A35200" stroke-width="0.6"/>
-      <polygon points="-9,0 9,0 0,-12" fill="none" stroke="#FFE066" stroke-width="0.4" opacity="0.7"/>
-    </g>
-    <g transform="translate(805 568)">
-      <polygon points="-9,0 9,0 0,-12" fill="#FF7A1F" stroke="#A35200" stroke-width="0.6"/>
-      <polygon points="-9,0 9,0 0,-12" fill="none" stroke="#FFE066" stroke-width="0.4" opacity="0.7"/>
-    </g>
+    <g transform="translate(340 540)"><use href="#safetyCone"/></g>
+    <g transform="translate(1080 548)"><use href="#safetyCone"/></g>
   </g>
 
   <!-- ============================================================
-       REACH STACKER (Kalmar/Hyster top-handler, right side)
-       Boom group rises during lift phase (boom-extend animation)
+       AUTO-CARRIER (open multi-level) parked at left, decks loading
        ============================================================ -->
-  <g class="boom-extend" filter="url(#rigShadow)">
 
-    <!-- ===== Reach stacker chassis (rubber-tired) ===== -->
-    <!-- Counterweight at rear -->
-    <rect x="1064" y="448" width="100" height="78" fill="#3A3F4A"/>
-    <rect x="1064" y="448" width="100" height="6"  fill="#5A606D"/>
-    <rect x="1066" y="454" width="96" height="3"  fill="#1F2330"/>
-    <text x="1114" y="492" text-anchor="middle"
-          font-family="Inter, system-ui, sans-serif"
-          font-weight="800" font-size="9" letter-spacing="1.6" fill="#FFFFFF" opacity="0.55">CW</text>
-
-    <!-- Body (yellow industrial) -->
-    <rect x="956" y="430" width="208" height="100" fill="url(#reachStackerYellow)"/>
-    <rect x="956" y="430" width="208" height="6"   fill="#FFFFFF" opacity="0.4"/>
-    <rect x="956" y="528" width="208" height="3"   fill="#1F2330" opacity="0.45"/>
-    <rect x="956" y="498" width="208" height="3"   fill="#1A1F2E" opacity="0.7"/>
-
-    <!-- Side panel hatch lines -->
-    <g stroke="#A66B00" stroke-width="0.6" opacity="0.55">
-      <line x1="990"  y1="430" x2="990"  y2="498"/>
-      <line x1="1024" y1="430" x2="1024" y2="498"/>
-      <line x1="1058" y1="430" x2="1058" y2="498"/>
-    </g>
-
-    <!-- Hydraulic cylinder visible on body -->
-    <g>
-      <rect x="976" y="476" width="44" height="8" fill="#5A606D"/>
-      <rect x="976" y="476" width="44" height="2" fill="#9098A8" opacity="0.55"/>
-      <circle cx="1018" cy="480" r="2" fill="#1A1F2E"/>
-    </g>
-
-    <!-- Operator cab -->
-    <g>
-      <rect x="966" y="380" width="74" height="50" fill="#2A2F3A"/>
-      <rect x="966" y="380" width="74" height="3"  fill="#5A606D"/>
-      <rect x="970" y="386" width="66" height="36" fill="#7E9DDB" opacity="0.85"/>
-      <rect x="970" y="386" width="66" height="6"  fill="#FFFFFF" opacity="0.35"/>
-      <line x1="1003" y1="386" x2="1003" y2="422" stroke="#1A1F2E" stroke-width="1"/>
-      <g fill="#1A1F2E">
-        <ellipse cx="985" cy="402" rx="4" ry="4.4"/>
-        <path d="M 977 410 Q 985 408 993 410 L 993 422 L 977 422 Z"/>
-      </g>
-      <line x1="966" y1="380" x2="966" y2="430" stroke="#5A606D" stroke-width="1.2"/>
-      <!-- Warning beacon -->
-      <g>
-        <rect x="998" y="370" width="10" height="3" fill="#3A3F4A"/>
-        <circle class="beacon-flash" cx="1003" cy="368" r="5" fill="#FFC400" stroke="#A37500" stroke-width="0.6"/>
-        <circle class="strobe-amber" cx="1003" cy="368" r="11" fill="url(#strobeGlow)"/>
-      </g>
-    </g>
-
-    <!-- ===== TELESCOPING BOOM (3 segments) ===== -->
-    <g>
-      <circle cx="1020" cy="430" r="8" fill="#3A3F4A" stroke="#1A1F2E" stroke-width="0.6"/>
-      <circle cx="1020" cy="430" r="3" fill="#FFFFFF" opacity="0.55"/>
-      <!-- Boom segment 1 -->
-      <polygon points="1014,432 1100,250 1116,250 1026,432" fill="url(#boomSteel)"/>
-      <polygon points="1014,432 1100,250 1116,250 1026,432" fill="#FFFFFF" opacity="0.18"/>
-      <line x1="1018" y1="425" x2="1108" y2="252" stroke="#1A1F2E" stroke-width="2.4" opacity="0.55"/>
-      <line x1="1020" y1="425" x2="1110" y2="252" stroke="#9098A8" stroke-width="0.8" opacity="0.85"/>
-      <!-- Boom segment 2 -->
-      <polygon points="1098,250 1100,232 850,232 850,248" fill="url(#boomSteel)"/>
-      <polygon points="1098,250 1100,232 850,232 850,248" fill="#FFFFFF" opacity="0.15"/>
-      <rect x="1090" y="244" width="14" height="6" fill="#1A1F2E" opacity="0.65"/>
-      <rect x="870"  y="237" width="220" height="3" fill="#5A606D" opacity="0.85"/>
-      <circle cx="870" cy="238.5" r="2" fill="#1A1F2E"/>
-      <!-- Boom segment 3 -->
-      <polygon points="850,232 850,248 470,248 470,232" fill="url(#boomSteel)"/>
-      <polygon points="850,232 850,248 470,248 470,232" fill="#FFFFFF" opacity="0.18"/>
-      <rect x="844" y="234" width="10" height="14" fill="#1A1F2E" opacity="0.65"/>
-      <!-- Boom tip head -->
-      <rect x="466" y="232" width="10" height="36" fill="url(#boomSteel)"/>
-      <rect x="466" y="262" width="10" height="6"  fill="#1A1F2E" opacity="0.7"/>
-    </g>
-
-    <!-- ===== SPREADER FRAME (engaged with container TOP, follows container-lift translate) ===== -->
-    <g class="container-lift">
-      <!-- Telescoping spreader frame -->
-      <rect x="178" y="268" width="640" height="14" fill="#3A3F4A" stroke="#1A1F2E" stroke-width="0.6"/>
-      <rect x="178" y="268" width="640" height="3"  fill="#9098A8" opacity="0.55"/>
-      <g stroke="#1A1F2E" stroke-width="0.6" opacity="0.7">
-        <line x1="298" y1="268" x2="298" y2="282"/>
-        <line x1="498" y1="268" x2="498" y2="282"/>
-        <line x1="698" y1="268" x2="698" y2="282"/>
-      </g>
-      <rect x="178" y="266" width="640" height="2" fill="#FFD200" opacity="0.85"/>
-
-      <!-- 4 spreader twist-lock cones (engaged on container top — yellow/locked state) -->
-      <g>
-        <polygon points="184,282 200,282 192,294" fill="#FFD200" stroke="#A37500" stroke-width="0.4"/>
-        <polygon points="392,282 408,282 400,294" fill="#FFD200" stroke="#A37500" stroke-width="0.4"/>
-        <polygon points="588,282 604,282 596,294" fill="#FFD200" stroke="#A37500" stroke-width="0.4"/>
-        <polygon points="796,282 812,282 804,294" fill="#FFD200" stroke="#A37500" stroke-width="0.4"/>
-      </g>
-
-      <!-- Cable from spreader top to boom-tip (short — boom tip drops just above spreader) -->
-      <g stroke="#1A1F2E" stroke-width="2.2">
-        <line x1="471" y1="268" x2="471" y2="262"/>
-      </g>
-
-      <!-- ===== ISO 40 FT CONTAINER (slung from spreader, lifts off chassis) ===== -->
-      <g>
-        <!-- Container body -->
-        <rect x="180" y="294" width="638" height="150" fill="url(#containerSkin)"/>
-        <rect x="180" y="294" width="638" height="4"   fill="#FFFFFF" opacity="0.45"/>
-        <rect x="180" y="440" width="638" height="4"   fill="#000000" opacity="0.35"/>
-
-        <!-- Corrugated walls -->
-        <g stroke="#1A2C58" stroke-width="0.7" opacity="0.7">
-          <line x1="200" y1="298" x2="200" y2="440"/>
-          <line x1="220" y1="298" x2="220" y2="440"/>
-          <line x1="240" y1="298" x2="240" y2="440"/>
-          <line x1="260" y1="298" x2="260" y2="440"/>
-          <line x1="280" y1="298" x2="280" y2="440"/>
-          <line x1="300" y1="298" x2="300" y2="440"/>
-          <line x1="320" y1="298" x2="320" y2="440"/>
-          <line x1="340" y1="298" x2="340" y2="440"/>
-          <line x1="360" y1="298" x2="360" y2="440"/>
-          <line x1="380" y1="298" x2="380" y2="440"/>
-          <line x1="400" y1="298" x2="400" y2="440"/>
-          <line x1="420" y1="298" x2="420" y2="440"/>
-          <line x1="440" y1="298" x2="440" y2="440"/>
-          <line x1="460" y1="298" x2="460" y2="440"/>
-          <line x1="480" y1="298" x2="480" y2="440"/>
-          <line x1="500" y1="298" x2="500" y2="440"/>
-          <line x1="520" y1="298" x2="520" y2="440"/>
-          <line x1="540" y1="298" x2="540" y2="440"/>
-          <line x1="560" y1="298" x2="560" y2="440"/>
-          <line x1="580" y1="298" x2="580" y2="440"/>
-          <line x1="600" y1="298" x2="600" y2="440"/>
-          <line x1="620" y1="298" x2="620" y2="440"/>
-          <line x1="640" y1="298" x2="640" y2="440"/>
-          <line x1="660" y1="298" x2="660" y2="440"/>
-          <line x1="680" y1="298" x2="680" y2="440"/>
-          <line x1="700" y1="298" x2="700" y2="440"/>
-          <line x1="720" y1="298" x2="720" y2="440"/>
-          <line x1="740" y1="298" x2="740" y2="440"/>
-        </g>
-        <!-- Corrugation highlights -->
-        <g stroke="#FFFFFF" stroke-width="0.4" opacity="0.18">
-          <line x1="201.5" y1="298" x2="201.5" y2="440"/>
-          <line x1="241.5" y1="298" x2="241.5" y2="440"/>
-          <line x1="281.5" y1="298" x2="281.5" y2="440"/>
-          <line x1="321.5" y1="298" x2="321.5" y2="440"/>
-          <line x1="361.5" y1="298" x2="361.5" y2="440"/>
-          <line x1="401.5" y1="298" x2="401.5" y2="440"/>
-          <line x1="441.5" y1="298" x2="441.5" y2="440"/>
-          <line x1="481.5" y1="298" x2="481.5" y2="440"/>
-          <line x1="521.5" y1="298" x2="521.5" y2="440"/>
-          <line x1="561.5" y1="298" x2="561.5" y2="440"/>
-          <line x1="601.5" y1="298" x2="601.5" y2="440"/>
-          <line x1="641.5" y1="298" x2="641.5" y2="440"/>
-          <line x1="681.5" y1="298" x2="681.5" y2="440"/>
-          <line x1="721.5" y1="298" x2="721.5" y2="440"/>
-        </g>
-
-        <!-- Top + bottom reinforcement rails -->
-        <rect x="180" y="294" width="638" height="6" fill="#1A2C58" opacity="0.65"/>
-        <rect x="180" y="436" width="638" height="8" fill="#1A2C58" opacity="0.85"/>
-
-        <!-- 4 ISO TOP corner castings (spreader engages here) -->
-        <g transform="translate(184 296)"><use href="#cornerCasting"/></g>
-        <g transform="translate(814 296)"><use href="#cornerCasting"/></g>
-        <!-- 4 ISO BOTTOM corner castings -->
-        <g transform="translate(184 442)"><use href="#cornerCasting"/></g>
-        <g transform="translate(814 442)"><use href="#cornerCasting"/></g>
-
-        <!-- ISO 6346 markings (left panel) -->
-        <text x="220" y="328" font-family="Inter, system-ui, sans-serif"
-              font-weight="800" font-size="20" letter-spacing="2.4" fill="#FFFFFF"
-              data-bind="container_id">EUSO 884361 7</text>
-        <text x="220" y="354" font-family="Inter, system-ui, sans-serif"
-              font-weight="800" font-size="14" letter-spacing="2" fill="#FFFFFF"
-              data-bind="iso_code">42G1</text>
-        <text x="220" y="376" font-family="Inter, system-ui, sans-serif"
-              font-weight="700" font-size="9" letter-spacing="1.4" fill="#FFFFFF" opacity="0.85">USA</text>
-        <text x="220" y="392" font-family="Inter, system-ui, sans-serif"
-              font-weight="700" font-size="8" letter-spacing="1" fill="#FFFFFF" opacity="0.78">MAX GROSS 67,200 LB . 30,480 KG</text>
-        <text x="220" y="404" font-family="Inter, system-ui, sans-serif"
-              font-weight="700" font-size="8" letter-spacing="1" fill="#FFFFFF" opacity="0.78">TARE 8,820 LB . 4,000 KG</text>
-        <text x="220" y="416" font-family="Inter, system-ui, sans-serif"
-              font-weight="700" font-size="8" letter-spacing="1" fill="#FFFFFF" opacity="0.78">NET 58,380 LB . 26,480 KG</text>
-        <text x="220" y="428" font-family="Inter, system-ui, sans-serif"
-              font-weight="700" font-size="7" letter-spacing="1" fill="#FFFFFF" opacity="0.55">CU CAP 2,390 CU FT . 67.7 CU M</text>
-
-        <!-- Brand badge (right panel) -->
-        <g>
-          <rect x="600" y="320" width="200" height="46" rx="3"
-                fill="#FFFFFF" fill-opacity="0.16" stroke="#FFFFFF" stroke-width="0.6" stroke-opacity="0.5"/>
-          <text x="700" y="342" text-anchor="middle"
-                font-family="Inter, system-ui, sans-serif"
-                font-weight="800" font-size="16" letter-spacing="3.4" fill="#FFFFFF">EUSOTRIP</text>
-          <text x="700" y="358" text-anchor="middle"
-                font-family="Inter, system-ui, sans-serif"
-                font-weight="600" font-size="8" letter-spacing="2.4" fill="#FFFFFF" opacity="0.78">INTERMODAL</text>
-        </g>
-
-        <!-- ============================================================
-             COUNTRY-SWITCHABLE DANGEROUS-GOODS PLACARD (parity w/ loading)
-             Class 3 Flammable Liquid, UN 1203 (gasoline).
-             RENDERER: data-country (US|MX|CA) on root <svg> picks one variant.
-               US — 49 CFR 172.500 diamond, UN id in placard centre.
-               CA — TDG diamond + separate orange UN panel (no UN prefix).
-               MX — NOM-004-SCT2 rombo + Spanish proper shipping name.
-             Default below = US visible.
-             ============================================================ -->
-        <g class="dg-placard" transform="translate(300 396)">
-          <g class="placard-country country-US">
-            <g transform="rotate(45 18 18)">
-              <rect x="0" y="0" width="36" height="36" rx="2" fill="#E5350D" stroke="#FFFFFF" stroke-width="1.4"/>
-              <rect x="2.4" y="2.4" width="31.2" height="31.2" rx="1.4" fill="none" stroke="#FFFFFF" stroke-width="0.8" opacity="0.7"/>
-            </g>
-            <path d="M18 6 C20 11 24 12 23 17 C26 15 26 12 26 12 C28 16 27 22 18 24 C11 23 9 17 13 12 C13 15 15 15 15 15 C14 11 17 9 18 6 Z" fill="#FFFFFF"/>
-            <text x="18" y="29" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6.6" fill="#FFFFFF">3</text>
-            <rect x="6" y="17" width="24" height="8" fill="#FFFFFF"/>
-            <text x="18" y="23.4" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6" letter-spacing="0.4" fill="#000000">1203</text>
-          </g>
-          <g class="placard-country country-MX" display="none">
-            <g transform="rotate(45 18 18)">
-              <rect x="0" y="0" width="36" height="36" rx="2" fill="#E5350D" stroke="#FFFFFF" stroke-width="1.4"/>
-              <rect x="2.4" y="2.4" width="31.2" height="31.2" rx="1.4" fill="none" stroke="#FFFFFF" stroke-width="0.8" opacity="0.7"/>
-            </g>
-            <path d="M18 6 C20 11 24 12 23 17 C26 15 26 12 26 12 C28 16 27 22 18 24 C11 23 9 17 13 12 C13 15 15 15 15 15 C14 11 17 9 18 6 Z" fill="#FFFFFF"/>
-            <text x="18" y="29" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6.6" fill="#FFFFFF">3</text>
-            <rect x="6" y="17" width="24" height="8" fill="#FFFFFF"/>
-            <text x="18" y="23.4" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6" letter-spacing="0.4" fill="#000000">1203</text>
-            <text x="18" y="46" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="4.4" letter-spacing="0.6" fill="#FFFFFF" opacity="0.9">GASOLINA</text>
-          </g>
-          <g class="placard-country country-CA" display="none">
-            <g transform="rotate(45 18 18)">
-              <rect x="0" y="0" width="36" height="36" rx="2" fill="#E5350D" stroke="#FFFFFF" stroke-width="1.4"/>
-              <rect x="2.4" y="2.4" width="31.2" height="31.2" rx="1.4" fill="none" stroke="#FFFFFF" stroke-width="0.8" opacity="0.7"/>
-            </g>
-            <path d="M18 6 C20 11 24 12 23 17 C26 15 26 12 26 12 C28 16 27 22 18 24 C11 23 9 17 13 12 C13 15 15 15 15 15 C14 11 17 9 18 6 Z" fill="#FFFFFF"/>
-            <text x="18" y="31" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="7" fill="#FFFFFF">3</text>
-            <rect x="42" y="13" width="30" height="12" fill="#E08A3A" stroke="#1A1F2E" stroke-width="0.6"/>
-            <text x="57" y="22" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="7" letter-spacing="0.6" fill="#000000">1203</text>
-          </g>
-        </g>
-
-        <!-- CSC plate -->
-        <rect x="744" y="412" width="62" height="20" fill="#FFFFFF" opacity="0.18" stroke="#FFFFFF" stroke-width="0.4" stroke-opacity="0.5"/>
-        <text x="775" y="421" text-anchor="middle"
-              font-family="Inter, system-ui, sans-serif"
-              font-weight="700" font-size="5.4" letter-spacing="0.4" fill="#FFFFFF" opacity="0.85">CSC SAFETY APPROVAL</text>
-        <text x="775" y="429" text-anchor="middle"
-              font-family="Inter, system-ui, sans-serif"
-              font-weight="700" font-size="5.4" letter-spacing="0.4" fill="#FFFFFF" opacity="0.78">USA/EUSO/2026/12345</text>
-
-        <!-- Door end (RIGHT side) -->
-        <g>
-          <line x1="744" y1="298" x2="744" y2="436" stroke="#0F1320" stroke-width="1.4" opacity="0.85"/>
-          <rect x="744" y="298" width="74" height="138" fill="none" stroke="#0F1320" stroke-width="0.6" opacity="0.55"/>
-          <g stroke="#0F1320" stroke-width="2" opacity="0.85">
-            <line x1="752" y1="306" x2="752" y2="430"/>
-            <line x1="772" y1="306" x2="772" y2="430"/>
-            <line x1="792" y1="306" x2="792" y2="430"/>
-            <line x1="810" y1="306" x2="810" y2="430"/>
-          </g>
-          <g fill="#0F1320">
-            <rect x="750" y="304" width="4" height="6"/>
-            <rect x="770" y="304" width="4" height="6"/>
-            <rect x="790" y="304" width="4" height="6"/>
-            <rect x="808" y="304" width="4" height="6"/>
-            <rect x="750" y="428" width="4" height="6"/>
-            <rect x="770" y="428" width="4" height="6"/>
-            <rect x="790" y="428" width="4" height="6"/>
-            <rect x="808" y="428" width="4" height="6"/>
-          </g>
-          <g fill="#1A1F2E" stroke="#0F1320" stroke-width="0.4">
-            <rect x="748" y="368" width="8" height="3"/>
-            <rect x="744" y="370" width="3" height="6"/>
-            <rect x="768" y="368" width="8" height="3"/>
-            <rect x="764" y="370" width="3" height="6"/>
-            <rect x="788" y="368" width="8" height="3"/>
-            <rect x="784" y="370" width="3" height="6"/>
-            <rect x="806" y="368" width="8" height="3"/>
-            <rect x="802" y="370" width="3" height="6"/>
-          </g>
-          <g fill="#0F1320" opacity="0.75">
-            <rect x="816" y="308" width="3" height="6"/>
-            <rect x="816" y="338" width="3" height="6"/>
-            <rect x="816" y="372" width="3" height="6"/>
-            <rect x="816" y="406" width="3" height="6"/>
-          </g>
-        </g>
-      </g>
-    </g>
-
-  </g>
-
-  <!-- ============================================================
-       4 LARGE FRONT TIRES of reach stacker (INLINED — no <use> refs)
-       ============================================================ -->
+  <!-- ===== TRACTOR (cab, simplified side-on, facing left) ===== -->
   <g filter="url(#rigShadow)">
-    <ellipse cx="1066" cy="572" rx="118" ry="6" fill="#000000" opacity="0.35"/>
-    <!-- Front large tire -->
-    <g transform="translate(1010 540)">
-      <circle cx="0" cy="0" r="34" fill="#0F0F0F"/>
-      <circle cx="0" cy="0" r="32" fill="none" stroke="#2A2A2A" stroke-width="1.4"/>
-      <circle cx="0" cy="0" r="20" fill="url(#rim)"/>
-      <circle cx="0" cy="0" r="6"  fill="#7A7F88"/>
-      <circle cx="0" cy="0" r="2.6" fill="#1A1F2E"/>
-      <g fill="#9098A8">
-        <circle cx="0"     cy="-13"   r="1.6"/>
-        <circle cx="12.4"  cy="-4"    r="1.6"/>
-        <circle cx="7.6"   cy="10.5"  r="1.6"/>
-        <circle cx="-7.6"  cy="10.5"  r="1.6"/>
-        <circle cx="-12.4" cy="-4"    r="1.6"/>
-      </g>
-      <g stroke="#3A3F4A" stroke-width="3" stroke-linecap="round" opacity="0.85">
-        <line x1="0"   y1="-29" x2="0"   y2="-24"/>
-        <line x1="20"  y1="-21" x2="17"  y2="-17"/>
-        <line x1="29"  y1="0"   x2="24"  y2="0"/>
-        <line x1="20"  y1="21"  x2="17"  y2="17"/>
-        <line x1="0"   y1="29"  x2="0"   y2="24"/>
-        <line x1="-20" y1="21"  x2="-17" y2="17"/>
-        <line x1="-29" y1="0"   x2="-24" y2="0"/>
-        <line x1="-20" y1="-21" x2="-17" y2="-17"/>
-      </g>
-      <ellipse cx="-7" cy="-12" rx="6" ry="3.4" fill="#FFFFFF" opacity="0.28"/>
+    <path d="M 70 470 L 70 360 Q 70 348 82 346 L 150 340 Q 162 340 168 350 L 184 384 L 200 388 Q 210 390 210 402 L 210 470 Z" fill="url(#hullDark)"/>
+    <path d="M 92 352 L 150 348 Q 158 348 162 356 L 174 380 L 100 384 Q 92 384 92 376 Z" fill="url(#carGlass)" opacity="0.9"/>
+    <line x1="126" y1="350" x2="126" y2="382" stroke="#1A1F2E" stroke-width="1.4" opacity="0.5"/>
+    <ellipse cx="76" cy="402" rx="6" ry="7" fill="#FFE9A8"/>
+    <rect x="66" y="416" width="10" height="44" rx="2" fill="#0F1320"/>
+    <!-- exhaust stack -->
+    <rect x="178" y="318" width="7" height="32" rx="2" fill="#5A606D"/>
+    <rect x="178" y="318" width="2.4" height="32" fill="#9098A8" opacity="0.6"/>
+    <!-- amber convoy beacon -->
+    <g transform="translate(120 340)">
+      <ellipse class="strobe-amber" cx="0" cy="0" rx="16" ry="16" fill="url(#strobeGlow)"/>
+      <rect x="-6" y="-4" width="12" height="6" rx="2" fill="#FF8A1F"/>
     </g>
-    <!-- Rear large tire -->
-    <g transform="translate(1126 540)">
-      <circle cx="0" cy="0" r="34" fill="#0F0F0F"/>
-      <circle cx="0" cy="0" r="32" fill="none" stroke="#2A2A2A" stroke-width="1.4"/>
-      <circle cx="0" cy="0" r="20" fill="url(#rim)"/>
-      <circle cx="0" cy="0" r="6"  fill="#7A7F88"/>
-      <circle cx="0" cy="0" r="2.6" fill="#1A1F2E"/>
-      <g fill="#9098A8">
-        <circle cx="0"     cy="-13"   r="1.6"/>
-        <circle cx="12.4"  cy="-4"    r="1.6"/>
-        <circle cx="7.6"   cy="10.5"  r="1.6"/>
-        <circle cx="-7.6"  cy="10.5"  r="1.6"/>
-        <circle cx="-12.4" cy="-4"    r="1.6"/>
-      </g>
-      <g stroke="#3A3F4A" stroke-width="3" stroke-linecap="round" opacity="0.85">
-        <line x1="0"   y1="-29" x2="0"   y2="-24"/>
-        <line x1="20"  y1="-21" x2="17"  y2="-17"/>
-        <line x1="29"  y1="0"   x2="24"  y2="0"/>
-        <line x1="20"  y1="21"  x2="17"  y2="17"/>
-        <line x1="0"   y1="29"  x2="0"   y2="24"/>
-        <line x1="-20" y1="21"  x2="-17" y2="17"/>
-        <line x1="-29" y1="0"   x2="-24" y2="0"/>
-        <line x1="-20" y1="-21" x2="-17" y2="-17"/>
-      </g>
-      <ellipse cx="-7" cy="-12" rx="6" ry="3.4" fill="#FFFFFF" opacity="0.28"/>
-    </g>
-    <ellipse cx="1010" cy="540" rx="24" ry="4" fill="#1A1A1A" opacity="0.45"/>
-    <ellipse cx="1126" cy="540" rx="24" ry="4" fill="#1A1A1A" opacity="0.45"/>
+    <circle cx="150" cy="430" r="9" fill="#FFFFFF" opacity="0.85"/>
+    <text x="150" y="434" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="9" fill="#5B3FBF">E</text>
   </g>
 
-  <!-- ============================================================
-       DOCK WORKERS (3 hi-vis, foreground-distance)
-       ============================================================ -->
-  <g>
-    <!-- Worker 1: hand-on-radio (stationary, near reach stacker) -->
-    <g transform="translate(880 522)">
-      <!-- Hi-vis vest body -->
-      <rect x="-5" y="0" width="10" height="14" fill="#FFD200"/>
-      <rect x="-5" y="2" width="10" height="2" fill="#FFFFFF" opacity="0.85"/>
-      <rect x="-5" y="9" width="10" height="2" fill="#FFFFFF" opacity="0.85"/>
-      <!-- Pants -->
-      <rect x="-5" y="14" width="4" height="14" fill="#2A2F3A"/>
-      <rect x="1"  y="14" width="4" height="14" fill="#2A2F3A"/>
-      <!-- Boots -->
-      <rect x="-6" y="28" width="5" height="2" fill="#1A1F2E"/>
-      <rect x="1"  y="28" width="5" height="2" fill="#1A1F2E"/>
-      <!-- Head -->
-      <ellipse cx="0" cy="-5" rx="3.6" ry="4" fill="#E9CFA8"/>
-      <!-- Hard hat (white) -->
-      <path d="M -4 -7 Q 0 -11 4 -7 L 4 -5 L -4 -5 Z" fill="#FFFFFF" stroke="#9098A8" stroke-width="0.4"/>
-      <!-- Radio at hip -->
-      <rect class="worker-radio" x="-7" y="6" width="3" height="6" fill="#1A1F2E"/>
-    </g>
-
-    <!-- Worker 2: signaling (arm raised, between trailer and stacker) -->
-    <g transform="translate(840 530)">
-      <rect x="-5" y="0" width="10" height="14" fill="#FF7A1F"/>
-      <rect x="-5" y="2" width="10" height="2" fill="#FFFFFF" opacity="0.85"/>
-      <rect x="-5" y="9" width="10" height="2" fill="#FFFFFF" opacity="0.85"/>
-      <rect x="-5" y="14" width="4" height="14" fill="#2A2F3A"/>
-      <rect x="1"  y="14" width="4" height="14" fill="#2A2F3A"/>
-      <rect x="-6" y="28" width="5" height="2" fill="#1A1F2E"/>
-      <rect x="1"  y="28" width="5" height="2" fill="#1A1F2E"/>
-      <ellipse cx="0" cy="-5" rx="3.6" ry="4" fill="#C49872"/>
-      <path d="M -4 -7 Q 0 -11 4 -7 L 4 -5 L -4 -5 Z" fill="#FFD200" stroke="#A37500" stroke-width="0.4"/>
-      <!-- Raised arm signaling -->
-      <g class="worker-signal">
-        <rect x="3" y="-2" width="3" height="12" fill="#FF7A1F"/>
-        <rect x="2" y="-6" width="5" height="4" fill="#E9CFA8"/>
-      </g>
-    </g>
-
-    <!-- Worker 3: walking with clipboard (front-left, on asphalt in front of chassis) -->
-    <g transform="translate(420 530)">
-      <rect x="-5" y="0" width="10" height="14" fill="#FFD200"/>
-      <rect x="-5" y="2" width="10" height="2" fill="#FFFFFF" opacity="0.85"/>
-      <rect x="-5" y="9" width="10" height="2" fill="#FFFFFF" opacity="0.85"/>
-      <!-- Striding legs (polygons — avoid rect+rotate renderer fragility) -->
-      <polygon points="-5,14 -1,14 0,28 -4,28" fill="#2A2F3A"/>
-      <polygon points="1,14 5,14 6,28 2,28" fill="#2A2F3A"/>
-      <rect x="-7" y="28" width="5" height="2" fill="#1A1F2E"/>
-      <rect x="2"  y="28" width="5" height="2" fill="#1A1F2E"/>
-      <ellipse cx="0" cy="-5" rx="3.6" ry="4" fill="#9C7857"/>
-      <path d="M -4 -7 Q 0 -11 4 -7 L 4 -5 L -4 -5 Z" fill="#1A1F2E" stroke="#0F1320" stroke-width="0.4"/>
-      <!-- Clipboard -->
-      <rect x="5" y="2" width="5" height="7" fill="#FFFFFF" stroke="#3A3F4A" stroke-width="0.4"/>
-      <rect x="6" y="3" width="3" height="0.6" fill="#3A3F4A"/>
-      <rect x="6" y="5" width="3" height="0.4" fill="#3A3F4A"/>
+  <!-- ===== HEAD RAMP over the cab (upper deck cantilevers forward) ===== -->
+  <g filter="url(#rigShadow)">
+    <path d="M 78 318 L 230 336 L 230 348 L 78 330 Z" fill="url(#frameSteel)"/>
+    <g stroke="#2A2F3A" stroke-width="0.8" opacity="0.5">
+      <line x1="110" y1="322" x2="110" y2="334"/><line x1="150" y1="327" x2="150" y2="339"/>
+      <line x1="190" y1="332" x2="190" y2="344"/>
     </g>
   </g>
 
-  <!-- ============================================================
-       BRAND CHROME — preserved from v3 standard
-       ============================================================ -->
+  <!-- ===== OPEN MULTI-LEVEL FRAME ===== -->
+  <g filter="url(#rigShadow)">
+    <!-- Rear gantry posts -->
+    <rect x="824" y="318" width="9" height="200" rx="2" fill="url(#frameSteel)"/>
+    <rect x="824" y="318" width="3" height="200" fill="#7A818C" opacity="0.6"/>
+    <!-- Mid post -->
+    <rect x="560" y="338" width="7" height="160" rx="2" fill="url(#frameSteel)"/>
+    <!-- Front upper post -->
+    <rect x="236" y="330" width="7" height="150" rx="2" fill="url(#frameSteel)"/>
 
+    <!-- UPPER DECK — staggered down toward rear -->
+    <path d="M 230 336 L 560 352 L 832 340 L 832 354 L 560 366 L 230 350 Z" fill="url(#deckTop)"/>
+    <path d="M 230 336 L 560 352 L 832 340" stroke="#FFFFFF" stroke-width="1.4" opacity="0.35" fill="none"/>
+    <g stroke="#2A2F3A" stroke-width="1" opacity="0.55">
+      <line x1="300" y1="340" x2="300" y2="354"/><line x1="400" y1="346" x2="400" y2="360"/>
+      <line x1="640" y1="356" x2="640" y2="366"/><line x1="730" y1="349" x2="730" y2="361"/>
+    </g>
+
+    <!-- Hydraulic deck-lift cylinders (the rig's signature) -->
+    <g class="hyd-pulse">
+      <rect x="420" y="366" width="7" height="120" rx="2" fill="#2A2F3A"/>
+      <rect x="421.5" y="366" width="2.4" height="120" fill="#C5CCD6" opacity="0.7"/>
+      <rect x="700" y="360" width="7" height="118" rx="2" fill="#2A2F3A"/>
+      <rect x="701.5" y="360" width="2.4" height="118" fill="#C5CCD6" opacity="0.7"/>
+    </g>
+
+    <!-- Main chassis I-beam -->
+    <rect x="230" y="494" width="606" height="12" rx="2" fill="#1A1F2E"/>
+    <rect x="230" y="494" width="606" height="2.4" fill="#3A3F4A"/>
+    <rect x="240" y="497" width="480" height="3" fill="url(#conspicuityTape)" opacity="0.85"/>
+    <!-- Rear gantry marker lights -->
+    <rect x="824" y="320" width="13" height="7" rx="1" fill="#FFC72C" opacity="0.85"/>
+    <rect x="824" y="500" width="13" height="9" rx="1" fill="#E5350D"/>
+  </g>
+
+  <!-- ===== LOWER DECK = tilt-down ramp (rotates up to level once the car is aboard) ===== -->
+  <g class="deck-lift">
+    <g filter="url(#rigShadow)">
+      <!-- ramp deck plane: hinged at left (~x=300), sloping down to the ground at right -->
+      <path d="M 300 470 L 560 470 L 770 540 L 510 540 Z" fill="url(#deckTop)"/>
+      <path d="M 300 470 L 560 470" stroke="#FFFFFF" stroke-width="1.4" opacity="0.35"/>
+      <!-- skeletal ramp runners -->
+      <g stroke="#2A2F3A" stroke-width="1" opacity="0.5">
+        <line x1="360" y1="470" x2="430" y2="494"/>
+        <line x1="440" y1="470" x2="510" y2="494"/>
+        <line x1="520" y1="470" x2="590" y2="494"/>
+      </g>
+      <!-- ramp foot lip + reflective edge -->
+      <rect x="752" y="535" width="22" height="6" rx="1" fill="#1A1F2E"/>
+      <g transform="rotate(15 510 540)"><rect x="510" y="538" width="240" height="3" fill="url(#conspicuityTape)" opacity="0.85"/></g>
+    </g>
+    <!-- ramp hydraulic ram -->
+    <g class="hyd-pulse">
+      <line x1="560" y1="470" x2="640" y2="510" stroke="#2A2F3A" stroke-width="6" stroke-linecap="round"/>
+      <line x1="560" y1="470" x2="620" y2="500" stroke="#C5CCD6" stroke-width="2.2" stroke-linecap="round" opacity="0.7"/>
+      <circle cx="560" cy="470" r="3.4" fill="#1A1F2E"/>
+      <circle cx="640" cy="510" r="3.4" fill="#1A1F2E"/>
+    </g>
+  </g>
+
+  <!-- ===== CARS ALREADY LOADED on the upper deck (staggered, chained) ===== -->
+  <g transform="translate(330 348) rotate(-3) scale(0.86)" color="#E5350D"><use href="#deckCar"/></g>
+  <g transform="translate(470 354) rotate(-3) scale(0.86)" color="#E2E6EE"><use href="#deckCar"/></g>
+  <g transform="translate(680 350) rotate(-2.5) scale(0.86)" color="#2B6FD6"><use href="#deckCar"/></g>
+  <!-- upper-deck tie-down chains -->
+  <g stroke="#1A1F2E" stroke-width="1.5" opacity="0.7" fill="none">
+    <line x1="302" y1="350" x2="314" y2="334"/><line x1="364" y1="348" x2="352" y2="334"/>
+    <line x1="640" y1="352" x2="652" y2="336"/><line x1="700" y1="350" x2="688" y2="336"/>
+  </g>
+  <!-- one car already chained on the FRONT of the lower deck slot -->
+  <g transform="translate(360 466) rotate(-2) scale(0.9)" color="#A8AFBC"><use href="#deckCar"/></g>
+
+  <!-- ===== DRIVE-ON CAR — climbing the ramp into the rear lower-deck slot ===== -->
+  <g class="car-drive">
+    <g transform="translate(560 466) scale(0.92)">
+      <g filter="url(#rigShadow)" color="#C77818">
+        <!-- body -->
+        <path d="M -50 0 L -50 -15 Q -50 -21 -42 -22 L -29 -23 L -19 -36 Q -15 -40 -8 -40 L 17 -40 Q 27 -40 32 -34 L 42 -23 L 48 -22 Q 54 -21 54 -15 L 54 0 Z" fill="currentColor"/>
+        <path d="M -18 -36 L -8 -39 L 16 -39 Q 23 -39 28 -34 L 34 -25 L -24 -25 Z" fill="url(#carGlass)" opacity="0.92"/>
+        <line x1="6" y1="-39" x2="6" y2="-25" stroke="#2A2F3A" stroke-width="1.1" opacity="0.5"/>
+        <rect x="-48" y="-23" width="102" height="2.2" rx="1" fill="#FFFFFF" opacity="0.32"/>
+        <ellipse cx="52" cy="-12" rx="3" ry="4" fill="#FFE9A8" opacity="0.95"/>
+        <ellipse cx="-48" cy="-12" rx="2.4" ry="4" fill="#E5350D" opacity="0.85"/>
+      </g>
+      <!-- spinning wheels -->
+      <circle cx="-32" cy="0" r="12" fill="#0F1118"/>
+      <circle cx="36" cy="0" r="12" fill="#0F1118"/>
+      <g class="car-wheel" style="transform-origin:-32px 0"><circle cx="-32" cy="0" r="8.4" fill="url(#carRim)"/><g stroke="#3A3F4A" stroke-width="1.4"><line x1="-32" y1="-7" x2="-32" y2="7"/><line x1="-39" y1="0" x2="-25" y2="0"/><line x1="-37" y1="-5" x2="-27" y2="5"/><line x1="-37" y1="5" x2="-27" y2="-5"/></g></g>
+      <g class="car-wheel" style="transform-origin:36px 0"><circle cx="36" cy="0" r="8.4" fill="url(#carRim)"/><g stroke="#3A3F4A" stroke-width="1.4"><line x1="36" y1="-7" x2="36" y2="7"/><line x1="29" y1="0" x2="43" y2="0"/><line x1="31" y1="-5" x2="41" y2="5"/><line x1="31" y1="5" x2="41" y2="-5"/></g></g>
+      <!-- tailpipe puff as it drives up -->
+      <ellipse class="exhaust-puff" cx="-54" cy="-4" rx="9" ry="7" fill="url(#vaporCloud)"/>
+    </g>
+  </g>
+
+  <!-- ===== CHAIN CINCH on the just-loaded rear car ===== -->
+  <g class="chain-cinch">
+    <line x1="538" y1="466" x2="552" y2="440" stroke="#3A3F4A" stroke-width="2" stroke-dasharray="3 1.6"/>
+    <line x1="582" y1="466" x2="568" y2="440" stroke="#3A3F4A" stroke-width="2" stroke-dasharray="3 1.6"/>
+    <circle cx="552" cy="440" r="2.4" fill="#FFD200"/>
+    <circle cx="568" cy="440" r="2.4" fill="#FFD200"/>
+  </g>
+
+  <!-- ===== GROUND GUIDE / SPOTTER giving the driver the come-on signal ===== -->
+  <g filter="url(#rigShadow)" transform="translate(880 540)">
+    <ellipse cx="0" cy="2" rx="14" ry="3" fill="#1A1F2E" opacity="0.4"/>
+    <rect x="-6" y="-34" width="12" height="26" rx="4" fill="#FF7A1F"/>
+    <rect x="-6" y="-22" width="12" height="3" fill="#FFFFFF" opacity="0.7"/>
+    <circle cx="0" cy="-40" r="6" fill="#E8C9A0"/>
+    <rect x="-7" y="-46" width="14" height="6" rx="2" fill="#FFD200"/>
+    <!-- waving arm with signal paddle -->
+    <g class="signal-wave">
+      <line x1="6" y1="-30" x2="24" y2="-40" stroke="#FF7A1F" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="26" cy="-42" r="5" fill="#39C26B"/>
+    </g>
+    <line x1="-6" y1="-30" x2="-18" y2="-16" stroke="#FF7A1F" stroke-width="5" stroke-linecap="round"/>
+  </g>
+
+  <!-- ============================================================
+       BRAND LOCKUP (canonical flame) — injected verbatim
+       ============================================================ -->
   <g class="brand-lockup" filter="url(#rigShadow)" transform="translate(490 26)">
         <g class="brand-mark">
       <!-- EUSOTRIP_FLAME_LOGO_V2_CANONICAL - Canonical EusoTrip flame, source: _DesignSystem/assets/eusotrip_flame_logo_canonical.svg -->
@@ -1790,7 +1059,7 @@
           font-weight="800" font-size="14" letter-spacing="1.8" fill="#FFFFFF">TRUCK</text>
   </g>
 
-  <!-- LBS unit badge (below TRUCK) -->
+  <!-- LBS unit badge -->
   <g>
     <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
           fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
@@ -1799,63 +1068,84 @@
           font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">LBS</text>
   </g>
 
-  <!-- UNLOADING pill (amber) -->
+  <!-- LOADING pill (teal #0AC2C2) -->
   <g class="load-pill">
-    <rect x="60" y="100" width="178" height="32" rx="16" ry="16" fill="#F2B27A" opacity="0.95"/>
+    <rect x="60" y="100" width="178" height="32" rx="16" ry="16" fill="#0AC2C2" opacity="0.95"/>
     <circle cx="80" cy="116" r="5" fill="#FFFFFF" opacity="0.95"/>
-    <circle cx="80" cy="116" r="2.5" fill="#F2B27A"/>
+    <circle cx="80" cy="116" r="2.5" fill="#0AC2C2"/>
     <text x="100" y="122" font-family="Inter, system-ui, sans-serif"
           font-weight="800" font-size="13" letter-spacing="2.4"
-          fill="#FFFFFF" data-bind="state_label">UNLOADING</text>
+          fill="#FFFFFF" data-bind="state_label">LOADING</text>
   </g>
 
   <!-- Equipment label + subtitle -->
   <g opacity="0.9">
     <text x="60" y="78" font-family="Inter, system-ui, sans-serif"
           font-weight="700" font-size="13" letter-spacing="2" fill="#5B3FBF"
-          data-bind="equipment_label">CONTAINER CHASSIS</text>
+          data-bind="equipment_label">AUTO CARRIER</text>
     <line x1="60" y1="86" x2="240" y2="86" stroke="#9B7FD9" stroke-width="2" stroke-linecap="round"/>
     <text x="60" y="148" font-family="Inter, system-ui, sans-serif"
           font-weight="500" font-size="10" letter-spacing="1.2" fill="#7A5AB8"
-          data-bind="equipment_subtitle">INTERMODAL . 40 FT</text>
+          data-bind="equipment_subtitle">OPEN MULTI-LEVEL &#183; 9 CARS</text>
   </g>
 
-  <!-- Dock chip + ETA (opaque white) -->
+  <!-- Yard chip + ETA -->
   <g opacity="0.95">
     <rect x="60" y="160" width="320" height="22" rx="6" ry="6"
           fill="#FFFFFF" fill-opacity="0.95" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.45"/>
     <text data-bind="dock_id" x="72" y="176"
           font-family="Inter, system-ui, sans-serif"
-          font-weight="700" font-size="11" letter-spacing="1.4" fill="#5B3FBF">BERTH 2 . PORT TERMINAL</text>
+          font-weight="700" font-size="11" letter-spacing="1.4" fill="#5B3FBF">LANE 3 &#183; VEHICLE YARD</text>
     <text data-bind="eta_minutes" x="370" y="176" text-anchor="end"
           font-family="Inter, system-ui, sans-serif"
-          font-weight="600" font-size="10" letter-spacing="0.8" fill="#7A5AB8">ETA 30 MIN</text>
+          font-weight="600" font-size="10" letter-spacing="0.8" fill="#7A5AB8">ETA 22 MIN</text>
   </g>
 
-  <!-- Commodity chip (opaque white) -->
+  <!-- Commodity chip -->
   <g opacity="0.95">
     <rect x="60" y="190" width="320" height="22" rx="6" ry="6"
           fill="#FFFFFF" fill-opacity="0.95" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.45"/>
     <text data-bind="commodity_label" x="72" y="206"
           font-family="Inter, system-ui, sans-serif"
-          font-weight="700" font-size="11" letter-spacing="1.4" fill="#5B3FBF">EUSO 8843 . 42G1</text>
+          font-weight="700" font-size="11" letter-spacing="1.4" fill="#5B3FBF">6 OF 9 LOADED &#183; 18,400 LBS</text>
   </g>
 
-  <!-- Progress bar (amber) -->
+  <!-- US/MX/CA country-aware markings — auto-transport bonding + odometer/condition placards.
+       The renderer reveals exactly one group via data-country; default US visible. -->
+  <g data-country-group="US" opacity="0.95">
+    <rect x="60" y="222" width="320" height="22" rx="6" ry="6"
+          fill="#FFFFFF" fill-opacity="0.95" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.45"/>
+    <text x="72" y="238" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="10" letter-spacing="1.2" fill="#5B3FBF">US DOT &#183; MC AUTO-TRANSPORT BOND</text>
+  </g>
+  <g data-country-group="MX" opacity="0.95" style="display:none">
+    <rect x="60" y="222" width="320" height="22" rx="6" ry="6"
+          fill="#FFFFFF" fill-opacity="0.95" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.45"/>
+    <text x="72" y="238" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="10" letter-spacing="1.2" fill="#5B3FBF">SCT &#183; NOM-012 PESO/DIMENSION</text>
+  </g>
+  <g data-country-group="CA" opacity="0.95" style="display:none">
+    <rect x="60" y="222" width="320" height="22" rx="6" ry="6"
+          fill="#FFFFFF" fill-opacity="0.95" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.45"/>
+    <text x="72" y="238" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="10" letter-spacing="1.2" fill="#5B3FBF">NSC &#183; PROVINCIAL VEHICLE PERMIT</text>
+  </g>
+
+  <!-- Progress bar -->
   <g>
     <rect x="60" y="555" width="1080" height="6" rx="3" fill="#E5E2EF" opacity="0.6"/>
-    <rect class="progress-fill" x="60" y="555" width="540" height="6" rx="3"
-          fill="#F2B27A"
-          data-progress-base="1080" data-progress="0.5"/>
-    <text x="60" y="548" text-anchor="start"
+    <rect class="progress-fill" x="60" y="555" width="648" height="6" rx="3"
+          fill="#0AC2C2"
+          style="--load-progress: 0.6;"/>
+    <text x="1140" y="548" text-anchor="end"
           font-family="Inter, system-ui, sans-serif"
           font-weight="700" font-size="10" letter-spacing="1.4"
-          fill="#5B3FBF" opacity="0.85"><tspan data-bind="weight_label">65,000 LBS</tspan> &#183; <tspan data-bind="progress_pct">50</tspan>%</text>
+          fill="#5B3FBF" opacity="0.85"><tspan data-bind="weight_label">18,400 LBS</tspan> &#183; <tspan data-bind="progress_pct">60</tspan>%</text>
   </g>
 
   <!-- Chevron -->
   <g class="chevron">
-    <path d="M 1136 540 L 1151 525 L 1151 555 Z" fill="#9B7FD9"/>
+    <path d="M 70 540 L 55 525 L 55 555 Z" fill="#9B7FD9"/>
   </g>
 
   <!-- Iridescent rounded card border -->

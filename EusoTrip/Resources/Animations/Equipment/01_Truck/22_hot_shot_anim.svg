@@ -161,12 +161,17 @@
       <feGaussianBlur stdDeviation="3"/>
     </filter>
   </defs>
-  <g class="chassis-bob">
 
+  <!-- STATIC ENVIRONMENT — must NOT bob with the chassis (sky/horizon/ground
+       are world-fixed; only the rig + its own ambient effects ride the
+       suspension via .chassis-bob). -->
   <rect class="sky-bg" width="1200" height="600" fill="url(#sky)"/>
   <rect x="0" y="380" width="1200" height="70" fill="#FFFFFF" opacity="0.18"/>
-  <line x1="60" y1="475" x2="1140" y2="475" stroke="#9B7FD9" stroke-width="4" stroke-dasharray="14 9" stroke-linecap="round" opacity="0.55"/>
-  <ellipse cx="640" cy="486" rx="430" ry="6" fill="#1A1F2E" opacity="0.13"/>
+  <line class="ground-line" x1="60" y1="475" x2="1140" y2="475" stroke="#9B7FD9" stroke-width="4" stroke-linecap="round" opacity="0.55"/>
+  <ellipse class="ground-shadow" cx="640" cy="486" rx="430" ry="6" fill="#1A1F2E" opacity="0.13"/>
+
+  <!-- ROLLING RIG — everything below floats on the suspension bob. -->
+  <g class="chassis-bob">
 
   <!-- Wheel template — defined up-front so both rig groups can `<use>` it
        without needing forward references. Same template as the
@@ -302,9 +307,7 @@
   <g transform="translate(1030 460)">
     <g><use href="#wheelMed"/><animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.6s" repeatCount="indefinite"/></g>
   </g>
-  
-  <g opacity="0.75">
-  </g>
+
   <!-- ========== SPEED STREAKS ========== -->
   <g stroke="#9B7FD9" stroke-width="2.5" stroke-linecap="round" opacity="0.5">
     <line class="streak"    x1="1090" y1="445" x2="1145" y2="445"/>
@@ -313,21 +316,30 @@
   </g>
   <!-- ========== BOW AIR DISPLACEMENT ========== -->
   <ellipse class="bow-air" cx="180" cy="410" rx="38" ry="55" fill="url(#bowHaze)"/>
-  <!-- ========== EXHAUST PUFFS ========== -->
+  <!-- ========== DIESEL EXHAUST STACK (behind cab) — gives the puffs a real origin ========== -->
+  <g>
+    <rect x="303" y="300" width="6" height="42" rx="1" fill="#9098A8" stroke="#3A3F4A" stroke-width="0.5"/>
+    <rect x="303" y="300" width="6" height="2" rx="1" fill="#C5C9D2"/>
+    <ellipse cx="306" cy="300" rx="3.4" ry="1.4" fill="#1A1F2E" opacity="0.7"/>
+  </g>
+  <!-- ========== EXHAUST PUFFS — rise from the stack mouth (≈306,298) ========== -->
   <g filter="url(#softBlur)" opacity="0.5">
-    <circle cx="292" cy="200" r="6" fill="#C8CDD8">
-      <animate attributeName="cy" from="200" to="120" dur="2.6s" repeatCount="indefinite"/>
-      <animate attributeName="r"  from="6" to="14" dur="2.6s" repeatCount="indefinite"/>
+    <circle cx="306" cy="298" r="4" fill="#C8CDD8">
+      <animate attributeName="cy" from="298" to="238" dur="2.6s" repeatCount="indefinite"/>
+      <animate attributeName="cx" from="306" to="318" dur="2.6s" repeatCount="indefinite"/>
+      <animate attributeName="r"  from="4" to="13" dur="2.6s" repeatCount="indefinite"/>
       <animate attributeName="opacity" values="0;0.55;0.55;0" keyTimes="0;0.15;0.7;1" dur="2.6s" repeatCount="indefinite"/>
     </circle>
-    <circle cx="294" cy="200" r="5" fill="#C8CDD8">
-      <animate attributeName="cy" from="200" to="120" dur="2.6s" begin="-0.9s" repeatCount="indefinite"/>
-      <animate attributeName="r"  from="5" to="12" dur="2.6s" begin="-0.9s" repeatCount="indefinite"/>
+    <circle cx="306" cy="298" r="3.5" fill="#C8CDD8">
+      <animate attributeName="cy" from="298" to="238" dur="2.6s" begin="-0.9s" repeatCount="indefinite"/>
+      <animate attributeName="cx" from="306" to="316" dur="2.6s" begin="-0.9s" repeatCount="indefinite"/>
+      <animate attributeName="r"  from="3.5" to="11" dur="2.6s" begin="-0.9s" repeatCount="indefinite"/>
       <animate attributeName="opacity" values="0;0.55;0.55;0" keyTimes="0;0.15;0.7;1" dur="2.6s" begin="-0.9s" repeatCount="indefinite"/>
     </circle>
-    <circle cx="290" cy="200" r="4" fill="#C8CDD8">
-      <animate attributeName="cy" from="200" to="120" dur="2.6s" begin="-1.7s" repeatCount="indefinite"/>
-      <animate attributeName="r"  from="4" to="10" dur="2.6s" begin="-1.7s" repeatCount="indefinite"/>
+    <circle cx="306" cy="298" r="3" fill="#C8CDD8">
+      <animate attributeName="cy" from="298" to="238" dur="2.6s" begin="-1.7s" repeatCount="indefinite"/>
+      <animate attributeName="cx" from="306" to="314" dur="2.6s" begin="-1.7s" repeatCount="indefinite"/>
+      <animate attributeName="r"  from="3" to="9" dur="2.6s" begin="-1.7s" repeatCount="indefinite"/>
       <animate attributeName="opacity" values="0;0.55;0.55;0" keyTimes="0;0.15;0.7;1" dur="2.6s" begin="-1.7s" repeatCount="indefinite"/>
     </circle>
   </g>
@@ -340,7 +352,32 @@
   </g>
 
   <!-- ========== EUSOTRIP BRAND LOCKUP ========== -->
-  
-  
-  <!-- EUSOTRIP-FIX-2026-05-17 -->
+
+  </g><!-- /chassis-bob : rig + ambient effects ride the suspension; world stays still -->
+
+  <!-- ========== COUNTRY-SWITCHABLE UNIT / MARKING BADGE ==========
+       A hot-shot gooseneck flatbed hauling bare oilfield equipment (mud pump)
+       is NOT a hazmat load, so there are NO UN/DOT placards. What DOES change
+       by jurisdiction is (a) the rated-weight UNIT shown to the operator and
+       (b) the rear conspicuity-corner marking standard. Renderer selects the
+       active country by setting display:none on the two inactive groups
+       (default: country-US visible). Match these class names to the app's
+       locale switch (region == 'US' | 'CA' | 'MX').
+         US : LBS  · FMVSS 108 / DOT-C2 conspicuity
+         CA : KG   · CMVSS 108 (DOT-C2 accepted), bilingual signage
+         MX : KG   · NMX-D-225 retroreflective · NOM-068-SCT-2 inspección -->
+  <g class="country-US" transform="translate(1062 96)">
+    <rect x="0" y="0" width="86" height="24" rx="12" fill="#FFFFFF" stroke="url(#brandIridescent)" stroke-width="1.6" stroke-opacity="0.7"/>
+    <text x="43" y="16" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">LBS · DOT-C2</text>
+  </g>
+  <g class="country-CA" transform="translate(1062 96)" style="display:none">
+    <rect x="0" y="0" width="86" height="24" rx="12" fill="#FFFFFF" stroke="url(#brandIridescent)" stroke-width="1.6" stroke-opacity="0.7"/>
+    <text x="43" y="16" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">KG · CMVSS</text>
+  </g>
+  <g class="country-MX" transform="translate(1062 96)" style="display:none">
+    <rect x="0" y="0" width="86" height="24" rx="12" fill="#FFFFFF" stroke="url(#brandIridescent)" stroke-width="1.6" stroke-opacity="0.7"/>
+    <text x="43" y="16" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">KG · NOM-068</text>
+  </g>
+
+  <!-- EUSOTRIP-FIX-2026-05-17 · pixel/motion/country polish 2026-05-29 -->
 </svg>

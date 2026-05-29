@@ -44,17 +44,20 @@
          90 – 100%: hold empty
        =================================================================== */
 
-    /* Departing car drives DOWN ramp from rack toward yard (right side) */
-    .driving-car { animation: driving-car 7s ease-in-out infinite; transform-box: fill-box; }
+    /* Departing car drives DOWN ramp from rack toward yard (right side).
+       Eases away from rest, then rolls clear (decel). Two cars per 7s. */
+    .driving-car { animation: driving-car 7s cubic-bezier(0.4,0,0.2,1) infinite; transform-box: fill-box; }
     @keyframes driving-car {
       0%, 8%   { transform: translateX(0);     opacity: 0; }
-      14%      { transform: translateX(0);     opacity: 1; }
+      13%      { transform: translateX(0);     opacity: 1; }
       28%      { transform: translateX(220px); opacity: 1; }
-      36%      { transform: translateX(220px); opacity: 0; }
+      33%      { transform: translateX(220px); opacity: 1; }
+      38%      { transform: translateX(220px); opacity: 0; }
       45%      { transform: translateX(0);     opacity: 0; }
       55%      { transform: translateX(0);     opacity: 1; }
       70%      { transform: translateX(220px); opacity: 1; }
-      78%      { transform: translateX(220px); opacity: 0; }
+      75%      { transform: translateX(220px); opacity: 1; }
+      80%      { transform: translateX(220px); opacity: 0; }
       100%     { transform: translateX(0);     opacity: 0; }
     }
 
@@ -63,7 +66,7 @@
     @keyframes wheel-spin { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
 
     /* Cars on decks fade OUT as they're removed (unloading) */
-    .car-stack-grow { animation: car-stack-shrink 7s ease-in-out infinite; }
+    .car-stack-grow { animation: car-stack-shrink 7s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes car-stack-shrink {
       0%, 12%   { opacity: 1; }
       35%       { opacity: 0.85; }
@@ -71,20 +74,31 @@
       80%, 100% { opacity: 0.2; }
     }
 
-    /* Ramp deploys at start */
-    .ramp-deploy { transform-box: fill-box; transform-origin: 935px 405px;
-                   animation: ramp-deploy 7s ease-in-out infinite; }
-    @keyframes ramp-deploy {
-      0%, 4%    { transform: rotate(-12deg); }
-      10%, 100% { transform: rotate(0deg); }
+    /* WHEEL CHOCKS / TIE-DOWNS (AAR securement) — on UNLOAD the operators
+       RELEASE the straps & pull the chocks FIRST, before any car can move.
+       Chocks start set and are removed early in the cycle. */
+    .chock-set { animation: chock-release 7s cubic-bezier(0.4,0,0.2,1) infinite; transform-box: fill-box; }
+    @keyframes chock-release {
+      0%, 10%   { opacity: 0.92; }
+      24%       { opacity: 0; }
+      100%      { opacity: 0; }
     }
 
-    /* End door swung open at start */
+    /* Portable ramp pulls up to the open end door and lowers onto the deck
+       sill (decel settle — heavy steel ramp easing to rest). */
+    .ramp-deploy { transform-box: fill-box; transform-origin: 935px 405px;
+                   animation: ramp-deploy 7s cubic-bezier(0.34,1.2,0.64,1) infinite; }
+    @keyframes ramp-deploy {
+      0%, 4%    { transform: rotate(-12deg); }
+      11%, 100% { transform: rotate(0deg); }
+    }
+
+    /* End doors are opened first, then the ramp comes up — decel curve. */
     .end-door-open { transform-box: fill-box; transform-origin: 962px 282px;
-                     animation: end-door 7s ease-in-out infinite; }
+                     animation: end-door 7s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes end-door {
-      0%, 4%    { transform: rotate(0deg); }
-      10%, 100% { transform: rotate(-90deg); }
+      0%, 2%    { transform: rotate(0deg); }
+      9%, 100%  { transform: rotate(-90deg); }
     }
 
     /* Operator subtle sway */
@@ -109,11 +123,27 @@
       50%      { transform: translateX(-30px); opacity: 0.75; }
     }
 
+    /* ============ COUNTRY-SWITCHABLE STENCILS ============
+       Auto racks carry finished automobiles — a NON-HAZMAT commodity, so
+       NO DOT/PHMSA/SCT/TDG hazard placards apply (n/a). What DOES differ by
+       country of interchange is the capacity/weight stencil unit:
+         US (FRA 49 CFR 224 / AAR)  — NET TONS, lbs LT WT
+         CA (Transport Canada TC)   — metric tonnes, kg
+         MX (SCT / ferrocarril)     — toneladas, kg
+       Renderer selects ONE via the root <svg> data-country attribute
+       (default US). Groups: .country-US / .country-CA / .country-MX. */
+    .country-CA, .country-MX { display: none; }
+    svg[data-country="CA"] .country-US, svg[data-country="CA"] .country-MX { display: none; }
+    svg[data-country="CA"] .country-CA { display: inline; }
+    svg[data-country="MX"] .country-US, svg[data-country="MX"] .country-CA { display: none; }
+    svg[data-country="MX"] .country-MX { display: inline; }
+
     @media (prefers-reduced-motion: reduce) {
       .brand-lockup, .brand-mark, .brand-word,
       .bg-activity,
       .car-stack-grow,
       .chevron,
+      .chock-set,
       .driving-car,
       .end-door-open,
       .load-pill,
@@ -125,6 +155,9 @@
       .wheel-spin {
         animation: none !important;
       }
+      /* Stilled: show secured car at rest, chocks in place, before release */
+      .driving-car { opacity: 0 !important; }
+      .chock-set   { opacity: 0.92 !important; }
     }
 
   ]]></style>
@@ -505,12 +538,32 @@
       </g>
     </g>
 
+    <!-- ============================================================
+         WHEEL CHOCKS / TIE-DOWN STRAPS (AAR securement)
+         Set at rest; RELEASED early in the unload cycle (chock-release).
+         Lower-deck wheels sit at y=390 (deck base 372+18).
+         ============================================================ -->
+    <g class="chock-set" fill="#FFD23A" stroke="#1A1F2E" stroke-width="0.3">
+      <!-- fore + aft chock per lower-deck car (wheels contact at y=395).
+           Car1 x=294/328, Car2 393/427, Car3 493/527, Car4 593/627, Car5 693/727. -->
+      <g><polygon points="287,395 292,395 292,389"/><polygon points="335,395 330,395 330,389"/></g>
+      <g><polygon points="386,395 391,395 391,389"/><polygon points="434,395 429,395 429,389"/></g>
+      <g><polygon points="486,395 491,395 491,389"/><polygon points="534,395 529,395 529,389"/></g>
+      <g><polygon points="586,395 591,395 591,389"/><polygon points="634,395 629,395 629,389"/></g>
+      <g><polygon points="686,395 691,395 691,389"/><polygon points="734,395 729,395 729,389"/></g>
+    </g>
+
     <!-- Reporting marks + AAR stencils -->
     <text x="260" y="280" font-family="Inter, system-ui, sans-serif"
           font-weight="900" font-size="14" fill="#FFFFFF" letter-spacing="2"
           data-bind="reporting_marks">EUSO 7705</text>
-    <text x="260" y="294" font-family="Inter, system-ui, sans-serif"
+    <!-- Capacity stencil — country-switchable unit (default US shown) -->
+    <text class="country-US" x="260" y="294" font-family="Inter, system-ui, sans-serif"
           font-weight="700" font-size="6.4" fill="#FFFFFF" opacity="0.85" letter-spacing="0.8">CAPY 70 TON · BI-LEVEL · 89' AAR PLATE F</text>
+    <text class="country-CA" x="260" y="294" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="6.4" fill="#FFFFFF" opacity="0.85" letter-spacing="0.8">CAP 63,5 t · BI-NIVEAU · 27,1 m · GABARIT AAR F</text>
+    <text class="country-MX" x="260" y="294" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="6.4" fill="#FFFFFF" opacity="0.85" letter-spacing="0.8">CAP 63,5 t · BI-NIVEL · 27,1 m · GALIBO AAR F</text>
 
     <!-- AAR class diamond (V = vehicle car) -->
     <g transform="translate(280 350)">
@@ -658,8 +711,10 @@
       <rect x="6" y="-10" width="48" height="11" rx="3" fill="url(#vehicleRed)" stroke="#7A1810" stroke-width="0.4"/>
       <rect x="9" y="-8" width="18" height="9" rx="1" fill="#1A2330" opacity="0.55"/>
       <rect x="32" y="-8" width="18" height="9" rx="1" fill="#1A2330" opacity="0.55"/>
-      <!-- Headlights (driving direction = LEFT, into car) -->
-      <rect x="-2" y="6" width="3" height="4" rx="0.4" fill="#FFD23A"/>
+      <!-- Headlights — leading edge faces RIGHT (driving OUT of the rack) -->
+      <rect x="59" y="6" width="3" height="4" rx="0.4" fill="#FFD23A"/>
+      <!-- Tail lamp at trailing (left) edge -->
+      <rect x="-2" y="6" width="2" height="4" rx="0.4" fill="#A6261A"/>
       <!-- Wheels -->
       <g class="wheel-spin" style="transform-origin: center;">
         <circle cx="13" cy="18" r="5" fill="#1A1F2E"/>
@@ -1390,7 +1445,7 @@
     <text x="1140" y="548" text-anchor="end"
           font-family="Inter, system-ui, sans-serif"
           font-weight="700" font-size="10" letter-spacing="1.4"
-          fill="#5B3FBF" opacity="0.85"><tspan data-bind="weight_label">70 NET TONS</tspan> &#183; <tspan data-bind="progress_pct">50</tspan>%</text>
+          fill="#5B3FBF" opacity="0.85"><tspan class="country-US" data-bind="weight_label">70 NET TONS</tspan><tspan class="country-CA" data-bind="weight_label">63,5 t NET</tspan><tspan class="country-MX" data-bind="weight_label">63,5 t NETAS</tspan> &#183; <tspan data-bind="progress_pct">50</tspan>%</text>
   </g>
 
   <g class="chevron">

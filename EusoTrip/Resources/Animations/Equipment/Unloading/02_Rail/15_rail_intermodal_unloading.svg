@@ -48,17 +48,21 @@
 
     /* Container starts settled on bottom (y_offset 0 = base render y=284..378).
        Lifts up to -120 (y=164..258). Traverses +480 X. Descends to +142 (y=426..520, on chassis). */
-    .container-lift { animation: container-lift 7s ease-in-out infinite;
+    /* Heavy-load decel: hoisting a loaded box eases in off the bottom, traverses
+       at speed, then creeps the last cm onto the chassis with a touch of weight-
+       settle (over-travel at 83% relaxing to rest at 85%). Material-decel curve. */
+    .container-lift { animation: container-lift 7s cubic-bezier(0.4,0,0.2,1) infinite;
                       transform-box: fill-box; transform-origin: center; }
     @keyframes container-lift {
       0%, 15%   { transform: translate(0, 0); }
-      30%       { transform: translate(0, 0); }
-      50%       { transform: translate(0, -120px); }
-      65%       { transform: translate(480px, -120px); }
-      85%, 100% { transform: translate(480px, 142px); }
+      30%       { transform: translate(0, 0); }       /* held while IBCs disengage */
+      50%       { transform: translate(0, -120px); }  /* hoisted clear of stack */
+      65%       { transform: translate(480px, -120px); } /* traverse to chassis lane */
+      83%       { transform: translate(480px, 143.5px); } /* touchdown over-travel */
+      85%, 100% { transform: translate(480px, 142px); }  /* weight settles on chassis */
     }
 
-    .trolley-shift { animation: trolley-shift 7s ease-in-out infinite;
+    .trolley-shift { animation: trolley-shift 7s cubic-bezier(0.4,0,0.2,1) infinite;
                      transform-box: fill-box; transform-origin: center; }
     @keyframes trolley-shift {
       0%, 50%   { transform: translateX(0); }
@@ -67,7 +71,7 @@
 
     /* Cable stretch tracks vertical position of spreader.
        Settled on bottom: scale 1. Lifted high: scale 0.15. Descended on chassis: scale 1.95. */
-    .cable-stretch { animation: cable-stretch 7s ease-in-out infinite;
+    .cable-stretch { animation: cable-stretch 7s cubic-bezier(0.4,0,0.2,1) infinite;
                      transform-box: fill-box; transform-origin: center top; }
     @keyframes cable-stretch {
       0%, 15%   { transform: scaleY(1); }
@@ -569,12 +573,46 @@
     <text x="306" y="424" font-family="Inter, system-ui, sans-serif"
           font-weight="800" font-size="10" letter-spacing="1.4" fill="#FFFFFF"
           data-bind="iso_code_bottom">42G1</text>
-    <text x="306" y="436" font-family="Inter, system-ui, sans-serif"
-          font-weight="700" font-size="6.4" letter-spacing="1" fill="#FFFFFF" opacity="0.85">USA</text>
-    <text x="306" y="448" font-family="Inter, system-ui, sans-serif"
-          font-weight="700" font-size="5.6" letter-spacing="0.6" fill="#FFFFFF" opacity="0.78">MAX GROSS 67,200 LB</text>
-    <text x="306" y="458" font-family="Inter, system-ui, sans-serif"
-          font-weight="700" font-size="5.6" letter-spacing="0.6" fill="#FFFFFF" opacity="0.78">TARE 8,820 LB</text>
+    <!-- ============================================================
+         COUNTRY-SWITCHABLE CONTAINER STENCIL + HAZMAT PLACARD SLOT
+         Intermodal containers cross US/MX/CA in interchange; country identifier,
+         weight units, and (for dangerous goods) placard regime differ. Renderer
+         shows exactly ONE country group by hiding the others (default country-US
+         visible; set display:none on .country-MX/.country-CA).
+         US: USA / lb / DOT-PHMSA NA placard ·
+         MX: MEX / kg / SICT NOM-002/004 placard ·
+         CA: CAN / kg / TC TDG placard (bilingual hazard text).
+         ============================================================ -->
+    <g class="country-US">
+      <text x="306" y="436" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6.4" letter-spacing="1" fill="#FFFFFF" opacity="0.85">USA</text>
+      <text x="306" y="448" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="5.6" letter-spacing="0.6" fill="#FFFFFF" opacity="0.78">MAX GROSS 67,200 LB</text>
+      <text x="306" y="458" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="5.6" letter-spacing="0.6" fill="#FFFFFF" opacity="0.78">TARE 8,820 LB</text>
+    </g>
+    <g class="country-MX" style="display:none">
+      <text x="306" y="436" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6.4" letter-spacing="1" fill="#FFFFFF" opacity="0.85">MEX</text>
+      <text x="306" y="448" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="5.6" letter-spacing="0.6" fill="#FFFFFF" opacity="0.78">PESO BRUTO 30 480 KG</text>
+      <text x="306" y="458" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="5.6" letter-spacing="0.6" fill="#FFFFFF" opacity="0.78">TARA 4 000 KG · NOM-002-SCT</text>
+    </g>
+    <g class="country-CA" style="display:none">
+      <text x="306" y="436" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6.4" letter-spacing="1" fill="#FFFFFF" opacity="0.85">CAN</text>
+      <text x="306" y="448" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="5.6" letter-spacing="0.6" fill="#FFFFFF" opacity="0.78">MASSE BRUTE 30 480 KG</text>
+      <text x="306" y="458" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="5.6" letter-spacing="0.6" fill="#FFFFFF" opacity="0.78">TARE 4 000 KG · TC TDG</text>
+    </g>
+    <!-- Hazmat placard slot (UN diamond) — hidden by default; app reveals for DG lading -->
+    <g class="hazmat-placard" style="display:none" transform="translate(470 438) rotate(45)">
+      <rect x="-9" y="-9" width="18" height="18" fill="#FFFFFF" stroke="#1A1F2E" stroke-width="0.8"/>
+      <text transform="rotate(-45)" x="0" y="2" text-anchor="middle"
+            font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6" fill="#1A1F2E">8</text>
+    </g>
 
     <!-- EUSOTRIP brand badge -->
     <g>
@@ -1003,44 +1041,16 @@
     </g>
 
     <!-- ============================================================
-         SPREADER + TOP CONTAINER (lift assembly)
-         AT START (0-15%): SETTLED on bottom container — spreader y=260, top container y=284..378.
-         At 30-50%: LIFTS UP (translateY 0 -> -120). Spreader y=140, top y=164..258.
-         At 50-65%: TRAVERSES laterally (translate +480px while lifted).
-         At 65-85%: DESCENDS onto chassis (translateY -120 -> 0 at +480 lateral).
-                    Final position: spreader at x=836..1060 effectively, top container x=770..990, y=410..504.
-                    Actually with translate(480,0) applied to base spreader at x=288..512:
-                    spreader becomes 768..992, container 770..990, container bottom at y=378+0 = ... wait.
-                    Base top container is at x=290..510, y=284..378.
-                    After translate(480, 0): x=770..990, y=284..378.
-                    But we need it to land on chassis whose top deck is at y=520.
-                    Chassis twist locks at x=762..778 and 982..998, y~516.
-                    So top container bottom corners need to align with chassis top: y=520.
-                    Container is 94 tall, so top container y=426..520 when on chassis.
-                    Base position (animated start): y=284..378. Bottom corners at y=378.
-                    For container BOTTOM to land at y=520, we need translateY = 520 - 378 = +142.
-                    And X: chassis center at x=880, container center base x=400, so translateX = 480.
-                    But we set translate(480, 0) — that means it ends at chassis level only horizontally!
-                    NEED TO REVISE: end translateY should be +142, not 0!
-         WAIT — checking loading reference: top container in LOADING starts y=268..378 settled with -120 offset
-         meaning HIGH = -120, settled = 0 corresponds to base y=268..378 (matched with bottom at y=378+).
-         So in loading: top container settled means y=268..378 in DOM coords.
-         For UNLOADING: same start (settled on bottom). End on chassis means moving DOWN +142 not just +0.
-         I need to redesign animation. Drayage chassis top deck is y=520.
-         Container is 94 px tall, so container needs y_bottom=520, y_top=426.
-         At animation end: container should be at y=426..520 (same X shifted +480).
-         Base (rendered) position: y=284..378.
-         translateY needed = 426-284 = +142.
-         BUT we also need to consider the spreader is 14 tall and includes cones below.
-         Actually spreader goes from y=260 to y=274 with cones extending to y=284.
-         If container starts at y=284, then translateY=+142 would put container at y=426.
-         BUT the trolley/cables are anchored to the beam at y=120. Cables lengthen.
-         OK so the cable stretch doesn't need to handle the +142 down — cables get LONGER when descending.
-         I'll define container-lift to go: 0->0 at 0%, 0->0 at 15%, 0->0 at 30%,
-                                          0->-120 at 50% (lift up),
-                                          480->-120 at 65% (traverse),
-                                          480->+142 at 85% (descend onto chassis).
-         Cable-stretch: 1 -> 1 -> 1 -> 0.45 (lifted, short) -> 0.45 (traversing short) -> 1.6 (descended, long).
+         SPREADER + TOP CONTAINER (lift assembly) — geometry & motion spec
+         Base (rendered) coords: spreader y=270..284, top container x=290..510, y=284..378.
+         Start: settled on the bottom container (bottom corners at y=378 = bottom box top).
+         Motion (transform on .container-lift):
+           hoist clear   -> translate(0,   -120)  spreader high, top box at y=164..258
+           traverse      -> translate(480, -120)  over drayage chassis lane (center x=880)
+           land on chassis-> translate(480, +142) top box at x=770..990, y=426..520
+         Landing alignment: bottom corner castings at x=770/990 sit on chassis castings
+         (x=762..778 / 982..998); box bottom y=520 mates the chassis deck (top y=516).
+         Cables (.cable-stretch) lengthen as the box descends; chassis twistlocks engage 85-95%.
          ============================================================ -->
     <g class="container-lift">
       <!-- Spreader frame (above top container) -->

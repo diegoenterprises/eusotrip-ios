@@ -43,18 +43,33 @@
          90 – 100%: hold full + reset
        =================================================================== */
 
-    .hatch-open { transform-box: fill-box; transform-origin: 622px 270px;
-                  animation: hatch-open 7s ease-in-out infinite; }
+    /* Hatch cover hinges at its OWN left edge (fill-box origin = left center).
+       Cubic-bezier decel so the cover lifts and settles like a real hinged lid. */
+    .hatch-open { transform-box: fill-box; transform-origin: left center;
+                  animation: hatch-open 7s cubic-bezier(0.34,1.2,0.64,1) infinite; }
     @keyframes hatch-open {
-      0%, 4%   { transform: rotate(0deg); }
-      10%, 100% { transform: rotate(-110deg); }
+      0%, 4%    { transform: rotate(0deg); }
+      10%, 100% { transform: rotate(-108deg); }
     }
 
-    .grain-spout { transform-box: fill-box; transform-origin: 622px 200px;
-                   animation: spout-drop 7s ease-in-out infinite; }
+    /* Telescoping spout extends DOWNWARD — fill-box origin at top so it grows down. */
+    .grain-spout { transform-box: fill-box; transform-origin: center top;
+                   animation: spout-drop 7s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes spout-drop {
       0%, 8%    { transform: scaleY(0.4); opacity: 0.7; }
       20%, 100% { transform: scaleY(1);   opacity: 1; }
+    }
+
+    /* Grain pouring from the spout tip into the open hatch — the central
+       act of grain loading. Fades in once the spout is down (12%), holds
+       through the fill, fades as the car tops off. Origin at TOP so the
+       stream grows downward out of the spout mouth. */
+    .grain-flow { transform-box: fill-box; transform-origin: center top;
+                  animation: grain-flow 7s ease-in-out infinite; }
+    @keyframes grain-flow {
+      0%, 10%   { opacity: 0; transform: scaleY(0.1); }
+      16%, 86%  { opacity: 0.95; transform: scaleY(1); }
+      94%, 100% { opacity: 0; transform: scaleY(0.1); }
     }
 
     .level-rise { transform-box: fill-box; transform-origin: bottom;
@@ -94,6 +109,7 @@
       .brand-lockup, .brand-mark, .brand-word,
       .chevron,
       .dust-wisp,
+      .grain-flow,
       .grain-spout,
       .hatch-open,
       .level-rise,
@@ -490,6 +506,25 @@
     </g>
     <rect x="20" y="490" width="1160" height="5" fill="#7A7F88"/>
     <rect x="20" y="490" width="1160" height="1.6" fill="#C0C5CD"/>
+  </g>
+
+  <!-- GRAIN FLOW — dense column pouring from the spout outlet lip (y=271) into
+       the open hatch (cy=270). Renders BELOW the dust wisp so dust billows over
+       the falling grain (physically correct). Grows downward from the spout mouth. -->
+  <g class="grain-flow">
+    <!-- tapered stream from spout mouth widening slightly toward the hatch -->
+    <path d="M 615 270 L 629 270 L 631 282 L 613 282 Z" fill="url(#grainColor)" opacity="0.95"/>
+    <rect x="616" y="270" width="12" height="12" fill="url(#grainColor)" opacity="0.5"/>
+    <!-- individual kernels catching light within the stream -->
+    <g fill="#F4D77A" opacity="0.9">
+      <circle cx="619" cy="274" r="1"/>
+      <circle cx="625" cy="277" r="1"/>
+      <circle cx="621" cy="280" r="0.9"/>
+      <circle cx="627" cy="273" r="0.9"/>
+      <circle cx="617" cy="278" r="0.8"/>
+    </g>
+    <!-- spill heap at the hatch lip where grain mounds before sinking in -->
+    <path d="M 606 281 Q 622 274 638 281 L 638 283 L 606 283 Z" fill="url(#grainColor)" opacity="0.85"/>
   </g>
 
   <!-- DUST WISP at fill point (rises above the open hatch) -->
@@ -1202,6 +1237,36 @@
 
   <g class="chevron">
     <path d="M 70 540 L 55 525 L 55 555 Z" fill="#9B7FD9"/>
+  </g>
+
+  <!-- ============================================================
+       COUNTRY-AWARE INTERCHANGE BADGE  (grain = NON-hazmat: no
+       UN/DOT placard required in any of US/MX/CA). Covered-hopper
+       AAR body stencils (CAPY / LD LMT in lb + CU FT) are an AAR
+       INTERCHANGE standard and stay identical across US/MX/CA, so
+       they are NOT switched. Only the commercial WEIGHT readout
+       unit + the interchange origin code differ by jurisdiction.
+
+       RENDERER SELECTION: the host shows exactly ONE of these three
+       groups by class. Default = country-US visible; hide the other
+       two (display:none). e.g. in SwiftUI/WebView set
+         .country-MX, .country-CA { display:none }
+       and flip per the shipment's origin country.
+       ============================================================ -->
+  <g font-family="Inter, system-ui, sans-serif" font-weight="800"
+     font-size="9" letter-spacing="1.2" fill="#5B3FBF" opacity="0.8">
+    <g class="country-US">
+      <rect x="430" y="540" width="150" height="16" rx="8" fill="#FFFFFF" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+      <text x="444" y="551">US · NET TONS · AAR</text>
+    </g>
+    <g class="country-MX" style="display:none">
+      <rect x="430" y="540" width="150" height="16" rx="8" fill="#FFFFFF" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+      <text x="444" y="551">MX · TONELADAS · AAR</text>
+    </g>
+    <g class="country-CA" style="display:none">
+      <rect x="430" y="540" width="150" height="16" rx="8" fill="#FFFFFF" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+      <text x="444" y="551">CA · TONNES · AAR</text>
+    </g>
   </g>
 
   <rect class="card-border" x="20" y="20" width="1160" height="560" rx="22"

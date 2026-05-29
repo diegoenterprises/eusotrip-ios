@@ -33,27 +33,47 @@
       50%      { opacity: 0.65; }
     }
     /* ============ CARGO HANDLING MOTION ============ */
+    /* Real STS unloading cycle: empty spreader travels OUT high (already over the
+       ship at 0%), lowers onto the box in the cell (22-38%), twistlocks ENGAGE
+       (38-44%), the box is hoisted up (44-62%), then the trolley carries it back
+       to the dock (62-100%). Reefer power is cut BEFORE the lift (safety: a live
+       reefer is never moved). Decel easing on every powered move. */
 
-    .crane-ascend { animation: crane-ascend 6s ease-in-out infinite; }
+    .crane-ascend {
+      animation: crane-ascend 6.6s cubic-bezier(0.4,0,0.2,1) infinite;
+    }
     @keyframes crane-ascend {
-      0%   { transform: translateY(0); }
-      35%  { transform: translateY(-180px); }
-      55%  { transform: translateY(-180px); }
-      85%, 100% { transform: translateY(0); }
+      0%        { transform: translateY(-110px); }   /* empty spreader, hoisted high */
+      22%, 38%  { transform: translateY(0);     }    /* lowered onto the box in the cell */
+      62%, 100% { transform: translateY(-110px); }   /* box hoisted; carried home high */
     }
-    .trolley-traverse { animation: trolley-traverse 6s ease-in-out infinite; }
-    @keyframes trolley-traverse {
-      0%   { transform: translateX(0); }
-      40%  { transform: translateX(440px); }
-      60%  { transform: translateX(440px); }
-      100% { transform: translateX(0); }
+    /* Hoist cables track the spreader (transform-origin at the trolley anchor). */
+    .hoist-rope {
+      transform-origin: 90px 82px;
+      animation: hoist-rope 6.6s cubic-bezier(0.4,0,0.2,1) infinite;
+    }
+    @keyframes hoist-rope {
+      0%        { transform: scaleY(0.085); }   /* short: spreader tucked under trolley */
+      22%, 38%  { transform: scaleY(1);     }   /* paid out to the box in the cell */
+      62%, 100% { transform: scaleY(0.085); }
     }
 
-    .twist-lock-pulse-r { animation: twist-lock-pulse-r 6s ease-in-out infinite; }
+    .trolley-traverse {
+      animation: trolley-traverse 6.6s cubic-bezier(0.45,0,0.25,1) infinite;
+    }
+    @keyframes trolley-traverse {
+      0%   { transform: translateX(440px); }   /* starts out over the ship */
+      38%  { transform: translateX(440px); }   /* held through lower + engage */
+      62%  { transform: translateX(440px); }   /* held through the lift */
+      100% { transform: translateX(0); }       /* carries the box back to dock */
+    }
+
+    /* Twistlocks: armed/grey while the spreader is empty + descending, ENGAGE
+       gold once seated on the box, stay locked through lift + carry-home. */
+    .twist-lock-pulse-r { animation: twist-lock-pulse-r 6.6s ease-in-out infinite; }
     @keyframes twist-lock-pulse-r {
-      0%, 50% { fill: #FFE680; }
-      55%, 75% { fill: #6A6F78; }
-      80%, 100% { fill: #6A6F78; }
+      0%, 34%   { fill: #6A6F78; }    /* empty spreader descending */
+      40%, 100% { fill: #FFE680; }    /* engaged: gripping the box, lift + carry */
     }
 
     .gland-glow { animation: gland-glow 2.4s ease-in-out infinite; }
@@ -61,12 +81,24 @@
       0%, 100% { opacity: 0.55; }
       50%      { opacity: 0.95; }
     }
+    /* Box reefer cold-end loses dock/deck power just before it is lifted away. */
+    .plug-deenergise { animation: plug-deenergise 6.6s ease-in-out infinite; }
+    @keyframes plug-deenergise {
+      0%, 38%   { opacity: 1;    }    /* still plugged in, sitting in the cell */
+      44%, 100% { opacity: 0.18; }    /* unplugged before the hoist lifts it away */
+    }
+    /* Country-switchable reefer set-point units — renderer toggles
+       .country-US (default, °F) / .country-MX / .country-CA (°C). */
+    .country-MX, .country-CA { display: none; }
+
     @media (prefers-reduced-motion: reduce) {
       .brand-lockup,
       .brand-mark,
       .brand-word,
       .chevron,
       .crane-ascend,
+      .hoist-rope,
+      .plug-deenergise,
       .gland-glow,
       .load-pill,
       .progress-fill,
@@ -75,6 +107,12 @@
       .twist-lock-pulse-r {
         animation: none !important;
       }
+      /* Still the cycle mid-hoist: box gripped, lifted clear, unplugged. */
+      .crane-ascend { transform: translateY(-110px) !important; }
+      .hoist-rope   { transform: scaleY(0.085) !important; }
+      .trolley-traverse { transform: translateX(220px) !important; }
+      .twist-lock-pulse-r { fill: #FFE680 !important; }
+      .plug-deenergise { opacity: 0.18 !important; }
     }
 
   ]]></style>
@@ -307,24 +345,31 @@
   <g transform="translate(160 120)" data-fix="vessel-trolley-rebase">
   <g class="trolley-traverse">
     <rect x="60" y="60" width="60" height="22" rx="3" fill="#3A3F4A"/>
-    <line x1="72" y1="82" x2="72" y2="200" stroke="#1A1F2E" stroke-width="3"/>
-    <line x1="108" y1="82" x2="108" y2="200" stroke="#1A1F2E" stroke-width="3"/>
+    <g class="hoist-rope">
+      <line x1="72" y1="82" x2="72" y2="200" stroke="#1A1F2E" stroke-width="3"/>
+      <line x1="108" y1="82" x2="108" y2="200" stroke="#1A1F2E" stroke-width="3"/>
+    </g>
     <g class="crane-ascend">
       <rect x="32" y="200" width="116" height="14" rx="2" fill="#3A3F4A"/>
       <rect class="twist-lock-pulse-r" x="36" y="212" width="6" height="6"/>
       <rect class="twist-lock-pulse-r" x="138" y="212" width="6" height="6"/>
       <rect x="32" y="216" width="116" height="100" fill="url(#reeferWhite)"/>
       <rect x="32" y="216" width="116" height="3" fill="#FFFFFF" opacity="0.55"/>
-      <!-- Reefer end glow -->
-      <rect x="128" y="216" width="20" height="100" fill="#0AC2C2" opacity="0.6"/>
+      <!-- Reefer end glow — cold-end loses power just before the box is lifted -->
+      <rect class="plug-deenergise" x="128" y="216" width="20" height="100" fill="#0AC2C2"/>
       <text x="90" y="266" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
             font-weight="800" font-size="13" fill="#5B3FBF" letter-spacing="2"
             data-bind="container_id">EUSO 8843</text>
       <text x="90" y="284" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
             font-weight="700" font-size="9" fill="#5B3FBF" letter-spacing="1.5"
             data-bind="iso_code">45R1</text>
-      <text x="90" y="302" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
-            font-weight="700" font-size="8" fill="#0AC2C2" letter-spacing="1.4">-10&#176;F</text>
+      <!-- Reefer set-point — country-switchable units (US °F default, MX/CA °C) -->
+      <g class="country-US"><text x="90" y="302" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="8" fill="#0AC2C2" letter-spacing="1.4">SET +14&#176;F</text></g>
+      <g class="country-MX"><text x="90" y="302" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="8" fill="#0AC2C2" letter-spacing="1.4">SET &#8722;10&#176;C</text></g>
+      <g class="country-CA"><text x="90" y="302" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="8" fill="#0AC2C2" letter-spacing="1.4">SET &#8722;10&#176;C</text></g>
     </g>
   </g>
   </g>

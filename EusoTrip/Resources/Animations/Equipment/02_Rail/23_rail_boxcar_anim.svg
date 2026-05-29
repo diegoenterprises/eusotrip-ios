@@ -253,9 +253,7 @@
       <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.4s" repeatCount="indefinite"/>
     </g>
   </g>
-  
-  <g opacity="0.75">
-  </g>
+
   <!-- ========== BALLAST SPRAY behind trailing bogie ========== -->
   <g filter="url(#softBlur)">
     <ellipse class="spray"   cx="1030" cy="500" rx="6" ry="3" fill="url(#dustCloud)"/>

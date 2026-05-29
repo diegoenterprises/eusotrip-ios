@@ -34,7 +34,9 @@
     }
     /* ============ CARGO HANDLING MOTION ============ */
 
-    .gauge-fall { animation: gauge-fall 6s ease-in-out infinite;
+    /* Cargo-tank pressure falls as cryo pumps empty the spheres (discharge).
+       Decel ease = needle eases into target each beat (Bourdon gauge settle). */
+    .gauge-fall { animation: gauge-fall 6s cubic-bezier(0.4,0,0.2,1) infinite;
                   transform-box: fill-box; transform-origin: center; }
     @keyframes gauge-fall {
       0%   { transform: rotate(70deg); }
@@ -52,15 +54,26 @@
       30%  { opacity: 0.55; }
       100% { transform: translateY(-50px) scale(1.3); opacity: 0; }
     }
-    .arm-articulate { animation: arm-articulate 6s ease-in-out infinite;
-                      transform-box: fill-box; transform-origin: 200px 240px; }
+    /* QCDC-coupled arms are positively locked once connected; only a hair of
+       drift with hull swell — not a wide swing. */
+    .arm-articulate { animation: arm-articulate 7s ease-in-out infinite;
+                      transform-box: fill-box; transform-origin: 200px 380px; }
     @keyframes arm-articulate {
-      0%, 100% { transform: rotate(-6deg); }
-      40%, 60% { transform: rotate(6deg); }
+      0%, 100% { transform: rotate(-1.1deg); }
+      50%      { transform: rotate(1.1deg); }
     }
+    /* LIQUID flow — UNLOADING = ship -> shore: ship cargo pumps push LNG to the
+       terminal, so dashes march toward shore (left, reversed vs loading). */
     .fluid-flow { animation: fluid-flow 1.4s linear infinite; }
     @keyframes fluid-flow {
-      0%   { stroke-dashoffset: 28; }
+      0%   { stroke-dashoffset: 0; }
+      100% { stroke-dashoffset: 28; }
+    }
+    /* VAPOR return — UNLOADING = shore -> ship: terminal sends gas back to keep
+       cargo-tank pressure up as liquid leaves, so vapor flows OPPOSITE liquid. */
+    .vapor-flow { animation: vapor-flow 1.8s linear infinite; }
+    @keyframes vapor-flow {
+      0%   { stroke-dashoffset: 24; }
       100% { stroke-dashoffset: 0; }
     }
 
@@ -71,6 +84,7 @@
       .brand-word,
       .chevron,
       .fluid-flow,
+      .vapor-flow,
       .frost-pulse,
       .gauge-fall,
       .load-pill,
@@ -248,55 +262,116 @@
   <g filter="url(#rigShadow)">
     <rect x="60" y="380" width="120" height="80" fill="#5A606D"/>
     <rect x="60" y="380" width="120" height="6" fill="#FFFFFF" opacity="0.45"/>
-    <text x="120" y="430" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+    <text x="120" y="412" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
           font-weight="800" font-size="10" fill="#FFFFFF" letter-spacing="1.4">LNG TERMINAL</text>
   </g>
-  <!-- 4 articulated arms (insulated, with frost) -->
-  <g class="arm-articulate" style="transform-origin:140px 380px">
+
+  <!-- ============================================================
+       COUNTRY-SWITCHABLE HAZMAT PLACARD  (regulated cargo: LNG)
+       Cargo = Methane, refrigerated liquid (LNG), UN 1972, Class 2.1
+       flammable gas. Renderer shows ONE group by jurisdiction of the berth:
+         US  (USCG 33 CFR 127 / 49 CFR / PHMSA) -> .country-US
+         MX  (SCT NOM-002/004-SCT, UN-class equiv.) -> .country-MX
+         CA  (Transport Canada TDG, SOR/2008-34)   -> .country-CA
+       Default: US visible; MX/CA hidden via display:none. The app toggles
+       `display` (or removes the class) for the active country.
+       The IMDG Class 2.1 diamond is red w/ flame — common to all three;
+       only the legend/standard text differs per country.
+       ============================================================ -->
+  <g transform="translate(76 432)">
+    <!-- Shared IMDG Class 2.1 flammable-gas diamond -->
+    <g transform="translate(14 0)">
+      <rect x="-13" y="-13" width="26" height="26" rx="2" transform="rotate(45)"
+            fill="#E5350D" stroke="#FFFFFF" stroke-width="1"/>
+      <path d="M 0 -8 C 4 -3 6 0 2 6 C 5 2 1 1 0 5 C -1 1 -3 4 -1 -2 C 0 -4 0 -6 0 -8 Z"
+            fill="#FFFFFF"/>
+      <text x="0" y="11" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="6" fill="#FFFFFF">2.1</text>
+    </g>
+    <!-- UN id panel (orange) — UN 1972 -->
+    <g transform="translate(34 -7)">
+      <rect x="0" y="0" width="48" height="14" rx="1.5" fill="#F2A900" stroke="#1A1F2E" stroke-width="0.7"/>
+      <line x1="0" y1="7" x2="48" y2="7" stroke="#1A1F2E" stroke-width="0.6"/>
+      <text x="24" y="6" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="5.4" fill="#1A1F2E">UN 1972</text>
+      <text x="24" y="12.5" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="4.4" fill="#1A1F2E">LNG · CH4</text>
+    </g>
+    <!-- Per-country legend -->
+    <g class="country-US">
+      <text x="0" y="30" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6" fill="#FFFFFF" letter-spacing="0.4">US · USCG 33 CFR 127 · PHMSA</text>
+    </g>
+    <g class="country-MX" style="display:none">
+      <text x="0" y="30" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6" fill="#FFFFFF" letter-spacing="0.4">MX · SCT NOM-002/004-SCT</text>
+    </g>
+    <g class="country-CA" style="display:none">
+      <text x="0" y="30" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6" fill="#FFFFFF" letter-spacing="0.4">CA · TDG SOR/2008-34</text>
+    </g>
+  </g>
+  <!-- Marine unloading arms: 3 cryogenic LIQUID arms + 1 VAPOUR-RETURN arm,
+       each terminated by a QCDC quick-connect/disconnect coupler. Ship cargo
+       pumps push LNG out through the liquid arms; terminal returns vapour to
+       hold tank pressure. Arms positively locked once coupled. -->
+  <g class="arm-articulate" style="transform-origin:200px 380px">
+    <!-- LIQUID arm 1 -->
     <g transform="translate(120 0)">
       <rect x="-6" y="200" width="12" height="180" fill="url(#tankSilver)" stroke="#3A3F4A" stroke-width="0.8"/>
       <rect x="0" y="240" width="200" height="14" fill="url(#tankSilver)" stroke="#3A3F4A" stroke-width="0.8"/>
       <rect x="195" y="244" width="10" height="160" fill="url(#tankSilver)" stroke="#3A3F4A" stroke-width="0.8"/>
       <circle cx="0" cy="247" r="6" fill="#3A3F4A"/>
       <circle cx="200" cy="247" r="6" fill="#3A3F4A"/>
-      <circle cx="200" cy="404" r="6" fill="#3A3F4A"/>
+      <rect x="193" y="398" width="14" height="12" rx="2" fill="#0AC2C2" stroke="#1A1F2E" stroke-width="0.8"/>
     </g>
 
+    <!-- LIQUID arm 2 -->
     <g transform="translate(135 0)">
       <rect x="-6" y="200" width="12" height="180" fill="url(#tankSilver)" stroke="#3A3F4A" stroke-width="0.8"/>
       <rect x="0" y="240" width="200" height="14" fill="url(#tankSilver)" stroke="#3A3F4A" stroke-width="0.8"/>
       <rect x="195" y="244" width="10" height="160" fill="url(#tankSilver)" stroke="#3A3F4A" stroke-width="0.8"/>
       <circle cx="0" cy="247" r="6" fill="#3A3F4A"/>
       <circle cx="200" cy="247" r="6" fill="#3A3F4A"/>
-      <circle cx="200" cy="404" r="6" fill="#3A3F4A"/>
+      <rect x="193" y="398" width="14" height="12" rx="2" fill="#0AC2C2" stroke="#1A1F2E" stroke-width="0.8"/>
     </g>
 
+    <!-- LIQUID arm 3 -->
     <g transform="translate(150 0)">
       <rect x="-6" y="200" width="12" height="180" fill="url(#tankSilver)" stroke="#3A3F4A" stroke-width="0.8"/>
       <rect x="0" y="240" width="200" height="14" fill="url(#tankSilver)" stroke="#3A3F4A" stroke-width="0.8"/>
       <rect x="195" y="244" width="10" height="160" fill="url(#tankSilver)" stroke="#3A3F4A" stroke-width="0.8"/>
       <circle cx="0" cy="247" r="6" fill="#3A3F4A"/>
       <circle cx="200" cy="247" r="6" fill="#3A3F4A"/>
-      <circle cx="200" cy="404" r="6" fill="#3A3F4A"/>
+      <rect x="193" y="398" width="14" height="12" rx="2" fill="#0AC2C2" stroke="#1A1F2E" stroke-width="0.8"/>
     </g>
 
+    <!-- VAPOUR-RETURN arm (amber riser + amber QCDC head, distinct from liquid) -->
     <g transform="translate(165 0)">
       <rect x="-6" y="200" width="12" height="180" fill="url(#tankSilver)" stroke="#3A3F4A" stroke-width="0.8"/>
       <rect x="0" y="240" width="200" height="14" fill="url(#tankSilver)" stroke="#3A3F4A" stroke-width="0.8"/>
-      <rect x="195" y="244" width="10" height="160" fill="url(#tankSilver)" stroke="#3A3F4A" stroke-width="0.8"/>
+      <rect x="195" y="244" width="10" height="160" fill="url(#tankSilver)" stroke="#C77A0A" stroke-width="1.2"/>
       <circle cx="0" cy="247" r="6" fill="#3A3F4A"/>
       <circle cx="200" cy="247" r="6" fill="#3A3F4A"/>
-      <circle cx="200" cy="404" r="6" fill="#3A3F4A"/>
+      <rect x="193" y="398" width="14" height="12" rx="2" fill="#FFC34D" stroke="#1A1F2E" stroke-width="0.8"/>
+      <text x="200" y="234" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="6" fill="#C77A0A" letter-spacing="0.4">VAPOUR</text>
     </g>
 
   </g>
-  <!-- Cyan glow flowing through arms -->
+  <!-- LIQUID transfer glow — LNG flowing ship manifold (800) -> shore (120). -->
   <line x1="120" y1="380" x2="120" y2="240" stroke="#0AC2C2" stroke-width="6"
         stroke-dasharray="14 14" opacity="0.95" class="fluid-flow"/>
   <line x1="120" y1="240" x2="800" y2="240" stroke="#0AC2C2" stroke-width="6"
         stroke-dasharray="14 14" opacity="0.95" class="fluid-flow"/>
   <line x1="800" y1="240" x2="800" y2="404" stroke="#0AC2C2" stroke-width="6"
         stroke-dasharray="14 14" opacity="0.95" class="fluid-flow"/>
+  <!-- VAPOUR-RETURN glow — make-up gas shore (135) -> ship (845), flows
+       OPPOSITE the liquid (amber, thinner). -->
+  <line x1="845" y1="404" x2="845" y2="226" stroke="#FFC34D" stroke-width="3.5"
+        stroke-dasharray="10 14" opacity="0.85" class="vapor-flow"/>
+  <line x1="845" y1="226" x2="135" y2="226" stroke="#FFC34D" stroke-width="3.5"
+        stroke-dasharray="10 14" opacity="0.85" class="vapor-flow"/>
   <!-- Methane vapor cloud (cyan-white) -->
   <g filter="url(#softBlur)">
     <ellipse class="vapor-rise" cx="800" cy="400" rx="40" ry="14" fill="url(#vaporCloud)"/>

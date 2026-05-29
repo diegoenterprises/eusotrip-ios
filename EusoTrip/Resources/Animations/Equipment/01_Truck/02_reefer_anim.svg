@@ -103,11 +103,27 @@
       0%, 100% { opacity: 0.78; }
       50%      { opacity: 1; }
     }
+    /* Cold-air recirculation: snow motes drift on the interior airflow loop */
+    .snow-mote { animation: snow-drift 5.5s ease-in-out infinite;
+                  transform-box: fill-box; transform-origin: center; }
+    .snow-mote.m2 { animation-delay: -1.1s; animation-duration: 6.2s; }
+    .snow-mote.m3 { animation-delay: -2.3s; animation-duration: 4.9s; }
+    .snow-mote.m4 { animation-delay: -3.4s; animation-duration: 6.6s; }
+    .snow-mote.m5 { animation-delay: -0.6s; animation-duration: 5.2s; }
+    .snow-mote.m6 { animation-delay: -4.0s; animation-duration: 6.0s; }
+    @keyframes snow-drift {
+      0%, 100% { transform: translate(0, 0);        opacity: 0.35; }
+      50%      { transform: translate(-5px, 6px);   opacity: 0.6; }
+    }
 
     @media (prefers-reduced-motion: reduce) {
+      /* CSS-class motion is fully stilled. NOTE: wheel rotation + exhaust puffs
+         use SMIL <animate>/<animateTransform>, which a CSS media query cannot
+         halt; they are slow continuous ambient loops (no popping) and remain. */
       .chassis-bob, .cab-sway, .mudflap, .streak, .bow-air, .tire-dust,
       .sheen, .wordmark, .badge-e, .headlight-glow, .airlines, .chevron,
-      .sky-shimmer, .ground-line, .brand-mark, .brand-word { animation: none !important; }
+      .sky-shimmer, .ground-line, .snow-mote,
+      .brand-mark, .brand-word { animation: none !important; }
     }
   
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
@@ -189,12 +205,14 @@
       <feGaussianBlur stdDeviation="3"/>
     </filter>
   </defs>
-  <g class="chassis-bob">
-
+  <!-- Static scene (sky + road + shadow) — must NOT bob with the rig -->
   <rect class="sky-bg" width="1200" height="600" fill="url(#sky)"/>
   <rect x="0" y="380" width="1200" height="70" fill="#FFFFFF" opacity="0.18"/>
-  <line x1="60" y1="475" x2="1140" y2="475" stroke="#9B7FD9" stroke-width="4" stroke-dasharray="14 9" stroke-linecap="round" opacity="0.55"/>
-  <ellipse cx="640" cy="486" rx="430" ry="7" fill="#1A1F2E" opacity="0.13"/>
+  <line class="ground-line" x1="60" y1="475" x2="1140" y2="475" stroke="#9B7FD9" stroke-width="4" stroke-linecap="round" opacity="0.55"/>
+  <ellipse class="ground-shadow" cx="640" cy="486" rx="430" ry="7" fill="#1A1F2E" opacity="0.13"/>
+
+  <!-- Rig body floats on suspension (bob) — wheels & ground stay grounded -->
+  <g class="chassis-bob">
 
   <!-- ========== TRACTOR (CAB) — canonical Class-8 template ========== -->
   <g filter="url(#rigShadow)">
@@ -278,15 +296,28 @@
       <line x1="-32" y1="0" x2="-26" y2="-6"/><line x1="-32" y1="0" x2="-26" y2="6"/>
       <line x1="32" y1="0" x2="26" y2="-6"/><line x1="32" y1="0" x2="26" y2="6"/>
     </g>
-    <!-- Drifting snow particles inside body -->
-    <g fill="#0AC2C2" opacity="0.5">
-      <circle cx="650" cy="240" r="3"/><circle cx="730" cy="280" r="2.5"/><circle cx="690" cy="350" r="3"/>
-      <circle cx="900" cy="260" r="2.5"/><circle cx="970" cy="320" r="3"/><circle cx="940" cy="400" r="2.5"/>
+    <!-- Drifting snow particles inside body (cold-air recirculation) -->
+    <g fill="#0AC2C2">
+      <circle class="snow-mote"    cx="650" cy="240" r="3"/><circle class="snow-mote m2" cx="730" cy="280" r="2.5"/><circle class="snow-mote m3" cx="690" cy="350" r="3"/>
+      <circle class="snow-mote m4" cx="900" cy="260" r="2.5"/><circle class="snow-mote m5" cx="970" cy="320" r="3"/><circle class="snow-mote m6" cx="940" cy="400" r="2.5"/>
     </g>
-    <!-- Temperature display (prominent — the reefer signature) -->
+    <!-- Temperature display (prominent — the reefer signature).
+         Frozen-goods setpoint, consistent with the loading/unloading set.
+         Country-switchable units: renderer shows ONE of .country-US / .country-MX
+         / .country-CA (US = °F default; MX & CA = °C, both -23°C) by setting the
+         non-selected groups to display:none. US/CA/MX reefers are NOT hazmat-
+         placarded (food cargo); the only country-varying marking is the unit. -->
     <g>
       <rect x="588" y="200" width="80" height="44" rx="6" fill="#FFFFFF" stroke="#0AC2C2" stroke-width="1.5"/>
-      <text x="628" y="226" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="20" fill="#0AC2C2">7°F</text>
+      <g class="country-US">
+        <text x="628" y="226" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="20" fill="#0AC2C2" data-bind="reefer_setpoint">-10&#176;F</text>
+      </g>
+      <g class="country-MX" style="display:none">
+        <text x="628" y="226" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="20" fill="#0AC2C2" data-bind="reefer_setpoint_c">-23&#176;C</text>
+      </g>
+      <g class="country-CA" style="display:none">
+        <text x="628" y="226" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="20" fill="#0AC2C2" data-bind="reefer_setpoint_c">-23&#176;C</text>
+      </g>
       <text x="628" y="238" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="8" fill="#5B3FBF" letter-spacing="1">SETPOINT</text>
     </g>
     <!-- DOT reflective strips -->

@@ -45,9 +45,9 @@
        85-100% Tractor pulls forward LEFT (-120px), kingpin clears jaws
        ============================================================ */
 
-    .wheel-spin { animation: po-wheel-spin 1.6s linear infinite;
-                  transform-box: fill-box; transform-origin: center; }
-    @keyframes po-wheel-spin { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
+    /* (Drive wheels use .drive-wheel below — they must stay STILL until the
+       pull-out window, so the continuous .wheel-spin loop is intentionally
+       absent here.) */
 
     /* Tractor stays put 0-85%, then pulls forward (LEFT) and exits the frame edge slightly. */
     .tractor-rig { animation: po-tractor-pullout 6.5s ease-in-out infinite; }
@@ -188,7 +188,7 @@
       .jaws-clamp .jaw-left, .jaws-clamp .jaw-right,
       .load-pill, .lock-indicator, .pigtail-line, .progress-fill,
       .release-handle, .sky-shimmer, .tractor-rig, .drive-wheel,
-      .dummy-park, .wheel-spin {
+      .dummy-park {
         animation: none !important;
       }
     }
@@ -903,9 +903,6 @@
        MOTION CUE — small dashed forward-motion arrow under tractor
        in final 15% (pull-out window). Subtle.
        ============================================================ -->
-  <g class="release-handle" opacity="0.55">
-    <!-- (reusing release-handle keyframe wouldn't be right; use a dedicated one below) -->
-  </g>
   <g>
     <g style="animation: po-pullout-arrow 6.5s ease-in-out infinite; opacity: 0;">
       <path d="M 100 470 L 40 470" stroke="#0AC2C2" stroke-width="1.6"
@@ -1553,11 +1550,31 @@
           font-weight="800" font-size="14" letter-spacing="1.8" fill="#FFFFFF">TRUCK</text>
   </g>
 
-  <!-- LBS unit chip below TRUCK badge -->
-  <g opacity="0.92">
-    <rect x="1072" y="98" width="60" height="22" rx="11" ry="11" fill="#FFFFFF" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
-    <text x="1102" y="113" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
-          font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">LBS</text>
+  <!-- ============================================================
+       COUNTRY-SWITCHABLE WEIGHT-UNIT CHIP (below TRUCK badge)
+       Power-only is an UNREGULATED rig (bare tractor, no commodity =>
+       no hazmat placard / orange panel). Only the tare-weight UNIT
+       varies by locale: US = lbs, MX (NOM-012-SCT-2) and CA = kg.
+       Renderer shows exactly ONE group per booking origin country:
+       .country-US is visible by default; set display:none on the two
+       it isn't showing, or toggle visibility from the US|MX|CA code.
+       ============================================================ -->
+  <g class="units-chip" opacity="0.92">
+    <g class="country-US">
+      <rect x="1072" y="98" width="60" height="22" rx="11" ry="11" fill="#FFFFFF" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+      <text x="1102" y="113" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">LBS</text>
+    </g>
+    <g class="country-MX" style="display:none">
+      <rect x="1072" y="98" width="60" height="22" rx="11" ry="11" fill="#FFFFFF" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+      <text x="1102" y="113" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">KG</text>
+    </g>
+    <g class="country-CA" style="display:none">
+      <rect x="1072" y="98" width="60" height="22" rx="11" ry="11" fill="#FFFFFF" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+      <text x="1102" y="113" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">KG</text>
+    </g>
   </g>
 
   <!-- UNLOADING pill (amber) -->

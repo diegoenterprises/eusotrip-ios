@@ -1,0 +1,678 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600" data-state="loading">
+  <style><![CDATA[
+
+    /* ============ FOUNDATION MOTION VOCAB ============ */
+    .brand-mark { transform-box: fill-box; transform-origin: center;
+                  animation: brand-pulse 3.6s ease-in-out infinite; }
+    @keyframes brand-pulse {
+      0%, 100% { transform: scale(1);    opacity: 0.92; }
+      50%      { transform: scale(1.05); opacity: 1; }
+    }
+    .brand-word { animation: brand-word-breath 6s ease-in-out infinite; }
+    @keyframes brand-word-breath {
+      0%, 100% { opacity: 0.78; }
+      50%      { opacity: 1; }
+    }
+    .sky-shimmer { animation: sky-drift 14s linear infinite; transform-box: fill-box; }
+    @keyframes sky-drift {
+      from { transform: translateX(-40px); opacity: 0.12; }
+      50%  { opacity: 0.22; }
+      to   { transform: translateX(40px);  opacity: 0.12; }
+    }
+    .load-pill { transform-box: fill-box; transform-origin: center;
+                 animation: load-pill-pulse 2.4s ease-in-out infinite; }
+    @keyframes load-pill-pulse {
+      0%, 100% { opacity: 0.85; transform: scale(1); }
+      50%      { opacity: 1;    transform: scale(1.04); }
+    }
+    .progress-fill { transition: width 0.4s ease-out; }
+    .chevron { animation: chevron-pulse 2.2s ease-in-out infinite; }
+    @keyframes chevron-pulse {
+      0%, 100% { opacity: 0.3; }
+      50%      { opacity: 0.65; }
+    }
+
+    /* ============ PNEUMATIC-LOADING-SPECIFIC MOTION ============
+       7s cycle, master rhythm (CEMENT top-load by gravity from an
+       overhead plant silo via a telescoping dust-controlled fill spout):
+         0  - 14% : telescoping loading spout lowers and seats on the open
+                    top hatch (decel settle, like a real hoist).
+         14 - 22% : dust-collection sock inflates / seals around the hatch.
+         22 - 92% : grey cement falls down the spout (dashed product flow)
+                    and the powder level rises inside the X-ray sight gauge;
+                    the plant silo's own level drops in step (what leaves
+                    the silo arrives in the trailer); load-cell scale ticks
+                    up net tons.
+         92 - 100%: hold full, spout dust-puff settles, then loop.
+       ============================================================ */
+
+    /* Telescoping fill spout lowers onto the hatch, then holds. */
+    .spout-lower { transform-box: view-box; transform-origin: 700px 150px;
+                   animation: spout-lower 7s cubic-bezier(0.4,0,0.2,1) infinite; }
+    @keyframes spout-lower {
+      0%        { transform: translateY(-34px); }
+      14%, 100% { transform: translateY(0); }
+    }
+    /* Dust-collection sock breathes/seals once seated. */
+    .dust-sock { transform-box: fill-box; transform-origin: center top;
+                 animation: dust-sock 7s ease-in-out infinite; }
+    @keyframes dust-sock {
+      0%, 14%   { transform: scaleY(0.4); opacity: 0.5; }
+      22%       { transform: scaleY(1.05); opacity: 0.95; }
+      30%, 100% { transform: scaleY(1); opacity: 0.92; }
+    }
+
+    /* Falling cement column — continuous dashed flow, gated to fill phase. */
+    .product-flow { animation: product-flow 0.9s linear infinite;
+                    stroke-dasharray: 5 9; }
+    @keyframes product-flow {
+      from { stroke-dashoffset: 0; }
+      to   { stroke-dashoffset: 28; }
+    }
+    .product-flow-fade { animation: product-flow-fade 7s ease-in-out infinite; }
+    @keyframes product-flow-fade {
+      0%, 22%   { opacity: 0; }
+      30%, 92%  { opacity: 0.9; }
+      100%      { opacity: 0; }
+    }
+
+    /* Powder level rises in the trailer X-ray sight gauge. */
+    .level-rise { transform-box: fill-box; transform-origin: bottom;
+                  animation: level-rise 7s ease-in-out infinite; }
+    @keyframes level-rise {
+      0%, 22%   { transform: scaleY(0.14); }
+      92%, 100% { transform: scaleY(0.95); }
+    }
+    .level-meniscus { animation: level-meniscus 7s ease-in-out infinite; }
+    @keyframes level-meniscus {
+      0%, 22%   { transform: translateY(120px); opacity: 0.9; }
+      92%, 100% { transform: translateY(8px);   opacity: 0.95; }
+    }
+
+    /* Plant silo level drops in step (source empties as trailer fills). */
+    .silo-level-fall { transform-box: fill-box; transform-origin: top;
+                       animation: silo-level-fall 7s ease-in-out infinite; }
+    @keyframes silo-level-fall {
+      0%, 22%   { transform: scaleY(0.92); }
+      92%, 100% { transform: scaleY(0.42); }
+    }
+
+    /* Scale / load-cell readout bar ticks up. */
+    .scale-bar { transform-box: fill-box; transform-origin: left center;
+                 animation: scale-bar 7s ease-in-out infinite; }
+    @keyframes scale-bar {
+      0%, 22%   { transform: scaleX(0.06); }
+      92%, 100% { transform: scaleX(0.95); }
+    }
+
+    /* Fugitive dust puff at the hatch interface during fill. */
+    .dust-puff { animation: dust-puff 3s ease-out infinite; }
+    .dust-puff.p2 { animation-delay: -1s; }
+    .dust-puff.p3 { animation-delay: -2s; }
+    @keyframes dust-puff {
+      0%   { opacity: 0;    transform: translateY(0)    scale(0.4); }
+      30%  { opacity: 0.38; transform: translateY(-7px) scale(0.9); }
+      70%  { opacity: 0.18; transform: translateY(-16px) scale(1.2); }
+      100% { opacity: 0;    transform: translateY(-24px) scale(1.5); }
+    }
+
+    /* Operator subtle breathe on the platform. */
+    .operator-bob { transform-box: fill-box; transform-origin: center bottom;
+                    animation: operator-bob 4.4s ease-in-out infinite; }
+    @keyframes operator-bob {
+      0%, 100% { transform: translateY(0); }
+      50%      { transform: translateY(-0.8px); }
+    }
+
+    /* Blower idle pulley (compressor disengaged during gravity top-load, so
+       a slow idle turn only). */
+    .blower-spin { transform-box: fill-box; transform-origin: center;
+                   animation: blower-spin 3.2s linear infinite; }
+    @keyframes blower-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .brand-lockup, .brand-mark, .brand-word,
+      .chevron,
+      .spout-lower, .dust-sock,
+      .product-flow, .product-flow-fade,
+      .level-rise, .level-meniscus,
+      .silo-level-fall,
+      .scale-bar,
+      .dust-puff,
+      .operator-bob,
+      .blower-spin,
+      .load-pill,
+      .progress-fill,
+      .sky-shimmer {
+        animation: none !important;
+      }
+      .dust-puff { opacity: 0 !important; }
+    }
+
+  ]]></style>
+
+  <defs>
+    <linearGradient id="brandIridescent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1473FF"/>
+      <stop offset="50%" stop-color="#6E4DFF"/>
+      <stop offset="100%" stop-color="#BE01FF"/>
+    </linearGradient>
+
+    <!-- Cool industrial sky over a cement / aggregate plant -->
+    <linearGradient id="plantSky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#D7DEE7"/>
+      <stop offset="55%" stop-color="#CAD2DD"/>
+      <stop offset="100%" stop-color="#A8B0BE"/>
+    </linearGradient>
+    <linearGradient id="plantPad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5C6068"/>
+      <stop offset="100%" stop-color="#2E3138"/>
+    </linearGradient>
+    <!-- Powder-tanker shell (matches hero 36) -->
+    <linearGradient id="tankerShell" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#F7F8FB"/>
+      <stop offset="18%" stop-color="#DCE0E8"/>
+      <stop offset="55%" stop-color="#AEB4C0"/>
+      <stop offset="100%" stop-color="#7E8593"/>
+    </linearGradient>
+    <linearGradient id="coneShell" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#D5DAE3"/>
+      <stop offset="100%" stop-color="#777E8C"/>
+    </linearGradient>
+    <!-- Concrete plant silo (white-grey) -->
+    <linearGradient id="siloBody" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"  stop-color="#E2E6EC"/>
+      <stop offset="50%" stop-color="#C2C8D2"/>
+      <stop offset="100%" stop-color="#8E95A2"/>
+    </linearGradient>
+    <!-- Cement powder fill colour (warm grey) -->
+    <linearGradient id="cementFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#CFC9BD"/>
+      <stop offset="55%" stop-color="#A8A192"/>
+      <stop offset="100%" stop-color="#7E7868"/>
+    </linearGradient>
+    <radialGradient id="rim" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#5A606D"/>
+      <stop offset="80%" stop-color="#3A3F4A"/>
+      <stop offset="100%" stop-color="#1F2330"/>
+    </radialGradient>
+    <radialGradient id="dustPuff" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#E9E4DA" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#E9E4DA" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="rigShadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
+      <feOffset dx="0" dy="4" result="offsetBlur"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.18"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softBlur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+
+    <!-- Trailer wheel (matches set wheel pattern) -->
+    <symbol id="trailerWheel" overflow="visible">
+      <circle cx="0" cy="0" r="24" fill="#1A1A1A"/>
+      <circle cx="0" cy="0" r="16" fill="url(#rim)"/>
+      <circle cx="0" cy="0" r="5"  fill="#7A7F88"/>
+      <circle cx="0" cy="0" r="2"  fill="#1A1F2E"/>
+      <g stroke="#3A3F4A" stroke-width="2" stroke-linecap="round" opacity="0.85">
+        <line x1="0" y1="-21" x2="0" y2="-17"/>
+        <line x1="15" y1="-15" x2="12" y2="-12"/>
+        <line x1="21" y1="0"  x2="17" y2="0"/>
+        <line x1="15" y1="15" x2="12" y2="12"/>
+        <line x1="0"  y1="21" x2="0"  y2="17"/>
+        <line x1="-15" y1="15" x2="-12" y2="12"/>
+        <line x1="-21" y1="0"  x2="-17" y2="0"/>
+        <line x1="-15" y1="-15" x2="-12" y2="-12"/>
+      </g>
+      <ellipse cx="-5" cy="-9" rx="4" ry="2.4" fill="#FFFFFF" opacity="0.32"/>
+    </symbol>
+
+    <!-- Wheel chock (parked-load safety) -->
+    <symbol id="wheelChock" overflow="visible">
+      <polygon points="-14,0 14,0 4,-12" fill="#FF7A1F" stroke="#A35200" stroke-width="0.6"/>
+      <polygon points="-14,0 14,0 4,-12" fill="none" stroke="#FFFFFF" stroke-width="0.4" opacity="0.5"/>
+      <ellipse cx="0" cy="1" rx="14" ry="1.4" fill="#1A1F2E" opacity="0.4"/>
+    </symbol>
+  </defs>
+
+
+  <!-- ============================================================
+       CARD BACKGROUND
+       ============================================================ -->
+  <rect class="card-bg" x="20" y="20" width="1160" height="560" rx="22" fill="#FAFBFD"/>
+
+
+  <!-- ============================================================
+       CEMENT-PLANT ATMOSPHERE (background)
+       ============================================================ -->
+  <rect x="20" y="220" width="1160" height="240" fill="url(#plantSky)" opacity="0.85"/>
+  <rect class="sky-shimmer" x="20" y="370" width="1160" height="60" fill="#FFFFFF" opacity="0.14"/>
+
+  <!-- Distant plant skyline (storage silos + elevator) -->
+  <g opacity="0.5">
+    <rect x="70"  y="250" width="54" height="210" fill="url(#siloBody)"/>
+    <ellipse cx="97" cy="250" rx="27" ry="8" fill="#B5BCC8"/>
+    <rect x="132" y="276" width="42" height="184" fill="url(#siloBody)"/>
+    <ellipse cx="153" cy="276" rx="21" ry="6" fill="#B5BCC8"/>
+    <rect x="182" y="262" width="48" height="198" fill="url(#siloBody)"/>
+    <ellipse cx="206" cy="262" rx="24" ry="7" fill="#B5BCC8"/>
+    <!-- Bucket elevator tower -->
+    <rect x="244" y="208" width="20" height="252" fill="#9098A8"/>
+    <rect x="240" y="200" width="28" height="12" fill="#6E747F"/>
+    <!-- Conveyor gallery to silos -->
+    <path d="M 264 230 L 360 268" stroke="#7A8089" stroke-width="6" opacity="0.8"/>
+  </g>
+
+  <!-- Faint horizon line -->
+  <line x1="20" y1="378" x2="1180" y2="378" stroke="#5C6068" stroke-width="0.7" opacity="0.32"/>
+
+
+  <!-- ============================================================
+       LOADING PAD (clean concrete + lane line)
+       ============================================================ -->
+  <rect x="20" y="478" width="1160" height="102" fill="url(#plantPad)"/>
+  <rect x="60" y="476" width="1080" height="4" fill="#2A2D33"/>
+  <rect x="60" y="478" width="1080" height="2" fill="#FFFFFF" opacity="0.16"/>
+  <!-- Painted dashed lane line -->
+  <line x1="80" y1="540" x2="1120" y2="540" stroke="#FFD200" stroke-width="1.6"
+        stroke-dasharray="22 14" opacity="0.5"/>
+  <!-- Light cement-dust film on pad -->
+  <g opacity="0.16">
+    <ellipse cx="360" cy="548" rx="40" ry="3.4" fill="#E9E4DA"/>
+    <ellipse cx="760" cy="552" rx="48" ry="3.6" fill="#E9E4DA"/>
+  </g>
+
+
+  <!-- ============================================================
+       OVERHEAD PLANT LOADING SILO + TELESCOPING FILL SPOUT
+       (the source: gravity / auger top-load into the open hatch)
+       ============================================================ -->
+  <g filter="url(#rigShadow)">
+    <!-- Support gantry leg (right) -->
+    <rect x="1040" y="70" width="16" height="404" fill="#6E747F"/>
+    <rect x="1040" y="70" width="3"  height="404" fill="#FFFFFF" opacity="0.4"/>
+    <rect x="1028" y="468" width="40" height="10" fill="#3A3F4A"/>
+    <!-- Top crossbeam -->
+    <rect x="612" y="64" width="444" height="14" fill="#6E747F"/>
+    <rect x="612" y="64" width="444" height="3" fill="#FFFFFF" opacity="0.4"/>
+
+    <!-- Plant batch silo (the source vessel, hangs from the beam) -->
+    <g>
+      <rect x="620" y="78" width="170" height="120" rx="6" fill="url(#siloBody)"/>
+      <rect x="620" y="78" width="170" height="6" rx="3" fill="#D9DEE6"/>
+      <!-- Silo level window (drops as the trailer fills) -->
+      <rect x="640" y="92" width="14" height="96" rx="2" fill="#1A1F2E" opacity="0.25"/>
+      <rect class="silo-level-fall" x="641" y="93" width="12" height="94" rx="2" fill="url(#cementFill)"/>
+      <text x="712" y="132" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="13" fill="#5A606D" letter-spacing="1.4">BATCH SILO</text>
+      <text x="712" y="150" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="8" fill="#5A606D" opacity="0.7" letter-spacing="1">TYPE I/II CEMENT</text>
+      <!-- Discharge funnel under silo -->
+      <path d="M 668 198 L 762 198 L 718 232 L 712 232 Z" fill="url(#coneShell)"/>
+    </g>
+  </g>
+
+  <!-- Telescoping fill spout (lowers onto the hatch, then holds) -->
+  <g class="spout-lower">
+    <g filter="url(#rigShadow)">
+      <!-- Upper rigid pipe -->
+      <rect x="708" y="228" width="20" height="30" fill="#7E8593"/>
+      <!-- Telescoping bellows sections -->
+      <g fill="#9098A8" stroke="#5A606D" stroke-width="0.8">
+        <rect x="704" y="256" width="28" height="10" rx="2"/>
+        <rect x="706" y="266" width="24" height="10" rx="2"/>
+        <rect x="708" y="276" width="20" height="10" rx="2"/>
+      </g>
+      <!-- Outlet head that seats on the hatch -->
+      <rect x="704" y="286" width="28" height="10" rx="3" fill="#5A606D"/>
+    </g>
+    <!-- Dust-collection sock around the outlet (seals to the hatch) -->
+    <g class="dust-sock">
+      <path d="M 700 296 Q 700 320 718 326 Q 736 320 736 296 Z" fill="#C2C8D2" opacity="0.85" stroke="#8E95A2" stroke-width="1"/>
+      <g stroke="#8E95A2" stroke-width="0.6" opacity="0.7">
+        <line x1="704" y1="300" x2="704" y2="322"/>
+        <line x1="712" y1="300" x2="712" y2="325"/>
+        <line x1="724" y1="300" x2="724" y2="325"/>
+        <line x1="732" y1="300" x2="732" y2="322"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- Falling cement column from spout into the open hatch (fill phase) -->
+  <g class="product-flow-fade">
+    <line class="product-flow" x1="718" y1="300" x2="718" y2="332"
+          stroke="url(#cementFill)" stroke-width="11" stroke-linecap="round"/>
+    <line class="product-flow" x1="718" y1="300" x2="718" y2="332"
+          stroke="#E9E4DA" stroke-width="4" stroke-linecap="round" opacity="0.5"/>
+  </g>
+
+
+  <!-- ============================================================
+       OPERATOR ON PLATFORM (hi-vis + hard hat + respirator)
+       ============================================================ -->
+  <g transform="translate(560 300)">
+    <g class="operator-bob" filter="url(#rigShadow)">
+      <rect x="-7" y="42" width="6" height="3" fill="#1A1F2E"/>
+      <rect x="1"  y="42" width="6" height="3" fill="#1A1F2E"/>
+      <rect x="-7" y="22" width="6" height="22" fill="#1B2840"/>
+      <rect x="1"  y="22" width="6" height="22" fill="#1B2840"/>
+      <path d="M -10 4 Q -10 0 -7 0 L 7 0 Q 10 0 10 4 L 11 24 L -11 24 Z"
+            fill="#C4F036" stroke="#1A1F2E" stroke-width="0.5"/>
+      <rect x="-11" y="14" width="22" height="2" fill="#FFFFFF" opacity="0.85"/>
+      <!-- Arm raised toward the spout control -->
+      <path d="M 8 4 L 18 -2 L 22 6 L 13 10 Z" fill="#C4F036" stroke="#1A1F2E" stroke-width="0.4"/>
+      <rect x="20" y="2" width="4" height="8" fill="#D9A878"/>
+      <circle cx="0" cy="-6" r="5" fill="#D9A878"/>
+      <!-- Half-mask respirator (dust PPE for silica) -->
+      <path d="M -4 -5 Q 0 -2 4 -5 L 4 -7 L -4 -7 Z" fill="#E8EBF0" stroke="#1A1F2E" stroke-width="0.4"/>
+      <circle cx="-3" cy="-4" r="0.9" fill="#7A7F88"/>
+      <!-- Hard hat -->
+      <path d="M -6 -10 Q -6 -14 0 -14 Q 6 -14 6 -10 L 7 -8 L -7 -8 Z" fill="#F1F4F9" stroke="#1A1F2E" stroke-width="0.5"/>
+      <rect x="-7" y="-9" width="14" height="1.4" fill="#1A1F2E"/>
+    </g>
+  </g>
+
+
+  <!-- ============================================================
+       PNEUMATIC DRY-BULK TRAILER — broadside profile
+       (camera-side view; trailer rolls left-to-right)
+       ============================================================ -->
+
+  <!-- Drop shadow under trailer -->
+  <ellipse cx="600" cy="552" rx="500" ry="6" fill="#1A1F2E" opacity="0.32"/>
+
+  <g filter="url(#rigShadow)">
+    <!-- Rounded pressure-vessel barrel -->
+    <path d="M 250 322 Q 250 300 274 300 L 944 300 Q 980 300 980 332 L 980 392 Q 980 412 956 412 L 268 412 Q 250 412 250 390 Z"
+          fill="url(#tankerShell)"/>
+    <!-- Rounded front (left) head -->
+    <path d="M 250 322 Q 210 330 210 356 Q 210 384 268 412 L 250 390 Z" fill="url(#tankerShell)"/>
+    <ellipse cx="246" cy="356" rx="14" ry="56" fill="#C2C8D2" opacity="0.5"/>
+    <!-- Top highlight + bottom shadow -->
+    <rect x="250" y="302" width="730" height="6" fill="#FFFFFF" opacity="0.6"/>
+    <rect x="250" y="404" width="730" height="6" fill="#1A1F2E" opacity="0.28"/>
+
+    <!-- Bottom V-shaped discharge cones / hoppers (signature) -->
+    <g fill="url(#coneShell)">
+      <path d="M 300 412 L 412 412 L 372 470 L 340 470 Z"/>
+      <path d="M 440 412 L 552 412 L 512 470 L 480 470 Z"/>
+      <path d="M 580 412 L 692 412 L 652 470 L 620 470 Z"/>
+      <path d="M 720 412 L 832 412 L 792 470 L 760 470 Z"/>
+      <path d="M 860 412 L 952 412 L 924 466 L 898 466 Z"/>
+    </g>
+    <g stroke="#6B7280" stroke-width="1.4" opacity="0.5" fill="none">
+      <path d="M 300 412 L 356 470"/>
+      <path d="M 440 412 L 496 470"/>
+      <path d="M 580 412 L 636 470"/>
+      <path d="M 720 412 L 776 470"/>
+    </g>
+    <!-- Aeration pad housings -->
+    <g fill="#3A3F4A">
+      <rect x="342" y="468" width="28" height="9" rx="2"/>
+      <rect x="482" y="468" width="28" height="9" rx="2"/>
+      <rect x="622" y="468" width="28" height="9" rx="2"/>
+      <rect x="762" y="468" width="28" height="9" rx="2"/>
+      <rect x="898" y="464" width="26" height="9" rx="2"/>
+    </g>
+
+    <!-- Longitudinal product (conveying) line + cone valves -->
+    <rect x="312" y="476" width="618" height="9" rx="4" fill="#5A606D"/>
+    <rect x="312" y="476" width="618" height="2" rx="1" fill="#9097A4"/>
+    <g fill="#3A3F4A">
+      <rect x="352" y="477" width="10" height="9" rx="1"/>
+      <rect x="492" y="477" width="10" height="9" rx="1"/>
+      <rect x="632" y="477" width="10" height="9" rx="1"/>
+      <rect x="772" y="477" width="10" height="9" rx="1"/>
+      <rect x="906" y="471" width="10" height="6" rx="1"/>
+    </g>
+    <!-- Rear discharge head (capped during loading — no discharge yet) -->
+    <g>
+      <rect x="926" y="466" width="20" height="22" rx="3" fill="#3A3F4A"/>
+      <circle cx="936" cy="477" r="8" fill="#5A606D"/>
+      <circle cx="936" cy="477" r="4" fill="#1F2330"/>
+    </g>
+
+    <!-- Top catwalk + load hatches; the FILL hatch (center) is OPEN -->
+    <rect x="266" y="296" width="700" height="6" rx="1" fill="#3A3F4A"/>
+    <g>
+      <ellipse cx="370" cy="294" rx="20" ry="6" fill="#3A3F4A"/>
+      <ellipse cx="370" cy="291" rx="16" ry="4" fill="#5A606D"/>
+      <ellipse cx="900" cy="294" rx="20" ry="6" fill="#3A3F4A"/>
+      <ellipse cx="900" cy="291" rx="16" ry="4" fill="#5A606D"/>
+    </g>
+    <!-- OPEN fill hatch (center, under the spout) — lid flipped back, dark bore -->
+    <g>
+      <ellipse cx="718" cy="300" rx="22" ry="7" fill="#1F2330"/>
+      <ellipse cx="718" cy="300" rx="17" ry="4.6" fill="#0F1320"/>
+      <!-- Flipped-open lid + hinge -->
+      <ellipse cx="690" cy="286" rx="14" ry="4" fill="#5A606D" transform="rotate(-28 690 286)"/>
+      <line x1="700" y1="296" x2="706" y2="290" stroke="#3A3F4A" stroke-width="2"/>
+    </g>
+
+    <!-- Side X-ray sight gauge (powder level RISES while loading) -->
+    <g>
+      <rect x="296" y="320" width="14" height="80" rx="3" fill="#1A1F2E" opacity="0.22"/>
+      <rect x="297" y="321" width="12" height="78" rx="2" fill="#E8EBF0"/>
+      <!-- Rising cement column (origin bottom; scaleY animates) -->
+      <g transform="translate(303 399)">
+        <rect class="level-rise" x="-6" y="-78" width="12" height="78" rx="2" fill="url(#cementFill)"/>
+      </g>
+      <rect class="level-meniscus" x="297" y="321" width="12" height="4" rx="2" fill="#CFC9BD"/>
+      <rect x="296" y="320" width="14" height="80" rx="3" fill="none" stroke="#3A3F4A" stroke-width="1.4"/>
+      <g stroke="#5A606D" stroke-width="0.8" opacity="0.6">
+        <line x1="310" y1="340" x2="316" y2="340"/>
+        <line x1="310" y1="360" x2="316" y2="360"/>
+        <line x1="310" y1="380" x2="316" y2="380"/>
+      </g>
+    </g>
+
+    <!-- Commodity stencil -->
+    <text x="640" y="350" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="900" font-size="26" fill="#5A606D" opacity="0.5" letter-spacing="3">CEMENT</text>
+    <text x="640" y="370" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="10" fill="#5B3FBF" opacity="0.62" letter-spacing="2">PNEUMATIC DRY-BULK &#183; 1050 ft³</text>
+
+    <!-- ============================================================
+         COUNTRY-SWITCHABLE DRY-BULK MARKING GROUP
+         Cement is NOT a DOT hazmat (no UN diamond). Regulated items:
+         the ASME / DOT pressure-vessel data plate (~29 psi MAWP) and a
+         respirable-silica dust caution. Default = .country-US visible;
+         renderer sets display:none on the two it does not want.
+           US — OSHA/MSHA respirable-silica CAUTION (yellow) + ASME "U"
+                MAWP stencil in psi.
+           CA — TDG non-regulated: bilingual EN/FR dust caution + CRN /
+                Transport Canada plate, MAWP in kPa.
+           MX — NOM-SCT: Spanish "POLVO" caution + NOM plate, MAWP in kPa.
+         Geometry identical so swapping is seamless.
+         ============================================================ -->
+    <g class="marking-group">
+      <g class="country-US">
+        <g transform="translate(872 354)">
+          <rect x="-34" y="-13" width="68" height="26" rx="4" fill="#FFD23A" stroke="#1A1F2E" stroke-width="1.4"/>
+          <text x="0" y="-2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="7" fill="#1A1F2E" letter-spacing="0.5">CAUTION</text>
+          <text x="0" y="8" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="5.2" fill="#1A1F2E" letter-spacing="0.3">SILICA DUST · PPE</text>
+        </g>
+        <g transform="translate(500 384)">
+          <rect x="-28" y="-10" width="56" height="20" rx="2" fill="#C2C8D2" stroke="#3A3F4A" stroke-width="1.2"/>
+          <text x="0" y="-1" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="5.4" fill="#1A1F2E" letter-spacing="0.4">ASME · U</text>
+          <text x="0" y="7" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="4.8" fill="#3A3F4A" letter-spacing="0.3">MAWP 29 PSI</text>
+        </g>
+      </g>
+      <g class="country-MX" style="display:none">
+        <g transform="translate(872 354)">
+          <rect x="-34" y="-13" width="68" height="26" rx="4" fill="#FFD23A" stroke="#1A1F2E" stroke-width="1.4"/>
+          <text x="0" y="-2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="6.6" fill="#1A1F2E" letter-spacing="0.4">PRECAUCIÓN</text>
+          <text x="0" y="8" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="5.2" fill="#1A1F2E" letter-spacing="0.3">POLVO · EPP</text>
+        </g>
+        <g transform="translate(500 384)">
+          <rect x="-28" y="-10" width="56" height="20" rx="2" fill="#C2C8D2" stroke="#3A3F4A" stroke-width="1.2"/>
+          <text x="0" y="-1" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="5.4" fill="#1A1F2E" letter-spacing="0.4">NOM-SCT</text>
+          <text x="0" y="7" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="4.8" fill="#3A3F4A" letter-spacing="0.3">PMTA 200 kPa</text>
+        </g>
+      </g>
+      <g class="country-CA" style="display:none">
+        <g transform="translate(872 354)">
+          <rect x="-34" y="-13" width="68" height="26" rx="4" fill="#FFD23A" stroke="#1A1F2E" stroke-width="1.4"/>
+          <text x="0" y="-2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="6.2" fill="#1A1F2E" letter-spacing="0.3">DUST · POUSSIÈRE</text>
+          <text x="0" y="8" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="5" fill="#1A1F2E" letter-spacing="0.3">PPE · EPI</text>
+        </g>
+        <g transform="translate(500 384)">
+          <rect x="-28" y="-10" width="56" height="20" rx="2" fill="#C2C8D2" stroke="#3A3F4A" stroke-width="1.2"/>
+          <text x="0" y="-1" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="5.4" fill="#1A1F2E" letter-spacing="0.4">CRN · TC</text>
+          <text x="0" y="7" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="4.8" fill="#3A3F4A" letter-spacing="0.3">PMAS 200 kPa</text>
+        </g>
+      </g>
+    </g>
+  </g>
+
+  <!-- Chassis underframe + bogie -->
+  <g filter="url(#rigShadow)"><rect x="270" y="486" width="690" height="12" rx="2" fill="#1A1F2E"/></g>
+  <use href="#wheelChock" x="312" y="540"/>
+
+  <!-- Trailer bogie wheels -->
+  <g transform="translate(360 540)"><use href="#trailerWheel"/></g>
+  <g transform="translate(420 540)"><use href="#trailerWheel"/></g>
+  <g transform="translate(820 540)"><use href="#trailerWheel"/></g>
+  <g transform="translate(880 540)"><use href="#trailerWheel"/></g>
+  <!-- Landing-gear legs (parked) -->
+  <rect x="560" y="498" width="10" height="42" fill="#5A606D"/>
+  <rect x="556" y="538" width="18" height="6" fill="#3A3F4A"/>
+
+  <!-- PTO blower (idle during gravity top-load) -->
+  <g filter="url(#rigShadow)" transform="translate(228 452)">
+    <rect x="0" y="0" width="46" height="36" rx="4" fill="#5A606D"/>
+    <rect x="0" y="0" width="46" height="5" rx="2" fill="#7E8593"/>
+    <rect x="5" y="8" width="36" height="16" rx="2" fill="#3A3F4A"/>
+    <text x="23" y="20" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6" fill="#C8CDD8" letter-spacing="0.4">BLOWER</text>
+    <g class="blower-spin">
+      <circle cx="23" cy="30" r="8" fill="#1F2330"/>
+      <circle cx="23" cy="30" r="5" fill="#5A606D"/>
+      <circle cx="23" cy="30" r="1.6" fill="#C8CDD8"/>
+    </g>
+    <rect x="11" y="0" width="3" height="36" fill="#A36F08" opacity="0.6"/>
+  </g>
+
+
+  <!-- ============================================================
+       FUGITIVE DUST PUFFS at the open hatch (during fill)
+       ============================================================ -->
+  <g filter="url(#softBlur)">
+    <circle class="dust-puff"    cx="708" cy="298" r="6" fill="url(#dustPuff)"/>
+    <circle class="dust-puff p2" cx="728" cy="298" r="5" fill="url(#dustPuff)"/>
+    <circle class="dust-puff p3" cx="718" cy="300" r="4" fill="url(#dustPuff)"/>
+  </g>
+
+
+  <!-- ============================================================
+       SAFETY CONES
+       ============================================================ -->
+  <g>
+    <g transform="translate(210 552)">
+      <polygon points="-7,0 7,0 4.6,-12 -4.6,-12" fill="#FF7A1F"/>
+      <polygon points="-5.4,-6 5.4,-6 4.6,-9 -4.6,-9" fill="#FFFFFF" opacity="0.85"/>
+      <polygon points="-3.4,-12 3.4,-12 3,-15 -3,-15" fill="#FF7A1F"/>
+      <ellipse cx="0" cy="0" rx="9" ry="2" fill="#1A1F2E" opacity="0.35"/>
+    </g>
+    <g transform="translate(990 552)">
+      <polygon points="-7,0 7,0 4.6,-12 -4.6,-12" fill="#FF7A1F"/>
+      <polygon points="-5.4,-6 5.4,-6 4.6,-9 -4.6,-9" fill="#FFFFFF" opacity="0.85"/>
+      <polygon points="-3.4,-12 3.4,-12 3,-15 -3,-15" fill="#FF7A1F"/>
+      <ellipse cx="0" cy="0" rx="9" ry="2" fill="#1A1F2E" opacity="0.35"/>
+    </g>
+  </g>
+
+
+  <!-- ============================================================
+       SCALE / LOAD-CELL READOUT (net tons loaded)
+       ============================================================ -->
+  <g filter="url(#rigShadow)" transform="translate(1056 360)">
+    <rect x="0" y="0" width="96" height="70" rx="4" fill="#3A3F4A"/>
+    <rect x="0" y="0" width="96" height="6"  fill="#5A606D"/>
+    <rect x="6" y="12" width="84" height="26" fill="#0F1320"/>
+    <text x="84" y="32" text-anchor="end" font-family="Courier New, ui-monospace, monospace"
+          font-weight="900" font-size="18" fill="#43E26A" letter-spacing="1.2">24.6</text>
+    <text x="10" y="50" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="7" fill="#43E26A" letter-spacing="0.6">NET TONS</text>
+    <rect x="6" y="56" width="84" height="6" fill="#1A1F2E"/>
+    <rect class="scale-bar" x="6" y="56" width="84" height="6" fill="#43E26A"/>
+    <text x="48" y="5" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="4.6" fill="#FFFFFF" letter-spacing="0.5">PLANT LOAD-CELL</text>
+  </g>
+
+
+  <!-- ============================================================
+       HUD OVERLAYS
+       ============================================================ -->
+  <g class="brand-lockup" transform="translate(50 40)">
+    <g class="brand-mark">
+      <circle cx="24" cy="14" r="15" fill="url(#brandIridescent)"/>
+      <path d="M 24 6 C 22 10 19 13 20.4 17 C 19 16.2 18 14 18.8 12.4 C 17 14 16.6 17.4 19 20 C 17.8 19 17.8 16.6 17.8 19 C 19.4 21.6 22 22.2 24 22.2 C 26 22.2 28.6 21.6 30.2 19 C 30.2 16.6 30.2 19 29 20 C 31.4 17.4 31 14 29.2 12.4 C 30 14 29 16.2 27.6 17 C 29 13 26 10 24 6 Z" fill="#FFFFFF"/>
+    </g>
+    <text class="brand-word" x="48" y="14" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="18" letter-spacing="2.5" fill="#5B3FBF">EUSOTRIP</text>
+    <text x="48" y="28" font-family="Inter, system-ui, sans-serif"
+          font-weight="500" font-size="8" letter-spacing="3" fill="#9B7FD9" opacity="0.55">BY EUSORONE</text>
+  </g>
+
+  <g>
+    <rect x="1052" y="58" width="100" height="32" rx="16" ry="16" fill="url(#brandIridescent)" stroke="#FFFFFF" stroke-width="1.5" stroke-opacity="0.5"/>
+    <g transform="translate(1066 70)" fill="#FFFFFF"><rect x="0" y="2" width="8" height="6" rx="1"/><rect x="9" y="0" width="6" height="8" rx="1"/><circle cx="3" cy="10" r="1.5"/><circle cx="12" cy="10" r="1.5"/></g>
+    <text x="1115" y="79" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="14" letter-spacing="1.8" fill="#FFFFFF">TRUCK</text>
+  </g>
+
+  <g class="load-pill">
+    <rect x="60" y="100" width="178" height="32" rx="16" ry="16" fill="#0AC2C2" opacity="0.95"/>
+    <circle cx="80" cy="116" r="5" fill="#FFFFFF" opacity="0.95"/>
+    <circle cx="80" cy="116" r="2.5" fill="#0AC2C2"/>
+    <text x="100" y="122" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="13" letter-spacing="2.4"
+          fill="#FFFFFF" data-bind="state_label">LOADING</text>
+  </g>
+
+  <g opacity="0.9">
+    <text x="60" y="78" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="13" letter-spacing="2" fill="#5B3FBF"
+          data-bind="equipment_label">PNEUMATIC DRY-BULK</text>
+    <line x1="60" y1="86" x2="240" y2="86" stroke="#9B7FD9" stroke-width="2" stroke-linecap="round"/>
+    <text x="60" y="148" font-family="Inter, system-ui, sans-serif"
+          font-weight="500" font-size="10" letter-spacing="1.2" fill="#7A5AB8"
+          data-bind="equipment_subtitle">CEMENT &#183; FLY-ASH &#183; GRAIN</text>
+  </g>
+
+  <g opacity="0.95">
+    <rect x="60" y="160" width="320" height="22" rx="6" ry="6"
+          fill="#FFFFFF" fill-opacity="0.95" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.45"/>
+    <text data-bind="dock_id" x="72" y="176" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="11" letter-spacing="1.4" fill="#5B3FBF">BATCH SILO 3 &#183; TOP-LOAD</text>
+    <text data-bind="eta_minutes" x="370" y="176" text-anchor="end"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="600" font-size="10" letter-spacing="0.8" fill="#7A5AB8">ETA 12 MIN</text>
+  </g>
+  <g opacity="0.95">
+    <rect x="60" y="190" width="320" height="22" rx="6" ry="6"
+          fill="#FFFFFF" fill-opacity="0.95" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.45"/>
+    <text data-bind="commodity_label" x="72" y="206" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="11" letter-spacing="1.4" fill="#5B3FBF">PORTLAND CEMENT &#183; TYPE I/II</text>
+  </g>
+
+  <g>
+    <rect x="60" y="555" width="1080" height="6" rx="3" fill="#E5E2EF" opacity="0.6"/>
+    <rect class="progress-fill" x="60" y="555" width="540" height="6" rx="3"
+          fill="#0AC2C2"
+          style="--load-progress: 0.5;"/>
+    <text x="1140" y="548" text-anchor="end"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="10" letter-spacing="1.4"
+          fill="#5B3FBF" opacity="0.85"><tspan data-bind="weight_label">49,200 LBS</tspan> &#183; <tspan data-bind="progress_pct">50</tspan>%</text>
+  </g>
+
+  <g class="chevron">
+    <path d="M 70 540 L 55 525 L 55 555 Z" fill="#9B7FD9"/>
+  </g>
+
+  <!-- Iridescent rounded card border -->
+  <rect class="card-border" x="20" y="20" width="1160" height="560" rx="22"
+        fill="none" stroke="url(#brandIridescent)" stroke-width="2.5" pointer-events="none"/>
+</svg>

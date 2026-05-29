@@ -1,0 +1,561 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600" data-state="loading">
+  <!--
+    EusoTrip Animation Design System
+    34 · Livestock (Possum-Belly Cattle Hauler) · LOADING
+    EquipmentKind: livestock · Mode: TRUCK · Unit: HD (head)
+
+    TRUE livestock loading cycle (6.4s loop):
+      The cattle pot is backed against a stepped loading chute at a feedlot/ranch
+      working facility. Animals are walked single-file UP the ~20° stepped ramp
+      and into the rear loading gate, filling the decks. A handler on foot works
+      the alley behind them.
+        1. A beast appears at the bottom of the chute (right), walks UP the ramp
+           with a 4-beat gait bob, decelerating as it steps over the gate sill.
+        2. It crosses the threshold and the on-ramp beast fades — "absorbed" into
+           the growing in-trailer herd (deck head-count grows).
+        3. Reset: the next animal appears at the bottom. Seamless loop.
+      cubic-bezier decel on the climb reads like a real, deliberate animal pace.
+  -->
+  <style><![CDATA[
+
+    /* ============ FOUNDATION MOTION VOCAB ============ */
+    .brand-mark { transform-box: fill-box; transform-origin: center;
+                  animation: brand-pulse 3.6s ease-in-out infinite; }
+    @keyframes brand-pulse {
+      0%, 100% { transform: scale(1);    opacity: 0.92; }
+      50%      { transform: scale(1.05); opacity: 1; }
+    }
+    .brand-word { animation: brand-word-breath 6s ease-in-out infinite; }
+    @keyframes brand-word-breath {
+      0%, 100% { opacity: 0.78; }
+      50%      { opacity: 1; }
+    }
+    .sky-shimmer { animation: sky-drift 14s linear infinite; transform-box: fill-box; }
+    @keyframes sky-drift {
+      from { transform: translateX(-40px); opacity: 0.12; }
+      50%  { opacity: 0.22; }
+      to   { transform: translateX(40px);  opacity: 0.12; }
+    }
+    .load-pill { transform-box: fill-box; transform-origin: center;
+                 animation: load-pill-pulse 2.4s ease-in-out infinite; }
+    @keyframes load-pill-pulse {
+      0%, 100% { opacity: 0.85; transform: scale(1); }
+      50%      { opacity: 1;    transform: scale(1.04); }
+    }
+    .progress-fill { transition: width 0.4s ease-out; }
+    .chevron { animation: chevron-pulse 2.2s ease-in-out infinite; }
+    @keyframes chevron-pulse {
+      0%, 100% { opacity: 0.3; }
+      50%      { opacity: 0.65; }
+    }
+
+    /* ============ LIVESTOCK HANDLING MOTION ============ */
+    /* The animal walking UP the chute and into the rear gate. The path moves it
+       left-and-up along the ramp slope, then fades as it crosses the gate sill
+       (transferred to the growing in-trailer herd). 0%/100% match for seamless. */
+    .walk-up { animation: walk-up 6.4s cubic-bezier(0.4,0,0.2,1) infinite; }
+    @keyframes walk-up {
+      0%   { transform: translate(0,0)        ; opacity: 0; }
+      6%   { transform: translate(-6px,-3px)  ; opacity: 1; }   /* steps onto chute */
+      54%  { transform: translate(-184px,-92px); opacity: 1; }  /* nears the gate sill */
+      64%  { transform: translate(-208px,-104px); opacity: 1; } /* steps over the sill */
+      70%  { transform: translate(-220px,-110px); opacity: 0; } /* into the deck — fades */
+      100% { transform: translate(-220px,-110px); opacity: 0; } /* park, seamless reset */
+    }
+    /* 4-beat gait bob layered on top of the climb */
+    .gait { animation: gait 0.62s ease-in-out infinite; transform-box: fill-box;
+            transform-origin: bottom center; }
+    @keyframes gait {
+      0%, 100% { transform: translateY(0)    rotate(0deg); }
+      50%      { transform: translateY(-2px) rotate(-1.2deg); }
+    }
+    /* In-trailer herd grows deck-by-deck as the cycle progresses; settles full
+       just before the on-ramp beast fades. Gentle decel — no linear pop. */
+    .herd-grow { animation: herd-grow 6.4s cubic-bezier(0.4,0,0.2,1) infinite;
+                 transform-box: fill-box; transform-origin: bottom; }
+    @keyframes herd-grow {
+      0%, 10%  { transform: scaleY(0.12); opacity: 0.25; }
+      54%      { transform: scaleY(0.7);  opacity: 0.9; }
+      70%      { transform: scaleY(1);    opacity: 1; }
+      100%     { transform: scaleY(1);    opacity: 1; }
+    }
+    /* The handler's sorting paddle taps in rhythm to keep the line moving */
+    .paddle { transform-box: fill-box; transform-origin: top center;
+              animation: paddle-tap 1.3s ease-in-out infinite; }
+    @keyframes paddle-tap {
+      0%, 100% { transform: rotate(0deg); }
+      50%      { transform: rotate(-16deg); }
+    }
+    /* Settled cattle already aboard sway gently with the live load */
+    .settle-sway { transform-box: fill-box; transform-origin: bottom center;
+                   animation: settle-sway 3s ease-in-out infinite; }
+    .settle-sway.s2 { animation-delay: -1.1s; animation-duration: 3.4s; }
+    .settle-sway.s3 { animation-delay: -2.0s; animation-duration: 2.7s; }
+    @keyframes settle-sway {
+      0%, 100% { transform: rotate(0deg); }
+      50%      { transform: rotate(1.4deg); }
+    }
+    .dock-glow { animation: dock-glow 4s ease-in-out infinite; }
+    @keyframes dock-glow {
+      0%, 100% { opacity: 0.55; }
+      50%      { opacity: 0.85; }
+    }
+    /* Bedding / straw dust kicked up at the gate sill */
+    .straw-dust { transform-box: fill-box; transform-origin: center;
+                  animation: straw-dust 3.2s ease-out infinite; }
+    .straw-dust.d2 { animation-delay: -1.4s; animation-duration: 3.8s; }
+    @keyframes straw-dust {
+      0%   { transform: translate(0,0) scale(0.4); opacity: 0; }
+      25%  { opacity: 0.45; }
+      100% { transform: translate(-12px,-20px) scale(1.2); opacity: 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .brand-lockup, .brand-mark, .brand-word, .chevron,
+      .walk-up, .gait, .herd-grow, .paddle, .settle-sway,
+      .load-pill, .progress-fill, .sky-shimmer, .dock-glow, .straw-dust {
+        animation: none !important;
+      }
+    }
+
+  ]]></style>
+
+  <defs>
+    <linearGradient id="brandIridescent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1473FF"/>
+      <stop offset="50%" stop-color="#6E4DFF"/>
+      <stop offset="100%" stop-color="#BE01FF"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#EEF1FA"/>
+      <stop offset="55%" stop-color="#F5EEFC"/>
+      <stop offset="100%" stop-color="#EFF8FA"/>
+    </linearGradient>
+    <linearGradient id="dockFloor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#C5C9D2"/>
+      <stop offset="100%" stop-color="#7A7F88"/>
+    </linearGradient>
+    <linearGradient id="aluBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#EDEFF3"/>
+      <stop offset="50%" stop-color="#D3D8E1"/>
+      <stop offset="100%" stop-color="#AEB5C2"/>
+    </linearGradient>
+    <linearGradient id="aluBelly" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#C2C8D2"/>
+      <stop offset="100%" stop-color="#959DAC"/>
+    </linearGradient>
+    <linearGradient id="chuteSteel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#B6BDCB"/>
+      <stop offset="100%" stop-color="#7A8294"/>
+    </linearGradient>
+    <linearGradient id="trailerInterior" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2A2018"/>
+      <stop offset="60%" stop-color="#1A1410"/>
+      <stop offset="100%" stop-color="#0F0C09"/>
+    </linearGradient>
+    <radialGradient id="dockLightCone" cx="0.5" cy="0" r="0.9">
+      <stop offset="0%" stop-color="#FFE9A8" stop-opacity="0.75"/>
+      <stop offset="60%" stop-color="#FFC97A" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#FFC97A" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="rim" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#5A606D"/>
+      <stop offset="80%" stop-color="#3A3F4A"/>
+      <stop offset="100%" stop-color="#1F2330"/>
+    </radialGradient>
+    <radialGradient id="strawDust" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#D8C48A" stop-opacity="0.65"/>
+      <stop offset="100%" stop-color="#D8C48A" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="diamondPlate" x="0" y="0" width="14" height="14" patternUnits="userSpaceOnUse">
+      <rect width="14" height="14" fill="#9DA2AB"/>
+      <path d="M 0 7 L 7 0 L 14 7 L 7 14 Z" fill="#B5BAC3" opacity="0.55"/>
+      <path d="M 0 7 L 7 0 L 14 7 L 7 14 Z" fill="none" stroke="#6E737D" stroke-width="0.3" opacity="0.6"/>
+    </pattern>
+    <pattern id="punchVent" x="0" y="0" width="26" height="26" patternUnits="userSpaceOnUse">
+      <circle cx="13" cy="7"  r="4.4" fill="#3A3F4A" opacity="0.62"/>
+      <circle cx="13" cy="7"  r="4.4" fill="none" stroke="#7A8294" stroke-width="0.7" opacity="0.6"/>
+      <circle cx="0"  cy="20" r="4.4" fill="#3A3F4A" opacity="0.62"/>
+      <circle cx="0"  cy="20" r="4.4" fill="none" stroke="#7A8294" stroke-width="0.7" opacity="0.6"/>
+      <circle cx="26" cy="20" r="4.4" fill="#3A3F4A" opacity="0.62"/>
+      <circle cx="26" cy="20" r="4.4" fill="none" stroke="#7A8294" stroke-width="0.7" opacity="0.6"/>
+    </pattern>
+    <filter id="rigShadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
+      <feOffset dx="0" dy="4" result="offsetBlur"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.18"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softBlur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+
+    <!-- Steer (cattle) walking-profile silhouette, facing left toward the gate -->
+    <symbol id="steerProfile" overflow="visible">
+      <!-- Body -->
+      <ellipse cx="0" cy="0" rx="26" ry="15" fill="#6B5443"/>
+      <ellipse cx="0" cy="-3" rx="24" ry="11" fill="#7A6250"/>
+      <!-- Hindquarter -->
+      <ellipse cx="20" cy="-2" rx="11" ry="13" fill="#5A4636"/>
+      <!-- Neck + head (toward left) -->
+      <path d="M -22 -6 Q -34 -8 -40 2 Q -44 8 -40 12 L -30 12 Q -24 6 -22 -2 Z" fill="#6B5443"/>
+      <ellipse cx="-40" cy="6" rx="8" ry="6" fill="#5C4838"/>
+      <circle cx="-42" cy="3" r="1.6" fill="#1A1A1A"/>
+      <!-- Ear + small horns -->
+      <path d="M -34 -2 Q -38 -8 -33 -9" stroke="#4A3A2C" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+      <path d="M -36 -4 Q -40 -10 -36 -12" stroke="#3A2E22" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+      <!-- Legs (4) -->
+      <rect x="-18" y="12" width="4" height="18" rx="1.5" fill="#4A3A2C"/>
+      <rect x="-6"  y="12" width="4" height="18" rx="1.5" fill="#5A4636"/>
+      <rect x="10"  y="12" width="4" height="18" rx="1.5" fill="#4A3A2C"/>
+      <rect x="22"  y="12" width="4" height="18" rx="1.5" fill="#5A4636"/>
+      <!-- Tail -->
+      <path d="M 30 -4 Q 36 4 33 16" stroke="#4A3A2C" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+    </symbol>
+    <!-- Compact aboard-the-deck steer (head/back only, seen through slats) -->
+    <symbol id="steerAboard" overflow="visible">
+      <ellipse cx="0" cy="0" rx="15" ry="11" fill="#5A4636"/>
+      <ellipse cx="0" cy="-2" rx="7" ry="8" fill="#6B5443"/>
+      <circle cx="-3" cy="-3" r="1.3" fill="#1A1A1A"/>
+      <path d="M -7 -8 Q -10 -12 -7 -13" stroke="#3A2E22" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <path d="M 7 -8 Q 10 -12 7 -13" stroke="#3A2E22" stroke-width="2" fill="none" stroke-linecap="round"/>
+    </symbol>
+  </defs>
+
+  <rect class="card-bg" x="20" y="20" width="1160" height="560" rx="22" fill="#FAFBFD"/>
+  <rect class="sky-shimmer" x="20" y="380" width="1160" height="70" fill="#FFFFFF" opacity="0.18"/>
+
+  <!-- ============================================================
+       BACKGROUND: feedlot working-facility wall + sky hint
+       ============================================================ -->
+  <rect x="20" y="220" width="1160" height="240" fill="url(#sky)" opacity="0.8"/>
+  <g opacity="0.18" stroke="#9098A8" stroke-width="0.6">
+    <line x1="380" y1="220" x2="380" y2="460"/>
+    <line x1="540" y1="220" x2="540" y2="460"/>
+    <line x1="700" y1="220" x2="700" y2="460"/>
+    <line x1="860" y1="220" x2="860" y2="460"/>
+    <line x1="1020" y1="220" x2="1020" y2="460"/>
+  </g>
+  <!-- Pipe-rail corral fence hint behind the chute (working pens) -->
+  <g opacity="0.4" stroke="#8A92A0" stroke-width="3" stroke-linecap="round">
+    <line x1="900" y1="300" x2="1150" y2="300"/>
+    <line x1="900" y1="330" x2="1150" y2="330"/>
+    <line x1="900" y1="360" x2="1150" y2="360"/>
+    <line x1="960" y1="296" x2="960" y2="392"/>
+    <line x1="1060" y1="296" x2="1060" y2="392"/>
+  </g>
+
+  <!-- ============================================================
+       GROUND / YARD APRON
+       ============================================================ -->
+  <rect x="20" y="460" width="1160" height="120" fill="url(#dockFloor)"/>
+  <line x1="320" y1="500" x2="1140" y2="500" stroke="#FFD200" stroke-width="2"
+        stroke-dasharray="22 14" opacity="0.45"/>
+
+  <!-- ============================================================
+       LIVESTOCK POSSUM-BELLY TRAILER — parked rear-to-chute at left.
+       We see the REAR of the trailer (loading gate open) + the punched side.
+       ============================================================ -->
+  <g filter="url(#rigShadow)">
+    <!-- Dropped 'possum belly' lower deck -->
+    <path d="M 96 392 L 96 430 Q 96 442 108 442 L 300 442 Q 312 442 312 430 L 312 392 Z"
+          fill="url(#aluBelly)" stroke="#8A92A0" stroke-width="1"/>
+    <rect x="108" y="398" width="192" height="34" fill="url(#punchVent)" opacity="0.9"/>
+
+    <!-- Main upper body -->
+    <rect x="74" y="200" width="290" height="192" rx="8" fill="url(#aluBody)"
+          stroke="#9098A8" stroke-width="1"/>
+    <rect x="74" y="200" width="290" height="6" rx="3" fill="#FFFFFF" opacity="0.6"/>
+    <rect x="74" y="200" width="290" height="12" fill="#C7CDD8" opacity="0.7"/>
+    <rect x="74" y="380" width="290" height="12" fill="#B6BDCB" opacity="0.7"/>
+    <!-- Mid-deck divider -->
+    <rect x="74" y="290" width="290" height="8" fill="#B6BDCB" opacity="0.8"/>
+
+    <!-- Dark interior visible through the open rear gate -->
+    <rect x="80" y="212" width="280" height="166" fill="url(#trailerInterior)" opacity="0.92"/>
+
+    <!-- Punched vent sides (upper + lower deck bands) over the body, but the
+         open rear shows interior — vents only on the closed left portion -->
+    <rect x="80" y="216" width="160" height="68" fill="url(#punchVent)" opacity="0.55"/>
+    <rect x="80" y="302" width="160" height="72" fill="url(#punchVent)" opacity="0.55"/>
+
+    <!-- Interior bedding (straw on deck floors) -->
+    <rect x="84" y="372" width="272" height="6" fill="#C8B06A" opacity="0.55"/>
+    <rect x="84" y="284" width="272" height="5" fill="#C8B06A" opacity="0.45"/>
+
+    <!-- HERD ALREADY ABOARD — grows as the cycle progresses -->
+    <g transform="translate(0 0)">
+      <g class="herd-grow">
+        <!-- Upper deck -->
+        <g class="settle-sway"    transform="translate(120 268)"><use href="#steerAboard"/></g>
+        <g class="settle-sway s2" transform="translate(165 270)"><use href="#steerAboard"/></g>
+        <g class="settle-sway s3" transform="translate(210 268)"><use href="#steerAboard"/></g>
+        <!-- Lower deck / belly -->
+        <g class="settle-sway s3" transform="translate(135 356)"><use href="#steerAboard"/></g>
+        <g class="settle-sway"    transform="translate(185 358)"><use href="#steerAboard"/></g>
+        <g class="settle-sway s2" transform="translate(235 356)"><use href="#steerAboard"/></g>
+      </g>
+    </g>
+
+    <!-- Vertical posts -->
+    <g stroke="#8A92A0" stroke-width="1.4" opacity="0.6">
+      <line x1="150" y1="212" x2="150" y2="378"/>
+      <line x1="230" y1="212" x2="230" y2="378"/>
+      <line x1="300" y1="212" x2="300" y2="378"/>
+    </g>
+
+    <!-- LIVE ANIMALS welfare placard on the side -->
+    <g transform="translate(92 222)">
+      <rect x="0" y="0" width="64" height="26" rx="4" fill="#FFFFFF" opacity="0.95"
+            stroke="#E5350D" stroke-width="1.5"/>
+      <text x="32" y="12" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="7" fill="#1A1F2E" letter-spacing="0.5">LIVE ANIMALS</text>
+      <g stroke="#1A1F2E" stroke-width="1.2" fill="none" stroke-linecap="round">
+        <line x1="12" y1="22" x2="12" y2="16"/><path d="M 9.8 18.4 L 12 16 L 14.2 18.4"/>
+        <line x1="52" y1="22" x2="52" y2="16"/><path d="M 49.8 18.4 L 52 16 L 54.2 18.4"/>
+      </g>
+      <text x="32" y="22" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="600" font-size="4.6" fill="#5B3FBF" letter-spacing="0.8">HANDLE WITH CARE</text>
+    </g>
+
+    <!-- DOT conspicuity strip on lower rail -->
+    <g>
+      <rect x="80" y="383" width="16" height="5" fill="#E5350D"/>
+      <rect x="96" y="383" width="16" height="5" fill="#FFFFFF"/>
+      <rect x="112" y="383" width="16" height="5" fill="#E5350D"/>
+      <rect x="128" y="383" width="16" height="5" fill="#FFFFFF"/>
+    </g>
+  </g>
+
+  <!-- ============================================================
+       OPEN REAR LOADING GATE (swung outward at the right edge)
+       ============================================================ -->
+  <g opacity="0.95">
+    <rect x="364" y="200" width="14" height="192" fill="#C2C8D2" stroke="#8A92A0" stroke-width="1"/>
+    <g stroke="#7A8294" stroke-width="2" opacity="0.85">
+      <line x1="368" y1="210" x2="368" y2="384"/>
+      <line x1="373" y1="210" x2="373" y2="384"/>
+    </g>
+    <!-- Hinge bands + latch -->
+    <rect x="362" y="220" width="18" height="6" fill="#3A3F4A"/>
+    <rect x="362" y="300" width="18" height="6" fill="#3A3F4A"/>
+    <rect x="362" y="372" width="18" height="6" fill="#3A3F4A"/>
+  </g>
+
+  <!-- Red marker lights on rear corner posts (DOT) -->
+  <circle cx="78" cy="372" r="2.4" fill="#E63A3A"/><circle cx="78" cy="372" r="1.2" fill="#FFB8B8"/>
+  <circle cx="360" cy="372" r="2.4" fill="#E63A3A"/><circle cx="360" cy="372" r="1.2" fill="#FFB8B8"/>
+
+  <!-- Trailer ID + country-aware welfare authority stencil on the gate.
+       Renderer shows ONE of .country-US / .country-MX / .country-CA by route
+       country (set the others to display:none):
+         US → USDA APHIS humane transport (28-Hour Law)
+         MX → SENASICA transporte de ganado (NOM-051-ZOO)
+         CA → CFIA humane transport + NFACC code (bedding / fitness-to-travel)
+       data-bind feeds the live permit/certificate number. -->
+  <g class="country-US" data-country="US">
+    <text x="371" y="290" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="900" font-size="3.6" fill="#1A1F2E" letter-spacing="0.3"
+          transform="rotate(-90 371 290)" opacity="0.85" data-bind="welfare_auth">USDA APHIS · 28-HR LAW</text>
+  </g>
+  <g class="country-MX" data-country="MX" style="display:none">
+    <text x="371" y="290" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="900" font-size="3.6" fill="#1A1F2E" letter-spacing="0.3"
+          transform="rotate(-90 371 290)" opacity="0.85" data-bind="welfare_auth">SENASICA · NOM-051-ZOO</text>
+  </g>
+  <g class="country-CA" data-country="CA" style="display:none">
+    <text x="371" y="290" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="900" font-size="3.6" fill="#1A1F2E" letter-spacing="0.3"
+          transform="rotate(-90 371 290)" opacity="0.85" data-bind="welfare_auth">CFIA · NFACC TRANSPORT</text>
+  </g>
+
+  <!-- ============================================================
+       STEPPED LOADING CHUTE / RAMP (rises from yard up to the gate sill)
+       ~20-degree stepped ramp per welfare best-practice; single-file alley.
+       ============================================================ -->
+  <g filter="url(#rigShadow)">
+    <!-- Ramp underside / structure -->
+    <polygon points="380,392 620,486 620,500 380,406" fill="url(#chuteSteel)"/>
+    <!-- Ramp deck (stepped, cleated) -->
+    <polygon points="380,378 600,468 600,486 380,392" fill="#9DA2AB"/>
+    <polygon points="380,378 600,468 600,486 380,392" fill="none" stroke="#5A606D" stroke-width="1"/>
+    <!-- Cleats / steps across the ramp (reduce slipping) -->
+    <g stroke="#3A3F4A" stroke-width="2" opacity="0.65">
+      <line x1="408" y1="380" x2="408" y2="394"/>
+      <line x1="446" y1="396" x2="446" y2="410"/>
+      <line x1="484" y1="412" x2="484" y2="426"/>
+      <line x1="522" y1="428" x2="522" y2="442"/>
+      <line x1="560" y1="444" x2="560" y2="458"/>
+    </g>
+    <!-- Solid side walls of the chute (single-file alley) -->
+    <polygon points="380,344 600,434 600,468 380,378" fill="url(#chuteSteel)" opacity="0.85"/>
+    <g stroke="#5A606D" stroke-width="1.5" opacity="0.55">
+      <line x1="408" y1="346" x2="408" y2="382"/>
+      <line x1="466" y1="370" x2="466" y2="406"/>
+      <line x1="524" y1="394" x2="524" y2="430"/>
+      <line x1="582" y1="418" x2="582" y2="454"/>
+    </g>
+    <!-- Yellow safety toe-guard at the gate sill (bridge to trailer floor) -->
+    <rect x="364" y="376" width="26" height="4" fill="#FFD200" opacity="0.8"/>
+  </g>
+
+  <!-- Dock light gooseneck shining into the trailer (working at dawn/dusk) -->
+  <g transform="translate(200 200)">
+    <rect x="-6" y="-4" width="12" height="6" rx="1" fill="#3A3F4A"/>
+    <path d="M 0 2 Q 6 14 22 22 Q 38 30 56 38" stroke="#1A1F2E" stroke-width="3.6" fill="none" stroke-linecap="round"/>
+    <g transform="translate(60 40) rotate(28)">
+      <ellipse cx="0" cy="0" rx="11" ry="8" fill="#3A3F4A"/>
+      <ellipse cx="-1" cy="-1" rx="9" ry="6" fill="#FFE9A8"/>
+    </g>
+  </g>
+  <g class="dock-glow">
+    <path d="M 250 244 L 110 224 L 110 378 L 300 378 Z" fill="url(#dockLightCone)"/>
+  </g>
+
+  <!-- ============================================================
+       STRAW / BEDDING DUST at the gate sill (animals stir the bedding)
+       ============================================================ -->
+  <g filter="url(#softBlur)">
+    <circle class="straw-dust"    cx="360" cy="380" r="6" fill="url(#strawDust)"/>
+    <circle class="straw-dust d2" cx="400" cy="390" r="5" fill="url(#strawDust)"/>
+  </g>
+
+  <!-- ============================================================
+       THE ANIMAL WALKING UP THE CHUTE (climbs left-and-up, then fades
+       as it crosses the gate sill — absorbed into the growing herd)
+       ============================================================ -->
+  <g class="walk-up">
+    <g transform="translate(584 446) scale(1.05 1.05)">
+      <g class="gait">
+        <use href="#steerProfile"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- ============================================================
+       HANDLER ON FOOT working the alley behind the line (sorting paddle)
+       ============================================================ -->
+  <g transform="translate(660 432)">
+    <!-- Legs -->
+    <rect x="-4" y="14" width="4" height="22" rx="1.5" fill="#2A3045"/>
+    <rect x="3"  y="14" width="4" height="22" rx="1.5" fill="#2A3045"/>
+    <!-- Torso (hi-vis) -->
+    <rect x="-7" y="-6" width="16" height="22" rx="4" fill="#FFC72C"/>
+    <rect x="-7" y="2"  width="16" height="3" fill="#FFFFFF" opacity="0.7"/>
+    <!-- Head + hat -->
+    <circle cx="1" cy="-13" r="6" fill="#C9A07A"/>
+    <path d="M -8 -15 Q 1 -22 10 -15 Z" fill="#5A4636"/>
+    <rect x="-9" y="-15" width="20" height="2.4" rx="1" fill="#4A3A2C"/>
+    <!-- Arm + sorting paddle -->
+    <g transform="translate(9 0)">
+      <line x1="0" y1="-2" x2="14" y2="-8" stroke="#FFC72C" stroke-width="4" stroke-linecap="round"/>
+      <g class="paddle" transform="translate(14 -8)">
+        <line x1="0" y1="0" x2="22" y2="6" stroke="#7A5A40" stroke-width="2.4" stroke-linecap="round"/>
+        <circle cx="22" cy="6" r="6" fill="#E5350D" opacity="0.85"/>
+        <circle cx="22" cy="6" r="6" fill="none" stroke="#FFFFFF" stroke-width="1"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- ============================================================
+       WHEELS (trailer tandem straddling the possum belly + bogie)
+       ============================================================ -->
+  <symbol id="wheelArt" overflow="visible">
+    <circle cx="0" cy="0" r="26" fill="#1A1A1A"/>
+    <circle cx="0" cy="0" r="18" fill="url(#rim)"/>
+    <circle cx="0" cy="0" r="6" fill="#7A7F88"/>
+    <g stroke="#3A3F4A" stroke-width="2.2" stroke-linecap="round">
+      <line x1="0" y1="-15" x2="0" y2="-7"/>
+      <line x1="14" y1="-5" x2="7" y2="-2"/>
+      <line x1="9" y1="13" x2="5" y2="6"/>
+      <line x1="-9" y1="13" x2="-5" y2="6"/>
+      <line x1="-14" y1="-5" x2="-7" y2="-2"/>
+    </g>
+  </symbol>
+  <g transform="translate(150 458)"><use href="#wheelArt"/></g>
+  <g transform="translate(232 458)"><use href="#wheelArt"/></g>
+  <!-- Landing gear (parked) -->
+  <rect x="316" y="392" width="8" height="66" fill="#5A606D"/>
+  <rect x="313" y="456" width="14" height="6" rx="1" fill="#3A3F4A"/>
+
+  <!-- ============================================================
+       BRAND CHROME
+       ============================================================ -->
+  <g class="brand-lockup" filter="url(#rigShadow)" transform="translate(490 26)">
+    <g class="brand-mark">
+      <circle cx="19" cy="19" r="18" fill="url(#brandIridescent)"/>
+      <circle cx="19" cy="19" r="18" fill="none" stroke="#FFFFFF" stroke-width="1.4" stroke-opacity="0.5"/>
+      <text x="19" y="26" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="22" fill="#FFFFFF">E</text>
+    </g>
+    <text class="brand-word" x="48" y="22" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="18" letter-spacing="2.5" fill="#5B3FBF">EUSOTRIP</text>
+    <text x="48" y="36" font-family="Inter, system-ui, sans-serif"
+          font-weight="500" font-size="8" letter-spacing="3" fill="#9B7FD9" opacity="0.55">BY EUSORONE</text>
+  </g>
+
+  <!-- Mode pill -->
+  <g>
+    <rect x="1052" y="58" width="100" height="32" rx="16" ry="16" fill="url(#brandIridescent)" stroke="#FFFFFF" stroke-width="1.5" stroke-opacity="0.5"/>
+    <g transform="translate(1066 70)" fill="#FFFFFF"><rect x="0" y="2" width="8" height="6" rx="1"/><rect x="9" y="0" width="6" height="8" rx="1"/><circle cx="3" cy="10" r="1.5"/><circle cx="12" cy="10" r="1.5"/></g>
+    <text x="1115" y="79" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="14" letter-spacing="1.8" fill="#FFFFFF">TRUCK</text>
+  </g>
+
+  <!-- State pill -->
+  <g class="load-pill">
+    <rect x="60" y="100" width="178" height="32" rx="16" ry="16" fill="#0AC2C2" opacity="0.95"/>
+    <circle cx="80" cy="116" r="5" fill="#FFFFFF" opacity="0.95"/>
+    <circle cx="80" cy="116" r="2.5" fill="#0AC2C2"/>
+    <text x="100" y="122" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="13" letter-spacing="2.4"
+          fill="#FFFFFF" data-bind="state_label">LOADING</text>
+  </g>
+
+  <!-- Equipment label -->
+  <g opacity="0.9">
+    <text x="60" y="78" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="13" letter-spacing="2" fill="#5B3FBF"
+          data-bind="equipment_label">53' LIVESTOCK</text>
+    <line x1="60" y1="86" x2="240" y2="86" stroke="#9B7FD9" stroke-width="2" stroke-linecap="round"/>
+    <text x="60" y="148" font-family="Inter, system-ui, sans-serif"
+          font-weight="500" font-size="10" letter-spacing="1.2" fill="#7A5AB8"
+          data-bind="equipment_subtitle">POSSUM-BELLY CATTLE POT</text>
+  </g>
+
+  <!-- Facility + ETA -->
+  <g opacity="0.95">
+    <rect x="60" y="160" width="220" height="22" rx="6" ry="6"
+          fill="#FFFFFF" fill-opacity="0.95" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.45"/>
+    <text data-bind="dock_id" x="72" y="176" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="11" letter-spacing="1.4" fill="#5B3FBF">CHUTE 3</text>
+    <text data-bind="eta_minutes" x="270" y="176" text-anchor="end"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="600" font-size="10" letter-spacing="0.8" fill="#7A5AB8">ETA 22 MIN</text>
+  </g>
+  <g opacity="0.95">
+    <rect x="60" y="190" width="280" height="22" rx="6" ry="6"
+          fill="#FFFFFF" fill-opacity="0.95" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.45"/>
+    <text data-bind="commodity_label" x="72" y="206" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="11" letter-spacing="1.4" fill="#5B3FBF">FEEDER CATTLE &#183; 48 HD</text>
+  </g>
+
+  <!-- Progress bar — head-count localized by renderer (HD count is unit-neutral) -->
+  <g>
+    <rect x="60" y="555" width="1080" height="6" rx="3" fill="#E5E2EF" opacity="0.6"/>
+    <rect class="progress-fill" x="60" y="555" width="486" height="6" rx="3"
+          fill="#0AC2C2"
+          style="--load-progress: 0.45;"/>
+    <text x="1140" y="548" text-anchor="end"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="10" letter-spacing="1.4"
+          fill="#5B3FBF" opacity="0.85"><tspan data-bind="headcount_label">22 / 48 HD</tspan> &#183; <tspan data-bind="progress_pct">45</tspan>%</text>
+  </g>
+
+  <g class="chevron">
+    <path d="M 70 540 L 55 525 L 55 555 Z" fill="#9B7FD9"/>
+  </g>
+
+  <rect class="card-border" x="20" y="20" width="1160" height="560" rx="22" fill="none" stroke="url(#brandIridescent)" stroke-width="2.5" pointer-events="none"/>
+</svg>

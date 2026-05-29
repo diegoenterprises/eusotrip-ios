@@ -180,6 +180,14 @@
       50%      { opacity: 1;    transform: scale(1.15); }
     }
 
+    /* ============ COUNTRY-SWITCHABLE PLACARDS (USMCA) ============
+       UN1075 propane placards are UN-harmonized: the red Class-2.1 diamond +
+       orange UN1075 ID panel are identical under US 49 CFR 172.532,
+       MX NOM-004-SCT/2-2011, and CA TDG (SOR/2001-286). Only the optional
+       word-line localizes. Default = US visible; renderer toggles by setting
+       display on .country-US / .country-MX / .country-CA per shipment origin. */
+    .country-MX, .country-CA { display: none; }
+
     @media (prefers-reduced-motion: reduce) {
       .brand-lockup, .brand-mark, .brand-word,
       .bulk-level-rise, .bulk-meniscus,
@@ -882,13 +890,19 @@
         font-weight="700" font-size="6.4" fill="#3A3F4A" opacity="0.78"
         letter-spacing="1">SINGLE COMPARTMENT &#183; UN1075</text>
 
+  <!-- Class 2.1 FLAMMABLE GAS placard (red diamond) - LEFT SIDE -->
   <g transform="translate(354 462)">
     <g transform="rotate(45)">
       <rect x="-18" y="-18" width="36" height="36" fill="#E5350D" stroke="#000000" stroke-width="1.6"/>
     </g>
     <text y="-2" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
           font-weight="900" font-size="13" fill="#FFFFFF">2</text>
-    <text y="9" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+    <!-- Country-switchable word-line (default US) -->
+    <text class="country-US" y="9" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="4.6" fill="#FFFFFF" letter-spacing="0.5">FLAM GAS</text>
+    <text class="country-MX" y="9" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="4" fill="#FFFFFF" letter-spacing="0.3">GAS INFLAM.</text>
+    <text class="country-CA" y="9" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
           font-weight="800" font-size="4.6" fill="#FFFFFF" letter-spacing="0.5">FLAM GAS</text>
   </g>
   <g transform="translate(354 488)">
@@ -898,13 +912,19 @@
           data-bind="un_number">UN 1075</text>
   </g>
 
+  <!-- Class 2.1 placard (RIGHT SIDE) -->
   <g transform="translate(820 462)">
     <g transform="rotate(45)">
       <rect x="-18" y="-18" width="36" height="36" fill="#E5350D" stroke="#000000" stroke-width="1.6"/>
     </g>
     <text y="-2" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
           font-weight="900" font-size="13" fill="#FFFFFF">2</text>
-    <text y="9" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+    <!-- Country-switchable word-line (default US) -->
+    <text class="country-US" y="9" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="4.6" fill="#FFFFFF" letter-spacing="0.5">FLAM GAS</text>
+    <text class="country-MX" y="9" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="4" fill="#FFFFFF" letter-spacing="0.3">GAS INFLAM.</text>
+    <text class="country-CA" y="9" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
           font-weight="800" font-size="4.6" fill="#FFFFFF" letter-spacing="0.5">FLAM GAS</text>
   </g>
   <g transform="translate(820 488)">

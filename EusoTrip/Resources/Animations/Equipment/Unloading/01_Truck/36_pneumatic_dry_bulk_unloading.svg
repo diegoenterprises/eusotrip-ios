@@ -1,0 +1,677 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600" data-state="unloading">
+  <style><![CDATA[
+
+    /* ============ FOUNDATION MOTION VOCAB ============ */
+    .brand-mark { transform-box: fill-box; transform-origin: center;
+                  animation: brand-pulse 3.6s ease-in-out infinite; }
+    @keyframes brand-pulse {
+      0%, 100% { transform: scale(1);    opacity: 0.92; }
+      50%      { transform: scale(1.05); opacity: 1; }
+    }
+    .brand-word { animation: brand-word-breath 6s ease-in-out infinite; }
+    @keyframes brand-word-breath {
+      0%, 100% { opacity: 0.78; }
+      50%      { opacity: 1; }
+    }
+    .sky-shimmer { animation: sky-drift 14s linear infinite; transform-box: fill-box; }
+    @keyframes sky-drift {
+      from { transform: translateX(-40px); opacity: 0.12; }
+      50%  { opacity: 0.22; }
+      to   { transform: translateX(40px);  opacity: 0.12; }
+    }
+    .load-pill { transform-box: fill-box; transform-origin: center;
+                 animation: load-pill-pulse 2.4s ease-in-out infinite; }
+    @keyframes load-pill-pulse {
+      0%, 100% { opacity: 0.85; transform: scale(1); }
+      50%      { opacity: 1;    transform: scale(1.04); }
+    }
+    .progress-fill { transition: width 0.4s ease-out; }
+    .chevron { animation: chevron-pulse 2.2s ease-in-out infinite; }
+    @keyframes chevron-pulse {
+      0%, 100% { opacity: 0.3; }
+      50%      { opacity: 0.65; }
+    }
+
+    /* ============ PNEUMATIC-UNLOADING-SPECIFIC MOTION ============
+       7s cycle, master rhythm (CEMENT pressurized blow-off to a receiving
+       silo — the defining pneumatic process):
+         0  - 12% : driver couples the discharge hose between the trailer
+                    rear outlet and the silo top fill line.
+         12 - 26% : PTO blower engages; tank PRESSURIZES — needle on the
+                    tank gauge sweeps up toward the green band (~29 psi);
+                    blower pulley spins up to full speed.
+         26 - 34% : at set pressure the rear butterfly valve rotates OPEN
+                    (90° quarter-turn) and product begins to move.
+         34 - 94% : fluidized cement blows UP the hose into the silo — the
+                    trailer sight gauge FALLS, the silo level RISES in step
+                    (mass conservation); a dust/relief wisp vents at the
+                    silo's bag-filter top.
+         94 - 100%: transfer complete; valve seats, pressure bleeds, loop.
+       Cement is non-hazmat (no UN diamond) — markings are pressure-plate
+       + silica-dust caution, country-aware.
+       ============================================================== */
+
+    /* Discharge hose 'connected' confirm. */
+    .hose-attach { transform-box: fill-box;
+                   animation: hose-attach 7s ease-in-out infinite; }
+    @keyframes hose-attach {
+      0%, 12%  { opacity: 0.5; }
+      20%      { opacity: 1; }
+      26%, 100%{ opacity: 0.95; }
+    }
+    /* Blower pulley spins up to full speed for the blow phase. */
+    .blower-spin { transform-box: fill-box; transform-origin: center;
+                   animation: blower-spin 7s linear infinite; }
+    @keyframes blower-spin {
+      0%   { transform: rotate(0deg); }
+      12%  { transform: rotate(40deg); }
+      100% { transform: rotate(2160deg); }
+    }
+    /* Tank pressure needle sweeps up into the green band during pressurize. */
+    .pressure-needle { transform-box: fill-box; transform-origin: center;
+                       animation: pressure-needle 7s cubic-bezier(0.4,0,0.2,1) infinite; }
+    @keyframes pressure-needle {
+      0%, 12%   { transform: rotate(-72deg); }
+      26%, 94%  { transform: rotate(58deg); }
+      100%      { transform: rotate(-72deg); }
+    }
+    /* Rear butterfly valve quarter-turn open. */
+    .valve-rotate { transform-box: fill-box; transform-origin: center;
+                    animation: valve-rotate 7s cubic-bezier(0.4,0,0.2,1) infinite; }
+    @keyframes valve-rotate {
+      0%, 26%   { transform: rotate(0deg); }
+      34%, 100% { transform: rotate(90deg); }
+    }
+
+    /* Fluidized product blowing UP the hose — continuous dashed flow,
+       gated to the blow phase. */
+    .product-flow { animation: product-flow 0.7s linear infinite;
+                    stroke-dasharray: 5 9; }
+    @keyframes product-flow {
+      from { stroke-dashoffset: 0; }
+      to   { stroke-dashoffset: -28; }
+    }
+    .product-flow-fade { animation: product-flow-fade 7s ease-in-out infinite; }
+    @keyframes product-flow-fade {
+      0%, 34%   { opacity: 0; }
+      42%, 94%  { opacity: 0.92; }
+      100%      { opacity: 0; }
+    }
+
+    /* Trailer sight gauge FALLS as product leaves. */
+    .truck-level-fall { transform-box: fill-box; transform-origin: bottom;
+                        animation: truck-level-fall 7s ease-in-out infinite; }
+    @keyframes truck-level-fall {
+      0%, 34%   { transform: scaleY(0.95); }
+      94%, 100% { transform: scaleY(0.16); }
+    }
+    .truck-meniscus { animation: truck-meniscus 7s ease-in-out infinite; }
+    @keyframes truck-meniscus {
+      0%, 34%   { transform: translateY(8px);   opacity: 0.95; }
+      94%, 100% { transform: translateY(108px); opacity: 0.85; }
+    }
+    /* Receiving silo level RISES in step. */
+    .silo-level-rise { transform-box: fill-box; transform-origin: bottom;
+                       animation: silo-level-rise 7s ease-in-out infinite; }
+    @keyframes silo-level-rise {
+      0%, 34%   { transform: scaleY(0.18); }
+      94%, 100% { transform: scaleY(0.9); }
+    }
+    .silo-meniscus { animation: silo-meniscus 7s ease-in-out infinite; }
+    @keyframes silo-meniscus {
+      0%, 34%   { transform: translateY(150px); opacity: 0.85; }
+      94%, 100% { transform: translateY(18px);  opacity: 0.95; }
+    }
+
+    /* Bag-filter relief wisp at the silo top (excess conveying air vents). */
+    .relief-wisp { animation: relief-wisp 2.6s ease-out infinite; }
+    .relief-wisp.r2 { animation-delay: -0.9s; }
+    .relief-wisp.r3 { animation-delay: -1.8s; }
+    @keyframes relief-wisp {
+      0%   { opacity: 0;    transform: translateY(0)    scale(0.4); }
+      30%  { opacity: 0.34; transform: translateY(-8px) scale(0.9); }
+      70%  { opacity: 0.16; transform: translateY(-18px) scale(1.2); }
+      100% { opacity: 0;    transform: translateY(-28px) scale(1.5); }
+    }
+
+    /* Transfer progress bar. */
+    .level-bar { transform-box: fill-box; transform-origin: left center;
+                 animation: level-bar 7s ease-in-out infinite; }
+    @keyframes level-bar {
+      0%, 34%   { transform: scaleX(0.12); }
+      94%, 100% { transform: scaleX(0.9); }
+    }
+
+    .operator-bob { transform-box: fill-box; transform-origin: center bottom;
+                    animation: operator-bob 4.4s ease-in-out infinite; }
+    @keyframes operator-bob {
+      0%, 100% { transform: translateY(0); }
+      50%      { transform: translateY(-0.8px); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .brand-lockup, .brand-mark, .brand-word,
+      .chevron,
+      .hose-attach,
+      .blower-spin,
+      .pressure-needle,
+      .valve-rotate,
+      .product-flow, .product-flow-fade,
+      .truck-level-fall, .truck-meniscus,
+      .silo-level-rise, .silo-meniscus,
+      .relief-wisp,
+      .level-bar,
+      .operator-bob,
+      .load-pill,
+      .progress-fill,
+      .sky-shimmer {
+        animation: none !important;
+      }
+      .relief-wisp { opacity: 0 !important; }
+    }
+
+  ]]></style>
+
+  <defs>
+    <linearGradient id="brandIridescent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1473FF"/>
+      <stop offset="50%" stop-color="#6E4DFF"/>
+      <stop offset="100%" stop-color="#BE01FF"/>
+    </linearGradient>
+
+    <linearGradient id="plantSky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#D8DEE7"/>
+      <stop offset="55%" stop-color="#CBD2DC"/>
+      <stop offset="100%" stop-color="#A8B0BE"/>
+    </linearGradient>
+    <linearGradient id="plantPad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5C6068"/>
+      <stop offset="100%" stop-color="#2E3138"/>
+    </linearGradient>
+    <linearGradient id="tankerShell" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#F7F8FB"/>
+      <stop offset="18%" stop-color="#DCE0E8"/>
+      <stop offset="55%" stop-color="#AEB4C0"/>
+      <stop offset="100%" stop-color="#7E8593"/>
+    </linearGradient>
+    <linearGradient id="coneShell" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#D5DAE3"/>
+      <stop offset="100%" stop-color="#777E8C"/>
+    </linearGradient>
+    <linearGradient id="siloBody" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"  stop-color="#E2E6EC"/>
+      <stop offset="50%" stop-color="#C2C8D2"/>
+      <stop offset="100%" stop-color="#8E95A2"/>
+    </linearGradient>
+    <linearGradient id="cementFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#CFC9BD"/>
+      <stop offset="55%" stop-color="#A8A192"/>
+      <stop offset="100%" stop-color="#7E7868"/>
+    </linearGradient>
+    <radialGradient id="rim" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#5A606D"/>
+      <stop offset="80%" stop-color="#3A3F4A"/>
+      <stop offset="100%" stop-color="#1F2330"/>
+    </radialGradient>
+    <radialGradient id="dustPuff" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#E9E4DA" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#E9E4DA" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="rigShadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
+      <feOffset dx="0" dy="4" result="offsetBlur"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.18"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softBlur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+
+    <symbol id="trailerWheel" overflow="visible">
+      <circle cx="0" cy="0" r="24" fill="#1A1A1A"/>
+      <circle cx="0" cy="0" r="16" fill="url(#rim)"/>
+      <circle cx="0" cy="0" r="5"  fill="#7A7F88"/>
+      <circle cx="0" cy="0" r="2"  fill="#1A1F2E"/>
+      <g stroke="#3A3F4A" stroke-width="2" stroke-linecap="round" opacity="0.85">
+        <line x1="0" y1="-21" x2="0" y2="-17"/>
+        <line x1="15" y1="-15" x2="12" y2="-12"/>
+        <line x1="21" y1="0"  x2="17" y2="0"/>
+        <line x1="15" y1="15" x2="12" y2="12"/>
+        <line x1="0"  y1="21" x2="0"  y2="17"/>
+        <line x1="-15" y1="15" x2="-12" y2="12"/>
+        <line x1="-21" y1="0"  x2="-17" y2="0"/>
+        <line x1="-15" y1="-15" x2="-12" y2="-12"/>
+      </g>
+      <ellipse cx="-5" cy="-9" rx="4" ry="2.4" fill="#FFFFFF" opacity="0.32"/>
+    </symbol>
+
+    <symbol id="wheelChock" overflow="visible">
+      <polygon points="-14,0 14,0 4,-12" fill="#FF7A1F" stroke="#A35200" stroke-width="0.6"/>
+      <polygon points="-14,0 14,0 4,-12" fill="none" stroke="#FFFFFF" stroke-width="0.4" opacity="0.5"/>
+      <ellipse cx="0" cy="1" rx="14" ry="1.4" fill="#1A1F2E" opacity="0.4"/>
+    </symbol>
+  </defs>
+
+
+  <!-- CARD BACKGROUND -->
+  <rect class="card-bg" x="20" y="20" width="1160" height="560" rx="22" fill="#FAFBFD"/>
+
+
+  <!-- ============================================================
+       JOBSITE / READY-MIX PLANT ATMOSPHERE (background)
+       ============================================================ -->
+  <rect x="20" y="220" width="1160" height="240" fill="url(#plantSky)" opacity="0.85"/>
+  <rect class="sky-shimmer" x="20" y="370" width="1160" height="60" fill="#FFFFFF" opacity="0.14"/>
+
+  <!-- Distant skyline (small silos + crane) -->
+  <g opacity="0.45">
+    <rect x="70"  y="286" width="40" height="174" fill="url(#siloBody)"/>
+    <ellipse cx="90" cy="286" rx="20" ry="6" fill="#B5BCC8"/>
+    <rect x="120" y="270" width="46" height="190" fill="url(#siloBody)"/>
+    <ellipse cx="143" cy="270" rx="23" ry="7" fill="#B5BCC8"/>
+    <!-- Tower crane mast + jib -->
+    <rect x="200" y="200" width="8" height="260" fill="#9098A8"/>
+    <rect x="120" y="196" width="220" height="6" fill="#9098A8"/>
+    <line x1="204" y1="200" x2="124" y2="220" stroke="#9098A8" stroke-width="2"/>
+    <line x1="204" y1="200" x2="332" y2="220" stroke="#9098A8" stroke-width="2"/>
+  </g>
+
+  <line x1="20" y1="378" x2="1180" y2="378" stroke="#5C6068" stroke-width="0.7" opacity="0.32"/>
+
+
+  <!-- PAD -->
+  <rect x="20" y="478" width="1160" height="102" fill="url(#plantPad)"/>
+  <rect x="60" y="476" width="1080" height="4" fill="#2A2D33"/>
+  <rect x="60" y="478" width="1080" height="2" fill="#FFFFFF" opacity="0.16"/>
+  <line x1="80" y1="540" x2="1120" y2="540" stroke="#FFD200" stroke-width="1.6"
+        stroke-dasharray="22 14" opacity="0.5"/>
+  <g opacity="0.16">
+    <ellipse cx="320" cy="548" rx="40" ry="3.4" fill="#E9E4DA"/>
+    <ellipse cx="980" cy="552" rx="44" ry="3.6" fill="#E9E4DA"/>
+  </g>
+
+
+  <!-- ============================================================
+       RECEIVING SILO (destination — product blown UP into it)
+       Placed on the right; cement enters at top, level rises.
+       ============================================================ -->
+  <g filter="url(#rigShadow)">
+    <!-- Silo legs -->
+    <g stroke="#6E747F" stroke-width="9" stroke-linecap="round">
+      <line x1="980"  y1="470" x2="998"  y2="360"/>
+      <line x1="1120" y1="470" x2="1102" y2="360"/>
+    </g>
+    <!-- Silo body (vertical cylinder) -->
+    <rect x="978" y="156" width="144" height="208" rx="8" fill="url(#siloBody)"/>
+    <rect x="978" y="156" width="144" height="8" rx="4" fill="#D9DEE6"/>
+    <!-- Cone bottom -->
+    <path d="M 978 364 L 1122 364 L 1062 416 L 1038 416 Z" fill="url(#coneShell)"/>
+    <!-- Level window (RISES) -->
+    <rect x="1006" y="170" width="16" height="186" rx="3" fill="#1A1F2E" opacity="0.22"/>
+    <g transform="translate(1014 355)">
+      <rect class="silo-level-rise" x="-7" y="-184" width="14" height="184" rx="2" fill="url(#cementFill)"/>
+    </g>
+    <rect class="silo-meniscus" x="1007" y="170" width="14" height="5" rx="2" fill="#CFC9BD"/>
+    <rect x="1006" y="170" width="16" height="186" rx="3" fill="none" stroke="#3A3F4A" stroke-width="1.4"/>
+    <!-- Silo label -->
+    <text x="1072" y="250" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="900" font-size="14" fill="#5A606D" letter-spacing="1.6">SILO 2</text>
+    <text x="1072" y="268" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="8" fill="#5A606D" opacity="0.7" letter-spacing="1">CEMENT · 200 T</text>
+    <!-- Top bag-house filter (vents conveying air, retains dust) -->
+    <rect x="1024" y="132" width="52" height="26" rx="4" fill="#6E747F"/>
+    <rect x="1024" y="132" width="52" height="5" rx="2" fill="#8E95A2"/>
+    <g stroke="#4A4F58" stroke-width="0.8" opacity="0.7">
+      <line x1="1034" y1="136" x2="1034" y2="156"/>
+      <line x1="1044" y1="136" x2="1044" y2="156"/>
+      <line x1="1054" y1="136" x2="1054" y2="156"/>
+      <line x1="1064" y1="136" x2="1064" y2="156"/>
+    </g>
+    <!-- Top fill line inlet (hose couples here) -->
+    <rect x="1010" y="148" width="14" height="10" rx="2" fill="#3A3F4A"/>
+  </g>
+
+  <!-- Bag-filter relief wisps (excess air vents at silo top during transfer) -->
+  <g filter="url(#softBlur)">
+    <circle class="relief-wisp"    cx="1040" cy="130" r="6" fill="url(#dustPuff)"/>
+    <circle class="relief-wisp r2" cx="1056" cy="130" r="5" fill="url(#dustPuff)"/>
+    <circle class="relief-wisp r3" cx="1048" cy="132" r="4" fill="url(#dustPuff)"/>
+  </g>
+
+
+  <!-- ============================================================
+       PNEUMATIC DRY-BULK TRAILER — broadside profile
+       (camera-side view; nose left, rear discharge faces the silo right)
+       ============================================================ -->
+
+  <ellipse cx="560" cy="552" rx="470" ry="6" fill="#1A1F2E" opacity="0.32"/>
+
+  <g filter="url(#rigShadow)">
+    <path d="M 210 322 Q 210 300 234 300 L 904 300 Q 940 300 940 332 L 940 392 Q 940 412 916 412 L 228 412 Q 210 412 210 390 Z"
+          fill="url(#tankerShell)"/>
+    <path d="M 210 322 Q 170 330 170 356 Q 170 384 228 412 L 210 390 Z" fill="url(#tankerShell)"/>
+    <ellipse cx="206" cy="356" rx="14" ry="56" fill="#C2C8D2" opacity="0.5"/>
+    <rect x="210" y="302" width="730" height="6" fill="#FFFFFF" opacity="0.6"/>
+    <rect x="210" y="404" width="730" height="6" fill="#1A1F2E" opacity="0.28"/>
+
+    <!-- Bottom V-shaped discharge cones / hoppers -->
+    <g fill="url(#coneShell)">
+      <path d="M 260 412 L 372 412 L 332 470 L 300 470 Z"/>
+      <path d="M 400 412 L 512 412 L 472 470 L 440 470 Z"/>
+      <path d="M 540 412 L 652 412 L 612 470 L 580 470 Z"/>
+      <path d="M 680 412 L 792 412 L 752 470 L 720 470 Z"/>
+      <path d="M 820 412 L 912 412 L 884 466 L 858 466 Z"/>
+    </g>
+    <g stroke="#6B7280" stroke-width="1.4" opacity="0.5" fill="none">
+      <path d="M 260 412 L 316 470"/>
+      <path d="M 400 412 L 456 470"/>
+      <path d="M 540 412 L 596 470"/>
+      <path d="M 680 412 L 736 470"/>
+    </g>
+    <g fill="#3A3F4A">
+      <rect x="302" y="468" width="28" height="9" rx="2"/>
+      <rect x="442" y="468" width="28" height="9" rx="2"/>
+      <rect x="582" y="468" width="28" height="9" rx="2"/>
+      <rect x="722" y="468" width="28" height="9" rx="2"/>
+      <rect x="858" y="464" width="26" height="9" rx="2"/>
+    </g>
+
+    <!-- Longitudinal product line + cone valves -->
+    <rect x="272" y="476" width="618" height="9" rx="4" fill="#5A606D"/>
+    <rect x="272" y="476" width="618" height="2" rx="1" fill="#9097A4"/>
+    <g fill="#3A3F4A">
+      <rect x="312" y="477" width="10" height="9" rx="1"/>
+      <rect x="452" y="477" width="10" height="9" rx="1"/>
+      <rect x="592" y="477" width="10" height="9" rx="1"/>
+      <rect x="732" y="477" width="10" height="9" rx="1"/>
+    </g>
+
+    <!-- Top catwalk + sealed load hatches (closed during discharge) -->
+    <rect x="226" y="296" width="700" height="6" rx="1" fill="#3A3F4A"/>
+    <g>
+      <ellipse cx="330" cy="294" rx="20" ry="6" fill="#3A3F4A"/>
+      <ellipse cx="330" cy="291" rx="16" ry="4" fill="#5A606D"/>
+      <ellipse cx="560" cy="294" rx="20" ry="6" fill="#3A3F4A"/>
+      <ellipse cx="560" cy="291" rx="16" ry="4" fill="#5A606D"/>
+      <ellipse cx="790" cy="294" rx="20" ry="6" fill="#3A3F4A"/>
+      <ellipse cx="790" cy="291" rx="16" ry="4" fill="#5A606D"/>
+    </g>
+    <!-- Air-inlet manifold on top (pressurizing line from blower into tank) -->
+    <rect x="860" y="286" width="56" height="6" rx="3" fill="#5A606D"/>
+    <rect x="912" y="286" width="6" height="14" rx="2" fill="#5A606D"/>
+
+    <!-- Side X-ray sight gauge (level FALLS during discharge) -->
+    <g>
+      <rect x="256" y="320" width="14" height="80" rx="3" fill="#1A1F2E" opacity="0.22"/>
+      <rect x="257" y="321" width="12" height="78" rx="2" fill="#E8EBF0"/>
+      <g transform="translate(263 399)">
+        <rect class="truck-level-fall" x="-6" y="-78" width="12" height="78" rx="2" fill="url(#cementFill)"/>
+      </g>
+      <rect class="truck-meniscus" x="257" y="321" width="12" height="4" rx="2" fill="#CFC9BD"/>
+      <rect x="256" y="320" width="14" height="80" rx="3" fill="none" stroke="#3A3F4A" stroke-width="1.4"/>
+    </g>
+
+    <!-- Tank pressure gauge (needle sweeps up to green band during pressurize) -->
+    <g transform="translate(360 332)">
+      <circle cx="0" cy="0" r="18" fill="#FFFFFF" stroke="#3A3F4A" stroke-width="1.8"/>
+      <circle cx="0" cy="0" r="14" fill="#F1F4F9"/>
+      <!-- Green safe-pressure arc -->
+      <path d="M 6 -11 A 13 13 0 0 1 12 4" fill="none" stroke="#43E26A" stroke-width="2.6"/>
+      <!-- Red over-pressure arc -->
+      <path d="M -12 4 A 13 13 0 0 1 -6 -11" fill="none" stroke="#E1320C" stroke-width="2.6"/>
+      <g class="pressure-needle"><line x1="0" y1="3" x2="0" y2="-12" stroke="#1A1F2E" stroke-width="2" stroke-linecap="round"/></g>
+      <circle cx="0" cy="0" r="2.4" fill="#1A1F2E"/>
+      <text x="0" y="30" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="7" fill="#5A606D" letter-spacing="0.4">TANK PSI</text>
+    </g>
+
+    <!-- Commodity stencil -->
+    <text x="640" y="352" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="900" font-size="26" fill="#5A606D" opacity="0.5" letter-spacing="3">CEMENT</text>
+    <text x="640" y="372" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="10" fill="#5B3FBF" opacity="0.62" letter-spacing="2">PNEUMATIC DRY-BULK &#183; 1050 ft³</text>
+
+    <!-- ============================================================
+         COUNTRY-SWITCHABLE DRY-BULK MARKING GROUP
+         Cement is non-hazmat (no UN diamond). Regulated items: ASME /
+         pressure-vessel data plate (~29 psi MAWP) + respirable-silica
+         dust caution. Default = .country-US; renderer sets display:none
+         on the two it does not want. Geometry identical so swapping is
+         seamless. US = OSHA/MSHA silica CAUTION + ASME "U" MAWP psi;
+         CA = TDG non-regulated, bilingual dust caution + CRN/TC, kPa;
+         MX = NOM-SCT Spanish "POLVO" + NOM plate, kPa.
+         ============================================================ -->
+    <g class="marking-group">
+      <g class="country-US">
+        <g transform="translate(840 356)">
+          <rect x="-34" y="-13" width="68" height="26" rx="4" fill="#FFD23A" stroke="#1A1F2E" stroke-width="1.4"/>
+          <text x="0" y="-2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="7" fill="#1A1F2E" letter-spacing="0.5">CAUTION</text>
+          <text x="0" y="8" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="5.2" fill="#1A1F2E" letter-spacing="0.3">SILICA DUST · PPE</text>
+        </g>
+        <g transform="translate(480 386)">
+          <rect x="-28" y="-10" width="56" height="20" rx="2" fill="#C2C8D2" stroke="#3A3F4A" stroke-width="1.2"/>
+          <text x="0" y="-1" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="5.4" fill="#1A1F2E" letter-spacing="0.4">ASME · U</text>
+          <text x="0" y="7" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="4.8" fill="#3A3F4A" letter-spacing="0.3">MAWP 29 PSI</text>
+        </g>
+      </g>
+      <g class="country-MX" style="display:none">
+        <g transform="translate(840 356)">
+          <rect x="-34" y="-13" width="68" height="26" rx="4" fill="#FFD23A" stroke="#1A1F2E" stroke-width="1.4"/>
+          <text x="0" y="-2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="6.6" fill="#1A1F2E" letter-spacing="0.4">PRECAUCIÓN</text>
+          <text x="0" y="8" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="5.2" fill="#1A1F2E" letter-spacing="0.3">POLVO · EPP</text>
+        </g>
+        <g transform="translate(480 386)">
+          <rect x="-28" y="-10" width="56" height="20" rx="2" fill="#C2C8D2" stroke="#3A3F4A" stroke-width="1.2"/>
+          <text x="0" y="-1" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="5.4" fill="#1A1F2E" letter-spacing="0.4">NOM-SCT</text>
+          <text x="0" y="7" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="4.8" fill="#3A3F4A" letter-spacing="0.3">PMTA 200 kPa</text>
+        </g>
+      </g>
+      <g class="country-CA" style="display:none">
+        <g transform="translate(840 356)">
+          <rect x="-34" y="-13" width="68" height="26" rx="4" fill="#FFD23A" stroke="#1A1F2E" stroke-width="1.4"/>
+          <text x="0" y="-2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="6.2" fill="#1A1F2E" letter-spacing="0.3">DUST · POUSSIÈRE</text>
+          <text x="0" y="8" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="5" fill="#1A1F2E" letter-spacing="0.3">PPE · EPI</text>
+        </g>
+        <g transform="translate(480 386)">
+          <rect x="-28" y="-10" width="56" height="20" rx="2" fill="#C2C8D2" stroke="#3A3F4A" stroke-width="1.2"/>
+          <text x="0" y="-1" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="5.4" fill="#1A1F2E" letter-spacing="0.4">CRN · TC</text>
+          <text x="0" y="7" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="4.8" fill="#3A3F4A" letter-spacing="0.3">PMAS 200 kPa</text>
+        </g>
+      </g>
+    </g>
+  </g>
+
+  <!-- Chassis underframe + bogie -->
+  <g filter="url(#rigShadow)"><rect x="230" y="486" width="690" height="12" rx="2" fill="#1A1F2E"/></g>
+  <use href="#wheelChock" x="272" y="540"/>
+
+  <g transform="translate(320 540)"><use href="#trailerWheel"/></g>
+  <g transform="translate(380 540)"><use href="#trailerWheel"/></g>
+  <g transform="translate(780 540)"><use href="#trailerWheel"/></g>
+  <g transform="translate(840 540)"><use href="#trailerWheel"/></g>
+  <rect x="520" y="498" width="10" height="42" fill="#5A606D"/>
+  <rect x="516" y="538" width="18" height="6" fill="#3A3F4A"/>
+
+
+  <!-- ============================================================
+       REAR DISCHARGE MANIFOLD + BUTTERFLY VALVE
+       (rear of trailer, faces the silo; valve quarter-turns OPEN)
+       ============================================================ -->
+  <g filter="url(#rigShadow)">
+    <!-- Discharge head off the rear of the product line -->
+    <rect x="912" y="466" width="22" height="24" rx="3" fill="#3A3F4A"/>
+    <!-- Butterfly valve (rotates 90° open) -->
+    <g transform="translate(923 478)">
+      <circle cx="0" cy="0" r="11" fill="#5A606D" stroke="#1F2330" stroke-width="1.4"/>
+      <g class="valve-rotate">
+        <rect x="-9" y="-2" width="18" height="4" rx="1.5" fill="#1F2330"/>
+      </g>
+      <!-- Valve handle -->
+      <rect x="-1.5" y="-20" width="3" height="11" rx="1.5" fill="#A36F08"/>
+      <circle cx="0" cy="-20" r="2.4" fill="#FFD23A"/>
+    </g>
+  </g>
+
+
+  <!-- ============================================================
+       DISCHARGE HOSE — trailer rear outlet UP to silo top fill line
+       (fluidized cement is BLOWN up under pressure)
+       ============================================================ -->
+  <g class="hose-attach">
+    <!-- Hose outer jacket -->
+    <path d="M 934 478 Q 990 480 1010 400 Q 1024 320 1016 200 Q 1012 168 1017 154"
+          fill="none" stroke="#2E3138" stroke-width="13" stroke-linecap="round"/>
+    <path d="M 934 478 Q 990 480 1010 400 Q 1024 320 1016 200 Q 1012 168 1017 154"
+          fill="none" stroke="#4A4F58" stroke-width="9" stroke-linecap="round"/>
+    <!-- Hose coupling clamps -->
+    <g fill="#9097A4">
+      <rect x="952" y="466" width="8" height="14" rx="2" transform="rotate(18 956 473)"/>
+      <rect x="1012" y="300" width="8" height="14" rx="2"/>
+      <rect x="1010" y="170" width="8" height="14" rx="2"/>
+    </g>
+  </g>
+  <!-- Fluidized product blowing UP the hose (dashed flow, blow phase only) -->
+  <g class="product-flow-fade">
+    <path class="product-flow" d="M 934 478 Q 990 480 1010 400 Q 1024 320 1016 200 Q 1012 168 1017 154"
+          fill="none" stroke="url(#cementFill)" stroke-width="6" stroke-linecap="round"/>
+    <path class="product-flow" d="M 934 478 Q 990 480 1010 400 Q 1024 320 1016 200 Q 1012 168 1017 154"
+          fill="none" stroke="#E9E4DA" stroke-width="2.2" stroke-linecap="round" opacity="0.55"/>
+  </g>
+
+
+  <!-- ============================================================
+       PTO BLOWER (spins up to full speed for the blow phase)
+       ============================================================ -->
+  <g filter="url(#rigShadow)" transform="translate(186 452)">
+    <rect x="0" y="0" width="46" height="36" rx="4" fill="#5A606D"/>
+    <rect x="0" y="0" width="46" height="5" rx="2" fill="#7E8593"/>
+    <rect x="5" y="8" width="36" height="16" rx="2" fill="#3A3F4A"/>
+    <text x="23" y="20" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6" fill="#C8CDD8" letter-spacing="0.4">BLOWER</text>
+    <g class="blower-spin">
+      <circle cx="23" cy="30" r="8" fill="#1F2330"/>
+      <circle cx="23" cy="30" r="5" fill="#5A606D"/>
+      <g stroke="#9097A4" stroke-width="1.2" stroke-linecap="round">
+        <line x1="23" y1="24" x2="23" y2="28"/>
+        <line x1="28" y1="28" x2="25" y2="29.5"/>
+        <line x1="26" y1="35" x2="24.5" y2="32"/>
+        <line x1="20" y1="35" x2="21.5" y2="32"/>
+        <line x1="18" y1="28" x2="21" y2="29.5"/>
+      </g>
+      <circle cx="23" cy="30" r="1.6" fill="#C8CDD8"/>
+    </g>
+    <!-- Air line up to the tank top manifold -->
+    <path d="M 23 0 Q 26 -120 700 -160" fill="none" stroke="#5A606D" stroke-width="3" opacity="0.55"/>
+  </g>
+
+
+  <!-- ============================================================
+       OPERATOR beside the rear manifold (hi-vis + respirator)
+       ============================================================ -->
+  <g transform="translate(956 506)">
+    <g class="operator-bob" filter="url(#rigShadow)">
+      <rect x="-7" y="42" width="6" height="3" fill="#1A1F2E"/>
+      <rect x="1"  y="42" width="6" height="3" fill="#1A1F2E"/>
+      <rect x="-7" y="22" width="6" height="22" fill="#1B2840"/>
+      <rect x="1"  y="22" width="6" height="22" fill="#1B2840"/>
+      <path d="M -10 4 Q -10 0 -7 0 L 7 0 Q 10 0 10 4 L 11 24 L -11 24 Z"
+            fill="#C4F036" stroke="#1A1F2E" stroke-width="0.5"/>
+      <rect x="-11" y="14" width="22" height="2" fill="#FFFFFF" opacity="0.85"/>
+      <!-- Arm toward the valve handle -->
+      <path d="M -8 4 L -18 -1 L -22 7 L -13 11 Z" fill="#C4F036" stroke="#1A1F2E" stroke-width="0.4"/>
+      <rect x="-24" y="3" width="4" height="8" fill="#D9A878"/>
+      <circle cx="0" cy="-6" r="5" fill="#D9A878"/>
+      <path d="M -4 -5 Q 0 -2 4 -5 L 4 -7 L -4 -7 Z" fill="#E8EBF0" stroke="#1A1F2E" stroke-width="0.4"/>
+      <path d="M -6 -10 Q -6 -14 0 -14 Q 6 -14 6 -10 L 7 -8 L -7 -8 Z" fill="#F1F4F9" stroke="#1A1F2E" stroke-width="0.5"/>
+      <rect x="-7" y="-9" width="14" height="1.4" fill="#1A1F2E"/>
+    </g>
+  </g>
+
+
+  <!-- ============================================================
+       SAFETY CONES
+       ============================================================ -->
+  <g>
+    <g transform="translate(180 552)">
+      <polygon points="-7,0 7,0 4.6,-12 -4.6,-12" fill="#FF7A1F"/>
+      <polygon points="-5.4,-6 5.4,-6 4.6,-9 -4.6,-9" fill="#FFFFFF" opacity="0.85"/>
+      <polygon points="-3.4,-12 3.4,-12 3,-15 -3,-15" fill="#FF7A1F"/>
+      <ellipse cx="0" cy="0" rx="9" ry="2" fill="#1A1F2E" opacity="0.35"/>
+    </g>
+  </g>
+
+
+  <!-- ============================================================
+       HUD OVERLAYS
+       ============================================================ -->
+  <g class="brand-lockup" transform="translate(50 40)">
+    <g class="brand-mark">
+      <circle cx="24" cy="14" r="15" fill="url(#brandIridescent)"/>
+      <path d="M 24 6 C 22 10 19 13 20.4 17 C 19 16.2 18 14 18.8 12.4 C 17 14 16.6 17.4 19 20 C 17.8 19 17.8 16.6 17.8 19 C 19.4 21.6 22 22.2 24 22.2 C 26 22.2 28.6 21.6 30.2 19 C 30.2 16.6 30.2 19 29 20 C 31.4 17.4 31 14 29.2 12.4 C 30 14 29 16.2 27.6 17 C 29 13 26 10 24 6 Z" fill="#FFFFFF"/>
+    </g>
+    <text class="brand-word" x="48" y="14" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="18" letter-spacing="2.5" fill="#5B3FBF">EUSOTRIP</text>
+    <text x="48" y="28" font-family="Inter, system-ui, sans-serif"
+          font-weight="500" font-size="8" letter-spacing="3" fill="#9B7FD9" opacity="0.55">BY EUSORONE</text>
+  </g>
+
+  <g>
+    <rect x="1052" y="58" width="100" height="32" rx="16" ry="16" fill="url(#brandIridescent)" stroke="#FFFFFF" stroke-width="1.5" stroke-opacity="0.5"/>
+    <g transform="translate(1066 70)" fill="#FFFFFF"><rect x="0" y="2" width="8" height="6" rx="1"/><rect x="9" y="0" width="6" height="8" rx="1"/><circle cx="3" cy="10" r="1.5"/><circle cx="12" cy="10" r="1.5"/></g>
+    <text x="1115" y="79" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="14" letter-spacing="1.8" fill="#FFFFFF">TRUCK</text>
+  </g>
+
+  <g class="load-pill">
+    <rect x="60" y="100" width="198" height="32" rx="16" ry="16" fill="#0AC2C2" opacity="0.95"/>
+    <circle cx="80" cy="116" r="5" fill="#FFFFFF" opacity="0.95"/>
+    <circle cx="80" cy="116" r="2.5" fill="#0AC2C2"/>
+    <text x="100" y="122" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="13" letter-spacing="2.4"
+          fill="#FFFFFF" data-bind="state_label">UNLOADING</text>
+  </g>
+
+  <g opacity="0.9">
+    <text x="60" y="78" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="13" letter-spacing="2" fill="#5B3FBF"
+          data-bind="equipment_label">PNEUMATIC DRY-BULK</text>
+    <line x1="60" y1="86" x2="240" y2="86" stroke="#9B7FD9" stroke-width="2" stroke-linecap="round"/>
+    <text x="60" y="148" font-family="Inter, system-ui, sans-serif"
+          font-weight="500" font-size="10" letter-spacing="1.2" fill="#7A5AB8"
+          data-bind="equipment_subtitle">PRESSURIZED BLOW-OFF TO SILO</text>
+  </g>
+
+  <g opacity="0.95">
+    <rect x="60" y="160" width="320" height="22" rx="6" ry="6"
+          fill="#FFFFFF" fill-opacity="0.95" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.45"/>
+    <text data-bind="dock_id" x="72" y="176" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="11" letter-spacing="1.4" fill="#5B3FBF">SILO 2 &#183; 29 PSI</text>
+    <text data-bind="eta_minutes" x="370" y="176" text-anchor="end"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="600" font-size="10" letter-spacing="0.8" fill="#7A5AB8">ETA 22 MIN</text>
+  </g>
+  <g opacity="0.95">
+    <rect x="60" y="190" width="320" height="22" rx="6" ry="6"
+          fill="#FFFFFF" fill-opacity="0.95" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.45"/>
+    <text data-bind="commodity_label" x="72" y="206" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="11" letter-spacing="1.4" fill="#5B3FBF">PORTLAND CEMENT &#183; TYPE I/II</text>
+  </g>
+
+  <g>
+    <rect x="60" y="555" width="1080" height="6" rx="3" fill="#E5E2EF" opacity="0.6"/>
+    <rect class="progress-fill" x="60" y="555" width="540" height="6" rx="3"
+          fill="#0AC2C2"
+          style="--load-progress: 0.5;"/>
+    <text x="1140" y="548" text-anchor="end"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="10" letter-spacing="1.4"
+          fill="#5B3FBF" opacity="0.85"><tspan data-bind="weight_label">49,200 LBS</tspan> &#183; <tspan data-bind="progress_pct">50</tspan>%</text>
+  </g>
+
+  <g class="chevron">
+    <path d="M 70 540 L 55 525 L 55 555 Z" fill="#9B7FD9"/>
+  </g>
+
+  <!-- Iridescent rounded card border -->
+  <rect class="card-border" x="20" y="20" width="1160" height="560" rx="22"
+        fill="none" stroke="url(#brandIridescent)" stroke-width="2.5" pointer-events="none"/>
+</svg>

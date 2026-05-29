@@ -163,6 +163,21 @@
       100%      { opacity: 0; }
     }
 
+    /* ============ COUNTRY-SWITCHABLE HAZMAT MARKINGS ============
+       Class 8 CORROSIVE (UN 1830, sulfuric acid) is UN-harmonized, so the
+       placard diamond + UN panel are identical across NA. Country-specific
+       differences are the emergency-response phone and optional language:
+         · US  DOT/PHMSA 49 CFR 172   → CHEMTREC 1-800-424-9300
+         · CA  TC TDG (SOR/2001-286)  → CANUTEC 1-888-226-8832
+         · MX  SCT NOM-004-SCT/2008   → SETIQ 01-800-00-214-00 (CORROSIVO)
+       Default = US. Host renderer sets data-country="US|MX|CA" on <svg>. */
+    .country-US { display: inline; }
+    .country-MX, .country-CA { display: none; }
+    [data-country="MX"] .country-US { display: none; }
+    [data-country="MX"] .country-MX { display: inline; }
+    [data-country="CA"] .country-US { display: none; }
+    [data-country="CA"] .country-CA { display: inline; }
+
     @media (prefers-reduced-motion: reduce) {
       .brand-lockup, .brand-mark, .brand-word,
       .canopy-shimmer,
@@ -298,7 +313,9 @@
       <ellipse cx="0" cy="1" rx="14" ry="1.4" fill="#1A1F2E" opacity="0.4"/>
     </symbol>
 
-    <!-- DOT Class 8 placard symbol (CORROSIVE — white/black diamond) -->
+    <!-- Class 8 CORROSIVE placard (white-top / black-bottom diamond). UN-
+         harmonized across US DOT / CA TDG / MX SCT.
+         NOTE: id is a legacy handle (was "class3Placard"); content is Class 8. -->
     <symbol id="class3Placard" overflow="visible">
       <g transform="rotate(45)">
         <rect x="-26" y="-26" width="52" height="26" fill="#FFFFFF" stroke="#1A1F2E" stroke-width="1.6"/>
@@ -323,7 +340,8 @@
             font-weight="800" font-size="5.4" fill="#FFFFFF" letter-spacing="0.4">CORROSIVE</text>
     </symbol>
 
-    <!-- UN1830 orange panel (sulfuric acid) -->
+    <!-- UN 1830 orange panel (sulfuric acid). Hazard ID "80" / UN "1830".
+         NOTE: id is a legacy handle (was "un1203Panel"); content is UN 1830. -->
     <symbol id="un1203Panel" overflow="visible">
       <rect x="-22" y="-9" width="44" height="18" fill="#F08222" stroke="#1A1F2E" stroke-width="1.2"/>
       <line x1="-22" y1="0" x2="22" y2="0" stroke="#1A1F2E" stroke-width="0.6" opacity="0.55"/>
@@ -837,17 +855,22 @@
           letter-spacing="1">MC 4-2287-EU</text>
   </g>
 
-  <!-- Class 3 placard (red diamond) on tank side — front -->
+  <!-- Class 8 CORROSIVE placard on tank side — front -->
   <g transform="translate(478 386) scale(0.86)">
     <use href="#class3Placard"/>
+    <!-- MX adds Spanish CORROSIVO under the symbol -->
+    <text class="country-MX" y="34" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="4.6" fill="#FFFFFF" letter-spacing="0.3">CORROSIVO</text>
   </g>
   <g transform="translate(478 420) scale(0.86)">
     <use href="#un1203Panel"/>
   </g>
 
-  <!-- Class 3 placard (rear) -->
+  <!-- Class 8 CORROSIVE placard — rear -->
   <g transform="translate(820 386) scale(0.86)">
     <use href="#class3Placard"/>
+    <text class="country-MX" y="34" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="4.6" fill="#FFFFFF" letter-spacing="0.3">CORROSIVO</text>
   </g>
   <g transform="translate(820 420) scale(0.86)">
     <use href="#un1203Panel"/>
