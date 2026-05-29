@@ -552,81 +552,20 @@ private struct SignSheet: View {
         }
     }
 
-    private var hasStroke: Bool {
-        strokes.contains { $0.count > 2 }
-    }
+    private var hasStroke: Bool { EusoGradientInkCanvas.hasInk(strokes) }
 
+    // Bespoke gradient-ink draw surface — the shared EusoGradientInkCanvas
+    // (single source of the EusoTrip-gradient ink + rasterizer). Was a
+    // hand-rolled Canvas + rasterizer copy whose ink had to be patched in
+    // place once already; consolidated so it can't diverge per-screen again.
     private var signaturePad: some View {
-        Canvas { ctx, size in
-            // Gradient ink — strokes render in the EusoTrip brand gradient
-            // (#1473FF → #7B3AFF → #BE01FF) in real time as the driver draws,
-            // matching GradientSignaturePad + the founder signature-ink mandate.
-            // Was `.color(.primary)` (solid system ink) despite this screen's
-            // "Gradient-Ink signature" label — the label now tells the truth.
-            let shading = GraphicsContext.Shading.linearGradient(
-                Gradient(colors: [Brand.blue, Color(hex: 0x7B3AFF), Brand.magenta]),
-                startPoint: .zero,
-                endPoint: CGPoint(x: size.width, y: 0)
-            )
-            for stroke in strokes where stroke.count > 1 {
-                var path = Path()
-                path.move(to: stroke[0])
-                for pt in stroke.dropFirst() {
-                    path.addLine(to: pt)
-                }
-                ctx.stroke(path, with: shading, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
-            }
-        }
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { value in
-                    strokes[strokes.count - 1].append(value.location)
-                }
-                .onEnded { _ in
-                    strokes.append([])
-                }
-        )
+        EusoGradientInkCanvas(strokes: $strokes)
     }
 
-    /// Render the signature strokes to a PNG and base64-encode so
-    /// the server can SHA-256 the bytes and stash them as the
-    /// agreement's signature hash.
+    /// Render the signature strokes to a base64 PNG for the server's SHA-256
+    /// hash, via the shared gradient-ink rasterizer.
     private func encodeSignatureBase64() -> String {
-        let size = CGSize(width: 600, height: 200)
-        let renderer = UIGraphicsImageRenderer(size: size)
-        let image = renderer.image { ctx in
-            UIColor.white.setFill()
-            ctx.fill(CGRect(origin: .zero, size: size))
-            // Gradient ink — clip to the stroked path and fill with the
-            // EusoTrip brand gradient so the saved (and server-SHA-256'd)
-            // signature image matches the on-screen gradient (was solid black).
-            let cg = ctx.cgContext
-            let cgPath = CGMutablePath()
-            for stroke in strokes where stroke.count > 1 {
-                cgPath.move(to: stroke[0])
-                for pt in stroke.dropFirst() {
-                    cgPath.addLine(to: pt)
-                }
-            }
-            cg.addPath(cgPath)
-            cg.setLineWidth(3)
-            cg.setLineCap(.round)
-            cg.setLineJoin(.round)
-            cg.replacePathWithStrokedPath()
-            cg.clip()
-            if let grad = CGGradient(
-                colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                colors: [
-                    UIColor(red: 20/255,  green: 115/255, blue: 255/255, alpha: 1).cgColor,
-                    UIColor(red: 123/255, green: 58/255,  blue: 255/255, alpha: 1).cgColor,
-                    UIColor(red: 190/255, green: 1/255,   blue: 255/255, alpha: 1).cgColor,
-                ] as CFArray,
-                locations: [0, 0.5, 1]
-            ) {
-                cg.drawLinearGradient(grad, start: .zero, end: CGPoint(x: size.width, y: 0), options: [])
-            }
-        }
-        return image.pngData()?.base64EncodedString() ?? ""
+        EusoGradientInkCanvas.renderPNGBase64(strokes, size: CGSize(width: 600, height: 200))
     }
 }
 
