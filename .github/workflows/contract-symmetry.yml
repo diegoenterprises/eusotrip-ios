@@ -3,7 +3,7 @@ name: Contract Symmetry
 # Fails a PR when an iOS Codable In/Out struct and its server tRPC Zod input
 # schema disagree on a scalar type — the §6 bug class (e.g. agreementId Int vs
 # z.string(), 435 String agreementId, loadId String vs z.number()). Cross-repo:
-# checks out this iOS repo + the server repo and runs Scripts/contract-symmetry.mjs.
+# checks out this iOS repo + the server repo and runs scripts/contract-symmetry.mjs.
 #
 # SETUP (one-time, by a repo admin): add a repository secret WEB_REPO_TOKEN — a
 # fine-grained PAT (or classic, `repo` scope) with READ access to
@@ -14,7 +14,7 @@ on:
   pull_request:
     paths:
       - "EusoTrip/**/*.swift"
-      - "Scripts/contract-symmetry.mjs"
+      - "scripts/contract-symmetry.mjs"
       - ".github/workflows/contract-symmetry.yml"
   push:
     branches: [main]
@@ -79,7 +79,7 @@ jobs:
 
       - name: Contract-symmetry gate (fails on type mismatch)
         if: steps.cfg.outputs.ok == 'true'
-        run: node ios/Scripts/contract-symmetry.mjs --ios=ios --web=web
+        run: node ios/scripts/contract-symmetry.mjs --ios=ios --web=web
 
       - name: id-field drift census (metric — never fails the build)
         if: steps.cfg.outputs.ok == 'true'
@@ -87,6 +87,6 @@ jobs:
           {
             echo '## id-field type-drift census'
             echo '```'
-            node ios/Scripts/contract-symmetry.mjs --ios=ios --web=web --summary 2>&1 | sed -E 's/\x1b\[[0-9;]*m//g'
+            node ios/scripts/contract-symmetry.mjs --ios=ios --web=web --summary 2>&1 | sed -E 's/\x1b\[[0-9;]*m//g'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY" || true
