@@ -1,0 +1,82 @@
+name: Contract Symmetry
+
+# Fails a PR when an iOS Codable In/Out struct and its server tRPC Zod input
+# schema disagree on a scalar type — the §6 bug class (e.g. agreementId Int vs
+# z.string(), 435 String agreementId, loadId String vs z.number()). Cross-repo:
+# checks out this iOS repo + the server repo and runs Scripts/contract-symmetry.mjs.
+#
+# SETUP (one-time, by a repo admin): add a repository secret WEB_REPO_TOKEN — a
+# fine-grained PAT (or classic, `repo` scope) with READ access to
+# diegoenterprises/eusoronetechnologiesinc. Until it's set, this workflow
+# SKIPS the gate with a warning (it never blocks PRs on a missing secret).
+
+on:
+  pull_request:
+    paths:
+      - "EusoTrip/**/*.swift"
+      - "Scripts/contract-symmetry.mjs"
+      - ".github/workflows/contract-symmetry.yml"
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+# The drift can also originate server-side; to run this on server-repo changes,
+# add a workflow there that fires `repository_dispatch` at this repo, or trigger
+# it manually (workflow_dispatch) after a server schema change.
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contract-symmetry-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract-symmetry:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout iOS repo
+        uses: actions/checkout@v4
+        with:
+          path: ios
+
+      - name: Detect server-repo token
+        id: cfg
+        env:
+          WEB_TOKEN: ${{ secrets.WEB_REPO_TOKEN }}
+        run: |
+          if [ -z "$WEB_TOKEN" ]; then
+            echo "::warning title=Contract Symmetry skipped::WEB_REPO_TOKEN not configured — add a PAT with read access to eusoronetechnologiesinc to enable the iOS↔server contract gate."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout server repo
+        if: steps.cfg.outputs.ok == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: diegoenterprises/eusoronetechnologiesinc
+          token: ${{ secrets.WEB_REPO_TOKEN }}
+          path: web
+          persist-credentials: false
+
+      - name: Setup Node
+        if: steps.cfg.outputs.ok == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Contract-symmetry gate (fails on type mismatch)
+        if: steps.cfg.outputs.ok == 'true'
+        run: node ios/Scripts/contract-symmetry.mjs --ios=ios --web=web
+
+      - name: id-field drift census (metric — never fails the build)
+        if: steps.cfg.outputs.ok == 'true'
+        run: |
+          {
+            echo '## id-field type-drift census'
+            echo '```'
+            node ios/Scripts/contract-symmetry.mjs --ios=ios --web=web --summary 2>&1 | sed -E 's/\x1b\[[0-9;]*m//g'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY" || true
