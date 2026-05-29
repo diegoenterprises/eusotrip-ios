@@ -1,0 +1,607 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600" data-state="unloading">
+  <style><![CDATA[
+
+    /* ============ FOUNDATION MOTION VOCAB ============ */
+    .brand-mark { transform-box: fill-box; transform-origin: center;
+                  animation: brand-pulse 3.6s ease-in-out infinite; }
+    @keyframes brand-pulse {
+      0%, 100% { transform: scale(1);    opacity: 0.92; }
+      50%      { transform: scale(1.05); opacity: 1; }
+    }
+    .brand-word { animation: brand-word-breath 6s ease-in-out infinite; }
+    @keyframes brand-word-breath {
+      0%, 100% { opacity: 0.78; }
+      50%      { opacity: 1; }
+    }
+    .sky-shimmer { animation: sky-drift 14s linear infinite; transform-box: fill-box; }
+    @keyframes sky-drift {
+      from { transform: translateX(-40px); opacity: 0.12; }
+      50%  { opacity: 0.22; }
+      to   { transform: translateX(40px);  opacity: 0.12; }
+    }
+    .load-pill { transform-box: fill-box; transform-origin: center;
+                 animation: load-pill-pulse 2.4s ease-in-out infinite; }
+    @keyframes load-pill-pulse {
+      0%, 100% { opacity: 0.85; transform: scale(1); }
+      50%      { opacity: 1;    transform: scale(1.04); }
+    }
+    .progress-fill { transition: width 0.4s ease-out; }
+    .chevron { animation: chevron-pulse 2.2s ease-in-out infinite; }
+    @keyframes chevron-pulse {
+      0%, 100% { opacity: 0.3; }
+      50%      { opacity: 0.65; }
+    }
+
+    /* ============ LOG-TRAILER UNLOADING-SPECIFIC MOTION ============
+       8s master cycle — the REVERSE of loading. A knuckle-boom grapple
+       loader strips the load one bundle at a time:
+         0  - 12% : the binder strap is released and lifts off the top tier
+                    (the rigger has unhooked it before the boom comes in).
+         12 - 40% : the EMPTY boom swings IN from the right and lowers the
+                    open grapple onto the top tier (cubic-bezier decel).
+         40 - 52% : the grapple jaws CLOSE on the top bundle and the on-deck
+                    top tier disappears (lifted clear -> stack steps down).
+         52 - 84% : the boom lifts the captured bundle and swings back OUT to
+                    the landing pile (off-screen right), bundle in the jaws.
+         84 - 100%: brief hold, then the loop repeats seamlessly.
+       ============================================================ */
+
+    /* Knuckle-boom swing + lower (comes in empty, leaves loaded). */
+    .boom-cycle { animation: boom-cycle 8s cubic-bezier(0.4,0,0.2,1) infinite;
+                  transform-box: view-box; transform-origin: 1058px 300px; }
+    @keyframes boom-cycle {
+      0%, 12%   { transform: rotate(34deg)  translateY(-10px); }   /* parked out over pile */
+      40%, 52%  { transform: rotate(0deg)   translateY(0); }       /* swung in, jaws on top tier */
+      84%       { transform: rotate(34deg)  translateY(-10px); }   /* swung back out, loaded */
+      100%      { transform: rotate(34deg)  translateY(-10px); }   /* hold parked */
+    }
+
+    /* Grapple jaws: arrive OPEN, then CLOSE on the bundle to lift it. */
+    .grapple-left  { transform-box: fill-box; transform-origin: top right;
+                     animation: grapple-left 8s ease-in-out infinite; }
+    @keyframes grapple-left {
+      0%, 40%   { transform: rotate(-26deg); }   /* open on the way in */
+      52%       { transform: rotate(0deg); }     /* clamp shut on the bundle */
+      84%, 100% { transform: rotate(0deg); }     /* stays shut while carried out */
+    }
+    .grapple-right { transform-box: fill-box; transform-origin: top left;
+                     animation: grapple-right 8s ease-in-out infinite; }
+    @keyframes grapple-right {
+      0%, 40%   { transform: rotate(26deg); }
+      52%       { transform: rotate(0deg); }
+      84%, 100% { transform: rotate(0deg); }
+    }
+    /* The carried bundle appears in the jaws once they clamp, rides out. */
+    .held-bundle { animation: held-bundle 8s ease-in-out infinite; }
+    @keyframes held-bundle {
+      0%, 46%   { opacity: 0; }   /* nothing in the jaws on the way in */
+      54%       { opacity: 1; }   /* clamped the top tier -> now held */
+      100%      { opacity: 1; }   /* carried out */
+    }
+
+    /* On-deck top tier disappears (lifted clear) as the grapple clamps. */
+    .stack-fall { transform-box: fill-box; transform-origin: bottom;
+                  animation: stack-fall 8s ease-in-out infinite; }
+    @keyframes stack-fall {
+      0%, 46%   { transform: translateY(0);    opacity: 1; }
+      54%       { transform: translateY(-20px); opacity: 0; }
+      100%      { transform: translateY(-20px); opacity: 0; }
+    }
+
+    /* Binder strap releases + lifts off the top tier at the start. */
+    .strap-release { transform-box: fill-box; transform-origin: bottom;
+                     animation: strap-release 8s ease-in-out infinite; }
+    @keyframes strap-release {
+      0%        { opacity: 1; transform: scaleY(1); }
+      8%        { opacity: 1; transform: scaleY(1.04); }   /* ratchet pops loose */
+      14%       { opacity: 0; transform: scaleY(0.4); }    /* lifts away */
+      100%      { opacity: 0; transform: scaleY(0.4); }
+    }
+    .ratchet-tick { animation: ratchet-tick 8s ease-in-out infinite;
+                    transform-box: fill-box; transform-origin: left center; }
+    @keyframes ratchet-tick {
+      0%        { transform: rotate(0deg); }
+      5%        { transform: rotate(-24deg); }   /* crack the binder open */
+      10%       { transform: rotate(-40deg); }
+      14%, 100% { transform: rotate(-40deg); }
+    }
+
+    /* Loader cab idle bob + warning beacon. */
+    .loader-bob { transform-box: fill-box; transform-origin: center bottom;
+                  animation: loader-bob 3.8s ease-in-out infinite; }
+    @keyframes loader-bob {
+      0%, 100% { transform: translateY(0); }
+      50%      { transform: translateY(-0.8px); }
+    }
+    .yard-beacon { animation: yard-beacon 1.1s ease-in-out infinite;
+                   transform-box: fill-box; transform-origin: center; }
+    @keyframes yard-beacon {
+      0%, 100% { opacity: 0.45; }
+      50%      { opacity: 0.95; }
+    }
+    /* Bark dust puff at the bunk as the bundle is plucked off. */
+    .bark-dust { animation: bark-dust 8s ease-out infinite; }
+    .bark-dust.d2 { animation-delay: 0.2s; }
+    @keyframes bark-dust {
+      0%, 46%   { opacity: 0; transform: translateY(0) scale(0.4); }
+      54%       { opacity: 0.4; transform: translateY(-4px) scale(0.9); }
+      66%       { opacity: 0; transform: translateY(-14px) scale(1.3); }
+      100%      { opacity: 0; transform: translateY(-14px) scale(1.3); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .brand-lockup, .brand-mark, .brand-word,
+      .chevron, .load-pill, .progress-fill, .sky-shimmer,
+      .boom-cycle, .grapple-left, .grapple-right, .held-bundle,
+      .stack-fall, .strap-release, .ratchet-tick,
+      .loader-bob, .yard-beacon, .bark-dust {
+        animation: none !important;
+      }
+      /* Settle the calm end-state: strap off, top tier removed, boom out
+         with the bundle in the jaws. */
+      .strap-release { opacity: 0 !important; }
+      .stack-fall    { opacity: 0 !important; }
+      .held-bundle   { opacity: 1 !important; }
+      .bark-dust     { opacity: 0 !important; }
+      .boom-cycle    { transform: rotate(34deg) translateY(-10px) !important; }
+      .grapple-left  { transform: rotate(0deg) !important; }
+      .grapple-right { transform: rotate(0deg) !important; }
+    }
+
+  ]]></style>
+
+  <defs>
+    <linearGradient id="brandIridescent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1473FF"/>
+      <stop offset="50%" stop-color="#6E4DFF"/>
+      <stop offset="100%" stop-color="#BE01FF"/>
+    </linearGradient>
+    <linearGradient id="yardSky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#DCE4D9"/>
+      <stop offset="45%" stop-color="#CFD9C8"/>
+      <stop offset="100%" stop-color="#AEBAA2"/>
+    </linearGradient>
+    <linearGradient id="yardFloor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#6E5E44"/>
+      <stop offset="100%" stop-color="#352B1C"/>
+    </linearGradient>
+    <linearGradient id="cab" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2B85FF"/><stop offset="55%" stop-color="#6E4DFF"/><stop offset="100%" stop-color="#A726E8"/>
+    </linearGradient>
+    <linearGradient id="windowGlass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#BFD3FF"/><stop offset="100%" stop-color="#7E9DDB"/>
+    </linearGradient>
+    <linearGradient id="deckTop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#6A707A"/><stop offset="50%" stop-color="#4A4F58"/><stop offset="100%" stop-color="#3A3F4A"/>
+    </linearGradient>
+    <linearGradient id="deck" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4A4F58"/><stop offset="100%" stop-color="#1F2330"/>
+    </linearGradient>
+    <linearGradient id="loaderBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FF9A33"/><stop offset="100%" stop-color="#C85A00"/>
+    </linearGradient>
+    <radialGradient id="logButt" cx="0.42" cy="0.4" r="0.62">
+      <stop offset="0%" stop-color="#E8C98E"/><stop offset="55%" stop-color="#C79A5A"/><stop offset="100%" stop-color="#8A6334"/>
+    </radialGradient>
+    <linearGradient id="logBark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8A6A44"/><stop offset="45%" stop-color="#6B4F30"/><stop offset="100%" stop-color="#46341F"/>
+    </linearGradient>
+    <linearGradient id="strapWeb" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#FFE066"/><stop offset="50%" stop-color="#F5B700"/><stop offset="100%" stop-color="#A37500"/>
+    </linearGradient>
+    <radialGradient id="rim" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#5A606D"/><stop offset="80%" stop-color="#3A3F4A"/><stop offset="100%" stop-color="#1F2330"/>
+    </radialGradient>
+    <radialGradient id="barkPuff" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#C8B187" stop-opacity="0.8"/><stop offset="100%" stop-color="#C8B187" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="rigShadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
+      <feOffset dx="0" dy="4" result="offsetBlur"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.18"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softBlur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+
+    <symbol id="trailerWheel" overflow="visible">
+      <circle cx="0" cy="0" r="24" fill="#1A1A1A"/>
+      <circle cx="0" cy="0" r="16" fill="url(#rim)"/>
+      <circle cx="0" cy="0" r="5"  fill="#7A7F88"/>
+      <circle cx="0" cy="0" r="2"  fill="#1A1F2E"/>
+      <g stroke="#3A3F4A" stroke-width="2" stroke-linecap="round" opacity="0.85">
+        <line x1="0" y1="-21" x2="0" y2="-17"/><line x1="15" y1="-15" x2="12" y2="-12"/>
+        <line x1="21" y1="0" x2="17" y2="0"/><line x1="15" y1="15" x2="12" y2="12"/>
+        <line x1="0" y1="21" x2="0" y2="17"/><line x1="-15" y1="15" x2="-12" y2="12"/>
+        <line x1="-21" y1="0" x2="-17" y2="0"/><line x1="-15" y1="-15" x2="-12" y2="-12"/>
+      </g>
+      <ellipse cx="-5" cy="-9" rx="4" ry="2.4" fill="#FFFFFF" opacity="0.32"/>
+    </symbol>
+
+    <symbol id="logEnd" overflow="visible">
+      <ellipse cx="0" cy="0" rx="12" ry="12" fill="url(#logButt)" stroke="#5A3E22" stroke-width="0.8"/>
+      <circle cx="0" cy="0" r="8" fill="none" stroke="#8A6334" stroke-width="0.5" opacity="0.6"/>
+      <circle cx="0" cy="0" r="4.5" fill="none" stroke="#8A6334" stroke-width="0.5" opacity="0.6"/>
+    </symbol>
+
+    <symbol id="wheelChock" overflow="visible">
+      <polygon points="-14,0 14,0 4,-12" fill="#FF7A1F" stroke="#A35200" stroke-width="0.6"/>
+      <polygon points="-14,0 14,0 4,-12" fill="none" stroke="#FFFFFF" stroke-width="0.4" opacity="0.5"/>
+      <ellipse cx="0" cy="1" rx="14" ry="1.4" fill="#1A1F2E" opacity="0.4"/>
+    </symbol>
+  </defs>
+
+
+  <!-- ============================================================
+       CARD BACKGROUND
+       ============================================================ -->
+  <rect class="card-bg" x="20" y="20" width="1160" height="560" rx="22" fill="#FAFBFD"/>
+
+
+  <!-- ============================================================
+       MILL-YARD ATMOSPHERE (forest yard, warm haze)
+       ============================================================ -->
+  <rect x="20" y="220" width="1160" height="240" fill="url(#yardSky)" opacity="0.8"/>
+  <rect class="sky-shimmer" x="20" y="370" width="1160" height="60" fill="#FFFFFF" opacity="0.14"/>
+
+  <!-- Distant conifer treeline -->
+  <g opacity="0.45" fill="#5A6B4A">
+    <path d="M 70 300 L 86 250 L 102 300 Z"/>
+    <path d="M 96 308 L 116 244 L 136 308 Z"/>
+    <path d="M 130 304 L 148 256 L 166 304 Z"/>
+    <path d="M 162 312 L 184 248 L 206 312 Z"/>
+    <path d="M 200 306 L 218 258 L 236 306 Z"/>
+    <path d="M 230 314 L 252 252 L 274 314 Z"/>
+  </g>
+  <!-- Growing mill deck pile (logs already stripped off — taller than loading) -->
+  <g opacity="0.6">
+    <g transform="translate(316 322)">
+      <rect x="0" y="0" width="170" height="14" rx="7" fill="#6B4F30"/>
+      <rect x="6" y="-13" width="158" height="14" rx="7" fill="#7A5A38"/>
+      <rect x="14" y="-26" width="142" height="13" rx="6.5" fill="#6B4F30"/>
+      <rect x="24" y="-39" width="120" height="13" rx="6.5" fill="#7A5A38"/>
+      <g fill="#C79A5A"><circle cx="6" cy="7" r="6"/><circle cx="12" cy="-6" r="5.5"/><circle cx="20" cy="-19" r="5"/><circle cx="30" cy="-32" r="4.5"/></g>
+    </g>
+  </g>
+
+  <!-- Faint horizon line -->
+  <line x1="20" y1="378" x2="1180" y2="378" stroke="#4A5240" stroke-width="0.7" opacity="0.32"/>
+
+
+  <!-- ============================================================
+       MILL-YARD FLOOR (packed dirt + ruts)
+       ============================================================ -->
+  <rect x="20" y="478" width="1160" height="102" fill="url(#yardFloor)"/>
+  <rect x="60" y="476" width="1080" height="4" fill="#2A2114"/>
+  <rect x="60" y="478" width="1080" height="2" fill="#FFFFFF" opacity="0.10"/>
+  <g opacity="0.22">
+    <ellipse cx="360" cy="548" rx="60" ry="3.6" fill="#2A2114"/>
+    <ellipse cx="760" cy="552" rx="70" ry="3.8" fill="#2A2114"/>
+    <ellipse cx="520" cy="558" rx="40" ry="3" fill="#4A3B22"/>
+  </g>
+
+
+  <!-- ============================================================
+       LOG/POLE TRAILER — broadside profile (being stripped)
+       ============================================================ -->
+  <ellipse cx="560" cy="554" rx="470" ry="6" fill="#1A1F2E" opacity="0.32"/>
+
+  <!-- CAB -->
+  <g class="loader-bob" filter="url(#rigShadow)">
+    <path d="M 250 300 L 250 500 L 110 500 L 110 360 Q 110 340 122 330 L 162 290 Q 172 282 182 282 L 240 282 Q 250 282 250 292 Z" fill="url(#cab)"/>
+    <rect x="120" y="338" width="64" height="48" rx="6" fill="url(#windowGlass)" opacity="0.9"/>
+    <path d="M 192 300 Q 178 296 166 300 L 130 336 Q 130 350 144 350 L 192 350 Z" fill="url(#windowGlass)" opacity="0.9"/>
+    <ellipse cx="116" cy="396" rx="7" ry="5" fill="#FFE680"/>
+    <rect x="110" y="412" width="13" height="48" rx="3" fill="#0A1F3F" opacity="0.85"/>
+    <rect x="186" y="270" width="7" height="30" rx="3" fill="#7A7F88"/>
+    <circle cx="222" cy="438" r="8" fill="#FFFFFF" opacity="0.85"/>
+    <text x="222" y="442" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="8" fill="#5B3FBF">E</text>
+  </g>
+
+  <!-- HEADBOARD + FRONT BUNK + STANCHION -->
+  <g filter="url(#rigShadow)">
+    <rect x="256" y="330" width="13" height="172" rx="2" fill="url(#deckTop)"/>
+    <rect x="256" y="330" width="3" height="172" fill="#FFFFFF" opacity="0.35"/>
+    <g stroke="#2A2F38" stroke-width="1.2" opacity="0.5">
+      <line x1="259" y1="350" x2="266" y2="350"/><line x1="259" y1="370" x2="266" y2="370"/>
+      <line x1="259" y1="390" x2="266" y2="390"/><line x1="259" y1="410" x2="266" y2="410"/>
+    </g>
+    <rect x="264" y="482" width="130" height="18" rx="3" fill="url(#deckTop)"/>
+    <rect x="264" y="482" width="130" height="3" fill="#FFFFFF" opacity="0.4"/>
+    <rect x="382" y="400" width="12" height="100" rx="2" fill="url(#deckTop)"/>
+    <rect x="382" y="400" width="3" height="100" fill="#FFFFFF" opacity="0.35"/>
+    <rect x="379" y="400" width="18" height="7" rx="2" fill="#3A3F4A"/>
+  </g>
+
+  <!-- TELESCOPING REACH BEAM -->
+  <g filter="url(#rigShadow)">
+    <rect x="330" y="504" width="540" height="14" rx="3" fill="url(#deck)"/>
+    <rect x="330" y="504" width="540" height="3" fill="#7A7F88" opacity="0.6"/>
+    <rect x="560" y="507" width="260" height="8" rx="2" fill="#2A2F38"/>
+    <g fill="#0F1118">
+      <circle cx="600" cy="511" r="1.5"/><circle cx="628" cy="511" r="1.5"/><circle cx="656" cy="511" r="1.5"/>
+      <circle cx="684" cy="511" r="1.5"/><circle cx="712" cy="511" r="1.5"/><circle cx="740" cy="511" r="1.5"/>
+    </g>
+  </g>
+
+  <!-- King pin / hitch -->
+  <rect x="244" y="496" width="22" height="14" fill="#3A3F4A"/>
+  <circle cx="255" cy="503" r="5" fill="#1A1F2E"/>
+
+  <!-- REAR BUNK + STANCHION -->
+  <g filter="url(#rigShadow)">
+    <rect x="800" y="482" width="138" height="18" rx="3" fill="url(#deckTop)"/>
+    <rect x="800" y="482" width="138" height="3" fill="#FFFFFF" opacity="0.4"/>
+    <rect x="926" y="400" width="12" height="100" rx="2" fill="url(#deckTop)"/>
+    <rect x="926" y="400" width="3" height="100" fill="#FFFFFF" opacity="0.35"/>
+    <rect x="923" y="400" width="18" height="7" rx="2" fill="#3A3F4A"/>
+    <rect x="806" y="406" width="9" height="86" rx="2" fill="#3A3F4A" opacity="0.7"/>
+  </g>
+
+  <!-- ============================================================
+       REMAINING ON-DECK LOG STACK (bottom + middle tiers stay)
+       ============================================================ -->
+  <g filter="url(#rigShadow)">
+    <rect x="392" y="458" width="540" height="24" rx="12" fill="url(#logBark)"/>
+    <rect x="392" y="460" width="540" height="4" rx="2" fill="#A98255" opacity="0.5"/>
+    <rect x="398" y="438" width="528" height="23" rx="11.5" fill="url(#logBark)"/>
+    <rect x="398" y="440" width="528" height="4" rx="2" fill="#A98255" opacity="0.5"/>
+    <g transform="translate(918 470)"><use href="#logEnd"/></g>
+    <g transform="translate(896 470)"><use href="#logEnd"/></g>
+    <g transform="translate(874 470)"><use href="#logEnd"/></g>
+    <g transform="translate(914 449)"><use href="#logEnd"/></g>
+    <g transform="translate(892 449)"><use href="#logEnd"/></g>
+    <g stroke="#2E2113" stroke-width="0.7" opacity="0.4">
+      <line x1="440" y1="470" x2="850" y2="470"/>
+      <line x1="440" y1="449" x2="850" y2="449"/>
+    </g>
+  </g>
+
+  <!-- TOP TIER — present, then lifted clear (disappears) via .stack-fall -->
+  <g class="stack-fall" filter="url(#rigShadow)">
+    <rect x="420" y="419" width="490" height="21" rx="10.5" fill="url(#logBark)"/>
+    <rect x="420" y="421" width="490" height="4" rx="2" fill="#A98255" opacity="0.5"/>
+    <g transform="translate(906 430)"><use href="#logEnd"/></g>
+    <g transform="translate(885 430)"><use href="#logEnd"/></g>
+    <g stroke="#2E2113" stroke-width="0.7" opacity="0.4"><line x1="460" y1="430" x2="840" y2="430"/></g>
+  </g>
+
+  <!-- ============================================================
+       BINDER STRAP on the top tier (releases + lifts away first)
+       ============================================================ -->
+  <g class="strap-release">
+    <path d="M 470 500 Q 490 408 520 408 Q 552 408 575 500"
+          stroke="url(#strapWeb)" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <path d="M 470 500 Q 490 408 520 408 Q 552 408 575 500"
+          stroke="#FFE066" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.8"/>
+    <path d="M 800 500 Q 822 412 850 412 Q 878 412 898 500"
+          stroke="url(#strapWeb)" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <path d="M 800 500 Q 822 412 850 412 Q 878 412 898 500"
+          stroke="#FFE066" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.8"/>
+    <!-- Ratchet buckle + tick handle (cracks the binder open) -->
+    <g transform="translate(466 498)">
+      <rect x="-2" y="-4" width="14" height="10" rx="1" fill="#3A3F4A" stroke="#1A1F2E" stroke-width="0.4"/>
+      <circle cx="5" cy="1" r="2.2" fill="#1A1F2E"/>
+      <g transform="translate(11 1)"><g class="ratchet-tick">
+        <rect x="0" y="-1.6" width="14" height="3.2" rx="1" fill="#3A3F4A"/>
+        <rect x="11" y="-2.4" width="3" height="4.8" rx="0.5" fill="#FFD200"/>
+      </g></g>
+    </g>
+  </g>
+
+  <!-- Bark-dust puffs at the bunk when the bundle is plucked off -->
+  <g filter="url(#softBlur)">
+    <circle class="bark-dust"    cx="640" cy="430" r="7" fill="url(#barkPuff)"/>
+    <circle class="bark-dust d2" cx="700" cy="430" r="6" fill="url(#barkPuff)"/>
+  </g>
+
+  <!-- DOT reflective conspicuity -->
+  <g>
+    <rect x="350" y="505" width="20" height="4" fill="#E5350D"/><rect x="370" y="505" width="20" height="4" fill="#FFFFFF"/>
+    <rect x="820" y="505" width="20" height="4" fill="#FFFFFF"/><rect x="840" y="505" width="20" height="4" fill="#E5350D"/>
+  </g>
+
+  <!-- Chassis underframe -->
+  <g filter="url(#rigShadow)"><rect x="266" y="518" width="660" height="10" rx="2" fill="#1A1F2E"/></g>
+  <use href="#wheelChock" x="312" y="556"/>
+
+  <!-- Tractor + bogie wheels -->
+  <g transform="translate(190 552)"><use href="#trailerWheel"/></g>
+  <g transform="translate(250 552)"><use href="#trailerWheel"/></g>
+  <g transform="translate(840 552)"><use href="#trailerWheel"/></g>
+  <g transform="translate(900 552)"><use href="#trailerWheel"/></g>
+
+  <!-- Landing-gear legs (parked) -->
+  <rect x="470" y="518" width="10" height="38" fill="#5A606D"/>
+  <rect x="466" y="554" width="18" height="6" fill="#3A3F4A"/>
+
+
+  <!-- ============================================================
+       KNUCKLE-BOOM GRAPPLE LOADER (strips the load)
+       ============================================================ -->
+  <g filter="url(#rigShadow)">
+    <rect x="1018" y="486" width="150" height="34" rx="6" fill="#2A2F38"/>
+    <g transform="translate(1040 532)"><use href="#trailerWheel"/></g>
+    <g transform="translate(1100 532)"><use href="#trailerWheel"/></g>
+    <g transform="translate(1148 532)"><use href="#trailerWheel"/></g>
+    <rect x="1030" y="470" width="120" height="20" rx="4" fill="#3A3F4A"/>
+    <g class="loader-bob">
+      <rect x="1052" y="404" width="104" height="70" rx="8" fill="url(#loaderBody)" stroke="#8C4400" stroke-width="0.8"/>
+      <rect x="1052" y="404" width="104" height="5" fill="#FFFFFF" opacity="0.3"/>
+      <rect x="1058" y="414" width="40" height="44" rx="4" fill="url(#windowGlass)" opacity="0.9"/>
+      <line x1="1078" y1="414" x2="1078" y2="458" stroke="#0A1F3F" stroke-width="1" opacity="0.35"/>
+      <circle cx="1072" cy="430" r="4.5" fill="#D9A878"/>
+      <rect x="1066" y="434" width="13" height="14" rx="2" fill="#C4F036"/>
+      <rect x="1067" y="430" width="11" height="3" fill="#F1F4F9"/>
+      <g transform="translate(1130 400)">
+        <rect x="-2" y="0" width="4" height="4" fill="#3A3F4A"/>
+        <ellipse class="yard-beacon" cx="0" cy="-3" rx="4" ry="3.2" fill="#FF8A1F"/>
+        <ellipse class="yard-beacon" cx="0" cy="-3" rx="8" ry="6" fill="#FF8A1F" opacity="0.3"/>
+      </g>
+      <rect x="1140" y="430" width="18" height="40" rx="3" fill="#1A1F2E"/>
+      <rect x="1148" y="396" width="5" height="12" rx="2" fill="#3A3F4A"/>
+    </g>
+  </g>
+
+  <!-- ===== ARTICULATED KNUCKLE-BOOM (swings in empty, leaves loaded) ===== -->
+  <g class="boom-cycle">
+    <g filter="url(#rigShadow)">
+      <circle cx="1058" cy="404" r="9" fill="#3A3F4A"/>
+      <circle cx="1058" cy="404" r="4" fill="#1A1F2E"/>
+      <path d="M 1054 404 L 1046 396 L 690 270 L 700 286 Z" fill="url(#loaderBody)" stroke="#8C4400" stroke-width="0.8"/>
+      <circle cx="696" cy="278" r="9" fill="#3A3F4A"/>
+      <circle cx="696" cy="278" r="4" fill="#1A1F2E"/>
+      <line x1="1040" y1="412" x2="820" y2="334" stroke="#5A606D" stroke-width="4" stroke-linecap="round"/>
+      <line x1="1040" y1="412" x2="820" y2="334" stroke="#9098A8" stroke-width="1.4" stroke-linecap="round" opacity="0.7"/>
+      <path d="M 700 282 L 690 274 L 612 384 L 626 388 Z" fill="url(#loaderBody)" stroke="#8C4400" stroke-width="0.8"/>
+      <line x1="690" y1="290" x2="628" y2="372" stroke="#5A606D" stroke-width="3.4" stroke-linecap="round"/>
+      <circle cx="619" cy="386" r="7" fill="#3A3F4A"/>
+      <circle cx="619" cy="386" r="3" fill="#1A1F2E"/>
+    </g>
+
+    <!-- ===== ROTATING GRAPPLE + CAPTURED LOG BUNDLE ===== -->
+    <g>
+      <g class="held-bundle" filter="url(#rigShadow)">
+        <rect x="556" y="398" width="128" height="22" rx="11" fill="url(#logBark)"/>
+        <rect x="562" y="396" width="116" height="20" rx="10" fill="#7A5A38"/>
+        <g>
+          <g transform="translate(674 409)"><use href="#logEnd"/></g>
+          <g transform="translate(670 392)"><use href="#logEnd"/></g>
+          <g transform="translate(652 400)"><use href="#logEnd"/></g>
+        </g>
+      </g>
+      <g class="grapple-left">
+        <path d="M 615 384 L 600 392 L 585 416 L 596 420 L 610 396 Z" fill="#3A3F4A" stroke="#1A1F2E" stroke-width="0.6"/>
+      </g>
+      <g class="grapple-right">
+        <path d="M 623 384 L 638 392 L 653 416 L 642 420 L 628 396 Z" fill="#3A3F4A" stroke="#1A1F2E" stroke-width="0.6"/>
+      </g>
+      <rect x="610" y="380" width="18" height="8" rx="2" fill="#1A1F2E"/>
+    </g>
+  </g>
+
+
+  <!-- ============================================================
+       SAFETY CONES
+       ============================================================ -->
+  <g>
+    <g transform="translate(330 556)">
+      <polygon points="-7,0 7,0 4.6,-12 -4.6,-12" fill="#FF7A1F"/>
+      <polygon points="-5.4,-6 5.4,-6 4.6,-9 -4.6,-9" fill="#FFFFFF" opacity="0.85"/>
+      <polygon points="-3.4,-12 3.4,-12 3,-15 -3,-15" fill="#FF7A1F"/>
+      <ellipse cx="0" cy="0" rx="9" ry="2" fill="#1A1F2E" opacity="0.35"/>
+    </g>
+    <g transform="translate(980 556)">
+      <polygon points="-7,0 7,0 4.6,-12 -4.6,-12" fill="#FF7A1F"/>
+      <polygon points="-5.4,-6 5.4,-6 4.6,-9 -4.6,-9" fill="#FFFFFF" opacity="0.85"/>
+      <polygon points="-3.4,-12 3.4,-12 3,-15 -3,-15" fill="#FF7A1F"/>
+      <ellipse cx="0" cy="0" rx="9" ry="2" fill="#1A1F2E" opacity="0.35"/>
+    </g>
+  </g>
+
+
+  <!-- ============================================================
+       HUD OVERLAYS
+       ============================================================ -->
+  <g class="brand-lockup" transform="translate(50 40)">
+    <g class="brand-mark">
+      <circle cx="24" cy="14" r="15" fill="url(#brandIridescent)"/>
+      <path d="M 24 6 C 22 10 19 13 20.4 17 C 19 16.2 18 14 18.8 12.4 C 17 14 16.6 17.4 19 20 C 17.8 19 17.8 16.6 17.8 19 C 19.4 21.6 22 22.2 24 22.2 C 26 22.2 28.6 21.6 30.2 19 C 30.2 16.6 30.2 19 29 20 C 31.4 17.4 31 14 29.2 12.4 C 30 14 29 16.2 27.6 17 C 29 13 26 10 24 6 Z" fill="#FFFFFF"/>
+    </g>
+    <text class="brand-word" x="48" y="14" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="18" letter-spacing="2.5" fill="#5B3FBF">EUSOTRIP</text>
+    <text x="48" y="28" font-family="Inter, system-ui, sans-serif"
+          font-weight="500" font-size="8" letter-spacing="3" fill="#9B7FD9" opacity="0.55">BY EUSORONE</text>
+  </g>
+
+  <!-- TRUCK mode badge (top-right) -->
+  <g>
+    <rect x="1052" y="58" width="100" height="32" rx="16" ry="16" fill="url(#brandIridescent)" stroke="#FFFFFF" stroke-width="1.5" stroke-opacity="0.5"/>
+    <g transform="translate(1066 70)" fill="#FFFFFF"><rect x="0" y="2" width="8" height="6" rx="1"/><rect x="9" y="0" width="6" height="8" rx="1"/><circle cx="3" cy="10" r="1.5"/><circle cx="12" cy="10" r="1.5"/></g>
+    <text x="1115" y="79" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="14" letter-spacing="1.8" fill="#FFFFFF">TRUCK</text>
+  </g>
+
+  <!-- ============================================================
+       COUNTRY-SWITCHABLE UNITS + WLL MARKING (regulated rig)
+       Tree-length log securement — harmonized NA Cargo Securement Standard:
+         US · FMCSA 49 CFR 393.116 (logs).
+         CA · NSC Standard 10 (CCMTA), WLL marked, metric (kg).
+         MX · NOM-SCT2 series, harmonized, metric (kg).
+       Default = country-US visible; CA/MX inline display:none. Host flips
+       by shipment country + localizes data-bind tspans.
+       ============================================================ -->
+  <g class="country-units">
+    <g class="country-US" data-country="US">
+      <rect x="1072" y="98" width="60" height="20" rx="10" ry="10" fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+      <text x="1102" y="112" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">LBS</text>
+      <text data-bind="wll_label" x="1132" y="130" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="7" letter-spacing="0.8" fill="#7A5AB8" opacity="0.85">WLL 24,000 LB</text>
+    </g>
+    <g class="country-CA" data-country="CA" style="display:none;">
+      <rect x="1072" y="98" width="60" height="20" rx="10" ry="10" fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+      <text x="1102" y="112" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">KG</text>
+      <text data-bind="wll_label" x="1132" y="130" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="7" letter-spacing="0.8" fill="#7A5AB8" opacity="0.85">WLL 10 900 KG</text>
+    </g>
+    <g class="country-MX" data-country="MX" style="display:none;">
+      <rect x="1072" y="98" width="60" height="20" rx="10" ry="10" fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+      <text x="1102" y="112" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">KG</text>
+      <text data-bind="wll_label" x="1132" y="130" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="7" letter-spacing="0.8" fill="#7A5AB8" opacity="0.85">CST 10 900 KG</text>
+    </g>
+  </g>
+
+  <!-- UNLOADING pill -->
+  <g class="load-pill">
+    <rect x="60" y="100" width="198" height="32" rx="16" ry="16" fill="#FF7A1F" opacity="0.95"/>
+    <circle cx="80" cy="116" r="5" fill="#FFFFFF" opacity="0.95"/>
+    <circle cx="80" cy="116" r="2.5" fill="#FF7A1F"/>
+    <text x="100" y="122" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="13" letter-spacing="2.4"
+          fill="#FFFFFF" data-bind="state_label">UNLOADING</text>
+  </g>
+
+  <!-- Equipment label + subtitle -->
+  <g opacity="0.9">
+    <text x="60" y="78" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="13" letter-spacing="2" fill="#5B3FBF"
+          data-bind="equipment_label">LOG / POLE TRAILER</text>
+    <line x1="60" y1="86" x2="240" y2="86" stroke="#9B7FD9" stroke-width="2" stroke-linecap="round"/>
+    <text x="60" y="148" font-family="Inter, system-ui, sans-serif"
+          font-weight="500" font-size="10" letter-spacing="1.2" fill="#7A5AB8"
+          data-bind="equipment_subtitle">SKELETAL BUNKS &#183; TREE-LENGTH STEMS</text>
+  </g>
+
+  <!-- Yard chip + ETA -->
+  <g opacity="0.95">
+    <rect x="60" y="160" width="320" height="22" rx="6" ry="6" fill="#FFFFFF" fill-opacity="0.95" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.45"/>
+    <text data-bind="dock_id" x="72" y="176" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="11" letter-spacing="1.4" fill="#5B3FBF">MILL DECK 1 &#183; KNUCKLE-BOOM</text>
+    <text data-bind="eta_minutes" x="370" y="176" text-anchor="end" font-family="Inter, system-ui, sans-serif"
+          font-weight="600" font-size="10" letter-spacing="0.8" fill="#7A5AB8">ETA 9 MIN</text>
+  </g>
+
+  <!-- Commodity chip -->
+  <g opacity="0.95">
+    <rect x="60" y="190" width="320" height="22" rx="6" ry="6" fill="#FFFFFF" fill-opacity="0.95" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.45"/>
+    <text data-bind="commodity_label" x="72" y="206" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="11" letter-spacing="1.4" fill="#5B3FBF">SOFTWOOD SAWLOGS &#183; 33 FT</text>
+  </g>
+
+  <!-- Progress bar (unloading counts DOWN remaining weight) -->
+  <g>
+    <rect x="60" y="555" width="1080" height="6" rx="3" fill="#E5E2EF" opacity="0.6"/>
+    <rect class="progress-fill" x="60" y="555" width="460" height="6" rx="3" fill="#FF7A1F" style="--load-progress: 0.42;"/>
+    <text x="1140" y="548" text-anchor="end" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="10" letter-spacing="1.4" fill="#5B3FBF" opacity="0.85"><tspan data-bind="weight_label">20,200 LBS REMAINING</tspan> &#183; <tspan data-bind="progress_pct">58</tspan>%</text>
+  </g>
+
+  <!-- Chevron -->
+  <g class="chevron">
+    <path d="M 70 540 L 55 525 L 55 555 Z" fill="#9B7FD9"/>
+  </g>
+
+  <!-- Iridescent rounded card border -->
+  <rect class="card-border" x="20" y="20" width="1160" height="560" rx="22"
+        fill="none" stroke="url(#brandIridescent)" stroke-width="2.5" pointer-events="none"/>
+</svg>

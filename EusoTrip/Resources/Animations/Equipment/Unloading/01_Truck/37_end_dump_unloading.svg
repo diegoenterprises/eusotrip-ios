@@ -1,0 +1,608 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600" data-state="unloading">
+  <style><![CDATA[
+
+    /* ============ FOUNDATION MOTION VOCAB ============ */
+    .brand-mark { transform-box: fill-box; transform-origin: center;
+                  animation: brand-pulse 3.6s ease-in-out infinite; }
+    @keyframes brand-pulse {
+      0%, 100% { transform: scale(1);    opacity: 0.92; }
+      50%      { transform: scale(1.05); opacity: 1; }
+    }
+    .brand-word { animation: brand-word-breath 6s ease-in-out infinite; }
+    @keyframes brand-word-breath {
+      0%, 100% { opacity: 0.78; }
+      50%      { opacity: 1; }
+    }
+    .sky-shimmer { animation: sky-drift 14s linear infinite; transform-box: fill-box; }
+    @keyframes sky-drift {
+      from { transform: translateX(-40px); opacity: 0.12; }
+      50%  { opacity: 0.22; }
+      to   { transform: translateX(40px);  opacity: 0.12; }
+    }
+    .load-pill { transform-box: fill-box; transform-origin: center;
+                 animation: load-pill-pulse 2.4s ease-in-out infinite; }
+    @keyframes load-pill-pulse {
+      0%, 100% { opacity: 0.85; transform: scale(1); }
+      50%      { opacity: 1;    transform: scale(1.04); }
+    }
+    .progress-fill { transition: width 0.4s ease-out; }
+    .chevron { animation: chevron-pulse 2.2s ease-in-out infinite; }
+    @keyframes chevron-pulse {
+      0%, 100% { opacity: 0.3; }
+      50%      { opacity: 0.65; }
+    }
+
+    /* ============ END-DUMP-UNLOADING-SPECIFIC MOTION ============
+       8s cycle, master rhythm (the DEFINING process — the bed ARTICULATES
+       UP on the front hydraulic hoist and aggregate slides out the rear):
+         0  - 14% : air-operated rear TAILGATE unlatches and swings OPEN
+                    about its top hinge (decel settle).
+         14 - 42% : the front telescoping multi-stage hoist cylinder EXTENDS;
+                    the whole dump body rotates UP about the REAR hinge to a
+                    ~46° dump angle (cubic-bezier decel — the signature lift).
+                    THE BED TILT IS THE IDENTITY.
+         30 - 86% : aggregate slides down and out the rear tailgate (dashed
+                    product flow); the in-body load level FALLS; the discharge
+                    pile on the ground GROWS in step; impact dust kicks up.
+         86 - 100%: body lowers back level, tailgate re-latches, pile holds,
+                    then loop.
+       Aggregate is non-hazmat (no UN diamond) — markings are GVWR plate +
+       raised-bed / overhead-line caution, country-aware.
+       ============================================================== */
+
+    /* The whole dump BODY tilts up about the rear hinge — the identity move. */
+    .bed-tilt { transform-box: view-box; transform-origin: 968px 470px;
+                animation: bed-tilt 8s cubic-bezier(0.4,0,0.2,1) infinite; }
+    @keyframes bed-tilt {
+      0%, 14%   { transform: rotate(0deg); }
+      42%, 86%  { transform: rotate(-46deg); }
+      100%      { transform: rotate(0deg); }
+    }
+    /* Front telescoping hoist cylinder EXTENDS in step with the lift. */
+    .hoist-extend { transform-box: fill-box; transform-origin: bottom;
+                    animation: hoist-extend 8s cubic-bezier(0.4,0,0.2,1) infinite; }
+    @keyframes hoist-extend {
+      0%, 14%   { transform: scaleY(1); }
+      42%, 86%  { transform: scaleY(3.4); }
+      100%      { transform: scaleY(1); }
+    }
+    .hoist-glint { transform-box: fill-box; transform-origin: center;
+                   animation: hoist-glint 4.6s ease-in-out infinite; }
+    @keyframes hoist-glint {
+      0%, 100% { opacity: 0.35; }
+      50%      { opacity: 0.85; }
+    }
+    /* Rear air-operated tailgate swings OPEN about its top hinge. */
+    .tailgate-swing { transform-box: view-box; transform-origin: 1028px 326px;
+                      animation: tailgate-swing 8s cubic-bezier(0.4,0,0.2,1) infinite; }
+    @keyframes tailgate-swing {
+      0%, 14%   { transform: rotate(0deg); }
+      26%, 90%  { transform: rotate(38deg); }
+      100%      { transform: rotate(0deg); }
+    }
+
+    /* Aggregate sliding out the rear — continuous dashed flow, gated to dump. */
+    .product-flow { animation: product-flow 0.6s linear infinite;
+                    stroke-dasharray: 7 7; }
+    @keyframes product-flow {
+      from { stroke-dashoffset: 0; }
+      to   { stroke-dashoffset: 28; }
+    }
+    .product-flow-fade { animation: product-flow-fade 8s ease-in-out infinite; }
+    @keyframes product-flow-fade {
+      0%, 30%   { opacity: 0; }
+      40%, 86%  { opacity: 0.95; }
+      100%      { opacity: 0; }
+    }
+
+    /* In-body load level FALLS as product slides out. */
+    .body-level-fall { transform-box: fill-box; transform-origin: bottom;
+                       animation: body-level-fall 8s ease-in-out infinite; }
+    @keyframes body-level-fall {
+      0%, 30%   { transform: scaleY(1); }
+      86%, 100% { transform: scaleY(0.12); }
+    }
+    /* Discharge pile on the ground GROWS in step. */
+    .pile-grow { transform-box: fill-box; transform-origin: bottom;
+                 animation: pile-grow 8s ease-in-out infinite; }
+    @keyframes pile-grow {
+      0%, 30%   { transform: scale(0.2); opacity: 0.5; }
+      40%       { opacity: 1; }
+      86%, 100% { transform: scale(1);   opacity: 1; }
+    }
+
+    /* Impact dust kicked up where material lands. */
+    .dust-puff { animation: dust-puff 2.6s ease-out infinite; }
+    .dust-puff.p2 { animation-delay: -0.9s; }
+    .dust-puff.p3 { animation-delay: -1.8s; }
+    @keyframes dust-puff {
+      0%   { opacity: 0;    transform: translateY(0)    scale(0.4); }
+      30%  { opacity: 0.42; transform: translateY(-9px) scale(1); }
+      70%  { opacity: 0.2;  transform: translateY(-20px) scale(1.4); }
+      100% { opacity: 0;    transform: translateY(-30px) scale(1.8); }
+    }
+    .dust-fade { animation: dust-fade 8s ease-in-out infinite; }
+    @keyframes dust-fade {
+      0%, 30%   { opacity: 0; }
+      40%, 86%  { opacity: 1; }
+      100%      { opacity: 0; }
+    }
+
+    /* Transfer progress bar. */
+    .level-bar { transform-box: fill-box; transform-origin: left center;
+                 animation: level-bar 8s ease-in-out infinite; }
+    @keyframes level-bar {
+      0%, 30%   { transform: scaleX(0.1); }
+      86%, 100% { transform: scaleX(0.92); }
+    }
+
+    .operator-bob { transform-box: fill-box; transform-origin: center bottom;
+                    animation: operator-bob 4.4s ease-in-out infinite; }
+    @keyframes operator-bob {
+      0%, 100% { transform: translateY(0); }
+      50%      { transform: translateY(-0.8px); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .brand-lockup, .brand-mark, .brand-word,
+      .chevron,
+      .bed-tilt,
+      .hoist-extend, .hoist-glint,
+      .tailgate-swing,
+      .product-flow, .product-flow-fade,
+      .body-level-fall,
+      .pile-grow,
+      .dust-puff, .dust-fade,
+      .level-bar,
+      .operator-bob,
+      .load-pill,
+      .progress-fill,
+      .sky-shimmer {
+        animation: none !important;
+      }
+      .dust-puff { opacity: 0 !important; }
+      /* Calm rest state: leave the bed raised at its dump angle so the
+         identity (bed tilt + open tailgate) reads even when motion is off. */
+      .bed-tilt    { transform: rotate(-46deg) !important; }
+      .hoist-extend{ transform: scaleY(3.4) !important; }
+      .tailgate-swing { transform: rotate(38deg) !important; }
+      .body-level-fall { transform: scaleY(0.12) !important; }
+      .pile-grow   { transform: scale(1) !important; opacity: 1 !important; }
+    }
+
+  ]]></style>
+
+  <defs>
+    <linearGradient id="brandIridescent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1473FF"/>
+      <stop offset="50%" stop-color="#6E4DFF"/>
+      <stop offset="100%" stop-color="#BE01FF"/>
+    </linearGradient>
+
+    <linearGradient id="plantSky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#D8DEE7"/>
+      <stop offset="55%" stop-color="#CBD2DC"/>
+      <stop offset="100%" stop-color="#A8B0BE"/>
+    </linearGradient>
+    <linearGradient id="plantPad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5C6068"/>
+      <stop offset="100%" stop-color="#2E3138"/>
+    </linearGradient>
+    <!-- Dump-body steel (matches hero 37) -->
+    <linearGradient id="dumpBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#5E6470"/>
+      <stop offset="45%" stop-color="#454B57"/>
+      <stop offset="100%" stop-color="#23262F"/>
+    </linearGradient>
+    <linearGradient id="dumpBelly" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3A3F4A"/>
+      <stop offset="100%" stop-color="#15181F"/>
+    </linearGradient>
+    <linearGradient id="aggFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#C9BFA8"/>
+      <stop offset="55%" stop-color="#A1957B"/>
+      <stop offset="100%" stop-color="#766B53"/>
+    </linearGradient>
+    <linearGradient id="hoistChrome" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#EEF1F6"/>
+      <stop offset="45%" stop-color="#AEB4C0"/>
+      <stop offset="100%" stop-color="#6E747F"/>
+    </linearGradient>
+    <radialGradient id="rim" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#5A606D"/>
+      <stop offset="80%" stop-color="#3A3F4A"/>
+      <stop offset="100%" stop-color="#1F2330"/>
+    </radialGradient>
+    <radialGradient id="dustPuff" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#CFC4AB" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#CFC4AB" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="rigShadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
+      <feOffset dx="0" dy="4" result="offsetBlur"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.18"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softBlur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+
+    <symbol id="trailerWheel" overflow="visible">
+      <circle cx="0" cy="0" r="24" fill="#1A1A1A"/>
+      <circle cx="0" cy="0" r="16" fill="url(#rim)"/>
+      <circle cx="0" cy="0" r="5"  fill="#7A7F88"/>
+      <circle cx="0" cy="0" r="2"  fill="#1A1F2E"/>
+      <g stroke="#3A3F4A" stroke-width="2" stroke-linecap="round" opacity="0.85">
+        <line x1="0" y1="-21" x2="0" y2="-17"/>
+        <line x1="15" y1="-15" x2="12" y2="-12"/>
+        <line x1="21" y1="0"  x2="17" y2="0"/>
+        <line x1="15" y1="15" x2="12" y2="12"/>
+        <line x1="0"  y1="21" x2="0"  y2="17"/>
+        <line x1="-15" y1="15" x2="-12" y2="12"/>
+        <line x1="-21" y1="0"  x2="-17" y2="0"/>
+        <line x1="-15" y1="-15" x2="-12" y2="-12"/>
+      </g>
+      <ellipse cx="-5" cy="-9" rx="4" ry="2.4" fill="#FFFFFF" opacity="0.32"/>
+    </symbol>
+
+    <symbol id="wheelChock" overflow="visible">
+      <polygon points="-14,0 14,0 4,-12" fill="#FF7A1F" stroke="#A35200" stroke-width="0.6"/>
+      <polygon points="-14,0 14,0 4,-12" fill="none" stroke="#FFFFFF" stroke-width="0.4" opacity="0.5"/>
+      <ellipse cx="0" cy="1" rx="14" ry="1.4" fill="#1A1F2E" opacity="0.4"/>
+    </symbol>
+  </defs>
+
+
+  <!-- CARD BACKGROUND -->
+  <rect class="card-bg" x="20" y="20" width="1160" height="560" rx="22" fill="#FAFBFD"/>
+
+
+  <!-- ============================================================
+       JOBSITE ATMOSPHERE (background)
+       ============================================================ -->
+  <rect x="20" y="220" width="1160" height="240" fill="url(#plantSky)" opacity="0.85"/>
+  <rect class="sky-shimmer" x="20" y="370" width="1160" height="60" fill="#FFFFFF" opacity="0.14"/>
+
+  <!-- Distant jobsite skyline (grade dozer + screen plant) -->
+  <g opacity="0.45">
+    <rect x="70"  y="300" width="56" height="160" fill="#9098A8"/>
+    <rect x="66"  y="292" width="64" height="10" fill="#6E747F"/>
+    <!-- Tower crane mast + jib -->
+    <rect x="200" y="210" width="8" height="250" fill="#9098A8"/>
+    <rect x="120" y="206" width="220" height="6" fill="#9098A8"/>
+    <line x1="204" y1="210" x2="124" y2="228" stroke="#9098A8" stroke-width="2"/>
+    <line x1="204" y1="210" x2="332" y2="228" stroke="#9098A8" stroke-width="2"/>
+  </g>
+
+  <line x1="20" y1="378" x2="1180" y2="378" stroke="#5C6068" stroke-width="0.7" opacity="0.32"/>
+
+
+  <!-- PAD -->
+  <rect x="20" y="478" width="1160" height="102" fill="url(#plantPad)"/>
+  <rect x="60" y="476" width="1080" height="4" fill="#2A2D33"/>
+  <rect x="60" y="478" width="1080" height="2" fill="#FFFFFF" opacity="0.16"/>
+  <line x1="80" y1="540" x2="1120" y2="540" stroke="#FFD200" stroke-width="1.6"
+        stroke-dasharray="22 14" opacity="0.5"/>
+  <g opacity="0.16">
+    <ellipse cx="300" cy="548" rx="40" ry="3.4" fill="#CFC4AB"/>
+    <ellipse cx="640" cy="552" rx="44" ry="3.6" fill="#CFC4AB"/>
+  </g>
+
+
+  <!-- ============================================================
+       HALF-ROUND END-DUMP TRAILER — broadside profile
+       (camera-side view; nose left, rear faces RIGHT; bed tilts UP)
+       ============================================================ -->
+
+  <ellipse cx="600" cy="552" rx="430" ry="6" fill="#1A1F2E" opacity="0.32"/>
+
+  <!-- ===== CHASSIS, AXLES, WHEELS (stay on the ground — do NOT tilt) ===== -->
+  <g filter="url(#rigShadow)"><rect x="240" y="498" width="730" height="12" rx="2" fill="#1A1F2E"/></g>
+  <use href="#wheelChock" x="292" y="540"/>
+  <g transform="translate(340 540)"><use href="#trailerWheel"/></g>
+  <g transform="translate(400 540)"><use href="#trailerWheel"/></g>
+  <g transform="translate(820 540)"><use href="#trailerWheel"/></g>
+  <g transform="translate(880 540)"><use href="#trailerWheel"/></g>
+  <!-- Landing-gear legs (parked) -->
+  <rect x="300" y="510" width="10" height="30" fill="#5A606D"/>
+  <rect x="296" y="538" width="18" height="6" fill="#3A3F4A"/>
+
+  <!-- Rear hinge pivot block (the bed rotates about this point) -->
+  <g filter="url(#rigShadow)">
+    <rect x="952" y="486" width="32" height="22" rx="4" fill="#3A3F4A"/>
+    <circle cx="968" cy="470" r="8" fill="#5A606D" stroke="#1F2330" stroke-width="1.6"/>
+    <circle cx="968" cy="470" r="3" fill="#7E8593"/>
+  </g>
+
+  <!-- ===== FRONT TELESCOPING HYDRAULIC HOIST (extends to raise the bed) =====
+       Anchored to the chassis near the nose; the multi-stage chromed ram
+       grows upward (scaleY about its base) in step with the bed tilt. -->
+  <g filter="url(#rigShadow)">
+    <!-- Trunnion base mount on the chassis -->
+    <rect x="296" y="490" width="26" height="18" rx="4" fill="#3A3F4A"/>
+    <circle cx="309" cy="499" r="5" fill="#1F2330"/>
+    <!-- Extending cylinder stack (base-anchored, scales up) -->
+    <g class="hoist-extend">
+      <rect x="300" y="446" width="18" height="52" rx="8" fill="url(#hoistChrome)"/>
+      <rect class="hoist-glint" x="303" y="450" width="12" height="44" rx="4" fill="#FFFFFF"/>
+      <!-- Telescoping stage seams -->
+      <g stroke="#5A606D" stroke-width="1.4" opacity="0.7">
+        <line x1="300" y1="462" x2="318" y2="462"/>
+        <line x1="300" y1="476" x2="318" y2="476"/>
+      </g>
+      <!-- Upper pivot pin to the bed underside -->
+      <circle cx="309" cy="446" r="5" fill="#1F2330"/>
+    </g>
+  </g>
+
+  <!-- ===== THE DUMP BODY — tilts UP about the rear hinge (THE IDENTITY) ===== -->
+  <g class="bed-tilt">
+    <g filter="url(#rigShadow)">
+      <!-- Tub shell: tall straight side wall sweeping into a curved belly -->
+      <path d="M 312 322
+               L 1010 322
+               L 1010 446
+               Q 1010 502 952 502
+               L 370 502
+               Q 312 502 312 446
+               Z" fill="url(#dumpBody)"/>
+      <!-- Curved-belly shading band (the half-round underside) -->
+      <path d="M 320 446 Q 320 494 370 494 L 952 494 Q 1002 494 1002 446 L 1002 462 Q 1002 498 952 498 L 370 498 Q 320 498 320 462 Z"
+            fill="url(#dumpBelly)" opacity="0.85"/>
+      <!-- Top side-wall rail highlight + bottom shadow -->
+      <rect x="312" y="322" width="698" height="6" rx="2" fill="#FFFFFF" opacity="0.4"/>
+      <rect x="312" y="490" width="698" height="6" fill="#1A1F2E" opacity="0.28"/>
+
+      <!-- Vertical side stiffener ribs (dump-body hallmark) -->
+      <g stroke="#15181F" stroke-width="3" opacity="0.6">
+        <line x1="380" y1="328" x2="380" y2="486"/>
+        <line x1="460" y1="328" x2="460" y2="490"/>
+        <line x1="540" y1="328" x2="540" y2="494"/>
+        <line x1="620" y1="328" x2="620" y2="494"/>
+        <line x1="700" y1="328" x2="700" y2="494"/>
+        <line x1="780" y1="328" x2="780" y2="494"/>
+        <line x1="860" y1="328" x2="860" y2="490"/>
+        <line x1="940" y1="328" x2="940" y2="484"/>
+      </g>
+
+      <!-- Top cap rail -->
+      <rect x="312" y="316" width="698" height="8" rx="3" fill="#3A3F4A"/>
+      <rect x="312" y="316" width="698" height="2" rx="1" fill="#6E747F"/>
+
+      <!-- In-body aggregate load — level FALLS as it slides out the rear -->
+      <g transform="translate(661 494)">
+        <rect class="body-level-fall" x="-341" y="-160" width="682" height="160" rx="6" fill="url(#aggFill)"/>
+      </g>
+      <!-- Speckle on the in-body load -->
+      <g class="body-level-fall" fill="#5E5640" opacity="0.45" transform="translate(0 0)">
+        <circle cx="420" cy="360" r="2.4"/><circle cx="540" cy="350" r="2"/><circle cx="660" cy="358" r="2.4"/>
+        <circle cx="780" cy="352" r="2"/><circle cx="880" cy="356" r="2.2"/>
+      </g>
+
+      <!-- Commodity stencil -->
+      <text x="661" y="430" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="24" fill="#C8CDD8" opacity="0.5" letter-spacing="3">AGGREGATE</text>
+      <text x="661" y="450" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="10" fill="#5B3FBF" opacity="0.62" letter-spacing="2">HALF-ROUND END-DUMP &#183; 24 CU YD</text>
+
+      <!-- ============================================================
+           COUNTRY-SWITCHABLE END-DUMP MARKING GROUP
+           Aggregate is non-hazmat (no UN diamond). Regulated /
+           industry-standard items: a GVWR weight-class data plate + a
+           "RAISED BED — CHECK OVERHEAD LINES" caution (the signature
+           tilting-dump-body hazard marking — especially apt here, with the
+           bed in the air). Default = .country-US; renderer sets
+           display:none on the two it does not want. Geometry identical so
+           swapping is seamless. US = OSHA overhead-line CAUTION + DOT GVWR
+           plate (lbs); CA = bilingual EN/FR caution + TC plate (kg);
+           MX = NOM-012-SCT Spanish caution + NOM weight plate (kg).
+           ============================================================ -->
+      <g class="marking-group">
+        <g class="country-US">
+          <g transform="translate(560 470)">
+            <rect x="-44" y="-12" width="88" height="24" rx="4" fill="#FFD23A" stroke="#1A1F2E" stroke-width="1.4"/>
+            <text x="0" y="-2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="7" fill="#1A1F2E" letter-spacing="0.4">CAUTION · RAISED BED</text>
+            <text x="0" y="8" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="5.2" fill="#1A1F2E" letter-spacing="0.3">CHECK OVERHEAD LINES</text>
+          </g>
+          <g transform="translate(780 470)">
+            <rect x="-28" y="-10" width="56" height="20" rx="2" fill="#C2C8D2" stroke="#3A3F4A" stroke-width="1.2"/>
+            <text x="0" y="-1" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="5.4" fill="#1A1F2E" letter-spacing="0.4">DOT · GVWR</text>
+            <text x="0" y="7" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="4.8" fill="#3A3F4A" letter-spacing="0.3">80,000 LBS</text>
+          </g>
+        </g>
+        <g class="country-MX" style="display:none">
+          <g transform="translate(560 470)">
+            <rect x="-44" y="-12" width="88" height="24" rx="4" fill="#FFD23A" stroke="#1A1F2E" stroke-width="1.4"/>
+            <text x="0" y="-2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="6.4" fill="#1A1F2E" letter-spacing="0.3">PRECAUCIÓN · CAJA ALZADA</text>
+            <text x="0" y="8" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="5" fill="#1A1F2E" letter-spacing="0.3">REVISE LÍNEAS AÉREAS</text>
+          </g>
+          <g transform="translate(780 470)">
+            <rect x="-28" y="-10" width="56" height="20" rx="2" fill="#C2C8D2" stroke="#3A3F4A" stroke-width="1.2"/>
+            <text x="0" y="-1" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="5.4" fill="#1A1F2E" letter-spacing="0.4">NOM-SCT</text>
+            <text x="0" y="7" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="4.8" fill="#3A3F4A" letter-spacing="0.3">PBV 36 287 kg</text>
+          </g>
+        </g>
+        <g class="country-CA" style="display:none">
+          <g transform="translate(560 470)">
+            <rect x="-44" y="-12" width="88" height="24" rx="4" fill="#FFD23A" stroke="#1A1F2E" stroke-width="1.4"/>
+            <text x="0" y="-2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="5.8" fill="#1A1F2E" letter-spacing="0.3">RAISED BED · BENNE LEVÉE</text>
+            <text x="0" y="8" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="4.8" fill="#1A1F2E" letter-spacing="0.3">OVERHEAD · LIGNES</text>
+          </g>
+          <g transform="translate(780 470)">
+            <rect x="-28" y="-10" width="56" height="20" rx="2" fill="#C2C8D2" stroke="#3A3F4A" stroke-width="1.2"/>
+            <text x="0" y="-1" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="5.4" fill="#1A1F2E" letter-spacing="0.4">TC · PNBV</text>
+            <text x="0" y="7" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="4.8" fill="#3A3F4A" letter-spacing="0.3">36 287 kg</text>
+          </g>
+        </g>
+      </g>
+    </g>
+
+    <!-- Rear air-operated TAILGATE — swings OPEN about its top hinge -->
+    <g class="tailgate-swing">
+      <g filter="url(#rigShadow)">
+        <path d="M 1010 326 L 1034 326 L 1034 456 Q 1034 478 1018 492 L 1010 492 Z" fill="url(#dumpBody)"/>
+        <rect x="1010" y="326" width="24" height="4" fill="#FFFFFF" opacity="0.35"/>
+        <!-- Tailgate horizontal braces -->
+        <g stroke="#15181F" stroke-width="2.4" opacity="0.6">
+          <line x1="1012" y1="360" x2="1032" y2="360"/>
+          <line x1="1012" y1="400" x2="1032" y2="400"/>
+          <line x1="1012" y1="440" x2="1032" y2="440"/>
+        </g>
+        <!-- Air-cylinder latch hardware at bottom -->
+        <rect x="1016" y="470" width="14" height="22" rx="3" fill="#3A3F4A"/>
+        <rect x="1020" y="474" width="6" height="14" rx="3" fill="#6E747F"/>
+      </g>
+    </g>
+    <!-- Top swing hinge of the tailgate -->
+    <circle cx="1028" cy="326" r="5" fill="#1F2330"/>
+    <circle cx="1028" cy="326" r="2" fill="#7E8593"/>
+  </g>
+
+  <!-- King pin (on the chassis, stays grounded) -->
+  <rect x="270" y="498" width="25" height="14" fill="#3A3F4A"/><circle cx="282" cy="505" r="5" fill="#1A1F2E"/>
+
+
+  <!-- ============================================================
+       AGGREGATE SLIDING OUT THE REAR (dashed flow, dump phase only)
+       From the raised rear lip down to the growing pile on the ground.
+       ============================================================ -->
+  <g class="product-flow-fade">
+    <path class="product-flow" d="M 1024 360 Q 1060 420 1066 500"
+          fill="none" stroke="url(#aggFill)" stroke-width="22" stroke-linecap="round"/>
+    <path class="product-flow" d="M 1024 360 Q 1060 420 1066 500"
+          fill="none" stroke="#CFC4AB" stroke-width="8" stroke-linecap="round" opacity="0.5"/>
+  </g>
+
+  <!-- ============================================================
+       DISCHARGE PILE on the ground (GROWS as material slides out)
+       ============================================================ -->
+  <g filter="url(#rigShadow)">
+    <g class="pile-grow" transform="translate(1066 520)">
+      <polygon points="-70,0 70,0 24,-70 -24,-70" fill="url(#aggFill)"/>
+      <polygon points="-70,0 4,0 -16,-70 -24,-70" fill="#8B8067" opacity="0.4"/>
+      <g fill="#5E5640" opacity="0.5">
+        <circle cx="-30" cy="-18" r="2.6"/><circle cx="20" cy="-26" r="2.4"/><circle cx="-6" cy="-44" r="2.2"/>
+        <circle cx="34" cy="-14" r="2.4"/><circle cx="-44" cy="-8" r="2.2"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- Impact dust where material lands -->
+  <g class="dust-fade" filter="url(#softBlur)">
+    <circle class="dust-puff"    cx="1050" cy="510" r="8" fill="url(#dustPuff)"/>
+    <circle class="dust-puff p2" cx="1078" cy="512" r="7" fill="url(#dustPuff)"/>
+    <circle class="dust-puff p3" cx="1064" cy="506" r="6" fill="url(#dustPuff)"/>
+  </g>
+
+
+  <!-- ============================================================
+       OPERATOR beside the rig (hi-vis + hard hat, clear of the pour)
+       ============================================================ -->
+  <g transform="translate(470 506)">
+    <g class="operator-bob" filter="url(#rigShadow)">
+      <rect x="-7" y="42" width="6" height="3" fill="#1A1F2E"/>
+      <rect x="1"  y="42" width="6" height="3" fill="#1A1F2E"/>
+      <rect x="-7" y="22" width="6" height="22" fill="#1B2840"/>
+      <rect x="1"  y="22" width="6" height="22" fill="#1B2840"/>
+      <path d="M -10 4 Q -10 0 -7 0 L 7 0 Q 10 0 10 4 L 11 24 L -11 24 Z"
+            fill="#C4F036" stroke="#1A1F2E" stroke-width="0.5"/>
+      <rect x="-11" y="14" width="22" height="2" fill="#FFFFFF" opacity="0.85"/>
+      <!-- Arm raised, watching the raised bed -->
+      <path d="M 8 4 L 18 -4 L 22 4 L 13 10 Z" fill="#C4F036" stroke="#1A1F2E" stroke-width="0.4"/>
+      <rect x="20" y="-2" width="4" height="8" fill="#D9A878"/>
+      <circle cx="0" cy="-6" r="5" fill="#D9A878"/>
+      <path d="M -6 -10 Q -6 -14 0 -14 Q 6 -14 6 -10 L 7 -8 L -7 -8 Z" fill="#F1F4F9" stroke="#1A1F2E" stroke-width="0.5"/>
+      <rect x="-7" y="-9" width="14" height="1.4" fill="#1A1F2E"/>
+    </g>
+  </g>
+
+
+  <!-- ============================================================
+       SAFETY CONES
+       ============================================================ -->
+  <g>
+    <g transform="translate(180 552)">
+      <polygon points="-7,0 7,0 4.6,-12 -4.6,-12" fill="#FF7A1F"/>
+      <polygon points="-5.4,-6 5.4,-6 4.6,-9 -4.6,-9" fill="#FFFFFF" opacity="0.85"/>
+      <polygon points="-3.4,-12 3.4,-12 3,-15 -3,-15" fill="#FF7A1F"/>
+      <ellipse cx="0" cy="0" rx="9" ry="2" fill="#1A1F2E" opacity="0.35"/>
+    </g>
+  </g>
+
+
+  <!-- ============================================================
+       HUD OVERLAYS
+       ============================================================ -->
+  <g class="brand-lockup" transform="translate(50 40)">
+    <g class="brand-mark">
+      <circle cx="24" cy="14" r="15" fill="url(#brandIridescent)"/>
+      <path d="M 24 6 C 22 10 19 13 20.4 17 C 19 16.2 18 14 18.8 12.4 C 17 14 16.6 17.4 19 20 C 17.8 19 17.8 16.6 17.8 19 C 19.4 21.6 22 22.2 24 22.2 C 26 22.2 28.6 21.6 30.2 19 C 30.2 16.6 30.2 19 29 20 C 31.4 17.4 31 14 29.2 12.4 C 30 14 29 16.2 27.6 17 C 29 13 26 10 24 6 Z" fill="#FFFFFF"/>
+    </g>
+    <text class="brand-word" x="48" y="14" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="18" letter-spacing="2.5" fill="#5B3FBF">EUSOTRIP</text>
+    <text x="48" y="28" font-family="Inter, system-ui, sans-serif"
+          font-weight="500" font-size="8" letter-spacing="3" fill="#9B7FD9" opacity="0.55">BY EUSORONE</text>
+  </g>
+
+  <g>
+    <rect x="1052" y="58" width="100" height="32" rx="16" ry="16" fill="url(#brandIridescent)" stroke="#FFFFFF" stroke-width="1.5" stroke-opacity="0.5"/>
+    <g transform="translate(1066 70)" fill="#FFFFFF"><rect x="0" y="2" width="8" height="6" rx="1"/><rect x="9" y="0" width="6" height="8" rx="1"/><circle cx="3" cy="10" r="1.5"/><circle cx="12" cy="10" r="1.5"/></g>
+    <text x="1115" y="79" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="14" letter-spacing="1.8" fill="#FFFFFF">TRUCK</text>
+  </g>
+
+  <g class="load-pill">
+    <rect x="60" y="100" width="198" height="32" rx="16" ry="16" fill="#0AC2C2" opacity="0.95"/>
+    <circle cx="80" cy="116" r="5" fill="#FFFFFF" opacity="0.95"/>
+    <circle cx="80" cy="116" r="2.5" fill="#0AC2C2"/>
+    <text x="100" y="122" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="13" letter-spacing="2.4"
+          fill="#FFFFFF" data-bind="state_label">UNLOADING</text>
+  </g>
+
+  <g opacity="0.9">
+    <text x="60" y="78" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="13" letter-spacing="2" fill="#5B3FBF"
+          data-bind="equipment_label">END-DUMP</text>
+    <line x1="60" y1="86" x2="240" y2="86" stroke="#9B7FD9" stroke-width="2" stroke-linecap="round"/>
+    <text x="60" y="148" font-family="Inter, system-ui, sans-serif"
+          font-weight="500" font-size="10" letter-spacing="1.2" fill="#7A5AB8"
+          data-bind="equipment_subtitle">BED TILT &#183; REAR TAILGATE DISCHARGE</text>
+  </g>
+
+  <g opacity="0.95">
+    <rect x="60" y="160" width="320" height="22" rx="6" ry="6"
+          fill="#FFFFFF" fill-opacity="0.95" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.45"/>
+    <text data-bind="dock_id" x="72" y="176" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="11" letter-spacing="1.4" fill="#5B3FBF">DROP SITE · 46° HOIST</text>
+    <text data-bind="eta_minutes" x="370" y="176" text-anchor="end"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="600" font-size="10" letter-spacing="0.8" fill="#7A5AB8">ETA 4 MIN</text>
+  </g>
+  <g opacity="0.95">
+    <rect x="60" y="190" width="320" height="22" rx="6" ry="6"
+          fill="#FFFFFF" fill-opacity="0.95" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.45"/>
+    <text data-bind="commodity_label" x="72" y="206" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="11" letter-spacing="1.4" fill="#5B3FBF">3/4" CRUSHED STONE</text>
+  </g>
+
+  <g>
+    <rect x="60" y="555" width="1080" height="6" rx="3" fill="#E5E2EF" opacity="0.6"/>
+    <rect class="progress-fill" x="60" y="555" width="540" height="6" rx="3"
+          fill="#0AC2C2"
+          style="--load-progress: 0.5;"/>
+    <text x="1140" y="548" text-anchor="end"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="10" letter-spacing="1.4"
+          fill="#5B3FBF" opacity="0.85"><tspan data-bind="weight_label">44,800 LBS</tspan> &#183; <tspan data-bind="progress_pct">50</tspan>%</text>
+  </g>
+
+  <g class="chevron">
+    <path d="M 70 540 L 55 525 L 55 555 Z" fill="#9B7FD9"/>
+  </g>
+
+  <!-- Iridescent rounded card border -->
+  <rect class="card-border" x="20" y="20" width="1160" height="560" rx="22"
+        fill="none" stroke="url(#brandIridescent)" stroke-width="2.5" pointer-events="none"/>
+</svg>

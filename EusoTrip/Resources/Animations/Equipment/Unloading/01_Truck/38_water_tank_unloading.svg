@@ -1,0 +1,631 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600" data-state="unloading">
+  <style><![CDATA[
+
+    /* ============ FOUNDATION MOTION VOCAB ============ */
+    .brand-mark { transform-box: fill-box; transform-origin: center;
+                  animation: brand-pulse 3.6s ease-in-out infinite; }
+    @keyframes brand-pulse {
+      0%, 100% { transform: scale(1);    opacity: 0.92; }
+      50%      { transform: scale(1.05); opacity: 1; }
+    }
+    .brand-word { animation: brand-word-breath 6s ease-in-out infinite; }
+    @keyframes brand-word-breath {
+      0%, 100% { opacity: 0.78; }
+      50%      { opacity: 1; }
+    }
+    .sky-shimmer { animation: sky-drift 14s linear infinite; transform-box: fill-box; }
+    @keyframes sky-drift {
+      from { transform: translateX(-40px); opacity: 0.12; }
+      50%  { opacity: 0.22; }
+      to   { transform: translateX(40px);  opacity: 0.12; }
+    }
+    .load-pill { transform-box: fill-box; transform-origin: center;
+                 animation: load-pill-pulse 2.4s ease-in-out infinite; }
+    @keyframes load-pill-pulse {
+      0%, 100% { opacity: 0.85; transform: scale(1); }
+      50%      { opacity: 1;    transform: scale(1.04); }
+    }
+    .progress-fill { transition: width 0.4s ease-out; }
+    .chevron { animation: chevron-pulse 2.2s ease-in-out infinite; }
+    @keyframes chevron-pulse {
+      0%, 100% { opacity: 0.3; }
+      50%      { opacity: 0.65; }
+    }
+
+    /* ============ WATER-TANK-UNLOADING-SPECIFIC MOTION ============
+       7s cycle, master rhythm (WATER discharged to a ground-level cistern /
+       reservoir — gravity-assisted, then driven by the centrifugal transfer
+       pump for head/lift, the powered discharge option):
+         0  - 12% : driver couples the discharge hose between the trailer's
+                    bottom rear 3" camlock and the reservoir inlet.
+         12 - 26% : centrifugal pump primes & spins up; the pressure needle
+                    on the discharge gauge sweeps up to the green band.
+         26 - 34% : the rear butterfly valve rotates OPEN (90 deg quarter-turn)
+                    and water begins to move.
+         34 - 94% : water flows DOWN the hose into the reservoir — the trailer
+                    sight-gauge FALLS, the reservoir level RISES in step (mass
+                    conservation); ripples spread on the reservoir surface.
+         94 - 100%: transfer complete; valve seats, pump idles, loop.
+       Water is non-hazmat (no UN diamond) — markings are the universal
+       POTABLE-WATER band + food-grade plate, country-aware.
+       ============================================================== */
+
+    /* Discharge hose 'connected' confirm. */
+    .hose-attach { transform-box: fill-box;
+                   animation: hose-attach 7s ease-in-out infinite; }
+    @keyframes hose-attach {
+      0%, 12%  { opacity: 0.5; }
+      20%      { opacity: 1; }
+      26%, 100%{ opacity: 0.95; }
+    }
+    /* Centrifugal pump impeller spins up for the discharge phase. */
+    .pump-spin { transform-box: fill-box; transform-origin: center;
+                 animation: pump-spin 7s linear infinite; }
+    @keyframes pump-spin {
+      0%   { transform: rotate(0deg); }
+      12%  { transform: rotate(40deg); }
+      100% { transform: rotate(2160deg); }
+    }
+    /* Discharge pressure needle sweeps up into the green band during prime. */
+    .pressure-needle { transform-box: fill-box; transform-origin: center;
+                       animation: pressure-needle 7s cubic-bezier(0.4,0,0.2,1) infinite; }
+    @keyframes pressure-needle {
+      0%, 12%   { transform: rotate(-72deg); }
+      26%, 94%  { transform: rotate(52deg); }
+      100%      { transform: rotate(-72deg); }
+    }
+    /* Rear butterfly valve quarter-turn open. */
+    .valve-rotate { transform-box: fill-box; transform-origin: center;
+                    animation: valve-rotate 7s cubic-bezier(0.4,0,0.2,1) infinite; }
+    @keyframes valve-rotate {
+      0%, 26%   { transform: rotate(0deg); }
+      34%, 100% { transform: rotate(90deg); }
+    }
+
+    /* Water flowing DOWN the hose — continuous dashed flow, gated to the
+       discharge phase. */
+    .product-flow { animation: product-flow 0.6s linear infinite;
+                    stroke-dasharray: 6 8; }
+    @keyframes product-flow {
+      from { stroke-dashoffset: 0; }
+      to   { stroke-dashoffset: 28; }
+    }
+    .product-flow-fade { animation: product-flow-fade 7s ease-in-out infinite; }
+    @keyframes product-flow-fade {
+      0%, 34%   { opacity: 0; }
+      42%, 94%  { opacity: 0.92; }
+      100%      { opacity: 0; }
+    }
+
+    /* Trailer sight-gauge FALLS as water leaves. */
+    .truck-level-fall { transform-box: fill-box; transform-origin: bottom;
+                        animation: truck-level-fall 7s ease-in-out infinite; }
+    @keyframes truck-level-fall {
+      0%, 34%   { transform: scaleY(0.95); }
+      94%, 100% { transform: scaleY(0.16); }
+    }
+    .truck-meniscus { animation: truck-meniscus 7s ease-in-out infinite; }
+    @keyframes truck-meniscus {
+      0%, 34%   { transform: translateY(8px);   opacity: 0.95; }
+      94%, 100% { transform: translateY(104px); opacity: 0.85; }
+    }
+    /* Receiving reservoir level RISES in step. */
+    .res-level-rise { transform-box: fill-box; transform-origin: bottom;
+                      animation: res-level-rise 7s ease-in-out infinite; }
+    @keyframes res-level-rise {
+      0%, 34%   { transform: scaleY(0.16); }
+      94%, 100% { transform: scaleY(0.92); }
+    }
+
+    /* Reservoir surface ripples while filling. */
+    .ripple { transform-box: fill-box; transform-origin: center;
+              animation: ripple 2.6s ease-out infinite; opacity: 0; }
+    .ripple.r2 { animation-delay: -0.9s; }
+    .ripple.r3 { animation-delay: -1.8s; }
+    @keyframes ripple {
+      0%   { opacity: 0;    transform: scaleX(0.3); }
+      30%  { opacity: 0.42; transform: scaleX(0.9); }
+      100% { opacity: 0;    transform: scaleX(1.6); }
+    }
+    .ripple-fade { animation: ripple-fade 7s ease-in-out infinite; }
+    @keyframes ripple-fade {
+      0%, 34%  { opacity: 0; }
+      42%, 94% { opacity: 1; }
+      100%     { opacity: 0; }
+    }
+
+    /* Transfer progress bar. */
+    .level-bar { transform-box: fill-box; transform-origin: left center;
+                 animation: level-bar 7s ease-in-out infinite; }
+    @keyframes level-bar {
+      0%, 34%   { transform: scaleX(0.12); }
+      94%, 100% { transform: scaleX(0.9); }
+    }
+
+    .operator-bob { transform-box: fill-box; transform-origin: center bottom;
+                    animation: operator-bob 4.4s ease-in-out infinite; }
+    @keyframes operator-bob {
+      0%, 100% { transform: translateY(0); }
+      50%      { transform: translateY(-0.8px); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .brand-lockup, .brand-mark, .brand-word,
+      .chevron,
+      .hose-attach,
+      .pump-spin,
+      .pressure-needle,
+      .valve-rotate,
+      .product-flow, .product-flow-fade,
+      .truck-level-fall, .truck-meniscus,
+      .res-level-rise,
+      .ripple, .ripple-fade,
+      .level-bar,
+      .operator-bob,
+      .load-pill,
+      .progress-fill,
+      .sky-shimmer {
+        animation: none !important;
+      }
+      .ripple { opacity: 0 !important; }
+    }
+
+  ]]></style>
+
+  <defs>
+    <linearGradient id="brandIridescent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1473FF"/>
+      <stop offset="50%" stop-color="#6E4DFF"/>
+      <stop offset="100%" stop-color="#BE01FF"/>
+    </linearGradient>
+
+    <linearGradient id="plantSky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#D8E3EF"/>
+      <stop offset="55%" stop-color="#CAD6E4"/>
+      <stop offset="100%" stop-color="#A6B4C6"/>
+    </linearGradient>
+    <linearGradient id="plantPad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5C6068"/>
+      <stop offset="100%" stop-color="#2E3138"/>
+    </linearGradient>
+    <linearGradient id="tankerShell" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#FBFCFE"/>
+      <stop offset="18%" stop-color="#E2E8F0"/>
+      <stop offset="55%" stop-color="#B4BECC"/>
+      <stop offset="100%" stop-color="#8893A4"/>
+    </linearGradient>
+    <linearGradient id="resBody" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"  stop-color="#E5EAF0"/>
+      <stop offset="50%" stop-color="#C6CFDA"/>
+      <stop offset="100%" stop-color="#909AAA"/>
+    </linearGradient>
+    <linearGradient id="waterFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#BFE6FF"/>
+      <stop offset="55%" stop-color="#5FB8EC"/>
+      <stop offset="100%" stop-color="#2E86C8"/>
+    </linearGradient>
+    <radialGradient id="rim" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#5A606D"/>
+      <stop offset="80%" stop-color="#3A3F4A"/>
+      <stop offset="100%" stop-color="#1F2330"/>
+    </radialGradient>
+    <filter id="rigShadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
+      <feOffset dx="0" dy="4" result="offsetBlur"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.18"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softBlur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+
+    <symbol id="trailerWheel" overflow="visible">
+      <circle cx="0" cy="0" r="24" fill="#1A1A1A"/>
+      <circle cx="0" cy="0" r="16" fill="url(#rim)"/>
+      <circle cx="0" cy="0" r="5"  fill="#7A7F88"/>
+      <circle cx="0" cy="0" r="2"  fill="#1A1F2E"/>
+      <g stroke="#3A3F4A" stroke-width="2" stroke-linecap="round" opacity="0.85">
+        <line x1="0" y1="-21" x2="0" y2="-17"/>
+        <line x1="15" y1="-15" x2="12" y2="-12"/>
+        <line x1="21" y1="0"  x2="17" y2="0"/>
+        <line x1="15" y1="15" x2="12" y2="12"/>
+        <line x1="0"  y1="21" x2="0"  y2="17"/>
+        <line x1="-15" y1="15" x2="-12" y2="12"/>
+        <line x1="-21" y1="0"  x2="-17" y2="0"/>
+        <line x1="-15" y1="-15" x2="-12" y2="-12"/>
+      </g>
+      <ellipse cx="-5" cy="-9" rx="4" ry="2.4" fill="#FFFFFF" opacity="0.32"/>
+    </symbol>
+
+    <symbol id="wheelChock" overflow="visible">
+      <polygon points="-14,0 14,0 4,-12" fill="#FF7A1F" stroke="#A35200" stroke-width="0.6"/>
+      <polygon points="-14,0 14,0 4,-12" fill="none" stroke="#FFFFFF" stroke-width="0.4" opacity="0.5"/>
+      <ellipse cx="0" cy="1" rx="14" ry="1.4" fill="#1A1F2E" opacity="0.4"/>
+    </symbol>
+  </defs>
+
+
+  <!-- CARD BACKGROUND -->
+  <rect class="card-bg" x="20" y="20" width="1160" height="560" rx="22" fill="#FAFBFD"/>
+
+
+  <!-- ============================================================
+       SITE ATMOSPHERE (background)
+       ============================================================ -->
+  <rect x="20" y="220" width="1160" height="240" fill="url(#plantSky)" opacity="0.85"/>
+  <rect class="sky-shimmer" x="20" y="370" width="1160" height="60" fill="#FFFFFF" opacity="0.14"/>
+
+  <!-- Distant skyline (small storage tanks + elevated water tower) -->
+  <g opacity="0.45">
+    <rect x="70"  y="288" width="40" height="172" rx="6" fill="url(#resBody)"/>
+    <ellipse cx="90" cy="288" rx="20" ry="6" fill="#B5C0CC"/>
+    <ellipse cx="180" cy="232" rx="40" ry="24" fill="#B5C0CC"/>
+    <g stroke="#9098A8" stroke-width="4" stroke-linecap="round">
+      <line x1="160" y1="252" x2="154" y2="460"/>
+      <line x1="200" y1="252" x2="206" y2="460"/>
+      <line x1="180" y1="256" x2="180" y2="460"/>
+    </g>
+  </g>
+
+  <line x1="20" y1="378" x2="1180" y2="378" stroke="#5C6068" stroke-width="0.7" opacity="0.32"/>
+
+
+  <!-- PAD -->
+  <rect x="20" y="478" width="1160" height="102" fill="url(#plantPad)"/>
+  <rect x="60" y="476" width="1080" height="4" fill="#2A2D33"/>
+  <rect x="60" y="478" width="1080" height="2" fill="#FFFFFF" opacity="0.16"/>
+  <line x1="80" y1="540" x2="1120" y2="540" stroke="#FFD200" stroke-width="1.6"
+        stroke-dasharray="22 14" opacity="0.5"/>
+  <g opacity="0.18">
+    <ellipse cx="320" cy="548" rx="40" ry="3.4" fill="#9FD6F5"/>
+    <ellipse cx="640" cy="552" rx="44" ry="3.6" fill="#9FD6F5"/>
+  </g>
+
+
+  <!-- ============================================================
+       RECEIVING RESERVOIR / CISTERN (destination — ground level)
+       Placed on the right; water enters at top, surface level rises.
+       ============================================================ -->
+  <g filter="url(#rigShadow)">
+    <!-- Cistern shell (open-top vertical reservoir) -->
+    <rect x="978" y="356" width="158" height="118" rx="8" fill="url(#resBody)"/>
+    <rect x="978" y="356" width="158" height="8" rx="4" fill="#DCE3EB"/>
+    <!-- Rising water body (origin bottom; scaleY animates) -->
+    <g transform="translate(1057 470)">
+      <rect class="res-level-rise" x="-72" y="-110" width="144" height="110" rx="3" fill="url(#waterFill)" opacity="0.9"/>
+    </g>
+    <!-- Reservoir surface ripples while filling -->
+    <g class="ripple-fade">
+      <ellipse class="ripple"    cx="1040" cy="384" rx="20" ry="3" fill="none" stroke="#EAF6FF" stroke-width="1.4"/>
+      <ellipse class="ripple r2" cx="1080" cy="386" rx="20" ry="3" fill="none" stroke="#EAF6FF" stroke-width="1.4"/>
+      <ellipse class="ripple r3" cx="1058" cy="382" rx="20" ry="3" fill="none" stroke="#EAF6FF" stroke-width="1.4"/>
+    </g>
+    <!-- Reservoir frame over the water -->
+    <rect x="978" y="356" width="158" height="118" rx="8" fill="none" stroke="#3A3F4A" stroke-width="1.6"/>
+    <!-- Reservoir label -->
+    <text x="1057" y="436" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="900" font-size="14" fill="#28557E" letter-spacing="1.6">CISTERN 2</text>
+    <text x="1057" y="454" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="8" fill="#3E78B0" opacity="0.8" letter-spacing="1">POTABLE · 20,000 GAL</text>
+    <!-- Top fill inlet (hose couples here) -->
+    <rect x="1050" y="346" width="14" height="12" rx="2" fill="#3A3F4A"/>
+  </g>
+
+
+  <!-- ============================================================
+       ELLIPTICAL BAFFLED WATER TRAILER — broadside profile
+       (camera-side view; nose left, rear discharge faces the cistern right)
+       ============================================================ -->
+
+  <ellipse cx="560" cy="552" rx="470" ry="6" fill="#1A1F2E" opacity="0.32"/>
+
+  <g filter="url(#rigShadow)">
+    <!-- Low, wide ELLIPTICAL (oval) tank barrel -->
+    <path d="M 230 326 Q 230 306 254 306 L 906 306 Q 950 306 950 358 Q 950 410 906 410 L 254 410 Q 230 410 230 390 Z"
+          fill="url(#tankerShell)"/>
+    <path d="M 230 326 Q 182 334 182 358 Q 182 382 230 410 L 230 390 Z" fill="url(#tankerShell)"/>
+    <ellipse cx="222" cy="358" rx="13" ry="50" fill="#C7D2E0" opacity="0.5"/>
+    <path d="M 254 310 Q 600 304 906 310" stroke="#FFFFFF" stroke-width="5" fill="none" opacity="0.6" stroke-linecap="round"/>
+    <path d="M 254 406 Q 600 412 906 406" stroke="#1A1F2E" stroke-width="5" fill="none" opacity="0.24" stroke-linecap="round"/>
+
+    <!-- Internal baffle ring stiffeners (the 'baffled water' cue) -->
+    <g stroke="#8893A4" stroke-width="2.5" opacity="0.5">
+      <ellipse cx="352" cy="358" rx="3" ry="50"/>
+      <ellipse cx="460" cy="358" rx="3" ry="52"/>
+      <ellipse cx="568" cy="358" rx="3" ry="52"/>
+      <ellipse cx="676" cy="358" rx="3" ry="52"/>
+      <ellipse cx="784" cy="358" rx="3" ry="50"/>
+    </g>
+
+    <!-- Top catwalk + sealed manway (closed during discharge) -->
+    <rect x="248" y="302" width="660" height="6" rx="1" fill="#3A3F4A"/>
+    <g>
+      <ellipse cx="568" cy="306" rx="24" ry="7" fill="#3A3F4A"/>
+      <ellipse cx="568" cy="303" rx="19" ry="5" fill="#7A8494"/>
+      <ellipse cx="568" cy="302" rx="12" ry="3" fill="#C7D2E0"/>
+    </g>
+    <!-- Air-vent (open to atmosphere so the tank doesn't collapse while draining) -->
+    <g>
+      <rect x="800" y="296" width="9" height="12" rx="2" fill="#5A606D"/>
+      <circle cx="804" cy="294" r="5" fill="#7A8494"/>
+    </g>
+
+    <!-- Side X-ray sight gauge (level FALLS during discharge) -->
+    <g>
+      <rect x="276" y="324" width="14" height="76" rx="3" fill="#1A1F2E" opacity="0.20"/>
+      <rect x="277" y="325" width="12" height="74" rx="2" fill="#EAF4FF"/>
+      <g transform="translate(283 399)">
+        <rect class="truck-level-fall" x="-6" y="-74" width="12" height="74" rx="2" fill="url(#waterFill)"/>
+      </g>
+      <rect class="truck-meniscus" x="277" y="325" width="12" height="4" rx="2" fill="#BFE6FF"/>
+      <rect x="276" y="324" width="14" height="76" rx="3" fill="none" stroke="#3A3F4A" stroke-width="1.4"/>
+    </g>
+
+    <!-- Discharge pressure gauge (needle sweeps up to green band as pump primes) -->
+    <g transform="translate(380 350)">
+      <circle cx="0" cy="0" r="18" fill="#FFFFFF" stroke="#3A3F4A" stroke-width="1.8"/>
+      <circle cx="0" cy="0" r="14" fill="#F1F7FF"/>
+      <!-- Green safe-pressure arc -->
+      <path d="M 6 -11 A 13 13 0 0 1 12 4" fill="none" stroke="#43E26A" stroke-width="2.6"/>
+      <!-- Red over-pressure arc -->
+      <path d="M -12 4 A 13 13 0 0 1 -6 -11" fill="none" stroke="#E1320C" stroke-width="2.6"/>
+      <g class="pressure-needle"><line x1="0" y1="3" x2="0" y2="-12" stroke="#1A1F2E" stroke-width="2" stroke-linecap="round"/></g>
+      <circle cx="0" cy="0" r="2.4" fill="#1A1F2E"/>
+      <text x="0" y="30" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="7" fill="#5A606D" letter-spacing="0.4">PUMP PSI</text>
+    </g>
+
+    <!-- Commodity stencil -->
+    <text x="640" y="356" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="900" font-size="26" fill="#3E78B0" opacity="0.55" letter-spacing="4">WATER</text>
+    <text x="640" y="376" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="10" fill="#5B3FBF" opacity="0.62" letter-spacing="2">BAFFLED LIQUID TANK &#183; 6500 GAL</text>
+
+    <!-- ============================================================
+         COUNTRY-SWITCHABLE NON-HAZ LIQUID MARKING GROUP
+         Water (potable / industrial) is NOT a DOT hazmat — no UN diamond.
+         Conventional markings: a "POTABLE WATER" identity band + a
+         food-contact certification plate. Default = .country-US; renderer
+         sets display:none on the two it does not want. Geometry identical so
+         swapping is seamless. A universal blue-droplet potability mark
+         anchors all three.
+           US — blue "POTABLE WATER" band + "FDA · NSF-61" food-grade plate.
+           CA — bilingual "POTABLE · EAU POTABLE" + "NSF · ACS" stamp.
+           MX — Spanish "AGUA POTABLE" + "COFEPRIS · NOM-127" plate.
+         ============================================================ -->
+    <g class="marking-group">
+      <!-- Universal potable-water droplet badge (shared) -->
+      <g transform="translate(320 364)">
+        <path d="M 0 -11 C -7 -2 -9 4 0 9 C 9 4 7 -2 0 -11 Z" fill="#2B85FF" stroke="#1A3F6B" stroke-width="1.2"/>
+        <path d="M -2 -2 C -4 0 -4 3 -1 5" fill="none" stroke="#EAF6FF" stroke-width="1.3" stroke-linecap="round"/>
+      </g>
+      <g class="country-US">
+        <g transform="translate(800 356)">
+          <rect x="-46" y="-12" width="92" height="24" rx="4" fill="#1473FF" stroke="#0A2A52" stroke-width="1.4"/>
+          <text x="0" y="5" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="9" fill="#FFFFFF" letter-spacing="1.2">POTABLE WATER</text>
+        </g>
+        <g transform="translate(520 384)">
+          <rect x="-32" y="-11" width="64" height="22" rx="2" fill="#E7EEF6" stroke="#3A3F4A" stroke-width="1.2"/>
+          <text x="0" y="-1" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="5.6" fill="#1A1F2E" letter-spacing="0.6">FDA · NSF-61</text>
+          <text x="0" y="7" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="5" fill="#3A3F4A" letter-spacing="0.3">FOOD GRADE</text>
+        </g>
+      </g>
+      <g class="country-MX" style="display:none">
+        <g transform="translate(800 356)">
+          <rect x="-46" y="-12" width="92" height="24" rx="4" fill="#1473FF" stroke="#0A2A52" stroke-width="1.4"/>
+          <text x="0" y="5" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="9.6" fill="#FFFFFF" letter-spacing="1.2">AGUA POTABLE</text>
+        </g>
+        <g transform="translate(520 384)">
+          <rect x="-32" y="-11" width="64" height="22" rx="2" fill="#E7EEF6" stroke="#3A3F4A" stroke-width="1.2"/>
+          <text x="0" y="-1" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="5.6" fill="#1A1F2E" letter-spacing="0.4">COFEPRIS</text>
+          <text x="0" y="7" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="5" fill="#3A3F4A" letter-spacing="0.3">NOM-127-SSA1</text>
+        </g>
+      </g>
+      <g class="country-CA" style="display:none">
+        <g transform="translate(800 356)">
+          <rect x="-46" y="-12" width="92" height="24" rx="4" fill="#1473FF" stroke="#0A2A52" stroke-width="1.4"/>
+          <text x="0" y="4" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="7.2" fill="#FFFFFF" letter-spacing="0.5">POTABLE · EAU POTABLE</text>
+        </g>
+        <g transform="translate(520 384)">
+          <rect x="-32" y="-11" width="64" height="22" rx="2" fill="#E7EEF6" stroke="#3A3F4A" stroke-width="1.2"/>
+          <text x="0" y="-1" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="5.6" fill="#1A1F2E" letter-spacing="0.5">NSF · ACS</text>
+          <text x="0" y="7" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="5" fill="#3A3F4A" letter-spacing="0.3">HEALTH CANADA</text>
+        </g>
+      </g>
+    </g>
+  </g>
+
+  <!-- Chassis underframe + bogie -->
+  <g filter="url(#rigShadow)"><rect x="250" y="486" width="690" height="12" rx="2" fill="#1A1F2E"/></g>
+  <use href="#wheelChock" x="292" y="540"/>
+
+  <g transform="translate(340 540)"><use href="#trailerWheel"/></g>
+  <g transform="translate(400 540)"><use href="#trailerWheel"/></g>
+  <g transform="translate(780 540)"><use href="#trailerWheel"/></g>
+  <g transform="translate(840 540)"><use href="#trailerWheel"/></g>
+  <rect x="540" y="498" width="10" height="42" fill="#5A606D"/>
+  <rect x="536" y="538" width="18" height="6" fill="#3A3F4A"/>
+
+
+  <!-- ============================================================
+       REAR DISCHARGE MANIFOLD + BUTTERFLY VALVE (bottom rear)
+       (rear of trailer, faces the cistern; valve quarter-turns OPEN)
+       ============================================================ -->
+  <g filter="url(#rigShadow)">
+    <!-- Bottom rear discharge head -->
+    <rect x="908" y="402" width="22" height="22" rx="3" fill="#3A3F4A"/>
+    <!-- Butterfly valve (rotates 90 deg open) -->
+    <g transform="translate(919 414)">
+      <circle cx="0" cy="0" r="11" fill="#5A606D" stroke="#1F2330" stroke-width="1.4"/>
+      <g class="valve-rotate">
+        <rect x="-9" y="-2" width="18" height="4" rx="1.5" fill="#1F2330"/>
+      </g>
+      <!-- Valve handle -->
+      <rect x="-1.5" y="-20" width="3" height="11" rx="1.5" fill="#1473FF"/>
+      <circle cx="0" cy="-20" r="2.4" fill="#2B85FF"/>
+    </g>
+  </g>
+
+
+  <!-- ============================================================
+       DISCHARGE HOSE — trailer rear bottom outlet DOWN to cistern inlet
+       (water flows down under gravity + pump head)
+       ============================================================ -->
+  <g class="hose-attach">
+    <!-- Hose outer jacket -->
+    <path d="M 930 416 Q 984 420 1004 396 Q 1030 366 1042 352"
+          fill="none" stroke="#1F3A52" stroke-width="13" stroke-linecap="round"/>
+    <path d="M 930 416 Q 984 420 1004 396 Q 1030 366 1042 352"
+          fill="none" stroke="#3E78B0" stroke-width="9" stroke-linecap="round"/>
+    <!-- Hose coupling clamps -->
+    <g fill="#9097A4">
+      <rect x="942" y="408" width="8" height="14" rx="2" transform="rotate(20 946 415)"/>
+      <rect x="1036" y="346" width="8" height="14" rx="2"/>
+    </g>
+  </g>
+  <!-- Water flowing DOWN the hose (dashed flow, discharge phase only) -->
+  <g class="product-flow-fade">
+    <path class="product-flow" d="M 930 416 Q 984 420 1004 396 Q 1030 366 1042 352"
+          fill="none" stroke="url(#waterFill)" stroke-width="6" stroke-linecap="round"/>
+    <path class="product-flow" d="M 930 416 Q 984 420 1004 396 Q 1030 366 1042 352"
+          fill="none" stroke="#EAF6FF" stroke-width="2.2" stroke-linecap="round" opacity="0.6"/>
+  </g>
+
+
+  <!-- ============================================================
+       CENTRIFUGAL TRANSFER PUMP (spins up to drive the discharge)
+       Mounted on the trailer frame, between the bogie and rear outlet.
+       ============================================================ -->
+  <g filter="url(#rigShadow)" transform="translate(720 452)">
+    <rect x="0" y="0" width="48" height="36" rx="4" fill="#5A606D"/>
+    <rect x="0" y="0" width="48" height="5" rx="2" fill="#7E8593"/>
+    <rect x="5" y="8" width="38" height="16" rx="2" fill="#3A3F4A"/>
+    <text x="24" y="20" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6" fill="#C8D6E4" letter-spacing="0.4">PUMP</text>
+    <!-- Volute housing + impeller -->
+    <g class="pump-spin">
+      <circle cx="24" cy="30" r="8" fill="#1F2330"/>
+      <circle cx="24" cy="30" r="5" fill="#3E78B0"/>
+      <g stroke="#BFE6FF" stroke-width="1.2" stroke-linecap="round">
+        <line x1="24" y1="24" x2="24" y2="28"/>
+        <line x1="29" y1="28" x2="26" y2="29.5"/>
+        <line x1="27" y1="35" x2="25.5" y2="32"/>
+        <line x1="21" y1="35" x2="22.5" y2="32"/>
+        <line x1="19" y1="28" x2="22" y2="29.5"/>
+      </g>
+      <circle cx="24" cy="30" r="1.6" fill="#EAF6FF"/>
+    </g>
+    <!-- Suction line up to the tank bottom outlet -->
+    <path d="M 24 0 Q 60 -40 210 -52" fill="none" stroke="#5A606D" stroke-width="3" opacity="0.5"/>
+  </g>
+
+
+  <!-- ============================================================
+       OPERATOR beside the rear manifold (hi-vis + hard hat)
+       ============================================================ -->
+  <g transform="translate(950 506)">
+    <g class="operator-bob" filter="url(#rigShadow)">
+      <rect x="-7" y="42" width="6" height="3" fill="#1A1F2E"/>
+      <rect x="1"  y="42" width="6" height="3" fill="#1A1F2E"/>
+      <rect x="-7" y="22" width="6" height="22" fill="#1B2840"/>
+      <rect x="1"  y="22" width="6" height="22" fill="#1B2840"/>
+      <path d="M -10 4 Q -10 0 -7 0 L 7 0 Q 10 0 10 4 L 11 24 L -11 24 Z"
+            fill="#C4F036" stroke="#1A1F2E" stroke-width="0.5"/>
+      <rect x="-11" y="14" width="22" height="2" fill="#FFFFFF" opacity="0.85"/>
+      <!-- Arm toward the valve handle -->
+      <path d="M -8 4 L -18 -1 L -22 7 L -13 11 Z" fill="#C4F036" stroke="#1A1F2E" stroke-width="0.4"/>
+      <rect x="-24" y="3" width="4" height="8" fill="#D9A878"/>
+      <circle cx="0" cy="-6" r="5" fill="#D9A878"/>
+      <path d="M -6 -10 Q -6 -14 0 -14 Q 6 -14 6 -10 L 7 -8 L -7 -8 Z" fill="#FFFFFF" stroke="#1A1F2E" stroke-width="0.5"/>
+      <rect x="-7" y="-9" width="14" height="1.4" fill="#1A1F2E"/>
+    </g>
+  </g>
+
+
+  <!-- ============================================================
+       SAFETY CONES
+       ============================================================ -->
+  <g>
+    <g transform="translate(180 552)">
+      <polygon points="-7,0 7,0 4.6,-12 -4.6,-12" fill="#FF7A1F"/>
+      <polygon points="-5.4,-6 5.4,-6 4.6,-9 -4.6,-9" fill="#FFFFFF" opacity="0.85"/>
+      <polygon points="-3.4,-12 3.4,-12 3,-15 -3,-15" fill="#FF7A1F"/>
+      <ellipse cx="0" cy="0" rx="9" ry="2" fill="#1A1F2E" opacity="0.35"/>
+    </g>
+  </g>
+
+
+  <!-- ============================================================
+       HUD OVERLAYS
+       ============================================================ -->
+  <g class="brand-lockup" transform="translate(50 40)">
+    <g class="brand-mark">
+      <circle cx="24" cy="14" r="15" fill="url(#brandIridescent)"/>
+      <path d="M 24 6 C 22 10 19 13 20.4 17 C 19 16.2 18 14 18.8 12.4 C 17 14 16.6 17.4 19 20 C 17.8 19 17.8 16.6 17.8 19 C 19.4 21.6 22 22.2 24 22.2 C 26 22.2 28.6 21.6 30.2 19 C 30.2 16.6 30.2 19 29 20 C 31.4 17.4 31 14 29.2 12.4 C 30 14 29 16.2 27.6 17 C 29 13 26 10 24 6 Z" fill="#FFFFFF"/>
+    </g>
+    <text class="brand-word" x="48" y="14" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="18" letter-spacing="2.5" fill="#5B3FBF">EUSOTRIP</text>
+    <text x="48" y="28" font-family="Inter, system-ui, sans-serif"
+          font-weight="500" font-size="8" letter-spacing="3" fill="#9B7FD9" opacity="0.55">BY EUSORONE</text>
+  </g>
+
+  <g>
+    <rect x="1052" y="58" width="100" height="32" rx="16" ry="16" fill="url(#brandIridescent)" stroke="#FFFFFF" stroke-width="1.5" stroke-opacity="0.5"/>
+    <g transform="translate(1066 70)" fill="#FFFFFF"><rect x="0" y="2" width="8" height="6" rx="1"/><rect x="9" y="0" width="6" height="8" rx="1"/><circle cx="3" cy="10" r="1.5"/><circle cx="12" cy="10" r="1.5"/></g>
+    <text x="1115" y="79" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="14" letter-spacing="1.8" fill="#FFFFFF">TRUCK</text>
+  </g>
+
+  <g class="load-pill">
+    <rect x="60" y="100" width="198" height="32" rx="16" ry="16" fill="#0AC2C2" opacity="0.95"/>
+    <circle cx="80" cy="116" r="5" fill="#FFFFFF" opacity="0.95"/>
+    <circle cx="80" cy="116" r="2.5" fill="#0AC2C2"/>
+    <text x="100" y="122" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="13" letter-spacing="2.4"
+          fill="#FFFFFF" data-bind="state_label">UNLOADING</text>
+  </g>
+
+  <g opacity="0.9">
+    <text x="60" y="78" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="13" letter-spacing="2" fill="#5B3FBF"
+          data-bind="equipment_label">WATER TANK</text>
+    <line x1="60" y1="86" x2="240" y2="86" stroke="#9B7FD9" stroke-width="2" stroke-linecap="round"/>
+    <text x="60" y="148" font-family="Inter, system-ui, sans-serif"
+          font-weight="500" font-size="10" letter-spacing="1.2" fill="#7A5AB8"
+          data-bind="equipment_subtitle">PUMP DISCHARGE TO CISTERN</text>
+  </g>
+
+  <g opacity="0.95">
+    <rect x="60" y="160" width="320" height="22" rx="6" ry="6"
+          fill="#FFFFFF" fill-opacity="0.95" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.45"/>
+    <text data-bind="dock_id" x="72" y="176" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="11" letter-spacing="1.4" fill="#5B3FBF">CISTERN 2 · 3" CAMLOCK</text>
+    <text data-bind="eta_minutes" x="370" y="176" text-anchor="end"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="600" font-size="10" letter-spacing="0.8" fill="#7A5AB8">ETA 18 MIN</text>
+  </g>
+  <g opacity="0.95">
+    <rect x="60" y="190" width="320" height="22" rx="6" ry="6"
+          fill="#FFFFFF" fill-opacity="0.95" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.45"/>
+    <text data-bind="commodity_label" x="72" y="206" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="11" letter-spacing="1.4" fill="#5B3FBF">POTABLE WATER · FDA / NSF-61</text>
+  </g>
+
+  <g>
+    <rect x="60" y="555" width="1080" height="6" rx="3" fill="#E5E2EF" opacity="0.6"/>
+    <rect class="progress-fill" x="60" y="555" width="540" height="6" rx="3"
+          fill="#0AC2C2"
+          style="--load-progress: 0.5;"/>
+    <text x="1140" y="548" text-anchor="end"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="10" letter-spacing="1.4"
+          fill="#5B3FBF" opacity="0.85"><tspan data-bind="weight_label">3,250 GAL</tspan> &#183; <tspan data-bind="progress_pct">50</tspan>%</text>
+  </g>
+
+  <g class="chevron">
+    <path d="M 70 540 L 55 525 L 55 555 Z" fill="#9B7FD9"/>
+  </g>
+
+  <!-- Iridescent rounded card border -->
+  <rect class="card-border" x="20" y="20" width="1160" height="560" rx="22"
+        fill="none" stroke="url(#brandIridescent)" stroke-width="2.5" pointer-events="none"/>
+</svg>

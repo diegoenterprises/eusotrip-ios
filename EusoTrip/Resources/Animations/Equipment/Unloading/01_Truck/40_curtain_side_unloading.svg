@@ -1,0 +1,750 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600" data-state="unloading">
+  <!--
+    EusoTrip Animation Design System
+    40 · Curtain-Side / Tautliner · UNLOADING scene
+    EquipmentKind: 40_curtain_side · TRUCK / LBS
+
+    TRUE UNLOAD SEQUENCE (the reverse of loading; sliding curtain is identity):
+      1. Parked broadside at the dock, buckles released.
+      2. The PVC curtain SLIDES OPEN — fabric concertinas to the front
+         bulkhead on the top-rail rollers, exposing the loaded bay.
+      3. A counterbalance forklift drives in EMPTY, forks a pallet OFF the
+         deck and retreats out the OPEN SIDE carrying it (side-unload).
+      4. The curtain SLIDES CLOSED and the buckle straps re-tension "taut".
+    Loop is seamless; one full open -> extract -> close cycle per period.
+  -->
+  <style><![CDATA[
+
+    /* ============ FOUNDATION MOTION VOCAB ============ */
+    .brand-mark { transform-box: fill-box; transform-origin: center;
+                  animation: brand-pulse 3.6s ease-in-out infinite; }
+    @keyframes brand-pulse {
+      0%, 100% { transform: scale(1);    opacity: 0.92; }
+      50%      { transform: scale(1.05); opacity: 1; }
+    }
+    .brand-word { animation: brand-word-breath 6s ease-in-out infinite; }
+    @keyframes brand-word-breath {
+      0%, 100% { opacity: 0.78; }
+      50%      { opacity: 1; }
+    }
+    .sky-shimmer { animation: sky-drift 14s linear infinite; transform-box: fill-box; }
+    @keyframes sky-drift {
+      from { transform: translateX(-40px); opacity: 0.12; }
+      50%  { opacity: 0.22; }
+      to   { transform: translateX(40px);  opacity: 0.12; }
+    }
+    .load-pill { transform-box: fill-box; transform-origin: center;
+                 animation: load-pill-pulse 2.4s ease-in-out infinite; }
+    @keyframes load-pill-pulse {
+      0%, 100% { opacity: 0.85; transform: scale(1); }
+      50%      { opacity: 1;    transform: scale(1.04); }
+    }
+    .progress-fill { transition: width 0.4s ease-out; }
+    .chevron { animation: chevron-pulse 2.2s ease-in-out infinite; }
+    @keyframes chevron-pulse {
+      0%, 100% { opacity: 0.3; }
+      50%      { opacity: 0.65; }
+    }
+    .wheel-spin { animation: wheel-spin 1.4s linear infinite;
+                  transform-origin: center; transform-box: fill-box; }
+    @keyframes wheel-spin { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
+    .dock-beacon { transform-box: fill-box; transform-origin: center;
+                   animation: dock-beacon 3.2s ease-in-out infinite; }
+    @keyframes dock-beacon {
+      0%, 100% { opacity: 0.55; }
+      50%      { opacity: 0.95; }
+    }
+
+    /* ============ CURTAIN-SIDE SPECIFIC MOTION ============
+       12s master cycle. Phase map:
+         0–22%   curtain CLOSED + tensioned (dwell)
+         22–40%  curtain SLIDES OPEN (gathers to front bulkhead)
+         40–58%  forklift drives in EMPTY, extracts a pallet
+         58–78%  curtain SLIDES CLOSED again
+         78–100% re-tension + dwell (buckles settle taut)
+    */
+
+    .curtain-panel { transform-box: fill-box; transform-origin: left center;
+                     animation: curtain-slide 12s cubic-bezier(0.4,0,0.2,1) infinite; }
+    @keyframes curtain-slide {
+      0%, 22%   { transform: scaleX(1); }
+      40%       { transform: scaleX(0.10); }
+      58%       { transform: scaleX(0.10); }
+      78%, 100% { transform: scaleX(1); }
+    }
+    .curtain-stack { transform-box: fill-box; transform-origin: left center;
+                     animation: curtain-stack 12s cubic-bezier(0.4,0,0.2,1) infinite; }
+    @keyframes curtain-stack {
+      0%, 22%   { opacity: 0; transform: scaleX(0.4); }
+      40%       { opacity: 1; transform: scaleX(1); }
+      58%       { opacity: 1; transform: scaleX(1); }
+      78%, 100% { opacity: 0; transform: scaleX(0.4); }
+    }
+    .buckle-straps { animation: buckle-fade 12s ease-in-out infinite; }
+    @keyframes buckle-fade {
+      0%, 20%   { opacity: 1; }
+      26%       { opacity: 0; }
+      74%       { opacity: 0; }
+      80%, 100% { opacity: 1; }
+    }
+    .tension-snap { transform-box: fill-box; transform-origin: center bottom;
+                    animation: tension-snap 12s ease-in-out infinite; }
+    @keyframes tension-snap {
+      0%, 78%   { transform: scaleY(1); }
+      82%       { transform: scaleY(1.04); }
+      86%, 100% { transform: scaleY(1); }
+    }
+
+    /* Forklift: enters EMPTY from the right, reaches the deck, picks up the
+       pallet, retreats out the open side carrying it. Windowed to open phase. */
+    .forklift-cycle { animation: forklift-cycle 12s ease-in-out infinite; }
+    @keyframes forklift-cycle {
+      0%, 34%  { transform: translateX(240px); opacity: 0; }
+      40%      { transform: translateX(240px); opacity: 0; }
+      44%      { opacity: 1; }
+      52%      { transform: translateX(0);      opacity: 1; }
+      58%      { transform: translateX(0);      opacity: 1; }
+      63%      { transform: translateX(0);      opacity: 0; }
+      70%      { transform: translateX(240px);  opacity: 0; }
+      100%     { transform: translateX(240px);  opacity: 0; }
+    }
+    /* The carried pallet: HIDDEN while the lift drives in empty, then
+       APPEARS on the forks at the pickup dwell (~56%) and rides out. The
+       reverse of loading's fork-pallet-drop. */
+    .fork-pallet-pick { animation: fork-pallet-pick 12s ease-in-out infinite;
+                        transform-box: fill-box; transform-origin: center bottom; }
+    @keyframes fork-pallet-pick {
+      0%, 52%   { opacity: 0; transform: translateY(4px); }
+      56%       { opacity: 1; transform: translateY(2px); }
+      60%, 100% { opacity: 1; transform: translateY(0); }
+    }
+    /* The deck pallet being removed: sits on the deck, then is lifted away
+       (shrinks to nothing) once the forks reach it (~56%) — the pallet count
+       drops by one each cycle. Synced to fork-pallet-pick. */
+    .pallet-removed { transform-box: fill-box; transform-origin: center bottom;
+                      animation: pallet-removed 12s cubic-bezier(0.4,0,0.2,1) infinite; }
+    @keyframes pallet-removed {
+      0%, 52%   { transform: scaleY(1); opacity: 1; }
+      56%       { transform: scaleY(1.04); opacity: 1; }
+      60%       { transform: scaleY(0);    opacity: 0; }
+      100%      { transform: scaleY(0);    opacity: 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .brand-lockup, .brand-mark, .brand-word, .chevron, .sky-shimmer,
+      .load-pill, .progress-fill, .wheel-spin, .dock-beacon,
+      .curtain-panel, .curtain-stack, .buckle-straps, .tension-snap,
+      .forklift-cycle, .fork-pallet-pick, .pallet-removed {
+        animation: none !important;
+      }
+      /* Calm resting state: curtain CLOSED + buckled taut, deck still loaded. */
+      .curtain-panel { transform: scaleX(1) !important; }
+      .curtain-stack { opacity: 0 !important; }
+      .buckle-straps { opacity: 1 !important; }
+      .forklift-cycle { transform: translateX(240px) !important; opacity: 0 !important; }
+      .fork-pallet-pick { opacity: 0 !important; }
+      .pallet-removed { transform: scaleY(1) !important; opacity: 1 !important; }
+    }
+
+  ]]></style>
+
+  <defs>
+    <linearGradient id="brandIridescent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1473FF"/>
+      <stop offset="50%" stop-color="#6E4DFF"/>
+      <stop offset="100%" stop-color="#BE01FF"/>
+    </linearGradient>
+    <linearGradient id="dockAir" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#D9DEEA"/>
+      <stop offset="60%" stop-color="#C7CDDD"/>
+      <stop offset="100%" stop-color="#A9B0C4"/>
+    </linearGradient>
+    <linearGradient id="dockFloor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7A7F8C"/>
+      <stop offset="100%" stop-color="#3C404C"/>
+    </linearGradient>
+    <linearGradient id="curtainPVC" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#7E63D8"/>
+      <stop offset="42%" stop-color="#5B3FBF"/>
+      <stop offset="100%" stop-color="#3A2580"/>
+    </linearGradient>
+    <linearGradient id="curtainPleat" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"   stop-color="#000000" stop-opacity="0.16"/>
+      <stop offset="22%"  stop-color="#FFFFFF" stop-opacity="0.10"/>
+      <stop offset="50%"  stop-color="#000000" stop-opacity="0.05"/>
+      <stop offset="78%"  stop-color="#FFFFFF" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.16"/>
+    </linearGradient>
+    <linearGradient id="curtainBunch" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"   stop-color="#3A2580"/>
+      <stop offset="14%"  stop-color="#7E63D8"/>
+      <stop offset="28%"  stop-color="#3A2580"/>
+      <stop offset="42%"  stop-color="#7E63D8"/>
+      <stop offset="56%"  stop-color="#3A2580"/>
+      <stop offset="70%"  stop-color="#7E63D8"/>
+      <stop offset="84%"  stop-color="#3A2580"/>
+      <stop offset="100%" stop-color="#5B3FBF"/>
+    </linearGradient>
+    <linearGradient id="hardRoof" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FAFBFD"/>
+      <stop offset="100%" stop-color="#D4D9E2"/>
+    </linearGradient>
+    <linearGradient id="forkliftBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFC34D"/>
+      <stop offset="100%" stop-color="#D67A00"/>
+    </linearGradient>
+    <linearGradient id="palletWood" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#D4A872"/>
+      <stop offset="100%" stop-color="#8C6535"/>
+    </linearGradient>
+    <linearGradient id="cartonBox" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#E6C79A"/>
+      <stop offset="55%" stop-color="#C79A63"/>
+      <stop offset="100%" stop-color="#9A6F3E"/>
+    </linearGradient>
+    <radialGradient id="rim" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#5A606D"/>
+      <stop offset="80%" stop-color="#3A3F4A"/>
+      <stop offset="100%" stop-color="#1F2330"/>
+    </radialGradient>
+    <radialGradient id="dockLamp" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#FFF6D8"/>
+      <stop offset="55%" stop-color="#FFE9A8"/>
+      <stop offset="100%" stop-color="#C9A24A"/>
+    </radialGradient>
+    <radialGradient id="dockLightCone" cx="0.5" cy="0" r="0.9">
+      <stop offset="0%" stop-color="#FFF6D8" stop-opacity="0.5"/>
+      <stop offset="60%" stop-color="#FFE9A8" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#FFE9A8" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="rigShadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
+      <feOffset dx="0" dy="4" result="offsetBlur"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.18"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softBlur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+
+    <!-- ===== Palletized carton stack (general dry freight) ===== -->
+    <symbol id="cartonPallet" overflow="visible">
+      <rect x="-40" y="-8" width="80" height="8" fill="url(#palletWood)" stroke="#7A5A40" stroke-width="0.5"/>
+      <line x1="-30" y1="-8" x2="-30" y2="0" stroke="#7A5A40" stroke-width="0.5"/>
+      <line x1="-15" y1="-8" x2="-15" y2="0" stroke="#7A5A40" stroke-width="0.5"/>
+      <line x1="0"   y1="-8" x2="0"   y2="0" stroke="#7A5A40" stroke-width="0.5"/>
+      <line x1="15"  y1="-8" x2="15"  y2="0" stroke="#7A5A40" stroke-width="0.5"/>
+      <line x1="30"  y1="-8" x2="30"  y2="0" stroke="#7A5A40" stroke-width="0.5"/>
+      <rect x="-38" y="-58" width="76" height="50" fill="url(#cartonBox)" stroke="#6E4A23" stroke-width="0.6"/>
+      <g stroke="#6E4A23" stroke-width="0.5" opacity="0.6">
+        <line x1="-38" y1="-33" x2="38" y2="-33"/>
+        <line x1="-13" y1="-58" x2="-13" y2="-8"/>
+        <line x1="13"  y1="-58" x2="13"  y2="-8"/>
+      </g>
+      <rect x="-38" y="-58" width="2" height="50" fill="#FFFFFF" opacity="0.4"/>
+      <rect x="-20" y="-58" width="0.6" height="50" fill="#FFFFFF" opacity="0.25"/>
+      <rect x="6"   y="-58" width="0.6" height="50" fill="#FFFFFF" opacity="0.25"/>
+      <rect x="-38" y="-58" width="76" height="1.6" fill="#FFFFFF" opacity="0.45"/>
+      <rect x="-14" y="-30" width="20" height="9" fill="#FFFFFF" opacity="0.85"/>
+      <text x="-4" y="-23" text-anchor="middle"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="5" fill="#5B3FBF" letter-spacing="0.4">PLT</text>
+    </symbol>
+  </defs>
+
+  <!-- ============================================================
+       CARD BACKGROUND
+       ============================================================ -->
+  <rect class="card-bg" x="20" y="20" width="1160" height="560" rx="22" fill="#FAFBFD"/>
+
+  <!-- ============================================================
+       INDOOR DISTRIBUTION DOCK ATMOSPHERE
+       ============================================================ -->
+  <rect x="20" y="210" width="1160" height="250" fill="url(#dockAir)" opacity="0.75"/>
+  <rect class="sky-shimmer" x="20" y="360" width="1160" height="60" fill="#FFFFFF" opacity="0.16"/>
+
+  <g opacity="0.20" fill="#3A3F4A">
+    <rect x="70"  y="240" width="4" height="200"/>
+    <rect x="250" y="240" width="4" height="200"/>
+    <rect x="430" y="240" width="4" height="200"/>
+    <rect x="940" y="240" width="4" height="200"/>
+    <rect x="1120" y="240" width="4" height="200"/>
+    <rect x="70"  y="300" width="364" height="4"/>
+    <rect x="70"  y="360" width="364" height="4"/>
+    <rect x="940" y="300" width="184" height="4"/>
+    <rect x="940" y="360" width="184" height="4"/>
+    <rect x="86"  y="262" width="60" height="36"/>
+    <rect x="160" y="266" width="56" height="32"/>
+    <rect x="300" y="262" width="58" height="36"/>
+    <rect x="958" y="262" width="58" height="36"/>
+    <rect x="1040" y="266" width="56" height="32"/>
+  </g>
+  <g opacity="0.16" stroke="#3A3F4A" stroke-width="2" fill="none">
+    <polyline points="20,232 200,210 380,232"/>
+    <polyline points="380,232 560,210 740,232"/>
+    <polyline points="740,232 920,210 1100,232"/>
+  </g>
+  <line x1="20" y1="380" x2="1180" y2="380" stroke="#3A3F4A" stroke-width="0.7" opacity="0.32"/>
+
+  <!-- ============================================================
+       DOCK FLOOR
+       ============================================================ -->
+  <rect x="20" y="555" width="1160" height="25" fill="url(#dockFloor)"/>
+  <rect x="20" y="552" width="1160" height="3" fill="#1A1F2E" opacity="0.18"/>
+  <g opacity="0.30" stroke="#1A1F2E" stroke-width="0.4">
+    <line x1="60"  y1="562" x2="220" y2="562"/>
+    <line x1="240" y1="568" x2="380" y2="568"/>
+    <line x1="420" y1="572" x2="560" y2="572"/>
+    <line x1="600" y1="565" x2="740" y2="565"/>
+    <line x1="780" y1="570" x2="920" y2="570"/>
+    <line x1="960" y1="574" x2="1120" y2="574"/>
+  </g>
+  <line x1="60" y1="568" x2="1140" y2="568" stroke="#FFD200" stroke-width="1.6"
+        stroke-dasharray="26 18" opacity="0.45"/>
+
+  <!-- ============================================================
+       DOCK LIGHT (top-right)
+       ============================================================ -->
+  <g filter="url(#rigShadow)">
+    <rect x="1098" y="552" width="16" height="6" fill="#3A3F4A"/>
+    <rect x="1102" y="86" width="8" height="470" fill="#5A606D"/>
+    <rect x="1102" y="86" width="2" height="470" fill="#9098A8" opacity="0.7"/>
+    <rect x="1052" y="86" width="60" height="5" fill="#5A606D"/>
+    <g transform="translate(1064 84)">
+      <rect x="-10" y="0" width="20" height="8" rx="1" fill="#3A3F4A"/>
+      <rect x="-10" y="0" width="20" height="2" fill="#5A606D"/>
+      <ellipse class="dock-beacon" cx="0" cy="9" rx="9" ry="3.4" fill="url(#dockLamp)"/>
+      <ellipse cx="0" cy="9" rx="5" ry="1.8" fill="#FFFFFF" opacity="0.65"/>
+    </g>
+    <path d="M 1064 96 L 1006 555 L 1140 555 Z" fill="url(#dockLightCone)"/>
+  </g>
+
+  <!-- ============================================================
+       CURTAIN-SIDE TRAILER — BROADSIDE
+       ============================================================ -->
+  <ellipse cx="600" cy="552" rx="540" ry="5" fill="#1A1F2E" opacity="0.32"/>
+
+  <!-- ===== HARD-SHELL ROOF + TOP ROLL-TRACK RAIL ===== -->
+  <g filter="url(#rigShadow)">
+    <rect x="118" y="246" width="1024" height="16" rx="5" fill="url(#hardRoof)"
+          stroke="#C8CDD8" stroke-width="1"/>
+    <rect x="118" y="246" width="1024" height="4" rx="2" fill="#FFFFFF" opacity="0.6"/>
+    <rect x="124" y="260" width="1012" height="6" rx="2" fill="#1A1F2E"/>
+    <rect x="124" y="260" width="1012" height="1.6" fill="#7A7F88" opacity="0.7"/>
+    <rect x="120" y="242" width="6" height="4" rx="0.6" fill="#FF8A1F"/>
+    <rect x="1134" y="242" width="6" height="4" rx="0.6" fill="#E5350D"/>
+  </g>
+
+  <!-- ===== SOLID FRONT BULKHEAD ===== -->
+  <g filter="url(#rigShadow)">
+    <rect x="120" y="266" width="40" height="164" fill="#5A606D" stroke="#1A1F2E" stroke-width="0.8"/>
+    <rect x="120" y="266" width="40" height="6" fill="#9098A8"/>
+    <rect x="120" y="266" width="2" height="164" fill="#9098A8" opacity="0.6"/>
+    <g stroke="#1A1F2E" stroke-width="0.5" opacity="0.5">
+      <line x1="132" y1="272" x2="132" y2="424"/>
+      <line x1="146" y1="272" x2="146" y2="424"/>
+    </g>
+    <rect x="126" y="300" width="30" height="12" rx="1" fill="#1A1F2E" stroke="#9098A8" stroke-width="0.4"/>
+    <text x="141" y="309" text-anchor="middle"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="5.6" fill="#FFD200" letter-spacing="0.5">ESTR-4001</text>
+  </g>
+
+  <!-- ===== REAR — BARN DOORS + CURTAIN POLE / RATCHET ===== -->
+  <g filter="url(#rigShadow)">
+    <rect x="1100" y="266" width="40" height="164" fill="#5A606D" stroke="#1A1F2E" stroke-width="0.8"/>
+    <rect x="1100" y="266" width="40" height="6" fill="#9098A8"/>
+    <line x1="1120" y1="270" x2="1120" y2="426" stroke="#1A1F2E" stroke-width="1.2" opacity="0.5"/>
+    <rect x="1112" y="300" width="3" height="118" fill="#3A3F4A"/>
+    <rect x="1125" y="300" width="3" height="118" fill="#3A3F4A"/>
+    <rect x="1094" y="264" width="5" height="168" rx="2" fill="#A4A8B2"/>
+    <rect x="1094" y="264" width="1.6" height="168" fill="#FFFFFF" opacity="0.5"/>
+    <rect x="1086" y="404" width="14" height="6" rx="1" fill="#3A3F4A"/>
+    <circle cx="1087" cy="407" r="3" fill="#FFD200" stroke="#7A5A00" stroke-width="0.5"/>
+  </g>
+
+  <!-- ============================================================
+       CURTAIN ZONE — sliding curtain (identity). Bay x=160..1094.
+       ============================================================ -->
+
+  <!-- Open-bay interior backdrop -->
+  <g>
+    <rect x="160" y="266" width="934" height="164" fill="#221A3A"/>
+    <rect x="160" y="266" width="934" height="6" fill="#2E2350" opacity="0.8"/>
+    <g stroke="#000000" stroke-width="2" opacity="0.25">
+      <line x1="290" y1="270" x2="290" y2="424"/>
+      <line x1="450" y1="270" x2="450" y2="424"/>
+      <line x1="610" y1="270" x2="610" y2="424"/>
+      <line x1="770" y1="270" x2="770" y2="424"/>
+      <line x1="930" y1="270" x2="930" y2="424"/>
+    </g>
+  </g>
+
+  <!-- Deck planks -->
+  <g>
+    <rect x="160" y="424" width="934" height="6" fill="#3A2A18"/>
+    <g stroke="#1A1208" stroke-width="0.5" opacity="0.6">
+      <line x1="320" y1="424" x2="320" y2="430"/>
+      <line x1="480" y1="424" x2="480" y2="430"/>
+      <line x1="640" y1="424" x2="640" y2="430"/>
+      <line x1="800" y1="424" x2="800" y2="430"/>
+      <line x1="960" y1="424" x2="960" y2="430"/>
+    </g>
+  </g>
+
+  <!-- Pallets remaining on deck (still to be unloaded) -->
+  <g>
+    <g transform="translate(250 424) scale(0.74)"><use href="#cartonPallet"/></g>
+    <g transform="translate(360 424) scale(0.74)"><use href="#cartonPallet"/></g>
+    <g transform="translate(470 424) scale(0.74)"><use href="#cartonPallet"/></g>
+  </g>
+  <!-- Pallet being EXTRACTED this cycle — lifted off the deck (count drops). -->
+  <g class="pallet-removed" transform="translate(700 424) scale(0.74)">
+    <use href="#cartonPallet"/>
+  </g>
+
+  <!-- THE CURTAIN PANEL — slides open then closed -->
+  <g class="curtain-panel">
+    <rect x="160" y="266" width="934" height="164" fill="url(#curtainPVC)"/>
+    <g>
+      <rect x="160" y="268" width="156" height="160" fill="url(#curtainPleat)" opacity="0.7"/>
+      <rect x="316" y="268" width="156" height="160" fill="url(#curtainPleat)" opacity="0.7"/>
+      <rect x="472" y="268" width="156" height="160" fill="url(#curtainPleat)" opacity="0.7"/>
+      <rect x="628" y="268" width="156" height="160" fill="url(#curtainPleat)" opacity="0.7"/>
+      <rect x="784" y="268" width="156" height="160" fill="url(#curtainPleat)" opacity="0.7"/>
+      <rect x="940" y="268" width="154" height="160" fill="url(#curtainPleat)" opacity="0.7"/>
+    </g>
+    <text class="brand-word" x="627" y="362" text-anchor="middle"
+          font-family="Inter, system-ui, sans-serif" font-weight="800"
+          font-size="46" letter-spacing="5" fill="#FFFFFF" opacity="0.85">EUSOTRIP</text>
+  </g>
+
+  <!-- VERTICAL BUCKLE TENSION STRAPS (taut when closed) -->
+  <g class="buckle-straps">
+    <g class="tension-snap">
+      <g fill="#E8E2D2" opacity="0.92">
+        <rect x="208" y="266" width="6" height="162"/>
+        <rect x="296" y="266" width="6" height="162"/>
+        <rect x="384" y="266" width="6" height="162"/>
+        <rect x="472" y="266" width="6" height="162"/>
+        <rect x="560" y="266" width="6" height="162"/>
+        <rect x="648" y="266" width="6" height="162"/>
+        <rect x="736" y="266" width="6" height="162"/>
+        <rect x="824" y="266" width="6" height="162"/>
+        <rect x="912" y="266" width="6" height="162"/>
+        <rect x="1000" y="266" width="6" height="162"/>
+      </g>
+      <g fill="#1A1F2E" opacity="0.25">
+        <rect x="214" y="266" width="1.4" height="162"/>
+        <rect x="302" y="266" width="1.4" height="162"/>
+        <rect x="390" y="266" width="1.4" height="162"/>
+        <rect x="478" y="266" width="1.4" height="162"/>
+        <rect x="566" y="266" width="1.4" height="162"/>
+        <rect x="654" y="266" width="1.4" height="162"/>
+        <rect x="742" y="266" width="1.4" height="162"/>
+        <rect x="830" y="266" width="1.4" height="162"/>
+        <rect x="918" y="266" width="1.4" height="162"/>
+        <rect x="1006" y="266" width="1.4" height="162"/>
+      </g>
+      <g fill="#C8CDD8" stroke="#5A606D" stroke-width="0.6">
+        <rect x="205" y="404" width="12" height="15" rx="1.5"/>
+        <rect x="293" y="404" width="12" height="15" rx="1.5"/>
+        <rect x="381" y="404" width="12" height="15" rx="1.5"/>
+        <rect x="469" y="404" width="12" height="15" rx="1.5"/>
+        <rect x="557" y="404" width="12" height="15" rx="1.5"/>
+        <rect x="645" y="404" width="12" height="15" rx="1.5"/>
+        <rect x="733" y="404" width="12" height="15" rx="1.5"/>
+        <rect x="821" y="404" width="12" height="15" rx="1.5"/>
+        <rect x="909" y="404" width="12" height="15" rx="1.5"/>
+        <rect x="997" y="404" width="12" height="15" rx="1.5"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- GATHERED / CONCERTINA fabric at the front when open -->
+  <g class="curtain-stack" filter="url(#softBlur)">
+    <rect x="160" y="266" width="86" height="164" fill="url(#curtainBunch)"/>
+    <g stroke="#1F1240" stroke-width="1.4" opacity="0.7">
+      <line x1="172" y1="266" x2="172" y2="430"/>
+      <line x1="184" y1="266" x2="184" y2="430"/>
+      <line x1="196" y1="266" x2="196" y2="430"/>
+      <line x1="208" y1="266" x2="208" y2="430"/>
+      <line x1="220" y1="266" x2="220" y2="430"/>
+      <line x1="232" y1="266" x2="232" y2="430"/>
+    </g>
+    <rect x="160" y="266" width="86" height="3" fill="#FFFFFF" opacity="0.35"/>
+  </g>
+
+  <!-- ============================================================
+       UNDER-DECK STRUCTURE / RUNNING GEAR
+       ============================================================ -->
+  <g filter="url(#rigShadow)">
+    <rect x="120" y="430" width="1020" height="20" fill="#3A3F4A"/>
+    <rect x="120" y="430" width="1020" height="3"  fill="#7A7F88" opacity="0.7"/>
+    <rect x="120" y="446" width="1020" height="4"  fill="#1A1F2E"/>
+  </g>
+  <rect x="160" y="426" width="934" height="6" rx="2" fill="#1A1F2E"/>
+  <rect x="160" y="426" width="934" height="1.4" fill="#7A7F88" opacity="0.7"/>
+  <rect x="160" y="431" width="934" height="1.6" fill="#FFD200" opacity="0.7"/>
+
+  <!-- ===== KINGPIN PLATE ===== -->
+  <g filter="url(#rigShadow)">
+    <rect x="123" y="450" width="92" height="7" fill="#3A3F4A"/>
+    <rect x="123" y="450" width="92" height="1.6" fill="#7A7F88" opacity="0.7"/>
+    <rect x="153" y="457" width="14" height="9" fill="#1A1F2E"/>
+    <rect x="156" y="466" width="8"  height="4" fill="#3A3F4A"/>
+    <ellipse cx="160" cy="472" rx="6" ry="1.4" fill="#0F1320" opacity="0.55"/>
+  </g>
+
+  <!-- ===== LANDING GEAR ===== -->
+  <g filter="url(#rigShadow)">
+    <rect x="232" y="450" width="58" height="8" fill="#3A3F4A"/>
+    <rect x="232" y="450" width="58" height="1.4" fill="#7A7F88" opacity="0.7"/>
+    <rect x="240" y="458" width="14" height="74" fill="#5A606D" stroke="#1A1F2E" stroke-width="0.6"/>
+    <rect x="240" y="458" width="3"  height="74" fill="#9098A8" opacity="0.6"/>
+    <rect x="242" y="510" width="10" height="22" fill="#3A3F4A" stroke="#1A1F2E" stroke-width="0.5"/>
+    <rect x="236" y="530" width="22" height="6" rx="1" fill="#1A1F2E"/>
+    <rect x="254" y="472" width="14" height="3" rx="0.5" fill="#3A3F4A"/>
+    <circle cx="270" cy="473.5" r="2.4" fill="#FFD200" stroke="#7A5A00" stroke-width="0.4"/>
+  </g>
+
+  <!-- ===== TANDEM AXLE ASSEMBLY ===== -->
+  <g filter="url(#rigShadow)">
+    <rect x="868" y="450" width="184" height="10" fill="#3A3F4A"/>
+    <rect x="868" y="450" width="184" height="2"  fill="#7A7F88" opacity="0.7"/>
+    <rect x="868" y="458" width="184" height="2"  fill="#1A1F2E"/>
+    <g fill="#1A1F2E">
+      <rect x="894" y="460" width="6" height="14"/>
+      <rect x="940" y="460" width="6" height="14"/>
+      <rect x="974" y="460" width="6" height="14"/>
+      <rect x="1020" y="460" width="6" height="14"/>
+    </g>
+    <g fill="none" stroke="#3A3F4A" stroke-width="2.4">
+      <path d="M 894 476 Q 920 484 946 476"/>
+      <path d="M 974 476 Q 1000 484 1026 476"/>
+    </g>
+    <rect x="894" y="498" width="52" height="8" rx="3" fill="#3A3F4A"/>
+    <rect x="974" y="498" width="52" height="8" rx="3" fill="#3A3F4A"/>
+  </g>
+
+  <!-- ===== Tandem wheels ===== -->
+  <g filter="url(#rigShadow)">
+    <g transform="translate(920 504)"><circle cx="0" cy="0" r="24" fill="#1A1A1A"/><circle cx="0" cy="0" r="16" fill="url(#rim)"/><circle cx="0" cy="0" r="5" fill="#7A7F88"/><circle cx="0" cy="0" r="2" fill="#1A1F2E"/><g stroke="#3A3F4A" stroke-width="2" stroke-linecap="round" opacity="0.85"><line x1="0" y1="-21" x2="0" y2="-17"/><line x1="15" y1="-15" x2="12" y2="-12"/><line x1="21" y1="0" x2="17" y2="0"/><line x1="15" y1="15" x2="12" y2="12"/><line x1="0" y1="21" x2="0" y2="17"/><line x1="-15" y1="15" x2="-12" y2="12"/><line x1="-21" y1="0" x2="-17" y2="0"/><line x1="-15" y1="-15" x2="-12" y2="-12"/></g><ellipse cx="-5" cy="-9" rx="4" ry="2.4" fill="#FFFFFF" opacity="0.32"/></g>
+    <ellipse cx="920" cy="528" rx="22" ry="2.4" fill="#1A1F2E" opacity="0.55"/>
+    <g transform="translate(1000 504)"><circle cx="0" cy="0" r="24" fill="#1A1A1A"/><circle cx="0" cy="0" r="16" fill="url(#rim)"/><circle cx="0" cy="0" r="5" fill="#7A7F88"/><circle cx="0" cy="0" r="2" fill="#1A1F2E"/><g stroke="#3A3F4A" stroke-width="2" stroke-linecap="round" opacity="0.85"><line x1="0" y1="-21" x2="0" y2="-17"/><line x1="15" y1="-15" x2="12" y2="-12"/><line x1="21" y1="0" x2="17" y2="0"/><line x1="15" y1="15" x2="12" y2="12"/><line x1="0" y1="21" x2="0" y2="17"/><line x1="-15" y1="15" x2="-12" y2="12"/><line x1="-21" y1="0" x2="-17" y2="0"/><line x1="-15" y1="-15" x2="-12" y2="-12"/></g><ellipse cx="-5" cy="-9" rx="4" ry="2.4" fill="#FFFFFF" opacity="0.32"/></g>
+    <ellipse cx="1000" cy="528" rx="22" ry="2.4" fill="#1A1F2E" opacity="0.55"/>
+  </g>
+
+  <!-- ===== MUD FLAPS ===== -->
+  <g filter="url(#rigShadow)">
+    <rect x="942" y="506" width="4" height="32" fill="#1A1F2E"/>
+    <rect x="1024" y="506" width="6" height="32" fill="#1A1F2E"/>
+  </g>
+
+  <!-- ===== REAR ICC BUMPER + TAIL LIGHTS ===== -->
+  <g filter="url(#rigShadow)">
+    <rect x="1054" y="540" width="84" height="4" fill="#1A1F2E"/>
+    <rect x="1058" y="460" width="3" height="80" fill="#3A3F4A"/>
+    <rect x="1132" y="460" width="3" height="80" fill="#3A3F4A"/>
+    <rect x="1056" y="486" width="7" height="6" rx="0.6" fill="#E5350D"/>
+    <rect x="1130" y="486" width="7" height="6" rx="0.6" fill="#E5350D"/>
+    <rect x="1086" y="528" width="20" height="9" fill="#1A1F2E" stroke="#3A3F4A" stroke-width="0.4"/>
+    <rect x="1088" y="530" width="16" height="5" fill="#FFFFFF" opacity="0.85"/>
+  </g>
+
+  <!-- ===== WHEEL CHOCKS ===== -->
+  <g filter="url(#rigShadow)">
+    <polygon points="888,536 906,536 898,524" fill="#FF7A1F" stroke="#A35200" stroke-width="0.6"/>
+    <polygon points="1018,536 1036,536 1026,524" fill="#FF7A1F" stroke="#A35200" stroke-width="0.6"/>
+  </g>
+
+  <!-- ============================================================
+       FORKLIFT — drives in empty, extracts a pallet out the open side
+       ============================================================ -->
+  <g class="forklift-cycle">
+    <g transform="translate(900 553) scale(1.25 1.25)">
+      <!-- Counterweight -->
+      <rect x="22" y="-22" width="20" height="22" rx="2" fill="#1A1F2E"/>
+      <rect x="22" y="-22" width="20" height="2"  fill="#3A3F4A"/>
+      <rect x="26" y="-14" width="12" height="3" rx="0.5" fill="#FFC34D" opacity="0.7"/>
+      <!-- Body / chassis -->
+      <rect x="-6" y="-22" width="30" height="22" rx="2"
+            fill="url(#forkliftBody)" stroke="#8C5500" stroke-width="0.7"/>
+      <rect x="-6" y="-12" width="30" height="2" fill="#1A1F2E" opacity="0.4"/>
+      <rect x="-7" y="-18" width="2"  height="3" rx="0.5" fill="#FFE9A8"/>
+      <!-- Operator compartment -->
+      <rect x="6" y="-32" width="14" height="10" rx="1.5" fill="#1A1F2E" opacity="0.85"/>
+      <rect x="18" y="-32" width="3" height="10" rx="0.5" fill="#3A3F4A"/>
+      <!-- Driver silhouette -->
+      <circle cx="13" cy="-36" r="3.4" fill="#C99878"/>
+      <rect x="10" y="-33" width="8" height="6" rx="1" fill="#FF7A1F" opacity="0.9"/>
+      <ellipse cx="13" cy="-39.4" rx="3.6" ry="1.5" fill="#FFD200"/>
+      <line x1="9" y1="-30" x2="6" y2="-26" stroke="#3A3F4A" stroke-width="1"/>
+      <!-- Overhead guard cage -->
+      <line x1="0"  y1="-22" x2="0"  y2="-44" stroke="url(#forkliftBody)" stroke-width="2.2"/>
+      <line x1="22" y1="-22" x2="22" y2="-44" stroke="url(#forkliftBody)" stroke-width="2.2"/>
+      <rect x="-2" y="-46" width="26" height="3" rx="0.7" fill="url(#forkliftBody)"/>
+      <line x1="0" y1="-44" x2="22" y2="-44" stroke="url(#forkliftBody)" stroke-width="1" opacity="0.7"/>
+      <!-- Warning beacon -->
+      <g transform="translate(11 -47)">
+        <rect x="-2" y="-1" width="4" height="2" fill="#3A3F4A"/>
+        <ellipse cx="0" cy="-3" rx="3" ry="2.4" fill="#FF8A1F"/>
+        <ellipse cx="0" cy="-3" rx="6" ry="4.5" fill="#FF8A1F" opacity="0.32"/>
+      </g>
+      <!-- Mast -->
+      <rect x="-12" y="-128" width="3" height="128" fill="url(#forkliftBody)" stroke="#8C5500" stroke-width="0.4"/>
+      <rect x="-4"  y="-128" width="3" height="128" fill="url(#forkliftBody)" stroke="#8C5500" stroke-width="0.4"/>
+      <rect x="-13" y="-128" width="13" height="3" rx="0.5" fill="url(#forkliftBody)"/>
+      <rect x="-7.5" y="-122" width="2" height="116" fill="#7A7F88" opacity="0.8"/>
+      <!-- Carriage / backrest -->
+      <rect x="-13" y="-118" width="14" height="22"
+            fill="url(#forkliftBody)" stroke="#8C5500" stroke-width="0.5"/>
+      <!-- Fork tines -->
+      <rect x="-72" y="-104" width="60" height="3"  fill="#3A3F4A" stroke="#1A1F2E" stroke-width="0.3"/>
+      <rect x="-72" y="-104" width="60" height="0.8" fill="#9098A8" opacity="0.65"/>
+      <rect x="-72" y="-100" width="60" height="3"  fill="#3A3F4A" stroke="#1A1F2E" stroke-width="0.3"/>
+      <rect x="-14" y="-108" width="3" height="14" fill="#3A3F4A"/>
+      <!-- ===== PALLET ON THE FORKS (appears at pickup, rides out) ===== -->
+      <g class="fork-pallet-pick" transform="translate(-44 -104)">
+        <rect x="-30" y="-6" width="60" height="6" fill="url(#palletWood)" stroke="#7A5A40" stroke-width="0.4"/>
+        <line x1="-22" y1="-6" x2="-22" y2="0" stroke="#7A5A40" stroke-width="0.3"/>
+        <line x1="-10" y1="-6" x2="-10" y2="0" stroke="#7A5A40" stroke-width="0.3"/>
+        <line x1="0"   y1="-6" x2="0"   y2="0" stroke="#7A5A40" stroke-width="0.3"/>
+        <line x1="10"  y1="-6" x2="10"  y2="0" stroke="#7A5A40" stroke-width="0.3"/>
+        <line x1="22"  y1="-6" x2="22"  y2="0" stroke="#7A5A40" stroke-width="0.3"/>
+        <rect x="-28" y="-44" width="56" height="38" fill="url(#cartonBox)" stroke="#6E4A23" stroke-width="0.5"/>
+        <g stroke="#6E4A23" stroke-width="0.4" opacity="0.6">
+          <line x1="-28" y1="-25" x2="28" y2="-25"/>
+          <line x1="-9"  y1="-44" x2="-9" y2="-6"/>
+          <line x1="9"   y1="-44" x2="9"  y2="-6"/>
+        </g>
+        <rect x="-28" y="-44" width="56" height="1.4" fill="#FFFFFF" opacity="0.4"/>
+        <rect x="-10" y="-30" width="16" height="7" fill="#FFFFFF" opacity="0.8"/>
+      </g>
+      <!-- Wheels -->
+      <g transform="translate(-3 -10)"><g class="wheel-spin"><circle cx="0" cy="0" r="11" fill="#1A1A1A"/><circle cx="0" cy="0" r="6" fill="url(#rim)"/><line x1="0" y1="-7" x2="0" y2="-3" stroke="#3A3F4A" stroke-width="1.4"/><line x1="6" y1="-2" x2="3" y2="-1" stroke="#3A3F4A" stroke-width="1.4"/><line x1="0" y1="7" x2="0" y2="3" stroke="#3A3F4A" stroke-width="1.4"/><line x1="-6" y1="-2" x2="-3" y2="-1" stroke="#3A3F4A" stroke-width="1.4"/></g></g>
+      <g transform="translate(32 -8)"><g class="wheel-spin"><circle cx="0" cy="0" r="8" fill="#1A1A1A"/><circle cx="0" cy="0" r="4.2" fill="url(#rim)"/><line x1="0" y1="-5" x2="0" y2="-2" stroke="#3A3F4A" stroke-width="1"/><line x1="0" y1="5" x2="0" y2="2" stroke="#3A3F4A" stroke-width="1"/><line x1="-4" y1="0" x2="-2" y2="0" stroke="#3A3F4A" stroke-width="1"/><line x1="4" y1="0" x2="2" y2="0" stroke="#3A3F4A" stroke-width="1"/></g></g>
+    </g>
+  </g>
+
+  <!-- ============================================================
+       BRAND LOCKUP (top-left)
+       ============================================================ -->
+  <g class="brand-lockup" filter="url(#rigShadow)" transform="translate(490 26)">
+    <g class="brand-mark">
+      <circle cx="22" cy="18" r="16" fill="url(#brandIridescent)"/>
+      <text x="22" y="25" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="20" fill="#FFFFFF">E</text>
+    </g>
+    <text class="brand-word" x="48" y="22" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="18" letter-spacing="2.5" fill="#5B3FBF">EUSOTRIP</text>
+    <text x="48" y="36" font-family="Inter, system-ui, sans-serif"
+          font-weight="500" font-size="8" letter-spacing="3" fill="#9B7FD9" opacity="0.55">BY EUSORONE</text>
+  </g>
+
+  <!-- TRUCK mode badge (top-right) -->
+  <g>
+    <rect x="1052" y="58" width="100" height="32" rx="16" ry="16"
+          fill="url(#brandIridescent)" stroke="#FFFFFF" stroke-width="1.5" stroke-opacity="0.5"/>
+    <g transform="translate(1066 70)" fill="#FFFFFF">
+      <rect x="0" y="2" width="8" height="6" rx="1"/>
+      <rect x="9" y="0" width="6" height="8" rx="1"/>
+      <circle cx="3" cy="10" r="1.5"/>
+      <circle cx="12" cy="10" r="1.5"/>
+    </g>
+    <text x="1115" y="79" text-anchor="middle"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="14" letter-spacing="1.8" fill="#FFFFFF">TRUCK</text>
+  </g>
+
+  <!-- Weight-unit badge — COUNTRY-SWITCHABLE (general dry freight, no hazmat
+       placards). Renderer shows exactly ONE group:
+         country-US / country-CA -> LBS (default)   country-MX -> KG -->
+  <g class="unit-badge country-US">
+    <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
+          fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+    <text x="1102" y="112" text-anchor="middle"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">LBS</text>
+  </g>
+  <g class="unit-badge country-CA" style="display:none">
+    <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
+          fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+    <text x="1102" y="112" text-anchor="middle"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">LBS</text>
+  </g>
+  <g class="unit-badge country-MX" style="display:none">
+    <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
+          fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+    <text x="1102" y="112" text-anchor="middle"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">KG</text>
+  </g>
+
+  <!-- UNLOADING pill -->
+  <g class="load-pill">
+    <rect x="60" y="100" width="200" height="32" rx="16" ry="16" fill="#FF8A1F" opacity="0.95"/>
+    <circle cx="80" cy="116" r="5" fill="#FFFFFF" opacity="0.95"/>
+    <circle cx="80" cy="116" r="2.5" fill="#FF8A1F"/>
+    <text x="100" y="122" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="13" letter-spacing="2.4"
+          fill="#FFFFFF" data-bind="state_label">UNLOADING</text>
+  </g>
+
+  <!-- Equipment label + subtitle -->
+  <g opacity="0.9">
+    <text x="60" y="78" font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="13" letter-spacing="2" fill="#5B3FBF"
+          data-bind="equipment_label">53' CURTAIN-SIDE</text>
+    <line x1="60" y1="86" x2="270" y2="86" stroke="#9B7FD9" stroke-width="2" stroke-linecap="round"/>
+    <text x="60" y="148" font-family="Inter, system-ui, sans-serif"
+          font-weight="500" font-size="10" letter-spacing="1.2" fill="#7A5AB8"
+          data-bind="equipment_subtitle">TAUTLINER &#183; SLIDING CURTAIN SIDE-UNLOAD</text>
+  </g>
+
+  <!-- Dock chip + ETA -->
+  <g opacity="0.95">
+    <rect x="60" y="160" width="320" height="22" rx="6" ry="6"
+          fill="#FFFFFF" fill-opacity="0.95" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.45"/>
+    <text data-bind="dock_id" x="72" y="176"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="11" letter-spacing="1.4" fill="#5B3FBF">DOCK 12 &#183; SIDE-LOAD BAY</text>
+    <text data-bind="eta_minutes" x="370" y="176" text-anchor="end"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="600" font-size="10" letter-spacing="0.8" fill="#7A5AB8">8 MIN LEFT</text>
+  </g>
+
+  <!-- Commodity chip -->
+  <g opacity="0.95">
+    <rect x="60" y="190" width="320" height="22" rx="6" ry="6"
+          fill="#FFFFFF" fill-opacity="0.95" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.45"/>
+    <text data-bind="commodity_label" x="72" y="206"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="11" letter-spacing="1.4" fill="#5B3FBF">PALLETIZED DRY GOODS &#183; 26 PLT</text>
+  </g>
+
+  <!-- Progress bar -->
+  <g>
+    <rect x="60" y="555" width="1080" height="6" rx="3" fill="#E5E2EF" opacity="0.6"/>
+    <rect class="progress-fill" x="60" y="555" width="756" height="6" rx="3"
+          fill="#FF8A1F"
+          style="--load-progress: 0.7;"/>
+    <text x="1140" y="548" text-anchor="end"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="700" font-size="10" letter-spacing="1.4"
+          fill="#5B3FBF" opacity="0.85"><tspan data-bind="weight_label">38,000 LBS</tspan> &#183; <tspan data-bind="progress_pct">70</tspan>%</text>
+  </g>
+
+  <!-- Chevron -->
+  <g class="chevron">
+    <path d="M 70 540 L 55 525 L 55 555 Z" fill="#9B7FD9"/>
+  </g>
+
+  <!-- Iridescent rounded card border -->
+  <rect class="card-border" x="20" y="20" width="1160" height="560" rx="22"
+        fill="none" stroke="url(#brandIridescent)" stroke-width="2.5" pointer-events="none"/>
+
+  <!-- EUSOTRIP-CURTAIN-SIDE-UNLOADING-2026-05-29 -->
+</svg>

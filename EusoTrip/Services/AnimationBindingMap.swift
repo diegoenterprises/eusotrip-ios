@@ -53,11 +53,11 @@ public enum AnimationBindingMap {
         // rig now matches the load instead of a wrong-shape proxy).
         .autoCarrier:          .init(loading: "35_auto_carrier_loading.svg",     unloading: "35_auto_carrier_unloading.svg",     hero: "35_auto_carrier_anim.svg"),
         .pneumaticTank:        .init(loading: "36_pneumatic_dry_bulk_loading.svg", unloading: "36_pneumatic_dry_bulk_unloading.svg", hero: "36_pneumatic_dry_bulk_anim.svg"),
-        .endDump:              .init(loading: "03_flatbed_loading.svg",          unloading: "03_flatbed_unloading.svg",          hero: "03_flatbed_anim.svg"),       // proxy — no dedicated SVG yet
-        .waterTank:            .init(loading: "09_tanker_liquid_loading.svg",    unloading: "09_tanker_liquid_unloading.svg",    hero: "09_tanker_liquid_anim.svg"), // proxy — no dedicated SVG yet
+        .endDump:              .init(loading: "37_end_dump_loading.svg",         unloading: "37_end_dump_unloading.svg",         hero: "37_end_dump_anim.svg"),
+        .waterTank:            .init(loading: "38_water_tank_loading.svg",       unloading: "38_water_tank_unloading.svg",       hero: "38_water_tank_anim.svg"),
         .livestockCattlePot:   .init(loading: "34_livestock_loading.svg",        unloading: "34_livestock_unloading.svg",        hero: "34_livestock_anim.svg"),
-        .logTrailer:           .init(loading: "03_flatbed_loading.svg",          unloading: "03_flatbed_unloading.svg",          hero: "03_flatbed_anim.svg"),       // proxy — no dedicated SVG yet
-        .curtainSide:          .init(loading: "01_dry_van_loading.svg",          unloading: "01_dry_van_unloading.svg",          hero: "01_dry_van_anim.svg"),       // proxy — no dedicated SVG yet
+        .logTrailer:           .init(loading: "39_log_trailer_loading.svg",      unloading: "39_log_trailer_unloading.svg",      hero: "39_log_trailer_anim.svg"),
+        .curtainSide:          .init(loading: "40_curtain_side_loading.svg",     unloading: "40_curtain_side_unloading.svg",     hero: "40_curtain_side_anim.svg"),
         .dryBulkHopper:        .init(loading: "36_pneumatic_dry_bulk_loading.svg", unloading: "36_pneumatic_dry_bulk_unloading.svg", hero: "36_pneumatic_dry_bulk_anim.svg"),
         .gravityHopper:        .init(loading: "36_pneumatic_dry_bulk_loading.svg", unloading: "36_pneumatic_dry_bulk_unloading.svg", hero: "36_pneumatic_dry_bulk_anim.svg"),
         .grainHopper:          .init(loading: "36_pneumatic_dry_bulk_loading.svg", unloading: "36_pneumatic_dry_bulk_unloading.svg", hero: "36_pneumatic_dry_bulk_anim.svg"),

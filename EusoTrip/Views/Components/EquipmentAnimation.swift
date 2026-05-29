@@ -120,11 +120,11 @@ enum EquipmentKind: String, Hashable, CaseIterable {
         // backlog). Once the 6 dedicated hero SVGs land, swap each
         // case to its own asset name.
         case .livestockCattlePot:    return "34_livestock_anim"          // dedicated SVG (2026-05-29)
-        case .logTrailer:            return "03_flatbed_anim"            // fallback proxy
+        case .logTrailer:            return "39_log_trailer_anim"        // dedicated SVG (2026-05-29)
         case .pneumaticTank:         return "36_pneumatic_dry_bulk_anim" // dedicated SVG (2026-05-29)
-        case .endDump:               return "03_flatbed_anim"        // fallback proxy
-        case .waterTank:             return "09_tanker_liquid_anim"  // fallback proxy
-        case .curtainSide:           return "01_dry_van_anim"        // fallback proxy
+        case .endDump:               return "37_end_dump_anim"           // dedicated SVG (2026-05-29)
+        case .waterTank:             return "38_water_tank_anim"         // dedicated SVG (2026-05-29)
+        case .curtainSide:           return "40_curtain_side_anim"       // dedicated SVG (2026-05-29)
         }
     }
 
