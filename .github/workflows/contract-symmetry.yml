@@ -19,10 +19,14 @@ on:
   push:
     branches: [main]
   workflow_dispatch: {}
-
-# The drift can also originate server-side; to run this on server-repo changes,
-# add a workflow there that fires `repository_dispatch` at this repo, or trigger
-# it manually (workflow_dispatch) after a server schema change.
+  # Server-side drift: the server repo's contract-symmetry-notify.yml fires this
+  # event (via repository_dispatch) whenever frontend/server/routers/** or the
+  # drizzle schema changes, so a Zod-schema edit on the server is gated too — not
+  # just iOS-side struct edits. repository_dispatch always runs the workflow as
+  # defined on the DEFAULT branch, so this arm only goes live once this file is
+  # on main. It still degrades gracefully if WEB_REPO_TOKEN is unset (skips).
+  repository_dispatch:
+    types: [server-contract-check]
 
 permissions:
   contents: read
@@ -60,6 +64,12 @@ jobs:
           token: ${{ secrets.WEB_REPO_TOKEN }}
           path: web
           persist-credentials: false
+          # On a server-originated run (repository_dispatch from the server repo's
+          # notify workflow), check out the exact ref that changed — so the gate
+          # tests the PR's/commit's server code, not stale main. For iOS-originated
+          # runs this expression is empty, and checkout@v4 falls back to the
+          # default branch (main), which is the intended behaviour.
+          ref: ${{ github.event.client_payload.web_ref }}
 
       - name: Setup Node
         if: steps.cfg.outputs.ok == 'true'
