@@ -435,10 +435,12 @@ struct ShipperSurface: View {
                 input: In(avatarUrl: dataURL)
             )
             if out.success {
-                // Surface a refresh notification so any avatar-rendering
-                // surface (Me hero, top-bar `duAvatar`, MeProfile card)
-                // can re-fetch the profile and pick up the new picture.
-                NotificationCenter.default.post(name: .eusoProfileAvatarUpdated, object: nil)
+                // Post the LIVE profile-updated event so avatar-rendering
+                // surfaces re-fetch and pick up the new picture. Was
+                // `.eusoProfileAvatarUpdated`, which had ZERO observers anywhere
+                // (a dead post); `.eusoProfileUpdated` is the event the
+                // real-time profile-refresh path actually listens on.
+                NotificationCenter.default.post(name: .eusoProfileUpdated, object: nil)
             } else {
                 avatarUploadError = "Your photo didn't upload. Please try again."
             }
