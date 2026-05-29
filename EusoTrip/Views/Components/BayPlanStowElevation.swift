@@ -542,7 +542,7 @@ public extension BayPlanStowElevation {
     /// conflict concentrated at bay 09/10. Mixed dry / reefer / hazmat /
     /// empty stowage elsewhere so the legend exercises every kind.
     static var proofColumns: [BayColumn] {
-        func od(_ k: [BayPlanSlot.Kind]) -> [BayPlanSlot] { k.map(BayPlanSlot.init) }
+        func od(_ k: [BayPlanSlot.Kind]) -> [BayPlanSlot] { k.map { BayPlanSlot($0) } }
 
         return [
             BayColumn(bayNumber: 34,

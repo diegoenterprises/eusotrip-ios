@@ -52,6 +52,7 @@ private struct VesselComplianceBody: View {
     enum Tab: String, CaseIterable {
         case inspections = "Inspections"
         case certificates = "Certificates"
+        case coldChain = "Cold Chain"
     }
     @State private var activeTab: Tab = .inspections
 
@@ -90,6 +91,7 @@ private struct VesselComplianceBody: View {
                     switch activeTab {
                     case .inspections:  inspectionsContent
                     case .certificates: certificatesContent
+                    case .coldChain:    coldChainContent
                     }
                 }
                 Color.clear.frame(height: 96)
@@ -275,6 +277,62 @@ private struct VesselComplianceBody: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
             .strokeBorder(isExpiringSoon ? Brand.warning.opacity(0.35) : palette.borderFaint))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    // MARK: - Cold chain (FSMA reefer temp log)
+    //
+    // FSMA Sanitary Transportation rule: reefer cargo must hold below the
+    // 40°F excursion ceiling; the commanded setpoint here is 34°F. The chart
+    // plots the front/center/rear probe traces against those two rails.
+
+    /// FSMA Sanitary-Transportation excursion ceiling (°F).
+    private let fsmaCeilingF: Double = 40
+    /// Commanded reefer box temperature (°F).
+    private let reeferSetpointF: Double = 34
+
+    @ViewBuilder
+    private var coldChainContent: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            ReeferTempLogChart(
+                zones: reeferZones,
+                setpointF: reeferSetpointF,
+                ceilingF: fsmaCeilingF,
+                title: "REEFER COLD CHAIN"
+            )
+            Text("FSMA Sanitary-Transportation ceiling 40°F · setpoint 34°F.")
+                .font(EType.micro).foregroundStyle(palette.textTertiary)
+                .padding(.horizontal, Space.s1)
+        }
+    }
+
+    /// Front/center/rear probe traces for the cold-chain chart.
+    ///
+    /// TODO(vessel-reefer): wire to a real vessel reefer temp-log endpoint
+    /// once exposed to iOS (the existing `reeferTemp.getReadings` is scoped to
+    /// the truck driver's `driverId`/`loadId`, not a vessel operator's reefer
+    /// containers, so it is not the correct source for this surface). When a
+    /// `vesselShipments.getReeferTempLog` (or equivalent) endpoint lands,
+    /// decode its `{ zone, temp/tempF, timestamp }` rows — the same shape
+    /// `reeferTemp.getReadings` already returns — group by `zone`, and map each
+    /// group into a `TempZone` exactly as below. Until then this renders the
+    /// component's reference series so the card is live (not preview-only) and
+    /// the swap is a drop-in. No fabricated tenant data is persisted.
+    private var reeferZones: [TempZone] {
+        let now = Date()
+        func mk(_ vals: [Double]) -> [TempZone.Reading] {
+            let n = vals.count
+            return vals.enumerated().map { i, v in
+                .init(t: now.addingTimeInterval(-Double(n - 1 - i) * 3600), tempF: v)
+            }
+        }
+        let front  = mk([34.1, 33.9, 34.0, 34.2, 33.8, 34.0, 34.1, 33.9, 34.0, 34.2, 34.0, 33.9, 34.1])
+        let center = mk([34.6, 34.4, 34.8, 35.1, 34.9, 35.2, 35.0, 35.3, 35.1, 35.4, 35.2, 35.5, 35.3])
+        let rear   = mk([34.8, 34.9, 35.2, 35.6, 35.9, 36.3, 36.6, 36.9, 37.2, 37.5, 37.8, 38.1, 38.4])
+        return [
+            TempZone(name: "Front",  position: .front,  color: Brand.success, readings: front),
+            TempZone(name: "Center", position: .center, color: Brand.blue,    readings: center),
+            TempZone(name: "Rear",   position: .rear,   color: Brand.warning, readings: rear),
+        ]
     }
 
     // MARK: - Load
