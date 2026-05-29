@@ -119,9 +119,9 @@ enum EquipmentKind: String, Hashable, CaseIterable {
         // dedicated state-variant catalog ships (T-030b on the design
         // backlog). Once the 6 dedicated hero SVGs land, swap each
         // case to its own asset name.
-        case .livestockCattlePot:    return "01_dry_van_anim"        // fallback proxy
-        case .logTrailer:            return "03_flatbed_anim"        // fallback proxy
-        case .pneumaticTank:         return "10_tanker_gas_anim"     // fallback proxy
+        case .livestockCattlePot:    return "34_livestock_anim"          // dedicated SVG (2026-05-29)
+        case .logTrailer:            return "03_flatbed_anim"            // fallback proxy
+        case .pneumaticTank:         return "36_pneumatic_dry_bulk_anim" // dedicated SVG (2026-05-29)
         case .endDump:               return "03_flatbed_anim"        // fallback proxy
         case .waterTank:             return "09_tanker_liquid_anim"  // fallback proxy
         case .curtainSide:           return "01_dry_van_anim"        // fallback proxy
@@ -386,6 +386,7 @@ final class EquipmentAnimationCache {
 private struct EquipmentAnimationWebView: UIViewRepresentable {
     let svgString: String
     let colorScheme: ColorScheme
+    let country: String   // "US" | "MX" | "CA" — selects the placard/marking group
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -441,6 +442,12 @@ private struct EquipmentAnimationWebView: UIViewRepresentable {
             display: block;
             width: 100%; height: 100%;
           }
+          /* Country placard selector — the equipment SVGs carry
+             .country-US / .country-MX / .country-CA marking groups
+             (DOT·PHMSA / SCT·NOM / TDG). Show only the operating
+             country's group; pure CSS so it works with JS disabled. */
+          .country-US, .country-MX, .country-CA { display: none !important; }
+          .country-\(country) { display: inline !important; }
         </style>
         </head><body>
         \(svgString)
@@ -465,6 +472,10 @@ struct EquipmentAnimation: View {
     let equipment: EquipmentKind
     let cargo: CargoKind
     let weightUnit: String
+    /// Operating country ("US" | "MX" | "CA") of the load's jurisdiction —
+    /// selects which placard/marking group the SVG shows (DOT·PHMSA /
+    /// SCT·NOM / TDG). Defaults to US.
+    var operatingCountry: String = "US"
 
     var tankerHose: String      = ""
     var isHazmat: Bool          = false
@@ -606,7 +617,7 @@ struct EquipmentAnimation: View {
     @ViewBuilder
     private var content: some View {
         if let svg = EquipmentAnimationCache.shared.svg(for: equipment) {
-            EquipmentAnimationWebView(svgString: svg, colorScheme: colorScheme)
+            EquipmentAnimationWebView(svgString: svg, colorScheme: colorScheme, country: operatingCountry)
                 .padding(2)
         } else {
             // Honest fallback — never a fabricated silhouette.
