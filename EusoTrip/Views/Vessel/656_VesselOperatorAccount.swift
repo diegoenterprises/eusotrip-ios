@@ -71,6 +71,7 @@ private struct VesselOperatorAccountBody: View {
     @State private var voiceOn = true
     @State private var loading = true
     @State private var loadError: String? = nil
+    @State private var saveError: String? = nil
 
     private var displayName: String {
         let n = me?.name?.trimmingCharacters(in: .whitespaces) ?? ""
@@ -101,6 +102,10 @@ private struct VesselOperatorAccountBody: View {
         }
         .task { await load() }
         .refreshable { await load() }
+        .alert("Settings", isPresented: Binding(
+            get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
+            Button("OK", role: .cancel) { saveError = nil }
+        } message: { Text(saveError ?? "") }
     }
 
     private var header: some View {
@@ -223,10 +228,24 @@ private struct VesselOperatorAccountBody: View {
     }
 
     private func savePref(_ key: String, _ value: Bool) async {
-        struct PrefIn: Encodable { let key: String; let value: Bool }
-        struct Empty656: Decodable {}
-        let _: Empty656? = try? await EusoTripAPI.shared.mutation(
-            "users.updateProfile", input: PrefIn(key: key, value: value))
+        // See §6 FIX 3 — re-pointed from users.updateProfile (which silently
+        // dropped {key,value}) to the real users.updateNotificationPreferences.
+        struct PrefIn: Encodable { let pushNotifications: Bool }
+        struct Out: Decodable { let success: Bool? }
+        guard key == "notifications" else { return }
+        do {
+            let out: Out = try await EusoTripAPI.shared.mutation(
+                "users.updateNotificationPreferences",
+                input: PrefIn(pushNotifications: value))
+            if out.success != true {
+                notificationsOn = !value
+                saveError = "Couldn't save notification preference."
+            }
+        } catch {
+            notificationsOn = !value
+            saveError = (error as? EusoTripAPIError)?.errorDescription
+                ?? "Couldn't save notification preference."
+        }
     }
 }
 
