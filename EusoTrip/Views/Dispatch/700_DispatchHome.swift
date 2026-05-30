@@ -110,20 +110,48 @@ private struct DispatchHomeBody: View {
                 }
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            // SVG 400 margin rhythm — 20pt content gutter (Space.s5) so the
+            // hero, KPI strip, and widgets breathe at the wireframe's cadence
+            // instead of the prior cramped 14pt.
+            .padding(.horizontal, Space.s5).padding(.top, Space.s3)
         }
         .task { await load() }
         .refreshable { await load() }
     }
 
+    // SVG 400 Dispatcher Home — bespoke eyebrow row matching the DriverHome
+    // idiom: a gradient "✦ DISPATCHER · DESK · LIVE" chip on the left, a
+    // tertiary live-context caps string on the right (active · pending ·
+    // expiring, pulled from the live KPI when loaded), then the display
+    // greeting beneath. The sparkle glyph is the SVG's defining header motif
+    // (used exactly once per surface, §4.3 budget).
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: "rectangle.split.3x1.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text("DISPATCH · HOME").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack {
+                Text("✦ DISPATCHER · DESK · LIVE")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(LinearGradient.primary)
+                Spacer(minLength: Space.s2)
+                Text(headerContextCaps)
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
-            Text("Dispatch board").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            Text("Dispatch board")
+                .font(.system(size: 34, weight: .bold))
+                .tracking(-0.6)
+                .foregroundStyle(LinearGradient.diagonal)
         }
+    }
+
+    /// Right-rail live-context caps string for the eyebrow row. Mirrors the
+    /// SVG's "14 ACTIVE · 8 PENDING · 4 EXPIRING" idiom but sourced from the
+    /// live KPI when present; a neutral status caps line otherwise (no
+    /// fabricated counts before the backend resolves).
+    private var headerContextCaps: String {
+        guard let k = kpi else { return "LIVE · DISPATCH DESK" }
+        return "\(k.activeLoads) ACTIVE · \(k.openExceptions) EXCEPTIONS · \(k.lateArrivalsToday) LATE"
     }
 
     private func kpiHero(_ k: DispatchKPI) -> some View {
@@ -135,16 +163,30 @@ private struct DispatchHomeBody: View {
                 Text("UTIL \(k.avgUtilizationPct ?? 0)%").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 3).background(.white.opacity(0.18)).clipShape(Capsule())
             }
         }
-        .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Space.s5).frame(maxWidth: .infinity, alignment: .leading)
         .background(LinearGradient.diagonal)
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        // Bespoke lift — paired brand-tinted glow (blue biased left, magenta
+        // biased right) so the gradient KPI hero reads as the elevated
+        // feature surface the SVG's cardRim treatment implies, instead of a
+        // flat gradient block. Mirrors the EusoCard / ActiveCard glow stack.
+        .shadow(color: Brand.blue.opacity(0.28), radius: 14, x: -5, y: 4)
+        .shadow(color: Brand.magenta.opacity(0.28), radius: 14, x: 5, y: 4)
     }
 
     private func statsGrid(_ k: DispatchKPI) -> some View {
-        HStack(spacing: Space.s2) {
-            LifecycleStatTile(label: "ACTIVE LOADS", value: "\(k.activeLoads)", icon: "shippingbox")
-            LifecycleStatTile(label: "EXCEPTIONS", value: "\(k.openExceptions)", icon: "exclamationmark.triangle", danger: k.openExceptions > 0)
-            LifecycleStatTile(label: "LATE TODAY", value: "\(k.lateArrivalsToday)", icon: "clock", danger: k.lateArrivalsToday > 0)
+        // SVG 400 — labeled KPI strip. A tertiary caps section eyebrow above
+        // the 3-up tile row gives the strip the SVG's titled-region rhythm
+        // without altering the live tiles below.
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("FLEET PULSE")
+                .font(EType.micro).tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+            HStack(spacing: Space.s2) {
+                LifecycleStatTile(label: "ACTIVE LOADS", value: "\(k.activeLoads)", icon: "shippingbox")
+                LifecycleStatTile(label: "EXCEPTIONS", value: "\(k.openExceptions)", icon: "exclamationmark.triangle", danger: k.openExceptions > 0)
+                LifecycleStatTile(label: "LATE TODAY", value: "\(k.lateArrivalsToday)", icon: "clock", danger: k.lateArrivalsToday > 0)
+            }
         }
     }
 
@@ -217,8 +259,8 @@ private struct DispatchHomeBody: View {
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("EXCEPTIONS LIST")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                    .foregroundStyle(palette.textPrimary)
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
                 Spacer()
                 if !allExceptions.isEmpty {
                     Text("\(allExceptions.count)")
@@ -231,10 +273,12 @@ private struct DispatchHomeBody: View {
             if loading {
                 VStack(spacing: Space.s2) {
                     ForEach(0..<3, id: \.self) { _ in
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .fill(palette.bgCardSoft).frame(height: 56)
-                            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                                        .strokeBorder(palette.borderFaint))
+                        // Skeleton rows carry the bespoke iridescent rim
+                        // (whisper) so the loading state reads as the same
+                        // card family as the resolved exception rows.
+                        Color.clear
+                            .frame(height: 56)
+                            .eusoRow(radius: Radius.md)
                     }
                 }
             } else if allExceptions.isEmpty {
@@ -276,9 +320,11 @@ private struct DispatchHomeBody: View {
             }
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        // Migrated flat (bgCard + strokeBorder + clipShape) exception row to
+        // the bespoke EusoCard surface (iridescent blue→magenta rim, whisper
+        // intensity so nested rows don't compound glow halos) — matches the
+        // SVG's iridescent-rim card language.
+        .eusoRow(radius: Radius.md)
     }
 
     private func load() async {

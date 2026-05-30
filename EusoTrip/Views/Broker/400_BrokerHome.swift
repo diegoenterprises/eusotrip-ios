@@ -140,12 +140,7 @@ struct BrokerHome: View {
             }
             .padding(.horizontal, Space.s4)
             .padding(.vertical, 12)
-            .background(palette.bgCard)
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .strokeBorder(LinearGradient.diagonal.opacity(0.4))
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .eusoCard(radius: Radius.lg)
         }
         .buttonStyle(.plain)
     }
@@ -177,12 +172,7 @@ struct BrokerHome: View {
             }
             .padding(.horizontal, Space.s4)
             .padding(.vertical, 12)
-            .background(palette.bgCard)
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .strokeBorder(LinearGradient.diagonal.opacity(0.4))
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .eusoCard(radius: Radius.lg)
         }
         .buttonStyle(.plain)
     }
@@ -196,28 +186,55 @@ struct BrokerHome: View {
     }
 
     // MARK: - Header
+    //
+    // Bespoke header matching the DriverHome (010) idiom: a gradient
+    // eyebrow row ("✦ BROKER · DASHBOARD" chip + a right-rail caps
+    // time-of-day · context line), then the identity row (briefcase
+    // glyph + gradient greeting + tender/awarded subhead). The eyebrow
+    // is the SVG's defining header motif — sparkle glyph used exactly
+    // once per surface per §4.3 budget. Every prior element (glyph,
+    // headline, subhead) is preserved; only the chrome is elevated.
 
     private var header: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            // Bespoke eyebrow row — gradient role chip on the left,
+            // tertiary time-of-day · context caps on the right, so the
+            // broker home reads as one family with the Driver/Shipper
+            // homes.
+            HStack {
+                Text("✦ BROKER · DASHBOARD")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(LinearGradient.primary)
+                Spacer(minLength: Space.s2)
+                Text(eyebrowContext.uppercased())
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+
+            headerIdentityRow
+        }
+        .padding(.top, 4)
+    }
+
+    /// Identity row — briefcase glyph + gradient greeting + tender/
+    /// awarded subhead. Split out of `header` so the bespoke eyebrow can
+    /// sit above it without inflating a single view literal past the
+    /// type-checker's tractable budget.
+    private var headerIdentityRow: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "briefcase.fill")
                 .font(.system(size: 18, weight: .heavy))
                 .foregroundStyle(LinearGradient.diagonal)
                 .frame(width: 36, height: 36)
-                .background(palette.bgCard)
-                .overlay(Circle().strokeBorder(palette.borderFaint))
-                .clipShape(Circle())
+                .eusoCard(radius: Radius.pill, intensity: .whisper)
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 9, weight: .heavy))
-                        .foregroundStyle(LinearGradient.diagonal)
-                    Text("BROKER · HOME")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                        .foregroundStyle(LinearGradient.diagonal)
-                }
                 Text(headline)
-                    .font(.system(size: 22, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary)
+                    .font(.system(size: 26, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(2)
                 Text(subhead)
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
@@ -225,7 +242,27 @@ struct BrokerHome: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.top, 4)
+    }
+
+    /// Right-rail eyebrow caption. Pairs the live time-of-day with the
+    /// open-tender count once the dashboard resolves, so the eyebrow
+    /// carries real context rather than static chrome.
+    private var eyebrowContext: String {
+        let tod = timeOfDayGreeting
+        if let outer = dashboard.state.value, let s = outer {
+            return "\(tod) · \(s.openTenders) open"
+        }
+        return tod
+    }
+
+    private var timeOfDayGreeting: String {
+        let h = Calendar.current.component(.hour, from: Date())
+        switch h {
+        case 5..<12:  return "Good morning"
+        case 12..<17: return "Good afternoon"
+        case 17..<22: return "Good evening"
+        default:      return "Good night"
+        }
     }
 
     /// Identity-aware headline. Falls back to the role label so the
@@ -316,12 +353,7 @@ struct BrokerHome: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(LinearGradient.diagonal.opacity(0.4), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .eusoCard(radius: Radius.lg, intensity: .feature)
     }
 
     private func dollars(_ v: Double) -> String {
@@ -395,12 +427,7 @@ struct BrokerHome: View {
                 .overlay(Capsule().strokeBorder(severityColor.opacity(0.5), lineWidth: 1))
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .eusoRow(radius: Radius.md)
     }
 
     // MARK: - Open tenders
@@ -491,12 +518,7 @@ struct BrokerHome: View {
             }
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .eusoRow(radius: Radius.md)
     }
 
     // MARK: - Recent activity
@@ -562,12 +584,7 @@ struct BrokerHome: View {
             }
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .eusoRow(radius: Radius.md)
     }
 
     // MARK: - Shared widgets

@@ -145,28 +145,59 @@ struct EscortHome: View {
     }
 
     // MARK: - Header
-
+    //
+    // Bespoke hero header matching the 010_DriverHome idiom (the gold
+    // standard merged in the bespoke-homes lane): a gradient eyebrow
+    // role-chip row ("✦ ESCORT · DASHBOARD") balanced by a tertiary
+    // context caps line on the right, then a heavy display greeting in
+    // the brand diagonal gradient and a tertiary sub-context line. The
+    // sparkle glyph rides the eyebrow exactly once per surface (§4.3
+    // budget). Split into `eyebrowRow` + `headerRow` so the new chip can
+    // sit above the greeting without exploding the type-check budget on
+    // one giant view literal.
     private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            eyebrowRow
+            headerRow
+        }
+        .padding(.top, Space.s1)
+    }
+
+    /// Gradient role chip + tertiary live-context caps — the SVG-family
+    /// header motif shared with Driver-010 / Shipper-200 so every role
+    /// home reads as one family.
+    private var eyebrowRow: some View {
+        HStack {
+            Text("✦ ESCORT · DASHBOARD")
+                .font(EType.micro).tracking(1.0)
+                .foregroundStyle(LinearGradient.primary)
+            Spacer(minLength: Space.s2)
+            Text(contextCaps)
+                .font(EType.micro).tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+    }
+
+    /// Identity gem + two-line greeting/sub. The gem keeps the original
+    /// shield glyph but lifts onto the bespoke EusoCard surface; the
+    /// greeting moves to the brand diagonal gradient so the hero reads
+    /// EusoTrip-native in both Night and Afternoon.
+    private var headerRow: some View {
+        HStack(alignment: .top, spacing: Space.s3) {
             Image(systemName: "shield.lefthalf.filled")
                 .font(.system(size: 18, weight: .heavy))
                 .foregroundStyle(LinearGradient.diagonal)
-                .frame(width: 36, height: 36)
-                .background(palette.bgCard)
-                .overlay(Circle().strokeBorder(palette.borderFaint))
-                .clipShape(Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 9, weight: .heavy))
-                        .foregroundStyle(LinearGradient.diagonal)
-                    Text("ESCORT · HOME")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                        .foregroundStyle(LinearGradient.diagonal)
-                }
+                .frame(width: 40, height: 40)
+                .eusoCard(radius: Radius.md, intensity: .whisper)
+            VStack(alignment: .leading, spacing: 3) {
                 Text(headline)
-                    .font(.system(size: 22, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary)
+                    .font(.system(size: 26, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(subhead)
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
@@ -174,7 +205,17 @@ struct EscortHome: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.top, 4)
+    }
+
+    /// Right-rail context caps line. Surfaces the live assignment count
+    /// when the dashboard has resolved, falling back to the role label
+    /// so the eyebrow never reads as a placeholder.
+    private var contextCaps: String {
+        if let outer = dashboard.state.value, let s = outer {
+            let live = s.activeAssignments
+            return "ON THE CORRIDOR · \(live) LIVE"
+        }
+        return "ON THE CORRIDOR"
     }
 
     /// Identity-aware headline. Falls back to the role label so the
@@ -231,10 +272,7 @@ struct EscortHome: View {
                 RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                     .fill(palette.bgCardSoft)
                     .frame(height: 72)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                            .strokeBorder(palette.borderFaint)
-                    )
+                    .eusoCard(radius: Radius.lg, intensity: .whisper)
             }
         }
     }
@@ -265,12 +303,7 @@ struct EscortHome: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(LinearGradient.diagonal.opacity(0.4), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .eusoCard(radius: Radius.lg)
     }
 
     private func dollars(_ v: Double) -> String {
@@ -364,12 +397,7 @@ struct EscortHome: View {
                 .overlay(Capsule().strokeBorder(severityColor.opacity(0.5), lineWidth: 1))
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .eusoRow(radius: Radius.md)
     }
 
     // MARK: - Active assignments
@@ -475,12 +503,7 @@ struct EscortHome: View {
             }
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .eusoRow(radius: Radius.md)
     }
 
     // MARK: - Recent activity
@@ -546,12 +569,7 @@ struct EscortHome: View {
             }
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .eusoRow(radius: Radius.md)
     }
 
     // MARK: - Shared widgets
@@ -562,10 +580,7 @@ struct EscortHome: View {
                 RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                     .fill(palette.bgCardSoft)
                     .frame(height: 56)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(palette.borderFaint)
-                    )
+                    .eusoRow(radius: Radius.md)
             }
         }
     }

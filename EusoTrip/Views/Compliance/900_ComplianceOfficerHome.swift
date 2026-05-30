@@ -78,7 +78,7 @@ private struct ComplianceHomeBody: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
+            VStack(alignment: .leading, spacing: Space.s5) {
                 header
                 // Canonical lead: morning brief → weather. Driver 010 is the
                 // baseline; every role home opens with these two cards.
@@ -97,35 +97,65 @@ private struct ComplianceHomeBody: View {
                 }
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .padding(.horizontal, 14).padding(.top, Space.s4)
         }
         .task { await load() }
         .refreshable { await load() }
     }
 
+    // Bespoke hero eyebrow — gradient role chip ("✦ COMPLIANCE · DASHBOARD")
+    // on the left, a tertiary context-caps line on the right, then the
+    // greeting title underneath as a brand-gradient hero. Matches the
+    // DriverHome (010) idiom so every role home reads as one family: the
+    // sparkle glyph is the SVG's defining header motif (§4.3, used once
+    // per surface), the title rides LinearGradient.diagonal so it reads
+    // EusoTrip-native in both Night and Afternoon.
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: "checkmark.shield.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text("COMPLIANCE · HOME").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.shield.fill")
+                        .font(.system(size: 9, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text("✦ COMPLIANCE · DASHBOARD")
+                        .font(EType.micro).tracking(1.0)
+                        .foregroundStyle(LinearGradient.diagonal)
+                }
+                Spacer(minLength: Space.s2)
+                Text("FLEET · OVERSIGHT")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
-            Text("Fleet compliance").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            Text("Fleet compliance")
+                .font(.system(size: 30, weight: .heavy))
+                .foregroundStyle(LinearGradient.diagonal)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
     }
 
+    // Hero overall-score card — full brand-gradient fill (the one surface
+    // on the home that earns the saturated gradient, like the active-load
+    // amount on DriverHome). Elevated with a paired blue/magenta glow lift
+    // (matching ActiveCard) + Radius.lg so it reads as a floating hero
+    // rather than a flat gradient block.
     private func hero(_ d: ComplianceDash) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("OVERALL SCORE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(.white.opacity(0.85))
-            Text("\(d.overallScore ?? d.complianceScore ?? 0)").font(.system(size: 36, weight: .heavy)).foregroundStyle(.white).monospacedDigit()
+            Text("\(d.overallScore ?? d.complianceScore ?? 0)").font(.system(size: 44, weight: .heavy)).foregroundStyle(.white).monospacedDigit()
             HStack(spacing: 8) {
                 Text("COMPLIANT \(d.compliant ?? 0)").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 3).background(.white.opacity(0.18)).clipShape(Capsule())
                 Text("EXPIRING \(d.expiring ?? d.expiringDocs ?? 0)").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 3).background(.white.opacity(0.18)).clipShape(Capsule())
                 Text("TREND \((d.trend ?? "—").uppercased())").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 3).background(.white.opacity(0.18)).clipShape(Capsule())
             }
         }
-        .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Space.s5).frame(maxWidth: .infinity, alignment: .leading)
         .background(LinearGradient.diagonal)
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .shadow(color: Brand.blue.opacity(0.28), radius: 14, x: -4, y: 4)
+        .shadow(color: Brand.magenta.opacity(0.28), radius: 14, x: 4, y: 4)
     }
 
     private func statsGrid(_ d: ComplianceDash) -> some View {
@@ -167,8 +197,8 @@ private struct ComplianceHomeBody: View {
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(Brand.danger)
                 Text("VIOLATIONS")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                    .foregroundStyle(palette.textPrimary)
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(LinearGradient.diagonal)
                 Spacer()
             }
             if loading {
@@ -199,8 +229,8 @@ private struct ComplianceHomeBody: View {
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("DRIVER COMPLIANCE")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                    .foregroundStyle(palette.textPrimary)
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(LinearGradient.diagonal)
                 Spacer()
                 if !driverCompliance.isEmpty {
                     Text("\(driverCompliance.count)")
@@ -211,10 +241,9 @@ private struct ComplianceHomeBody: View {
             if loading {
                 VStack(spacing: Space.s2) {
                     ForEach(0..<3, id: \.self) { _ in
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .fill(palette.bgCardSoft).frame(height: 52)
-                            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                                        .strokeBorder(palette.borderFaint))
+                        Color.clear
+                            .frame(height: 52)
+                            .eusoRow(radius: Radius.md)
                     }
                 }
             } else if driverCompliance.isEmpty {
@@ -262,9 +291,11 @@ private struct ComplianceHomeBody: View {
                 .overlay(Capsule().strokeBorder(statusColor.opacity(0.5), lineWidth: 1))
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        // Bespoke nested row surface — iridescent blue→magenta hairline
+        // (whisper intensity) instead of the flat palette.bgCard +
+        // borderFaint box, so each driver row reads as a first-class
+        // card on the home, matching the SVG card language.
+        .eusoRow(radius: Radius.md)
     }
 
     private func load() async {

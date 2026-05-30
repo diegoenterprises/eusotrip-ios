@@ -150,28 +150,58 @@ struct TerminalHome: View {
     }
 
     // MARK: - Header
+    //
+    // Bespoke hero — matches the gold-standard Driver-010 idiom: a
+    // gradient eyebrow chip ("✦ TERMINAL · DASHBOARD") with the
+    // time-of-day · context caps trailing on the right (per the SVG
+    // header motif, sparkle glyph used exactly once per surface), then
+    // the identity headline rendered in the brand gradient so the
+    // role homes read as one family in both Night and Afternoon.
+    // Every prior element is preserved — building glyph, headline,
+    // subhead — only the styling rhythm is elevated.
 
     private var header: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            // Bespoke eyebrow row — gradient role chip + tertiary
+            // time-of-day · live-count, mirroring the Dark-SVG header
+            // and the Driver-010 / Shipper-200 idiom.
+            HStack {
+                Text("✦ TERMINAL · DASHBOARD")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(LinearGradient.primary)
+                Spacer(minLength: Space.s2)
+                Text(eyebrowContext)
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+
+            headerRow
+        }
+        .padding(.top, 4)
+    }
+
+    /// Greeting + building glyph row. Split out of `header` so the new
+    /// bespoke eyebrow can sit above it without exploding the type-check
+    /// budget on one giant view literal (mirrors DriverHome's headerRow).
+    private var headerRow: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "building.2.fill")
                 .font(.system(size: 18, weight: .heavy))
                 .foregroundStyle(LinearGradient.diagonal)
-                .frame(width: 36, height: 36)
-                .background(palette.bgCard)
-                .overlay(Circle().strokeBorder(palette.borderFaint))
+                .frame(width: 40, height: 40)
+                .background(
+                    Circle().fill(LinearGradient.diagonal.opacity(0.12))
+                )
+                .overlay(Circle().strokeBorder(LinearGradient.diagonal.opacity(0.4), lineWidth: 1))
                 .clipShape(Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 9, weight: .heavy))
-                        .foregroundStyle(LinearGradient.diagonal)
-                    Text("TERMINAL · HOME")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                        .foregroundStyle(LinearGradient.diagonal)
-                }
+            VStack(alignment: .leading, spacing: 3) {
                 Text(headline)
-                    .font(.system(size: 22, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary)
+                    .font(.system(size: 24, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
                 Text(subhead)
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
@@ -179,7 +209,26 @@ struct TerminalHome: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.top, 4)
+    }
+
+    /// Time-of-day greeting (caps) paired with the live in-yard count so
+    /// the eyebrow right rail reads as live context, never a placeholder.
+    private var eyebrowContext: String {
+        let tod = timeOfDayGreeting.uppercased()
+        if let outer = dashboard.state.value, let s = outer {
+            return "\(tod) · \(s.activeMovements) IN YARD"
+        }
+        return "\(tod) · TERMINAL OPS"
+    }
+
+    private var timeOfDayGreeting: String {
+        let h = Calendar.current.component(.hour, from: Date())
+        switch h {
+        case 5..<12:  return "Good morning"
+        case 12..<17: return "Good afternoon"
+        case 17..<22: return "Good evening"
+        default:      return "Good night"
+        }
     }
 
     /// Identity-aware headline. Falls back to the role label so the
@@ -298,12 +347,10 @@ struct TerminalHome: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(LinearGradient.diagonal.opacity(0.4), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        // Bespoke iridescent-rim + glow surface — replaces the flat
+        // bgCard + strokeBorder + clipShape stack so the KPI tiles read
+        // as first-class cards matching the SVG card language.
+        .eusoCard(radius: Radius.lg)
     }
 
     /// Format dwell hours as a one-decimal label. Returns "—" for
@@ -384,12 +431,9 @@ struct TerminalHome: View {
                 .overlay(Capsule().strokeBorder(severityColor.opacity(0.5), lineWidth: 1))
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        // Bespoke nested-row surface — iridescent whisper rim, no
+        // compounding glow inside the already-carded section.
+        .eusoRow(radius: Radius.md)
     }
 
     // MARK: - Active movements
@@ -496,12 +540,8 @@ struct TerminalHome: View {
             }
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        // Bespoke nested-row surface — iridescent whisper rim.
+        .eusoRow(radius: Radius.md)
     }
 
     // MARK: - Recent activity
@@ -567,12 +607,8 @@ struct TerminalHome: View {
             }
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        // Bespoke nested-row surface — iridescent whisper rim.
+        .eusoRow(radius: Radius.md)
     }
 
     // MARK: - Shared widgets

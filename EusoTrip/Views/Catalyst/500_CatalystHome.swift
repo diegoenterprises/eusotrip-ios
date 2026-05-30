@@ -237,10 +237,10 @@ struct CatalystHome: View {
                     .foregroundStyle(palette.textTertiary)
             }
             .padding(Space.s3)
-            .background(palette.bgCard)
-            .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                        .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            // Bespoke EusoCard surface — iridescent outline + glow so the
+            // enable-location CTA reads as a first-class card, matching
+            // the SVG card language (was flat bgCard + strokeBorder).
+            .eusoCard(radius: Radius.lg)
         }
         .buttonStyle(.plain)
     }
@@ -292,37 +292,65 @@ struct CatalystHome: View {
 
     // MARK: - Header
 
+    // SVG 300 Catalyst Home — bespoke eyebrow row: gradient
+    // "✦ CATALYST · DASHBOARD" chip on the left, tertiary context caps
+    // on the right (matching the Driver-010 idiom + the Dark-SVG header
+    // motif where the sparkle glyph appears exactly once per surface).
+    // The eyebrow sits above the avatar + display greeting so the
+    // Catalyst home reads as one family with the other role homes.
     private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "bolt.circle.fill")
-                .font(.system(size: 18, weight: .heavy))
-                .foregroundStyle(LinearGradient.diagonal)
-                .frame(width: 36, height: 36)
-                .background(palette.bgCard)
-                .overlay(Circle().strokeBorder(palette.borderFaint))
-                .clipShape(Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 9, weight: .heavy))
-                        .foregroundStyle(LinearGradient.diagonal)
-                    Text("CATALYST · HOME")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                        .foregroundStyle(LinearGradient.diagonal)
-                        .lineLimit(1).minimumScaleFactor(0.7)
-                }
-                Text(headline)
-                    .font(.system(size: 22, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary)
-                    .lineLimit(2).minimumScaleFactor(0.75)
-                Text(subhead)
-                    .font(EType.mono(.micro)).tracking(0.3)
-                    .foregroundStyle(palette.textSecondary)
-                    .lineLimit(2)
+        VStack(alignment: .leading, spacing: Space.s2) {
+            // Bespoke eyebrow — gradient role chip + tertiary context.
+            HStack(spacing: Space.s2) {
+                Text("✦ CATALYST · DASHBOARD")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(LinearGradient.primary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                Spacer(minLength: Space.s2)
+                Text(eyebrowContext)
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
-            Spacer(minLength: 0)
+
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "bolt.circle.fill")
+                    .font(.system(size: 18, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .frame(width: 36, height: 36)
+                    .background(palette.bgCard)
+                    .overlay(Circle().strokeBorder(palette.borderFaint))
+                    .clipShape(Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    // Display greeting — gradient name reads EusoTrip-native
+                    // in both Night and Afternoon (matches the SVG's 34pt
+                    // "Hey, Michael" hero line and the Driver-010 idiom).
+                    Text(headline)
+                        .font(.system(size: 26, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                        .lineLimit(2).minimumScaleFactor(0.75)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(subhead)
+                        .font(EType.mono(.micro)).tracking(0.3)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+            }
         }
         .padding(.top, 4)
+    }
+
+    /// Right-side eyebrow context caps. Mirrors the SVG's
+    /// "A+ · 1 TRUCK · 38 LOADS / 90D" slot using the live dashboard
+    /// envelope when present, falling back to the role label so the
+    /// header never reads as a placeholder.
+    private var eyebrowContext: String {
+        if let outer = dashboard.state.value, let s = outer {
+            return "\(s.activeMatches) LIVE · \(s.matchedThisWeek) MATCHED · 7D"
+        }
+        return "OWNER-OP"
     }
 
     /// Identity-aware headline. Falls back to the role label so the
@@ -429,12 +457,10 @@ struct CatalystHome: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(LinearGradient.diagonal.opacity(0.4), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        // Bespoke EusoCard surface — iridescent rim + glow on the KPI
+        // tiles (was flat bgCard + diagonal stroke), matching the SVG's
+        // rounded metric-tile language.
+        .eusoCard(radius: Radius.lg)
     }
 
     private func dollars(_ v: Double) -> String {
@@ -521,12 +547,9 @@ struct CatalystHome: View {
                 .overlay(Capsule().strokeBorder(severityColor.opacity(0.5), lineWidth: 1))
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        // Bespoke nested-row surface — whisper-intensity iridescent rim
+        // (was flat bgCard + borderFaint).
+        .eusoRow(radius: Radius.md)
     }
 
     // MARK: - Active matches
@@ -652,12 +675,9 @@ struct CatalystHome: View {
             }
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        // Bespoke nested-row surface — whisper-intensity iridescent rim
+        // (was flat bgCard + borderFaint).
+        .eusoRow(radius: Radius.md)
     }
 
     // MARK: - Recent activity
@@ -730,12 +750,9 @@ struct CatalystHome: View {
             }
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        // Bespoke nested-row surface — whisper-intensity iridescent rim
+        // (was flat bgCard + borderFaint).
+        .eusoRow(radius: Radius.md)
     }
 
     // MARK: - Shared widgets
