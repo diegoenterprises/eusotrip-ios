@@ -893,6 +893,15 @@ final class EusoTripAPI: ObservableObject {
     /// 108 MeLoadBoard (driver-facing browse + bid entry).
     lazy var loadBoard: LoadBoardAPI = LoadBoardAPI(api: self)
 
+    /// `vesselShipments.*` ocean-track surface — live AIS position, historical
+    /// track polyline, scheduled port calls, per-container geofence positions,
+    /// and the INTTRA cross-carrier ocean-shipment track. Backs 003 Vessel
+    /// Live Tracking (great-circle map). MCP-verified procs in
+    /// `frontend/server/routers/vesselShipments.ts`
+    /// (liveVesselPosition:1032, getVesselTrack:1085, getVesselPortCalls:1060,
+    /// getContainerPositions:950, liveTrackOceanShipment:1132).
+    lazy var vesselTrack: VesselTrackAPI = VesselTrackAPI(api: self)
+
     // MARK: Low-level tRPC invocation
 
     /// GET /api/trpc/<path>?input=<url-encoded-JSON>
@@ -19206,5 +19215,188 @@ struct CarrierVetAgentAPI {
     func getRecentVettings(companyId: Int, limit: Int = 10) async throws -> [CarrierVetHistoryItem] {
         try await api.query("carrierVetAgent.getRecentVettings",
                             input: GetRecentInput(companyId: companyId, limit: limit))
+    }
+}
+
+// MARK: - vesselShipmentsRouter (ocean live-track surface · 003)
+//
+// Mirrors the integration-powered procs in
+// `frontend/server/routers/vesselShipments.ts`:
+//
+//   • liveVesselPosition(imoNumber)        :1032 → VesselPosition | null
+//        (MarineTraffic/Kpler live AIS — lat/lng/heading/speed/eta/timestamp)
+//   • getVesselTrack(imoNumber)            :1085 → RoutePosition[] | null
+//        (MarineTraffic historical track — polyline for map plotting)
+//   • getVesselPortCalls(imoNumber,days)   :1060 → PortCall[] | null
+//        (MarineTraffic scheduled / historical port calls)
+//   • getContainerPositions(status?,limit) :950  → { containers, total }
+//        (per-box geofence rows; NEVER null — empty arrays on no-db)
+//   • liveTrackOceanShipment(referenceNumber):1132 → TrackingEvent[] | null
+//        (INTTRA/E2open cross-carrier ocean-shipment track events)
+//
+// Every integration proc `return null` on a caught error, so the live AIS /
+// track / port-call / INTTRA decoders are Optionals — the 003 ocean map
+// coalesces nil → [] (or falls back to the booking's authored origin/dest).
+// The decoders are typed VERBATIM to the service interfaces
+// (`MarineTrafficService.ts` VesselPosition/RoutePosition/PortCall and
+// `INTTRAService.ts` TrackingEvent). `shippingContainers` rows are loose
+// freeform JSON server-side, so `ContainerPosition` decodes the stable
+// subset (id/containerNumber/status/lat/lng/updatedAt) leniently.
+
+struct VesselTrackAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: Decoders (1:1 with the server service interfaces)
+
+    /// `MarineTrafficService.VesselPosition` — live AIS fix. The 003 AIS orb +
+    /// callout chip (speed / heading / coords) + ETA strip read off this.
+    struct VesselPosition: Decodable, Hashable {
+        let imoNumber: String?
+        let mmsi: String?
+        let lat: Double
+        let lng: Double
+        let heading: Double?
+        let speed: Double?
+        let course: Double?
+        let destination: String?
+        let eta: String?
+        let timestamp: String?
+        let status: String?
+        let draught: Double?
+        let navigationalStatus: String?
+    }
+
+    /// `MarineTrafficService.RoutePosition` — one historical AIS track vertex.
+    /// The ordered array is the great-circle source polyline (origin→current).
+    struct RoutePosition: Decodable, Hashable {
+        let lat: Double
+        let lng: Double
+        let speed: Double?
+        let heading: Double?
+        let course: Double?
+        let timestamp: String?
+        let status: String?
+
+        /// Projected into the canonical map data contract.
+        var coordinate: HereLatLng { HereLatLng(lat, lng) }
+    }
+
+    /// `MarineTrafficService.PortCall` — a scheduled / historical port call.
+    struct PortCall: Decodable, Hashable {
+        let portName: String?
+        let portId: String?
+        let unlocode: String?
+        let arrivalTime: String?
+        let departureTime: String?
+        let inPort: Bool?
+        let draught: Double?
+        let country: String?
+    }
+
+    /// `INTTRAService.TrackingEvent` — one cross-carrier ocean-track event
+    /// (the 003 "AIS EVENTS · EUSOTRIP NETWORK" feed rows).
+    struct TrackingEvent: Decodable, Hashable {
+        let eventType: String?
+        let eventDescription: String?
+        let location: String?
+        let timestamp: String?
+        let vessel: String?
+        let voyage: String?
+        let containerNumber: String?
+        let status: String?
+    }
+
+    /// One `shippingContainers` row projected to its map-relevant fields.
+    /// Decoded leniently — the server row is a wide freeform record and only
+    /// this stable subset is consumed by the per-container positions surface.
+    struct ContainerPosition: Decodable, Hashable {
+        let id: Int?
+        let containerNumber: String?
+        let status: String?
+        let currentLat: Double?
+        let currentLng: Double?
+        let updatedAt: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id
+            case containerNumber
+            case status
+            case currentLat, latitude, lat
+            case currentLng, longitude, lng
+            case updatedAt
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id = try c.decodeIfPresent(Int.self, forKey: .id)
+            containerNumber = try c.decodeIfPresent(String.self, forKey: .containerNumber)
+            status = try c.decodeIfPresent(String.self, forKey: .status)
+            currentLat = try c.decodeIfPresent(Double.self, forKey: .currentLat)
+                ?? c.decodeIfPresent(Double.self, forKey: .latitude)
+                ?? c.decodeIfPresent(Double.self, forKey: .lat)
+            currentLng = try c.decodeIfPresent(Double.self, forKey: .currentLng)
+                ?? c.decodeIfPresent(Double.self, forKey: .longitude)
+                ?? c.decodeIfPresent(Double.self, forKey: .lng)
+            updatedAt = try c.decodeIfPresent(String.self, forKey: .updatedAt)
+        }
+
+        /// nil unless the row carries a real geofence fix.
+        var coordinate: HereLatLng? {
+            guard let lat = currentLat, let lng = currentLng else { return nil }
+            return HereLatLng(lat, lng)
+        }
+    }
+
+    struct ContainerPositionsResult: Decodable {
+        let containers: [ContainerPosition]
+        let total: Int
+    }
+
+    // MARK: Inputs
+
+    private struct ImoInput: Encodable { let imoNumber: String }
+    private struct PortCallsInput: Encodable { let imoNumber: String; let days: Int }
+    private struct RefInput: Encodable { let referenceNumber: String }
+    private struct ContainerPositionsInput: Encodable {
+        let status: String?
+        let limit: Int
+    }
+
+    // MARK: Procedures
+
+    /// `vesselShipments.liveVesselPosition` — live AIS fix for the vessel orb,
+    /// callout chip (speed / heading / coords), and ETA. `nil` when the AIS
+    /// feed is unavailable (server returns `null` on a caught error).
+    func liveVesselPosition(imoNumber: String) async throws -> VesselPosition? {
+        try await api.query("vesselShipments.liveVesselPosition",
+                            input: ImoInput(imoNumber: imoNumber))
+    }
+
+    /// `vesselShipments.getVesselTrack` — historical AIS track vertices, the
+    /// origin→current source for the great-circle polyline. `nil` on error.
+    func getVesselTrack(imoNumber: String) async throws -> [RoutePosition]? {
+        try await api.query("vesselShipments.getVesselTrack",
+                            input: ImoInput(imoNumber: imoNumber))
+    }
+
+    /// `vesselShipments.getVesselPortCalls` — scheduled / historical port
+    /// calls (origin / destination pin enrichment). `nil` on error.
+    func getVesselPortCalls(imoNumber: String, days: Int = 30) async throws -> [PortCall]? {
+        try await api.query("vesselShipments.getVesselPortCalls",
+                            input: PortCallsInput(imoNumber: imoNumber, days: days))
+    }
+
+    /// `vesselShipments.liveTrackOceanShipment` — INTTRA/E2open cross-carrier
+    /// ocean-track events (the 003 AIS-EVENTS feed). `nil` on error.
+    func liveTrackOceanShipment(referenceNumber: String) async throws -> [TrackingEvent]? {
+        try await api.query("vesselShipments.liveTrackOceanShipment",
+                            input: RefInput(referenceNumber: referenceNumber))
+    }
+
+    /// `vesselShipments.getContainerPositions` — per-box geofence rows for the
+    /// "Per-container positions" surface. Never `null` (empty arrays on no-db).
+    func getContainerPositions(status: String? = nil, limit: Int = 100) async throws -> ContainerPositionsResult {
+        try await api.query("vesselShipments.getContainerPositions",
+                            input: ContainerPositionsInput(status: status, limit: limit))
     }
 }
