@@ -1258,6 +1258,18 @@ enum ScreenRegistry {
         list.append(.init(id: "380", title: "Catalyst · M-05 Competing Quote", role: .catalyst) { p in AnyView(CatalystM05CompetingQuoteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) })
         list.append(.init(id: "381", title: "Catalyst · M-05 Third Quote",   role: .catalyst) { p in AnyView(CatalystM05ThirdQuoteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) })
         list.append(.init(id: "382", title: "Catalyst · M-05 Awarded Aurora", role: .catalyst) { p in AnyView(CatalystM05AwardedAuroraScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) })
+        // 2026-05-29 — Catalyst growth band 391-398 (port wave 13).
+        // Bespoke ports of `03 Catalyst/Code/` canonical bricks, wired to real
+        // routers (detention, documentManagement, rateSheet) with honest // WIRE:
+        // markers where no iOS client method exists yet. Role-prefixed Cat391-Cat398 ids.
+        list.append(.init(id: "Cat391", title: "Catalyst · Detention Alerts",       role: .catalyst) { p in AnyView(CatalystDetentionAlertsScreen(theme: p)) })
+        list.append(.init(id: "Cat392", title: "Catalyst · Cargo Insurance",        role: .catalyst) { p in AnyView(CatalystCargoInsuranceScreen(theme: p)) })
+        list.append(.init(id: "Cat393", title: "Catalyst · Document Ingest",        role: .catalyst) { p in AnyView(CatalystDocumentIngestScreen(theme: p)) })
+        list.append(.init(id: "Cat394", title: "Catalyst · Factoring",             role: .catalyst) { p in AnyView(CatalystFactoringScreen(theme: p)) })
+        list.append(.init(id: "Cat395", title: "Catalyst · Fuel Surcharge Schedule", role: .catalyst) { p in AnyView(CatalystFuelSurchargeScheduleScreen(theme: p)) })
+        list.append(.init(id: "Cat396", title: "Catalyst · Lane Rate Sheet",        role: .catalyst) { p in AnyView(CatalystLaneRateSheetScreen(theme: p)) })
+        list.append(.init(id: "Cat397", title: "Catalyst · Carrier Tier",           role: .catalyst) { p in AnyView(CatalystCarrierTierScreen(theme: p)) })
+        list.append(.init(id: "Cat398", title: "Catalyst · Backhaul Optimizer",     role: .catalyst) { p in AnyView(CatalystBackhaulOptimizerScreen(theme: p)) })
         // 2026-04-27 — eusotrip-killers 134th firing
         // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
         // Second Catalyst-track brick lands in production. The Matches
