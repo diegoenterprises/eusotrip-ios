@@ -106,39 +106,57 @@ private struct RailEngineerHomeBody: View {
     // MARK: - Top bar
 
     private var topBar: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                HStack(spacing: 5) {
-                    Image(systemName: "tram.fill")
-                        .font(.system(size: 8, weight: .heavy))
-                        .foregroundStyle(LinearGradient.primary)
-                    Text("✦  RAIL ENGINEER · DASHBOARD")
-                        .font(EType.micro).tracking(1.0)
-                        .foregroundStyle(LinearGradient.primary)
-                }
-                Spacer()
-                if let n = dash?.activeShipments {
-                    Text("\(n) active")
-                        .font(EType.micro).tracking(0.8)
-                        .foregroundStyle(palette.textTertiary)
-                }
+        VStack(alignment: .leading, spacing: Space.s2) {
+            // Bespoke eyebrow row — gradient role chip on the left, caps
+            // live fleet stat on the right. Mirrors the 550 SVG header
+            // motif ("✦ RAIL ENGINEER · HOME" + "8 ACTIVE · 23 CARS")
+            // and the DriverHome idiom so every role home reads as one
+            // family. The sparkle glyph is the surface's single §4.3
+            // accent budget.
+            HStack(spacing: Space.s3) {
+                Text("✦ RAIL ENGINEER · DASHBOARD")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(LinearGradient.primary)
+                Spacer(minLength: Space.s2)
+                Text(fleetEyebrowStat)
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
+
             HStack(alignment: .firstTextBaseline) {
+                // Brand-gradient greeting reads as EusoTrip-native in both
+                // Night and Afternoon, matching DriverHome's hero name and
+                // the SVG's display headline rhythm (tight tracking).
                 Text(headline)
                     .font(EType.display)
-                    .foregroundStyle(palette.textPrimary)
+                    .tracking(-0.6)
+                    .foregroundStyle(LinearGradient.diagonal)
                     .lineLimit(2).minimumScaleFactor(0.65)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
             }
-            .padding(.top, Space.s2)
             Text("Rail operations · in-yard consist + crew HOS")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
-                .padding(.top, 2)
         }
         .padding(.horizontal, Space.s5)
         .padding(.top, Space.s5)
         .padding(.bottom, Space.s3)
+    }
+
+    /// Caps fleet stat shown at the top-right of the eyebrow row. Mirrors
+    /// the SVG's "8 ACTIVE · 23 CARS" — derived from the live dashboard so
+    /// it stays honest (no fabricated values). Falls through to just the
+    /// active count, then a neutral label while loading.
+    private var fleetEyebrowStat: String {
+        guard let d = dash else { return "RAIL FLEET" }
+        let active = d.activeShipments ?? 0
+        if let cars = d.carsInTransit {
+            return "\(active) ACTIVE · \(cars) CARS"
+        }
+        return "\(active) ACTIVE"
     }
 
     private var headline: String {
@@ -247,6 +265,11 @@ private struct RailEngineerHomeBody: View {
                                subtitle: "Active rail shipments will appear here.")
             }
         }
+        // Bespoke EusoCard surface — iridescent blue→magenta rim + glow,
+        // matching the SVG card language and the DriverHome widget idiom
+        // (replaces the flat, surface-less VStack).
+        .padding(Space.s4)
+        .eusoCard(radius: Radius.lg)
     }
 
     // MARK: - Compliance widget
@@ -270,6 +293,10 @@ private struct RailEngineerHomeBody: View {
                                subtitle: "Rail compliance status will appear here.")
             }
         }
+        // Bespoke EusoCard surface — matches the shipments widget so the
+        // secondary-widget zone reads as a stack of iridescent-rimmed cards.
+        .padding(Space.s4)
+        .eusoCard(radius: Radius.lg)
     }
 
     // MARK: - Crew widget
@@ -292,6 +319,10 @@ private struct RailEngineerHomeBody: View {
                                subtitle: "Crew hours of service will appear here.")
             }
         }
+        // Bespoke EusoCard surface — keeps the crew HOS widget in the same
+        // iridescent-rim card family as shipments + compliance.
+        .padding(Space.s4)
+        .eusoCard(radius: Radius.lg)
     }
 
     // MARK: - Widget header helper

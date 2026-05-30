@@ -107,26 +107,34 @@ private struct VesselOperatorHomeBody: View {
 
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // Bespoke eyebrow row — gradient role chip (sparkle glyph used
+            // exactly once per surface, §4.3) + right-rail TEU/active caps
+            // context. Mirrors the SVG-650 header motif and the Driver-010
+            // idiom so every role home reads as one family.
             HStack {
                 HStack(spacing: 5) {
                     Image(systemName: "ferry.fill")
-                        .font(.system(size: 8, weight: .heavy))
+                        .font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.primary)
-                    Text("✦  VESSEL OPERATOR · DASHBOARD")
+                    Text("✦ VESSEL OPERATOR · HOME")
                         .font(EType.micro).tracking(1.0)
                         .foregroundStyle(LinearGradient.primary)
                 }
-                Spacer()
-                if let n = dash?.activeBookings {
-                    Text("\(n) active")
-                        .font(EType.micro).tracking(0.8)
+                Spacer(minLength: Space.s2)
+                if let d = dash {
+                    Text(eyebrowContext(d))
+                        .font(EType.micro).tracking(1.0)
                         .foregroundStyle(palette.textTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
             }
+            // Greeting hero — gradient name caps reads as EusoTrip-native
+            // in both Night and Afternoon, matching the Driver-010 hero.
             HStack(alignment: .firstTextBaseline) {
                 Text(headline)
                     .font(EType.display)
-                    .foregroundStyle(palette.textPrimary)
+                    .foregroundStyle(LinearGradient.diagonal)
                     .lineLimit(2).minimumScaleFactor(0.65)
                 Spacer(minLength: 8)
             }
@@ -139,6 +147,18 @@ private struct VesselOperatorHomeBody: View {
         .padding(.horizontal, Space.s5)
         .padding(.top, Space.s5)
         .padding(.bottom, Space.s3)
+    }
+
+    /// Right-rail eyebrow context — "N ACTIVE · M TEU" caps strip matching
+    /// the SVG-650 header. Falls back to the bare active count when the
+    /// containers figure isn't present yet. No fabricated data — both
+    /// numerals are live `VesselDash` fields.
+    private func eyebrowContext(_ d: VesselDash) -> String {
+        let active = d.activeBookings ?? 0
+        if let teu = d.containersInTransit {
+            return "\(active) ACTIVE · \(teu) TEU"
+        }
+        return "\(active) ACTIVE"
     }
 
     private var headline: String {
@@ -201,6 +221,17 @@ private struct VesselOperatorHomeBody: View {
             .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
             .background(LinearGradient.diagonal)
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            // Bespoke iridescent rim + ambient glow over the gradient hero —
+            // matches the SVG-650 `cardRim` motif (gradient outline lifting
+            // the card off the page) so the hero reads as a first-class
+            // volumetric surface, not a flat gradient block.
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
+                    .blendMode(.overlay)
+            )
+            .shadow(color: Brand.blue.opacity(0.28), radius: 16, x: -4, y: 4)
+            .shadow(color: Brand.magenta.opacity(0.28), radius: 16, x: 4, y: 4)
 
             if let c = compliance {
                 let isGood = (c.failedCount ?? 0) == 0
@@ -278,10 +309,12 @@ private struct VesselOperatorHomeBody: View {
             if loading {
                 VStack(spacing: Space.s2) {
                     ForEach(0..<3, id: \.self) { _ in
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .fill(palette.bgCardSoft).frame(height: 52)
-                            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                                        .strokeBorder(palette.borderFaint))
+                        // Skeleton placeholder rows carry the same bespoke
+                        // whisper rim as the live crew rows so the loading
+                        // state reads as the same card surface settling in.
+                        Color.clear.frame(height: 52)
+                            .background(palette.bgCardSoft)
+                            .eusoRow(radius: Radius.md)
                     }
                 }
             } else if crew.isEmpty {
@@ -323,9 +356,10 @@ private struct VesselOperatorHomeBody: View {
                 .overlay(Capsule().strokeBorder(statusColor.opacity(0.5), lineWidth: 1))
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        // Bespoke EusoCard surface — iridescent blue→magenta rim (whisper
+        // intensity for nested rows) replaces the flat bgCard + borderFaint
+        // box so each crew row reads with the signature card language.
+        .eusoRow(radius: Radius.md)
     }
 
     // MARK: - Widget header helper

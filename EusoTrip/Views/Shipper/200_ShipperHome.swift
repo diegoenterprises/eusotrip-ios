@@ -230,12 +230,11 @@ struct ShipperHome: View {
                     .foregroundStyle(palette.textTertiary)
             }
             .padding(Space.s3)
-            .background(palette.bgCard)
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.lg)
-                    .strokeBorder(palette.borderFaint)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+            // Bespoke EusoCard surface — iridescent blue→magenta outline
+            // + glow so the enable-location CTA reads as a first-class
+            // card matching the SVG card language (mirrors DriverHome's
+            // enableLocationCard treatment).
+            .eusoCard(radius: Radius.lg)
         }
         .buttonStyle(.plain)
     }
@@ -664,10 +663,9 @@ struct ShipperHome: View {
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg)
-                    .strokeBorder(palette.borderFaint))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+        // Bespoke EusoCard surface — iridescent rim + glow per stat tile,
+        // matching the SVG's lit stat strip and the DriverHome metric idiom.
+        .eusoCard(radius: Radius.lg)
     }
 
     // MARK: - Active loads — list of MATRIX-50 rows w/ 8-stage strip
@@ -770,10 +768,9 @@ struct ShipperHome: View {
                 }
             }
         }
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg)
-                    .strokeBorder(palette.borderFaint))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+        // Bespoke EusoCard surface — iridescent rim + glow wraps the
+        // active-loads list, matching the SVG card stack + DriverHome.
+        .eusoCard(radius: Radius.lg)
     }
 
     private var activeLoadsSkeleton: some View {
@@ -954,10 +951,10 @@ struct ShipperHome: View {
                     .foregroundStyle(palette.textSecondary)
             }
             .padding(Space.s3)
-            .background(palette.bgCard)
-            .overlay(RoundedRectangle(cornerRadius: Radius.lg)
-                        .strokeBorder(palette.borderFaint))
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+            // Bespoke EusoCard surface — iridescent rim + glow on the
+            // eSang strip so the AI signal row reads as a lit surface
+            // (matches the SVG eSang panel + DriverHome treatment).
+            .eusoCard(radius: Radius.lg)
         }
         .buttonStyle(.plain)
     }
@@ -1051,11 +1048,11 @@ struct ShipperHome: View {
                 }
             }
             .padding(Space.s3)
-            .background(palette.bgCard)
-            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(palette.borderFaint))
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .contentShape(Rectangle())
+            // Bespoke EusoCard surface — whisper-intensity iridescent
+            // outline on each recent-activity row so the ledger reads as
+            // lit nested cards rather than flat bordered boxes.
+            .eusoRow(radius: Radius.md)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Open load \(row.loadNumber), \(row.origin) to \(row.destination)")

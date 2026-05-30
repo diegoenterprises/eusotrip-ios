@@ -109,7 +109,7 @@ struct AdminHome: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
+            VStack(alignment: .leading, spacing: Space.s5) {
                 header
                 kpiStrip
                 controlTowerLink
@@ -123,8 +123,8 @@ struct AdminHome: View {
                 )
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 8)
+            .padding(.horizontal, Space.s4)
+            .padding(.top, Space.s2)
         }
         .task { await refreshAll() }
         .refreshable { await refreshAll() }
@@ -183,6 +183,9 @@ struct AdminHome: View {
             }
             .buttonStyle(.plain)
         }
+        .padding(.horizontal, Space.s3)
+        .padding(.vertical, Space.s3)
+        .eusoRow(radius: Radius.md)
     }
 
     // MARK: - Tenants section link
@@ -219,6 +222,9 @@ struct AdminHome: View {
             }
             .buttonStyle(.plain)
         }
+        .padding(.horizontal, Space.s3)
+        .padding(.vertical, Space.s3)
+        .eusoRow(radius: Radius.md)
     }
 
     private func refreshAll() async {
@@ -232,34 +238,68 @@ struct AdminHome: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "person.badge.key.fill")
-                .font(.system(size: 18, weight: .heavy))
-                .foregroundStyle(LinearGradient.diagonal)
-                .frame(width: 36, height: 36)
-                .background(palette.bgCard)
-                .overlay(Circle().strokeBorder(palette.borderFaint))
-                .clipShape(Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 9, weight: .heavy))
-                        .foregroundStyle(LinearGradient.diagonal)
-                    Text("ADMIN · HOME")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                        .foregroundStyle(LinearGradient.diagonal)
-                }
-                Text(headline)
-                    .font(.system(size: 22, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary)
-                Text(subhead)
-                    .font(EType.mono(.micro)).tracking(0.3)
-                    .foregroundStyle(palette.textSecondary)
-                    .lineLimit(2)
+        // Bespoke hero — gradient role eyebrow chip + tertiary context
+        // on the right (the "✦ ADMIN · DASHBOARD" idiom from 010_DriverHome),
+        // then an avatar-anchored greeting row with a gradient headline.
+        VStack(alignment: .leading, spacing: Space.s2) {
+            // Eyebrow row — gradient role chip left, tertiary platform
+            // context right, matching the Driver/Shipper role-home family.
+            HStack(spacing: Space.s2) {
+                Text("✦ ADMIN · DASHBOARD")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(LinearGradient.primary)
+                Spacer(minLength: Space.s2)
+                Text(eyebrowContext.uppercased())
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
-            Spacer(minLength: 0)
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "person.badge.key.fill")
+                    .font(.system(size: 18, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .frame(width: 36, height: 36)
+                    .background(palette.bgCard)
+                    .overlay(Circle().strokeBorder(palette.borderFaint))
+                    .clipShape(Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(headline)
+                        .font(.system(size: 24, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.7)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(subhead)
+                        .font(EType.mono(.micro)).tracking(0.3)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+            }
         }
         .padding(.top, 4)
+    }
+
+    /// Tertiary eyebrow context — time-of-day greeting paired with a
+    /// live platform-health caption once the dashboard envelope lands.
+    /// Mirrors the DriverHome eyebrow's "GOOD AFTERNOON · CITY" rhythm.
+    private var eyebrowContext: String {
+        let tod = timeOfDayGreeting
+        if let outer = dashboard.state.value, let s = outer {
+            return "\(tod) · HEALTH \(health(s.systemHealthScore))"
+        }
+        return tod
+    }
+
+    private var timeOfDayGreeting: String {
+        let h = Calendar.current.component(.hour, from: Date())
+        switch h {
+        case 5..<12:  return "Good morning"
+        case 12..<17: return "Good afternoon"
+        case 17..<22: return "Good evening"
+        default:      return "Good night"
+        }
     }
 
     /// Identity-aware headline. Falls back to the role label so the
@@ -316,10 +356,7 @@ struct AdminHome: View {
                 RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                     .fill(palette.bgCardSoft)
                     .frame(height: 72)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                            .strokeBorder(palette.borderFaint)
-                    )
+                    .eusoCard(radius: Radius.lg)
             }
         }
     }
@@ -350,12 +387,7 @@ struct AdminHome: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(LinearGradient.diagonal.opacity(0.4), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .eusoCard(radius: Radius.lg)
     }
 
     /// Format a health composite ratio (0.0…1.0) as a percentage
@@ -427,12 +459,7 @@ struct AdminHome: View {
                 .overlay(Capsule().strokeBorder(severityColor.opacity(0.5), lineWidth: 1))
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .eusoRow(radius: Radius.md)
     }
 
     // MARK: - Open tickets
@@ -471,6 +498,8 @@ struct AdminHome: View {
                 inlineError(e) { Task { await tickets.refresh() } }
             }
         }
+        .padding(Space.s4)
+        .eusoCard(radius: Radius.lg)
     }
 
     private func ticketRow(_ row: AdminAPI.ActiveTicket) -> some View {
@@ -525,12 +554,7 @@ struct AdminHome: View {
             }
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .eusoRow(radius: Radius.md)
     }
 
     // MARK: - Recent activity
@@ -564,6 +588,8 @@ struct AdminHome: View {
                 inlineError(e) { Task { await recent.refresh() } }
             }
         }
+        .padding(Space.s4)
+        .eusoCard(radius: Radius.lg)
     }
 
     private func recentRow(_ row: AdminAPI.RecentTicket) -> some View {
@@ -596,12 +622,7 @@ struct AdminHome: View {
             }
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .eusoRow(radius: Radius.md)
     }
 
     // MARK: - Shared widgets
@@ -612,10 +633,7 @@ struct AdminHome: View {
                 RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                     .fill(palette.bgCardSoft)
                     .frame(height: 56)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(palette.borderFaint)
-                    )
+                    .eusoRow(radius: Radius.md)
             }
         }
     }
@@ -652,6 +670,8 @@ struct AdminHome: View {
                 inlineError(e) { Task { await dashboard.refresh() } }
             }
         }
+        .padding(Space.s4)
+        .eusoCard(radius: Radius.lg)
     }
 
     // MARK: - Pending approvals widget
@@ -694,6 +714,8 @@ struct AdminHome: View {
                 inlineError(e) { Task { await alerts.refresh() } }
             }
         }
+        .padding(Space.s4)
+        .eusoCard(radius: Radius.lg)
     }
 
     private func inlineError(_ error: Error, retry: @escaping () -> Void) -> some View {

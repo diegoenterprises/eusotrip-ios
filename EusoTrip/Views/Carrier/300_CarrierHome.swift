@@ -155,10 +155,10 @@ struct CarrierHome: View {
                     .foregroundStyle(palette.textTertiary)
             }
             .padding(Space.s3)
-            .background(palette.bgCard)
-            .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                        .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            // Bespoke EusoCard surface — iridescent rim + glow so the
+            // enable-location CTA reads as a first-class card, matching
+            // the SVG card language instead of a flat bordered box.
+            .eusoCard(radius: Radius.lg)
         }
         .buttonStyle(.plain)
     }
@@ -209,34 +209,67 @@ struct CarrierHome: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "truck.box.fill")
-                .font(.system(size: 18, weight: .heavy))
-                .foregroundStyle(LinearGradient.diagonal)
-                .frame(width: 36, height: 36)
-                .background(palette.bgCard)
-                .overlay(Circle().strokeBorder(palette.borderFaint))
-                .clipShape(Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 9, weight: .heavy))
-                        .foregroundStyle(LinearGradient.diagonal)
-                    Text("CARRIER · HOME")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                        .foregroundStyle(LinearGradient.diagonal)
-                }
-                Text(headline)
-                    .font(.system(size: 22, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary)
-                Text(subhead)
-                    .font(EType.mono(.micro)).tracking(0.3)
-                    .foregroundStyle(palette.textSecondary)
-                    .lineLimit(2)
+        VStack(alignment: .leading, spacing: Space.s2) {
+            // Bespoke eyebrow row — gradient role chip on the left,
+            // tertiary context caps on the right. Mirrors the Catalyst /
+            // Driver dashboard SVG idiom (✦ CARRIER · DASHBOARD …) so the
+            // role homes read as one family. The sparkle glyph is the
+            // surface's single §4.3 accent budget.
+            HStack(spacing: Space.s2) {
+                Text("✦ CARRIER · DASHBOARD")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(LinearGradient.primary)
+                Spacer(minLength: Space.s2)
+                Text(eyebrowContext)
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
-            Spacer(minLength: 0)
+
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "truck.box.fill")
+                    .font(.system(size: 18, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .frame(width: 36, height: 36)
+                    .background(palette.bgCard)
+                    .overlay(Circle().strokeBorder(palette.borderFaint))
+                    .clipShape(Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(headline)
+                        .font(.system(size: 26, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Text(subhead)
+                        .font(EType.mono(.micro)).tracking(0.3)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+            }
         }
         .padding(.top, 4)
+    }
+
+    /// Right-rail context caps for the bespoke eyebrow row. Pulls from
+    /// the live dashboard stats when loaded (active loads · open offers)
+    /// and falls back to the role label while the store hydrates — never
+    /// reads as a placeholder, never fabricates a number.
+    private var eyebrowContext: String {
+        let h = Calendar.current.component(.hour, from: Date())
+        let tod: String = {
+            switch h {
+            case 5..<12:  return "GOOD MORNING"
+            case 12..<17: return "GOOD AFTERNOON"
+            case 17..<22: return "GOOD EVENING"
+            default:      return "GOOD NIGHT"
+            }
+        }()
+        if let outer = dashboard.state.value, let s = outer {
+            return "\(tod) · \(s.activeLoads) ACTIVE · \(s.deliveredThisWeek) DELIVERED / 7D"
+        }
+        return "\(tod) · CARRIER"
     }
 
     /// Identity-aware headline. Falls back to the role label so the
@@ -327,12 +360,9 @@ struct CarrierHome: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(LinearGradient.diagonal.opacity(0.4), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        // Bespoke EusoCard surface — iridescent rim + glow on every KPI
+        // tile, matching the SVG metric-card language.
+        .eusoCard(radius: Radius.lg)
     }
 
     private func dollars(_ v: Double) -> String {
@@ -406,12 +436,9 @@ struct CarrierHome: View {
                 .overlay(Capsule().strokeBorder(severityColor.opacity(0.5), lineWidth: 1))
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        // Bespoke nested-row surface — whisper-intensity iridescent rim
+        // (no compounding glow inside its already-carded container).
+        .eusoRow(radius: Radius.md)
     }
 
     // MARK: - Active loads
@@ -502,12 +529,8 @@ struct CarrierHome: View {
             }
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        // Bespoke nested-row surface — whisper iridescent rim per load.
+        .eusoRow(radius: Radius.md)
     }
 
     // MARK: - Recent activity
@@ -573,12 +596,8 @@ struct CarrierHome: View {
             }
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        // Bespoke nested-row surface — whisper iridescent rim per row.
+        .eusoRow(radius: Radius.md)
     }
 
     // MARK: - Shared widgets
