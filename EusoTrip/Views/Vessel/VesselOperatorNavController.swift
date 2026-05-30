@@ -37,6 +37,19 @@ enum VesselOperatorNavRoute {
     ]
 
     static let orbLabels: Set<String> = ["esang", "orb"]
+
+    // Deep-surface routes (Vesl653–658). NOT bottom-nav slots — these are the
+    // deep Vessel Operator screens, reachable by key via deep-link / push so
+    // they're navigable beyond the 4 canonical tabs. Additive only; the bottom
+    // nav `map` above is untouched.
+    static let deepMap: [String: String] = [
+        "bookingDetail":      "Vesl653",
+        "crewCertifications": "Vesl654",
+        "containerPositions": "Vesl655",
+        "account":            "Vesl656",
+        "statusUpdate":       "Vesl657",
+        "demurrageWatch":     "Vesl658",
+    ]
 }
 
 @MainActor
@@ -52,7 +65,8 @@ enum VesselOperatorNavDispatcher {
             return
         }
 
-        guard let screenId = VesselOperatorNavRoute.map[key] else { return }
+        guard let screenId = VesselOperatorNavRoute.map[key]
+                ?? VesselOperatorNavRoute.deepMap[label] else { return }
         NotificationCenter.default.post(
             name: .eusoVesselNavSwap,
             object: nil,
