@@ -91,37 +91,24 @@ extension Notification.Name {
 // screen. Back posts `.eusoShipperNavBack` — the surface clears the
 // detail layer first, else pops `screenStack`. This stays entirely
 // WITHIN the existing notification router (no SwiftUI NavigationStack).
-
-/// One pushed detail layer. `id` lets SwiftUI diff/transition between
-/// successive pushes; `title` feeds the `BespokeBackBar`; `content`
-/// is the caller-built body (already carrying its own data wiring).
-struct ShipperDetailPush: Identifiable {
-    let id = UUID()
-    let title: String?
-    let content: AnyView
-}
-
-/// Environment closure a Shipper screen invokes to push an inline
-/// detail view in-stack (sheet→push). Signature mirrors the simple
-/// `(String) -> Void` nav handler so screens depend only on the
-/// environment, never on the surface type. Nil outside ShipperSurface.
-struct ShipperPushDetailKey: EnvironmentKey {
-    static let defaultValue: ((String?, @escaping () -> AnyView) -> Void)? = nil
-}
+//
+// 2026-05-30 generalization: the model + layer + push closure were
+// promoted to the SHARED `RoleDetailPush` / `\.rolePushDetail` /
+// `RoleDetailLayer` primitive in `Theme/Components/RoleDetailPush.swift`
+// so every role surface reuses ONE implementation. `\.shipperPushDetail`
+// is kept here as a thin ALIAS onto the shared `\.rolePushDetail` key so
+// the four already-converted Shipper screens (215/217/219/221) compile
+// unchanged. New call sites should prefer `\.rolePushDetail` directly.
 
 extension EnvironmentValues {
-    /// Push an inline detail in-stack. `title` feeds the back bar
-    /// (pass nil to render chevron-only); the closure builds the body.
-    ///
-    ///     @Environment(\.shipperPushDetail) private var pushDetail
-    ///     ...
-    ///     pushDetail?("Contract") { AnyView(ContractDetailBody(row: row)) }
-    ///
-    /// The surface wraps the result with `BespokeBackBar` automatically
-    /// and animates the slide-in; callers must NOT add their own bar.
+    /// Backwards-compatible alias for `\.rolePushDetail`. Reads/writes
+    /// the SAME underlying `RolePushDetailKey` so there is exactly one
+    /// push mechanism — the Shipper surface (and its four converted
+    /// screens) keep using `\.shipperPushDetail` while everyone shares
+    /// the generalized layer. Prefer `\.rolePushDetail` for new code.
     var shipperPushDetail: ((String?, @escaping () -> AnyView) -> Void)? {
-        get { self[ShipperPushDetailKey.self] }
-        set { self[ShipperPushDetailKey.self] = newValue }
+        get { self[RolePushDetailKey.self] }
+        set { self[RolePushDetailKey.self] = newValue }
     }
 }
 

@@ -221,14 +221,16 @@ struct ShipperSurface: View {
     @State private var avatarPickerItem: PhotosPickerItem? = nil
     @State private var avatarPickerOpen: Bool = false
 
-    /// The single generic detail layer pushed in-stack via
-    /// `\.shipperPushDetail` (sheet→push, NAV remediation 2026-05-30).
-    /// When non-nil it renders ABOVE the current screen, slid in from
-    /// the trailing edge with a `BespokeBackBar`. `.eusoShipperNavBack`
-    /// clears this first (if present) before popping `screenStack`, so
-    /// one back gesture pops one level whether it's a detail or a
-    /// registry screen.
-    @State private var pushedDetail: ShipperDetailPush? = nil
+    /// The single generic detail layer pushed in-stack via the shared
+    /// `\.rolePushDetail` (aliased to `\.shipperPushDetail` for the four
+    /// converted Shipper screens). Sheet→push, NAV remediation
+    /// 2026-05-30 — generalized to `RoleDetailPush` so every surface
+    /// shares one mechanism. When non-nil it renders ABOVE the current
+    /// screen, slid in from the trailing edge with a `BespokeBackBar`.
+    /// `.eusoShipperNavBack` clears this first (if present) before
+    /// popping `screenStack`, so one back gesture pops one level whether
+    /// it's a detail or a registry screen.
+    @State private var pushedDetail: RoleDetailPush? = nil
 
     private var current: ProductionScreen {
         // Detail screens with a captured loadId override the registry
@@ -290,10 +292,16 @@ struct ShipperSurface: View {
             // Generic sheet→push detail layer (slides in over the
             // current screen, BespokeBackBar on top). Sits ABOVE the
             // back overlay so the floating circle never shows under a
-            // pushed detail. Injects `\.shipperPushDetail` for screens.
-            .modifier(ShipperDetailLayer(
+            // pushed detail. Injects `\.rolePushDetail` for screens
+            // (aliased to `\.shipperPushDetail` for the four converted
+            // Shipper screens). Shared primitive — RoleDetailLayer.
+            .modifier(RoleDetailLayer(
                 pushedDetail: $pushedDetail,
-                palette: palette
+                palette: palette,
+                onBack: {
+                    NotificationCenter.default.post(
+                        name: .eusoShipperNavBack, object: nil)
+                }
             ))
             .modifier(ShipperEnvInjections())
             .modifier(ShipperNotificationListeners(
@@ -570,44 +578,11 @@ private struct ShipperBackOverlay: ViewModifier {
     }
 }
 
-/// Sheet→push detail layer (NAV remediation 2026-05-30). Renders the
-/// surface-owned `pushedDetail` ABOVE the current screen, slid in from
-/// the trailing edge and topped with a `BespokeBackBar`. Also injects
-/// the `\.shipperPushDetail` environment closure every Shipper screen
-/// uses to push an inline detail in-stack.
-///
-/// Back: the bar posts `.eusoShipperNavBack` (the surface's nav
-/// receiver clears `pushedDetail` before popping `screenStack`, so a
-/// single back gesture pops exactly one level). The detail body fills
-/// the page; `palette.bgPage` underlay makes the slide-in opaque so
-/// the screen beneath is fully covered while it animates.
-private struct ShipperDetailLayer: ViewModifier {
-    @Binding var pushedDetail: ShipperDetailPush?
-    let palette: Theme.Palette
-
-    func body(content: Content) -> some View {
-        ZStack {
-            content
-            if let detail = pushedDetail {
-                detail.content
-                    .injectBespokeBackBar(title: detail.title) {
-                        NotificationCenter.default.post(
-                            name: .eusoShipperNavBack, object: nil
-                        )
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(palette.bgPage.ignoresSafeArea())
-                    .transition(.move(edge: .trailing))
-                    .zIndex(1)
-            }
-        }
-        .environment(\.shipperPushDetail) { title, builder in
-            withAnimation(.easeInOut(duration: 0.28)) {
-                pushedDetail = ShipperDetailPush(title: title, content: builder())
-            }
-        }
-    }
-}
+// NOTE: the former private `ShipperDetailLayer` was promoted to the
+// shared `RoleDetailLayer` in `Theme/Components/RoleDetailPush.swift`
+// (NAV remediation 2026-05-30 generalization). The Shipper surface now
+// applies `RoleDetailLayer` directly (see body above) with an `onBack`
+// closure that posts `.eusoShipperNavBack`. One implementation, app-wide.
 
 /// Three environment overrides applied in sequence:
 ///   • driverNavHandler = nil — masks the inherited driver handler so
@@ -647,7 +622,7 @@ private struct ShipperNotificationListeners: ViewModifier {
     @Binding var avatarPickerOpen: Bool
     @Binding var showeSang: Bool
     @Binding var webContinuationURL: URL?
-    @Binding var pushedDetail: ShipperDetailPush?
+    @Binding var pushedDetail: RoleDetailPush?
     let pushOrTab: (String) -> Void
     let popOne: () -> Void
     let handleMeAction: (String, [AnyHashable: Any]) -> Void
@@ -681,7 +656,7 @@ private struct ShipperNavReceivers: ViewModifier {
     @Binding var activeLoadId: String?
     @Binding var avatarPickerOpen: Bool
     @Binding var showeSang: Bool
-    @Binding var pushedDetail: ShipperDetailPush?
+    @Binding var pushedDetail: RoleDetailPush?
     let pushOrTab: (String) -> Void
     let popOne: () -> Void
 
@@ -944,6 +919,11 @@ struct CarrierSurface: View {
     /// single entry; non-tab screens append.
     @State private var screenStack: [String] = ["300"]
     @State private var showeSang: Bool = false
+    /// Shared sheet→push detail layer (NAV remediation 2026-05-30).
+    /// Ready for the per-role sheet-conversion wave; surfaces the
+    /// `\.rolePushDetail` env closure and renders the pushed detail
+    /// in-stack with a `BespokeBackBar`.
+    @State private var pushedDetail: RoleDetailPush? = nil
     private static let tabRoots: Set<String> = ["300", "301", "302", "303"]
 
     /// Carrier-side suppress list — same purpose as ShipperBackOverlay's
@@ -990,6 +970,17 @@ struct CarrierSurface: View {
                 currentScreenId: currentScreenId,
                 screensWithOwnBack: Self.backSuppress
             ))
+            // Shared sheet→push detail layer — injects `\.rolePushDetail`
+            // and renders the pushed detail in-stack (BespokeBackBar on
+            // top). onBack posts the shared NavBack the surface listens to.
+            .modifier(RoleDetailLayer(
+                pushedDetail: $pushedDetail,
+                palette: palette,
+                onBack: {
+                    NotificationCenter.default.post(
+                        name: .eusoRoleNavBack, object: nil)
+                }
+            ))
             .environment(\.driverNavHandler, nil)
             .environment(\.shipperNavHandler, nil)
             .environment(\.carrierNavHandler) { label in
@@ -1000,10 +991,17 @@ struct CarrierSurface: View {
                 guard RoleAccess.canRender(role: .catalyst, screenId: id) else {
                     screenStack = ["300"]; return
                 }
+                // Any explicit swap leaves the detail layer behind.
+                pushedDetail = nil
                 withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
-                withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+                // Detail-first: one back gesture pops one level.
+                if pushedDetail != nil {
+                    withAnimation(.easeInOut(duration: 0.28)) { pushedDetail = nil }
+                } else {
+                    withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoCarriereSangTapped)) { _ in
                 showeSang = true
@@ -1028,6 +1026,8 @@ struct BrokerSurface: View {
     @EnvironmentObject var session: EusoTripSession
     @State private var screenStack: [String] = ["400"]
     @State private var showeSang: Bool = false
+    /// Shared sheet→push detail layer (NAV remediation 2026-05-30).
+    @State private var pushedDetail: RoleDetailPush? = nil
     private static let tabRoots: Set<String> = ["400", "401", "402", "403"]
 
     private var currentScreenId: String { screenStack.last ?? "400" }
@@ -1064,6 +1064,14 @@ struct BrokerSurface: View {
             .environment(\.brokerNavHandler) { label in
                 BrokerNavDispatcher.handle(label)
             }
+            .modifier(RoleDetailLayer(
+                pushedDetail: $pushedDetail,
+                palette: palette,
+                onBack: {
+                    NotificationCenter.default.post(
+                        name: .eusoRoleNavBack, object: nil)
+                }
+            ))
             .onReceive(NotificationCenter.default.publisher(for: .eusoBrokerNavSwap)) { note in
                 guard let id = note.userInfo?["screenId"] as? String else { return }
                 guard RoleAccess.canRender(role: .broker, screenId: id) else {
@@ -1075,10 +1083,15 @@ struct BrokerSurface: View {
                 // (palette) -> AnyView with no slot for extra args.
                 if let c = note.userInfo?["catalystId"] as? String { BrokerNavContext.latestCatalystId = c }
                 if let l = note.userInfo?["loadId"]     as? String { BrokerNavContext.latestLoadId     = l }
+                pushedDetail = nil
                 withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
-                withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+                if pushedDetail != nil {
+                    withAnimation(.easeInOut(duration: 0.28)) { pushedDetail = nil }
+                } else {
+                    withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoBrokereSangTapped)) { _ in
                 showeSang = true
@@ -1099,6 +1112,8 @@ struct EscortSurface: View {
     @EnvironmentObject var session: EusoTripSession
     @State private var screenStack: [String] = ["600"]
     @State private var showeSang: Bool = false
+    /// Shared sheet→push detail layer (NAV remediation 2026-05-30).
+    @State private var pushedDetail: RoleDetailPush? = nil
     private static let tabRoots: Set<String> = ["600", "601", "602", "603"]
 
     private var currentScreenId: String { screenStack.last ?? "600" }
@@ -1135,15 +1150,28 @@ struct EscortSurface: View {
             .environment(\.escortNavHandler) { label in
                 EscortNavDispatcher.handle(label)
             }
+            .modifier(RoleDetailLayer(
+                pushedDetail: $pushedDetail,
+                palette: palette,
+                onBack: {
+                    NotificationCenter.default.post(
+                        name: .eusoRoleNavBack, object: nil)
+                }
+            ))
             .onReceive(NotificationCenter.default.publisher(for: .eusoEscortNavSwap)) { note in
                 guard let id = note.userInfo?["screenId"] as? String else { return }
                 guard RoleAccess.canRender(role: .escort, screenId: id) else {
                     screenStack = ["600"]; return
                 }
+                pushedDetail = nil
                 withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
-                withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+                if pushedDetail != nil {
+                    withAnimation(.easeInOut(duration: 0.28)) { pushedDetail = nil }
+                } else {
+                    withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoEscorteSangTapped)) { _ in
                 showeSang = true
@@ -1164,6 +1192,8 @@ struct TerminalSurface: View {
     @EnvironmentObject var session: EusoTripSession
     @State private var screenStack: [String] = ["700"]
     @State private var showeSang: Bool = false
+    /// Shared sheet→push detail layer (NAV remediation 2026-05-30).
+    @State private var pushedDetail: RoleDetailPush? = nil
     private static let tabRoots: Set<String> = ["700", "701", "702", "703"]
 
     private var currentScreenId: String { screenStack.last ?? "700" }
@@ -1200,15 +1230,28 @@ struct TerminalSurface: View {
             .environment(\.terminalNavHandler) { label in
                 TerminalNavDispatcher.handle(label)
             }
+            .modifier(RoleDetailLayer(
+                pushedDetail: $pushedDetail,
+                palette: palette,
+                onBack: {
+                    NotificationCenter.default.post(
+                        name: .eusoRoleNavBack, object: nil)
+                }
+            ))
             .onReceive(NotificationCenter.default.publisher(for: .eusoTerminalNavSwap)) { note in
                 guard let id = note.userInfo?["screenId"] as? String else { return }
                 guard RoleAccess.canRender(role: .terminal, screenId: id) else {
                     screenStack = ["700"]; return
                 }
+                pushedDetail = nil
                 withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
-                withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+                if pushedDetail != nil {
+                    withAnimation(.easeInOut(duration: 0.28)) { pushedDetail = nil }
+                } else {
+                    withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoTerminaleSangTapped)) { _ in
                 showeSang = true
@@ -1232,6 +1275,8 @@ struct AdminSurface: View {
     @EnvironmentObject var session: EusoTripSession
     @State private var screenStack: [String] = ["800"]
     @State private var showeSang: Bool = false
+    /// Shared sheet→push detail layer (NAV remediation 2026-05-30).
+    @State private var pushedDetail: RoleDetailPush? = nil
     private static let tabRoots: Set<String> = ["800", "801", "802", "803"]
 
     private var currentScreenId: String { screenStack.last ?? "800" }
@@ -1268,15 +1313,28 @@ struct AdminSurface: View {
             .environment(\.adminNavHandler) { label in
                 AdminNavDispatcher.handle(label)
             }
+            .modifier(RoleDetailLayer(
+                pushedDetail: $pushedDetail,
+                palette: palette,
+                onBack: {
+                    NotificationCenter.default.post(
+                        name: .eusoRoleNavBack, object: nil)
+                }
+            ))
             .onReceive(NotificationCenter.default.publisher(for: .eusoAdminNavSwap)) { note in
                 guard let id = note.userInfo?["screenId"] as? String else { return }
                 guard RoleAccess.canRender(role: .admin, screenId: id) else {
                     screenStack = ["800"]; return
                 }
+                pushedDetail = nil
                 withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
-                withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+                if pushedDetail != nil {
+                    withAnimation(.easeInOut(duration: 0.28)) { pushedDetail = nil }
+                } else {
+                    withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoAdmineSangTapped)) { _ in
                 showeSang = true
@@ -1298,6 +1356,8 @@ struct DispatchSurface: View {
     @EnvironmentObject var session: EusoTripSession
     @State private var screenStack: [String] = ["Dpch700"]
     @State private var showeSang: Bool = false
+    /// Shared sheet→push detail layer (NAV remediation 2026-05-30).
+    @State private var pushedDetail: RoleDetailPush? = nil
     private static let tabRoots: Set<String> = ["Dpch700", "Dpch701", "Dpch702", "Dpch703"]
 
     private var currentScreenId: String { screenStack.last ?? "Dpch700" }
@@ -1334,15 +1394,28 @@ struct DispatchSurface: View {
             .environment(\.dispatchNavHandler) { label in
                 DispatchNavDispatcher.handle(label)
             }
+            .modifier(RoleDetailLayer(
+                pushedDetail: $pushedDetail,
+                palette: palette,
+                onBack: {
+                    NotificationCenter.default.post(
+                        name: .eusoRoleNavBack, object: nil)
+                }
+            ))
             .onReceive(NotificationCenter.default.publisher(for: .eusoDispatchNavSwap)) { note in
                 guard let id = note.userInfo?["screenId"] as? String else { return }
                 guard RoleAccess.canRender(role: .dispatch, screenId: id) else {
                     screenStack = ["Dpch700"]; return
                 }
+                pushedDetail = nil
                 withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
-                withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+                if pushedDetail != nil {
+                    withAnimation(.easeInOut(duration: 0.28)) { pushedDetail = nil }
+                } else {
+                    withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoDispatcheSangTapped)) { _ in
                 showeSang = true
@@ -1364,6 +1437,8 @@ struct ComplianceSurface: View {
     @EnvironmentObject var session: EusoTripSession
     @State private var screenStack: [String] = ["900"]
     @State private var showeSang: Bool = false
+    /// Shared sheet→push detail layer (NAV remediation 2026-05-30).
+    @State private var pushedDetail: RoleDetailPush? = nil
     private static let tabRoots: Set<String> = ["900", "901", "902", "903"]
 
     private var currentScreenId: String { screenStack.last ?? "900" }
@@ -1400,15 +1475,28 @@ struct ComplianceSurface: View {
             .environment(\.complianceNavHandler) { label in
                 ComplianceNavDispatcher.handle(label)
             }
+            .modifier(RoleDetailLayer(
+                pushedDetail: $pushedDetail,
+                palette: palette,
+                onBack: {
+                    NotificationCenter.default.post(
+                        name: .eusoRoleNavBack, object: nil)
+                }
+            ))
             .onReceive(NotificationCenter.default.publisher(for: .eusoComplianceNavSwap)) { note in
                 guard let id = note.userInfo?["screenId"] as? String else { return }
                 guard RoleAccess.canRender(role: .compliance, screenId: id) else {
                     screenStack = ["900"]; return
                 }
+                pushedDetail = nil
                 withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
-                withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+                if pushedDetail != nil {
+                    withAnimation(.easeInOut(duration: 0.28)) { pushedDetail = nil }
+                } else {
+                    withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoComplianceeSangTapped)) { _ in
                 showeSang = true
@@ -1429,6 +1517,8 @@ struct RailEngineerSurface: View {
     @EnvironmentObject var session: EusoTripSession
     @State private var screenStack: [String] = ["Rail550"]
     @State private var showeSang: Bool = false
+    /// Shared sheet→push detail layer (NAV remediation 2026-05-30).
+    @State private var pushedDetail: RoleDetailPush? = nil
     private static let tabRoots: Set<String> = ["Rail550", "Rail551", "Rail552", "Rail553"]
 
     private var currentScreenId: String { screenStack.last ?? "Rail550" }
@@ -1465,15 +1555,28 @@ struct RailEngineerSurface: View {
             .environment(\.railEngineerNavHandler) { label in
                 RailEngineerNavDispatcher.handle(label)
             }
+            .modifier(RoleDetailLayer(
+                pushedDetail: $pushedDetail,
+                palette: palette,
+                onBack: {
+                    NotificationCenter.default.post(
+                        name: .eusoRoleNavBack, object: nil)
+                }
+            ))
             .onReceive(NotificationCenter.default.publisher(for: .eusoRailNavSwap)) { note in
                 guard let id = note.userInfo?["screenId"] as? String else { return }
                 guard RoleAccess.canRender(role: .railEngineer, screenId: id) else {
                     screenStack = ["Rail550"]; return
                 }
+                pushedDetail = nil
                 withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
-                withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+                if pushedDetail != nil {
+                    withAnimation(.easeInOut(duration: 0.28)) { pushedDetail = nil }
+                } else {
+                    withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoRaileSangTapped)) { _ in
                 showeSang = true
@@ -1494,6 +1597,8 @@ struct VesselOperatorSurface: View {
     @EnvironmentObject var session: EusoTripSession
     @State private var screenStack: [String] = ["Vesl650"]
     @State private var showeSang: Bool = false
+    /// Shared sheet→push detail layer (NAV remediation 2026-05-30).
+    @State private var pushedDetail: RoleDetailPush? = nil
     private static let tabRoots: Set<String> = ["Vesl650", "Vesl651", "Vesl652", "Vesl653"]
 
     private var currentScreenId: String { screenStack.last ?? "Vesl650" }
@@ -1530,15 +1635,28 @@ struct VesselOperatorSurface: View {
             .environment(\.vesselOperatorNavHandler) { label in
                 VesselOperatorNavDispatcher.handle(label)
             }
+            .modifier(RoleDetailLayer(
+                pushedDetail: $pushedDetail,
+                palette: palette,
+                onBack: {
+                    NotificationCenter.default.post(
+                        name: .eusoRoleNavBack, object: nil)
+                }
+            ))
             .onReceive(NotificationCenter.default.publisher(for: .eusoVesselNavSwap)) { note in
                 guard let id = note.userInfo?["screenId"] as? String else { return }
                 guard RoleAccess.canRender(role: .vesselOperator, screenId: id) else {
                     screenStack = ["Vesl650"]; return
                 }
+                pushedDetail = nil
                 withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
-                withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+                if pushedDetail != nil {
+                    withAnimation(.easeInOut(duration: 0.28)) { pushedDetail = nil }
+                } else {
+                    withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoVesseleSangTapped)) { _ in
                 showeSang = true

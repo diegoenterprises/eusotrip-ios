@@ -201,6 +201,7 @@
 		B06D0FA2CE1A4B7E0000D065 /* ZeunMechanicsScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = B06D0FA2CE1A4B7E0000D066 /* ZeunMechanicsScreens.swift */; };
 		B06E0FA2CE1A4B7E0000D101 /* 106_MeEusoTickets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B06E0FA2CE1A4B7E0000D102 /* 106_MeEusoTickets.swift */; };
 		B07D0FA2CE1A4B7E0000D067 /* SheetCloseButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = B07D0FA2CE1A4B7E0000D068 /* SheetCloseButton.swift */; };
+		B0DE7A1100000000000000A7 /* RoleDetailPush.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DE7A1100000000000000A8 /* RoleDetailPush.swift */; };
 		B07E0FA2CE1A4B7E0000D107 /* 107_MeMyBids.swift in Sources */ = {isa = PBXBuildFile; fileRef = B07E0FA2CE1A4B7E0000D108 /* 107_MeMyBids.swift */; };
 		B08E0FA2CE1A4B7E0000D109 /* 108_MeLoadBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B08E0FA2CE1A4B7E0000D110 /* 108_MeLoadBoard.swift */; };
 		B09E0FA2CE1A4B7E0000D111 /* 109_MeBidDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = B09E0FA2CE1A4B7E0000D112 /* 109_MeBidDetail.swift */; };
@@ -1018,6 +1019,7 @@
 		B06D0FA2CE1A4B7E0000D066 /* ZeunMechanicsScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZeunMechanicsScreens.swift; sourceTree = "<group>"; };
 		B06E0FA2CE1A4B7E0000D102 /* 106_MeEusoTickets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 106_MeEusoTickets.swift; sourceTree = "<group>"; };
 		B07D0FA2CE1A4B7E0000D068 /* SheetCloseButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SheetCloseButton.swift; sourceTree = "<group>"; };
+		B0DE7A1100000000000000A8 /* RoleDetailPush.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoleDetailPush.swift; sourceTree = "<group>"; };
 		B07E0FA2CE1A4B7E0000D108 /* 107_MeMyBids.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 107_MeMyBids.swift; sourceTree = "<group>"; };
 		B08E0FA2CE1A4B7E0000D110 /* 108_MeLoadBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 108_MeLoadBoard.swift; sourceTree = "<group>"; };
 		B09E0FA2CE1A4B7E0000D112 /* 109_MeBidDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 109_MeBidDetail.swift; sourceTree = "<group>"; };
@@ -2445,6 +2447,7 @@
 				A12E1A1C0010CE0FF1000032 /* EusoEmptyState.swift */,
 				A12E1A1C0010CE0FF1000034 /* MockDataGuard.swift */,
 				B07D0FA2CE1A4B7E0000D068 /* SheetCloseButton.swift */,
+				B0DE7A1100000000000000A8 /* RoleDetailPush.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -2933,6 +2936,7 @@
 				B10E0FA2CE1A4B7E0000D113 /* 110_MeAutoAcceptRules.swift in Sources */,
 				B06D0FA2CE1A4B7E0000D065 /* ZeunMechanicsScreens.swift in Sources */,
 				B07D0FA2CE1A4B7E0000D067 /* SheetCloseButton.swift in Sources */,
+				B0DE7A1100000000000000A7 /* RoleDetailPush.swift in Sources */,
 				A40C0FA9CE1A4B7E0000C011 /* MeComplianceView.swift in Sources */,
 				A16BC7376B77E8DC7AA73CE6 /* AuthModels.swift in Sources */,
 				BFAD202605200001000100B1 /* Vertical.swift in Sources */,
