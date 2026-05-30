@@ -17,6 +17,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct DispatchBulkUploadKanbanScreen: View {
     let theme: Theme.Palette
@@ -87,6 +88,21 @@ private struct BulkBody: View {
     /// a job toward. Drives a gradient stroke on the target column.
     @State private var dragHoverColumn: String? = nil
 
+    // MARK: — File-import → AI-parse pipeline state
+    //
+    // 2026-05-30 (WIRE-GAP) — the kanban could only *view* jobs the
+    // shipper-side 400 shell had already created. This wires the
+    // funnel's own intake: a FileImporter that routes the picked
+    // CSV/JSON/XLS/PDF straight through `bulkUpload.uploadAndProcess`
+    // with `options.aiMapping: true` (founder doctrine "ai-parse" — the
+    // server's VIGA multi-pass Gemini column-extraction). The job lands
+    // in `'uploaded'` server-side, so a reload drops it into the
+    // UPLOADED lane where the dispatcher can Validate → Execute it via
+    // the existing per-card actions.
+    @State private var fileImporterPresented = false
+    @State private var uploading = false
+    @State private var uploadProgressNote: String? = nil
+
     var body: some View {
         VStack(spacing: 0) {
             header.padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 6)
@@ -103,6 +119,26 @@ private struct BulkBody: View {
         }
         .task { await load() }
         .refreshable { await load() }
+        // AI-parse intake. XLS/XLSX kept in the type list so the picker
+        // surfaces them; the handler decodes UTF-8 text (CSV/JSON/TXT)
+        // and the server's Gemini pass maps messy columns. Binary-only
+        // formats that don't decode to text are reported honestly rather
+        // than silently dropped.
+        .fileImporter(
+            isPresented: $fileImporterPresented,
+            allowedContentTypes: [
+                .commaSeparatedText,
+                .json,
+                .text,
+                .pdf,
+                UTType(filenameExtension: "xls")  ?? .data,
+                UTType(filenameExtension: "xlsx") ?? .data,
+                UTType.spreadsheet
+            ],
+            allowsMultipleSelection: false
+        ) { result in
+            Task { await handleFileImport(result) }
+        }
     }
 
     private var header: some View {
@@ -116,8 +152,41 @@ private struct BulkBody: View {
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(palette.bgCard).clipShape(Capsule())
             }
-            Text("Bulk import funnel").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("Bulk import funnel").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 0)
+                uploadButton
+            }
+            if let note = uploadProgressNote {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                    Text(note).font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
+    }
+
+    /// AI-parse upload affordance. Drops the picked file onto the
+    /// server's Gemini-backed extraction pass; the new job appears in
+    /// the UPLOADED lane on the follow-up reload.
+    private var uploadButton: some View {
+        Button { fileImporterPresented = true } label: {
+            HStack(spacing: 5) {
+                if uploading {
+                    ProgressView().scaleEffect(0.6).tint(.white)
+                } else {
+                    Image(systemName: "sparkles.tv.fill").font(.system(size: 10, weight: .heavy))
+                }
+                Text(uploading ? "Parsing…" : "AI parse")
+                    .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .background(LinearGradient.diagonal)
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(uploading)
     }
 
     private var funnelChips: some View {
@@ -273,6 +342,78 @@ private struct BulkBody: View {
             }
             .padding(14)
         }.background(palette.bgPage)
+    }
+
+    // MARK: — File import → AI-parse upload
+
+    /// Reads the picked document and hands it to the bulk AI-parse
+    /// pipeline. Surfaces a typed error on read/decode failure so a
+    /// binary-only XLS/PDF that can't be decoded to text fails loudly
+    /// instead of submitting empty/garbage rows.
+    @MainActor
+    private func handleFileImport(_ result: Result<[URL], Error>) async {
+        guard !uploading else { return }
+        actionError = nil
+        let url: URL
+        do {
+            guard let first = try result.get().first else { return }
+            url = first
+        } catch {
+            actionError = "Couldn't read the picked file: \(error.localizedDescription)"
+            return
+        }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url), !data.isEmpty else {
+            actionError = "Couldn't open \(url.lastPathComponent) — file was empty or unreadable."
+            return
+        }
+        guard let text = decodeText(data), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            actionError = "\(url.lastPathComponent) isn't text-decodable. Export the spreadsheet/PDF to CSV (or paste the data) and retry — AI parse maps the columns from there."
+            return
+        }
+        await uploadAndProcess(csvText: text, fileName: url.lastPathComponent)
+    }
+
+    /// UTF-8 first, then Latin-1 — covers the CSV/JSON exports legacy
+    /// TMS systems emit. Returns nil for true binary (XLS/PDF), which
+    /// the caller reports rather than fabricating rows.
+    private func decodeText(_ data: Data) -> String? {
+        String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
+    }
+
+    /// Fires `bulkUpload.uploadAndProcess` with `options.aiMapping:
+    /// true` — the server's VIGA multi-pass Gemini column extraction
+    /// (founder doctrine "ai-parse"). On success the job is created
+    /// server-side in the `'uploaded'` stage; we snap the funnel to
+    /// UPLOADED and reload so the parsed job surfaces as a card.
+    @MainActor
+    private func uploadAndProcess(csvText: String, fileName: String) async {
+        uploading = true
+        uploadProgressNote = "ESANG is parsing \(fileName)…"
+        actionError = nil
+        struct Options: Encodable { let aiMapping: Bool }
+        struct In: Encodable { let entityType: String; let csvText: String; let fileName: String; let options: Options }
+        struct Out: Decodable { let jobId: Int?; let totalRows: Int?; let aiConfidence: Double? }
+        do {
+            let r: Out = try await EusoTripAPI.shared.mutation(
+                "bulkUpload.uploadAndProcess",
+                input: In(entityType: entityType, csvText: csvText, fileName: fileName, options: Options(aiMapping: true))
+            )
+            let rows = r.totalRows ?? 0
+            if let conf = r.aiConfidence, conf > 0 {
+                lastAction = "Parsed \(fileName) → \(rows) row\(rows == 1 ? "" : "s") (\(Int((conf).rounded()))% map confidence). Now in UPLOADED — Validate to continue."
+            } else {
+                lastAction = "Parsed \(fileName) → \(rows) row\(rows == 1 ? "" : "s"). Now in UPLOADED — Validate to continue."
+            }
+            uploadProgressNote = nil
+            withAnimation(.easeOut(duration: 0.18)) { selected = "uploaded" }
+            await load()
+        } catch {
+            uploadProgressNote = nil
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        uploading = false
     }
 
     private func load() async {
