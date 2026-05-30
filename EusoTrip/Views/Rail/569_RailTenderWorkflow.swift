@@ -275,7 +275,7 @@ private struct RailTenderWorkflowBody: View {
         }
     }
     private func chipColor(_ o: TenderOutcome) -> Color {
-        switch o { case .accepted: return Brand.success; case .declined: return Brand.danger; case .counter: return Color(red: 0.38, green: 0.49, blue: 0.55) }
+        switch o { case .accepted: return Brand.success; case .declined: return Brand.danger; case .counter: return Brand.rail }
     }
     private func pillLabel(_ o: TenderOutcome) -> String {
         switch o { case .accepted: return "ACCEPTED"; case .declined: return "DECLINED"; case .counter: return "COUNTER" }

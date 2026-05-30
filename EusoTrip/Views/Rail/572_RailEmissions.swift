@@ -146,7 +146,7 @@ private struct RailEmissionsBody: View {
         case "dray", "truck": return ("DRAY",  Brand.warning, "shippingbox.fill")
         case "rail":          return ("RAIL",  Brand.success, "tram.fill")
         case "total":         return ("TOTAL", Brand.blue,    "leaf.fill")
-        default:              return (mode.uppercased(), Color(red: 0.38, green: 0.49, blue: 0.55), "circle.fill")
+        default:              return (mode.uppercased(), Brand.rail, "circle.fill")
         }
     }
 

@@ -37,6 +37,49 @@ enum RailEngineerNavRoute {
     ]
 
     static let orbLabels: Set<String> = ["esang", "orb"]
+
+    // Deep-surface routes (Rail553–590). NOT bottom-nav slots — these are the
+    // 36 deep Rail Engineer screens, reachable by key via deep-link / push so
+    // they're navigable beyond the 4 canonical tabs. Additive only; the bottom
+    // nav `map` above is untouched.
+    static let deepMap: [String: String] = [
+        "shipmentDetail":      "Rail553",
+        "crewHosRoster":       "Rail554",
+        "consistBoard":        "Rail555",
+        "account":             "Rail556",
+        "statusUpdate":        "Rail557",
+        "demurrageWatch":      "Rail558",
+        "liveTracking":        "Rail560",
+        "facilityStatus":      "Rail561",
+        "gateAppointment":     "Rail562",
+        "exceptionsHolds":     "Rail563",
+        "borderClearance":     "Rail564",
+        "containerTimeline":   "Rail565",
+        "intermodalTransfer":  "Rail566",
+        "chainOfCustody":      "Rail567",
+        "equipmentLease":      "Rail568",
+        "tenderWorkflow":      "Rail569",
+        "imdgHazmatManifest":  "Rail571",
+        "emissions":           "Rail572",
+        "accessorialCharges":  "Rail573",
+        "carrierScorecard":    "Rail574",
+        "equipmentHealth":     "Rail575",
+        "shipmentAmendment":   "Rail576",
+        "fuelSurcharge":       "Rail577",
+        "routeWeather":        "Rail578",
+        "networkDisruption":   "Rail579",
+        "tariffRateLookup":    "Rail580",
+        "settlementSummary":   "Rail581",
+        "rampSchedule":        "Rail582",
+        "crossBorderInterchange": "Rail583",
+        "crewCallBoard":       "Rail584",
+        "equipmentPositions":  "Rail585",
+        "serviceLineup":       "Rail586",
+        "fraSafety":           "Rail587",
+        "fleetHealth":         "Rail588",
+        "transloadConnection": "Rail589",
+        "documentIngest":      "Rail590",
+    ]
 }
 
 @MainActor
@@ -52,7 +95,8 @@ enum RailEngineerNavDispatcher {
             return
         }
 
-        guard let screenId = RailEngineerNavRoute.map[key] else { return }
+        guard let screenId = RailEngineerNavRoute.map[key]
+                ?? RailEngineerNavRoute.deepMap[label] else { return }
         NotificationCenter.default.post(
             name: .eusoRailNavSwap,
             object: nil,

@@ -139,7 +139,7 @@ private struct RailRampScheduleBody: View {
     private var rampStatusColor: Color {
         rampStatusLabel == "RAMP OPEN" ? Brand.success : Brand.warning
     }
-    private var nextTrackLabel: String { nextWindow?.dockId.replacingOccurrences(of: "D", with: "track ") ?? "—" }
+    private var nextTrackLabel: String { nextWindow?.dockId?.replacingOccurrences(of: "D", with: "track ") ?? "—" }
     private var nextWindowLabel: String {
         if let m = minutesUntil(nextWindow?.scheduledAt) { return "in \(m)m" }
         return "—"

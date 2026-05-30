@@ -58,8 +58,8 @@ private struct RailConsistBoardBody: View {
                                    subtitle: "Building and rolling consists will appear here.")
                 } else {
                     VStack(spacing: Space.s2) { ForEach(consists) { consistCard($0) } }
-                    CTAButton(title: building ? "Building…" : "Build new consist", leadingIcon: "plus",
-                              action: { Task { await buildConsist() } })
+                    CTAButton(title: building ? "Building…" : "Build new consist",
+                              action: { Task { await buildConsist() } }, leadingIcon: "plus")
                 }
                 Color.clear.frame(height: 96)
             }

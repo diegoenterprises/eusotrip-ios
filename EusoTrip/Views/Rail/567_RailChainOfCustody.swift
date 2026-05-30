@@ -66,7 +66,11 @@ private struct RailChainOfCustodyBody: View {
     @State private var isVerifying = false
     @State private var isExporting = false
 
-    private static let chainPurple = Color(red: 0.612, green: 0.153, blue: 0.690)
+    // Non-latest custody-block chip accent. 0x9C27B0 is the canonical
+    // Brand.escort hue (the original raw Color(red:0.612,…) literal mapped
+    // to exactly this hex) — re-expressed via the brand token so it adapts
+    // with the palette instead of a fixed sRGB literal.
+    private static let chainPurple = Brand.escort
 
     // MARK: Derived
 
@@ -194,7 +198,7 @@ private struct RailChainOfCustodyBody: View {
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(integrityColor)
                     Text("verifyChain")
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(EType.mono(.caption))
                         .foregroundStyle(palette.textSecondary)
                 }
             }
@@ -230,7 +234,7 @@ private struct RailChainOfCustodyBody: View {
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
                 Text("getTrail")
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(EType.mono(.caption))
                     .foregroundStyle(palette.textTertiary)
             }
             if blocks.isEmpty {
@@ -284,7 +288,7 @@ private struct RailChainOfCustodyBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)
                 Text(sub)
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .font(EType.mono(.caption))
                     .tracking(0.4)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
@@ -308,16 +312,16 @@ private struct RailChainOfCustodyBody: View {
 
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
-            CTAButton(title: "Export compliance report", leadingIcon: "doc.text", isLoading: isExporting) {
-                Task { await exportReport() }
-            }
+            CTAButton(title: "Export compliance report",
+                      action: { Task { await exportReport() } },
+                      leadingIcon: "doc.text", isLoading: isExporting)
             Button { Task { await verify() } } label: {
                 Group {
                     if isVerifying {
                         ProgressView().scaleEffect(0.85)
                     } else {
                         Text("Verify")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(EType.bodyStrong)
                             .foregroundStyle(palette.textPrimary)
                     }
                 }

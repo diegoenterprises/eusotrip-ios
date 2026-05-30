@@ -241,7 +241,7 @@ private struct RailExceptionsHoldsBody: View {
                     ? LinearGradient(colors: [Brand.danger.opacity(0.10), Brand.warning.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing)
                     : LinearGradient(colors: [palette.bgCard, palette.bgCard], startPoint: .topLeading, endPoint: .bottomTrailing))
             RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
-                .strokeBorder(isCritical ? Brand.danger.opacity(0.35) : LinearGradient.diagonal as! LinearGradient, lineWidth: 1.5)
+                .strokeBorder(isCritical ? AnyShapeStyle(Brand.danger.opacity(0.35)) : AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
 
             HStack(spacing: Space.s4) {
                 VStack(alignment: .leading, spacing: 8) {

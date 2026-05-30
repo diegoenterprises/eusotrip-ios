@@ -132,11 +132,11 @@ private struct RailCarrierScorecardBody: View {
 
     private func carrierColor(_ code: String?) -> Color {
         switch (code ?? "").uppercased() {
-        case "BNSF", "BN": return Color(red: 1.0, green: 0.42, blue: 0.0)
+        case "BNSF", "BN": return Color(hex: 0xFF6B00)
         case "UP":         return Brand.warning
         case "NS":         return Brand.blue
         case "CSX":        return Brand.success
-        case "CN":         return Color(red: 0.55, green: 0.0, blue: 0.88)
+        case "CN":         return Color(hex: 0x8C00E0)
         case "KCS", "CP":  return Brand.danger
         default:
             let palette: [Color] = [Brand.success, Brand.blue, Brand.warning, Brand.danger]
@@ -148,7 +148,7 @@ private struct RailCarrierScorecardBody: View {
         let g = grade ?? ""
         if g.hasPrefix("A") { return Brand.success }
         if g.hasPrefix("B") { return Brand.warning }
-        if g.hasPrefix("C") { return Color(red: 0.38, green: 0.49, blue: 0.55) }
+        if g.hasPrefix("C") { return Brand.rail }
         return Brand.danger
     }
 

@@ -378,7 +378,7 @@ private struct RailContainerTimelineBody: View {
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
             CTAButton(title: "View shipment detail", leadingIcon: "shippingbox.fill")
-            CTAButton(title: "Share", leadingIcon: "square.and.arrow.up", style: .secondary)
+            CTAButton(title: "Share", leadingIcon: "square.and.arrow.up")
         }
     }
 

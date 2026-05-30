@@ -94,9 +94,9 @@ private struct RailShipmentAmendmentBody: View {
 
     private func fieldChipInfo(_ fieldType: String?) -> (color: Color, icon: String) {
         switch (fieldType ?? "").lowercased() {
-        case "destination":                return (Color(red: 0.745, green: 0.008, blue: 1.0), "mappin.circle.fill")
+        case "destination":                return (Brand.magenta, "mappin.circle.fill")
         case "car_count", "car count":     return (Brand.blue,    "rectangle.split.3x1.fill")
-        case "commodity":                  return (Color(red: 0.38, green: 0.49, blue: 0.55), "doc.text.fill")
+        case "commodity":                  return (Brand.rail,    "doc.text.fill")
         case "rate", "rate_impact":        return (Brand.warning,  "dollarsign.circle.fill")
         default:                           return (Brand.blue,     "pencil.circle.fill")
         }
@@ -105,9 +105,9 @@ private struct RailShipmentAmendmentBody: View {
     private func pillInfo(_ c: AmendmentChange576) -> (label: String, color: Color)? {
         switch (c.status ?? "").lowercased() {
         case "edited":
-            return ("EDITED", Color(red: 0.608, green: 0.122, blue: 0.812))
+            return ("EDITED", Color(hex: 0xC77DFF))
         case "no_change", "no change":
-            return ("NO CHANGE", Color(red: 0.38, green: 0.49, blue: 0.55))
+            return ("NO CHANGE", Brand.rail)
         case "delta_positive":
             guard let d = c.deltaLabel else { return nil }
             return (d, Brand.success)
@@ -193,7 +193,7 @@ private struct RailShipmentAmendmentBody: View {
                                 if i <= current {
                                     Rectangle().fill(LinearGradient.primary).frame(maxWidth: .infinity, maxHeight: 2)
                                 } else {
-                                    Rectangle().fill(Color.black.opacity(0.10)).frame(maxWidth: .infinity, maxHeight: 2)
+                                    Rectangle().fill(palette.borderFaint).frame(maxWidth: .infinity, maxHeight: 2)
                                 }
                             }
                         }
@@ -259,8 +259,8 @@ private struct RailShipmentAmendmentBody: View {
             .frame(width: 22)
         } else {
             Circle()
-                .fill(Color.white)
-                .overlay(Circle().strokeBorder(Color.black.opacity(0.20), lineWidth: 1.5))
+                .fill(palette.bgCardSoft)
+                .overlay(Circle().strokeBorder(palette.borderStrong, lineWidth: 1.5))
                 .frame(width: 10, height: 10)
                 .frame(width: 22)
         }
