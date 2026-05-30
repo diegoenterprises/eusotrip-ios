@@ -261,7 +261,154 @@ private struct EusoCloseXModifier: ViewModifier {
     }
 }
 
+// MARK: - BespokeBackBar (the unified top back affordance)
+//
+// The canonical TOP-of-screen back control for PUSHED detail screens
+// (sheet→push conversions per the 2026-05-30 NAV remediation spec).
+// It is the in-stack sibling of `SheetCloseButton`:
+//
+//   • SheetCloseButton (X, top-right)  → dismisses a *modal sheet*.
+//   • BespokeBackBar  (chevron, top-left + title) → pops a *pushed*
+//     detail back to its caller via the role's NavBack notification.
+//
+// Layout contract (founder hard constraint — "back must NEVER overlap
+// the title"): the back control is a FIXED-WIDTH leading element
+// (`backSlot` pt). The title is centered in the remaining space with a
+// symmetric trailing spacer of the same fixed width, so the title's
+// optical center is the bar center and it can never slide under the
+// chevron. With a long title the center block truncates with an
+// ellipsis well clear of the chevron.
+//
+// This bar is role-agnostic: the caller supplies `onBack` (which posts
+// the role's correct `eusoXxxNavBack`), so every role surface reuses
+// the identical structure the IA spec requires.
+//
+// BottomNav is untouched (founder mandate) — this lives only at the
+// top of the pushed content.
+
+struct BespokeBackBar: View {
+    @Environment(\.palette) private var palette
+    @State private var pressed: Bool = false
+
+    /// Page title shown centered in the bar. Pass `nil`/empty on
+    /// screens that already paint a strong eyebrow+title so the bar
+    /// renders chevron-only (avoids the title-collision the floating
+    /// overlay used to cause).
+    let title: String?
+    /// Fires the role's NavBack. The bar adds the canonical §B.4 haptic
+    /// before invoking; the surface owns the pop animation, so `onBack`
+    /// should NOT animate (avoids double-animation).
+    let onBack: () -> Void
+
+    /// Fixed leading + trailing slot width. The chevron lives in the
+    /// leading slot; an equal-width invisible trailing slot keeps the
+    /// centered title optically centered without overlapping the back.
+    private let backSlot: CGFloat = 56
+
+    var body: some View {
+        ZStack {
+            // Centered title — bounded by symmetric fixed insets so it
+            // can never reach the chevron.
+            if let title, !title.isEmpty {
+                Text(title)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, backSlot)
+                    .accessibilityAddTraits(.isHeader)
+            }
+
+            HStack(spacing: 0) {
+                // Leading fixed-width back slot.
+                Button(action: {
+                    #if canImport(UIKit)
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    #endif
+                    onBack()
+                }) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                        .frame(width: 44, height: 44)   // HIG hit target
+                        .background(Circle().fill(palette.bgCardSoft))
+                        .overlay(Circle().strokeBorder(palette.borderFaint))
+                        .scaleEffect(pressed ? 0.92 : 1.0)
+                        .animation(.easeOut(duration: 0.12), value: pressed)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back")
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { _ in pressed = true }
+                        .onEnded   { _ in pressed = false }
+                )
+                .frame(width: backSlot, alignment: .leading)
+
+                Spacer(minLength: 0)
+
+                // Trailing fixed-width mirror slot keeps the centered
+                // title balanced. Empty by design — the X close lives
+                // on sheets, not on pushed screens (never both).
+                Color.clear
+                    .frame(width: backSlot, height: 44)
+                    .allowsHitTesting(false)
+            }
+        }
+        .frame(height: 52)
+        .padding(.horizontal, Space.s3)
+        .background(palette.bgPage)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(palette.borderFaint)
+                .frame(height: 1)
+        }
+    }
+}
+
+extension View {
+    /// Inject the canonical `BespokeBackBar` above a PUSHED detail
+    /// screen. The bar pins to the top; the screen body fills below it.
+    /// Use this on the root of any view that a role surface renders
+    /// in-stack (slide-in-from-right) instead of in a `.sheet`.
+    ///
+    ///     SomeDetailBody()
+    ///         .injectBespokeBackBar(title: "Contract") {
+    ///             NotificationCenter.default.post(
+    ///                 name: .eusoShipperNavBack, object: nil)
+    ///         }
+    ///
+    /// Pass `title: nil` when the body already shows a strong title.
+    /// `onBack` must post the role's correct NavBack notification.
+    func injectBespokeBackBar(
+        title: String? = nil,
+        onBack: @escaping () -> Void
+    ) -> some View {
+        VStack(spacing: 0) {
+            BespokeBackBar(title: title, onBack: onBack)
+            self
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
 // MARK: - Preview
+
+#Preview("Bespoke Back Bar · Dark") {
+    ZStack {
+        Theme.dark.bgPage.ignoresSafeArea()
+        VStack(spacing: 0) {
+            BespokeBackBar(title: "Contract · EUSO-2120 Volume Commitment That Is Very Long") {}
+            BespokeBackBar(title: "Live Tracking") {}
+            BespokeBackBar(title: nil) {}
+            Spacer()
+        }
+        .environment(\.palette, Theme.dark)
+    }
+    .preferredColorScheme(.dark)
+}
 
 #Preview("Sheet Close Button · Dark") {
     ZStack {

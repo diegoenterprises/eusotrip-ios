@@ -78,6 +78,53 @@ extension Notification.Name {
     static let eusoProfileUpdated = Notification.Name("eusoProfileUpdated")
 }
 
+// MARK: - Sheet→push detail mechanism (NAV remediation 2026-05-30)
+//
+// The router's `screenStack: [String]` pushes registry screens by ID.
+// Many detail surfaces, though, are inline structs (ContractDetailSheet,
+// ClaimDetailSheet, …) with rich runtime data (a row model, a binding)
+// that doesn't reduce cleanly to a registry id + string token. Rather
+// than register one screen per inline detail, the surface owns a single
+// generic detail layer: a screen calls `\.shipperPushDetail(title:) {
+// AnyView(...) }` and the surface renders that view IN-STACK, slid in
+// from the right, topped with a `BespokeBackBar`, above the current
+// screen. Back posts `.eusoShipperNavBack` — the surface clears the
+// detail layer first, else pops `screenStack`. This stays entirely
+// WITHIN the existing notification router (no SwiftUI NavigationStack).
+
+/// One pushed detail layer. `id` lets SwiftUI diff/transition between
+/// successive pushes; `title` feeds the `BespokeBackBar`; `content`
+/// is the caller-built body (already carrying its own data wiring).
+struct ShipperDetailPush: Identifiable {
+    let id = UUID()
+    let title: String?
+    let content: AnyView
+}
+
+/// Environment closure a Shipper screen invokes to push an inline
+/// detail view in-stack (sheet→push). Signature mirrors the simple
+/// `(String) -> Void` nav handler so screens depend only on the
+/// environment, never on the surface type. Nil outside ShipperSurface.
+struct ShipperPushDetailKey: EnvironmentKey {
+    static let defaultValue: ((String?, @escaping () -> AnyView) -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    /// Push an inline detail in-stack. `title` feeds the back bar
+    /// (pass nil to render chevron-only); the closure builds the body.
+    ///
+    ///     @Environment(\.shipperPushDetail) private var pushDetail
+    ///     ...
+    ///     pushDetail?("Contract") { AnyView(ContractDetailBody(row: row)) }
+    ///
+    /// The surface wraps the result with `BespokeBackBar` automatically
+    /// and animates the slide-in; callers must NOT add their own bar.
+    var shipperPushDetail: ((String?, @escaping () -> AnyView) -> Void)? {
+        get { self[ShipperPushDetailKey.self] }
+        set { self[ShipperPushDetailKey.self] = newValue }
+    }
+}
+
 /// Slot-label → screen-id map. Keyed off the lowercased label string
 /// the BottomNav primitive emits. Centralized so future shipper
 /// chrome additions only have to touch this dictionary.

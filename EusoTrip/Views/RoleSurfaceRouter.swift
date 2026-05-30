@@ -221,6 +221,15 @@ struct ShipperSurface: View {
     @State private var avatarPickerItem: PhotosPickerItem? = nil
     @State private var avatarPickerOpen: Bool = false
 
+    /// The single generic detail layer pushed in-stack via
+    /// `\.shipperPushDetail` (sheet→push, NAV remediation 2026-05-30).
+    /// When non-nil it renders ABOVE the current screen, slid in from
+    /// the trailing edge with a `BespokeBackBar`. `.eusoShipperNavBack`
+    /// clears this first (if present) before popping `screenStack`, so
+    /// one back gesture pops one level whether it's a detail or a
+    /// registry screen.
+    @State private var pushedDetail: ShipperDetailPush? = nil
+
     private var current: ProductionScreen {
         // Detail screens with a captured loadId override the registry
         // sentinel so the screen renders the real load. This is how
@@ -278,6 +287,14 @@ struct ShipperSurface: View {
                 stackDepth: screenStack.count,
                 currentScreenId: currentScreenId
             ))
+            // Generic sheet→push detail layer (slides in over the
+            // current screen, BespokeBackBar on top). Sits ABOVE the
+            // back overlay so the floating circle never shows under a
+            // pushed detail. Injects `\.shipperPushDetail` for screens.
+            .modifier(ShipperDetailLayer(
+                pushedDetail: $pushedDetail,
+                palette: palette
+            ))
             .modifier(ShipperEnvInjections())
             .modifier(ShipperNotificationListeners(
                 screenStack: $screenStack,
@@ -285,6 +302,7 @@ struct ShipperSurface: View {
                 avatarPickerOpen: $avatarPickerOpen,
                 showeSang: $showeSang,
                 webContinuationURL: $webContinuationURL,
+                pushedDetail: $pushedDetail,
                 pushOrTab: pushOrTab,
                 popOne: popOne,
                 handleMeAction: handleShipperMeAction
@@ -552,6 +570,45 @@ private struct ShipperBackOverlay: ViewModifier {
     }
 }
 
+/// Sheet→push detail layer (NAV remediation 2026-05-30). Renders the
+/// surface-owned `pushedDetail` ABOVE the current screen, slid in from
+/// the trailing edge and topped with a `BespokeBackBar`. Also injects
+/// the `\.shipperPushDetail` environment closure every Shipper screen
+/// uses to push an inline detail in-stack.
+///
+/// Back: the bar posts `.eusoShipperNavBack` (the surface's nav
+/// receiver clears `pushedDetail` before popping `screenStack`, so a
+/// single back gesture pops exactly one level). The detail body fills
+/// the page; `palette.bgPage` underlay makes the slide-in opaque so
+/// the screen beneath is fully covered while it animates.
+private struct ShipperDetailLayer: ViewModifier {
+    @Binding var pushedDetail: ShipperDetailPush?
+    let palette: Theme.Palette
+
+    func body(content: Content) -> some View {
+        ZStack {
+            content
+            if let detail = pushedDetail {
+                detail.content
+                    .injectBespokeBackBar(title: detail.title) {
+                        NotificationCenter.default.post(
+                            name: .eusoShipperNavBack, object: nil
+                        )
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(palette.bgPage.ignoresSafeArea())
+                    .transition(.move(edge: .trailing))
+                    .zIndex(1)
+            }
+        }
+        .environment(\.shipperPushDetail) { title, builder in
+            withAnimation(.easeInOut(duration: 0.28)) {
+                pushedDetail = ShipperDetailPush(title: title, content: builder())
+            }
+        }
+    }
+}
+
 /// Three environment overrides applied in sequence:
 ///   • driverNavHandler = nil — masks the inherited driver handler so
 ///     bottom-nav slots route to ShipperNavDispatcher.
@@ -590,6 +647,7 @@ private struct ShipperNotificationListeners: ViewModifier {
     @Binding var avatarPickerOpen: Bool
     @Binding var showeSang: Bool
     @Binding var webContinuationURL: URL?
+    @Binding var pushedDetail: ShipperDetailPush?
     let pushOrTab: (String) -> Void
     let popOne: () -> Void
     let handleMeAction: (String, [AnyHashable: Any]) -> Void
@@ -601,6 +659,7 @@ private struct ShipperNotificationListeners: ViewModifier {
                 activeLoadId: $activeLoadId,
                 avatarPickerOpen: $avatarPickerOpen,
                 showeSang: $showeSang,
+                pushedDetail: $pushedDetail,
                 pushOrTab: pushOrTab,
                 popOne: popOne
             ))
@@ -622,6 +681,7 @@ private struct ShipperNavReceivers: ViewModifier {
     @Binding var activeLoadId: String?
     @Binding var avatarPickerOpen: Bool
     @Binding var showeSang: Bool
+    @Binding var pushedDetail: ShipperDetailPush?
     let pushOrTab: (String) -> Void
     let popOne: () -> Void
 
@@ -644,10 +704,22 @@ private struct ShipperNavReceivers: ViewModifier {
                     screenStack = ["200"]
                     return
                 }
+                // Any explicit screen swap leaves the generic detail
+                // layer behind — clear it so a stale detail never paints
+                // over a freshly-swapped screen.
+                pushedDetail = nil
                 withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoShipperNavBack)) { _ in
-                withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+                // Detail layer takes priority: one back gesture pops one
+                // level. If a generic sheet→push detail is showing, slide
+                // it back out; only when no detail is up do we pop the
+                // registry `screenStack`.
+                if pushedDetail != nil {
+                    withAnimation(.easeInOut(duration: 0.28)) { pushedDetail = nil }
+                } else {
+                    withAnimation(.easeInOut(duration: 0.22)) { popOne() }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoShipperAvatarPickRequested)) { _ in
                 avatarPickerOpen = true

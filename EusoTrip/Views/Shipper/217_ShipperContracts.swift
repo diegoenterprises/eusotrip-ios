@@ -189,6 +189,10 @@ struct ShipperContracts: View {
     @Environment(\.palette) private var palette
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // Sheet→push (NAV remediation 2026-05-30): the contract detail now
+    // pushes in-stack via the surface's detail layer + BespokeBackBar
+    // instead of presenting as a `.sheet`. Nil outside ShipperSurface.
+    @Environment(\.shipperPushDetail) private var pushDetail
     @StateObject private var store = ShipperContractsStore()
     @State private var selectedId: String?
     @State private var detail: ContractsAPI.ContractDetail?
@@ -220,21 +224,6 @@ struct ShipperContracts: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
             Task { await store.refresh() }
-        }
-        .sheet(item: Binding(
-            get: { selectedId.map { IdentifiedContractId(id: $0) } },
-            set: { newValue in
-                selectedId = newValue?.id
-                if newValue == nil { detail = nil }
-            }
-        )) { ident in
-            ContractDetailSheet(
-                contractId: ident.id,
-                detail: $detail,
-                loading: $detailLoading,
-                palette: palette
-            )
-            .presentationDragIndicator(.visible)
         }
         .animation(
             reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.18),
@@ -800,10 +789,29 @@ struct ShipperContracts: View {
 
     private func tapRow(_ row: ContractsAPI.ContractRow) {
         selectedId = row.id
+        detail = nil
         Task {
             detailLoading = true
             detail = try? await EusoTripAPI.shared.contracts.getContract(id: row.id)
             detailLoading = false
+        }
+        // Sheet→push: render ContractDetailSheet in-stack with a
+        // BespokeBackBar. The pushed body observes the `$detail` /
+        // `$detailLoading` bindings, so the skeleton flips to live data
+        // when the async fetch above resolves. Falls back to the
+        // legacy in-place state if no surface detail layer is present.
+        if let pushDetail {
+            let id = row.id
+            pushDetail("Contract") {
+                AnyView(
+                    ContractDetailSheet(
+                        contractId: id,
+                        detail: $detail,
+                        loading: $detailLoading,
+                        palette: palette
+                    )
+                )
+            }
         }
         // observability post — telemetry only; real local effects are
         // selectedId mutation + the contracts.getContract fetch above.

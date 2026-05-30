@@ -197,6 +197,9 @@ struct ShipperFreightClaims: View {
     @Environment(\.palette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openURL) private var openURL
+    // Sheet→push (NAV remediation 2026-05-30): the claim detail pushes
+    // in-stack via the surface detail layer + BespokeBackBar.
+    @Environment(\.shipperPushDetail) private var pushDetail
     @StateObject private var store = ShipperFreightClaimsStore()
     @State private var selected: ShipperFreightClaimsAPI.ClaimRow?
 
@@ -229,11 +232,6 @@ struct ShipperFreightClaims: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
             Task { await store.refresh() }
-        }
-        .sheet(item: $selected) { row in
-            ClaimDetailSheet(claim: row)
-                .environment(\.palette, palette)
-                .presentationDragIndicator(.visible)
         }
         .animation(
             reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.18),
@@ -603,9 +601,25 @@ struct ShipperFreightClaims: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
+    /// Open a claim's detail. Sheet→push: renders `ClaimDetailSheet`
+    /// in-stack with a BespokeBackBar via the surface detail layer.
+    /// `selected` is retained for any in-place readers; the push is the
+    /// active presentation path.
+    private func openClaim(_ row: ShipperFreightClaimsAPI.ClaimRow) {
+        selected = row
+        if let pushDetail {
+            pushDetail("Freight Claim") {
+                AnyView(
+                    ClaimDetailSheet(claim: row)
+                        .environment(\.palette, palette)
+                )
+            }
+        }
+    }
+
     @ViewBuilder
     private func historyRowView(_ row: ShipperFreightClaimsAPI.ClaimRow) -> some View {
-        Button(action: { selected = row }) {
+        Button(action: { openClaim(row) }) {
             HStack(alignment: .top, spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -823,7 +837,7 @@ struct ShipperFreightClaims: View {
         let sev = severityStyle(row.severity)
         let stColor = statusColor(row.status, palette: palette)
         return Button {
-            selected = row
+            openClaim(row)
         } label: {
             HStack(alignment: .top, spacing: Space.s3) {
                 ZStack {
