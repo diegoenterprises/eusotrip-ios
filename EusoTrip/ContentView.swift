@@ -913,6 +913,10 @@ enum ScreenRegistry {
         list.append(.init(id: "293", title: "Shipper · Settlement Detail",       role: .shipper) { p in AnyView(SettlementDetailScreen(theme: p, settlementId: "0")) })
         list.append(.init(id: "294", title: "Shipper · Dispute Settlement",      role: .shipper) { p in AnyView(DisputeSettlementScreen(theme: p, settlementId: "0")) })
         list.append(.init(id: "295", title: "Shipper · Payment Methods",         role: .shipper) { p in AnyView(PaymentMethodsScreen(theme: p)) })
+        // §40 — Shipper Dock Appointments (registry "295" is Payment Methods, so this
+        // takes a distinct id). ShipperDockAppointments owns its chrome (ShipperScreenWrap)
+        // + reads @Environment(\.palette); wired to appointments.{list,getSummary,assignHazmatBay}.
+        list.append(.init(id: "ShipDock295", title: "Shipper · Dock Appointments", role: .shipper) { p in AnyView(ShipperDockAppointments().environment(\.palette, p)) })
         list.append(.init(id: "296", title: "Shipper · Add Payment Method",      role: .shipper) { p in AnyView(AddPaymentMethodScreen(theme: p)) })
         list.append(.init(id: "297", title: "Shipper · Monthly Statement",       role: .shipper) { p in AnyView(MonthlyStatementScreen(theme: p)) })
         list.append(.init(id: "298", title: "Shipper · Sustainability",          role: .shipper) { p in AnyView(SustainabilityScreen(theme: p)) })

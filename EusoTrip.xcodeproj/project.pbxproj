@@ -396,6 +396,7 @@
 		D2200000000000000022CB /* 220_ShipperRateBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2200000000000000022CA /* 220_ShipperRateBoard.swift */; };
 		D2210000000000000022CD /* 221_ShipperRecurringLoads.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2210000000000000022CC /* 221_ShipperRecurringLoads.swift */; };
 		D2220000000000000022CF /* 222_ShipperLiveTracking.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2220000000000000022CE /* 222_ShipperLiveTracking.swift */; };
+		SHIPDOCK295BUILD /* 295_ShipperDockAppointments.swift in Sources */ = {isa = PBXBuildFile; fileRef = SHIPDOCK295FREF /* 295_ShipperDockAppointments.swift */; };
 		D2230000000000000023CB /* 223_ShipperAgreements.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2230000000000000023CA /* 223_ShipperAgreements.swift */; };
 		D223A0000000000000023AI /* 223A_AgreementWizard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D223A0000000000000023AJ /* 223A_AgreementWizard.swift */; };
 		D2240000000000000024CB /* 224_ShipperPartnerDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2240000000000000024CA /* 224_ShipperPartnerDirectory.swift */; };
@@ -1130,6 +1131,7 @@
 		D2200000000000000022CA /* 220_ShipperRateBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 220_ShipperRateBoard.swift; path = EusoTrip/Views/Shipper/220_ShipperRateBoard.swift; sourceTree = SOURCE_ROOT; };
 		D2210000000000000022CC /* 221_ShipperRecurringLoads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 221_ShipperRecurringLoads.swift; path = EusoTrip/Views/Shipper/221_ShipperRecurringLoads.swift; sourceTree = SOURCE_ROOT; };
 		D2220000000000000022CE /* 222_ShipperLiveTracking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 222_ShipperLiveTracking.swift; path = EusoTrip/Views/Shipper/222_ShipperLiveTracking.swift; sourceTree = SOURCE_ROOT; };
+		SHIPDOCK295FREF /* 295_ShipperDockAppointments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 295_ShipperDockAppointments.swift; path = EusoTrip/Views/Shipper/295_ShipperDockAppointments.swift; sourceTree = SOURCE_ROOT; };
 		D2230000000000000023CA /* 223_ShipperAgreements.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 223_ShipperAgreements.swift; path = EusoTrip/Views/Shipper/223_ShipperAgreements.swift; sourceTree = SOURCE_ROOT; };
 		D223A0000000000000023AJ /* 223A_AgreementWizard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 223A_AgreementWizard.swift; path = EusoTrip/Views/Shipper/223A_AgreementWizard.swift; sourceTree = SOURCE_ROOT; };
 		D2240000000000000024CA /* 224_ShipperPartnerDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 224_ShipperPartnerDirectory.swift; path = EusoTrip/Views/Shipper/224_ShipperPartnerDirectory.swift; sourceTree = SOURCE_ROOT; };
@@ -1984,6 +1986,7 @@
 				D2200000000000000022CA /* 220_ShipperRateBoard.swift */,
 				D2210000000000000022CC /* 221_ShipperRecurringLoads.swift */,
 				D2220000000000000022CE /* 222_ShipperLiveTracking.swift */,
+				SHIPDOCK295FREF /* 295_ShipperDockAppointments.swift */,
 				D2230000000000000023CA /* 223_ShipperAgreements.swift */,
 				D2240000000000000024CA /* 224_ShipperPartnerDirectory.swift */,
 				D2250000000000000025CA /* 225_ShipperHotZones.swift */,
@@ -3203,6 +3206,7 @@
 				D2200000000000000022CB /* 220_ShipperRateBoard.swift in Sources */,
 				D2210000000000000022CD /* 221_ShipperRecurringLoads.swift in Sources */,
 				D2220000000000000022CF /* 222_ShipperLiveTracking.swift in Sources */,
+				SHIPDOCK295BUILD /* 295_ShipperDockAppointments.swift in Sources */,
 				D2230000000000000023CB /* 223_ShipperAgreements.swift in Sources */,
 				D2240000000000000024CB /* 224_ShipperPartnerDirectory.swift in Sources */,
 				D2250000000000000025CB /* 225_ShipperHotZones.swift in Sources */,
