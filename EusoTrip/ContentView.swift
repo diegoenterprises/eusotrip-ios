@@ -1949,6 +1949,15 @@ enum ScreenRegistry {
             .init(id: "Rail550", title: "Rail Engineer · Home",       role: .railEngineer) { p in AnyView(RailEngineerHomeScreen(theme: p)) },
             .init(id: "Rail551", title: "Rail Engineer · Shipments",  role: .railEngineer) { p in AnyView(RailShipmentsScreen(theme: p)) },
             .init(id: "Rail552", title: "Rail Engineer · Compliance", role: .railEngineer) { p in AnyView(RailComplianceScreen(theme: p)) },
+            // Phase B wave 9 — Rail NEW screens (verbatim ports, theme-only inits).
+            .init(id: "Rail631", title: "Rail Engineer · FRA Accident Reports",  role: .railEngineer) { p in AnyView(RailFRAAccidentReportsScreen(theme: p)) },
+            .init(id: "Rail632", title: "Rail Engineer · Crew Availability",      role: .railEngineer) { p in AnyView(RailCrewAvailabilityScreen(theme: p)) },
+            .init(id: "Rail633", title: "Rail Engineer · Border Crossing ETA",    role: .railEngineer) { p in AnyView(RailBorderCrossingETAScreen(theme: p)) },
+            .init(id: "Rail634", title: "Rail Engineer · Railcar Inventory",      role: .railEngineer) { p in AnyView(RailRailcarInventoryScreen(theme: p)) },
+            .init(id: "Rail635", title: "Rail Engineer · Financial Summary",      role: .railEngineer) { p in AnyView(RailFinancialSummaryScreen(theme: p)) },
+            .init(id: "Rail636", title: "Rail Engineer · X-Border Crew Certs",    role: .railEngineer) { p in AnyView(RailCrossBorderCrewCertsScreen(theme: p)) },
+            .init(id: "Rail637", title: "Rail Engineer · X-Border DG Regs",       role: .railEngineer) { p in AnyView(RailCrossBorderDGRegsScreen(theme: p)) },
+            .init(id: "Rail638", title: "Rail Engineer · X-Border Compliance",    role: .railEngineer) { p in AnyView(RailCrossBorderComplianceCheckScreen(theme: p)) },
         ])
 
         // Vessel Operator surface (Vesl650–652).
