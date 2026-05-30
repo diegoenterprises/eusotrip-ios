@@ -69,7 +69,7 @@ public struct DailyBriefWidget: View {
                     colors: [.cyan, .green],
                     startPoint: .leading, endPoint: .trailing
                 ))
-            Text("ESANG · MORNING BRIEF")
+            Text("ESANG BRIEF")
                 .font(.system(size: 11, weight: .heavy))
                 .tracking(1.0)
                 .foregroundStyle(.secondary)

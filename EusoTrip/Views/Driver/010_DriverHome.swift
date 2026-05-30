@@ -41,6 +41,77 @@ enum HomeWidgetCategory: String, Codable, CaseIterable {
     case planning, tracking, reporting, management
 }
 
+/// User-selectable widget span on the iOS home grid.
+///
+/// The iOS home is a single-column reorderable stack, so the resize
+/// dimension that's genuinely meaningful — and that maps cleanly onto
+/// the existing cross-platform `Slot{w,h}` payload (web is a 12-col
+/// grid) — is the tile's COLUMN SPAN:
+///
+///   • `.half`    → two tiles share a row (w = 6 on the 12-col model)
+///   • `.full`    → one tile per row     (w = 12)
+///   • `.compact` → full width, but the tile renders its condensed
+///                  body (caps tall tiles to a glanceable height; the
+///                  tile reads `\.homeWidgetSpan` from the environment)
+///
+/// Persisted into the same `users.saveDashboardLayout` slot the reorder
+/// already writes, via the `w`/`h` fields the server schema already
+/// accepts (users.ts:2058). Web hydrates the identical w/h.
+enum HomeWidgetSpan: String, Codable, CaseIterable, Hashable {
+    case compact, half, full
+
+    /// (w, h) on the 12-col cross-platform model. `h` mirrors the web
+    /// row-height convention; `w` is what drives iOS row-packing.
+    var grid: (w: Int, h: Int) {
+        switch self {
+        case .compact: return (12, 4)
+        case .half:    return (6, 6)
+        case .full:    return (12, 8)
+        }
+    }
+
+    /// Best-fit span for a saved/legacy `(w,h)` slot coming back from
+    /// the server (which may predate the iOS picker). Width wins; a
+    /// short full-width tile reads as `.compact`.
+    static func from(w: Int, h: Int) -> HomeWidgetSpan {
+        if w <= 6 { return .half }
+        if h <= 4 { return .compact }
+        return .full
+    }
+
+    var menuLabel: String {
+        switch self {
+        case .compact: return "Compact"
+        case .half:    return "Half width"
+        case .full:    return "Full width"
+        }
+    }
+
+    var menuIcon: String {
+        switch self {
+        case .compact: return "rectangle.compress.vertical"
+        case .half:    return "rectangle.split.2x1"
+        case .full:    return "rectangle"
+        }
+    }
+
+    /// True when this span occupies only half a row (packs with a sibling).
+    var isHalf: Bool { self == .half }
+}
+
+/// Environment key so a tile can render a condensed body when the user
+/// chooses `.compact`. Tiles opt in by reading `\.homeWidgetSpan`; tiles
+/// that ignore it simply render their natural body (still valid).
+private struct HomeWidgetSpanKey: EnvironmentKey {
+    static let defaultValue: HomeWidgetSpan = .full
+}
+extension EnvironmentValues {
+    var homeWidgetSpan: HomeWidgetSpan {
+        get { self[HomeWidgetSpanKey.self] }
+        set { self[HomeWidgetSpanKey.self] = newValue }
+    }
+}
+
 /// Mirrors web's `WidgetDefinition`. `id` is the cross-platform key.
 struct HomeWidgetDef: Identifiable, Hashable {
     let id: String
@@ -51,6 +122,31 @@ struct HomeWidgetDef: Identifiable, Hashable {
     let roles: Set<String>              // role enum strings — RBAC
     let defaultSize: (w: Int, h: Int)   // matches web grid (12-col)
     let iosRenderable: Bool
+    /// Spans the user may resize this widget to (edit-mode picker). Every
+    /// widget supports `.full`; data-dense tiles also allow `.half` so two
+    /// can share a row, and glanceable tiles allow `.compact`. Defaults to
+    /// `[.full]` (no resize affordance) when omitted.
+    let availableSizes: [HomeWidgetSpan]
+
+    init(id: String, name: String, summary: String, icon: String,
+         category: HomeWidgetCategory, roles: Set<String>,
+         defaultSize: (w: Int, h: Int), iosRenderable: Bool,
+         availableSizes: [HomeWidgetSpan] = [.full]) {
+        self.id = id; self.name = name; self.summary = summary
+        self.icon = icon; self.category = category; self.roles = roles
+        self.defaultSize = defaultSize; self.iosRenderable = iosRenderable
+        self.availableSizes = availableSizes
+    }
+
+    /// Span the catalog default `(w,h)` maps to — the seed value when no
+    /// user choice has been persisted yet. Clamped to this widget's
+    /// declared `availableSizes` so the seed is always a span the picker
+    /// can also select (falls back to the first available, then `.full`).
+    var defaultSpan: HomeWidgetSpan {
+        let mapped = HomeWidgetSpan.from(w: defaultSize.w, h: defaultSize.h)
+        if availableSizes.contains(mapped) { return mapped }
+        return availableSizes.first ?? .full
+    }
 
     /// Equatable + Hashable manual (defaultSize tuple isn't auto-hashable).
     static func == (lhs: HomeWidgetDef, rhs: HomeWidgetDef) -> Bool { lhs.id == rhs.id }
@@ -86,17 +182,20 @@ enum HomeWidgetCatalog {
     static let driver: [HomeWidgetDef] = [
         .init(id: "current_route",      name: "Current route",      summary: "Active route navigation",              icon: "location.north.line.fill", category: .operations,    roles: ["DRIVER"], defaultSize: (12, 10), iosRenderable: true),
         .init(id: "hos_tracker",        name: "HOS tracker",        summary: "Hours of service compliance",          icon: "clock.fill",              category: .compliance,     roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: true),
-        .init(id: "earnings_summary",   name: "Earnings",           summary: "Pay and bonuses",                      icon: "dollarsign.circle.fill",  category: .financial,      roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
-        .init(id: "next_delivery",      name: "Next delivery",      summary: "Upcoming delivery details",            icon: "mappin.circle.fill",      category: .operations,     roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: true),
-        .init(id: "fuel_stations",      name: "Fuel stations",      summary: "Nearby fuel stops",                    icon: "fuelpump.fill",           category: .planning,       roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
-        .init(id: "rest_areas",         name: "Rest areas",         summary: "Nearby rest stops",                    icon: "bed.double.fill",         category: .planning,       roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
-        .init(id: "vehicle_health",     name: "Vehicle health",     summary: "Truck diagnostics",                    icon: "wrench.and.screwdriver.fill", category: .operations,  roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
-        .init(id: "weather_alerts",     name: "Weather alerts",     summary: "Route weather conditions",             icon: "cloud.rain.fill",         category: .safety,         roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
+        .init(id: "earnings_summary",   name: "Earnings",           summary: "Pay and bonuses",                      icon: "dollarsign.circle.fill",  category: .financial,      roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true, availableSizes: [.half, .full]),
+        .init(id: "next_delivery",      name: "Next delivery",      summary: "Upcoming delivery details",            icon: "mappin.circle.fill",      category: .operations,     roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: true, availableSizes: [.half, .full]),
+        .init(id: "fuel_stations",      name: "Fuel stations",      summary: "Nearby fuel stops",                    icon: "fuelpump.fill",           category: .planning,       roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true, availableSizes: [.half, .full]),
+        .init(id: "rest_areas",         name: "Rest areas",         summary: "Nearby rest stops",                    icon: "bed.double.fill",         category: .planning,       roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true, availableSizes: [.half, .full]),
+        .init(id: "vehicle_health",     name: "Vehicle health",     summary: "Truck diagnostics",                    icon: "wrench.and.screwdriver.fill", category: .operations,  roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true, availableSizes: [.half, .full]),
+        .init(id: "weather_alerts",     name: "Weather alerts",     summary: "Route weather conditions",             icon: "cloud.rain.fill",         category: .safety,         roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true, availableSizes: [.half, .full]),
         .init(id: "haul",               name: "The Haul weekly",    summary: "XP ring + missions + rank",            icon: "rosette",                 category: .performance,    roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: true),
-        .init(id: "compliance",         name: "Compliance countdown", summary: "CDL / medical / hazmat / TWIC expiry", icon: "checkmark.shield.fill", category: .compliance,    roles: ["DRIVER"], defaultSize: (12, 4),  iosRenderable: true),
+        .init(id: "compliance",         name: "Compliance countdown", summary: "CDL / medical / hazmat / TWIC expiry", icon: "checkmark.shield.fill", category: .compliance,    roles: ["DRIVER"], defaultSize: (12, 4),  iosRenderable: true, availableSizes: [.full, .half]),
         .init(id: "hotZones",           name: "Hot zones",          summary: "Live load-to-truck ratios + surges",   icon: "flame.fill",              category: .analytics,      roles: ["DRIVER"], defaultSize: (12, 8),  iosRenderable: true),
-        .init(id: "performance_score",  name: "Performance score",  summary: "Safety · on-time rate · fleet rank",   icon: "chart.line.uptrend.xyaxis", category: .performance,  roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
-        .init(id: "mileage_tracker",    name: "Mileage tracker",    summary: "Monthly miles + current load distance", icon: "road.lanes",                 category: .analytics,    roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true),
+        .init(id: "performance_score",  name: "Performance score",  summary: "Safety · on-time rate · fleet rank",   icon: "chart.line.uptrend.xyaxis", category: .performance,  roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true, availableSizes: [.half, .full]),
+        .init(id: "mileage_tracker",    name: "Mileage tracker",    summary: "Monthly miles + current load distance", icon: "road.lanes",                 category: .analytics,    roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true, availableSizes: [.half, .full]),
+        // ── New driver widgets (2026-05-30 #50 catalog expansion) ──
+        .init(id: "wallet_activity",    name: "Wallet activity",    summary: "Latest payouts, bonuses & fees",       icon: "list.bullet.rectangle.portrait.fill", category: .financial, roles: ["DRIVER"], defaultSize: (12, 6), iosRenderable: true, availableSizes: [.compact, .full]),
+        .init(id: "fuel_economy",       name: "Fuel economy",       summary: "Month MPG, fuel spend & cost / mi",    icon: "fuelpump.circle.fill",    category: .analytics,      roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true, availableSizes: [.half, .full]),
     ]
 
     /// Shipper-specific widgets.
@@ -228,16 +327,54 @@ struct HomeWidgetGrid: View {
     let render: (String) -> AnyView
 
     @State private var order: [String] = []
+    /// User-chosen span per widget id. Seeded from the catalog default
+    /// span on first hydrate, then overridden by the saved slot `w`/`h`
+    /// and any in-session resize. Persisted in the same store the
+    /// reorder uses (UserDefaults mirror + tRPC slot w/h).
+    @State private var sizes: [String: HomeWidgetSpan] = [:]
     @State private var editing: Bool = false
     @State private var hoverSlot: String? = nil
     @State private var hydrated: Bool = false
     @State private var showAddSheet: Bool = false
 
+    /// Resolved span for a slot — user choice, else catalog default,
+    /// else `.full`.
+    private func span(for id: String) -> HomeWidgetSpan {
+        sizes[id] ?? HomeWidgetCatalog.all[id]?.defaultSpan ?? .full
+    }
+
+    /// Packs the ordered slot ids into rows: consecutive `.half` widgets
+    /// pair two-per-row; everything else takes a full row. Preserves the
+    /// reorder order exactly — a `.half` tile with no `.half` neighbor
+    /// after it simply renders alone on its row (still half-width).
+    private var packedRows: [[String]] {
+        var rows: [[String]] = []
+        var i = 0
+        while i < order.count {
+            let id = order[i]
+            if span(for: id).isHalf, i + 1 < order.count, span(for: order[i + 1]).isHalf {
+                rows.append([id, order[i + 1]])
+                i += 2
+            } else {
+                rows.append([id])
+                i += 1
+            }
+        }
+        return rows
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             toolbar
-            ForEach(order, id: \.self) { slotId in
-                slotView(slotId)
+            ForEach(Array(packedRows.enumerated()), id: \.offset) { _, row in
+                if row.count == 2 {
+                    HStack(alignment: .top, spacing: 12) {
+                        slotView(row[0])
+                        slotView(row[1])
+                    }
+                } else {
+                    slotView(row[0])
+                }
             }
         }
         .sheet(isPresented: $showAddSheet) { addSheet }
@@ -266,7 +403,7 @@ struct HomeWidgetGrid: View {
                 Spacer(minLength: 0)
                 if editing {
                     Button {
-                        withAnimation(.easeOut(duration: 0.18)) { order = canonicalOrder }
+                        withAnimation(.easeOut(duration: 0.18)) { order = canonicalOrder; sizes = [:] }
                     } label: {
                         Text("RESET")
                             .font(.system(size: 9, weight: .heavy)).tracking(0.6)
@@ -310,10 +447,16 @@ struct HomeWidgetGrid: View {
 
     @ViewBuilder
     private func slotView(_ id: String) -> some View {
-        let inner = render(id)
+        let activeSpan = span(for: id)
+        // Render the tile at its chosen span: condensed tiles read
+        // `\.homeWidgetSpan` to shrink; half-width tiles keep their
+        // natural body but live in a half-row HStack.
+        let inner = render(id).environment(\.homeWidgetSpan, activeSpan)
         if editing {
             let isHover = hoverSlot == id
-            let label = HomeWidgetCatalog.all[id]?.name ?? id
+            let def = HomeWidgetCatalog.all[id]
+            let label = def?.name ?? id
+            let resizable = (def?.availableSizes.count ?? 0) > 1
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "line.3.horizontal")
                     .font(.system(size: 14, weight: .semibold))
@@ -326,6 +469,7 @@ struct HomeWidgetGrid: View {
                     Button {
                         withAnimation(.easeOut(duration: 0.18)) {
                             order.removeAll { $0 == id }
+                            sizes[id] = nil
                         }
                     } label: {
                         Image(systemName: "minus.circle.fill")
@@ -333,12 +477,41 @@ struct HomeWidgetGrid: View {
                             .symbolRenderingMode(.multicolor)
                     }
                     .buttonStyle(.plain)
-                    Text(label.uppercased())
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(LinearGradient.diagonal)
-                        .clipShape(Capsule())
+                    // Size picker — long-press affordance lives here in
+                    // edit mode. Only widgets that declare >1 available
+                    // span show the chooser; single-span widgets keep
+                    // the static gradient name chip.
+                    if resizable, let def {
+                        Menu {
+                            Picker("Size", selection: sizeBinding(for: id)) {
+                                ForEach(def.availableSizes, id: \.self) { sp in
+                                    Label(sp.menuLabel, systemImage: sp.menuIcon).tag(sp)
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: activeSpan.menuIcon)
+                                    .font(.system(size: 8, weight: .heavy))
+                                Text(label.uppercased())
+                                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.system(size: 7, weight: .heavy))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(LinearGradient.diagonal)
+                            .clipShape(Capsule())
+                        }
+                        .menuStyle(.button)
+                        .buttonStyle(.plain)
+                    } else {
+                        Text(label.uppercased())
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(LinearGradient.diagonal)
+                            .clipShape(Capsule())
+                    }
                 }
                 .padding(6)
             }
@@ -374,6 +547,17 @@ struct HomeWidgetGrid: View {
         } else {
             inner
         }
+    }
+
+    /// Two-way binding for a widget's span that animates the repack and
+    /// clamps to the widget's declared available sizes.
+    private func sizeBinding(for id: String) -> Binding<HomeWidgetSpan> {
+        Binding(
+            get: { span(for: id) },
+            set: { newSpan in
+                withAnimation(.easeOut(duration: 0.2)) { sizes[id] = newSpan }
+            }
+        )
     }
 
     // MARK: - Add widget sheet
@@ -448,38 +632,78 @@ struct HomeWidgetGrid: View {
         .environment(\.palette, palette)
     }
 
+    /// UserDefaults cache row — mirrors the server slot so the offline
+    /// cache carries the chosen span too. Decoded leniently so a legacy
+    /// `[String]` order cache (pre-resize) still hydrates.
+    private struct CachedSlot: Codable { let widgetId: String; let w: Int; let h: Int }
+
     private func hydrate() async {
-        if let data = UserDefaults.standard.data(forKey: storageKey),
-           let cached = try? JSONDecoder().decode([String].self, from: data),
-           !cached.isEmpty {
-            order = reconcile(cached)
+        // Local cache first. New format = [CachedSlot]; fall back to the
+        // legacy plain `[String]` order so existing installs don't reset.
+        if let data = UserDefaults.standard.data(forKey: storageKey) {
+            if let cached = try? JSONDecoder().decode([CachedSlot].self, from: data), !cached.isEmpty {
+                applyServerSlots(cached.map { ($0.widgetId, $0.w, $0.h) })
+            } else if let legacy = try? JSONDecoder().decode([String].self, from: data), !legacy.isEmpty {
+                order = reconcile(legacy)
+            }
         }
         struct In: Encodable { let role: String }
-        struct Slot: Decodable { let widgetId: String }
+        struct Slot: Decodable { let widgetId: String; let w: Int?; let h: Int? }
         struct Out: Decodable { let layout: [Slot]?; let updatedAt: String? }
         do {
             let r: Out = try await EusoTripAPI.shared.query("users.getDashboardLayout", input: In(role: role))
             if let server = r.layout, !server.isEmpty {
-                let parsed = server.map { $0.widgetId }
-                let merged = reconcile(parsed)
-                await MainActor.run { order = merged }
-                if let data = try? JSONEncoder().encode(merged) {
-                    UserDefaults.standard.set(data, forKey: storageKey)
-                }
+                let slots = server.map { ($0.widgetId, $0.w ?? 12, $0.h ?? 8) }
+                await MainActor.run { applyServerSlots(slots) }
+                cacheLocally()
             }
         } catch { /* offline / unauth — local cache or canonical default holds */ }
     }
 
-    private func persist() async {
-        if let data = try? JSONEncoder().encode(order) {
+    /// Reconciles a saved slot set (id + w/h) into `order` + `sizes`:
+    /// preserves saved order, drops unknown ids, appends newly-shipped
+    /// widgets, and maps each slot's `(w,h)` back to a span — clamped to
+    /// the widget's declared available sizes so an old/web w/h that iOS
+    /// doesn't offer falls back to the catalog default span.
+    private func applyServerSlots(_ slots: [(id: String, w: Int, h: Int)]) {
+        order = reconcile(slots.map { $0.id })
+        var resolved: [String: HomeWidgetSpan] = [:]
+        for slot in slots where order.contains(slot.id) {
+            let candidate = HomeWidgetSpan.from(w: slot.w, h: slot.h)
+            let allowed = HomeWidgetCatalog.all[slot.id]?.availableSizes ?? [.full]
+            resolved[slot.id] = allowed.contains(candidate)
+                ? candidate
+                : (HomeWidgetCatalog.all[slot.id]?.defaultSpan ?? .full)
+        }
+        sizes = resolved
+    }
+
+    private func cacheLocally() {
+        let rows = order.map { id -> CachedSlot in
+            let g = span(for: id).grid
+            return CachedSlot(widgetId: id, w: g.w, h: g.h)
+        }
+        if let data = try? JSONEncoder().encode(rows) {
             UserDefaults.standard.set(data, forKey: storageKey)
         }
+    }
+
+    private func persist() async {
+        cacheLocally()
         struct Slot: Encodable { let widgetId: String; let x: Int; let y: Int; let w: Int; let h: Int }
         struct In: Encodable { let role: String; let layout: [Slot] }
         struct Out: Decodable { let success: Bool? }
-        let payload = order.enumerated().map { idx, id -> Slot in
-            let def = HomeWidgetCatalog.all[id]
-            return Slot(widgetId: id, x: 0, y: idx, w: def?.defaultSize.w ?? 12, h: def?.defaultSize.h ?? 4)
+        // x/y track the packed grid position so web hydrates the same
+        // two-up rows: half-width tiles alternate x = 0 / 6, full tiles
+        // reset to x = 0 on a fresh row. w/h carry the chosen span.
+        var payload: [Slot] = []
+        var cursorX = 0, rowY = 0
+        for id in order {
+            let g = span(for: id).grid
+            if cursorX + g.w > 12 { cursorX = 0; rowY += 1 }
+            payload.append(Slot(widgetId: id, x: cursorX, y: rowY, w: g.w, h: g.h))
+            cursorX += g.w
+            if cursorX >= 12 { cursorX = 0; rowY += 1 }
         }
         do {
             let _: Out = try await EusoTripAPI.shared.mutation(
@@ -557,7 +781,8 @@ struct DriverHome: View {
     private let driverHomeCanonicalOrder: [String] = [
         "current_route", "next_delivery", "hos_tracker", "earnings_summary", "weather_alerts",
         "messages", "notifications", "haul", "compliance", "news", "recent", "hotZones",
-        "performance_score", "vehicle_health", "mileage_tracker", "fuel_stations", "rest_areas",
+        "performance_score", "vehicle_health", "mileage_tracker", "fuel_economy",
+        "wallet_activity", "fuel_stations", "rest_areas",
     ]
 
     /// Maps a catalog widget id → the concrete iOS tile view this
@@ -580,6 +805,8 @@ struct DriverHome: View {
         case "performance_score": AnyView(PerformanceScoreWidget())
         case "vehicle_health":  AnyView(VehicleHealthWidget())
         case "mileage_tracker": AnyView(MileageTrackerWidget(currentLoadMiles: vm.activeLoad?.distanceValue))
+        case "fuel_economy":    AnyView(FuelEconomyWidget())
+        case "wallet_activity": AnyView(WalletActivityWidget())
         case "fuel_stations":   AnyView(FuelStationsWidget())
         case "rest_areas":      AnyView(RestAreasWidget())
         default:                AnyView(EmptyView())
@@ -2127,6 +2354,236 @@ struct MileageTrackerWidget: View {
             )
             monthlyMiles = sc.metrics.totalMiles
             totalLoads = sc.metrics.totalLoads
+            loading = false
+        } catch {
+            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loading = false
+        }
+    }
+}
+
+// MARK: - WalletActivityWidget (catalog widget id: "wallet_activity")
+//
+// Driver's latest EusoWallet movements — payouts, bonuses, fees,
+// factoring. Real data via `wallet.getTransactions`
+// (frontend/server/routers/wallet.ts:371) projected onto WalletTxn.
+// Honors `\.homeWidgetSpan`: `.compact` shows the 2 most recent rows,
+// `.full` shows up to 5. No fabricated rows — an empty wallet renders
+// the honest empty state.
+
+struct WalletActivityWidget: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.homeWidgetSpan) private var span
+
+    @State private var txns: [WalletTxn] = []
+    @State private var loading = true
+    @State private var loadError: String? = nil
+
+    private var rowCount: Int { span == .compact ? 2 : 5 }
+
+    private static let amtFormatter: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.maximumFractionDigits = 2
+        return f
+    }()
+
+    private func amountDisplay(_ t: WalletTxn) -> String {
+        let f = Self.amtFormatter
+        f.currencyCode = t.currency ?? "USD"
+        let s = f.string(from: NSNumber(value: abs(t.amount))) ?? String(format: "%.2f", abs(t.amount))
+        return (t.amount < 0 ? "−" : "+") + s
+    }
+
+    private func icon(for t: WalletTxn) -> String {
+        if let hint = t.iconHint, !hint.isEmpty { return hint }
+        switch t.kind {
+        case "load_payout":    return "shippingbox.fill"
+        case "instant_payout": return "bolt.fill"
+        case "bonus":          return "star.fill"
+        case "fee":            return "minus.circle.fill"
+        case "refund":         return "arrow.uturn.backward.circle.fill"
+        case "factoring":      return "building.columns.fill"
+        case "fuel":           return "fuelpump.fill"
+        default:               return "dollarsign.circle.fill"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "list.bullet.rectangle.portrait.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("WALLET · ACTIVITY")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 0)
+                Text("EUSOWALLET")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            if loading {
+                Text("Loading activity…")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 6)
+            } else if let err = loadError {
+                Text(err)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+                    .lineLimit(2)
+            } else if txns.isEmpty {
+                Text("No wallet activity yet. Completed load payouts and bonuses land here.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 6)
+            } else {
+                VStack(spacing: 6) {
+                    ForEach(Array(txns.prefix(rowCount))) { t in
+                        HStack(spacing: 10) {
+                            Image(systemName: icon(for: t))
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(LinearGradient.diagonal)
+                                .frame(width: 22)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(t.title)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(palette.textPrimary)
+                                    .lineLimit(1)
+                                if let sub = t.subtitle, !sub.isEmpty {
+                                    Text(sub)
+                                        .font(.system(size: 11, weight: .regular))
+                                        .foregroundStyle(palette.textTertiary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            Spacer(minLength: 4)
+                            Text(amountDisplay(t))
+                                .font(.system(size: 13, weight: .heavy))
+                                .monospacedDigit()
+                                .foregroundStyle(t.amount < 0 ? palette.textSecondary : Color.green)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg)
+        .task { await load() }
+    }
+
+    private func load() async {
+        loading = true; loadError = nil
+        do {
+            let resp = try await EusoTripAPI.shared.walletExtras.getTransactions(limit: 6)
+            txns = resp.items
+            loading = false
+        } catch {
+            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loading = false
+        }
+    }
+}
+
+// MARK: - FuelEconomyWidget (catalog widget id: "fuel_economy")
+//
+// Month-to-date fuel efficiency glance. Real data via
+// `drivers.getPerformanceMetrics` (frontend/server/routers/drivers.ts:544)
+// whose `fuelEfficiency` is loads.distance / fuelTransactions.gallons —
+// a real numerator, zeroed (not fabricated) when there's no fuel data
+// in the window. `totalMiles` is the same period's driven miles. Cost /
+// mile is derived only when a real fuel-spend figure is available; we
+// never invent a fuel price.
+
+struct FuelEconomyWidget: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.homeWidgetSpan) private var span
+    @EnvironmentObject private var session: EusoTripSession
+
+    @State private var mpg: Double? = nil
+    @State private var miles: Double? = nil
+    @State private var loading = true
+    @State private var loadError: String? = nil
+
+    private static let oneDecimal: NumberFormatter = {
+        let f = NumberFormatter(); f.numberStyle = .decimal
+        f.maximumFractionDigits = 1; f.minimumFractionDigits = 1; return f
+    }()
+    private static let whole: NumberFormatter = {
+        let f = NumberFormatter(); f.numberStyle = .decimal
+        f.maximumFractionDigits = 0; return f
+    }()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "fuelpump.circle.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("FUEL · THIS MONTH")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 0)
+            }
+            if loading {
+                Text("Loading fuel economy…")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 6)
+            } else if let err = loadError {
+                Text(err)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+                    .lineLimit(2)
+            } else if let m = mpg, m > 0 {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(Self.oneDecimal.string(from: NSNumber(value: m)) ?? String(format: "%.1f", m))
+                        .font(.system(size: 36, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                        .monospacedDigit()
+                    Text("mpg")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(palette.textSecondary)
+                }
+                if span != .compact, let mi = miles, mi > 0 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "road.lanes")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(LinearGradient.diagonal)
+                        Text("\(Self.whole.string(from: NSNumber(value: mi)) ?? String(Int(mi))) mi driven")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                }
+            } else {
+                Text("No fuel data yet this month. Logged fuel transactions populate your MPG here.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 6)
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg)
+        .task { await load() }
+    }
+
+    private func load() async {
+        loading = true; loadError = nil
+        let userId = session.user?.id ?? ""
+        guard !userId.isEmpty else { loading = false; return }
+        do {
+            let sc = try await EusoTripAPI.shared.drivers.getPerformanceMetrics(
+                driverId: userId, period: .month
+            )
+            mpg = sc.metrics.fuelEfficiency
+            miles = sc.metrics.totalMiles
             loading = false
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

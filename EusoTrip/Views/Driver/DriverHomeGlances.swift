@@ -2,7 +2,7 @@
 //  DriverHomeGlances.swift
 //  EusoTrip — Four glance widgets added to 010 Driver Home:
 //
-//    1) eSangMorningBriefCard     — esangCoach.forDriver top item
+//    1) eSangMorningBriefCard     — "ESANG brief" · esangCoach.forDriver top item, auto-loads on appear
 //    2) PreTripDVIRStatusPill     — inspections.getDVIRHistory (today's pre-trip)
 //    3) TheHaulWeeklyTile         — gamification.getProfile + missions.listMine
 //    4) ComplianceCountdownStrip  — driverQualification.getExpiringItems (≤60d)
@@ -18,11 +18,12 @@ import SwiftUI
 import UIKit
 #endif
 
-// MARK: - 1. ESANG Morning Brief Card
+// MARK: - 1. ESANG Brief Card
 
-/// Premium AI-coach glance. Pulls the top coaching item from the
-/// signed-in driver's role+vertical+hazmat-aware feed and renders it
-/// as a breathing gradient card directly under the top bar. Tapping
+/// Premium AI-coach glance ("ESANG brief"). Pulls the top coaching
+/// item from the signed-in driver's role+vertical+hazmat-aware feed
+/// and renders it as a breathing gradient card directly under the top
+/// bar. It AUTO-LOADS on appear via `.task` — no run button. Tapping
 /// opens the full 087 Safety Coach sheet.
 struct eSangMorningBriefCard: View {
     @Environment(\.palette) private var palette
@@ -116,13 +117,7 @@ struct eSangMorningBriefCard: View {
 
     private var header: some View {
         HStack(spacing: 6) {
-            Text("MORNING BRIEF")
-                .font(EType.micro).tracking(1.0)
-                .foregroundStyle(palette.textTertiary)
-            Text("·")
-                .font(EType.micro)
-                .foregroundStyle(palette.textTertiary)
-            Text("ESANG AI")
+            Text("ESANG BRIEF")
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(LinearGradient.diagonal)
             Spacer(minLength: 0)

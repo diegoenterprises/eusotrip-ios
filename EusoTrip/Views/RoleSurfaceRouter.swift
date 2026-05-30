@@ -1921,7 +1921,18 @@ struct WebContinuationSurface: View {
 private struct SafariContinuationView: UIViewControllerRepresentable {
     let url: URL
     func makeUIViewController(context: Context) -> SFSafariViewController {
-        SFSafariViewController(url: url)
+        // Match the canonical EusoInAppSafari config: SFSafariViewController
+        // is what unlocks iOS's free system Translate + Reader mode (a bare
+        // WKWebView gets neither). barCollapsing keeps the chrome out of the
+        // way; the brand magenta control tint reads this as part of EusoTrip
+        // rather than a generic Safari sheet.
+        let cfg = SFSafariViewController.Configuration()
+        cfg.entersReaderIfAvailable = false
+        cfg.barCollapsingEnabled = true
+        let vc = SFSafariViewController(url: url, configuration: cfg)
+        vc.dismissButtonStyle = .done
+        vc.preferredControlTintColor = UIColor(red: 0.745, green: 0.004, blue: 1.0, alpha: 1)
+        return vc
     }
     func updateUIViewController(_ vc: SFSafariViewController, context: Context) {}
 }

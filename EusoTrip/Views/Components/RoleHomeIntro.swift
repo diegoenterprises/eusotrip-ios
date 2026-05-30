@@ -3,10 +3,11 @@
 //  EusoTrip — Canonical Home lead-in for every role.
 //
 //  Doctrine: Driver 010 is the baseline. Every role's Home opens with
-//      ESANG Morning Brief  →  Weather  →  role-specific widgets.
+//      ESANG brief  →  Weather  →  role-specific widgets.
 //
 //  This component renders the first two cards as one reusable unit:
-//    • eSangMorningBriefCard  — top coaching card, role/vertical-aware.
+//    • eSangMorningBriefCard  — the "ESANG brief" top coaching card,
+//                               role/vertical-aware, auto-loads on appear.
 //    • WeatherCard            — live snapshot from WeatherService.shared.
 //                               Falls back to a neutral "Enable location"
 //                               CTA when CoreLocation is denied/restricted.
