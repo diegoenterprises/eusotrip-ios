@@ -114,7 +114,7 @@ private struct RailAccessorialChargesBody: View {
         case "switching", "switch":                return (Brand.blue,    "arrow.right.circle.fill")
         case "reefer", "refrigerated", "genset":   return (Brand.success, "thermometer.snowflake")
         case "fsc", "fuel_surcharge", "fuel":      return (Brand.warning, "fuelpump.fill")
-        default:                                   return (Color(red: 0.38, green: 0.49, blue: 0.55), "creditcard.fill")
+        default:                                   return (Brand.rail, "creditcard.fill")
         }
     }
 

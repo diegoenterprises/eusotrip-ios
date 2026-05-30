@@ -115,12 +115,12 @@ private struct RailEquipmentLeaseBody: View {
     private func chipColor(_ unit: LeasedUnit568) -> Color {
         switch (unit.healthStatus ?? "healthy").lowercased() {
         case "healthy":         return Brand.success
-        case "service":         return Color(red: 0.38, green: 0.49, blue: 0.55)
+        case "service":         return Brand.rail
         case "out_of_service":  return Brand.danger
         default:
             switch (unit.equipmentType ?? "").lowercased() {
             case "tank_car", "tanker": return Brand.warning
-            case "chassis":            return Color(red: 0.38, green: 0.49, blue: 0.55)
+            case "chassis":            return Brand.rail
             default:                   return Brand.success
             }
         }
@@ -415,7 +415,7 @@ private struct RailEquipmentLeaseBody: View {
             CTAButton(title: "Calculate lease cost", action: { Task { await calculateCost() } }, leadingIcon: "tablecells", isLoading: isCalculating)
             Button {} label: {
                 Text("Specs")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 116, height: 48)
                     .background(palette.bgCard)

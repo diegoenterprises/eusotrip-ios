@@ -111,7 +111,7 @@ private struct RailIMDGHazmatManifestBody: View {
         case "clear":  return Brand.success
         case "review": return Brand.warning
         case "active": return Brand.info
-        default:       return Color(red: 0.38, green: 0.49, blue: 0.55)
+        default:       return Brand.rail
         }
     }
 
@@ -360,7 +360,7 @@ private struct RailIMDGHazmatManifestBody: View {
                 switch (s.status ?? "").lowercased() {
                 case "clear":  return Brand.success
                 case "review": return Brand.warning
-                default:       return Color(red: 0.38, green: 0.49, blue: 0.55)
+                default:       return Brand.rail
                 }
             }()
             let icon: String = (s.status ?? "").lowercased() == "clear" ? "checkmark.diamond.fill" : "exclamationmark.triangle.fill"
@@ -372,21 +372,14 @@ private struct RailIMDGHazmatManifestBody: View {
         }
         for c in contacts {
             let isERG = (c.name ?? "").uppercased().contains("ERG") || c.ergGuide != nil
-            let color: Color = isERG ? Color(red: 0.38, green: 0.49, blue: 0.55) : Brand.info
+            let color: Color = isERG ? Brand.rail : Brand.info
             let icon  = isERG ? "book.fill" : "phone.fill"
             let sub   = c.contact ?? c.description ?? "—"
-            let result = isERG ? (c.ergGuide.map { "G\($0)" } ?? "—") : (c.availability ?? "24/7")
-            result.self
-            result
-            _ = result
-            result.self
+            let resultLabel = isERG ? (c.ergGuide.map { "G\($0)" } ?? "—") : (c.availability ?? "24/7")
             let status = isERG ? "ref" : "active"
-            result.self
-            result.self
-            _ = result
             let r = ManifestRow571(
                 id: idx, title: c.name ?? "—", sub: sub,
-                status: status, result: isERG ? (c.ergGuide.map { "G\($0)" } ?? "—") : (c.availability ?? "24/7"),
+                status: status, result: resultLabel,
                 chipColor: color, chipIcon: icon)
             result.append(r)
             idx += 1

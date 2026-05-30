@@ -684,6 +684,42 @@
 		FD97CECB2FC1D5120016DF5F /* 650_VesselOperatorHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */; };
 		VOTMBUILD1 /* VesselOceanTrackMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = VOTMFREF1 /* VesselOceanTrackMap.swift */; };
 		FD97CECD2FC1D7C70016DF5F /* 551_RailShipments.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */; };
+		FDA10000000000000000553B /* 553_RailShipmentDetailCarrier.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000553F /* 553_RailShipmentDetailCarrier.swift */; };
+		FDA10000000000000000554B /* 554_RailCrewHOSRoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000554F /* 554_RailCrewHOSRoster.swift */; };
+		FDA10000000000000000555B /* 555_RailConsistBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000555F /* 555_RailConsistBoard.swift */; };
+		FDA10000000000000000556B /* 556_RailEngineerAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000556F /* 556_RailEngineerAccount.swift */; };
+		FDA10000000000000000557B /* 557_RailStatusUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000557F /* 557_RailStatusUpdate.swift */; };
+		FDA10000000000000000558B /* 558_RailDemurrageWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000558F /* 558_RailDemurrageWatch.swift */; };
+		FDA10000000000000000560B /* 560_RailLiveTracking.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000560F /* 560_RailLiveTracking.swift */; };
+		FDA10000000000000000561B /* 561_RailFacilityStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000561F /* 561_RailFacilityStatus.swift */; };
+		FDA10000000000000000562B /* 562_RailGateAppointment.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000562F /* 562_RailGateAppointment.swift */; };
+		FDA10000000000000000563B /* 563_RailExceptionsHolds.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000563F /* 563_RailExceptionsHolds.swift */; };
+		FDA10000000000000000564B /* 564_RailBorderClearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000564F /* 564_RailBorderClearance.swift */; };
+		FDA10000000000000000565B /* 565_RailContainerTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000565F /* 565_RailContainerTimeline.swift */; };
+		FDA10000000000000000566B /* 566_RailIntermodalTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000566F /* 566_RailIntermodalTransfer.swift */; };
+		FDA10000000000000000567B /* 567_RailChainOfCustody.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000567F /* 567_RailChainOfCustody.swift */; };
+		FDA10000000000000000568B /* 568_RailEquipmentLease.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000568F /* 568_RailEquipmentLease.swift */; };
+		FDA10000000000000000569B /* 569_RailTenderWorkflow.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000569F /* 569_RailTenderWorkflow.swift */; };
+		FDA10000000000000000571B /* 571_RailIMDGHazmatManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000571F /* 571_RailIMDGHazmatManifest.swift */; };
+		FDA10000000000000000572B /* 572_RailEmissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000572F /* 572_RailEmissions.swift */; };
+		FDA10000000000000000573B /* 573_RailAccessorialCharges.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000573F /* 573_RailAccessorialCharges.swift */; };
+		FDA10000000000000000574B /* 574_RailCarrierScorecard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000574F /* 574_RailCarrierScorecard.swift */; };
+		FDA10000000000000000575B /* 575_RailEquipmentHealth.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000575F /* 575_RailEquipmentHealth.swift */; };
+		FDA10000000000000000576B /* 576_RailShipmentAmendment.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000576F /* 576_RailShipmentAmendment.swift */; };
+		FDA10000000000000000577B /* 577_RailFuelSurcharge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000577F /* 577_RailFuelSurcharge.swift */; };
+		FDA10000000000000000578B /* 578_RailRouteWeather.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000578F /* 578_RailRouteWeather.swift */; };
+		FDA10000000000000000579B /* 579_RailNetworkDisruption.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000579F /* 579_RailNetworkDisruption.swift */; };
+		FDA10000000000000000580B /* 580_RailTariffRateLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000580F /* 580_RailTariffRateLookup.swift */; };
+		FDA10000000000000000581B /* 581_RailSettlementSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000581F /* 581_RailSettlementSummary.swift */; };
+		FDA10000000000000000582B /* 582_RailRampSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000582F /* 582_RailRampSchedule.swift */; };
+		FDA10000000000000000583B /* 583_RailCrossBorderInterchange.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000583F /* 583_RailCrossBorderInterchange.swift */; };
+		FDA10000000000000000584B /* 584_RailCrewCallBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000584F /* 584_RailCrewCallBoard.swift */; };
+		FDA10000000000000000585B /* 585_RailEquipmentPositions.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000585F /* 585_RailEquipmentPositions.swift */; };
+		FDA10000000000000000586B /* 586_RailServiceLineup.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000586F /* 586_RailServiceLineup.swift */; };
+		FDA10000000000000000587B /* 587_RailFRASafety.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000587F /* 587_RailFRASafety.swift */; };
+		FDA10000000000000000588B /* 588_RailFleetHealth.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000588F /* 588_RailFleetHealth.swift */; };
+		FDA10000000000000000589B /* 589_RailTransloadConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000589F /* 589_RailTransloadConnection.swift */; };
+		FDA10000000000000000590B /* 590_RailDocumentIngest.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000590F /* 590_RailDocumentIngest.swift */; };
 		FD97CECF2FC1D7C80016DF5F /* 552_RailCompliance.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECE2FC1D7C80016DF5F /* 552_RailCompliance.swift */; };
 		FD97CED12FC1D8040016DF5F /* 651_VesselShipments.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CED02FC1D8040016DF5F /* 651_VesselShipments.swift */; };
 		FD97CED32FC1D8050016DF5F /* 652_VesselCompliance.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CED22FC1D8050016DF5F /* 652_VesselCompliance.swift */; };
@@ -1461,6 +1497,42 @@
 		FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 650_VesselOperatorHome.swift; sourceTree = "<group>"; };
 		VOTMFREF1 /* VesselOceanTrackMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VesselOceanTrackMap.swift; path = EusoTrip/Views/Vessel/VesselOceanTrackMap.swift; sourceTree = SOURCE_ROOT; };
 		FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 551_RailShipments.swift; sourceTree = "<group>"; };
+		FDA10000000000000000553F /* 553_RailShipmentDetailCarrier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 553_RailShipmentDetailCarrier.swift; sourceTree = "<group>"; };
+		FDA10000000000000000554F /* 554_RailCrewHOSRoster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 554_RailCrewHOSRoster.swift; sourceTree = "<group>"; };
+		FDA10000000000000000555F /* 555_RailConsistBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 555_RailConsistBoard.swift; sourceTree = "<group>"; };
+		FDA10000000000000000556F /* 556_RailEngineerAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 556_RailEngineerAccount.swift; sourceTree = "<group>"; };
+		FDA10000000000000000557F /* 557_RailStatusUpdate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 557_RailStatusUpdate.swift; sourceTree = "<group>"; };
+		FDA10000000000000000558F /* 558_RailDemurrageWatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 558_RailDemurrageWatch.swift; sourceTree = "<group>"; };
+		FDA10000000000000000560F /* 560_RailLiveTracking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 560_RailLiveTracking.swift; sourceTree = "<group>"; };
+		FDA10000000000000000561F /* 561_RailFacilityStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 561_RailFacilityStatus.swift; sourceTree = "<group>"; };
+		FDA10000000000000000562F /* 562_RailGateAppointment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 562_RailGateAppointment.swift; sourceTree = "<group>"; };
+		FDA10000000000000000563F /* 563_RailExceptionsHolds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 563_RailExceptionsHolds.swift; sourceTree = "<group>"; };
+		FDA10000000000000000564F /* 564_RailBorderClearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 564_RailBorderClearance.swift; sourceTree = "<group>"; };
+		FDA10000000000000000565F /* 565_RailContainerTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 565_RailContainerTimeline.swift; sourceTree = "<group>"; };
+		FDA10000000000000000566F /* 566_RailIntermodalTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 566_RailIntermodalTransfer.swift; sourceTree = "<group>"; };
+		FDA10000000000000000567F /* 567_RailChainOfCustody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 567_RailChainOfCustody.swift; sourceTree = "<group>"; };
+		FDA10000000000000000568F /* 568_RailEquipmentLease.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 568_RailEquipmentLease.swift; sourceTree = "<group>"; };
+		FDA10000000000000000569F /* 569_RailTenderWorkflow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 569_RailTenderWorkflow.swift; sourceTree = "<group>"; };
+		FDA10000000000000000571F /* 571_RailIMDGHazmatManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 571_RailIMDGHazmatManifest.swift; sourceTree = "<group>"; };
+		FDA10000000000000000572F /* 572_RailEmissions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 572_RailEmissions.swift; sourceTree = "<group>"; };
+		FDA10000000000000000573F /* 573_RailAccessorialCharges.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 573_RailAccessorialCharges.swift; sourceTree = "<group>"; };
+		FDA10000000000000000574F /* 574_RailCarrierScorecard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 574_RailCarrierScorecard.swift; sourceTree = "<group>"; };
+		FDA10000000000000000575F /* 575_RailEquipmentHealth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 575_RailEquipmentHealth.swift; sourceTree = "<group>"; };
+		FDA10000000000000000576F /* 576_RailShipmentAmendment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 576_RailShipmentAmendment.swift; sourceTree = "<group>"; };
+		FDA10000000000000000577F /* 577_RailFuelSurcharge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 577_RailFuelSurcharge.swift; sourceTree = "<group>"; };
+		FDA10000000000000000578F /* 578_RailRouteWeather.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 578_RailRouteWeather.swift; sourceTree = "<group>"; };
+		FDA10000000000000000579F /* 579_RailNetworkDisruption.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 579_RailNetworkDisruption.swift; sourceTree = "<group>"; };
+		FDA10000000000000000580F /* 580_RailTariffRateLookup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 580_RailTariffRateLookup.swift; sourceTree = "<group>"; };
+		FDA10000000000000000581F /* 581_RailSettlementSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 581_RailSettlementSummary.swift; sourceTree = "<group>"; };
+		FDA10000000000000000582F /* 582_RailRampSchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 582_RailRampSchedule.swift; sourceTree = "<group>"; };
+		FDA10000000000000000583F /* 583_RailCrossBorderInterchange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 583_RailCrossBorderInterchange.swift; sourceTree = "<group>"; };
+		FDA10000000000000000584F /* 584_RailCrewCallBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 584_RailCrewCallBoard.swift; sourceTree = "<group>"; };
+		FDA10000000000000000585F /* 585_RailEquipmentPositions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 585_RailEquipmentPositions.swift; sourceTree = "<group>"; };
+		FDA10000000000000000586F /* 586_RailServiceLineup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 586_RailServiceLineup.swift; sourceTree = "<group>"; };
+		FDA10000000000000000587F /* 587_RailFRASafety.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 587_RailFRASafety.swift; sourceTree = "<group>"; };
+		FDA10000000000000000588F /* 588_RailFleetHealth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 588_RailFleetHealth.swift; sourceTree = "<group>"; };
+		FDA10000000000000000589F /* 589_RailTransloadConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 589_RailTransloadConnection.swift; sourceTree = "<group>"; };
+		FDA10000000000000000590F /* 590_RailDocumentIngest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 590_RailDocumentIngest.swift; sourceTree = "<group>"; };
 		FD97CECE2FC1D7C80016DF5F /* 552_RailCompliance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 552_RailCompliance.swift; sourceTree = "<group>"; };
 		FD97CED02FC1D8040016DF5F /* 651_VesselShipments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 651_VesselShipments.swift; sourceTree = "<group>"; };
 		FD97CED22FC1D8050016DF5F /* 652_VesselCompliance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 652_VesselCompliance.swift; sourceTree = "<group>"; };
@@ -2431,6 +2503,42 @@
 				FD97CEC82FC1D5110016DF5F /* 550_RailEngineerHome.swift */,
 				FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */,
 				FD97CECE2FC1D7C80016DF5F /* 552_RailCompliance.swift */,
+				FDA10000000000000000553F /* 553_RailShipmentDetailCarrier.swift */,
+				FDA10000000000000000554F /* 554_RailCrewHOSRoster.swift */,
+				FDA10000000000000000555F /* 555_RailConsistBoard.swift */,
+				FDA10000000000000000556F /* 556_RailEngineerAccount.swift */,
+				FDA10000000000000000557F /* 557_RailStatusUpdate.swift */,
+				FDA10000000000000000558F /* 558_RailDemurrageWatch.swift */,
+				FDA10000000000000000560F /* 560_RailLiveTracking.swift */,
+				FDA10000000000000000561F /* 561_RailFacilityStatus.swift */,
+				FDA10000000000000000562F /* 562_RailGateAppointment.swift */,
+				FDA10000000000000000563F /* 563_RailExceptionsHolds.swift */,
+				FDA10000000000000000564F /* 564_RailBorderClearance.swift */,
+				FDA10000000000000000565F /* 565_RailContainerTimeline.swift */,
+				FDA10000000000000000566F /* 566_RailIntermodalTransfer.swift */,
+				FDA10000000000000000567F /* 567_RailChainOfCustody.swift */,
+				FDA10000000000000000568F /* 568_RailEquipmentLease.swift */,
+				FDA10000000000000000569F /* 569_RailTenderWorkflow.swift */,
+				FDA10000000000000000571F /* 571_RailIMDGHazmatManifest.swift */,
+				FDA10000000000000000572F /* 572_RailEmissions.swift */,
+				FDA10000000000000000573F /* 573_RailAccessorialCharges.swift */,
+				FDA10000000000000000574F /* 574_RailCarrierScorecard.swift */,
+				FDA10000000000000000575F /* 575_RailEquipmentHealth.swift */,
+				FDA10000000000000000576F /* 576_RailShipmentAmendment.swift */,
+				FDA10000000000000000577F /* 577_RailFuelSurcharge.swift */,
+				FDA10000000000000000578F /* 578_RailRouteWeather.swift */,
+				FDA10000000000000000579F /* 579_RailNetworkDisruption.swift */,
+				FDA10000000000000000580F /* 580_RailTariffRateLookup.swift */,
+				FDA10000000000000000581F /* 581_RailSettlementSummary.swift */,
+				FDA10000000000000000582F /* 582_RailRampSchedule.swift */,
+				FDA10000000000000000583F /* 583_RailCrossBorderInterchange.swift */,
+				FDA10000000000000000584F /* 584_RailCrewCallBoard.swift */,
+				FDA10000000000000000585F /* 585_RailEquipmentPositions.swift */,
+				FDA10000000000000000586F /* 586_RailServiceLineup.swift */,
+				FDA10000000000000000587F /* 587_RailFRASafety.swift */,
+				FDA10000000000000000588F /* 588_RailFleetHealth.swift */,
+				FDA10000000000000000589F /* 589_RailTransloadConnection.swift */,
+				FDA10000000000000000590F /* 590_RailDocumentIngest.swift */,
 			);
 			path = Rail;
 			sourceTree = "<group>";
@@ -2999,6 +3107,42 @@
 				D1A11111111111111111SD01 /* 205_ShipperLoadDetail.swift in Sources */,
 				D1A11111111111111111CCC1 /* ShipperLoadCycleView.swift in Sources */,
 				FD97CECD2FC1D7C70016DF5F /* 551_RailShipments.swift in Sources */,
+				FDA10000000000000000553B /* 553_RailShipmentDetailCarrier.swift in Sources */,
+				FDA10000000000000000554B /* 554_RailCrewHOSRoster.swift in Sources */,
+				FDA10000000000000000555B /* 555_RailConsistBoard.swift in Sources */,
+				FDA10000000000000000556B /* 556_RailEngineerAccount.swift in Sources */,
+				FDA10000000000000000557B /* 557_RailStatusUpdate.swift in Sources */,
+				FDA10000000000000000558B /* 558_RailDemurrageWatch.swift in Sources */,
+				FDA10000000000000000560B /* 560_RailLiveTracking.swift in Sources */,
+				FDA10000000000000000561B /* 561_RailFacilityStatus.swift in Sources */,
+				FDA10000000000000000562B /* 562_RailGateAppointment.swift in Sources */,
+				FDA10000000000000000563B /* 563_RailExceptionsHolds.swift in Sources */,
+				FDA10000000000000000564B /* 564_RailBorderClearance.swift in Sources */,
+				FDA10000000000000000565B /* 565_RailContainerTimeline.swift in Sources */,
+				FDA10000000000000000566B /* 566_RailIntermodalTransfer.swift in Sources */,
+				FDA10000000000000000567B /* 567_RailChainOfCustody.swift in Sources */,
+				FDA10000000000000000568B /* 568_RailEquipmentLease.swift in Sources */,
+				FDA10000000000000000569B /* 569_RailTenderWorkflow.swift in Sources */,
+				FDA10000000000000000571B /* 571_RailIMDGHazmatManifest.swift in Sources */,
+				FDA10000000000000000572B /* 572_RailEmissions.swift in Sources */,
+				FDA10000000000000000573B /* 573_RailAccessorialCharges.swift in Sources */,
+				FDA10000000000000000574B /* 574_RailCarrierScorecard.swift in Sources */,
+				FDA10000000000000000575B /* 575_RailEquipmentHealth.swift in Sources */,
+				FDA10000000000000000576B /* 576_RailShipmentAmendment.swift in Sources */,
+				FDA10000000000000000577B /* 577_RailFuelSurcharge.swift in Sources */,
+				FDA10000000000000000578B /* 578_RailRouteWeather.swift in Sources */,
+				FDA10000000000000000579B /* 579_RailNetworkDisruption.swift in Sources */,
+				FDA10000000000000000580B /* 580_RailTariffRateLookup.swift in Sources */,
+				FDA10000000000000000581B /* 581_RailSettlementSummary.swift in Sources */,
+				FDA10000000000000000582B /* 582_RailRampSchedule.swift in Sources */,
+				FDA10000000000000000583B /* 583_RailCrossBorderInterchange.swift in Sources */,
+				FDA10000000000000000584B /* 584_RailCrewCallBoard.swift in Sources */,
+				FDA10000000000000000585B /* 585_RailEquipmentPositions.swift in Sources */,
+				FDA10000000000000000586B /* 586_RailServiceLineup.swift in Sources */,
+				FDA10000000000000000587B /* 587_RailFRASafety.swift in Sources */,
+				FDA10000000000000000588B /* 588_RailFleetHealth.swift in Sources */,
+				FDA10000000000000000589B /* 589_RailTransloadConnection.swift in Sources */,
+				FDA10000000000000000590B /* 590_RailDocumentIngest.swift in Sources */,
 				D2120000000000000021CT /* 212_ShipperControlTower.swift in Sources */,
 				D2130000000000000021CS /* 213_ShipperCatalystScorecard.swift in Sources */,
 				D2280000000000000000ABFF /* LifecycleScaffold.swift in Sources */,

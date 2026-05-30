@@ -110,7 +110,7 @@ private struct RailEquipmentHealthBody: View {
         case "boxcar", "box car":               return Brand.blue
         case "well car", "wellcar":             return Brand.success
         case "flatcar", "flat car":             return Brand.blue
-        case "gondola":                         return Color(red: 0.38, green: 0.49, blue: 0.55)
+        case "gondola":                         return Brand.rail
         default:
             let types: [Color] = [Brand.success, Brand.blue, Brand.warning]
             return types[abs((type ?? "").hashValue) % types.count]

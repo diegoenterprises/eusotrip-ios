@@ -159,8 +159,8 @@ private struct RailRouteWeatherBody: View {
                 // Background
                 ctx.fill(Path(CGRect(origin: .zero, size: size)),
                          with: .linearGradient(
-                            Gradient(colors: [Color(red: 0.957, green: 0.961, blue: 0.969),
-                                              Color(red: 0.914, green: 0.925, blue: 0.941)]),
+                            Gradient(colors: [Color(hex: 0xF4F5F7),
+                                              Color(hex: 0xE9ECF0)]),
                             startPoint: .zero, endPoint: CGPoint(x: 0, y: h)))
 
                 // Subtle grid
@@ -184,8 +184,8 @@ private struct RailRouteWeatherBody: View {
                                control2: CGPoint(x: w * 0.83, y: h * 0.34))
                 ctx.stroke(route,
                            with: .linearGradient(
-                            Gradient(colors: [Color(red: 0.082, green: 0.451, blue: 1.0),
-                                              Color(red: 0.745, green: 0.004, blue: 1.0)]),
+                            Gradient(colors: [Brand.blue,
+                                              Brand.magenta]),
                             startPoint: CGPoint(x: ox, y: oy), endPoint: CGPoint(x: dx, y: dy)),
                            style: StrokeStyle(lineWidth: 3.5, lineCap: .round, dash: [1, 7]))
 
@@ -195,8 +195,8 @@ private struct RailRouteWeatherBody: View {
                          with: .color(.white))
                 ctx.fill(Circle().path(in: CGRect(x: origPt.x-5, y: origPt.y-5, width: 10, height: 10)),
                          with: .linearGradient(
-                            Gradient(colors: [Color(red: 0.082, green: 0.451, blue: 1.0),
-                                              Color(red: 0.745, green: 0.004, blue: 1.0)]),
+                            Gradient(colors: [Brand.blue,
+                                              Brand.magenta]),
                             startPoint: CGPoint(x: origPt.x-5, y: origPt.y),
                             endPoint: CGPoint(x: origPt.x+5, y: origPt.y)))
 
@@ -205,15 +205,15 @@ private struct RailRouteWeatherBody: View {
                 ctx.fill(Circle().path(in: CGRect(x: destPt.x-8, y: destPt.y-8, width: 16, height: 16)),
                          with: .color(.white))
                 ctx.fill(Circle().path(in: CGRect(x: destPt.x-5, y: destPt.y-5, width: 10, height: 10)),
-                         with: .color(Color(red: 0.745, green: 0.004, blue: 1.0)))
+                         with: .color(Brand.magenta))
 
                 // Snow marker (Rockies)
                 let snowPt = CGPoint(x: w * 0.52, y: h * 0.44)
                 ctx.fill(Circle().path(in: CGRect(x: snowPt.x-13, y: snowPt.y-13, width: 26, height: 26)),
                          with: .color(.white))
                 ctx.stroke(Circle().path(in: CGRect(x: snowPt.x-13, y: snowPt.y-13, width: 26, height: 26)),
-                           with: .color(Color(red: 0.129, green: 0.588, blue: 0.953, opacity: 0.4)), lineWidth: 1)
-                let sBlue = Color(red: 0.071, green: 0.463, blue: 0.690)
+                           with: .color(Brand.info.opacity(0.4)), lineWidth: 1)
+                let sBlue = Color(hex: 0x1276B0)
                 for deg in stride(from: 0.0, to: 360.0, by: 45.0) {
                     let r = deg * Double.pi / 180
                     var seg = Path()
@@ -227,8 +227,8 @@ private struct RailRouteWeatherBody: View {
                 ctx.fill(Circle().path(in: CGRect(x: windPt.x-12, y: windPt.y-12, width: 24, height: 24)),
                          with: .color(.white))
                 ctx.stroke(Circle().path(in: CGRect(x: windPt.x-12, y: windPt.y-12, width: 24, height: 24)),
-                           with: .color(Color(red: 1.0, green: 0.655, blue: 0.149, opacity: 0.5)), lineWidth: 1)
-                let wAmber = Color(red: 0.698, green: 0.451, blue: 0.000)
+                           with: .color(Brand.warning.opacity(0.5)), lineWidth: 1)
+                let wAmber = Color(hex: 0xB27300)
                 for (dy2, len) in [(-3.0, 8.0), (1.0, 10.0)] {
                     var wl = Path()
                     wl.move(to: CGPoint(x: windPt.x - len/2, y: windPt.y + dy2))
@@ -251,11 +251,11 @@ private struct RailRouteWeatherBody: View {
                 // Origin / destination labels
                 ctx.draw(Text("LONG BEACH")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.4)
-                    .foregroundColor(Color(red: 0.051, green: 0.067, blue: 0.090)),
+                    .foregroundColor(Color(hex: 0x0D1117)),
                          at: CGPoint(x: ox + 2, y: oy + 16), anchor: .center)
                 ctx.draw(Text("CHICAGO")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.4)
-                    .foregroundColor(Color(red: 0.051, green: 0.067, blue: 0.090)),
+                    .foregroundColor(Color(hex: 0x0D1117)),
                          at: CGPoint(x: dx - 24, y: dy - 14), anchor: .center)
             }
             .frame(height: 130)
@@ -283,7 +283,7 @@ private struct RailRouteWeatherBody: View {
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
                 Text("getRouteConditions")
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(EType.mono(.caption))
                     .foregroundStyle(palette.textTertiary)
             }
             if alerts.isEmpty {
@@ -383,7 +383,7 @@ private struct RailRouteWeatherBody: View {
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                 Text("getImpactedLoads · \(rerouteCount) reroute candidate\(rerouteCount == 1 ? "" : "s")")
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
             }
             Spacer()

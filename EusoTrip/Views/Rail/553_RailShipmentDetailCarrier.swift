@@ -203,7 +203,7 @@ private struct RailShipmentDetailCarrierBody: View {
 
     private var actions: some View {
         HStack(spacing: Space.s2) {
-            CTAButton(title: updating ? "Updating…" : "Update status", leadingIcon: "arrow.triangle.2.circlepath", action: { Task { await updateStatus() } })
+            CTAButton(title: updating ? "Updating…" : "Update status", action: { Task { await updateStatus() } }, leadingIcon: "arrow.triangle.2.circlepath")
             CTAButton(title: "Waybill", leadingIcon: "doc.text")
         }
     }

@@ -193,7 +193,11 @@ private struct RailEngineerAccountBody: View {
             self.me = try await EusoTripAPI.shared.query("users.me", input: Empty())
             let p: ProfileOut = try await EusoTripAPI.shared.query("users.getProfile", input: Empty())
             self.credentials = p.credentials ?? []
-            self.hos = p.crewHOS ?? (try? await EusoTripAPI.shared.query("railShipments.getCrewHOS", input: Empty()))
+            if let crewHOS = p.crewHOS {
+                self.hos = crewHOS
+            } else {
+                self.hos = try? await EusoTripAPI.shared.query("railShipments.getCrewHOS", input: Empty())
+            }
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }

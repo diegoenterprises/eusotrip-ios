@@ -93,7 +93,7 @@ private struct RailIntermodalTransferBody: View {
         switch (t.transferType ?? "").lowercased() {
         case "truck_to_rail": return Brand.info
         case "rail_to_truck": return Brand.warning
-        case "rail_to_vessel": return Color(red: 0.38, green: 0.49, blue: 0.55)
+        case "rail_to_vessel": return Brand.rail
         default: return Brand.info
         }
     }
