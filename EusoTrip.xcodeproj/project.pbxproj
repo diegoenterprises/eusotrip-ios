@@ -632,6 +632,11 @@
 		DSD020260521000001 /* Dpch750_DispatcherShipperDetailOctet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DSD020260521000002 /* Dpch750_DispatcherShipperDetailOctet.swift */; };
 		DSE020260521000001 /* Dpch770_DispatcherSettlementDetailOctet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DSE020260521000002 /* Dpch770_DispatcherSettlementDetailOctet.swift */; };
 		DST020260521000001 /* Dpch720_DispatcherSVGTrio.swift in Sources */ = {isa = PBXBuildFile; fileRef = DST020260521000002 /* Dpch720_DispatcherSVGTrio.swift */; };
+		C399BUILDW14 /* 399_CatalystTollCorridorCost.swift in Sources */ = {isa = PBXBuildFile; fileRef = C399FREFW14 /* 399_CatalystTollCorridorCost.swift */; };
+		C400BUILDW14 /* 400_CatalystConvoyPlatooning.swift in Sources */ = {isa = PBXBuildFile; fileRef = C400FREFW14 /* 400_CatalystConvoyPlatooning.swift */; };
+		C401BUILDW14 /* 401_CatalystCrewWellness.swift in Sources */ = {isa = PBXBuildFile; fileRef = C401FREFW14 /* 401_CatalystCrewWellness.swift */; };
+		C402BUILDW14 /* 402_CatalystCapacityPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C402FREFW14 /* 402_CatalystCapacityPlanner.swift */; };
+		C403BUILDW14 /* 403_CatalystFleetCarbon.swift in Sources */ = {isa = PBXBuildFile; fileRef = C403FREFW14 /* 403_CatalystFleetCarbon.swift */; };
 		DISP404BUILD1 /* 404_DispatcherDriverRoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = DISP404FREF1 /* 404_DispatcherDriverRoster.swift */; };
 		DVD020260521000001 /* Dpch760_DispatcherVehicleDetailOctet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DVD020260521000002 /* Dpch760_DispatcherVehicleDetailOctet.swift */; };
 		E1D1ED0111111111111111AA /* ELDIntegrationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D1ED0211111111111111AA /* ELDIntegrationStore.swift */; };
@@ -1343,6 +1348,11 @@
 		DSD020260521000002 /* Dpch750_DispatcherShipperDetailOctet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch750_DispatcherShipperDetailOctet.swift; path = EusoTrip/Views/Dispatch/Dpch750_DispatcherShipperDetailOctet.swift; sourceTree = SOURCE_ROOT; };
 		DSE020260521000002 /* Dpch770_DispatcherSettlementDetailOctet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch770_DispatcherSettlementDetailOctet.swift; path = EusoTrip/Views/Dispatch/Dpch770_DispatcherSettlementDetailOctet.swift; sourceTree = SOURCE_ROOT; };
 		DST020260521000002 /* Dpch720_DispatcherSVGTrio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch720_DispatcherSVGTrio.swift; path = EusoTrip/Views/Dispatch/Dpch720_DispatcherSVGTrio.swift; sourceTree = SOURCE_ROOT; };
+		C399FREFW14 /* 399_CatalystTollCorridorCost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 399_CatalystTollCorridorCost.swift; path = EusoTrip/Views/Catalyst/399_CatalystTollCorridorCost.swift; sourceTree = SOURCE_ROOT; };
+		C400FREFW14 /* 400_CatalystConvoyPlatooning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 400_CatalystConvoyPlatooning.swift; path = EusoTrip/Views/Catalyst/400_CatalystConvoyPlatooning.swift; sourceTree = SOURCE_ROOT; };
+		C401FREFW14 /* 401_CatalystCrewWellness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 401_CatalystCrewWellness.swift; path = EusoTrip/Views/Catalyst/401_CatalystCrewWellness.swift; sourceTree = SOURCE_ROOT; };
+		C402FREFW14 /* 402_CatalystCapacityPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 402_CatalystCapacityPlanner.swift; path = EusoTrip/Views/Catalyst/402_CatalystCapacityPlanner.swift; sourceTree = SOURCE_ROOT; };
+		C403FREFW14 /* 403_CatalystFleetCarbon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 403_CatalystFleetCarbon.swift; path = EusoTrip/Views/Catalyst/403_CatalystFleetCarbon.swift; sourceTree = SOURCE_ROOT; };
 		DISP404FREF1 /* 404_DispatcherDriverRoster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 404_DispatcherDriverRoster.swift; path = EusoTrip/Views/Dispatch/404_DispatcherDriverRoster.swift; sourceTree = SOURCE_ROOT; };
 		DVD020260521000002 /* Dpch760_DispatcherVehicleDetailOctet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch760_DispatcherVehicleDetailOctet.swift; path = EusoTrip/Views/Dispatch/Dpch760_DispatcherVehicleDetailOctet.swift; sourceTree = SOURCE_ROOT; };
 		E1D1ED0211111111111111AA /* ELDIntegrationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ELDIntegrationStore.swift; sourceTree = "<group>"; };
@@ -2024,6 +2034,11 @@
 				SPR020260521000002 /* 248_ShipperPODReceipt.swift */,
 				SLS020260521000002 /* 243_ShipperLifecycleSextet.swift */,
 				DST020260521000002 /* Dpch720_DispatcherSVGTrio.swift */,
+				C399FREFW14 /* 399_CatalystTollCorridorCost.swift */,
+				C400FREFW14 /* 400_CatalystConvoyPlatooning.swift */,
+				C401FREFW14 /* 401_CatalystCrewWellness.swift */,
+				C402FREFW14 /* 402_CatalystCapacityPlanner.swift */,
+				C403FREFW14 /* 403_CatalystFleetCarbon.swift */,
 				DISP404FREF1 /* 404_DispatcherDriverRoster.swift */,
 				DEQ020260521000002 /* Dpch724_DispatcherExceptionQuartet.swift */,
 				DOQ020260521000002 /* Dpch730_DispatcherOpsQuartet.swift */,
@@ -3212,6 +3227,11 @@
 				SPR020260521000001 /* 248_ShipperPODReceipt.swift in Sources */,
 				SLS020260521000001 /* 243_ShipperLifecycleSextet.swift in Sources */,
 				DST020260521000001 /* Dpch720_DispatcherSVGTrio.swift in Sources */,
+				C399BUILDW14 /* 399_CatalystTollCorridorCost.swift in Sources */,
+				C400BUILDW14 /* 400_CatalystConvoyPlatooning.swift in Sources */,
+				C401BUILDW14 /* 401_CatalystCrewWellness.swift in Sources */,
+				C402BUILDW14 /* 402_CatalystCapacityPlanner.swift in Sources */,
+				C403BUILDW14 /* 403_CatalystFleetCarbon.swift in Sources */,
 				DISP404BUILD1 /* 404_DispatcherDriverRoster.swift in Sources */,
 				DEQ020260521000001 /* Dpch724_DispatcherExceptionQuartet.swift in Sources */,
 				DOQ020260521000001 /* Dpch730_DispatcherOpsQuartet.swift in Sources */,

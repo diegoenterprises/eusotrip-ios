@@ -1258,6 +1258,12 @@ enum ScreenRegistry {
         list.append(.init(id: "380", title: "Catalyst · M-05 Competing Quote", role: .catalyst) { p in AnyView(CatalystM05CompetingQuoteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) })
         list.append(.init(id: "381", title: "Catalyst · M-05 Third Quote",   role: .catalyst) { p in AnyView(CatalystM05ThirdQuoteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) })
         list.append(.init(id: "382", title: "Catalyst · M-05 Awarded Aurora", role: .catalyst) { p in AnyView(CatalystM05AwardedAuroraScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) })
+        // 2026-05-30 — Catalyst intelligence band 399-403 (port wave 14, closes the 383-403 NEW band).
+        list.append(.init(id: "Cat399", title: "Catalyst · Toll Corridor Cost",  role: .catalyst) { p in AnyView(CatalystTollCorridorCostScreen(theme: p)) })
+        list.append(.init(id: "Cat400", title: "Catalyst · Convoy Platooning",   role: .catalyst) { p in AnyView(CatalystConvoyPlatooningScreen(theme: p)) })
+        list.append(.init(id: "Cat401", title: "Catalyst · Crew Wellness",       role: .catalyst) { p in AnyView(CatalystCrewWellnessScreen(theme: p)) })
+        list.append(.init(id: "Cat402", title: "Catalyst · Capacity Planner",    role: .catalyst) { p in AnyView(CatalystCapacityPlannerScreen(theme: p)) })
+        list.append(.init(id: "Cat403", title: "Catalyst · Fleet Carbon",        role: .catalyst) { p in AnyView(CatalystFleetCarbonScreen(theme: p)) })
         // 2026-05-29 — Catalyst fleet/finance band 383-390 (port wave 12).
         // Bespoke ports of `03 Catalyst/Code/` canonical bricks, wired to real
         // routers (csaScores, ifta, dataqs, fuelMgmt, shipperFreightClaims) with
