@@ -126,6 +126,7 @@ enum ScreenRegistry {
             .init(id: "057", title: "Driver Vehicle Card",         role: .driver) { p in AnyView(DriverVehicleCardScreen(theme: p)) },
             .init(id: "058", title: "Driver Weekly Plan",          role: .driver) { p in AnyView(DriverWeeklyPlanScreen(theme: p)) },
             .init(id: "059", title: "Driver Trips History",        role: .driver) { p in AnyView(DriverTripsHistoryScreen(theme: p)) },
+            .init(id: "059E", title: "Vehicle & Equipment",         role: .driver) { p in AnyView(VehicleAndEquipmentScreen(theme: p)) },
             .init(id: "060", title: "The Haul · Dashboard",         role: .driver) { p in AnyView(TheHaulDashboardScreen(theme: p)) },
             .init(id: "060L", title: "The Haul · Lobby",            role: .driver) { p in AnyView(TheHaulLobbyScreen(theme: p)) },
             .init(id: "074E", title: "ELD Device · Connect",         role: .driver) { p in AnyView(ELDConnectScreen(theme: p)) },
@@ -913,6 +914,10 @@ enum ScreenRegistry {
         list.append(.init(id: "293", title: "Shipper · Settlement Detail",       role: .shipper) { p in AnyView(SettlementDetailScreen(theme: p, settlementId: "0")) })
         list.append(.init(id: "294", title: "Shipper · Dispute Settlement",      role: .shipper) { p in AnyView(DisputeSettlementScreen(theme: p, settlementId: "0")) })
         list.append(.init(id: "295", title: "Shipper · Payment Methods",         role: .shipper) { p in AnyView(PaymentMethodsScreen(theme: p)) })
+        // §40 — Shipper Dock Appointments (registry "295" is Payment Methods, so this
+        // takes a distinct id). ShipperDockAppointments owns its chrome (ShipperScreenWrap)
+        // + reads @Environment(\.palette); wired to appointments.{list,getSummary,assignHazmatBay}.
+        list.append(.init(id: "ShipDock295", title: "Shipper · Dock Appointments", role: .shipper) { p in AnyView(ShipperDockAppointments().environment(\.palette, p)) })
         list.append(.init(id: "296", title: "Shipper · Add Payment Method",      role: .shipper) { p in AnyView(AddPaymentMethodScreen(theme: p)) })
         list.append(.init(id: "297", title: "Shipper · Monthly Statement",       role: .shipper) { p in AnyView(MonthlyStatementScreen(theme: p)) })
         list.append(.init(id: "298", title: "Shipper · Sustainability",          role: .shipper) { p in AnyView(SustainabilityScreen(theme: p)) })
@@ -1258,6 +1263,37 @@ enum ScreenRegistry {
         list.append(.init(id: "380", title: "Catalyst · M-05 Competing Quote", role: .catalyst) { p in AnyView(CatalystM05CompetingQuoteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) })
         list.append(.init(id: "381", title: "Catalyst · M-05 Third Quote",   role: .catalyst) { p in AnyView(CatalystM05ThirdQuoteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) })
         list.append(.init(id: "382", title: "Catalyst · M-05 Awarded Aurora", role: .catalyst) { p in AnyView(CatalystM05AwardedAuroraScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) })
+        // 2026-05-29 — Catalyst growth band 391-398 (port wave 13).
+        // Bespoke ports of `03 Catalyst/Code/` canonical bricks, wired to real
+        // routers (detention, documentManagement, rateSheet) with honest // WIRE:
+        // markers where no iOS client method exists yet. Role-prefixed Cat391-Cat398 ids.
+        list.append(.init(id: "Cat391", title: "Catalyst · Detention Alerts",       role: .catalyst) { p in AnyView(CatalystDetentionAlertsScreen(theme: p)) })
+        list.append(.init(id: "Cat392", title: "Catalyst · Cargo Insurance",        role: .catalyst) { p in AnyView(CatalystCargoInsuranceScreen(theme: p)) })
+        list.append(.init(id: "Cat393", title: "Catalyst · Document Ingest",        role: .catalyst) { p in AnyView(CatalystDocumentIngestScreen(theme: p)) })
+        list.append(.init(id: "Cat394", title: "Catalyst · Factoring",             role: .catalyst) { p in AnyView(CatalystFactoringScreen(theme: p)) })
+        list.append(.init(id: "Cat395", title: "Catalyst · Fuel Surcharge Schedule", role: .catalyst) { p in AnyView(CatalystFuelSurchargeScheduleScreen(theme: p)) })
+        list.append(.init(id: "Cat396", title: "Catalyst · Lane Rate Sheet",        role: .catalyst) { p in AnyView(CatalystLaneRateSheetScreen(theme: p)) })
+        list.append(.init(id: "Cat397", title: "Catalyst · Carrier Tier",           role: .catalyst) { p in AnyView(CatalystCarrierTierScreen(theme: p)) })
+        list.append(.init(id: "Cat398", title: "Catalyst · Backhaul Optimizer",     role: .catalyst) { p in AnyView(CatalystBackhaulOptimizerScreen(theme: p)) })
+        // 2026-05-30 — Catalyst intelligence band 399-403 (port wave 14, closes the 383-403 NEW band).
+        list.append(.init(id: "Cat399", title: "Catalyst · Toll Corridor Cost",  role: .catalyst) { p in AnyView(CatalystTollCorridorCostScreen(theme: p)) })
+        list.append(.init(id: "Cat400", title: "Catalyst · Convoy Platooning",   role: .catalyst) { p in AnyView(CatalystConvoyPlatooningScreen(theme: p)) })
+        list.append(.init(id: "Cat401", title: "Catalyst · Crew Wellness",       role: .catalyst) { p in AnyView(CatalystCrewWellnessScreen(theme: p)) })
+        list.append(.init(id: "Cat402", title: "Catalyst · Capacity Planner",    role: .catalyst) { p in AnyView(CatalystCapacityPlannerScreen(theme: p)) })
+        list.append(.init(id: "Cat403", title: "Catalyst · Fleet Carbon",        role: .catalyst) { p in AnyView(CatalystFleetCarbonScreen(theme: p)) })
+        // 2026-05-29 — Catalyst fleet/finance band 383-390 (port wave 12).
+        // Bespoke ports of `03 Catalyst/Code/` canonical bricks, wired to real
+        // routers (csaScores, ifta, dataqs, fuelMgmt, shipperFreightClaims) with
+        // honest // WIRE: markers where no iOS client method exists yet. Numeric
+        // 383-390 are Shipper slots, so these take role-prefixed Cat383-Cat390 ids.
+        list.append(.init(id: "Cat383", title: "Catalyst · Fleet Safety CSA",     role: .catalyst) { p in AnyView(CatalystFleetSafetyCSAScreen(theme: p)) })
+        list.append(.init(id: "Cat384", title: "Catalyst · Fleet IFTA",           role: .catalyst) { p in AnyView(CatalystFleetIFTAScreen(theme: p)) })
+        list.append(.init(id: "Cat385", title: "Catalyst · Roadside DataQ",       role: .catalyst) { p in AnyView(CatalystRoadsideDataQScreen(theme: p)) })
+        list.append(.init(id: "Cat386", title: "Catalyst · Fuel Card Fleet",      role: .catalyst) { p in AnyView(CatalystFuelCardFleetScreen(theme: p)) })
+        list.append(.init(id: "Cat387", title: "Catalyst · Reefer Fleet Monitor", role: .catalyst) { p in AnyView(CatalystReeferFleetMonitorScreen(theme: p)) })
+        list.append(.init(id: "Cat388", title: "Catalyst · Tanker Fleet Monitor", role: .catalyst) { p in AnyView(CatalystTankerFleetMonitorScreen(theme: p)) })
+        list.append(.init(id: "Cat389", title: "Catalyst · Cargo Claim",          role: .catalyst) { p in AnyView(CatalystCargoClaimScreen(theme: p)) })
+        list.append(.init(id: "Cat390", title: "Catalyst · EDI Messages",         role: .catalyst) { p in AnyView(CatalystEDIMessagesScreen(theme: p)) })
         // 2026-04-27 — eusotrip-killers 134th firing
         // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
         // Second Catalyst-track brick lands in production. The Matches
@@ -1725,6 +1761,8 @@ enum ScreenRegistry {
             // directly). Each takes `theme: Theme.Palette` only.
             .init(id: "Dpch700", title: "Dispatch · Home",             role: .dispatch) { p in AnyView(DispatchHomeScreen(theme: p)) },
             .init(id: "Dpch701", title: "Dispatch · Driver Board",     role: .dispatch) { p in AnyView(DispatchDriverBoardScreen(theme: p)) },
+            // §37 — Dispatcher 404 Driver Roster (HOS-urgency-sorted roster; wires dispatch.getDriverRoster).
+            .init(id: "Dpch404", title: "Dispatch · Driver Roster",    role: .dispatch) { p in AnyView(DispatcherDriverRosterScreen(theme: p)) },
             .init(id: "Dpch702", title: "Dispatch · Load Assignment",  role: .dispatch) { p in AnyView(DispatchLoadAssignmentScreen(theme: p)) },
             .init(id: "Dpch703", title: "Dispatch · Exception Triage", role: .dispatch) { p in AnyView(DispatchExceptionTriageScreen(theme: p)) },
             .init(id: "Dpch704", title: "Dispatch · HOS Alerts",       role: .dispatch) { p in AnyView(DispatchHOSAlertsScreen(theme: p)) },

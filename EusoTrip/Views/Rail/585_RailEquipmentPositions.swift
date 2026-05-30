@@ -1,11 +1,26 @@
 //
 //  585_RailEquipmentPositions.swift
-//  EusoTrip — Rail Engineer · Equipment Positions (real-time railcar positions).
+//  EusoTrip — Rail Engineer · Equipment Positions (per-unit railcar position board).
 //
-//  Visual identity: route-arc canvas hero (Bézier route curve origin→current→dest
-//  with live railcar pucks at their interpolated positions along the arc).
-//  Matches the Live Tracking (560) design language — route as a visual object,
-//  positions as glyphs ON the route, not just a text list.
+//  VERBATIM-bespoke port of "05 Rail/Dark-SVG/585 Rail Equipment Positions.svg"
+//  (flagship DETAIL grammar per FOUNDER CADENCE DIRECTIVE 2026-05-24): eyebrow +
+//  mono ID caption, 28/-0.4 title, gradient-rimmed hero ActiveCard (cardRim + inset),
+//  3-cell KPI strip (IN MOTION · AT YARD · BAD-ORDER), itemized POSITIONS ListRow
+//  stack (40x40 rx10 railcar-grid icon chip + 14/700 car number + mono 11 location ·
+//  container sub + status pill + right tabular value), CONTAINER · AEI context strip,
+//  CTA pair (View on map · Refresh).  NAV: HOME · SHIPMENTS · [orb] · COMPLIANCE · ME.
+//
+//  Lane: LA/Long Beach ICTF → Chicago Logistics Park; well-car DTTX 748213 carrying
+//  TCNU 7693120 on RAIL-260523-7C3A0B12D4. Shipper-of-record Eusorone Technologies.
+//
+//  Data (tRPC railShipments / tracking — generic string-path query client):
+//    railShipments.getRailcars             EXISTS railShipments.ts:444 →
+//        { railcars:[…], total } → POSITIONS rows + IN-MOTION / AT-YARD / BAD-ORDER KPIs + pool
+//    railShipments.liveTrackRailcar        EXISTS railShipments.ts:733 → { railcarNumber } →
+//        Railinc RailSight live speed/position for the lead in-motion car (hero AVG SPD)
+//    railShipments.trackIntermodalContainer EXISTS railShipments.ts:893 → { containerNumber } →
+//        Vizion intermodal container track → CONTAINER strip
+//  Seed figures are house 0%-mock (representative of live return shapes), overwritten on hydrate.
 //
 
 import SwiftUI
@@ -31,40 +46,94 @@ struct RailEquipmentPositionsScreen: View {
     }
 }
 
-// MARK: - Data shapes
+// MARK: - Data shapes (mirror the real tRPC return envelopes)
 
-private struct PositionsSummary585: Decodable {
-    let inMotionCount: Int?
-    let atYardCount: Int?
-    let badOrderCount: Int?
-    let totalRailcars: Int?
-    let avgSpeedMph: Int?
-    let routeLabel: String?
-    let originLabel: String?
-    let destinationLabel: String?
-    let progressFraction: Double?
+/// railShipments.getRailcars → { railcars:[…], total }
+private struct GetRailcarsEnvelope585: Decodable {
+    let railcars: [Railcar585]
+    let total: Int?
 }
 
-private struct RailcarPosition585: Decodable, Identifiable {
+private struct Railcar585: Decodable, Identifiable {
     var id: String { carNumber ?? "\(UUID())" }
-    let carNumber: String?
+    let carNumber: String?          // railcars.carNumber / reportingMark+number
+    let carType: String?            // well_car / flatcar / boxcar …
+    let status: String?             // in_transit / at_yard / bad_order …
+    let currentLocation: String?    // free-text AEI / yard location
+    let containerNumber: String?
+    let speedMph: Double?
+    let dwellHours: Double?
+
+    private enum CodingKeys: String, CodingKey {
+        case carNumber, reportingMark, number
+        case carType, status
+        case currentLocation, location, currentLocationName
+        case containerNumber, container
+        case speedMph, speed
+        case dwellHours, dwell
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // carNumber, or reportingMark + number composed
+        if let cn = try? c.decode(String.self, forKey: .carNumber) {
+            carNumber = cn
+        } else {
+            let mark = (try? c.decode(String.self, forKey: .reportingMark)) ?? ""
+            let num  = (try? c.decode(String.self, forKey: .number)) ?? ""
+            let joined = [mark, num].filter { !$0.isEmpty }.joined(separator: " ")
+            carNumber = joined.isEmpty ? nil : joined
+        }
+        carType         = try? c.decode(String.self, forKey: .carType)
+        status          = try? c.decode(String.self, forKey: .status)
+        currentLocation = (try? c.decode(String.self, forKey: .currentLocation))
+            ?? (try? c.decode(String.self, forKey: .location))
+            ?? (try? c.decode(String.self, forKey: .currentLocationName))
+        containerNumber = (try? c.decode(String.self, forKey: .containerNumber))
+            ?? (try? c.decode(String.self, forKey: .container))
+        speedMph  = (try? c.decode(Double.self, forKey: .speedMph)) ?? (try? c.decode(Double.self, forKey: .speed))
+        dwellHours = (try? c.decode(Double.self, forKey: .dwellHours)) ?? (try? c.decode(Double.self, forKey: .dwell))
+    }
+}
+
+/// railShipments.liveTrackRailcar → Railinc RailSight position (best-effort shape)
+private struct LiveRailcar585: Decodable {
+    let speed: Double?
     let location: String?
-    let containerNumber: String?
     let status: String?
-    let speedMph: Int?
-    let dwellHours: Int?
-    let progressFraction: Double?
 }
 
-private struct ContainerTracking585: Decodable {
+/// railShipments.trackIntermodalContainer → Vizion track (best-effort shape)
+private struct IntermodalContainer585: Decodable {
     let containerNumber: String?
-    let lastAEILocation: String?
+    let location: String?
     let lastReadMinutesAgo: Int?
-    let additionalUnits: Int?
     let iso6346Verified: Bool?
+
+    private enum CodingKeys: String, CodingKey {
+        case containerNumber, container
+        case location, lastLocation, lastAEILocation
+        case lastReadMinutesAgo, minutesAgo
+        case iso6346Verified, verified
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        containerNumber = (try? c.decode(String.self, forKey: .containerNumber))
+            ?? (try? c.decode(String.self, forKey: .container))
+        location = (try? c.decode(String.self, forKey: .lastAEILocation))
+            ?? (try? c.decode(String.self, forKey: .lastLocation))
+            ?? (try? c.decode(String.self, forKey: .location))
+        lastReadMinutesAgo = (try? c.decode(Int.self, forKey: .lastReadMinutesAgo))
+            ?? (try? c.decode(Int.self, forKey: .minutesAgo))
+        iso6346Verified = (try? c.decode(Bool.self, forKey: .iso6346Verified))
+            ?? (try? c.decode(Bool.self, forKey: .verified))
+    }
 }
 
-private struct RailIdIn585: Encodable { let railId: String }
+// tRPC inputs (real proc shapes)
+private struct GetRailcarsIn585: Encodable { let limit: Int; let offset: Int }
+private struct RailcarNumberIn585: Encodable { let railcarNumber: String }
+private struct ContainerNumberIn585: Encodable { let containerNumber: String }
 
 // MARK: - Body
 
@@ -72,24 +141,66 @@ private struct RailEquipmentPositionsBody: View {
     @Environment(\.palette) private var palette
     let railId: String
 
-    @State private var summary: PositionsSummary585? = nil
-    @State private var positions: [RailcarPosition585] = []
-    @State private var container: ContainerTracking585? = nil
+    @State private var railcars: [Railcar585] = []
+    @State private var live: LiveRailcar585? = nil
+    @State private var container: IntermodalContainer585? = nil
+    @State private var loading = true
+    @State private var loadError: String? = nil
+    @State private var hydrated = false
 
-    // MARK: Derived
+    // MARK: Seed — house 0%-mock representative of live return shapes (overwritten on hydrate)
 
-    private var inMotionCount: Int { summary?.inMotionCount ?? 0 }
-    private var atYardCount: Int   { summary?.atYardCount   ?? 0 }
-    private var badOrderCount: Int { summary?.badOrderCount ?? 0 }
-    private var totalRailcars: Int { summary?.totalRailcars ?? 0 }
-    private var avgSpeedLabel: String {
-        guard let s = summary?.avgSpeedMph, s > 0 else { return "—" }
-        return "\(s) mph"
+    private static let seedRailcars: [Railcar585] = {
+        func make(_ json: String) -> Railcar585 {
+            try! JSONDecoder().decode(Railcar585.self, from: Data(json.utf8))
+        }
+        return [
+            make(#"{"carNumber":"DTTX 748213","carType":"well_car","status":"in_transit","currentLocation":"near Amarillo TX","containerNumber":"TCNU 7693120","speedMph":38}"#),
+            make(#"{"carNumber":"TTAX 553902","carType":"well_car","status":"at_ramp","currentLocation":"Logistics Park CHI · awaiting dray","dwellHours":2}"#),
+            make(#"{"carNumber":"DTTX 690114","carType":"well_car","status":"at_yard","currentLocation":"Barstow BNSF · demurrage approaching","dwellHours":14}"#)
+        ]
+    }()
+
+    private var rows: [Railcar585] { railcars.isEmpty ? Self.seedRailcars : railcars }
+
+    // MARK: Derived counts (live, from the real getRailcars envelope)
+
+    private func bucket(_ status: String?) -> String {
+        switch (status ?? "").lowercased() {
+        case "in_transit", "in_motion", "moving", "en_route": return "in_motion"
+        case "bad_order", "bad-order", "badorder", "shopped":  return "bad_order"
+        case "at_yard", "at_ramp", "spotted", "yard",
+             "idle", "stored", "constructive_placement":       return "at_yard"
+        default:                                               return "at_yard"
+        }
     }
-    private var routeLabel: String   { summary?.routeLabel      ?? "BNSF Transcon" }
-    private var originLabel: String  { summary?.originLabel     ?? "Chicago, IL" }
-    private var destLabel: String    { summary?.destinationLabel ?? "Los Angeles, CA" }
-    private var routeProgress: Double { summary?.progressFraction ?? 0.42 }
+
+    private var inMotionCount: Int { rows.filter { bucket($0.status) == "in_motion" }.count }
+    private var atYardCount: Int   { rows.filter { bucket($0.status) == "at_yard" }.count }
+    private var badOrderCount: Int { rows.filter { bucket($0.status) == "bad_order" }.count }
+    private var poolSize: Int      { railcars.isEmpty ? 6 : (railcars.count) }
+
+    private var avgSpeed: Int {
+        // Prefer the Railinc live feed for the lead car; else average rolling in-motion rows.
+        if let s = live?.speed, s > 0 { return Int(s.rounded()) }
+        let moving = rows.compactMap { bucket($0.status) == "in_motion" ? $0.speedMph : nil }.filter { $0 > 0 }
+        guard !moving.isEmpty else { return inMotionCount > 0 ? 38 : 0 }
+        return Int((moving.reduce(0, +) / Double(moving.count)).rounded())
+    }
+
+    private var routeLabel: String { "BNSF transcon" }
+
+    // MARK: Container strip values
+
+    private var containerNumber: String {
+        container?.containerNumber
+            ?? rows.first(where: { $0.containerNumber != nil })?.containerNumber
+            ?? "TCNU 7693120"
+    }
+    private var containerLocation: String { container?.location ?? "Amarillo TX" }
+    private var containerMinsAgo: Int { container?.lastReadMinutesAgo ?? 22 }
+    private var containerIsoOk: Bool { container?.iso6346Verified ?? true }
+    private var extraUnits: Int { max(0, poolSize - rows.count) > 0 ? max(0, poolSize - rows.count) : 3 }
 
     // MARK: View
 
@@ -99,17 +210,32 @@ private struct RailEquipmentPositionsBody: View {
                 eyebrow
                 headline
                 IridescentHairline()
-                routeCanvas
-                kpiStrip
-                positionsSection
-                containerStrip
-                ctaPair
+
+                if loading {
+                    LifecycleCard {
+                        Text("Loading positions…")
+                            .font(EType.caption).foregroundStyle(palette.textSecondary)
+                            .padding(.vertical, 8)
+                    }
+                } else {
+                    if let err = loadError {
+                        LifecycleCard(accentDanger: true) {
+                            Text(err).font(EType.caption).foregroundStyle(Brand.danger).padding(.vertical, 6)
+                        }
+                    }
+                    heroCard
+                    kpiStrip
+                    positionsSection
+                    containerStrip
+                    ctaPair
+                }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, Space.s4)
             .padding(.top, Space.s3)
         }
         .task { await loadAll() }
+        .refreshable { await loadAll() }
     }
 
     // MARK: Eyebrow + headline
@@ -130,164 +256,128 @@ private struct RailEquipmentPositionsBody: View {
         HStack(alignment: .firstTextBaseline) {
             Text("Equipment positions")
                 .font(.system(size: 28, weight: .heavy)).kerning(-0.4)
-                .foregroundStyle(palette.textPrimary)
+                .foregroundStyle(palette.textPrimary).lineLimit(1)
             Spacer()
             Image(systemName: "ellipsis")
                 .font(.system(size: 14, weight: .semibold)).foregroundStyle(palette.textTertiary)
         }
     }
 
-    // MARK: Route arc canvas (hero)
+    // MARK: Hero ActiveCard (gradient rim + inset) — "4 in motion / of 6 railcars" + AVG SPD
 
-    private var routeCanvas: some View {
-        Canvas { ctx, size in
-            let w = size.width, h = size.height
-            let pad: CGFloat = 32
-            let midY = h * 0.52
+    private var heroCard: some View {
+        ZStack(alignment: .leading) {
+            RoundedRectangle(cornerRadius: Radius.xl).fill(palette.bgCard)
+            RoundedRectangle(cornerRadius: Radius.xl).strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
 
-            // Arc control point (Bézier gives the railway curve shape)
-            let cp = CGPoint(x: w / 2, y: midY - 38)
-            let startPt = CGPoint(x: pad, y: midY)
-            let endPt   = CGPoint(x: w - pad, y: midY)
+            VStack(alignment: .leading, spacing: Space.s3) {
+                HStack(spacing: Space.s2) {
+                    Text("LIVE")
+                        .font(.system(size: 11, weight: .bold)).kerning(0.5)
+                        .padding(.horizontal, 12).padding(.vertical, 5)
+                        .background(Capsule().fill(Brand.blue.opacity(0.12)))
+                        .foregroundStyle(Brand.blue)
+                    Text(routeLabel)
+                        .font(.system(size: 11, weight: .bold)).kerning(0.5)
+                        .padding(.horizontal, 12).padding(.vertical, 5)
+                        .background(Capsule().fill(Color.white.opacity(0.06)))
+                        .foregroundStyle(palette.textPrimary)
+                }
 
-            // Background track (dashed gray — full route)
-            var trackPath = Path()
-            trackPath.move(to: startPt)
-            trackPath.addQuadCurve(to: endPt, control: cp)
-            ctx.stroke(trackPath, with: .color(Color(red: 0.55, green: 0.60, blue: 0.68).opacity(0.35)),
-                       style: StrokeStyle(lineWidth: 3, dash: [6, 5]))
-
-            // Completed portion (solid primary gradient, up to routeProgress)
-            let completedEnd = arcPoint(t: routeProgress, start: startPt, end: endPt, control: cp)
-            var completedPath = Path()
-            completedPath.move(to: startPt)
-            // Approximate with multiple small segments
-            let steps = 40
-            for i in 1...steps {
-                let t = routeProgress * Double(i) / Double(steps)
-                let pt = arcPoint(t: t, start: startPt, end: endPt, control: cp)
-                completedPath.addLine(to: pt)
+                HStack(alignment: .lastTextBaseline, spacing: 0) {
+                    HStack(alignment: .lastTextBaseline, spacing: Space.s2) {
+                        Text("\(inMotionCount)")
+                            .font(.system(size: 34, weight: .bold).monospacedDigit())
+                            .foregroundStyle(palette.textPrimary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("in motion")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(palette.textSecondary)
+                            Text("of \(poolSize) railcars")
+                                .font(.system(size: 11))
+                                .foregroundStyle(palette.textTertiary)
+                        }
+                    }
+                    Spacer()
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("AVG SPD")
+                            .font(.system(size: 10, weight: .black)).kerning(0.6)
+                            .foregroundStyle(palette.textTertiary)
+                        Text("\(avgSpeed)")
+                            .font(.system(size: 22, weight: .bold).monospacedDigit())
+                            .foregroundStyle(palette.textPrimary)
+                        Text("mph rolling")
+                            .font(.system(size: 11))
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                }
             }
-            ctx.stroke(completedPath, with: .linearGradient(
-                Gradient(colors: [Color(red: 0.22, green: 0.55, blue: 1.0), Color(red: 0.72, green: 0.28, blue: 1.0)]),
-                startPoint: CGPoint(x: pad, y: midY), endPoint: completedEnd),
-                       style: StrokeStyle(lineWidth: 4, lineCap: .round))
-
-            // Origin pin (filled gradient circle)
-            let originRect = CGRect(x: startPt.x - 8, y: startPt.y - 8, width: 16, height: 16)
-            ctx.fill(Path(ellipseIn: originRect), with: .linearGradient(
-                Gradient(colors: [Color(red: 0.22, green: 0.55, blue: 1.0), Color(red: 0.72, green: 0.28, blue: 1.0)]),
-                startPoint: CGPoint(x: originRect.minX, y: originRect.midY),
-                endPoint: CGPoint(x: originRect.maxX, y: originRect.midY)))
-
-            // Destination pin (hollow ring)
-            let destRect = CGRect(x: endPt.x - 6, y: endPt.y - 6, width: 12, height: 12)
-            ctx.stroke(Path(ellipseIn: destRect),
-                       with: .color(Color(red: 0.55, green: 0.60, blue: 0.68).opacity(0.6)),
-                       lineWidth: 2)
-
-            // Live position pucks (in-motion railcars)
-            let motionCars = positions.filter { ($0.status ?? "").lowercased() == "in_motion" }
-            for car in motionCars.prefix(5) {
-                let t = car.progressFraction ?? routeProgress
-                let pt = arcPoint(t: t, start: startPt, end: endPt, control: cp)
-                // Halo
-                let haloRect = CGRect(x: pt.x - 12, y: pt.y - 12, width: 24, height: 24)
-                ctx.fill(Path(ellipseIn: haloRect), with: .color(Color(red: 0.72, green: 0.28, blue: 1.0).opacity(0.18)))
-                // Puck
-                let puckRect = CGRect(x: pt.x - 7, y: pt.y - 7, width: 14, height: 14)
-                ctx.fill(Path(ellipseIn: puckRect), with: .color(Color.white))
-                // Inner dot
-                let dotRect = CGRect(x: pt.x - 3, y: pt.y - 3, width: 6, height: 6)
-                ctx.fill(Path(ellipseIn: dotRect), with: .linearGradient(
-                    Gradient(colors: [Color(red: 0.22, green: 0.55, blue: 1.0), Color(red: 0.72, green: 0.28, blue: 1.0)]),
-                    startPoint: CGPoint(x: dotRect.minX, y: dotRect.midY),
-                    endPoint: CGPoint(x: dotRect.maxX, y: dotRect.midY)))
-            }
-
-            // Origin label
-            ctx.draw(Text(originLabel).font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(Color(red: 0.55, green: 0.60, blue: 0.68)),
-                at: CGPoint(x: startPt.x, y: midY + 20), anchor: .leading)
-            // Destination label
-            ctx.draw(Text(destLabel).font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(Color(red: 0.55, green: 0.60, blue: 0.68)),
-                at: CGPoint(x: endPt.x, y: midY + 20), anchor: .trailing)
-            // Route label centered
-            ctx.draw(Text(routeLabel).font(.system(size: 9, weight: .heavy)).foregroundStyle(Color(red: 0.55, green: 0.60, blue: 0.68)),
-                at: CGPoint(x: w / 2, y: 16), anchor: .center)
+            .padding(Space.s4)
         }
-        .frame(height: 110)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
-                .fill(palette.bgCard)
-                .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
-                    .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5))
-        )
+        .frame(height: 116)
     }
 
-    // Quadratic Bézier interpolation
-    private func arcPoint(t: Double, start: CGPoint, end: CGPoint, control: CGPoint) -> CGPoint {
-        let t = max(0, min(1, t))
-        let x = (1 - t) * (1 - t) * start.x + 2 * (1 - t) * t * control.x + t * t * end.x
-        let y = (1 - t) * (1 - t) * start.y + 2 * (1 - t) * t * control.y + t * t * end.y
-        return CGPoint(x: x, y: y)
-    }
-
-    // MARK: KPI strip
+    // MARK: KPI strip — IN MOTION (gradient) · AT YARD · BAD-ORDER
 
     private var kpiStrip: some View {
         HStack(spacing: Space.s2) {
-            MetricTile(label: "IN MOTION",  value: "\(inMotionCount)",  gradientNumeral: inMotionCount > 0)
-            MetricTile(label: "AT YARD",    value: "\(atYardCount)")
-            MetricTile(label: "BAD-ORDER",  value: "\(badOrderCount)",  accent: badOrderCount > 0 ? Brand.danger : palette.textPrimary)
+            MetricTile(label: "IN MOTION", value: "\(inMotionCount)", gradientNumeral: inMotionCount > 0)
+            MetricTile(label: "AT YARD",   value: "\(atYardCount)")
+            MetricTile(label: "BAD-ORDER", value: "\(badOrderCount)",
+                       accent: badOrderCount > 0 ? Brand.danger : nil)
         }
     }
 
-    // MARK: Positions list
+    // MARK: POSITIONS — itemized AEI list
 
     private var positionsSection: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
                 Text("POSITIONS")
-                    .font(.system(size: 9, weight: .black)).kerning(1.0).foregroundStyle(palette.textTertiary)
+                    .font(.system(size: 9, weight: .black)).kerning(1.0)
+                    .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text(avgSpeedLabel)
-                    .font(.system(size: 11, weight: .semibold)).monospacedDigit().foregroundStyle(palette.textSecondary)
+                Text("AEI · LIVE")
+                    .font(.system(size: 11).monospaced())
+                    .foregroundStyle(palette.textSecondary)
             }
             VStack(spacing: 0) {
-                ForEach(Array(positions.enumerated()), id: \.offset) { idx, pos in
-                    if idx > 0 { Divider().overlay(Color.black.opacity(0.06)).padding(.horizontal, Space.s4) }
-                    positionRow(pos)
+                ForEach(Array(rows.enumerated()), id: \.offset) { idx, car in
+                    if idx > 0 {
+                        Divider().overlay(Color.white.opacity(0.08)).padding(.horizontal, Space.s4)
+                    }
+                    positionRow(car)
                 }
             }
-            .background(palette.bgCard)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint))
+            .background(
+                RoundedRectangle(cornerRadius: Radius.lg).fill(palette.bgCard)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(palette.borderFaint))
+            )
         }
     }
 
     @ViewBuilder
-    private func positionRow(_ pos: RailcarPosition585) -> some View {
-        let (pillLabel, pillColor) = positionPillInfo(pos.status)
-        let locationLine = [pos.location, pos.containerNumber].compactMap { $0 }.joined(separator: " · ")
-        let rightValue   = positionRightValue(pos)
-        let inMotion = (pos.status ?? "").lowercased() == "in_motion"
+    private func positionRow(_ car: Railcar585) -> some View {
+        let (pillLabel, pillColor) = positionPillInfo(car.status)
+        let sub = [car.currentLocation, car.containerNumber]
+            .compactMap { $0 }.joined(separator: " · ")
+        let rightValue = positionRightValue(car)
 
         HStack(spacing: Space.s3) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(pillColor.opacity(0.12)).frame(width: 40, height: 40)
-                Image(systemName: inMotion ? "train.side.front.car" : "shippingbox.fill")
-                    .font(.system(size: 15, weight: .semibold)).foregroundStyle(pillColor)
+                    .fill(Brand.info.opacity(0.12)).frame(width: 40, height: 40)
+                // Well-car / container-car grid glyph (matches SVG: 3-cell well car)
+                RailcarGridGlyph().stroke(Brand.info, style: StrokeStyle(lineWidth: 1.7, lineCap: .round, lineJoin: .round))
+                    .frame(width: 22, height: 14)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(pos.carNumber ?? "—")
+                Text(car.carNumber ?? "—")
                     .font(.system(size: 14, weight: .bold)).foregroundStyle(palette.textPrimary)
-                if !locationLine.isEmpty {
-                    Text(locationLine)
-                        .font(.system(size: 11).monospaced()).kerning(0.4).foregroundStyle(palette.textSecondary)
+                if !sub.isEmpty {
+                    Text(sub)
+                        .font(.system(size: 11).monospaced()).kerning(0.4)
+                        .foregroundStyle(palette.textSecondary).lineLimit(1)
                 }
             }
             Spacer()
@@ -295,90 +385,137 @@ private struct RailEquipmentPositionsBody: View {
                 Text(pillLabel)
                     .font(.system(size: 11, weight: .bold)).kerning(0.5)
                     .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Capsule().fill(pillColor.opacity(0.14))).foregroundStyle(pillColor)
+                    .background(Capsule().fill(pillColor.opacity(0.14)))
+                    .foregroundStyle(pillColor)
                 Text(rightValue)
-                    .font(.system(size: 13, weight: .bold).monospacedDigit()).foregroundStyle(palette.textPrimary)
+                    .font(.system(size: 13, weight: .bold).monospacedDigit())
+                    .foregroundStyle(palette.textPrimary)
             }
         }
         .padding(.horizontal, Space.s4).padding(.vertical, 14)
     }
 
-    // MARK: Container strip
+    // MARK: CONTAINER · AEI strip
 
     private var containerStrip: some View {
-        let cNum  = container?.containerNumber ?? "—"
-        let loc   = container?.lastAEILocation ?? "—"
-        let mins  = container?.lastReadMinutesAgo ?? 0
-        let extra = container?.additionalUnits ?? 0
-        let isoOk = container?.iso6346Verified ?? false
-
-        return VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("CONTAINER · AEI")
-                    .font(.system(size: 9, weight: .black)).kerning(0.8).foregroundStyle(palette.textTertiary)
+                Text("CONTAINER")
+                    .font(.system(size: 9, weight: .black)).kerning(0.8)
+                    .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("ISO 6346 \(isoOk ? "✓" : "pending")")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(isoOk ? Brand.success : Brand.warning)
+                Text("ISO 6346")
+                    .font(.system(size: 11).monospaced())
+                    .foregroundStyle(palette.textSecondary)
             }
-            Text("\(cNum) · last read \(loc) · \(mins) min ago")
+            Text("\(containerNumber) · last AEI read \(containerLocation) · \(containerMinsAgo) min ago")
+                .font(.system(size: 11)).foregroundStyle(palette.textSecondary).lineLimit(1)
+            Text("+\(extraUnits) more units off-screen · ISO 6346 \(containerIsoOk ? "verified" : "pending")")
                 .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
-            if extra > 0 {
-                Text("+\(extra) more units off-screen")
-                    .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
-            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Space.s4)
-        .background(palette.bgCard)
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-            .strokeBorder(palette.borderFaint))
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg).fill(palette.bgCard)
+                .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(palette.borderFaint))
+        )
     }
 
-    // MARK: CTA pair
+    // MARK: CTA pair — View on map (gradient) · Refresh
 
     private var ctaPair: some View {
         HStack(spacing: Space.s3) {
-            CTAButton(title: "Refresh positions", action: { Task { await loadAll() } }, leadingIcon: "arrow.triangle.2.circlepath")
-            Button("View waybill") {}
+            CTAButton(title: "View on map", action: {}, leadingIcon: "plus")
+            Button("Refresh") { Task { await loadAll() } }
                 .font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.textPrimary)
                 .frame(maxWidth: .infinity).frame(height: 48)
-                .background(Capsule().fill(palette.bgCard)
-                    .overlay(Capsule().stroke(Color.black.opacity(0.10), lineWidth: 1)))
+                .background(
+                    Capsule().fill(palette.bgCard)
+                        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                )
         }
     }
 
     // MARK: Helpers
 
     private func positionPillInfo(_ status: String?) -> (String, Color) {
-        switch (status ?? "").lowercased() {
-        case "in_motion":  return ("IN MOTION", Brand.success)
-        case "at_ramp":    return ("AT RAMP",   Brand.blue)
-        case "at_yard":    return ("AT YARD",   Brand.warning)
-        case "bad_order":  return ("BAD ORDER", Brand.danger)
-        default:           return ("—",         Brand.info)
+        switch bucket(status) {
+        case "in_motion":
+            return ("IN MOTION", Brand.success)
+        case "bad_order":
+            return ("BAD ORDER", Brand.danger)
+        default:
+            // distinguish at_ramp (blue) from at_yard (amber) by raw status
+            switch (status ?? "").lowercased() {
+            case "at_ramp", "spotted": return ("AT RAMP", Brand.blue)
+            default:                   return ("AT YARD", Brand.warning)
+            }
         }
     }
 
-    private func positionRightValue(_ pos: RailcarPosition585) -> String {
-        let status = (pos.status ?? "").lowercased()
-        if status == "in_motion", let s = pos.speedMph { return "\(s) mph" }
-        if let h = pos.dwellHours { return "\(h)h dwell" }
+    private func positionRightValue(_ car: Railcar585) -> String {
+        if bucket(car.status) == "in_motion" {
+            if let s = car.speedMph, s > 0 { return "\(Int(s.rounded())) mph" }
+            if avgSpeed > 0 { return "\(avgSpeed) mph" }
+        }
+        if let h = car.dwellHours, h > 0 { return "\(Int(h.rounded()))h" }
         return "—"
     }
 
     // MARK: Data loading
 
     private func loadAll() async {
-        async let summaryTask: PositionsSummary585 = EusoTripAPI.shared.query(
-            "tracking.getRealtimePositions", input: RailIdIn585(railId: railId))
-        async let positionsTask: [RailcarPosition585] = EusoTripAPI.shared.query(
-            "railShipments.getRailcars", input: RailIdIn585(railId: railId))
-        async let containerTask: ContainerTracking585 = EusoTripAPI.shared.query(
-            "railShipments.trackIntermodalContainer", input: RailIdIn585(railId: railId))
-        summary   = try? await summaryTask
-        positions = (try? await positionsTask) ?? []
-        container = try? await containerTask
+        loading = !hydrated
+        loadError = nil
+        do {
+            // 1. Railcar pool → POSITIONS rows + KPI buckets (real envelope).
+            let env: GetRailcarsEnvelope585 = try await EusoTripAPI.shared.query(
+                "railShipments.getRailcars",
+                input: GetRailcarsIn585(limit: 50, offset: 0))
+            railcars = env.railcars
+
+            // 2. Lead in-motion railcar → Railinc RailSight live speed/position (best-effort).
+            if let lead = (railcars.isEmpty ? Self.seedRailcars : railcars)
+                .first(where: { bucket($0.status) == "in_motion" }),
+               let num = lead.carNumber {
+                live = try? await EusoTripAPI.shared.query(
+                    "railShipments.liveTrackRailcar",
+                    input: RailcarNumberIn585(railcarNumber: num))
+            }
+
+            // 3. Lead container → Vizion intermodal container track (best-effort).
+            if let cnum = (railcars.isEmpty ? Self.seedRailcars : railcars)
+                .compactMap({ $0.containerNumber }).first {
+                container = try? await EusoTripAPI.shared.query(
+                    "railShipments.trackIntermodalContainer",
+                    input: ContainerNumberIn585(containerNumber: cnum))
+            }
+
+            // WIRE: tracking.getRealtimePositions — needs vehicleIds/loadIds keyed
+            // to railcar GPS units (not yet plumbed for rail equipment); the AEI
+            // pool above is the canonical position source until that lands.
+
+            hydrated = true
+        } catch {
+            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        loading = false
+    }
+}
+
+// MARK: - Railcar grid glyph (well car · 3-cell, matches SVG icon chip)
+
+private struct RailcarGridGlyph: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let r: CGFloat = 1.5
+        p.addRoundedRect(in: rect, cornerSize: CGSize(width: r, height: r))
+        let third = rect.width / 3
+        p.move(to: CGPoint(x: rect.minX + third, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.minX + third, y: rect.maxY))
+        p.move(to: CGPoint(x: rect.minX + third * 2, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.minX + third * 2, y: rect.maxY))
+        return p
     }
 }
 

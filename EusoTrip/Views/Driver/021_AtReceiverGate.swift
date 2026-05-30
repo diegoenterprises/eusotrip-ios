@@ -42,6 +42,8 @@ struct AtReceiverGate: View {
 
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: Load?
+    @State private var appointment: AppointmentsAPI.ByLoadAppointment?
+    @State private var didHydrate: Bool = false
     @State private var isCheckingIn: Bool = false
 
     enum Register { case night, afternoon }
@@ -53,26 +55,69 @@ struct AtReceiverGate: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
-    // MARK: - Figma fallback
+    // MARK: - Em-dash sentinels
+    //
+    // 113th-firing M2 retrofit: the gate metrics were Figma literals
+    // ("00:15" / "#1" / "23:30") that leaked onto the live path. They
+    // now resolve from live state where a backend source exists, and
+    // hold the universal em-dash sentinel otherwise — never a faked
+    // value. ARRIVED (a geofence-entry timestamp) and QUEUE (a guard
+    // shack queue position) have no column on loads.getById or
+    // appointments.getByLoad, so they stay em-dash until those land.
+    private let dash              = "—"
     private let fallbackFacility  = "—"
     private let fallbackTrailer   = "—"
     private let fallbackLoadID    = "—"
-    private let fallbackGateLine  = "—"
-    private let fallbackArrived   = "00:15"
-    private let fallbackQueue     = "#1"
-    private let fallbackAppt      = "23:30"
+
+    /// Gate address line — delivery facility from the live load
+    /// (address > cityState), em-dash until the load hydrates.
+    private var gateLine: String { ctx.facets.deliveryFacility }
+
+    /// ARRIVED — geofence-entry wall-clock. No backend column yet, so
+    /// em-dash on the live path.
+    private var arrivedMetric: String { dash }
+
+    /// QUEUE — guard-shack position. No backend column yet, em-dash.
+    private var queueMetric: String { dash }
+
+    /// APPT — live scheduled appointment time, rendered HH:mm local.
+    /// Source: appointments.getByLoad → scheduledAt, falling through
+    /// to the load's deliveryDate. Em-dash when neither is set.
+    private var apptMetric: String {
+        if let t = formatTime(appointment?.scheduledAt) { return t }
+        if let t = formatTime(activeLoad?.deliveryDate) { return t }
+        return dash
+    }
+
+    private func formatTime(_ iso: String?) -> String? {
+        guard let iso = iso, !iso.isEmpty else { return nil }
+        let parser = ISO8601DateFormatter()
+        parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = parser.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
+        guard let d = date else { return nil }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        return f.string(from: d)
+    }
 
     // MARK: - Body
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
-                header
-                geofencePill
-                guardCard
-                actionRow
-                advisoryBanner
-                footerActions
+                if !didHydrate && activeLoad == nil {
+                    loadingState
+                } else if activeLoad == nil {
+                    emptyState
+                } else {
+                    header
+                    geofencePill
+                    guardCard
+                    actionRow
+                    advisoryBanner
+                    footerActions
+                }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14)
@@ -80,6 +125,28 @@ struct AtReceiverGate: View {
         }
         .task { await hydrateLiveTrip() }
         .screenTileRoot()
+    }
+
+    // MARK: Loading / empty
+
+    private var loadingState: some View {
+        VStack(spacing: Space.s3) {
+            ProgressView()
+                .tint(palette.textSecondary)
+            Text("Locating your active load…")
+                .font(EType.mono(.micro)).tracking(0.4)
+                .foregroundStyle(palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 320)
+    }
+
+    private var emptyState: some View {
+        EusoEmptyState(
+            systemImage: "house.fill",
+            title: "No active gate check-in",
+            subtitle: "When you reach a receiver geofence, your guard-check card lands here."
+        )
+        .frame(maxWidth: .infinity, minHeight: 320)
     }
 
     // MARK: Header
@@ -171,7 +238,7 @@ struct AtReceiverGate: View {
                     Text("Checking in")
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
-                    Text(fallbackGateLine)
+                    Text(gateLine)
                         .font(EType.mono(.micro)).tracking(0.3)
                         .foregroundStyle(palette.textSecondary)
                         .lineLimit(2)
@@ -181,9 +248,9 @@ struct AtReceiverGate: View {
 
             // 3-metric row
             HStack(spacing: Space.s2) {
-                metric(label: "ARRIVED", value: fallbackArrived)
-                metric(label: "QUEUE",   value: fallbackQueue)
-                metric(label: "APPT",    value: fallbackAppt)
+                metric(label: "ARRIVED", value: arrivedMetric)
+                metric(label: "QUEUE",   value: queueMetric)
+                metric(label: "APPT",    value: apptMetric)
             }
 
             Text(ctx.guardCheckNote)
@@ -333,8 +400,16 @@ struct AtReceiverGate: View {
     private func hydrateLiveTrip() async {
         await lifecycle.hydrateActiveLoad()
         await lifecycle.refresh()
-        guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
+        guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else {
+            didHydrate = true
+            return
+        }
         activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        // Live appointment (gate APPT metric + status sync), mirroring
+        // the 024 Unloading hydrate path.
+        appointment = try? await EusoTripAPI.shared.appointments
+            .getByLoad(loadId: lifecycle.loadId)
+        didHydrate = true
     }
 
     private func markCheckedIn() async {

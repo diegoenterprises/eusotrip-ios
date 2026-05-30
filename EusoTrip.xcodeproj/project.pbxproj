@@ -21,6 +21,19 @@
 		A12E1A1C0010CE0FF100000D /* HereMatrixClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100000E /* HereMatrixClient.swift */; };
 		A12E1A1C0010CE0FF100000F /* HereTileOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000010 /* HereTileOverlay.swift */; };
 		A12E1A1C0010CE0FF1000011 /* HereMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000012 /* HereMapView.swift */; };
+		KITRADGBUILD1 /* RadialFillGauge.swift in Sources */ = {isa = PBXBuildFile; fileRef = KITRADGFREF1 /* RadialFillGauge.swift */; };
+		KITSCRDBUILD1 /* ScorecardRadar.swift in Sources */ = {isa = PBXBuildFile; fileRef = KITSCRDFREF1 /* ScorecardRadar.swift */; };
+		KITBANDBUILD1 /* BandTrendChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = KITBANDFREF1 /* BandTrendChart.swift */; };
+		KITTHRBBUILD1 /* ThresholdBars.swift in Sources */ = {isa = PBXBuildFile; fileRef = KITTHRBFREF1 /* ThresholdBars.swift */; };
+		KITSTGRBUILD1 /* StateGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = KITSTGRFREF1 /* StateGrid.swift */; };
+		KITTLERBUILD1 /* TimelineEventRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = KITTLERFREF1 /* TimelineEventRail.swift */; };
+		KITWFBRBUILD1 /* WaterfallBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = KITWFBRFREF1 /* WaterfallBridge.swift */; };
+		KITHCMXBUILD1 /* HeatCellMatrix.swift in Sources */ = {isa = PBXBuildFile; fileRef = KITHCMXFREF1 /* HeatCellMatrix.swift */; };
+		KITTSPKBUILD1 /* TrendSparkline.swift in Sources */ = {isa = PBXBuildFile; fileRef = KITTSPKFREF1 /* TrendSparkline.swift */; };
+		KITFNBRBUILD1 /* FunnelBars.swift in Sources */ = {isa = PBXBuildFile; fileRef = KITFNBRFREF1 /* FunnelBars.swift */; };
+		BMAPPROJBUILD1 /* BespokeMapProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = BMAPPROJFREF1 /* BespokeMapProjection.swift */; };
+		BMAPSTYLBUILD1 /* BespokeMapStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = BMAPSTYLFREF1 /* BespokeMapStyle.swift */; };
+		BMAPCNVSBUILD1 /* BespokeMapCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = BMAPCNVSFREF1 /* BespokeMapCanvas.swift */; };
 		A12E1A1C0010CE0FF1000017 /* EusoAddressField.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000018 /* EusoAddressField.swift */; };
 		A12E1A1C0010CE0FF1000019 /* EusoHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100001A /* EusoHeader.swift */; };
 		A12E1A1C0010CE0FF100001B /* EusoBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100001C /* EusoBadge.swift */; };
@@ -144,6 +157,7 @@
 		A70D0FA2CE1A4B7E0000D01D /* 070_MeSettlements.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70D0FA2CE1A4B7E0000D01E /* 070_MeSettlements.swift */; };
 		A71D0FA2CE1A4B7E0000D01F /* 071_MeTax.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71D0FA2CE1A4B7E0000D020 /* 071_MeTax.swift */; };
 		A72D0FA2CE1A4B7E0000D021 /* 072_MeDocs.swift in Sources */ = {isa = PBXBuildFile; fileRef = A72D0FA2CE1A4B7E0000D022 /* 072_MeDocs.swift */; };
+		A59D0FA2CE1A4B7E0000D059 /* 059_VehicleAndEquipment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59D0FA2CE1A4B7E0000D05A /* 059_VehicleAndEquipment.swift */; };
 		A73D0FA2CE1A4B7E0000D023 /* 073_MeVehicle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A73D0FA2CE1A4B7E0000D024 /* 073_MeVehicle.swift */; };
 		A74D0FA2CE1A4B7E0000D025 /* 074_MeHOSLogs.swift in Sources */ = {isa = PBXBuildFile; fileRef = A74D0FA2CE1A4B7E0000D026 /* 074_MeHOSLogs.swift */; };
 		A74E0FA2CE1A4B7E0000ELDD /* 074E_ELDConnect.swift in Sources */ = {isa = PBXBuildFile; fileRef = A74E0FA2CE1A4B7E0000ELDE /* 074E_ELDConnect.swift */; };
@@ -270,6 +284,22 @@
 		CDV020260521000001 /* CV320B_CatalystDriverBVariantOctet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDV020260521000002 /* CV320B_CatalystDriverBVariantOctet.swift */; };
 		CFT020260521000001 /* CV375_CatalystM04FleetTrackPair.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFT020260521000002 /* CV375_CatalystM04FleetTrackPair.swift */; };
 		CFV020260521000001 /* 303_CatalystFleetVehicles.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFV020260521000002 /* 303_CatalystFleetVehicles.swift */; };
+		CATW13391BUILDF01 /* 391_CatalystDetentionAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW13391FILEREF1 /* 391_CatalystDetentionAlerts.swift */; };
+		CATW13392BUILDF01 /* 392_CatalystCargoInsurance.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW13392FILEREF1 /* 392_CatalystCargoInsurance.swift */; };
+		CATW13393BUILDF01 /* 393_CatalystDocumentIngest.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW13393FILEREF1 /* 393_CatalystDocumentIngest.swift */; };
+		CATW13394BUILDF01 /* 394_CatalystFactoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW13394FILEREF1 /* 394_CatalystFactoring.swift */; };
+		CATW13395BUILDF01 /* 395_CatalystFuelSurchargeSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW13395FILEREF1 /* 395_CatalystFuelSurchargeSchedule.swift */; };
+		CATW13396BUILDF01 /* 396_CatalystLaneRateSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW13396FILEREF1 /* 396_CatalystLaneRateSheet.swift */; };
+		CATW13397BUILDF01 /* 397_CatalystCarrierTier.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW13397FILEREF1 /* 397_CatalystCarrierTier.swift */; };
+		CATW13398BUILDF01 /* 398_CatalystBackhaulOptimizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW13398FILEREF1 /* 398_CatalystBackhaulOptimizer.swift */; };
+		CATW12383BUILDF01 /* 383_CatalystFleetSafetyCSA.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW12383FILEREF1 /* 383_CatalystFleetSafetyCSA.swift */; };
+		CATW12384BUILDF01 /* 384_CatalystFleetIFTA.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW12384FILEREF1 /* 384_CatalystFleetIFTA.swift */; };
+		CATW12385BUILDF01 /* 385_CatalystRoadsideDataQ.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW12385FILEREF1 /* 385_CatalystRoadsideDataQ.swift */; };
+		CATW12386BUILDF01 /* 386_CatalystFuelCardFleet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW12386FILEREF1 /* 386_CatalystFuelCardFleet.swift */; };
+		CATW12387BUILDF01 /* 387_CatalystReeferFleetMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW12387FILEREF1 /* 387_CatalystReeferFleetMonitor.swift */; };
+		CATW12388BUILDF01 /* 388_CatalystTankerFleetMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW12388FILEREF1 /* 388_CatalystTankerFleetMonitor.swift */; };
+		CATW12389BUILDF01 /* 389_CatalystCargoClaim.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW12389FILEREF1 /* 389_CatalystCargoClaim.swift */; };
+		CATW12390BUILDF01 /* 390_CatalystEDIMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW12390FILEREF1 /* 390_CatalystEDIMessages.swift */; };
 		CHZ020260521000001 /* 312_CatalystHotZones.swift in Sources */ = {isa = PBXBuildFile; fileRef = CHZ020260521000002 /* 312_CatalystHotZones.swift */; };
 		CLO020260521000001 /* 315_CatalystLeaseOnOut.swift in Sources */ = {isa = PBXBuildFile; fileRef = CLO020260521000002 /* 315_CatalystLeaseOnOut.swift */; };
 		CLS020260521000001 /* CV350_CatalystLifecycleSeptet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CLS020260521000002 /* CV350_CatalystLifecycleSeptet.swift */; };
@@ -367,6 +397,7 @@
 		D2200000000000000022CB /* 220_ShipperRateBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2200000000000000022CA /* 220_ShipperRateBoard.swift */; };
 		D2210000000000000022CD /* 221_ShipperRecurringLoads.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2210000000000000022CC /* 221_ShipperRecurringLoads.swift */; };
 		D2220000000000000022CF /* 222_ShipperLiveTracking.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2220000000000000022CE /* 222_ShipperLiveTracking.swift */; };
+		SHIPDOCK295BUILD /* 295_ShipperDockAppointments.swift in Sources */ = {isa = PBXBuildFile; fileRef = SHIPDOCK295FREF /* 295_ShipperDockAppointments.swift */; };
 		D2230000000000000023CB /* 223_ShipperAgreements.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2230000000000000023CA /* 223_ShipperAgreements.swift */; };
 		D223A0000000000000023AI /* 223A_AgreementWizard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D223A0000000000000023AJ /* 223A_AgreementWizard.swift */; };
 		D2240000000000000024CB /* 224_ShipperPartnerDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2240000000000000024CA /* 224_ShipperPartnerDirectory.swift */; };
@@ -621,6 +652,12 @@
 		DSD020260521000001 /* Dpch750_DispatcherShipperDetailOctet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DSD020260521000002 /* Dpch750_DispatcherShipperDetailOctet.swift */; };
 		DSE020260521000001 /* Dpch770_DispatcherSettlementDetailOctet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DSE020260521000002 /* Dpch770_DispatcherSettlementDetailOctet.swift */; };
 		DST020260521000001 /* Dpch720_DispatcherSVGTrio.swift in Sources */ = {isa = PBXBuildFile; fileRef = DST020260521000002 /* Dpch720_DispatcherSVGTrio.swift */; };
+		C399BUILDW14 /* 399_CatalystTollCorridorCost.swift in Sources */ = {isa = PBXBuildFile; fileRef = C399FREFW14 /* 399_CatalystTollCorridorCost.swift */; };
+		C400BUILDW14 /* 400_CatalystConvoyPlatooning.swift in Sources */ = {isa = PBXBuildFile; fileRef = C400FREFW14 /* 400_CatalystConvoyPlatooning.swift */; };
+		C401BUILDW14 /* 401_CatalystCrewWellness.swift in Sources */ = {isa = PBXBuildFile; fileRef = C401FREFW14 /* 401_CatalystCrewWellness.swift */; };
+		C402BUILDW14 /* 402_CatalystCapacityPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C402FREFW14 /* 402_CatalystCapacityPlanner.swift */; };
+		C403BUILDW14 /* 403_CatalystFleetCarbon.swift in Sources */ = {isa = PBXBuildFile; fileRef = C403FREFW14 /* 403_CatalystFleetCarbon.swift */; };
+		DISP404BUILD1 /* 404_DispatcherDriverRoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = DISP404FREF1 /* 404_DispatcherDriverRoster.swift */; };
 		DVD020260521000001 /* Dpch760_DispatcherVehicleDetailOctet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DVD020260521000002 /* Dpch760_DispatcherVehicleDetailOctet.swift */; };
 		E1D1ED0111111111111111AA /* ELDIntegrationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D1ED0211111111111111AA /* ELDIntegrationStore.swift */; };
 		E1D1ED0311111111111111AA /* ELDIntegrationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D1ED0411111111111111AA /* ELDIntegrationView.swift */; };
@@ -645,6 +682,7 @@
 		FD97CEC72FC1D4BC0016DF5F /* VesselOperatorNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CEC62FC1D4BC0016DF5F /* VesselOperatorNavController.swift */; };
 		FD97CEC92FC1D5110016DF5F /* 550_RailEngineerHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CEC82FC1D5110016DF5F /* 550_RailEngineerHome.swift */; };
 		FD97CECB2FC1D5120016DF5F /* 650_VesselOperatorHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */; };
+		VOTMBUILD1 /* VesselOceanTrackMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = VOTMFREF1 /* VesselOceanTrackMap.swift */; };
 		FD97CECD2FC1D7C70016DF5F /* 551_RailShipments.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */; };
 		FD97CECF2FC1D7C80016DF5F /* 552_RailCompliance.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECE2FC1D7C80016DF5F /* 552_RailCompliance.swift */; };
 		FD97CED12FC1D8040016DF5F /* 651_VesselShipments.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CED02FC1D8040016DF5F /* 651_VesselShipments.swift */; };
@@ -759,6 +797,19 @@
 		A12E1A1C0010CE0FF100000E /* HereMatrixClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereMatrixClient.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000010 /* HereTileOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereTileOverlay.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000012 /* HereMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereMapView.swift; sourceTree = "<group>"; };
+		KITRADGFREF1 /* RadialFillGauge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Charts/RadialFillGauge.swift; sourceTree = "<group>"; };
+		KITSCRDFREF1 /* ScorecardRadar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Charts/ScorecardRadar.swift; sourceTree = "<group>"; };
+		KITBANDFREF1 /* BandTrendChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Charts/BandTrendChart.swift; sourceTree = "<group>"; };
+		KITTHRBFREF1 /* ThresholdBars.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Charts/ThresholdBars.swift; sourceTree = "<group>"; };
+		KITSTGRFREF1 /* StateGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Charts/StateGrid.swift; sourceTree = "<group>"; };
+		KITTLERFREF1 /* TimelineEventRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Charts/TimelineEventRail.swift; sourceTree = "<group>"; };
+		KITWFBRFREF1 /* WaterfallBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Charts/WaterfallBridge.swift; sourceTree = "<group>"; };
+		KITHCMXFREF1 /* HeatCellMatrix.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Charts/HeatCellMatrix.swift; sourceTree = "<group>"; };
+		KITTSPKFREF1 /* TrendSparkline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Charts/TrendSparkline.swift; sourceTree = "<group>"; };
+		KITFNBRFREF1 /* FunnelBars.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Charts/FunnelBars.swift; sourceTree = "<group>"; };
+		BMAPPROJFREF1 /* BespokeMapProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Map/BespokeMapProjection.swift; sourceTree = "<group>"; };
+		BMAPSTYLFREF1 /* BespokeMapStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Map/BespokeMapStyle.swift; sourceTree = "<group>"; };
+		BMAPCNVSFREF1 /* BespokeMapCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Map/BespokeMapCanvas.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000015 /* EusoTrip.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = EusoTrip.xcconfig; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000016 /* HEREAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HEREAuthService.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000018 /* EusoAddressField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoAddressField.swift; sourceTree = "<group>"; };
@@ -881,6 +932,7 @@
 		A70D0FA2CE1A4B7E0000D01E /* 070_MeSettlements.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 070_MeSettlements.swift; sourceTree = "<group>"; };
 		A71D0FA2CE1A4B7E0000D020 /* 071_MeTax.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 071_MeTax.swift; sourceTree = "<group>"; };
 		A72D0FA2CE1A4B7E0000D022 /* 072_MeDocs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 072_MeDocs.swift; sourceTree = "<group>"; };
+		A59D0FA2CE1A4B7E0000D05A /* 059_VehicleAndEquipment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 059_VehicleAndEquipment.swift; sourceTree = "<group>"; };
 		A73D0FA2CE1A4B7E0000D024 /* 073_MeVehicle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 073_MeVehicle.swift; sourceTree = "<group>"; };
 		A74D0FA2CE1A4B7E0000D026 /* 074_MeHOSLogs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 074_MeHOSLogs.swift; sourceTree = "<group>"; };
 		A74E0FA2CE1A4B7E0000ELDE /* 074E_ELDConnect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 074E_ELDConnect.swift; sourceTree = "<group>"; };
@@ -968,6 +1020,22 @@
 		CDV020260521000002 /* CV320B_CatalystDriverBVariantOctet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CV320B_CatalystDriverBVariantOctet.swift; path = EusoTrip/Views/Catalyst/CV320B_CatalystDriverBVariantOctet.swift; sourceTree = SOURCE_ROOT; };
 		CFT020260521000002 /* CV375_CatalystM04FleetTrackPair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CV375_CatalystM04FleetTrackPair.swift; path = EusoTrip/Views/Catalyst/CV375_CatalystM04FleetTrackPair.swift; sourceTree = SOURCE_ROOT; };
 		CFV020260521000002 /* 303_CatalystFleetVehicles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 303_CatalystFleetVehicles.swift; path = EusoTrip/Views/Catalyst/303_CatalystFleetVehicles.swift; sourceTree = SOURCE_ROOT; };
+		CATW13391FILEREF1 /* 391_CatalystDetentionAlerts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 391_CatalystDetentionAlerts.swift; path = EusoTrip/Views/Catalyst/391_CatalystDetentionAlerts.swift; sourceTree = SOURCE_ROOT; };
+		CATW13392FILEREF1 /* 392_CatalystCargoInsurance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 392_CatalystCargoInsurance.swift; path = EusoTrip/Views/Catalyst/392_CatalystCargoInsurance.swift; sourceTree = SOURCE_ROOT; };
+		CATW13393FILEREF1 /* 393_CatalystDocumentIngest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 393_CatalystDocumentIngest.swift; path = EusoTrip/Views/Catalyst/393_CatalystDocumentIngest.swift; sourceTree = SOURCE_ROOT; };
+		CATW13394FILEREF1 /* 394_CatalystFactoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 394_CatalystFactoring.swift; path = EusoTrip/Views/Catalyst/394_CatalystFactoring.swift; sourceTree = SOURCE_ROOT; };
+		CATW13395FILEREF1 /* 395_CatalystFuelSurchargeSchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 395_CatalystFuelSurchargeSchedule.swift; path = EusoTrip/Views/Catalyst/395_CatalystFuelSurchargeSchedule.swift; sourceTree = SOURCE_ROOT; };
+		CATW13396FILEREF1 /* 396_CatalystLaneRateSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 396_CatalystLaneRateSheet.swift; path = EusoTrip/Views/Catalyst/396_CatalystLaneRateSheet.swift; sourceTree = SOURCE_ROOT; };
+		CATW13397FILEREF1 /* 397_CatalystCarrierTier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 397_CatalystCarrierTier.swift; path = EusoTrip/Views/Catalyst/397_CatalystCarrierTier.swift; sourceTree = SOURCE_ROOT; };
+		CATW13398FILEREF1 /* 398_CatalystBackhaulOptimizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 398_CatalystBackhaulOptimizer.swift; path = EusoTrip/Views/Catalyst/398_CatalystBackhaulOptimizer.swift; sourceTree = SOURCE_ROOT; };
+		CATW12383FILEREF1 /* 383_CatalystFleetSafetyCSA.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 383_CatalystFleetSafetyCSA.swift; path = EusoTrip/Views/Catalyst/383_CatalystFleetSafetyCSA.swift; sourceTree = SOURCE_ROOT; };
+		CATW12384FILEREF1 /* 384_CatalystFleetIFTA.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 384_CatalystFleetIFTA.swift; path = EusoTrip/Views/Catalyst/384_CatalystFleetIFTA.swift; sourceTree = SOURCE_ROOT; };
+		CATW12385FILEREF1 /* 385_CatalystRoadsideDataQ.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 385_CatalystRoadsideDataQ.swift; path = EusoTrip/Views/Catalyst/385_CatalystRoadsideDataQ.swift; sourceTree = SOURCE_ROOT; };
+		CATW12386FILEREF1 /* 386_CatalystFuelCardFleet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 386_CatalystFuelCardFleet.swift; path = EusoTrip/Views/Catalyst/386_CatalystFuelCardFleet.swift; sourceTree = SOURCE_ROOT; };
+		CATW12387FILEREF1 /* 387_CatalystReeferFleetMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 387_CatalystReeferFleetMonitor.swift; path = EusoTrip/Views/Catalyst/387_CatalystReeferFleetMonitor.swift; sourceTree = SOURCE_ROOT; };
+		CATW12388FILEREF1 /* 388_CatalystTankerFleetMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 388_CatalystTankerFleetMonitor.swift; path = EusoTrip/Views/Catalyst/388_CatalystTankerFleetMonitor.swift; sourceTree = SOURCE_ROOT; };
+		CATW12389FILEREF1 /* 389_CatalystCargoClaim.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 389_CatalystCargoClaim.swift; path = EusoTrip/Views/Catalyst/389_CatalystCargoClaim.swift; sourceTree = SOURCE_ROOT; };
+		CATW12390FILEREF1 /* 390_CatalystEDIMessages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 390_CatalystEDIMessages.swift; path = EusoTrip/Views/Catalyst/390_CatalystEDIMessages.swift; sourceTree = SOURCE_ROOT; };
 		CHZ020260521000002 /* 312_CatalystHotZones.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 312_CatalystHotZones.swift; path = EusoTrip/Views/Catalyst/312_CatalystHotZones.swift; sourceTree = SOURCE_ROOT; };
 		CLO020260521000002 /* 315_CatalystLeaseOnOut.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 315_CatalystLeaseOnOut.swift; path = EusoTrip/Views/Catalyst/315_CatalystLeaseOnOut.swift; sourceTree = SOURCE_ROOT; };
 		CLS020260521000002 /* CV350_CatalystLifecycleSeptet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CV350_CatalystLifecycleSeptet.swift; path = EusoTrip/Views/Catalyst/CV350_CatalystLifecycleSeptet.swift; sourceTree = SOURCE_ROOT; };
@@ -1065,6 +1133,7 @@
 		D2200000000000000022CA /* 220_ShipperRateBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 220_ShipperRateBoard.swift; path = EusoTrip/Views/Shipper/220_ShipperRateBoard.swift; sourceTree = SOURCE_ROOT; };
 		D2210000000000000022CC /* 221_ShipperRecurringLoads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 221_ShipperRecurringLoads.swift; path = EusoTrip/Views/Shipper/221_ShipperRecurringLoads.swift; sourceTree = SOURCE_ROOT; };
 		D2220000000000000022CE /* 222_ShipperLiveTracking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 222_ShipperLiveTracking.swift; path = EusoTrip/Views/Shipper/222_ShipperLiveTracking.swift; sourceTree = SOURCE_ROOT; };
+		SHIPDOCK295FREF /* 295_ShipperDockAppointments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 295_ShipperDockAppointments.swift; path = EusoTrip/Views/Shipper/295_ShipperDockAppointments.swift; sourceTree = SOURCE_ROOT; };
 		D2230000000000000023CA /* 223_ShipperAgreements.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 223_ShipperAgreements.swift; path = EusoTrip/Views/Shipper/223_ShipperAgreements.swift; sourceTree = SOURCE_ROOT; };
 		D223A0000000000000023AJ /* 223A_AgreementWizard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 223A_AgreementWizard.swift; path = EusoTrip/Views/Shipper/223A_AgreementWizard.swift; sourceTree = SOURCE_ROOT; };
 		D2240000000000000024CA /* 224_ShipperPartnerDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 224_ShipperPartnerDirectory.swift; path = EusoTrip/Views/Shipper/224_ShipperPartnerDirectory.swift; sourceTree = SOURCE_ROOT; };
@@ -1319,6 +1388,12 @@
 		DSD020260521000002 /* Dpch750_DispatcherShipperDetailOctet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch750_DispatcherShipperDetailOctet.swift; path = EusoTrip/Views/Dispatch/Dpch750_DispatcherShipperDetailOctet.swift; sourceTree = SOURCE_ROOT; };
 		DSE020260521000002 /* Dpch770_DispatcherSettlementDetailOctet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch770_DispatcherSettlementDetailOctet.swift; path = EusoTrip/Views/Dispatch/Dpch770_DispatcherSettlementDetailOctet.swift; sourceTree = SOURCE_ROOT; };
 		DST020260521000002 /* Dpch720_DispatcherSVGTrio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch720_DispatcherSVGTrio.swift; path = EusoTrip/Views/Dispatch/Dpch720_DispatcherSVGTrio.swift; sourceTree = SOURCE_ROOT; };
+		C399FREFW14 /* 399_CatalystTollCorridorCost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 399_CatalystTollCorridorCost.swift; path = EusoTrip/Views/Catalyst/399_CatalystTollCorridorCost.swift; sourceTree = SOURCE_ROOT; };
+		C400FREFW14 /* 400_CatalystConvoyPlatooning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 400_CatalystConvoyPlatooning.swift; path = EusoTrip/Views/Catalyst/400_CatalystConvoyPlatooning.swift; sourceTree = SOURCE_ROOT; };
+		C401FREFW14 /* 401_CatalystCrewWellness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 401_CatalystCrewWellness.swift; path = EusoTrip/Views/Catalyst/401_CatalystCrewWellness.swift; sourceTree = SOURCE_ROOT; };
+		C402FREFW14 /* 402_CatalystCapacityPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 402_CatalystCapacityPlanner.swift; path = EusoTrip/Views/Catalyst/402_CatalystCapacityPlanner.swift; sourceTree = SOURCE_ROOT; };
+		C403FREFW14 /* 403_CatalystFleetCarbon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 403_CatalystFleetCarbon.swift; path = EusoTrip/Views/Catalyst/403_CatalystFleetCarbon.swift; sourceTree = SOURCE_ROOT; };
+		DISP404FREF1 /* 404_DispatcherDriverRoster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 404_DispatcherDriverRoster.swift; path = EusoTrip/Views/Dispatch/404_DispatcherDriverRoster.swift; sourceTree = SOURCE_ROOT; };
 		DVD020260521000002 /* Dpch760_DispatcherVehicleDetailOctet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch760_DispatcherVehicleDetailOctet.swift; path = EusoTrip/Views/Dispatch/Dpch760_DispatcherVehicleDetailOctet.swift; sourceTree = SOURCE_ROOT; };
 		E1D1ED0211111111111111AA /* ELDIntegrationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ELDIntegrationStore.swift; sourceTree = "<group>"; };
 		E1D1ED0411111111111111AA /* ELDIntegrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ELDIntegrationView.swift; sourceTree = "<group>"; };
@@ -1384,6 +1459,7 @@
 		FD97CEC62FC1D4BC0016DF5F /* VesselOperatorNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VesselOperatorNavController.swift; sourceTree = "<group>"; };
 		FD97CEC82FC1D5110016DF5F /* 550_RailEngineerHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 550_RailEngineerHome.swift; sourceTree = "<group>"; };
 		FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 650_VesselOperatorHome.swift; sourceTree = "<group>"; };
+		VOTMFREF1 /* VesselOceanTrackMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VesselOceanTrackMap.swift; path = EusoTrip/Views/Vessel/VesselOceanTrackMap.swift; sourceTree = SOURCE_ROOT; };
 		FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 551_RailShipments.swift; sourceTree = "<group>"; };
 		FD97CECE2FC1D7C80016DF5F /* 552_RailCompliance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 552_RailCompliance.swift; sourceTree = "<group>"; };
 		FD97CED02FC1D8040016DF5F /* 651_VesselShipments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 651_VesselShipments.swift; sourceTree = "<group>"; };
@@ -1632,6 +1708,7 @@
 				A70D0FA2CE1A4B7E0000D01E /* 070_MeSettlements.swift */,
 				A71D0FA2CE1A4B7E0000D020 /* 071_MeTax.swift */,
 				A72D0FA2CE1A4B7E0000D022 /* 072_MeDocs.swift */,
+				A59D0FA2CE1A4B7E0000D05A /* 059_VehicleAndEquipment.swift */,
 				A73D0FA2CE1A4B7E0000D024 /* 073_MeVehicle.swift */,
 				A74D0FA2CE1A4B7E0000D026 /* 074_MeHOSLogs.swift */,
 				A75D0FA2CE1A4B7E0000D028 /* 075_MeSafetyScore.swift */,
@@ -1912,6 +1989,7 @@
 				D2200000000000000022CA /* 220_ShipperRateBoard.swift */,
 				D2210000000000000022CC /* 221_ShipperRecurringLoads.swift */,
 				D2220000000000000022CE /* 222_ShipperLiveTracking.swift */,
+				SHIPDOCK295FREF /* 295_ShipperDockAppointments.swift */,
 				D2230000000000000023CA /* 223_ShipperAgreements.swift */,
 				D2240000000000000024CA /* 224_ShipperPartnerDirectory.swift */,
 				D2250000000000000025CA /* 225_ShipperHotZones.swift */,
@@ -1968,6 +2046,22 @@
 				D1A11111111111111111CDS2 /* 320_CatalystDriverScorecard.swift */,
 				D1A11111111111111111CDC2 /* 326_CatalystDriverCompliance.swift */,
 				CFV020260521000002 /* 303_CatalystFleetVehicles.swift */,
+				CATW13391FILEREF1 /* 391_CatalystDetentionAlerts.swift */,
+				CATW13392FILEREF1 /* 392_CatalystCargoInsurance.swift */,
+				CATW13393FILEREF1 /* 393_CatalystDocumentIngest.swift */,
+				CATW13394FILEREF1 /* 394_CatalystFactoring.swift */,
+				CATW13395FILEREF1 /* 395_CatalystFuelSurchargeSchedule.swift */,
+				CATW13396FILEREF1 /* 396_CatalystLaneRateSheet.swift */,
+				CATW13397FILEREF1 /* 397_CatalystCarrierTier.swift */,
+				CATW13398FILEREF1 /* 398_CatalystBackhaulOptimizer.swift */,
+				CATW12383FILEREF1 /* 383_CatalystFleetSafetyCSA.swift */,
+				CATW12384FILEREF1 /* 384_CatalystFleetIFTA.swift */,
+				CATW12385FILEREF1 /* 385_CatalystRoadsideDataQ.swift */,
+				CATW12386FILEREF1 /* 386_CatalystFuelCardFleet.swift */,
+				CATW12387FILEREF1 /* 387_CatalystReeferFleetMonitor.swift */,
+				CATW12388FILEREF1 /* 388_CatalystTankerFleetMonitor.swift */,
+				CATW12389FILEREF1 /* 389_CatalystCargoClaim.swift */,
+				CATW12390FILEREF1 /* 390_CatalystEDIMessages.swift */,
 				CDP020260521000002 /* 306_CatalystDriverPayroll.swift */,
 				CAI020260521000002 /* 308_CatalystAuthorityInsurance.swift */,
 				CHZ020260521000002 /* 312_CatalystHotZones.swift */,
@@ -1990,6 +2084,12 @@
 				SPR020260521000002 /* 248_ShipperPODReceipt.swift */,
 				SLS020260521000002 /* 243_ShipperLifecycleSextet.swift */,
 				DST020260521000002 /* Dpch720_DispatcherSVGTrio.swift */,
+				C399FREFW14 /* 399_CatalystTollCorridorCost.swift */,
+				C400FREFW14 /* 400_CatalystConvoyPlatooning.swift */,
+				C401FREFW14 /* 401_CatalystCrewWellness.swift */,
+				C402FREFW14 /* 402_CatalystCapacityPlanner.swift */,
+				C403FREFW14 /* 403_CatalystFleetCarbon.swift */,
+				DISP404FREF1 /* 404_DispatcherDriverRoster.swift */,
 				DEQ020260521000002 /* Dpch724_DispatcherExceptionQuartet.swift */,
 				DOQ020260521000002 /* Dpch730_DispatcherOpsQuartet.swift */,
 				DCQ020260521000002 /* Dpch734_DispatcherControlQuartet.swift */,
@@ -2189,6 +2289,19 @@
 			isa = PBXGroup;
 			children = (
 				A12E1A1C0010CE0FF1000012 /* HereMapView.swift */,
+				KITRADGFREF1 /* RadialFillGauge.swift */,
+				KITSCRDFREF1 /* ScorecardRadar.swift */,
+				KITBANDFREF1 /* BandTrendChart.swift */,
+				KITTHRBFREF1 /* ThresholdBars.swift */,
+				KITSTGRFREF1 /* StateGrid.swift */,
+				KITTLERFREF1 /* TimelineEventRail.swift */,
+				KITWFBRFREF1 /* WaterfallBridge.swift */,
+				KITHCMXFREF1 /* HeatCellMatrix.swift */,
+				KITTSPKFREF1 /* TrendSparkline.swift */,
+				KITFNBRFREF1 /* FunnelBars.swift */,
+				BMAPPROJFREF1 /* BespokeMapProjection.swift */,
+				BMAPSTYLFREF1 /* BespokeMapStyle.swift */,
+				BMAPCNVSFREF1 /* BespokeMapCanvas.swift */,
 				HAFD00010CE0FF10000012A1 /* HereAddressField.swift */,
 				LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */,
 				LMBD2026051700000012A1 /* LoadModeBadge.swift */,
@@ -2327,6 +2440,7 @@
 			children = (
 				FD97CEC62FC1D4BC0016DF5F /* VesselOperatorNavController.swift */,
 				FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */,
+				VOTMFREF1 /* VesselOceanTrackMap.swift */,
 				FD97CED02FC1D8040016DF5F /* 651_VesselShipments.swift */,
 				FD97CED22FC1D8050016DF5F /* 652_VesselCompliance.swift */,
 			);
@@ -2652,6 +2766,7 @@
 				A70D0FA2CE1A4B7E0000D01D /* 070_MeSettlements.swift in Sources */,
 				A71D0FA2CE1A4B7E0000D01F /* 071_MeTax.swift in Sources */,
 				A72D0FA2CE1A4B7E0000D021 /* 072_MeDocs.swift in Sources */,
+				A59D0FA2CE1A4B7E0000D059 /* 059_VehicleAndEquipment.swift in Sources */,
 				A73D0FA2CE1A4B7E0000D023 /* 073_MeVehicle.swift in Sources */,
 				A74D0FA2CE1A4B7E0000D025 /* 074_MeHOSLogs.swift in Sources */,
 				A75D0FA2CE1A4B7E0000D027 /* 075_MeSafetyScore.swift in Sources */,
@@ -2766,6 +2881,19 @@
 				A12E1A1C0010CE0FF100000D /* HereMatrixClient.swift in Sources */,
 				A12E1A1C0010CE0FF100000F /* HereTileOverlay.swift in Sources */,
 				A12E1A1C0010CE0FF1000011 /* HereMapView.swift in Sources */,
+				KITRADGBUILD1 /* RadialFillGauge.swift in Sources */,
+				KITSCRDBUILD1 /* ScorecardRadar.swift in Sources */,
+				KITBANDBUILD1 /* BandTrendChart.swift in Sources */,
+				KITTHRBBUILD1 /* ThresholdBars.swift in Sources */,
+				KITSTGRBUILD1 /* StateGrid.swift in Sources */,
+				KITTLERBUILD1 /* TimelineEventRail.swift in Sources */,
+				KITWFBRBUILD1 /* WaterfallBridge.swift in Sources */,
+				KITHCMXBUILD1 /* HeatCellMatrix.swift in Sources */,
+				KITTSPKBUILD1 /* TrendSparkline.swift in Sources */,
+				KITFNBRBUILD1 /* FunnelBars.swift in Sources */,
+				BMAPPROJBUILD1 /* BespokeMapProjection.swift in Sources */,
+				BMAPSTYLBUILD1 /* BespokeMapStyle.swift in Sources */,
+				BMAPCNVSBUILD1 /* BespokeMapCanvas.swift in Sources */,
 				HAFD00010CE0FF10000011A1 /* HereAddressField.swift in Sources */,
 				LTBD00010CE0FF10000011A1 /* ListingTrustBadge.swift in Sources */,
 				LMBD2026051700000011A1 /* LoadModeBadge.swift in Sources */,
@@ -2774,6 +2902,7 @@
 				AAPR2026051900000011A1 /* AppleAuthProvider.swift in Sources */,
 				FLCD2026051800000011A1 /* FMCSALookupCard.swift in Sources */,
 				FD97CECB2FC1D5120016DF5F /* 650_VesselOperatorHome.swift in Sources */,
+				VOTMBUILD1 /* VesselOceanTrackMap.swift in Sources */,
 				DIBS2026051800000011A1 /* DriverInviteBulkStep.swift in Sources */,
 				FBRS2026051800000011A1 /* FleetBulkRegisterStep.swift in Sources */,
 				VINS2026051800000011A1 /* VINScannerSheet.swift in Sources */,
@@ -3081,6 +3210,7 @@
 				D2200000000000000022CB /* 220_ShipperRateBoard.swift in Sources */,
 				D2210000000000000022CD /* 221_ShipperRecurringLoads.swift in Sources */,
 				D2220000000000000022CF /* 222_ShipperLiveTracking.swift in Sources */,
+				SHIPDOCK295BUILD /* 295_ShipperDockAppointments.swift in Sources */,
 				D2230000000000000023CB /* 223_ShipperAgreements.swift in Sources */,
 				D2240000000000000024CB /* 224_ShipperPartnerDirectory.swift in Sources */,
 				D2250000000000000025CB /* 225_ShipperHotZones.swift in Sources */,
@@ -3138,6 +3268,22 @@
 				D1A11111111111111111CDS1 /* 320_CatalystDriverScorecard.swift in Sources */,
 				D1A11111111111111111CDC1 /* 326_CatalystDriverCompliance.swift in Sources */,
 				CFV020260521000001 /* 303_CatalystFleetVehicles.swift in Sources */,
+				CATW13391BUILDF01 /* 391_CatalystDetentionAlerts.swift in Sources */,
+				CATW13392BUILDF01 /* 392_CatalystCargoInsurance.swift in Sources */,
+				CATW13393BUILDF01 /* 393_CatalystDocumentIngest.swift in Sources */,
+				CATW13394BUILDF01 /* 394_CatalystFactoring.swift in Sources */,
+				CATW13395BUILDF01 /* 395_CatalystFuelSurchargeSchedule.swift in Sources */,
+				CATW13396BUILDF01 /* 396_CatalystLaneRateSheet.swift in Sources */,
+				CATW13397BUILDF01 /* 397_CatalystCarrierTier.swift in Sources */,
+				CATW13398BUILDF01 /* 398_CatalystBackhaulOptimizer.swift in Sources */,
+				CATW12383BUILDF01 /* 383_CatalystFleetSafetyCSA.swift in Sources */,
+				CATW12384BUILDF01 /* 384_CatalystFleetIFTA.swift in Sources */,
+				CATW12385BUILDF01 /* 385_CatalystRoadsideDataQ.swift in Sources */,
+				CATW12386BUILDF01 /* 386_CatalystFuelCardFleet.swift in Sources */,
+				CATW12387BUILDF01 /* 387_CatalystReeferFleetMonitor.swift in Sources */,
+				CATW12388BUILDF01 /* 388_CatalystTankerFleetMonitor.swift in Sources */,
+				CATW12389BUILDF01 /* 389_CatalystCargoClaim.swift in Sources */,
+				CATW12390BUILDF01 /* 390_CatalystEDIMessages.swift in Sources */,
 				CDP020260521000001 /* 306_CatalystDriverPayroll.swift in Sources */,
 				CAI020260521000001 /* 308_CatalystAuthorityInsurance.swift in Sources */,
 				FD97CEC72FC1D4BC0016DF5F /* VesselOperatorNavController.swift in Sources */,
@@ -3161,6 +3307,12 @@
 				SPR020260521000001 /* 248_ShipperPODReceipt.swift in Sources */,
 				SLS020260521000001 /* 243_ShipperLifecycleSextet.swift in Sources */,
 				DST020260521000001 /* Dpch720_DispatcherSVGTrio.swift in Sources */,
+				C399BUILDW14 /* 399_CatalystTollCorridorCost.swift in Sources */,
+				C400BUILDW14 /* 400_CatalystConvoyPlatooning.swift in Sources */,
+				C401BUILDW14 /* 401_CatalystCrewWellness.swift in Sources */,
+				C402BUILDW14 /* 402_CatalystCapacityPlanner.swift in Sources */,
+				C403BUILDW14 /* 403_CatalystFleetCarbon.swift in Sources */,
+				DISP404BUILD1 /* 404_DispatcherDriverRoster.swift in Sources */,
 				DEQ020260521000001 /* Dpch724_DispatcherExceptionQuartet.swift in Sources */,
 				DOQ020260521000001 /* Dpch730_DispatcherOpsQuartet.swift in Sources */,
 				DCQ020260521000001 /* Dpch734_DispatcherControlQuartet.swift in Sources */,
