@@ -621,6 +621,7 @@
 		DSD020260521000001 /* Dpch750_DispatcherShipperDetailOctet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DSD020260521000002 /* Dpch750_DispatcherShipperDetailOctet.swift */; };
 		DSE020260521000001 /* Dpch770_DispatcherSettlementDetailOctet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DSE020260521000002 /* Dpch770_DispatcherSettlementDetailOctet.swift */; };
 		DST020260521000001 /* Dpch720_DispatcherSVGTrio.swift in Sources */ = {isa = PBXBuildFile; fileRef = DST020260521000002 /* Dpch720_DispatcherSVGTrio.swift */; };
+		DISP404BUILD1 /* 404_DispatcherDriverRoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = DISP404FREF1 /* 404_DispatcherDriverRoster.swift */; };
 		DVD020260521000001 /* Dpch760_DispatcherVehicleDetailOctet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DVD020260521000002 /* Dpch760_DispatcherVehicleDetailOctet.swift */; };
 		E1D1ED0111111111111111AA /* ELDIntegrationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D1ED0211111111111111AA /* ELDIntegrationStore.swift */; };
 		E1D1ED0311111111111111AA /* ELDIntegrationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D1ED0411111111111111AA /* ELDIntegrationView.swift */; };
@@ -1319,6 +1320,7 @@
 		DSD020260521000002 /* Dpch750_DispatcherShipperDetailOctet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch750_DispatcherShipperDetailOctet.swift; path = EusoTrip/Views/Dispatch/Dpch750_DispatcherShipperDetailOctet.swift; sourceTree = SOURCE_ROOT; };
 		DSE020260521000002 /* Dpch770_DispatcherSettlementDetailOctet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch770_DispatcherSettlementDetailOctet.swift; path = EusoTrip/Views/Dispatch/Dpch770_DispatcherSettlementDetailOctet.swift; sourceTree = SOURCE_ROOT; };
 		DST020260521000002 /* Dpch720_DispatcherSVGTrio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch720_DispatcherSVGTrio.swift; path = EusoTrip/Views/Dispatch/Dpch720_DispatcherSVGTrio.swift; sourceTree = SOURCE_ROOT; };
+		DISP404FREF1 /* 404_DispatcherDriverRoster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 404_DispatcherDriverRoster.swift; path = EusoTrip/Views/Dispatch/404_DispatcherDriverRoster.swift; sourceTree = SOURCE_ROOT; };
 		DVD020260521000002 /* Dpch760_DispatcherVehicleDetailOctet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch760_DispatcherVehicleDetailOctet.swift; path = EusoTrip/Views/Dispatch/Dpch760_DispatcherVehicleDetailOctet.swift; sourceTree = SOURCE_ROOT; };
 		E1D1ED0211111111111111AA /* ELDIntegrationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ELDIntegrationStore.swift; sourceTree = "<group>"; };
 		E1D1ED0411111111111111AA /* ELDIntegrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ELDIntegrationView.swift; sourceTree = "<group>"; };
@@ -1990,6 +1992,7 @@
 				SPR020260521000002 /* 248_ShipperPODReceipt.swift */,
 				SLS020260521000002 /* 243_ShipperLifecycleSextet.swift */,
 				DST020260521000002 /* Dpch720_DispatcherSVGTrio.swift */,
+				DISP404FREF1 /* 404_DispatcherDriverRoster.swift */,
 				DEQ020260521000002 /* Dpch724_DispatcherExceptionQuartet.swift */,
 				DOQ020260521000002 /* Dpch730_DispatcherOpsQuartet.swift */,
 				DCQ020260521000002 /* Dpch734_DispatcherControlQuartet.swift */,
@@ -3161,6 +3164,7 @@
 				SPR020260521000001 /* 248_ShipperPODReceipt.swift in Sources */,
 				SLS020260521000001 /* 243_ShipperLifecycleSextet.swift in Sources */,
 				DST020260521000001 /* Dpch720_DispatcherSVGTrio.swift in Sources */,
+				DISP404BUILD1 /* 404_DispatcherDriverRoster.swift in Sources */,
 				DEQ020260521000001 /* Dpch724_DispatcherExceptionQuartet.swift in Sources */,
 				DOQ020260521000001 /* Dpch730_DispatcherOpsQuartet.swift in Sources */,
 				DCQ020260521000001 /* Dpch734_DispatcherControlQuartet.swift in Sources */,
