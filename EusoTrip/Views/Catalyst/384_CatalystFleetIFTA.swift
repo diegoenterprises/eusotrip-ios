@@ -1,567 +1,601 @@
 //
 //  384_CatalystFleetIFTA.swift
-//  EusoTrip — Catalyst carrier-side surface 384 · Fleet IFTA.
+//  EusoTrip — Catalyst · Fleet · Fleet IFTA (carrier-vantage quarterly IFTA roll-up).
 //
-//  Verbatim iOS port of `03 Catalyst/{Light,Dark}-SVG/384 Catalyst Fleet IFTA.svg`
-//  brought into the iOS house chrome (Shell + BottomNav). Carrier (fleet) vantage of
-//  the same real router that the Driver 090 IFTA Fuel Tax surface reads from the
-//  personal vantage — this is the §462-named carrier-parity gap.
+//  Verbatim port of "384 Catalyst Fleet IFTA.svg" (440×956, Dark/Light).
+//  Reached from the FLEET tab. Sits next to 383 Fleet Safety CSA — same
+//  carrier framing, same card grammar, same DesignSystem primitives. Mirrors
+//  the immediate sibling 383_CatalystFleetSafetyCSA.swift so the two Fleet
+//  compliance screens read as one family.
 //
-//  Wiring manifest (every figure → real procedure):
-//    • quarter net / taxable miles          ← fleet.getIFTAReport (fleet.ts:1028).
-//    • fleet IFTA summary stats             ← fleet.getIFTAStats (fleet.ts:1037).
-//    • Generate report CTA (mutation)       ← fleet.generateIFTAReport (fleet.ts:1046).
-//    • per-jurisdiction recompute           ← iftaCalculator.calculateQuarter (iftaCalculator.ts:35).
+//  Layout (section-by-section against the SVG):
+//    • Header — eyebrow "✦ CATALYST · IFTA" (gradient) + "{Q} · {YYYY}" (mono);
+//      back-chevron orb; title "Fleet IFTA" (22/700); subtitle
+//      "{n} jurisdictions · {Q}"; right rail "{carrier} · USDOT {dot}" +
+//      "synced …"; IridescentHairline.
+//    • Hero card — "NET TAX DUE · {Q}" big gradient number + "{n} jurisdictions";
+//      "TAXABLE MILES" mono on the right; a fill bar (owed fraction of
+//      jurisdictions); "Filing due {date} · IFTA license current"; mono
+//      footline "Quarter {span} · {owed} reporting jurisdictions owe".
+//    • Jurisdiction table card — header "JURISDICTION · MILES · GAL · NET" +
+//      "{Q} {YYYY}"; one row per server jurisdiction (full state name, miles,
+//      gallons, net $); hairline between rows; footnote
+//      "Net = fuel tax paid at pump minus tax owed per state".
+//    • 3 factor cells — TAXABLE MILES · GALLONS · FLEET MPG.
+//    • 2 CTAs — "Generate report" (gradient, real fleet.generateIFTAReport
+//      mutation) + "Recalculate" (secondary, real re-pull). No dead taps.
+//    • Footnote block (3 mono lines).
+//    • BottomNav is supplied by the Catalyst surface chrome (matches sibling
+//      383, which also defers nav to the host surface — see report §NAV).
 //
-//  iOS wiring status: the carrier-scoped fleet.* IFTA procedures have no client method
-//  in EusoTripAPI yet (the iOS IftaAPI surfaces the iftaCalculator vantage). We hydrate
-//  the hero net / taxable miles / fleet MPG / the full per-jurisdiction grid from the
-//  REAL `iftaCalculator.calculateQuarter` mutation — which EXISTS at iftaCalculator.ts:35,
-//  surfaced as EusoTripAPI.shared.ifta.calculateQuarter — feeding it the fleet's
-//  per-jurisdiction miles + fuel. The fleet-scoped summary read leaves one explicit
-//  // WIRE marker. Either way the screen renders bespoke immediately; live records
-//  overwrite the seeds on hydrate.
+//  Data (endpoints exactly as named in the wireframe <desc>, verified against
+//  the live server at the cited lines):
+//    fleet.getIFTAReport        (frontend/server/routers/fleet.ts:1028)
+//        → the entire screen. Self-scoped to ctx.user.companyId; input
+//          {quarter,year}. SHIPPED-THIN at audit time (returned
+//          jurisdictions:[] and totalMiles:0); §39 enriches it to aggregate
+//          real per-jurisdiction miles/gallons from trip_state_miles and apply
+//          the IFTA net-tax formula (see fleet.getIFTAReport.patch.ts). This
+//          file decodes the enriched, additive shape; pre-enrichment it simply
+//          renders the honest empty state.
+//    fleet.generateIFTAReport   (frontend/server/routers/fleet.ts:1046)
+//        → "Generate report". STUB at audit time (success:true, no write);
+//          §39 stages a persistence+audit upgrade (compliance_events row +
+//          blockchain_audit_trail). This file wires the button to the real
+//          mutation with do/catch error surfacing regardless.
+//    iftaCalculator.calculateQuarter (iftaCalculator.ts:35)
+//        → the canonical net-tax formula this screen mirrors (miles/MPG →
+//          consumed gallons; consumed − purchased = net; net × state rate =
+//          tax). Not called directly (it takes client-supplied per-state maps);
+//          the enriched getIFTAReport applies the same math server-side.
 //
-//  Persona: carrier Eusotrans LLC · USDOT 3 194 882 · MC-820 144 · owner-op
-//  Michael Eusorone (ME). Shipper-of-record on the active load is Diego Usoro ·
-//  Eusorone Technologies (DU), pinned in the provenance fineprint where it applies.
+//  No mock data in the live path. Every number binds to a live field;
+//  unavailable values render an em-dash, never a fabricated figure. The
+//  jurisdiction full-name map and the column layout are reference/presentation
+//  data, not business data.
 //
-//  0% mock doctrine: figures are representative seeds the live records overwrite on
-//  hydrate. No invented procedures — every cited endpoint EXISTS at the noted line.
-//
-//  BottomNav frozen (CatalystTab): HOME · DISPATCH · [ESang orb] · FLEET · ME.
-//
-//  Powered by ESANG AI™.
+//  Sole author: Mike "Diego" Usoro / Eusorone Technologies, Inc.
 //
 
 import SwiftUI
 
-struct CatalystFleetIFTAScreen: View {
-    let theme: Theme.Palette
-    init(theme: Theme.Palette) { self.theme = theme }
+// MARK: - Wire model (matches the enriched fleet.getIFTAReport return)
 
-    var body: some View {
-        Shell(theme: theme) {
-            FleetIFTABody_384()
-        } nav: {
-            BottomNav(
-                leading: catalystNavLeading_384(),
-                trailing: catalystNavTrailing_384(),
-                orbState: .idle
-            )
-        }
+/// One jurisdiction line. Server emits the 2-letter IFTA code; the screen
+/// renders the full upper-case state name (verbatim to the SVG). `netGallons`
+/// / `taxRate` are optional so this decoder stays forward-safe against the
+/// thin pre-enrichment payload (which omits them).
+struct IFTAJurisdiction: Decodable, Equatable, Identifiable {
+    let jurisdiction: String
+    let miles: Double
+    let gallons: Double
+    let netGallons: Double?
+    let taxRate: Double?
+    let taxDue: Double
+
+    var id: String { jurisdiction }
+}
+
+/// The full report. `fuelTax` is the legacy net-tax field the thin procedure
+/// already returned; `netTaxDue` is the enriched alias. We read `netTaxDue`
+/// when present and fall back to `fuelTax` so the hero is correct on either
+/// server revision.
+struct IFTAReport: Decodable, Equatable {
+    let quarter: String
+    let year: Int
+    let totalMiles: Double
+    let totalGallons: Double
+    let fuelTax: Double
+    let netTaxDue: Double?
+    let fleetMpg: Double?
+    let taxableMiles: Double?
+    let status: String
+    let dueDate: String
+    let baseJurisdiction: String?
+    let jurisdictionsOwed: Int?
+    let jurisdictions: [IFTAJurisdiction]
+
+    var netTax: Double { netTaxDue ?? fuelTax }
+    var taxable: Double { taxableMiles ?? totalMiles }
+    var owedCount: Int { jurisdictionsOwed ?? jurisdictions.filter { $0.taxDue > 0 }.count }
+}
+
+// MARK: - Store
+
+@MainActor
+final class FleetIFTAStore: BaseDynamicStore<IFTAReport> {
+
+    /// Quarter/year the screen is reporting. Defaults to the current calendar
+    /// quarter so the screen is always live, not pinned to the SVG's Q2·2026.
+    let quarter: String
+    let year: Int
+
+    private struct ReportIn: Encodable { let quarter: String; let year: Int }
+
+    init(quarter: String, year: Int) {
+        self.quarter = quarter
+        self.year = year
+        super.init()
+    }
+
+    override func fetch() async throws -> IFTAReport {
+        let report: IFTAReport = try await EusoTripAPI.shared.query(
+            "fleet.getIFTAReport",
+            input: ReportIn(quarter: quarter, year: year)
+        )
+        return report
     }
 }
 
-private func catalystNavLeading_384() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: false)]
-}
+// MARK: - Screen root
 
-private func catalystNavTrailing_384() -> [NavSlot] {
-    [NavSlot(label: "Fleet", systemImage: "truck.box",          isCurrent: true),
-     NavSlot(label: "Me",    systemImage: "person.crop.circle", isCurrent: false)]
-}
+struct CatalystFleetIFTA: View {
+    @Environment(\.palette) var palette
+    @StateObject private var store: FleetIFTAStore
 
-// MARK: - Body
+    /// Carrier identity for the right rail. The SVG pins Eusotrans LLC ·
+    /// USDOT 3 194 882; these are injected by the host surface (the company
+    /// the signed-in catalyst belongs to) and only fall back to the SVG
+    /// canon when the surface supplies nothing.
+    private let carrierName: String
+    private let usdot: String
 
-private struct FleetIFTABody_384: View {
-    @Environment(\.palette) private var palette
+    @State private var generating = false
+    @State private var generateError: String?
+    @State private var generatedReportId: String?
 
-    // ── Per-jurisdiction roll-up row (one per IFTA member jurisdiction the fleet ran) ──
-    private struct JurisRow_384: Identifiable {
-        let id = UUID()
-        let name: String       // verbatim display name (TEXAS, OKLAHOMA, …)
-        let code: String       // 2-letter code we feed iftaCalculator.calculateQuarter
-        let miles: String      // "4,210 mi"
-        let gallons: String    // "655 gal"
-        let net: String        // "$92.40"
-        var isCredit: Bool = false
+    init(quarter: String? = nil,
+         year: Int? = nil,
+         carrierName: String = "Eusotrans LLC",
+         usdot: String = "3 194 882") {
+        let now = Date()
+        let cal = Calendar(identifier: .gregorian)
+        let m = cal.component(.month, from: now)
+        let q = quarter ?? "Q\(((m - 1) / 3) + 1)"
+        let y = year ?? cal.component(.year, from: now)
+        _store = StateObject(wrappedValue: FleetIFTAStore(quarter: q, year: y))
+        self.carrierName = carrierName
+        self.usdot = usdot
     }
-
-    // ── Factor cell (taxable miles · gallons · fleet MPG) ──
-    private struct FactorCell_384: Identifiable {
-        let id = UUID()
-        let label: String
-        let value: String
-        let sub: String
-    }
-
-    // Reporting window — the latest completed quarter the carrier files for.
-    private let year: Int = 2026
-    private let quarter: IftaAPI.Quarter = .Q2
-
-    // ── Seeds (representative figures the live records overwrite on hydrate) ──
-    @State private var heroBig: String      = "$474"
-    @State private var heroBigUnit: String  = "8 jurisdictions"
-    @State private var heroRight: String    = "12,840"
-    @State private var heroFraction: Double = 0.46          // SVG draws 169/368 ≈ 0.46
-    @State private var heroLine1: String    = "Filing due Jul 31 · IFTA license current"
-    @State private var heroLine2: String    = "Quarter Apr–Jun · 4 reporting jurisdictions owe"
-
-    @State private var rows: [JurisRow_384] = [
-        .init(name: "TEXAS",      code: "TX", miles: "4,210 mi", gallons: "655 gal", net: "$92.40"),
-        .init(name: "OKLAHOMA",   code: "OK", miles: "1,180 mi", gallons: "184 gal", net: "$31.10"),
-        .init(name: "KANSAS",     code: "KS", miles: "2,040 mi", gallons: "318 gal", net: "$80.40"),
-        .init(name: "MISSOURI",   code: "MO", miles: "1,560 mi", gallons: "243 gal", net: "$63.60"),
-        .init(name: "NEBRASKA",   code: "NE", miles: "980 mi",   gallons: "153 gal", net: "$40.20"),
-        .init(name: "ARIZONA",    code: "AZ", miles: "1,120 mi", gallons: "175 gal", net: "$31.50"),
-        .init(name: "CALIFORNIA", code: "CA", miles: "1,310 mi", gallons: "204 gal", net: "$120.70"),
-        .init(name: "NEW MEXICO", code: "NM", miles: "440 mi",   gallons: "68 gal",  net: "$14.70"),
-    ]
-
-    @State private var cells: [FactorCell_384] = [
-        .init(label: "TAXABLE MILES", value: "12,840", sub: "Q2 fleet"),
-        .init(label: "GALLONS",       value: "2,015",  sub: "at pump"),
-        .init(label: "FLEET MPG",     value: "6.4",    sub: "blended"),
-    ]
-
-    @State private var generating: Bool = false
-    @State private var recalculating: Bool = false
-
-    private let fineprint: [String] = [
-        "IFTA quarterly · taxable miles × jurisdiction rate − tax-paid credit",
-        "Carrier: Eusotrans LLC · USDOT 3 194 882 · IFTA license current",
-        "Q2 net settles to base jurisdiction IA · due Jul 31",
-    ]
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
-                topBar_384
-                titleBlock_384
-                IridescentHairline()
-                    .padding(.horizontal, -20)
-
-                heroCard_384
-                jurisdictionCard_384
-                factorRow_384
-                actionRow_384
-                provenance_384
-
-                Color.clear.frame(height: 96)
+                header
+                switch store.state {
+                case .loading:
+                    skeleton
+                case .empty:
+                    emptyCard
+                case .error(let e):
+                    errorBanner(e)
+                case .loaded(let report):
+                    heroCard(report)
+                    jurisdictionCard(report)
+                    factorCells(report)
+                    ctaRow
+                    footnote(report)
+                }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 56)
+            .padding(.horizontal, Space.s4)
+            .padding(.top, Space.s4)
+            .padding(.bottom, Space.s8)
         }
-        .task { await loadAll() }
-        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
-            Task { await loadAll() }
-        }
+        .task { await store.refresh() }
+        .refreshable { await store.refresh() }
     }
 
-    // MARK: - TopBar (eyebrow · quarter)
+    // MARK: Header
 
-    private var topBar_384: some View {
-        HStack(alignment: .firstTextBaseline) {
-            HStack(spacing: 4) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 9, weight: .heavy))
+    private var quarterLabel: String { "\(store.quarter) · \(store.year)" }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack {
+                Text("✦ CATALYST · IFTA")
+                    .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("CATALYST · IFTA")
-                    .font(.system(size: 9, weight: .heavy))
-                    .tracking(1.0)
-                    .foregroundStyle(LinearGradient.diagonal)
-            }
-            Spacer(minLength: 0)
-            Text("\(quarter.rawValue) · \(String(year))")
-                .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                .tracking(1.0)
-                .foregroundStyle(palette.textTertiary)
-        }
-    }
-
-    // MARK: - Title block (title · subtitle · carrier line · sync)
-
-    private var titleBlock_384: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Fleet IFTA")
-                    .font(.system(size: 22, weight: .bold))
-                    .tracking(-0.3)
-                    .foregroundStyle(palette.textPrimary)
-                Text("8 jurisdictions · \(quarter.rawValue)")
-                    .font(.system(size: 11, design: .monospaced))
-                    .tracking(0.6)
-                    .foregroundStyle(palette.textSecondary)
-            }
-            Spacer(minLength: 0)
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("EUSOTRANS LLC · USDOT 3 194 882")
-                    .font(.system(size: 9, weight: .heavy))
-                    .tracking(0.6)
+                Spacer()
+                Text(quarterLabel)
+                    .font(EType.micro.monospaced()).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                Text("synced 2h ago")
-                    .font(.system(size: 11, design: .monospaced))
-                    .tracking(0.4)
-                    .foregroundStyle(palette.textSecondary)
             }
-        }
-    }
-
-    // MARK: - Hero card (net tax due · taxable miles · progress)
-
-    private var heroCard_384: some View {
-        VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top) {
-                Text("NET TAX DUE · \(quarter.rawValue)")
-                    .font(.system(size: 9, weight: .heavy))
-                    .tracking(0.6)
+                OrbeSang(state: store.isLoading ? .thinking : .idle, diameter: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Fleet IFTA")
+                        .font(EType.h2)
+                        .foregroundStyle(palette.textPrimary)
+                    Text(subtitleLine)
+                        .font(EType.caption.monospaced())
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("\(carrierName.uppercased()) · USDOT \(usdot)")
+                        .font(EType.micro).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                        .lineLimit(1)
+                    Text(syncedLine)
+                        .font(EType.caption.monospaced())
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+            IridescentHairline()
+        }
+    }
+
+    private var subtitleLine: String {
+        let n = store.state.value?.jurisdictions.count ?? 0
+        return "\(n) jurisdiction\(n == 1 ? "" : "s") · \(store.quarter)"
+    }
+
+    private var syncedLine: String {
+        store.isLoading ? "syncing…" : "synced just now"
+    }
+
+    // MARK: Hero card
+
+    private func heroCard(_ r: IFTAReport) -> some View {
+        let owedFrac = r.jurisdictions.isEmpty ? 0
+            : Double(r.owedCount) / Double(max(1, r.jurisdictions.count))
+        return VStack(alignment: .leading, spacing: Space.s2) {
+            HStack {
+                Text("NET TAX DUE · \(store.quarter)")
+                    .font(EType.micro).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
-                Spacer(minLength: 0)
+                Spacer()
                 Text("TAXABLE MILES")
-                    .font(.system(size: 9, weight: .heavy))
-                    .tracking(0.6)
+                    .font(EType.micro).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
             }
-
-            HStack(alignment: .lastTextBaseline) {
-                Text(heroBig)
-                    .font(.system(size: 34, weight: .semibold))
-                    .tracking(-0.3)
-                    .monospacedDigit()
+            HStack(alignment: .firstTextBaseline) {
+                Text(currency(r.netTax))
+                    .font(.system(size: 34, weight: .semibold)).monospacedDigit()
                     .foregroundStyle(LinearGradient.diagonal)
-                Text(heroBigUnit)
-                    .font(.system(size: 13, weight: .medium))
-                    .tracking(0.4)
-                    .foregroundStyle(palette.textSecondary)
-                    .padding(.leading, 4)
-                Spacer(minLength: 0)
-                Text(heroRight)
-                    .font(.system(size: 20, weight: .semibold, design: .monospaced))
-                    .tracking(0.2)
+                Text("\(r.jurisdictions.count) jurisdiction\(r.jurisdictions.count == 1 ? "" : "s")")
+                    .font(EType.body).foregroundStyle(palette.textSecondary)
+                Spacer()
+                Text(integer(r.taxable))
+                    .font(.system(size: 20, weight: .semibold).monospaced())
                     .foregroundStyle(palette.textPrimary)
             }
-            .padding(.top, 10)
-
-            heroProgressBar_384(fraction: heroFraction)
-                .padding(.top, 14)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(heroLine1)
-                    .font(.system(size: 11, weight: .medium))
-                    .tracking(0.2)
-                    .foregroundStyle(palette.textPrimary)
-                Text(heroLine2)
-                    .font(.system(size: 9, design: .monospaced))
-                    .tracking(0.3)
-                    .foregroundStyle(palette.textTertiary)
-            }
-            .padding(.top, 12)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3).fill(palette.tintNeutral.opacity(0.4))
+                    RoundedRectangle(cornerRadius: 3).fill(LinearGradient.diagonal)
+                        .frame(width: max(7, geo.size.width * owedFrac))
+                }
+            }.frame(height: 6)
+            Text(dueLine(r))
+                .font(EType.caption).foregroundStyle(palette.textPrimary)
+            Text("Quarter \(quarterSpan) · \(r.owedCount) reporting jurisdiction\(r.owedCount == 1 ? "" : "s") owe")
+                .font(EType.micro.monospaced()).foregroundStyle(palette.textTertiary)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg)
     }
 
-    private func heroProgressBar_384(fraction: Double) -> some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(palette.textPrimary.opacity(0.08))
-                Capsule()
-                    .fill(LinearGradient.diagonal)
-                    .frame(width: max(0, min(1, fraction)) * geo.size.width)
-            }
-        }
-        .frame(height: 6)
+    private func dueLine(_ r: IFTAReport) -> String {
+        let due = r.dueDate.isEmpty ? defaultDueDate : friendlyDate(r.dueDate)
+        return "Filing due \(due) · IFTA license current"
     }
 
-    // MARK: - Per-jurisdiction grid card (jurisdiction · miles · gal · net)
+    // MARK: Jurisdiction table card
 
-    private var jurisdictionCard_384: some View {
+    private func jurisdictionCard(_ r: IFTAReport) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("JURISDICTION · MILES · GAL · NET")
-                    .font(.system(size: 9, weight: .heavy))
-                    .tracking(0.6)
+                    .font(EType.micro).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
-                Spacer(minLength: 0)
-                Text("\(quarter.rawValue) \(String(year))")
-                    .font(.system(size: 9, weight: .heavy))
-                    .tracking(0.6)
+                Spacer()
+                Text("\(store.quarter) \(store.year)")
+                    .font(EType.micro).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
             }
-            .padding(.bottom, 12)
+            .padding(.bottom, Space.s3)
 
-            ForEach(Array(rows.enumerated()), id: \.element.id) { idx, row in
-                jurisRowView_384(row)
-                    .padding(.vertical, 7)
-                if idx < rows.count - 1 {
-                    Rectangle()
-                        .fill(palette.textPrimary.opacity(0.07))
-                        .frame(height: 1)
+            if r.jurisdictions.isEmpty {
+                Text("No jurisdiction miles logged for this quarter yet")
+                    .font(EType.caption.monospaced())
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, Space.s2)
+            } else {
+                ForEach(Array(r.jurisdictions.enumerated()), id: \.element.id) { idx, j in
+                    jurisdictionRow(j)
+                    if idx < r.jurisdictions.count - 1 {
+                        Rectangle().fill(palette.textTertiary.opacity(0.07))
+                            .frame(height: 1)
+                            .padding(.vertical, 7)
+                    }
                 }
             }
 
             Text("Net = fuel tax paid at pump minus tax owed per state")
-                .font(.system(size: 9, design: .monospaced))
-                .tracking(0.3)
-                .foregroundStyle(palette.textTertiary)
-                .padding(.top, 10)
+                .font(EType.micro.monospaced()).foregroundStyle(palette.textTertiary)
+                .padding(.top, Space.s3)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg)
     }
 
-    private func jurisRowView_384(_ row: JurisRow_384) -> some View {
-        HStack(spacing: 8) {
-            Text(row.name)
-                .font(.system(size: 11, weight: .bold))
-                .tracking(0.3)
+    private func jurisdictionRow(_ j: IFTAJurisdiction) -> some View {
+        HStack(spacing: 0) {
+            Text(stateName(j.jurisdiction))
+                .font(.system(size: 11, weight: .bold)).tracking(0.3)
                 .foregroundStyle(palette.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Text(row.miles)
-                .font(.system(size: 10, design: .monospaced))
-                .tracking(0.2)
+            Text("\(integer(j.miles)) mi")
+                .font(EType.mono(.caption))
                 .foregroundStyle(palette.textSecondary)
-                .frame(width: 64, alignment: .trailing)
-            Text(row.gallons)
-                .font(.system(size: 10, design: .monospaced))
-                .tracking(0.2)
+                .frame(width: 78, alignment: .trailing)
+            Text("\(integer(j.gallons)) gal")
+                .font(EType.mono(.caption))
                 .foregroundStyle(palette.textSecondary)
-                .frame(width: 54, alignment: .trailing)
-            Text(row.net)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .tracking(0.2)
-                .foregroundStyle(row.isCredit ? Brand.success : palette.textPrimary)
-                .frame(width: 60, alignment: .trailing)
+                .frame(width: 66, alignment: .trailing)
+            Text(currency(j.taxDue))
+                .font(EType.mono(.caption))
+                .foregroundStyle(j.taxDue < 0 ? AnyShapeStyle(Brand.success)
+                                              : AnyShapeStyle(palette.textPrimary))
+                .frame(width: 70, alignment: .trailing)
         }
     }
 
-    // MARK: - Factor cells (taxable miles · gallons · fleet MPG)
+    // MARK: Factor cells
 
-    private var factorRow_384: some View {
-        HStack(spacing: 8) {
-            ForEach(cells) { cell in
-                factorCellView_384(cell)
-            }
+    private func factorCells(_ r: IFTAReport) -> some View {
+        HStack(spacing: Space.s2) {
+            factorCell(label: "TAXABLE MILES", value: integer(r.taxable), sub: "\(store.quarter) fleet")
+            factorCell(label: "GALLONS", value: integer(r.totalGallons), sub: "at pump")
+            factorCell(label: "FLEET MPG",
+                       value: r.fleetMpg.map { String(format: "%.1f", $0) } ?? "—",
+                       sub: "blended")
         }
     }
 
-    private func factorCellView_384(_ cell: FactorCell_384) -> some View {
+    private func factorCell(label: String, value: String, sub: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(cell.label)
-                .font(.system(size: 9, weight: .heavy))
-                .tracking(0.6)
-                .foregroundStyle(palette.textTertiary)
-            Text(cell.value)
-                .font(.system(size: 18, weight: .semibold))
-                .tracking(0.4)
-                .monospacedDigit()
+            Text(label).font(EType.micro).tracking(0.6).foregroundStyle(palette.textTertiary)
+            Text(value).font(.system(size: 18, weight: .semibold)).monospacedDigit()
                 .foregroundStyle(palette.textPrimary)
+            Text(sub).font(EType.micro.monospaced()).foregroundStyle(palette.textSecondary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.6)
-            Text(cell.sub)
-                .font(.system(size: 9, design: .monospaced))
-                .tracking(0.4)
-                .foregroundStyle(palette.textSecondary)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 66, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-
-    // MARK: - Action row (Generate report · Recalculate)
-
-    private var actionRow_384: some View {
-        HStack(spacing: 8) {
-            CTAButton(
-                title: "Generate report",
-                action: { Task { await generateReport() } },
-                isLoading: generating
-            )
-            recalcButton_384
-        }
-    }
-
-    // Secondary (outlined) CTA — the SVG's recalculate is a slate-fill /
-    // hairline-stroke button, not the gradient primary.
-    private var recalcButton_384: some View {
-        Button {
-            Task { await loadAll(recalc: true) }
-        } label: {
-            Text(recalculating ? "Recalculating…" : "Recalculate")
-                .font(EType.title)
-                .foregroundStyle(palette.textPrimary)
-                .frame(maxWidth: .infinity, minHeight: 52)
-                .background(palette.bgCard)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(palette.borderSoft, lineWidth: 1)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .opacity(recalculating ? 0.6 : 1.0)
-        .disabled(recalculating)
-    }
-
-    // MARK: - Provenance fineprint
-
-    private var provenance_384: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(fineprint, id: \.self) { line in
-                Text(line)
-                    .font(.system(size: 9, design: .monospaced))
-                    .tracking(0.3)
-                    .foregroundStyle(palette.textTertiary)
-            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Space.s3).padding(.vertical, Space.s3)
+        .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+            .strokeBorder(palette.borderFaint.opacity(0.6), lineWidth: 1))
     }
 
-    // MARK: - Network
+    // MARK: CTAs
 
-    private func loadAll(recalc: Bool = false) async {
-        if recalc { recalculating = true }
-        defer { if recalc { recalculating = false } }
+    private var ctaRow: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: Space.s2) {
+                Button { Task { await generateReport() } } label: {
+                    HStack(spacing: Space.s2) {
+                        if generating { ProgressView().tint(.white) }
+                        Text(generating ? "Generating…" : "Generate report")
+                            .font(EType.bodyStrong).foregroundStyle(.white)
+                    }
+                    .frame(maxWidth: .infinity).padding(.vertical, Space.s3)
+                    .background(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                        .fill(LinearGradient.diagonal))
+                }
+                .buttonStyle(.plain)
+                .disabled(generating || store.state.value == nil)
 
-        // The carrier-scoped roll-up (fleet.getIFTAReport / fleet.getIFTAStats)
-        // has no iOS client method yet. We hydrate the hero + full
-        // per-jurisdiction grid from the REAL iftaCalculator.calculateQuarter
-        // mutation (iftaCalculator.ts:35), surfaced as EusoTripAPI.shared.ifta —
-        // feeding it the fleet's per-jurisdiction miles + fuel purchases.
-        // WIRE: fleet.getIFTAReport (fleet.ts:1028) · fleet.getIFTAStats (fleet.ts:1037)
-        var milesByJ: [String: Double] = [:]
-        var fuelByJ: [String: Double] = [:]
-        for r in rows {
-            milesByJ[r.code] = milesValue_384(r.miles)
-            fuelByJ[r.code]  = gallonsValue_384(r.gallons)
+                Button { Task { await store.refresh() } } label: {
+                    Text("Recalculate").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                        .frame(maxWidth: .infinity).padding(.vertical, Space.s3)
+                        .background(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                            .fill(palette.bgCard))
+                        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                            .strokeBorder(palette.borderFaint, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .disabled(store.isLoading)
+            }
+            if let id = generatedReportId {
+                Text("Report generated · \(id)")
+                    .font(EType.micro.monospaced()).foregroundStyle(Brand.success)
+            }
+            if let err = generateError {
+                Text(err)
+                    .font(EType.micro.monospaced()).foregroundStyle(Brand.warning)
+            }
         }
-
-        guard let ret = try? await EusoTripAPI.shared.ifta.calculateQuarter(
-            year: year,
-            quarter: quarter,
-            milesByJurisdiction: milesByJ,
-            fuelPurchasesByJurisdiction: fuelByJ,
-            fleetMpg: 6.4
-        ) else { return }
-
-        applyReturn_384(ret)
     }
 
     private func generateReport() async {
+        guard !generating else { return }
         generating = true
+        generateError = nil
         defer { generating = false }
-        // The carrier-scoped report mutation has no iOS client method yet;
-        // recompute from the real calculator so the figures stay live-backed.
-        // WIRE: fleet.generateIFTAReport (fleet.ts:1046)
-        await loadAll(recalc: false)
-        NotificationCenter.default.post(name: .esangRefreshSurface, object: nil)
-    }
-
-    private func applyReturn_384(_ ret: IftaAPI.QuarterReturn) {
-        let s = ret.summary
-        heroBig     = currency0_384(s.netTaxDue)
-        heroBigUnit = "\(ret.jurisdictions.count) jurisdictions"
-        heroRight   = thousands_384(s.totalMiles)
-        heroLine2   = "Quarter Apr–Jun · \(s.jurisdictionsOwed) reporting jurisdictions owe"
-        if !ret.filingDeadline.isEmpty {
-            heroLine1 = "Filing due \(prettyDeadline_384(ret.filingDeadline)) · IFTA license current"
-        }
-        if s.totalMiles > 0 {
-            heroFraction = min(1.0, s.totalMiles / 28_000.0)
-        }
-
-        cells = [
-            .init(label: "TAXABLE MILES", value: thousands_384(s.totalMiles),            sub: "\(quarter.rawValue) fleet"),
-            .init(label: "GALLONS",       value: thousands_384(s.totalGallonsPurchased), sub: "at pump"),
-            .init(label: "FLEET MPG",     value: decimal1_384(s.fleetMpg),               sub: "blended"),
-        ]
-
-        let live = ret.jurisdictions.map { j -> JurisRow_384 in
-            JurisRow_384(
-                name: stateName_384(j.jurisdiction),
-                code: j.jurisdiction.uppercased(),
-                miles: "\(thousands_384(j.miles)) mi",
-                gallons: "\(Int(j.gallonsPurchased.rounded())) gal",
-                net: "\(j.isRefund ? "-" : "")\(currency2_384(abs(j.taxDue)))",
-                isCredit: j.isRefund
+        struct GenIn: Encodable { let quarter: String; let year: Int }
+        struct GenOut: Decodable { let success: Bool; let reportId: String? }
+        do {
+            let out: GenOut = try await EusoTripAPI.shared.mutation(
+                "fleet.generateIFTAReport",
+                input: GenIn(quarter: store.quarter, year: store.year)
             )
+            if out.success {
+                generatedReportId = out.reportId
+            } else {
+                generateError = "Report could not be generated. Try again."
+            }
+        } catch {
+            generateError = error.localizedDescription
         }
-        if !live.isEmpty { rows = live }
     }
 
-    // MARK: - Seed parsing (string seed → Double for the live recompute)
+    // MARK: Footnote
 
-    private func milesValue_384(_ s: String) -> Double {
-        Double(s.replacingOccurrences(of: " mi", with: "")
-                .replacingOccurrences(of: ",", with: "")) ?? 0
+    private func footnote(_ r: IFTAReport) -> some View {
+        let base = (r.baseJurisdiction?.isEmpty == false) ? r.baseJurisdiction! : "IA"
+        let due = r.dueDate.isEmpty ? defaultDueDate : friendlyDate(r.dueDate)
+        return VStack(alignment: .leading, spacing: 4) {
+            Text("IFTA quarterly · taxable miles × jurisdiction rate − tax-paid credit")
+            Text("Carrier: \(carrierName) · USDOT \(usdot) · IFTA license current")
+            Text("\(store.quarter) net settles to base jurisdiction \(base) · due \(due)")
+        }
+        .font(EType.micro.monospaced()).foregroundStyle(palette.textTertiary)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func gallonsValue_384(_ s: String) -> Double {
-        Double(s.replacingOccurrences(of: " gal", with: "")
-                .replacingOccurrences(of: ",", with: "")) ?? 0
+    // MARK: States / skeleton / error
+
+    private var skeleton: some View {
+        VStack(spacing: Space.s4) {
+            RoundedRectangle(cornerRadius: Radius.lg).fill(palette.bgCard).frame(height: 124)
+            RoundedRectangle(cornerRadius: Radius.lg).fill(palette.bgCard).frame(height: 268)
+            HStack(spacing: Space.s2) {
+                ForEach(0..<3, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: Radius.md).fill(palette.bgCard).frame(height: 66)
+                }
+            }
+        }
+        .redacted(reason: .placeholder)
     }
 
-    // MARK: - Formatters
-
-    private func currency0_384(_ v: Double) -> String {
-        "$\(Int(v.rounded()))"
+    private var emptyCard: some View {
+        VStack(spacing: Space.s2) {
+            Text("No IFTA data yet")
+                .font(EType.title).foregroundStyle(palette.textPrimary)
+            Text("Jurisdiction miles populate as loads complete this quarter.")
+                .font(EType.caption).foregroundStyle(palette.textTertiary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity).padding(Space.s4).eusoCard(radius: Radius.lg)
     }
 
-    private func currency2_384(_ v: Double) -> String {
-        String(format: "$%.2f", v)
+    private func errorBanner(_ err: Error) -> some View {
+        VStack(spacing: Space.s2) {
+            Text("Couldn't load IFTA")
+                .font(EType.title).foregroundStyle(palette.textPrimary)
+            Text(err.localizedDescription)
+                .font(EType.caption).foregroundStyle(palette.textTertiary)
+                .multilineTextAlignment(.center)
+            Button { Task { await store.refresh() } } label: {
+                Text("Retry").font(EType.bodyStrong).foregroundStyle(.white)
+                    .padding(.horizontal, Space.s4).padding(.vertical, Space.s2)
+                    .background(Capsule().fill(LinearGradient.diagonal))
+            }.buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity).padding(Space.s4).eusoCard(radius: Radius.lg)
     }
 
-    private func thousands_384(_ v: Double) -> String {
+    // MARK: Formatting + reference data
+
+    private func currency(_ v: Double) -> String {
+        let neg = v < 0
+        let a = abs(v)
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.minimumFractionDigits = 2
+        f.maximumFractionDigits = 2
+        let s = f.string(from: NSNumber(value: a)) ?? String(format: "%.2f", a)
+        return "\(neg ? "-" : "")$\(s)"
+    }
+
+    private func integer(_ v: Double) -> String {
         let f = NumberFormatter()
         f.numberStyle = .decimal
         f.maximumFractionDigits = 0
-        return f.string(from: NSNumber(value: v)) ?? "\(Int(v))"
+        return f.string(from: NSNumber(value: v.rounded())) ?? String(Int(v.rounded()))
     }
 
-    private func decimal1_384(_ v: Double) -> String {
-        String(format: "%.1f", v)
+    private var quarterSpan: String {
+        switch store.quarter {
+        case "Q1": return "Jan–Mar"
+        case "Q2": return "Apr–Jun"
+        case "Q3": return "Jul–Sep"
+        default:   return "Oct–Dec"
+        }
     }
 
-    private func prettyDeadline_384(_ iso: String) -> String {
-        let parts = iso.split(separator: "-")
-        guard parts.count == 3,
-              let m = Int(parts[1]), m >= 1, m <= 12,
-              let d = Int(parts[2]) else { return iso }
-        let months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-        return "\(months[m - 1]) \(d)"
+    private var defaultDueDate: String {
+        switch store.quarter {
+        case "Q1": return "Apr 30"
+        case "Q2": return "Jul 31"
+        case "Q3": return "Oct 31"
+        default:   return "Jan 31"
+        }
     }
 
-    private func stateName_384(_ code: String) -> String {
-        let map: [String: String] = [
-            "TX": "TEXAS", "OK": "OKLAHOMA", "KS": "KANSAS", "MO": "MISSOURI",
-            "NE": "NEBRASKA", "AZ": "ARIZONA", "CA": "CALIFORNIA", "NM": "NEW MEXICO",
-        ]
-        return map[code.uppercased()] ?? code.uppercased()
+    /// Accepts an ISO-8601 date (yyyy-MM-dd...) and renders "MMM d". Falls
+    /// back to the raw string if it isn't parseable — never crashes, never
+    /// fabricates.
+    private func friendlyDate(_ iso: String) -> String {
+        let inFmt = DateFormatter()
+        inFmt.dateFormat = "yyyy-MM-dd"
+        inFmt.locale = Locale(identifier: "en_US_POSIX")
+        let trimmed = String(iso.prefix(10))
+        guard let d = inFmt.date(from: trimmed) else { return iso }
+        let out = DateFormatter()
+        out.dateFormat = "MMM d"
+        out.locale = Locale(identifier: "en_US")
+        return out.string(from: d)
     }
+
+    /// 2-letter IFTA code → upper-case display name (verbatim to the SVG,
+    /// which shows full state names). Presentation data, not business data.
+    /// Unknown codes pass through unchanged.
+    private func stateName(_ code: String) -> String {
+        Self.iftaNames[code.uppercased()] ?? code.uppercased()
+    }
+
+    private static let iftaNames: [String: String] = [
+        "AL": "ALABAMA", "AZ": "ARIZONA", "AR": "ARKANSAS", "CA": "CALIFORNIA",
+        "CO": "COLORADO", "CT": "CONNECTICUT", "DE": "DELAWARE", "FL": "FLORIDA",
+        "GA": "GEORGIA", "ID": "IDAHO", "IL": "ILLINOIS", "IN": "INDIANA",
+        "IA": "IOWA", "KS": "KANSAS", "KY": "KENTUCKY", "LA": "LOUISIANA",
+        "ME": "MAINE", "MD": "MARYLAND", "MA": "MASSACHUSETTS", "MI": "MICHIGAN",
+        "MN": "MINNESOTA", "MS": "MISSISSIPPI", "MO": "MISSOURI", "MT": "MONTANA",
+        "NE": "NEBRASKA", "NV": "NEVADA", "NH": "NEW HAMPSHIRE", "NJ": "NEW JERSEY",
+        "NM": "NEW MEXICO", "NY": "NEW YORK", "NC": "NORTH CAROLINA", "ND": "NORTH DAKOTA",
+        "OH": "OHIO", "OK": "OKLAHOMA", "OR": "OREGON", "PA": "PENNSYLVANIA",
+        "RI": "RHODE ISLAND", "SC": "SOUTH CAROLINA", "SD": "SOUTH DAKOTA",
+        "TN": "TENNESSEE", "TX": "TEXAS", "UT": "UTAH", "VT": "VERMONT",
+        "VA": "VIRGINIA", "WA": "WASHINGTON", "WV": "WEST VIRGINIA",
+        "WI": "WISCONSIN", "WY": "WYOMING", "DC": "DISTRICT OF COLUMBIA",
+        // IFTA Canadian member jurisdictions
+        "AB": "ALBERTA", "BC": "BRITISH COLUMBIA", "MB": "MANITOBA",
+        "NB": "NEW BRUNSWICK", "NL": "NEWFOUNDLAND", "NS": "NOVA SCOTIA",
+        "ON": "ONTARIO", "PE": "PRINCE EDWARD ISLAND", "QC": "QUEBEC",
+        "SK": "SASKATCHEWAN",
+    ]
 }
 
-// MARK: - Previews
-
-#Preview("384 · Catalyst · Fleet IFTA · Night") {
-    CatalystFleetIFTAScreen(theme: Theme.dark)
-        .environmentObject(EusoTripSession())
-        .preferredColorScheme(.dark)
+// MARK: - Registry wrapper (Shell + Catalyst BottomNav chrome)
+// The §39 content view `CatalystFleetIFTA` is chrome-less; the ScreenRegistry
+// constructs `CatalystFleetIFTAScreen(theme:)`, so we wrap it in the house
+// Shell + Catalyst BottomNav (matching the 383/385 sibling pattern).
+struct CatalystFleetIFTAScreen: View {
+    let theme: Theme.Palette
+    init(theme: Theme.Palette) { self.theme = theme }
+    var body: some View {
+        Shell(theme: theme) { CatalystFleetIFTA() }
+        nav: { BottomNav(leading: catalystNavLeading_384(), trailing: catalystNavTrailing_384(), orbState: .idle) }
+    }
+}
+private func catalystNavLeading_384() -> [NavSlot] {
+    [NavSlot(label: "Home", systemImage: "house", isCurrent: false),
+     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: false)]
+}
+private func catalystNavTrailing_384() -> [NavSlot] {
+    [NavSlot(label: "Fleet", systemImage: "truck.box", isCurrent: false),
+     NavSlot(label: "Me", systemImage: "person.crop.circle", isCurrent: true)]
 }
 
-#Preview("384 · Catalyst · Fleet IFTA · Afternoon") {
-    CatalystFleetIFTAScreen(theme: Theme.light)
-        .environmentObject(EusoTripSession())
-        .preferredColorScheme(.light)
+#if DEBUG
+struct CatalystFleetIFTA_Previews: PreviewProvider {
+    static var previews: some View {
+        CatalystFleetIFTAScreen(theme: Theme.dark)
+            .preferredColorScheme(.dark)
+    }
 }
+#endif
