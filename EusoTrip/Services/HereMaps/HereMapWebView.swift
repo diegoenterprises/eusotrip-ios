@@ -133,8 +133,13 @@ public struct HereVectorMapView: View {
     }
 
     public var body: some View {
-        #if canImport(UIKit)
-        HereMapWebViewRepresentable(
+        // 2026-05-29: map engine swapped WKWebView → the in-house native
+        // `BespokeMapCanvas` (SwiftUI Canvas, no WebKit). The public init +
+        // stored props are unchanged, so every one of the 16 caller screens
+        // keeps working verbatim — only the renderer behind `body` changed.
+        // The legacy `HereMapWebViewRepresentable` + `buildHTML` are kept
+        // below (now private/unused) for reference and quick rollback.
+        BespokeMapCanvas(
             center: center,
             zoom: zoom,
             interactive: interactive,
@@ -143,17 +148,20 @@ public struct HereVectorMapView: View {
             layers: layers,
             onSelectMarker: onSelectMarker
         )
-        #else
-        Color(white: 0.04)
-        #endif
     }
 }
 
 #if canImport(UIKit)
 
-// MARK: - UIViewRepresentable bridge
+// MARK: - UIViewRepresentable bridge (LEGACY — no longer wired)
+//
+// 2026-05-29: `HereVectorMapView.body` now renders `BespokeMapCanvas`
+// (native SwiftUI Canvas) instead of this WKWebView bridge. The type is
+// kept (marked `private`, unreferenced) for reference + fast rollback;
+// it intentionally has no remaining call sites. Delete freely once the
+// native renderer has soaked in production.
 
-struct HereMapWebViewRepresentable: UIViewRepresentable {
+private struct HereMapWebViewRepresentable: UIViewRepresentable {
     let center: HereLatLng
     let zoom: Int
     let interactive: Bool
