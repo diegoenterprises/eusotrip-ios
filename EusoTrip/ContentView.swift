@@ -1738,6 +1738,8 @@ enum ScreenRegistry {
             // directly). Each takes `theme: Theme.Palette` only.
             .init(id: "Dpch700", title: "Dispatch · Home",             role: .dispatch) { p in AnyView(DispatchHomeScreen(theme: p)) },
             .init(id: "Dpch701", title: "Dispatch · Driver Board",     role: .dispatch) { p in AnyView(DispatchDriverBoardScreen(theme: p)) },
+            // §37 — Dispatcher 404 Driver Roster (HOS-urgency-sorted roster; wires dispatch.getDriverRoster).
+            .init(id: "Dpch404", title: "Dispatch · Driver Roster",    role: .dispatch) { p in AnyView(DispatcherDriverRosterScreen(theme: p)) },
             .init(id: "Dpch702", title: "Dispatch · Load Assignment",  role: .dispatch) { p in AnyView(DispatchLoadAssignmentScreen(theme: p)) },
             .init(id: "Dpch703", title: "Dispatch · Exception Triage", role: .dispatch) { p in AnyView(DispatchExceptionTriageScreen(theme: p)) },
             .init(id: "Dpch704", title: "Dispatch · HOS Alerts",       role: .dispatch) { p in AnyView(DispatchHOSAlertsScreen(theme: p)) },
