@@ -2,6 +2,31 @@
 //  586_RailServiceLineup.swift
 //  EusoTrip — Rail 586 · Service Lineup
 //
+//  CARRIER-SIDE (Rail Engineer). VERBATIM port of
+//  "05 Rail/Dark-SVG/586 Rail Service Lineup.svg" — its purpose-built
+//  TIMELINE/SCHEDULE archetype (a route-rotation lineup), NOT a stat-tile
+//  dashboard:
+//    · lane-ribbon HERO — gradient-rim card: status + train-symbol + RAIL
+//      badge pills, a numbers-first next-departure countdown, an on-plan
+//      delta + consist line (cars · ft · tons), and a horizontal lane spine
+//      (LAX→BAR→KCK→GAL→CHI) drawn in Canvas with travel progress, a glowing
+//      current node and a green destination node.
+//    · CALL TIMELINE — a vertical rail-spine ledger of the ordered yard/ramp
+//      calls (one node per call: station, arr/dep tabular times, dwell + work
+//      events, status chip, the CURRENT call highlighted). Rendered through
+//      the BespokeChartKit `TimelineEventRail` primitive.
+//    · ESANG next-best-action card.
+//    · CTA pair — "Notify on departure" (gradient) · "Reroute" (outline).
+//
+//  Wiring (real railShipments router on disk — frontend/server/routers/railShipments.ts):
+//    railShipments.getRailShipmentDetail (EXISTS :209, input {id})        → train header, origin/dest yards, car count, status
+//    railShipments.getRailTracking       (EXISTS :554, input {shipmentId}) → events → derive per-call status (departed/current/scheduled)
+//  The lineup-specific fields (per-call arr/dep clock times, dwell minutes,
+//  set-out/pick-up counts, next-departure countdown) are not yet served by a
+//  single procedure — they would come from a `getServiceLineup` rollup. Until
+//  that lands those figures are representative seed (house 0%-mock, overwritten
+//  on hydrate of the live detail/tracking pair). See the WIRE marker in load().
+//
 
 import SwiftUI
 
@@ -26,35 +51,54 @@ struct RailServiceLineupScreen: View {
     }
 }
 
-// MARK: - Data shapes
+// MARK: - Data shapes (mirror getRailShipmentDetail + getRailTracking)
 
-private struct TrainConsist586: Decodable {
-    let trainSymbol: String?
-    let carCount: Int?
-    let scheduledCalls: Int?
-    let clearedCalls: Int?
-    let estimatedTransitHours: Int?
+private struct RailYard586: Decodable {
+    let id: Int?
+    let name: String?
+    let code: String?
+    let city: String?
+    let state: String?
+}
+
+private struct RailLocation586: Decodable {
+    let description: String?
+}
+
+private struct RailEvent586: Decodable, Identifiable {
+    let id: Int?
+    let eventType: String?
+    let description: String?
+    let location: RailLocation586?
+    let timestamp: String?
+    var stableID: String { id.map { "\($0)" } ?? UUID().uuidString }
+}
+
+private struct RailTracking586: Decodable {
+    let events: [RailEvent586]?
+    let currentLocation: RailLocation586?
+}
+
+private struct RailShipmentDetail586: Decodable {
+    let id: Int?
+    let shipmentNumber: String?
     let status: String?
-    let nextCallLabel: String?
-    let nextCallYardName: String?
+    let numberOfCars: Int?
+    let originRailroad: String?
+    let originYard: RailYard586?
+    let destinationYard: RailYard586?
 }
 
-private struct ServiceCall586: Decodable {
-    let yardName: String?
-    let detail: String?
-    let status: String?
-    let timeLabel: String?
-}
+// MARK: - Lineup call model (the bespoke call timeline rows)
 
-private struct FacilityStatus586: Decodable {
-    let facilityName: String?
-    let rampStatus: String?
-    let gateAvgMinutes: Int?
-    let etaNote: String?
-    let advisoryNote: String?
+private struct LineupCall586: Identifiable {
+    let id: String
+    let station: String        // "Barstow BNSF"
+    let detail: String         // "crew change · 12 min dwell"
+    let timeLabel: String      // "arr 14:35 · dep 14:47" or "dep 06:10"
+    let state: TimelineEventState
+    let statusLabel: String    // "DEPARTED" / "SCHEDULED" / "ON ETA"
 }
-
-private struct RailIdIn586: Encodable { let railId: String }
 
 // MARK: - Body
 
@@ -62,43 +106,95 @@ private struct RailServiceLineupBody: View {
     @Environment(\.palette) private var palette
     let railId: String
 
-    @State private var consist: TrainConsist586? = nil
-    @State private var calls: [ServiceCall586] = []
-    @State private var facility: FacilityStatus586? = nil
+    @State private var detail: RailShipmentDetail586? = nil
+    @State private var tracking: RailTracking586? = nil
+    @State private var loading = true
+    @State private var loadError: String? = nil
+    @State private var notifyArmed = false
 
-    // MARK: Derived
+    // ───────── Representative seed (house 0%-mock, overwritten on hydrate) ─────────
+    //
+    // The whole-journey lineup the SVG draws. Live detail/tracking refines the
+    // train header + per-call status; the clock times / dwell / countdown are
+    // seed until getServiceLineup lands (see WIRE marker in load()).
 
-    private var trainSymbol: String  { consist?.trainSymbol   ?? "—" }
-    private var carCount: Int        { consist?.carCount       ?? 0 }
-    private var scheduledCalls: Int  { consist?.scheduledCalls ?? 0 }
-    private var clearedCalls: Int    { consist?.clearedCalls   ?? 0 }
-    private var transitLabel: String {
-        guard let h = consist?.estimatedTransitHours else { return "—" }
-        return "\(h)h"
+    private let seedTrainSymbol  = "Q-LACCHI1-23"
+    private let seedCars         = 132
+    private let seedLengthFt     = "8,940 ft"
+    private let seedTons         = "14,210 t"
+    private let seedCountdown    = "1h 20m"
+    private let seedNextCall     = "Barstow BNSF"
+    private let seedDeltaMin     = 0          // on-plan +0 min
+
+    // Horizontal lane ribbon nodes: code · progress 0…1 · semantic state.
+    private let laneNodes: [LaneNode586] = [
+        LaneNode586(code: "LAX", progress: 0.01, state: .done),
+        LaneNode586(code: "BAR", progress: 0.12, state: .current),
+        LaneNode586(code: "KCK", progress: 0.46, state: .future),
+        LaneNode586(code: "GAL", progress: 0.69, state: .future),
+        LaneNode586(code: "CHI", progress: 0.99, state: .onEta)
+    ]
+
+    // Ordered calls (the vertical timeline).
+    private var seedCalls: [LineupCall586] {
+        [
+            LineupCall586(id: "c1", station: "LA Long Beach ICTF",
+                          detail: "origin ramp · BNSF · 132 cars built",
+                          timeLabel: "dep 06:10", state: .done, statusLabel: "DEPARTED"),
+            LineupCall586(id: "c2", station: "Barstow BNSF",
+                          detail: "crew change · 12 min dwell · arr 14:35 · dep 14:47",
+                          timeLabel: "in 1h 20m", state: .current, statusLabel: "NEXT"),
+            LineupCall586(id: "c3", station: "Kansas City Argentine",
+                          detail: "interchange · set out 18 · pick up 6",
+                          timeLabel: "Tue 09:20", state: .future, statusLabel: "SCHEDULED"),
+            LineupCall586(id: "c4", station: "Galesburg IL",
+                          detail: "fuel + roll-by inspection · 25 min",
+                          timeLabel: "Tue 19:05", state: .future, statusLabel: "SCHEDULED"),
+            LineupCall586(id: "c5", station: "Chicago Logistics Park",
+                          detail: "destination ramp · final · ETA holds",
+                          timeLabel: "Wed 02:40", state: .done, statusLabel: "ON ETA")
+        ]
     }
-    private var trainStatusLabel: String {
-        switch (consist?.status ?? "en_route").lowercased() {
+
+    // ───────── Derived (live-refined where the API serves it) ─────────
+
+    private var trainSymbol: String { detail?.shipmentNumber ?? seedTrainSymbol }
+    private var carCount: Int        { detail?.numberOfCars ?? seedCars }
+    private var statusOk: Bool {
+        let s = (detail?.status ?? "in_transit").lowercased()
+        return s == "in_transit" || s == "en_route"
+    }
+    private var statusLabel: String {
+        switch (detail?.status ?? "en_route").lowercased() {
         case "delayed":    return "DELAYED"
         case "terminated": return "TERMINATED"
+        case "in_transit": return "EN ROUTE"
         default:           return "EN ROUTE"
         }
     }
-    private var trainStatusOk: Bool {
-        let s = (consist?.status ?? "en_route").lowercased()
-        return s == "en_route"
+    private var consistLine: String {
+        let delta = seedDeltaMin
+        let plan  = delta == 0 ? "on plan +0 min" : (delta > 0 ? "ahead \(delta) min" : "late \(-delta) min")
+        return "\(plan)  ·  \(carCount) cars · \(seedLengthFt) · \(seedTons)"
     }
-    private var nextCallLabel: String    { consist?.nextCallLabel    ?? "—" }
-    private var nextCallYard: String     { consist?.nextCallYardName ?? "—" }
-    private var facilityLine1: String {
-        let name  = facility?.facilityName ?? "—"
-        let ramp  = (facility?.rampStatus ?? "open").lowercased() == "open" ? "ramp open" : "ramp closed"
-        let gate  = facility?.gateAvgMinutes.map { "gate avg \($0) min" } ?? ""
-        return [name, ramp, gate].filter { !$0.isEmpty }.joined(separator: " · ")
-    }
-    private var facilityLine2: String {
-        let eta  = facility?.etaNote      ?? "ETA holds"
-        let adv  = facility?.advisoryNote ?? "no network advisory on lane"
-        return "\(eta) · \(adv)"
+
+    // Live-refined calls: when tracking events exist, advance the call states
+    // from the latest beat; otherwise show the representative seed lineup.
+    private var calls: [LineupCall586] {
+        guard let events = tracking?.events, !events.isEmpty else { return seedCalls }
+        // Map known event types onto call states without fabricating times we
+        // don't have — keep the seed clock labels, refine only the state/chip.
+        let departedCount = events.filter {
+            let t = ($0.eventType ?? "").lowercased()
+            return t.contains("depart") || t.contains("arriv") || t.contains("scan")
+        }.count
+        return seedCalls.enumerated().map { idx, call in
+            if idx < departedCount {
+                return LineupCall586(id: call.id, station: call.station, detail: call.detail,
+                                     timeLabel: call.timeLabel, state: .done, statusLabel: "DEPARTED")
+            }
+            return call
+        }
     }
 
     // MARK: View
@@ -109,17 +205,34 @@ private struct RailServiceLineupBody: View {
                 eyebrow
                 headline
                 IridescentHairline()
-                heroCard
-                kpiStrip
-                callsSection
-                facilityStrip
-                ctaPair
+
+                if loading {
+                    LifecycleCard {
+                        HStack(spacing: Space.s3) {
+                            ProgressView().tint(palette.textSecondary)
+                            Text("Loading service lineup…")
+                                .font(EType.caption).foregroundStyle(palette.textSecondary)
+                        }
+                    }
+                } else {
+                    if let err = loadError {
+                        LifecycleCard(accentWarning: true) {
+                            Text("Live lineup unavailable — \(err). Showing scheduled rotation.")
+                                .font(EType.caption).foregroundStyle(palette.textSecondary)
+                        }
+                    }
+                    heroCard
+                    callTimelineSection
+                    esangCard
+                    ctaPair
+                }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, Space.s4)
             .padding(.top, Space.s3)
         }
-        .task { await loadAll() }
+        .task { await load() }
+        .refreshable { await load() }
     }
 
     // MARK: Eyebrow + headline
@@ -152,180 +265,137 @@ private struct RailServiceLineupBody: View {
         }
     }
 
-    // MARK: Hero card
+    // MARK: Hero — lane ribbon
 
     private var heroCard: some View {
-        ZStack(alignment: .leading) {
-            RoundedRectangle(cornerRadius: Radius.xl)
+        ZStack {
+            RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                .fill(LinearGradient.diagonal.opacity(0.85))
+            RoundedRectangle(cornerRadius: Radius.xl - 1.5, style: .continuous)
                 .fill(palette.bgCard)
-            RoundedRectangle(cornerRadius: Radius.xl)
-                .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
+                .padding(1.5)
 
             VStack(alignment: .leading, spacing: Space.s3) {
-                // Status + train symbol pills
+                // Pills row
                 HStack(spacing: Space.s2) {
-                    Text(trainStatusLabel)
-                        .font(.system(size: 11, weight: .bold))
-                        .kerning(0.5)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 5)
-                        .background(Capsule().fill((trainStatusOk ? Brand.success : Brand.warning).opacity(0.14)))
-                        .foregroundColor(trainStatusOk ? Brand.success : Brand.warning)
+                    Text(statusLabel)
+                        .font(.system(size: 11, weight: .bold)).kerning(0.5)
+                        .padding(.horizontal, 12).padding(.vertical, 5)
+                        .background(Capsule().fill((statusOk ? Brand.success : Brand.warning).opacity(0.18)))
+                        .foregroundColor(statusOk ? Brand.success : Brand.warning)
 
                     Text(trainSymbol)
-                        .font(.system(size: 11, weight: .bold))
-                        .kerning(0.5)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 5)
-                        .background(Capsule().fill(Color.black.opacity(0.05)))
+                        .font(.system(size: 11, weight: .bold).monospaced()).kerning(0.4)
+                        .padding(.horizontal, 12).padding(.vertical, 5)
+                        .background(Capsule().fill(Color.white.opacity(0.06)))
                         .foregroundColor(palette.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    HStack(spacing: 5) {
+                        Image(systemName: "tram.fill")
+                            .font(.system(size: 10, weight: .heavy))
+                        Text("RAIL")
+                            .font(.system(size: 10, weight: .black)).kerning(0.6)
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12).padding(.vertical, 5)
+                    .background(Capsule().fill(Brand.rail))
                 }
 
-                // Calls figure + next call right
-                HStack(alignment: .lastTextBaseline, spacing: 0) {
-                    HStack(alignment: .lastTextBaseline, spacing: Space.s2) {
-                        Text("\(scheduledCalls)")
-                            .font(.system(size: 34, weight: .bold).monospacedDigit())
-                            .foregroundStyle(LinearGradient.diagonal)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("scheduled calls")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(palette.textSecondary)
-                            Text("\(carCount) cars · getTrainConsists")
-                                .font(.system(size: 11))
-                                .foregroundColor(palette.textTertiary)
-                        }
-                    }
-                    Spacer()
+                // Countdown + next-call
+                HStack(alignment: .firstTextBaseline, spacing: Space.s4) {
+                    Text(seedCountdown)
+                        .font(.system(size: 34, weight: .bold).monospacedDigit())
+                        .foregroundStyle(LinearGradient.diagonal)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("NEXT CALL")
-                            .font(.system(size: 10, weight: .black))
-                            .kerning(0.6)
+                        Text("TO DEPART · NEXT CALL")
+                            .font(.system(size: 9, weight: .black)).kerning(0.8)
                             .foregroundColor(palette.textTertiary)
-                        Text(nextCallLabel)
-                            .font(.system(size: 22, weight: .bold).monospacedDigit())
+                        Text(seedNextCall)
+                            .font(.system(size: 15, weight: .bold))
                             .foregroundColor(palette.textPrimary)
-                        Text(nextCallYard)
-                            .font(.system(size: 11))
-                            .foregroundColor(palette.textSecondary)
+                            .lineLimit(1)
                     }
+                    Spacer(minLength: 0)
                 }
+
+                // On-plan delta + consist
+                Text(consistLine)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(palette.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+
+                // Horizontal lane spine
+                LaneRibbonSpine586(nodes: laneNodes, palette: palette)
+                    .frame(height: 30)
+                    .padding(.top, 2)
             }
             .padding(Space.s4)
         }
-        .frame(height: 116)
     }
 
-    // MARK: KPI strip
+    // MARK: Call timeline (BespokeChartKit · TimelineEventRail)
 
-    private var kpiStrip: some View {
-        HStack(spacing: Space.s2) {
-            MetricTile(label: "CALLS",   value: "\(scheduledCalls)", gradientNumeral: scheduledCalls > 0)
-            MetricTile(label: "CLEARED", value: "\(clearedCalls)")
-            MetricTile(label: "TO CHI",  value: transitLabel)
-        }
-    }
-
-    // MARK: Calls list
-
-    private var callsSection: some View {
+    private var callTimelineSection: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("CALLS")
-                .font(.system(size: 9, weight: .black))
-                .kerning(1.0)
-                .foregroundColor(palette.textTertiary)
-
-            VStack(spacing: 0) {
-                ForEach(Array(calls.enumerated()), id: \.offset) { idx, call in
-                    if idx > 0 {
-                        Divider()
-                            .overlay(Color.black.opacity(0.06))
-                            .padding(.horizontal, Space.s4)
-                    }
-                    callRow(call)
-                }
+            HStack(alignment: .firstTextBaseline) {
+                Text("CALL TIMELINE · \(calls.count) ORDERED CALLS")
+                    .font(.system(size: 9, weight: .black)).kerning(1.0)
+                    .foregroundColor(palette.textTertiary)
+                Spacer()
+                Text("getServiceLineup")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(palette.textSecondary)
             }
-            .background(
-                RoundedRectangle(cornerRadius: Radius.md)
-                    .fill(palette.bgCard)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md)
-                            .stroke(Color.black.opacity(0.06), lineWidth: 1)
+            TimelineEventRail(
+                events: calls.map { call in
+                    TimelineEventNode(
+                        id: call.id,
+                        title: call.station,
+                        detail: call.detail,
+                        timestamp: call.timeLabel,
+                        state: call.state,
+                        statusLabel: call.statusLabel
                     )
+                },
+                showSpine: true
             )
         }
     }
 
-    @ViewBuilder
-    private func callRow(_ call: ServiceCall586) -> some View {
-        let (pillLabel, pillColor, pillBg) = callPillInfo(call.status)
-        let timeLabel = call.timeLabel ?? "—"
+    // MARK: ESANG next-best-action
 
-        HStack(spacing: Space.s3) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Brand.blue.opacity(0.12))
-                    .frame(width: 40, height: 40)
-                Image(systemName: "mappin.and.ellipse")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(Brand.blue)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(call.yardName ?? "—")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(palette.textPrimary)
-                if let detail = call.detail {
-                    Text(detail)
-                        .font(.system(size: 11).monospaced())
-                        .kerning(0.4)
+    private var esangCard: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(palette.bgCard)
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+
+            HStack(alignment: .top, spacing: Space.s3) {
+                ZStack {
+                    Circle().fill(LinearGradient.diagonal).frame(width: 28, height: 28)
+                    Circle().fill(Color.white.opacity(0.45)).frame(width: 11, height: 11)
+                        .offset(x: -4, y: -4)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("ESANG AI")
+                        .font(.system(size: 9, weight: .black)).kerning(1.0)
+                        .foregroundStyle(LinearGradient.primary)
+                    Text("Hold 4 min at Barstow to take the Cajon meet —")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(palette.textPrimary)
+                    Text("avoids a 35-min wait at MP 56, protects the CHI ETA.")
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(palette.textSecondary)
                 }
+                Spacer(minLength: 0)
             }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(pillLabel)
-                    .font(.system(size: 11, weight: .bold))
-                    .kerning(0.5)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Capsule().fill(pillBg))
-                    .foregroundColor(pillColor)
-                Text(timeLabel)
-                    .font(.system(size: 13, weight: .bold).monospacedDigit())
-                    .foregroundColor(palette.textPrimary)
-            }
+            .padding(Space.s4)
         }
-        .padding(.horizontal, Space.s4)
-        .padding(.vertical, 14)
-    }
-
-    // MARK: Facility strip
-
-    private var facilityStrip: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("FACILITY")
-                    .font(.system(size: 9, weight: .black))
-                    .kerning(0.8)
-                    .foregroundColor(palette.textTertiary)
-                Spacer()
-            }
-            Text(facilityLine1)
-                .font(.system(size: 11))
-                .foregroundColor(palette.textSecondary)
-            Text(facilityLine2)
-                .font(.system(size: 11))
-                .foregroundColor(palette.textSecondary)
-        }
-        .padding(Space.s4)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.md)
-                .fill(palette.bgCard)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.md)
-                        .stroke(Color.black.opacity(0.06), lineWidth: 1)
-                )
-        )
     }
 
     // MARK: CTA pair
@@ -333,55 +403,155 @@ private struct RailServiceLineupBody: View {
     private var ctaPair: some View {
         HStack(spacing: Space.s3) {
             CTAButton(
-                title: "Notify on next call",
-                action: {},
-                leadingIcon: "plus",
-                isLoading: false
+                title: notifyArmed ? "Armed · departure" : "Notify on departure",
+                action: { notifyArmed.toggle() },   // WIRE: railShipments.notifyOnDeparture (proposed mutation — not on disk)
+                leadingIcon: notifyArmed ? "bell.fill" : "bell"
             )
-            Button("Lineup") {}
+            Button("Reroute") {}
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(palette.textPrimary)
                 .frame(maxWidth: .infinity)
-                .frame(height: 48)
+                .frame(height: 52)
                 .background(
-                    Capsule()
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                         .fill(palette.bgCard)
-                        .overlay(Capsule().stroke(Color.black.opacity(0.10), lineWidth: 1))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                .strokeBorder(palette.borderFaint, lineWidth: 1)
+                        )
                 )
         }
     }
 
-    // MARK: Helpers
+    // MARK: Load
 
-    private func callPillInfo(_ status: String?) -> (String, Color, Color) {
-        switch (status ?? "scheduled").lowercased() {
-        case "departed":  return ("DEPARTED",  palette.textSecondary, Color.black.opacity(0.05))
-        case "next":      return ("NEXT",       Brand.blue,           Brand.blue.opacity(0.12))
-        case "scheduled": return ("SCHEDULED", Brand.warning,        Brand.warning.opacity(0.14))
-        case "delayed":   return ("DELAYED",   Brand.danger,         Brand.danger.opacity(0.14))
-        case "arrived":   return ("ARRIVED",   Brand.success,        Brand.success.opacity(0.14))
-        default:          return ("—",         palette.textTertiary, Color.black.opacity(0.05))
+    private func load() async {
+        loading = true; loadError = nil
+        let numericId = Int(railId.filter(\.isNumber)) ?? 0
+
+        // getServiceLineup would return the consolidated lineup (per-call
+        // clock times, dwell, set-out/pick-up, next-departure countdown).
+        // No such procedure exists on the railShipments router yet, so we
+        // hydrate the train header + call states from the two procedures
+        // that DO exist and keep representative seed for the rest.
+        // WIRE: railShipments.getServiceLineup (proposed rollup — not on disk)
+
+        guard numericId > 0 else {
+            // No resolvable shipment id — present the scheduled seed rotation.
+            loading = false
+            return
+        }
+
+        do {
+            struct DetailIn: Encodable { let id: Int }
+            let d: RailShipmentDetail586 = try await EusoTripAPI.shared.query(
+                "railShipments.getRailShipmentDetail", input: DetailIn(id: numericId))
+            self.detail = d
+
+            struct TrackIn: Encodable { let shipmentId: Int }
+            self.tracking = try? await EusoTripAPI.shared.query(
+                "railShipments.getRailTracking", input: TrackIn(shipmentId: numericId))
+        } catch {
+            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        loading = false
+    }
+}
+
+// MARK: - Lane ribbon spine (horizontal Canvas — verbatim to SVG hero spine)
+
+private enum LaneNodeState586 { case done, current, future, onEta }
+
+private struct LaneNode586: Identifiable {
+    let id = UUID()
+    let code: String
+    let progress: CGFloat   // 0…1 along the ribbon
+    let state: LaneNodeState586
+}
+
+private struct LaneRibbonSpine586: View {
+    let nodes: [LaneNode586]
+    let palette: Theme.Palette
+
+    private var travel: CGFloat {
+        // The current node defines how far the travelled (gradient) segment runs.
+        nodes.first(where: { $0.state == .current })?.progress
+            ?? nodes.first(where: { $0.state == .done })?.progress
+            ?? 0
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let lineY = geo.size.height * 0.34
+            ZStack(alignment: .topLeading) {
+                // Base hairline
+                Path { p in
+                    p.move(to: CGPoint(x: 4, y: lineY))
+                    p.addLine(to: CGPoint(x: w - 4, y: lineY))
+                }
+                .stroke(Color.white.opacity(0.12),
+                        style: StrokeStyle(lineWidth: 3, lineCap: .round))
+
+                // Travelled segment (gradient)
+                Path { p in
+                    p.move(to: CGPoint(x: 4, y: lineY))
+                    p.addLine(to: CGPoint(x: 4 + (w - 8) * travel, y: lineY))
+                }
+                .stroke(LinearGradient.diagonal,
+                        style: StrokeStyle(lineWidth: 3, lineCap: .round))
+
+                // Nodes + labels
+                ForEach(nodes) { node in
+                    let x = 4 + (w - 8) * node.progress
+                    laneNode(node, x: x, y: lineY, h: geo.size.height)
+                }
+            }
         }
     }
 
-    // MARK: Data loading
+    @ViewBuilder
+    private func laneNode(_ node: LaneNode586, x: CGFloat, y: CGFloat, h: CGFloat) -> some View {
+        let (fill, ring, label): (Color, Color, Color) = {
+            switch node.state {
+            case .done:    return (Color.clear, Brand.blue, Brand.blue)
+            case .current: return (palette.bgCard, Brand.blue, Brand.blue)
+            case .future:  return (palette.bgCard, palette.textTertiary, palette.textTertiary)
+            case .onEta:   return (palette.bgCard, Brand.success, Brand.success)
+            }
+        }()
 
-    private func loadAll() async {
-        async let consistTask: TrainConsist586 = EusoTripAPI.shared.query(
-            "railShipments.getTrainConsists",
-            input: RailIdIn586(railId: railId)
-        )
-        async let callsTask: [ServiceCall586] = EusoTripAPI.shared.query(
-            "railShipments.getRailYards",
-            input: RailIdIn586(railId: railId)
-        )
-        async let facilityTask: FacilityStatus586 = EusoTripAPI.shared.query(
-            "railShipments.getFacilityStatus",
-            input: RailIdIn586(railId: railId)
-        )
+        ZStack {
+            // Current node glow halo
+            if node.state == .current {
+                Circle().strokeBorder(Brand.blue.opacity(0.35), lineWidth: 2)
+                    .frame(width: 20, height: 20)
+            }
+            if node.state == .done {
+                Circle().fill(LinearGradient.diagonal).frame(width: 10, height: 10)
+            } else {
+                Circle().fill(fill)
+                    .overlay(Circle().strokeBorder(ring, lineWidth: 2.2))
+                    .frame(width: node.state == .current ? 12 : 9,
+                           height: node.state == .current ? 12 : 9)
+            }
+        }
+        .position(x: x, y: y)
 
-        consist  = try? await consistTask
-        calls    = (try? await callsTask) ?? []
-        facility = try? await facilityTask
+        Text(node.code)
+            .font(.system(size: 8, weight: .black)).kerning(0.6)
+            .foregroundColor(label)
+            .position(x: x, y: y + 16)
     }
+}
+
+#Preview("586 · Rail Service Lineup · Night") {
+    RailServiceLineupScreen(theme: Theme.dark, railId: "RAIL-260523-7C3A0B12D4")
+        .environmentObject(EusoTripSession())
+        .preferredColorScheme(.dark)
+}
+#Preview("586 · Rail Service Lineup · Light") {
+    RailServiceLineupScreen(theme: Theme.light, railId: "RAIL-260523-7C3A0B12D4")
+        .environmentObject(EusoTripSession())
+        .preferredColorScheme(.light)
 }
