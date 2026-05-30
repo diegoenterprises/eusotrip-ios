@@ -398,6 +398,12 @@ public struct TheHaulRedemptionShopView: View {
             .padding(.top, 6)
         }
         .padding(20)
+        // Visible, working close at the top-trailing (drag-to-dismiss was
+        // the only top affordance; the inline "Done" stays as the primary).
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton { showReceipt = nil }
+                .padding(16)
+        }
         .presentationDetents([.medium])
     }
 }

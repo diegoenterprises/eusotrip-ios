@@ -1600,6 +1600,13 @@ struct VesselOperatorSurface: View {
     /// Shared sheet→push detail layer (NAV remediation 2026-05-30).
     @State private var pushedDetail: RoleDetailPush? = nil
     private static let tabRoots: Set<String> = ["Vesl650", "Vesl651", "Vesl652", "Vesl653"]
+    /// Screens that draw their OWN top back affordance (a `BespokeBackBar`
+    /// via `.injectBespokeBackBar`) so the surface's `RoleNavBackOverlay`
+    /// must NOT paint a second chevron (avoids the founder-hated double
+    /// back). 653/654/655/657 each replaced their decorative header chevron
+    /// with a real `BespokeBackBar` (NAV remediation 2026-05-30, Wave 3).
+    private static let screensWithOwnBack: Set<String> =
+        tabRoots.union(["Vesl653", "Vesl654", "Vesl655", "Vesl657"])
 
     private var currentScreenId: String { screenStack.last ?? "Vesl650" }
 
@@ -1628,7 +1635,7 @@ struct VesselOperatorSurface: View {
             .modifier(RoleNavBackOverlay(
                 stackDepth: screenStack.count,
                 currentScreenId: currentScreenId,
-                screensWithOwnBack: Self.tabRoots
+                screensWithOwnBack: Self.screensWithOwnBack
             ))
             .environment(\.driverNavHandler, nil)
             .environment(\.shipperNavHandler, nil)
