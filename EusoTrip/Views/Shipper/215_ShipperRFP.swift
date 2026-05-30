@@ -89,7 +89,7 @@ private func tierColor(_ tier: String?, palette: Theme.Palette) -> Color {
     switch (tier ?? "").lowercased() {
     case "gold":     return Brand.warning
     case "silver":   return palette.textSecondary
-    case "bronze":   return Color(red: 0.85, green: 0.55, blue: 0.30)
+    case "bronze":   return Color(hex: 0xD98C4D)
     default:          return palette.textTertiary
     }
 }
@@ -1218,7 +1218,7 @@ struct ShipperRFP: View {
             HStack(spacing: 4) {
                 scoreDim(label: "RATE",  value: sc.rateScore,         tint: Brand.success)
                 scoreDim(label: "SVC",   value: sc.serviceLevelScore, tint: Brand.info)
-                scoreDim(label: "SAFETY", value: sc.safetyScore,       tint: .purple)
+                scoreDim(label: "SAFETY", value: sc.safetyScore,       tint: Brand.escort)
                 scoreDim(label: "CAP",   value: sc.capacityScore,     tint: Brand.info)
                 scoreDim(label: "EXP",   value: sc.experienceScore,   tint: Brand.warning)
             }

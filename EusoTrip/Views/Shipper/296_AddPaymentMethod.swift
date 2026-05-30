@@ -126,7 +126,7 @@ private struct StripeSecureSafariView: UIViewControllerRepresentable {
         // Tint chrome to brand magenta so the in-app browser reads
         // as part of EusoTrip, not a generic Safari sheet.
         vc.preferredBarTintColor = nil
-        vc.preferredControlTintColor = UIColor(red: 0.745, green: 0.004, blue: 1.0, alpha: 1)
+        vc.preferredControlTintColor = UIColor(Brand.magenta)
         vc.dismissButtonStyle = .done
         return vc
     }

@@ -170,7 +170,7 @@ struct ShipperWatchComplication: View {
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Watch face")
-                .font(.system(size: 28, weight: .bold))
+                .font(EType.h1)
                 .tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
             Text("Complication design-spec · Eusorone Technologies")

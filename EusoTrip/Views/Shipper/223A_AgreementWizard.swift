@@ -177,7 +177,7 @@ private struct AgreementWizardBody: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14).padding(.vertical, 8)
-                    .background(.red.opacity(0.92), in: Capsule())
+                    .background(Brand.danger.opacity(0.92), in: Capsule())
                     .padding(.top, 12)
                     .onAppear {
                         Task {
@@ -1157,7 +1157,7 @@ private struct FlowEquipmentChips: View {
             }
             Toggle("Hazmat required", isOn: $hazmat)
                 .font(EType.caption)
-                .toggleStyle(SwitchToggleStyle(tint: Color(red: 0.745, green: 0.004, blue: 1.0)))
+                .toggleStyle(SwitchToggleStyle(tint: Brand.magenta))
         }
     }
 }

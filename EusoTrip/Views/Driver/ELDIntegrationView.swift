@@ -109,7 +109,7 @@ struct ELDIntegrationView: View {
                 }
 
                 Text(headlineText)
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(EType.h2)
                     .foregroundStyle(store.isConnected
                                      ? AnyShapeStyle(LinearGradient.diagonal)
                                      : AnyShapeStyle(palette.textPrimary))

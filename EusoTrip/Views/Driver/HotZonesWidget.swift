@@ -1235,8 +1235,8 @@ struct HotZonesHeatMapView: View {
         ZStack {
             LinearGradient(
                 colors: [
-                    Color(red: 0.07, green: 0.45, blue: 1.00).opacity(0.35),
-                    Color(red: 0.74, green: 0.00, blue: 1.00).opacity(0.35),
+                    Brand.blue.opacity(0.35),
+                    Brand.magenta.opacity(0.35),
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
