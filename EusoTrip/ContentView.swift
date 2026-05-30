@@ -270,6 +270,9 @@ enum ScreenRegistry {
             // drill into the same canonical surface.
             .init(id: "PULSE",  title: "EusoTrip Pulse",             role: .driver)  { p in AnyView(PulseSettingsScreen(theme: p)) },
             .init(id: "PULSE",  title: "EusoTrip Pulse",             role: .shipper) { p in AnyView(PulseSettingsScreen(theme: p)) },
+            // 2026-05-30 — the-oath §42/§48 driver ports.
+            .init(id: "112",    title: "Driver · Load Closed (Settlement)", role: .driver) { p in AnyView(DriverClosedScreen(theme: p)) },
+            .init(id: "161",    title: "Driver · Gate Pass",         role: .driver) { p in AnyView(DriverGatePass_161(appointmentId: 0).environment(\.palette, p)) },
         ]
 
         // MARK: Non-driver role placeholders (DEBUG only)
@@ -922,6 +925,9 @@ enum ScreenRegistry {
         list.append(.init(id: "297", title: "Shipper · Monthly Statement",       role: .shipper) { p in AnyView(MonthlyStatementScreen(theme: p)) })
         list.append(.init(id: "298", title: "Shipper · Sustainability",          role: .shipper) { p in AnyView(SustainabilityScreen(theme: p)) })
         list.append(.init(id: "299", title: "Shipper · Reports",                 role: .shipper) { p in AnyView(ReportsScreen(theme: p)) })
+        // 2026-05-30 — the-oath §46/§52 shipper ports (id-prefixed; bare 297/298 are taken above).
+        list.append(.init(id: "Ship297Ins", title: "Shipper · Cargo Insurance",  role: .shipper) { p in AnyView(ShipperCargoInsurance().environment(\.palette, p)) })
+        list.append(.init(id: "Ship298Det", title: "Shipper · Detention Exposure", role: .shipper) { p in AnyView(ShipperDetentionExposureScreen(theme: p)) })
 
         // 360-369 — Platform / permissions / error states. These are
         // mostly transient surfaces presented over the role surface
@@ -1286,9 +1292,9 @@ enum ScreenRegistry {
         // routers (csaScores, ifta, dataqs, fuelMgmt, shipperFreightClaims) with
         // honest // WIRE: markers where no iOS client method exists yet. Numeric
         // 383-390 are Shipper slots, so these take role-prefixed Cat383-Cat390 ids.
-        list.append(.init(id: "Cat383", title: "Catalyst · Fleet Safety CSA",     role: .catalyst) { p in AnyView(CatalystFleetSafetyCSAScreen(theme: p)) })
+        list.append(.init(id: "Cat383", title: "Catalyst · Fleet Safety CSA",     role: .catalyst) { p in AnyView(CatalystFleetSafetyCSA().environment(\.palette, p)) })
         list.append(.init(id: "Cat384", title: "Catalyst · Fleet IFTA",           role: .catalyst) { p in AnyView(CatalystFleetIFTAScreen(theme: p)) })
-        list.append(.init(id: "Cat385", title: "Catalyst · Roadside DataQ",       role: .catalyst) { p in AnyView(CatalystRoadsideDataQScreen(theme: p)) })
+        list.append(.init(id: "Cat385", title: "Catalyst · Roadside DataQ",       role: .catalyst) { p in AnyView(CatalystRoadsideDataQ().environment(\.palette, p)) })
         list.append(.init(id: "Cat386", title: "Catalyst · Fuel Card Fleet",      role: .catalyst) { p in AnyView(CatalystFuelCardFleetScreen(theme: p)) })
         list.append(.init(id: "Cat387", title: "Catalyst · Reefer Fleet Monitor", role: .catalyst) { p in AnyView(CatalystReeferFleetMonitorScreen(theme: p)) })
         list.append(.init(id: "Cat388", title: "Catalyst · Tanker Fleet Monitor", role: .catalyst) { p in AnyView(CatalystTankerFleetMonitorScreen(theme: p)) })
@@ -1878,6 +1884,9 @@ enum ScreenRegistry {
             .init(id: "Dpch824", title: "Dispatch · M-04 Paper Kanban",   role: .dispatch) { p in AnyView(DispatcherM04PaperworkKanbanScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "531",     title: "Dispatch · M-04 Closed Kanban",  role: .dispatch) { p in AnyView(DispatcherM04ClosedKanbanScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "532",     title: "Dispatch · M-05 Assign Driver",  role: .dispatch) { p in AnyView(DispatcherM05AssignDriverScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            // 2026-05-30 — the-oath §44/§50 dispatcher ports.
+            .init(id: "533",     title: "Dispatch · AI Dispatch Assist",   role: .dispatch) { p in AnyView(DispatcherAIDispatchAssistScreen(theme: p)) },
+            .init(id: "539",     title: "Dispatch · Carrier Scorecard",     role: .dispatch) { p in AnyView(DispatcherCarrierScorecardScreen(theme: p)) },
             // 2026-05-21 — Catalyst Vehicle B-variant deep-drill octet (SVG 330B-337B).
             .init(id: "CV330B", title: "Catalyst · Vehicle Score Axis",   role: .catalyst) { p in AnyView(CatalystVehicleScoreAxisScreen(theme: p)) },
             .init(id: "CV331B", title: "Catalyst · Vehicle Tier",         role: .catalyst) { p in AnyView(CatalystVehicleProfileTierScreen(theme: p)) },
@@ -2026,6 +2035,10 @@ enum ScreenRegistry {
             .init(id: "Rail588", title: "Rail Engineer · Fleet Health", role: .railEngineer) { p in AnyView(RailFleetHealthScreen(theme: p, railId: "0")) },
             .init(id: "Rail589", title: "Rail Engineer · Transload Connection", role: .railEngineer) { p in AnyView(RailTransloadConnectionScreen(theme: p, railId: "0")) },
             .init(id: "Rail590", title: "Rail Engineer · Document Ingest", role: .railEngineer) { p in AnyView(RailDocumentIngestScreen(theme: p, documentId: "0")) },
+            // 2026-05-30 — the-oath §41/§47/§53 rail ports.
+            .init(id: "Rail005", title: "Rail · Waybill",                 role: .railEngineer) { p in AnyView(RailWaybillScreen(theme: p)) },
+            .init(id: "Rail006", title: "Rail · Cross-Border Customs",    role: .railEngineer) { p in AnyView(RailCrossBorderCustoms_006(loadId: 0).environment(\.palette, p)) },
+            .init(id: "Rail007", title: "Rail · New Shipment",            role: .railEngineer) { p in AnyView(RailNewShipment_007().environment(\.palette, p)) },
         ])
 
         // Vessel Operator surface (Vesl650–652).
@@ -2039,6 +2052,9 @@ enum ScreenRegistry {
             .init(id: "Vesl656", title: "Vessel Operator · Account",             role: .vesselOperator) { p in AnyView(VesselOperatorAccountScreen(theme: p)) },
             .init(id: "Vesl657", title: "Vessel Operator · Status Update",        role: .vesselOperator) { p in AnyView(VesselStatusUpdateScreen(theme: p, bookingId: 0, currentStatus: "")) },
             .init(id: "Vesl658", title: "Vessel Operator · Demurrage & Detention", role: .vesselOperator) { p in AnyView(VesselDemurrageDetentionWatchScreen(theme: p)) },
+            // 2026-05-30 — the-oath §43/§49 vessel ports.
+            .init(id: "Vesl008", title: "Vessel · Intermodal Journey",    role: .vesselOperator) { p in AnyView(VesselIntermodalJourneyScreen(theme: p)) },
+            .init(id: "Vesl009", title: "Vessel · Tender Workflow",        role: .vesselOperator) { p in AnyView(VesselTenderWorkflowScreen(theme: p)) },
         ])
 
         return list

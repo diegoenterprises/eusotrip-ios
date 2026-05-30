@@ -682,6 +682,17 @@
 		FD97CEC52FC1D4BC0016DF5F /* RailEngineerNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CEC42FC1D4BC0016DF5F /* RailEngineerNavController.swift */; };
 		FD97CEC72FC1D4BC0016DF5F /* VesselOperatorNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CEC62FC1D4BC0016DF5F /* VesselOperatorNavController.swift */; };
 		FD97CEC92FC1D5110016DF5F /* 550_RailEngineerHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CEC82FC1D5110016DF5F /* 550_RailEngineerHome.swift */; };
+		FE410000000000000000005B /* 005_RailWaybill.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000005F /* 005_RailWaybill.swift */; };
+		FE410000000000000000006B /* 006_RailCrossBorderCustoms.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000006F /* 006_RailCrossBorderCustoms.swift */; };
+		FE410000000000000000007B /* 007_RailNewShipment.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000007F /* 007_RailNewShipment.swift */; };
+		FE410000000000000000008B /* 008_VesselIntermodalJourney.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000008F /* 008_VesselIntermodalJourney.swift */; };
+		FE410000000000000000009B /* 009_VesselTenderWorkflow.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000009F /* 009_VesselTenderWorkflow.swift */; };
+		FE410000000000000000112B /* 112_DriverClosed.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000112F /* 112_DriverClosed.swift */; };
+		FE410000000000000000161B /* 161_DriverGatePass.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000161F /* 161_DriverGatePass.swift */; };
+		FE410000000000000000297B /* 297_ShipperCargoInsurance.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000297F /* 297_ShipperCargoInsurance.swift */; };
+		FE410000000000000000298B /* 298_ShipperDetentionExposure.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000298F /* 298_ShipperDetentionExposure.swift */; };
+		FE410000000000000000533B /* 533_DispatcherAIDispatchAssist.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000533F /* 533_DispatcherAIDispatchAssist.swift */; };
+		FE410000000000000000539B /* 539_DispatcherCarrierScorecard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000539F /* 539_DispatcherCarrierScorecard.swift */; };
 		FD97CECB2FC1D5120016DF5F /* 650_VesselOperatorHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */; };
 		VOTMBUILD1 /* VesselOceanTrackMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = VOTMFREF1 /* VesselOceanTrackMap.swift */; };
 		FD97CECD2FC1D7C70016DF5F /* 551_RailShipments.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */; };
@@ -1502,6 +1513,17 @@
 		FD97CEC42FC1D4BC0016DF5F /* RailEngineerNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RailEngineerNavController.swift; sourceTree = "<group>"; };
 		FD97CEC62FC1D4BC0016DF5F /* VesselOperatorNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VesselOperatorNavController.swift; sourceTree = "<group>"; };
 		FD97CEC82FC1D5110016DF5F /* 550_RailEngineerHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 550_RailEngineerHome.swift; sourceTree = "<group>"; };
+		FE410000000000000000005F /* 005_RailWaybill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 005_RailWaybill.swift; path = EusoTrip/Views/Rail/005_RailWaybill.swift; sourceTree = SOURCE_ROOT; };
+		FE410000000000000000006F /* 006_RailCrossBorderCustoms.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 006_RailCrossBorderCustoms.swift; path = EusoTrip/Views/Rail/006_RailCrossBorderCustoms.swift; sourceTree = SOURCE_ROOT; };
+		FE410000000000000000007F /* 007_RailNewShipment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 007_RailNewShipment.swift; path = EusoTrip/Views/Rail/007_RailNewShipment.swift; sourceTree = SOURCE_ROOT; };
+		FE410000000000000000008F /* 008_VesselIntermodalJourney.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 008_VesselIntermodalJourney.swift; path = EusoTrip/Views/Vessel/008_VesselIntermodalJourney.swift; sourceTree = SOURCE_ROOT; };
+		FE410000000000000000009F /* 009_VesselTenderWorkflow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 009_VesselTenderWorkflow.swift; path = EusoTrip/Views/Vessel/009_VesselTenderWorkflow.swift; sourceTree = SOURCE_ROOT; };
+		FE410000000000000000112F /* 112_DriverClosed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 112_DriverClosed.swift; path = EusoTrip/Views/Driver/112_DriverClosed.swift; sourceTree = SOURCE_ROOT; };
+		FE410000000000000000161F /* 161_DriverGatePass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 161_DriverGatePass.swift; path = EusoTrip/Views/Driver/161_DriverGatePass.swift; sourceTree = SOURCE_ROOT; };
+		FE410000000000000000297F /* 297_ShipperCargoInsurance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 297_ShipperCargoInsurance.swift; path = EusoTrip/Views/Shipper/297_ShipperCargoInsurance.swift; sourceTree = SOURCE_ROOT; };
+		FE410000000000000000298F /* 298_ShipperDetentionExposure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 298_ShipperDetentionExposure.swift; path = EusoTrip/Views/Shipper/298_ShipperDetentionExposure.swift; sourceTree = SOURCE_ROOT; };
+		FE410000000000000000533F /* 533_DispatcherAIDispatchAssist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 533_DispatcherAIDispatchAssist.swift; path = EusoTrip/Views/Dispatch/533_DispatcherAIDispatchAssist.swift; sourceTree = SOURCE_ROOT; };
+		FE410000000000000000539F /* 539_DispatcherCarrierScorecard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 539_DispatcherCarrierScorecard.swift; path = EusoTrip/Views/Dispatch/539_DispatcherCarrierScorecard.swift; sourceTree = SOURCE_ROOT; };
 		FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 650_VesselOperatorHome.swift; sourceTree = "<group>"; };
 		VOTMFREF1 /* VesselOceanTrackMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VesselOceanTrackMap.swift; path = EusoTrip/Views/Vessel/VesselOceanTrackMap.swift; sourceTree = SOURCE_ROOT; };
 		FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 551_RailShipments.swift; sourceTree = "<group>"; };
@@ -2231,6 +2253,12 @@
 				D1A11111111111111111ATD2 /* 803_AdminTenantDetail.swift */,
 				D1A11111111111111111LP02 /* LifecycleProductContext.swift */,
 				E1D1ED0411111111111111AA /* ELDIntegrationView.swift */,
+				FE410000000000000000112F /* 112_DriverClosed.swift */,
+				FE410000000000000000161F /* 161_DriverGatePass.swift */,
+				FE410000000000000000297F /* 297_ShipperCargoInsurance.swift */,
+				FE410000000000000000298F /* 298_ShipperDetentionExposure.swift */,
+				FE410000000000000000533F /* 533_DispatcherAIDispatchAssist.swift */,
+				FE410000000000000000539F /* 539_DispatcherCarrierScorecard.swift */,
 			);
 			path = Driver;
 			sourceTree = "<group>";
@@ -2554,6 +2582,9 @@
 				FDA10000000000000000588F /* 588_RailFleetHealth.swift */,
 				FDA10000000000000000589F /* 589_RailTransloadConnection.swift */,
 				FDA10000000000000000590F /* 590_RailDocumentIngest.swift */,
+				FE410000000000000000005F /* 005_RailWaybill.swift */,
+				FE410000000000000000006F /* 006_RailCrossBorderCustoms.swift */,
+				FE410000000000000000007F /* 007_RailNewShipment.swift */,
 			);
 			path = Rail;
 			sourceTree = "<group>";
@@ -2572,6 +2603,8 @@
 				FEB10000000000000000004B /* 656_VesselOperatorAccount.swift */,
 				FEB10000000000000000005B /* 657_VesselStatusUpdate.swift */,
 				FEB10000000000000000006B /* 658_VesselDemurrageDetentionWatch.swift */,
+				FE410000000000000000008F /* 008_VesselIntermodalJourney.swift */,
+				FE410000000000000000009F /* 009_VesselTenderWorkflow.swift */,
 			);
 			path = Vessel;
 			sourceTree = "<group>";
@@ -2816,6 +2849,17 @@
 			buildActionMask = 2147483647;
 			files = (
 				A18C84C77B3CF73706D41A64 /* ContentView.swift in Sources */,
+				FE410000000000000000005B /* 005_RailWaybill.swift in Sources */,
+				FE410000000000000000006B /* 006_RailCrossBorderCustoms.swift in Sources */,
+				FE410000000000000000007B /* 007_RailNewShipment.swift in Sources */,
+				FE410000000000000000008B /* 008_VesselIntermodalJourney.swift in Sources */,
+				FE410000000000000000009B /* 009_VesselTenderWorkflow.swift in Sources */,
+				FE410000000000000000112B /* 112_DriverClosed.swift in Sources */,
+				FE410000000000000000161B /* 161_DriverGatePass.swift in Sources */,
+				FE410000000000000000297B /* 297_ShipperCargoInsurance.swift in Sources */,
+				FE410000000000000000298B /* 298_ShipperDetentionExposure.swift in Sources */,
+				FE410000000000000000533B /* 533_DispatcherAIDispatchAssist.swift in Sources */,
+				FE410000000000000000539B /* 539_DispatcherCarrierScorecard.swift in Sources */,
 				A144AC1DCD36EDC1A2891416 /* EusoTripApp.swift in Sources */,
 				A189C8A4865293C026FBA23C /* DesignSystem.swift in Sources */,
 				A1978D143BA29D29AC175E7B /* Glass.swift in Sources */,

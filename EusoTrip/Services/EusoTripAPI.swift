@@ -6906,6 +6906,50 @@ struct EarningsAPI {
             input: GetEarningsInput(period: period, offset: 0, limit: limit)
         )
     }
+
+    // ── §42 · earnings.previewSettlement — real per-load driver settlement ──
+    /// Wire shape of `earnings.previewSettlement({ loadId })` — the REAL
+    /// per-load driver settlement breakdown. Every monetary field is an
+    /// optional `Double` because the server returns `null` (not a fabricated
+    /// number) when the underlying settlement / settlement-document row does
+    /// not yet exist. `hasSettlement` is the honest gate: false ⇒ no real
+    /// settlement persisted yet, and the caller should keep its frame
+    /// references for display rather than show zeros.
+    struct SettlementPreview: Decodable, Hashable {
+        let loadId: Int
+        let loadNumber: String
+        let lane: String
+        let currency: String          // "USD" | "CAD" | "MXN" — tri-country honest
+        let cargoType: String
+        let hasSettlement: Bool
+        let settlementId: String?
+        let documentId: String?
+        let settlementStatus: String  // pending | processing | completed | failed | disputed | none
+        let documentStatus: String    // DRAFT | FINALIZED | PAID | none
+        let settledAt: String?        // ISO-8601
+        let linehaul: Double?
+        let hazmatSurcharge: Double?
+        let detention: Double?
+        let accessorialTotal: Double?
+        let platformFee: Double?
+        let catalystShare: Double?
+        let carrierPayment: Double?
+        let grossPay: Double?
+        let driverNet: Double?
+        let deductions: [String: Double]?
+    }
+
+    struct PreviewSettlementInput: Encodable { let loadId: Int }
+
+    /// `earnings.previewSettlement({ loadId })` — driver-facing settlement
+    /// preview for a single closed load. Throws on NOT_FOUND / FORBIDDEN /
+    /// DB-unavailable so the caller surfaces the failure honestly.
+    func previewSettlement(loadId: Int) async throws -> SettlementPreview {
+        try await api.query(
+            "earnings.previewSettlement",
+            input: PreviewSettlementInput(loadId: loadId)
+        )
+    }
 }
 
 // MARK: - settlementBatchingRouter (canonical — `server/routers/settlementBatching.ts`)
@@ -9348,21 +9392,25 @@ struct DetentionAPI {
 
     struct DisputeResult: Decodable, Equatable {
         let success: Bool?
-        let id: Int?
+        let claimId: Int?
         let status: String?
+        let message: String?
     }
 
-    /// `detentionAccessorials.disputeDetention` — the driver (or
-    /// dispatcher) challenges a detention charge. Server flips the
-    /// row status to `disputed` so billing/accounting can review.
+    /// `detentionAccessorials.disputeDetention` — challenge a charge.
+    /// Server input field is `claimId` (NOT `detentionId`); the external
+    /// argument label stays `detentionId:` for caller compatibility
+    /// (§52-C — the old `detentionId` payload failed server zod validation,
+    /// making every iOS dispute a dead write on 091/573/577).
+    @discardableResult
     func dispute(detentionId: Int, reason: String) async throws -> DisputeResult {
         struct Input: Encodable {
-            let detentionId: Int
+            let claimId: Int
             let reason: String
         }
         return try await api.mutation(
             "detentionAccessorials.disputeDetention",
-            input: Input(detentionId: detentionId, reason: reason)
+            input: Input(claimId: detentionId, reason: reason)
         )
     }
 }
