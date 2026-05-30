@@ -32,17 +32,26 @@
 //      hands back `/api/documents/:id/download` paths for in-app
 //      resolution). Absolute blob URLs pass through untouched.
 //
-//    • Upload is deliberately not wired on this screen. `getDocuments`
-//      + `uploadDocument` round-trips work server-side today, but the
-//      mobile file-picker wave (UIDocumentPickerViewController /
-//      PHPickerViewController) lands with the next infra bump; this
-//      screen surfaces the current vault state honestly and directs
-//      drivers to the desktop dashboard for new uploads. No stub
-//      buttons that do nothing.
+//    • Upload IS wired on this screen. The driver picks which
+//      credential they're scanning (CDL / Medical / TWIC / Hazmat),
+//      captures it with the in-house VisionKit document camera (the
+//      same auto-crop / perspective-correct capture surface the
+//      registration `CredentialScanCard` uses) or pulls it from the
+//      photo library, and the bytes go straight to the document-
+//      intelligence spine — `documentRouter.classifyAndRoute`
+//      (EusoTripAPI.swift:19004, Gemini + NVIDIA). The classifier
+//      auto-detects the credential type and extracts the expiry +
+//      identifier; we map the classified type onto the server's
+//      document-bucket vocabulary and hand the bytes + classified
+//      type + extracted expiry to the real
+//      `documentManagement.uploadDocument` round-trip. The driver's
+//      picked bucket rides along as the classifier `callerContext`
+//      hint so an ambiguous scan still files correctly. No stub
+//      buttons, no "go to desktop" deferral.
 //
 //    • Empty state is server-confirmed. A driver with zero documents
 //      on file sees an `EusoEmptyState` hero rather than a placeholder
-//      list.
+//      list, with the in-app scan affordance one tap below it.
 //
 //  Doctrine refs:
 //    §2   LinearGradient.diagonal on header numerals, section titles,
@@ -58,6 +67,8 @@
 //
 
 import SwiftUI
+import PhotosUI
+import VisionKit
 
 // MARK: - Document category buckets
 //
@@ -100,7 +111,7 @@ private enum DocCategory: String, CaseIterable, Identifiable {
 
     var emptyCopy: String {
         switch self {
-        case .cdl:     return "No CDL on file. Upload yours from the desktop dashboard."
+        case .cdl:     return "No CDL on file. Tap Scan a credential below to add yours."
         case .medical: return "No medical card on file. DOT medical certificates expire every 24 months."
         case .twic:    return "No TWIC on file. Port / terminal access requires an active TWIC card."
         case .hazmat:  return "No hazmat endorsement on file. Required for placarded loads."
@@ -137,13 +148,16 @@ struct MeDocs: View {
     @EnvironmentObject private var session: EusoTripSession
     @StateObject private var docs = DriverDocumentsStore()
     @StateObject private var expiring = ExpiringDocumentsStore()
-    /// Doc-router upload sheet. Powered by `DocumentClassifierSheet`
-    /// — same canonical Gemini classifier the shipper Post-Load
-    /// Templates/Bulk pills use. Cross-role parity per founder
-    /// doctrine: every upload affordance routes through the same
-    /// classifier so the user never picks a doc type from a 60-option
-    /// dropdown.
-    @State private var showDocUploadSheet: Bool = false
+    /// Credential-scan upload sheet. The driver picks which credential
+    /// they're scanning (CDL / Medical / TWIC / Hazmat), captures it on
+    /// the in-house VisionKit document camera (the registration
+    /// `CredentialScanCard` capture surface), and the bytes route
+    /// through the document-intelligence spine
+    /// (`documentRouter.classifyAndRoute`, Gemini + NVIDIA) before the
+    /// real `documentManagement.uploadDocument`. The picked bucket
+    /// rides along as the classifier hint so the user never has to
+    /// pick a doc type from a 60-option dropdown.
+    @State private var showCredentialSheet: Bool = false
     @State private var uploadInflight: Bool = false
     @State private var uploadAck: String? = nil
     @State private var uploadError: String? = nil
@@ -179,14 +193,12 @@ struct MeDocs: View {
         }
         .task { await reload() }
         .refreshable { await reload() }
-        .sheet(isPresented: $showDocUploadSheet) {
-            DocumentClassifierSheet(
-                mode: .prefillWizard,
-                callerContext: "driver Me Docs upload",
-                onApplySingle: { doc in
+        .sheet(isPresented: $showCredentialSheet) {
+            DriverCredentialScanSheet(
+                onClassified: { doc in
+                    showCredentialSheet = false
                     Task { await uploadClassified(doc) }
-                },
-                onDispatchBatch: { _ in }
+                }
             )
         }
     }
@@ -303,7 +315,7 @@ struct MeDocs: View {
         EusoEmptyState(
             systemImage: "folder",
             title: "No documents on file",
-            subtitle: "Upload your CDL, medical card, TWIC, and hazmat endorsement from the desktop dashboard. They'll land here within seconds."
+            subtitle: "Scan your CDL, medical card, TWIC, or hazmat endorsement below — ESANG reads the type and expiry and files it in the right bucket."
         )
     }
 
@@ -539,11 +551,12 @@ struct MeDocs: View {
     // MARK: Upload CTA
     //
     // Replaces the prior "uploads live on the desktop dashboard"
-    // disclosure with a real upload affordance powered by the
-    // canonical DocumentClassifierSheet. Cross-role parity with the
-    // shipper Post-Load Templates / Bulk pills: same Gemini classifier
-    // routes the scan into `documentManagement.uploadDocument` keyed
-    // by the classified type.
+    // disclosure with a real in-app credential-scan affordance. The
+    // driver picks the credential (CDL / Medical / TWIC / Hazmat),
+    // captures it on the VisionKit document camera, and the bytes
+    // route through `documentRouter.classifyAndRoute` (Gemini + NVIDIA)
+    // — which auto-detects the type + extracts expiry / identifier —
+    // before the real `documentManagement.uploadDocument`.
 
     private var uploadCTA: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
@@ -551,7 +564,7 @@ struct MeDocs: View {
                 Image(systemName: "sparkles.tv.fill")
                     .font(.system(size: 13, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("Upload with ESANG AI")
+                Text("Scan with ESANG AI")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
                 Spacer(minLength: 0)
@@ -559,18 +572,18 @@ struct MeDocs: View {
                     ProgressView().scaleEffect(0.75).tint(palette.textPrimary)
                 }
             }
-            Text("Snap or pick a doc — Gemini Vision classifies it as CDL, Medical, TWIC, Hazmat, COI, or another credential and files it in the right bucket. No 60-option dropdown.")
+            Text("Snap your CDL, medical card, TWIC, or hazmat endorsement — ESANG reads the credential type and expiry and files it in the right bucket. No 60-option dropdown.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Button {
                 uploadError = nil
-                showDocUploadSheet = true
+                showCredentialSheet = true
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "arrow.up.doc.fill")
+                    Image(systemName: "doc.viewfinder.fill")
                         .font(.system(size: 12, weight: .heavy))
-                    Text("Upload a document")
+                    Text("Scan a credential")
                         .font(.system(size: 13, weight: .heavy)).tracking(0.4)
                 }
                 .foregroundStyle(.white)
@@ -740,6 +753,360 @@ private func driverNavLeading_072() -> [NavSlot] {
 private func driverNavTrailing_072() -> [NavSlot] {
     [NavSlot(label: "My Loads", systemImage: "shippingbox.fill", isCurrent: false),
      NavSlot(label: "Me",     systemImage: "person",      isCurrent: true)]
+}
+
+// MARK: - Driver credential-scan sheet
+//
+// Bespoke to the driver document vault: the driver first tells us
+// which of the four credentials they're scanning (CDL / Medical /
+// TWIC / Hazmat), then captures it. We feed that picked credential as
+// the classifier hint so an ambiguous scan still files correctly, but
+// the document-intelligence spine (`documentRouter.classifyAndRoute`)
+// is authoritative on the final classified type + extracted fields.
+//
+// Capture mirrors the registration `CredentialScanCard`: VisionKit's
+// document camera (auto-crop, perspective-correct) for the primary
+// path, PhotosPicker for the library fallback. The camera UI itself is
+// untouched — we only own the post-capture handling: compress →
+// base64 → classifyAndRoute → ClassifiedDocument → host upload.
+
+/// The four canonical driver credentials, each carrying the
+/// `documentRouter` type code used as the classifier hint.
+private enum CredentialHint: String, CaseIterable, Identifiable {
+    case cdl
+    case medical
+    case twic
+    case hazmat
+
+    var id: String { rawValue }
+
+    /// Human label for the picker chip.
+    var label: String {
+        switch self {
+        case .cdl:     return "CDL"
+        case .medical: return "Medical Card"
+        case .twic:    return "TWIC"
+        case .hazmat:  return "Hazmat"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .cdl:     return "creditcard"
+        case .medical: return "cross.case"
+        case .twic:    return "person.badge.shield.checkmark"
+        case .hazmat:  return "exclamationmark.triangle"
+        }
+    }
+
+    /// Caller-context hint handed to `classifyAndRoute` so Gemini can
+    /// disambiguate overlapping credential shapes. The spine stays
+    /// authoritative — this only nudges it.
+    var callerContext: String {
+        switch self {
+        case .cdl:     return "driver Me·Docs credential scan — commercial driver's license (CDL)"
+        case .medical: return "driver Me·Docs credential scan — DOT medical examiner's certificate"
+        case .twic:    return "driver Me·Docs credential scan — TWIC transportation worker identification credential"
+        case .hazmat:  return "driver Me·Docs credential scan — hazmat endorsement / certificate"
+        }
+    }
+}
+
+private struct DriverCredentialScanSheet: View {
+    /// Fired with the classifier envelope (carrying the captured
+    /// base64) so the host runs its real `uploadDocument`.
+    let onClassified: (ClassifiedDocument) -> Void
+
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var hint: CredentialHint = .cdl
+    @State private var pickerItem: PhotosPickerItem? = nil
+    @State private var showCamera: Bool = false
+    @State private var inflight: Bool = false
+    @State private var error: String? = nil
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    hero
+                    hintPicker
+                    captureRow
+                    if let e = error { errorBanner(e) }
+                    if inflight { progressBlock }
+                    Spacer(minLength: 40)
+                }
+                .padding(.horizontal, Space.s4)
+                .padding(.top, Space.s3)
+            }
+            .background(palette.bgPage)
+            .navigationTitle("Scan a credential")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundStyle(LinearGradient.diagonal)
+                }
+            }
+            .onChange(of: pickerItem) { _, item in
+                guard let item else { return }
+                Task { await classifyFromLibrary(item) }
+            }
+            .sheet(isPresented: $showCamera) {
+                DriverCredentialCameraSheet { data in
+                    showCamera = false
+                    guard let data else { return }
+                    Task { await classify(data: data, mime: "image/jpeg") }
+                }
+                .ignoresSafeArea()
+            }
+        }
+    }
+
+    private var hero: some View {
+        HStack(spacing: Space.s2) {
+            Image(systemName: "sparkles.tv.fill")
+                .font(.system(size: 15, weight: .heavy))
+                .foregroundStyle(LinearGradient.diagonal)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("ESANG reads it for you")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Text("Pick the credential, snap it, and we'll auto-detect the type and expiry before filing it.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(palette.bgCard.opacity(0.6))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(LinearGradient.diagonal.opacity(0.35), lineWidth: 1)
+        )
+    }
+
+    private var hintPicker: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("WHICH CREDENTIAL?")
+                .font(EType.micro)
+                .tracking(1.4)
+                .foregroundStyle(palette.textTertiary)
+            HStack(spacing: Space.s2) {
+                ForEach(CredentialHint.allCases) { c in
+                    let selected = c == hint
+                    Button {
+                        guard !inflight else { return }
+                        hint = c
+                    } label: {
+                        VStack(spacing: 6) {
+                            Image(systemName: c.icon)
+                                .font(.system(size: 16, weight: .semibold))
+                            Text(c.label)
+                                .font(EType.micro)
+                                .tracking(0.6)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Space.s2)
+                        .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(palette.textSecondary))
+                        .background(
+                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                .fill(selected ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCard))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                .strokeBorder(selected ? Color.clear : palette.borderFaint, lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(inflight)
+                }
+            }
+        }
+    }
+
+    private var captureRow: some View {
+        HStack(spacing: Space.s2) {
+            Button {
+                guard !inflight else { return }
+                error = nil
+                showCamera = true
+            } label: {
+                captureLabel(systemImage: "camera.fill", title: "Scan", filled: true)
+            }
+            .buttonStyle(.plain)
+            .disabled(inflight)
+
+            PhotosPicker(selection: $pickerItem, matching: .images, photoLibrary: .shared()) {
+                captureLabel(systemImage: "photo.on.rectangle", title: "Library", filled: false)
+            }
+            .buttonStyle(.plain)
+            .disabled(inflight)
+        }
+    }
+
+    private func captureLabel(systemImage: String, title: String, filled: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .heavy))
+            Text(title)
+                .font(.system(size: 13, weight: .heavy))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .foregroundStyle(filled ? AnyShapeStyle(.white) : AnyShapeStyle(palette.textPrimary))
+        .background(filled ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCard))
+        .overlay(
+            Capsule().strokeBorder(filled ? Color.clear : palette.borderSoft, lineWidth: 1)
+        )
+        .clipShape(Capsule())
+    }
+
+    private var progressBlock: some View {
+        HStack(spacing: Space.s2) {
+            ProgressView().scaleEffect(0.8).tint(palette.textPrimary)
+            Text("Reading the credential…")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(palette.bgCard.opacity(0.6))
+        )
+    }
+
+    private func errorBanner(_ msg: String) -> some View {
+        HStack(spacing: Space.s2) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 13, weight: .heavy))
+                .foregroundStyle(Brand.danger)
+            Text(msg)
+                .font(EType.caption)
+                .foregroundStyle(palette.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(Brand.danger.opacity(0.45), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    // MARK: Capture → classify pipeline
+
+    @MainActor
+    private func classifyFromLibrary(_ item: PhotosPickerItem) async {
+        guard let data = try? await item.loadTransferable(type: Data.self), !data.isEmpty else {
+            error = "Couldn't read that photo. Try another."
+            pickerItem = nil
+            return
+        }
+        pickerItem = nil
+        await classify(data: data, mime: "image/jpeg")
+    }
+
+    @MainActor
+    private func classify(data: Data, mime: String) async {
+        guard !inflight else { return }
+        inflight = true
+        error = nil
+        defer { inflight = false }
+
+        // Compress to keep the Gemini payload under ~900KB, mirroring
+        // the registration CredentialScanCard's capture handling.
+        var jpeg = data
+        if mime != "application/pdf", data.count > 900_000, let img = UIImage(data: data) {
+            for q in [CGFloat(0.85), 0.75, 0.65, 0.55, 0.45] {
+                if let d = img.jpegData(compressionQuality: q), d.count <= 900_000 {
+                    jpeg = d
+                    break
+                }
+            }
+        }
+        let base64 = jpeg.base64EncodedString()
+        let mt = DocumentRouterAPI.MimeType(rawValue: mime) ?? .jpeg
+
+        do {
+            let resp = try await EusoTripAPI.shared.documentRouter.classifyAndRoute(
+                documentBase64: base64,
+                mimeType: mt,
+                callerContext: hint.callerContext
+            )
+            let fields: [String: String] = resp.extractedFields.compactMapValues { $0.asString }
+            let doc = ClassifiedDocument(
+                id: UUID().uuidString,
+                classifiedType: resp.classifiedType,
+                confidence: resp.confidence,
+                summary: resp.summary,
+                dispatchTarget: resp.dispatchTarget,
+                warnings: resp.warnings,
+                fields: fields,
+                mimeType: mt.rawValue,
+                documentBase64: base64
+            )
+            onClassified(doc)
+            dismiss()
+        } catch let apiErr as EusoTripAPIError {
+            error = "Couldn't read the credential: \(apiErr.errorDescription ?? "classification failed")"
+        } catch {
+            self.error = "Couldn't read the credential: \(error.localizedDescription)"
+        }
+    }
+}
+
+// MARK: - Driver credential document-camera wrapper
+//
+// SwiftUI wrapper around VisionKit's document camera — the same
+// auto-crop / perspective-correct capture the registration
+// CredentialScanCard uses. We only need page 0 for a single
+// credential, so we return its JPEG-encoded data. The camera UI
+// (blue-glow edge detection, realtime sizing) is system-owned and
+// untouched.
+
+private struct DriverCredentialCameraSheet: UIViewControllerRepresentable {
+    let onResult: (Data?) -> Void
+
+    func makeUIViewController(context: Context) -> VNDocumentCameraViewController {
+        let vc = VNDocumentCameraViewController()
+        vc.delegate = context.coordinator
+        return vc
+    }
+    func updateUIViewController(_ uiViewController: VNDocumentCameraViewController, context: Context) {}
+    func makeCoordinator() -> Coord { Coord(onResult: onResult) }
+
+    final class Coord: NSObject, VNDocumentCameraViewControllerDelegate {
+        let onResult: (Data?) -> Void
+        init(onResult: @escaping (Data?) -> Void) { self.onResult = onResult }
+
+        func documentCameraViewController(_ controller: VNDocumentCameraViewController,
+                                          didFinishWith scan: VNDocumentCameraScan) {
+            guard scan.pageCount > 0 else { onResult(nil); return }
+            let image = scan.imageOfPage(at: 0)
+            onResult(image.jpegData(compressionQuality: 0.9))
+        }
+        func documentCameraViewControllerDidCancel(_ controller: VNDocumentCameraViewController) {
+            onResult(nil)
+        }
+        func documentCameraViewController(_ controller: VNDocumentCameraViewController,
+                                          didFailWithError error: Error) {
+            onResult(nil)
+        }
+    }
 }
 
 // MARK: - Previews

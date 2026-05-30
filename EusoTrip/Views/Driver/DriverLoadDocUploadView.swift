@@ -123,13 +123,45 @@ struct DriverLoadDocUploadView: View {
     @State private var error: String? = nil
     @State private var success: Bool = false
 
+    // MARK: - Document-intelligence state
+    //
+    // After a capture, the bytes run through
+    // `documentRouter.classifyAndRoute(...)` (Gemini + NVIDIA) BEFORE
+    // the raw upload. The classifier auto-detects the doc type, so the
+    // chip row flips from "you pick" to "we picked — override if we're
+    // wrong". The classified envelope (server type + extracted fields +
+    // dispatch target + summary) is retained so the upload payload
+    // carries it downstream and the dispatch target gets routed.
+
+    /// Compressed base64 of the captured image, computed once at
+    /// classify-time and reused for the upload so we don't re-encode.
+    @State private var capturedBase64: String? = nil
+    /// True while the classify pass is in flight (separate from the
+    /// upload `inFlight`).
+    @State private var classifying: Bool = false
+    /// The server's verbatim classifiedType (e.g. "bill_of_lading"),
+    /// kept distinct from the local `kind` so the upload can carry the
+    /// canonical type even when it doesn't map to a chip.
+    @State private var classifiedType: String? = nil
+    @State private var confidence: Double? = nil
+    @State private var classifiedSummary: String? = nil
+    @State private var classifiedWarnings: [String] = []
+    @State private var dispatchTarget: String? = nil
+    @State private var extractedFields: [String: String] = [:]
+    /// Set true once the user taps a chip after auto-detect, so we stop
+    /// implying the type is AI-chosen and respect the manual override.
+    @State private var manualOverride: Bool = false
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.s4) {
                     headerCard
-                    docKindCard
                     photoCard
+                    if classifying || classifiedType != nil {
+                        classificationCard
+                    }
+                    docKindCard
                     namingCard
                     if let err = error {
                         errorBanner(err)
@@ -195,15 +227,34 @@ struct DriverLoadDocUploadView: View {
 
     private var docKindCard: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
-            Text("01 · DOC TYPE")
-                .font(.system(size: 9, weight: .heavy)).tracking(0.9)
-                .foregroundStyle(LinearGradient.diagonal)
+            HStack(spacing: 6) {
+                Text("01 · DOC TYPE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 0)
+                if confidence != nil && !manualOverride {
+                    confidenceBadge
+                } else if manualOverride {
+                    Text("MANUAL")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(palette.textTertiary)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(palette.bgCardSoft))
+                }
+            }
+            Text(docKindHint)
+                .font(EType.caption)
+                .foregroundStyle(palette.textTertiary)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(DriverLoadDocKind.allCases) { k in
                         Button {
                             withAnimation(.easeOut(duration: 0.12)) {
                                 kind = k
+                                // The driver disagreed with (or is
+                                // pre-empting) the classifier — respect
+                                // the manual choice from here on.
+                                if classifiedType != nil { manualOverride = true }
                             }
                         } label: {
                             HStack(spacing: 6) {
@@ -236,6 +287,110 @@ struct DriverLoadDocUploadView: View {
         .background(palette.bgCard)
         .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
             .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    /// Sub-line under the DOC TYPE header. Before a classify it tells
+    /// the driver they can pick; after, it tells them we already picked
+    /// (and how to override).
+    private var docKindHint: String {
+        if classifying { return "ESANG is reading the document…" }
+        if confidence != nil && !manualOverride {
+            return "Auto-detected from your capture. Tap a chip to override."
+        }
+        if manualOverride { return "You set this type — we'll upload as you chose." }
+        return "Pick the document type, or just snap it and we'll detect it."
+    }
+
+    /// Confidence pill shown beside the DOC TYPE header once the
+    /// classifier returns. Color tracks the same 85/60 thresholds the
+    /// 204 reference uses so the whole app reads confidence the same way.
+    private var confidenceBadge: some View {
+        let pct = Int(((confidence ?? 0) * 100).rounded())
+        let tint: Color = pct >= 85 ? Brand.success : (pct >= 60 ? Brand.warning : Brand.danger)
+        return HStack(spacing: 4) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 8, weight: .heavy))
+            Text("AI · \(pct)%")
+                .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 6).padding(.vertical, 2)
+        .background(Capsule().fill(tint.opacity(0.12)))
+    }
+
+    /// Result card surfacing what the classifier saw: the human type,
+    /// the summary, any warnings, and the downstream dispatch target it
+    /// routed to. Sits between the photo and the (now-override) chip row.
+    private var classificationCard: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles.tv.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("ESANG · DOCUMENT ROUTER")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 0)
+                if confidence != nil { confidenceBadge }
+            }
+
+            if classifying {
+                HStack(spacing: 8) {
+                    ProgressView().scaleEffect(0.7).tint(palette.textPrimary)
+                    Text("Classifying the capture…")
+                        .font(EType.caption).foregroundStyle(palette.textTertiary)
+                }
+            } else if let ct = classifiedType {
+                HStack(spacing: 6) {
+                    Text(humanType(ct))
+                        .font(EType.body).fontWeight(.bold)
+                        .foregroundStyle(palette.textPrimary)
+                    if mappedKind(for: ct) == nil {
+                        Text("· filed as \(kind.label)")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                }
+                if let s = classifiedSummary, !s.isEmpty {
+                    Text(s)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let dt = dispatchTarget, !dt.isEmpty {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.triangle.branch")
+                            .font(.system(size: 9, weight: .heavy))
+                            .foregroundStyle(palette.textTertiary)
+                        Text("Routed → \(dt)")
+                            .font(EType.mono(.micro)).tracking(0.2)
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                }
+                if !extractedFields.isEmpty {
+                    Text("\(extractedFields.count) field\(extractedFields.count == 1 ? "" : "s") extracted · attached to upload")
+                        .font(EType.micro)
+                        .foregroundStyle(palette.textTertiary)
+                }
+                ForEach(classifiedWarnings.prefix(2), id: \.self) { w in
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 9, weight: .heavy))
+                            .foregroundStyle(Brand.warning)
+                        Text(w)
+                            .font(EType.caption).foregroundStyle(Brand.warning)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+        .padding(Space.s4)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1)
+        )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
@@ -320,15 +475,146 @@ struct DriverLoadDocUploadView: View {
 
     private func loadPickedPhoto(_ item: PhotosPickerItem?) async {
         guard let item else { return }
-        if let data = try? await item.loadTransferable(type: Data.self),
-           let img = UIImage(data: data) {
-            photoImage = img
-            // Auto-prefill name with the doc kind + load number for
-            // a scannable label in the docs hub.
-            if name.isEmpty {
-                let stamp = ISO8601DateFormatter().string(from: Date())
-                name = "\(kind.defaultName) · \(loadNumber ?? loadId) · \(stamp.prefix(10))"
+        guard let data = try? await item.loadTransferable(type: Data.self),
+              let img = UIImage(data: data) else { return }
+        photoImage = img
+        // Hand the raw bytes to the document-intelligence spine FIRST,
+        // before any manual naming/typing, so the auto-detected type
+        // can drive the prefill.
+        await classifyCapture(img)
+        // Auto-prefill name with the (possibly classifier-chosen) doc
+        // kind + load number for a scannable label in the docs hub.
+        if name.isEmpty {
+            let stamp = ISO8601DateFormatter().string(from: Date())
+            name = "\(kind.defaultName) · \(loadNumber ?? loadId) · \(stamp.prefix(10))"
+        }
+    }
+
+    // MARK: - Document-intelligence pass
+    //
+    // Runs `documentRouter.classifyAndRoute(...)` on the captured bytes
+    // (Gemini + NVIDIA). Auto-detects the doc type → flips the chip row
+    // to AI-chosen (driver can still override), surfaces the summary +
+    // warnings, retains extractedFields for the upload payload, and
+    // emits the dispatchTarget envelope so the host shell can route it.
+
+    /// Maps the server's canonical `classifiedType` onto the local
+    /// chip enum. Nil when the classifier returns a type with no chip
+    /// (e.g. a weight ticket) — we still upload, just without changing
+    /// the chip selection.
+    private func mappedKind(for classifiedType: String) -> DriverLoadDocKind? {
+        switch classifiedType {
+        case "bill_of_lading", "bol":
+            return .bol
+        case "rate_confirmation", "load_tender":
+            return .rateCon
+        case "us_coi", "ca_coi", "mx_coi", "insurance", "certificate_of_insurance":
+            return .insurance
+        case "customs_declaration", "commercial_invoice", "customs",
+             "usmca_certificate", "bill_of_entry", "pedimento", "aces", "aci":
+            return .customs
+        case "photo", "image":
+            return .photo
+        default:
+            return nil
+        }
+    }
+
+    /// Human label for the server type — mirrors the 204 reference so
+    /// the same raw type reads identically across the app.
+    private func humanType(_ raw: String) -> String {
+        switch raw {
+        case "bill_of_lading", "bol": return "Bill of Lading"
+        case "rate_confirmation": return "Rate Confirmation"
+        case "load_tender": return "Load Tender"
+        case "run_ticket": return "Run Ticket"
+        case "proof_of_delivery": return "Proof of Delivery"
+        case "weight_ticket", "scale_ticket": return "Weight Ticket"
+        case "us_coi", "ca_coi", "mx_coi", "certificate_of_insurance":
+            return "Insurance Certificate"
+        case "commercial_invoice": return "Commercial Invoice"
+        case "customs_declaration": return "Customs Declaration"
+        case "usmca_certificate": return "USMCA Certificate"
+        case "us_cdl": return "CDL"
+        case "us_medical_card": return "Medical Card"
+        case "unknown", "": return "Unrecognized document"
+        default:
+            return raw.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
+    @MainActor
+    private func classifyCapture(_ img: UIImage) async {
+        // Reset any prior classification so a re-capture starts clean.
+        classifiedType = nil
+        confidence = nil
+        classifiedSummary = nil
+        classifiedWarnings = []
+        dispatchTarget = nil
+        extractedFields = [:]
+        manualOverride = false
+        capturedBase64 = nil
+
+        // Compress to keep the wire payload under ~900KB (same budget
+        // the 204 reference uses).
+        let raw = img.jpegData(compressionQuality: 0.7) ?? Data()
+        var payload = raw
+        if payload.count > 900_000 {
+            for q in [CGFloat(0.6), 0.5, 0.4] {
+                if let d = img.jpegData(compressionQuality: q), d.count <= 900_000 {
+                    payload = d; break
+                }
             }
+        }
+        guard !payload.isEmpty else { return }
+        let base64 = payload.base64EncodedString()
+        capturedBase64 = base64
+
+        classifying = true
+        defer { classifying = false }
+        do {
+            let resp = try await EusoTripAPI.shared.documentRouter.classifyAndRoute(
+                documentBase64: base64,
+                mimeType: .jpeg,
+                callerContext: "driver per-load in-flight capture · load \(loadNumber ?? loadId) · driver-selected \(kind.rawValue)"
+            )
+            classifiedType = resp.classifiedType
+            confidence = resp.confidence
+            classifiedSummary = resp.summary
+            classifiedWarnings = resp.warnings
+            dispatchTarget = resp.dispatchTarget
+            extractedFields = resp.extractedFields.compactMapValues { $0.asString }
+
+            // Auto-select the chip the classifier detected (unless the
+            // driver already overrode in the brief classify window).
+            if !manualOverride, let mapped = mappedKind(for: resp.classifiedType) {
+                withAnimation(.easeOut(duration: 0.15)) { kind = mapped }
+            }
+
+            // Emit the dispatch envelope so the host shell can route the
+            // doc to its canonical downstream procedure — same pattern
+            // as the 204 Bulk classifier's routed signal.
+            if let dt = resp.dispatchTarget, !dt.isEmpty {
+                NotificationCenter.default.post(
+                    name: .eusoDriverLoadDocClassifiedRouted,
+                    object: nil,
+                    userInfo: [
+                        "loadId": loadId,
+                        "classifiedType": resp.classifiedType,
+                        "dispatchTarget": dt,
+                        "confidence": resp.confidence,
+                        "summary": resp.summary,
+                        "fields": extractedFields,
+                    ]
+                )
+            }
+        } catch {
+            // A classify miss must NOT block the upload — the driver
+            // can still file the doc manually. Surface a soft note.
+            classifiedSummary = nil
+            classifiedType = nil
+            confidence = nil
+            self.error = "Auto-detect couldn't read this doc — pick the type below and upload as usual."
         }
     }
 
@@ -432,25 +718,61 @@ struct DriverLoadDocUploadView: View {
         error = nil
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
-        let payload: Data? = img.jpegData(compressionQuality: 0.7)
-        guard let payload else {
+        // Reuse the base64 computed during the classify pass so we don't
+        // re-encode; only fall back to a fresh encode if classify never ran.
+        let base64: String
+        let payloadSize: Int
+        if let cached = capturedBase64,
+           let decoded = Data(base64Encoded: cached) {
+            base64 = cached
+            payloadSize = decoded.count
+        } else if let fresh = img.jpegData(compressionQuality: 0.7) {
+            base64 = fresh.base64EncodedString()
+            payloadSize = fresh.count
+        } else {
             inFlight = false
             error = "Could not encode the photo for upload."
             return
         }
-        let base64 = payload.base64EncodedString()
         let label = trimmedName.isEmpty ? "\(kind.defaultName) · \(loadNumber ?? loadId)" : trimmedName
+
+        // Upload as today, now carrying the classified type + extracted
+        // fields. When the driver didn't override and the classifier
+        // produced a confident type, file under the canonical
+        // classifiedType; otherwise honor the chip selection.
+        let uploadType: String = (!manualOverride && (confidence ?? 0) >= 0.6 && classifiedType != nil && classifiedType != "unknown")
+            ? (classifiedType ?? kind.rawValue)
+            : kind.rawValue
+
+        // Fold the extracted fields into tags as compact key=value
+        // entries so the docs hub / downstream parsers see them on the
+        // same upload (documentManagement.uploadDocument has no dedicated
+        // metadata param — tags is the wire-stable carrier).
+        let fieldTags: [String] = extractedFields
+            .sorted { $0.key < $1.key }
+            .prefix(12)
+            .map { "field:\($0.key)=\($0.value)" }
+        var classifierTags: [String] = []
+        if let ct = classifiedType, !ct.isEmpty { classifierTags.append("classified:\(ct)") }
+        if let c = confidence { classifierTags.append("confidence:\(Int((c * 100).rounded()))") }
+        if let dt = dispatchTarget, !dt.isEmpty { classifierTags.append("dispatch:\(dt)") }
+        if manualOverride { classifierTags.append("manual-override") }
+
+        let tags = ([uploadType, "driver-captured"]
+            + classifierTags
+            + fieldTags
+            + [trimmedNotes]).filter { !$0.isEmpty }
 
         do {
             _ = try await EusoTripAPI.shared.documentManagement.uploadDocument(
                 name: label,
-                type: kind.rawValue,
+                type: uploadType,
                 mimeType: "image/jpeg",
-                size: payload.count,
+                size: payloadSize,
                 fileData: base64,
                 entityType: "load",
                 entityId: loadId,
-                tags: [kind.rawValue, "driver-captured", trimmedNotes].filter { !$0.isEmpty },
+                tags: tags,
                 expiresAt: nil
             )
             inFlight = false
@@ -462,6 +784,19 @@ struct DriverLoadDocUploadView: View {
             self.error = (error as NSError).localizedDescription
         }
     }
+}
+
+// MARK: - Doc-router dispatch signal
+
+extension Notification.Name {
+    /// Fired after the per-load capture is classified and the document
+    /// router returns a non-empty `dispatchTarget`. `userInfo` carries
+    /// `loadId`, `classifiedType`, `dispatchTarget`, `confidence`,
+    /// `summary`, and `fields` ([String:String]). The driver shell can
+    /// listen and route the doc into its canonical downstream procedure
+    /// — mirrors the 204 shipper Bulk classifier's routed signal.
+    static let eusoDriverLoadDocClassifiedRouted =
+        Notification.Name("eusoDriverLoadDocClassifiedRouted")
 }
 
 // MARK: - Previews

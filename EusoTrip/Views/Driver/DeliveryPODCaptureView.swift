@@ -105,6 +105,20 @@ struct DeliveryPODCaptureView: View {
     @State private var astraError: String? = nil
     @State private var sealNumber: String = ""
 
+    // 2026-05-30 · DocIntel WIRE-GAP — document-intelligence OCR/classify
+    // pass over the captured BOL photo. Runs the canonical
+    // `documentRouter.classifyAndRoute` spine (Gemini + NVIDIA) with a
+    // `proof_of_delivery` caller hint BEFORE the existing store/submit so
+    // the driver sees what was read off the doc — signature-block
+    // presence, receiver name, barcode/PRO, weight confirm — and can
+    // confirm the receiver name without re-typing. This is an ADDED pass
+    // alongside (not replacing) the real `pod.submitPOD` mutation and the
+    // Astra scan strip above. No FSM gating, no fabricated data: we only
+    // surface fields the classifier actually extracted.
+    @State private var docRead: PODDocRead? = nil
+    @State private var docReadScanning: Bool = false
+    @State private var docReadError: String? = nil
+
     // T-019 · 2026-05-20 — Equipment-specific POD capture state. Each
     // bucket is gated by a trailer / vertical predicate (see Body) and
     // stuffed into the submission notes block via `composedPODNotes()`
@@ -556,6 +570,16 @@ struct DeliveryPODCaptureView: View {
             if let pod = astraPod {
                 astraObservationStrip(pod)
             }
+            // 2026-05-30 · DocIntel WIRE-GAP — classify/OCR strip. The
+            // "Read the doc" button runs the captured photo through the
+            // document-intelligence spine; the observation strip below
+            // it surfaces what the classifier read.
+            if photoImage != nil {
+                docReadScanStrip
+            }
+            if let read = docRead {
+                docReadObservationStrip(read)
+            }
         }
         .padding(Space.s4)
         .background(palette.bgCard)
@@ -726,6 +750,187 @@ struct DeliveryPODCaptureView: View {
         if let data = try? await item.loadTransferable(type: Data.self),
            let img = UIImage(data: data) {
             photoImage = img
+            // A fresh photo invalidates any prior doc read.
+            docRead = nil
+            docReadError = nil
+        }
+    }
+
+    // MARK: - DocIntel · classify / OCR pass (2026-05-30)
+
+    /// "Read the doc" button rendered below the captured photo. Fires
+    /// `documentRouter.classifyAndRoute` with a `proof_of_delivery`
+    /// caller hint so Gemini+NVIDIA OCRs the signed BOL — signature-
+    /// block presence, receiver name, barcode/PRO, weight confirm. An
+    /// ADDED pass before the existing submit; never gates it.
+    @ViewBuilder
+    private var docReadScanStrip: some View {
+        HStack(spacing: 10) {
+            Button {
+                Task { await runDocClassifyPass() }
+            } label: {
+                HStack(spacing: 6) {
+                    if docReadScanning {
+                        ProgressView().controlSize(.small).tint(.white)
+                    } else {
+                        Image(systemName: "doc.text.viewfinder")
+                            .font(.system(size: 12, weight: .heavy))
+                    }
+                    Text(docReadScanning
+                         ? "Reading doc…"
+                         : (docRead == nil ? "Read the doc" : "Re-read"))
+                        .font(.system(size: 12, weight: .heavy))
+                        .tracking(0.4)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .foregroundStyle(.white)
+                .background(LinearGradient.diagonal)
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(docReadScanning)
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// Inline strip surfacing what the document-intelligence spine read
+    /// off the captured BOL photo: classified type + confidence,
+    /// signature-block presence, receiver name, barcode/PRO, weight
+    /// confirm, plus any classifier warnings. Read-only confirmation —
+    /// the driver still signs + submits below.
+    @ViewBuilder
+    private func docReadObservationStrip(_ read: PODDocRead) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "doc.text.viewfinder")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("ESANG · DOC READ")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 0)
+                docTypePill(read)
+            }
+            if !read.summary.isEmpty {
+                Text(read.summary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            // Signature-block presence — the single most load-bearing
+            // signal for a POD: did the doc actually get signed?
+            signatureBlockRow(read.signaturePresent)
+            if let receiver = read.receiverName, !receiver.isEmpty {
+                detailRow(label: "RECEIVER", value: receiver)
+            }
+            if let pro = read.barcodePRO, !pro.isEmpty {
+                detailRow(label: "BARCODE/PRO", value: pro)
+            }
+            if let weight = read.weightConfirm, !weight.isEmpty {
+                detailRow(label: "WEIGHT", value: weight)
+            }
+            if let receiver = read.receiverName, !receiver.isEmpty,
+               receiverName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button {
+                    receiverName = receiver
+                } label: {
+                    Label("Use \"\(receiver)\" as receiver", systemImage: "arrow.down.doc")
+                        .font(.system(size: 10, weight: .heavy)).tracking(0.3)
+                        .foregroundStyle(LinearGradient.diagonal)
+                }
+                .buttonStyle(.plain)
+            }
+            if !read.warnings.isEmpty {
+                ForEach(read.warnings.prefix(2), id: \.self) { w in
+                    Text("⚠︎ \(w)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if let err = docReadError {
+                Text(err).font(.system(size: 11)).foregroundStyle(.red)
+            }
+        }
+        .padding(10)
+        .background(palette.bgCardSoft.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    /// Classified-type + confidence pill. Green when the classifier is
+    /// confident the doc is a POD, orange otherwise — a mismatch tells
+    /// the driver they may have photographed the wrong page.
+    @ViewBuilder
+    private func docTypePill(_ read: PODDocRead) -> some View {
+        let conf = Int((read.confidence * 100).rounded())
+        let isPOD = read.classifiedType == "proof_of_delivery"
+        let color: Color = isPOD ? .green : .orange
+        let label = read.humanType
+        HStack(spacing: 4) {
+            Text(label)
+                .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+            Text("\(conf)%")
+                .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                .opacity(0.85)
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 6).padding(.vertical, 2)
+        .background(color.opacity(0.14), in: Capsule())
+    }
+
+    /// Signature-block presence row — explicit pass/missing chip so the
+    /// driver knows whether the OCR found a signature on the doc before
+    /// they submit.
+    @ViewBuilder
+    private func signatureBlockRow(_ present: Bool?) -> some View {
+        HStack(spacing: 6) {
+            Text("SIGNATURE")
+                .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+                .frame(width: 64, alignment: .leading)
+            switch present {
+            case .some(true):
+                Label("Block detected", systemImage: "checkmark.seal.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(.green)
+            case .some(false):
+                Label("Not detected on doc", systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(.orange)
+            case .none:
+                Text("Inconclusive")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
+            }
+        }
+    }
+
+    /// Run the captured BOL photo through the document-intelligence
+    /// spine. Compresses to JPEG, classifies with a `proof_of_delivery`
+    /// caller hint, then maps the extracted fields into a `PODDocRead`.
+    /// Pure read pass — no FSM transition, no submit, no auto-mutation.
+    @MainActor
+    private func runDocClassifyPass() async {
+        guard let img = photoImage else { return }
+        docReadScanning = true
+        docReadError = nil
+        defer { docReadScanning = false }
+
+        guard let jpeg = img.jpegData(compressionQuality: 0.7) else {
+            docReadError = "Could not encode the photo for reading."
+            return
+        }
+        let base64 = jpeg.base64EncodedString()
+
+        do {
+            let resp = try await EusoTripAPI.shared.documentRouter.classifyAndRoute(
+                documentBase64: base64,
+                mimeType: .jpeg,
+                callerContext: "driver delivery proof_of_delivery — extract signature-block presence, receiver name, barcode/PRO number, weight confirmation off the signed BOL"
+            )
+            docRead = PODDocRead(response: resp)
+        } catch {
+            docReadError = "Read failed: \((error as? LocalizedError)?.errorDescription ?? (error as NSError).localizedDescription)"
         }
     }
 
@@ -1040,6 +1245,112 @@ func renderSignaturePNGBase64(
         }
     }
     return img.pngData()?.base64EncodedString()
+}
+
+// MARK: - DocIntel · POD doc-read model (2026-05-30)
+
+/// The four POD-relevant signals the driver cares about, distilled from
+/// a `DocumentRouterAPI.ClassifyResponse`. Bespoke to this surface — we
+/// pull only signature-block presence, receiver name, barcode/PRO, and
+/// weight confirm out of the classifier's heterogeneous `extractedFields`
+/// (keys are doc-type-specific server-side, so we probe a small set of
+/// known aliases and never fabricate). All optional: a field is shown
+/// only when the classifier actually returned it.
+struct PODDocRead: Hashable {
+    let classifiedType: String
+    let confidence: Double
+    let summary: String
+    let warnings: [String]
+
+    /// Did the OCR find a signature block on the doc? `nil` when the
+    /// classifier returned no signal either way (inconclusive).
+    let signaturePresent: Bool?
+    let receiverName: String?
+    /// Barcode / PRO number off the BOL — the carrier's tracking key.
+    let barcodePRO: String?
+    /// Weight confirmation read off the doc (string so we keep the
+    /// unit the doc used, e.g. "42,180 lb").
+    let weightConfirm: String?
+
+    init(response: DocumentRouterAPI.ClassifyResponse) {
+        self.classifiedType = response.classifiedType
+        self.confidence = response.confidence
+        self.summary = response.summary
+        self.warnings = response.warnings
+
+        // Flatten heterogeneous field values to strings once.
+        let f: [String: String] = response.extractedFields.compactMapValues { $0.asString }
+
+        // Signature-block presence — probe boolean-ish + presence aliases.
+        // A truthy string or a non-empty signatory name both imply a
+        // signed block; an explicit false implies none detected.
+        let sigRaw = PODDocRead.firstValue(in: f, keys: [
+            "signaturePresent", "signature_present", "hasSignature",
+            "signatureBlockPresent", "signed", "isSigned", "signaturePresence"
+        ])
+        let signatoryName = PODDocRead.firstValue(in: f, keys: [
+            "signature", "signatureName", "signedBy", "signatory"
+        ])
+        if let sigRaw {
+            self.signaturePresent = PODDocRead.parseBool(sigRaw)
+        } else if let signatoryName, !signatoryName.isEmpty {
+            self.signaturePresent = true
+        } else {
+            self.signaturePresent = nil
+        }
+
+        self.receiverName = PODDocRead.firstValue(in: f, keys: [
+            "receiverName", "receiver_name", "consigneeName", "consignee_name",
+            "consignee", "receivedBy", "received_by", "deliveredTo"
+        ])
+
+        self.barcodePRO = PODDocRead.firstValue(in: f, keys: [
+            "proNumber", "pro_number", "pro", "barcode", "barcodeNumber",
+            "trackingNumber", "tracking_number", "bolNumber", "bol_number"
+        ])
+
+        self.weightConfirm = PODDocRead.firstValue(in: f, keys: [
+            "weight", "weightConfirm", "weight_confirm", "totalWeight",
+            "total_weight", "grossWeight", "gross_weight", "netWeight"
+        ])
+    }
+
+    /// Human-readable label for the classified type, mirroring 204's map
+    /// for the POD-adjacent doc shapes a delivery photo can land on.
+    var humanType: String {
+        switch classifiedType {
+        case "proof_of_delivery": return "POD"
+        case "bill_of_lading":    return "Bill of Lading"
+        case "weight_ticket", "scale_ticket": return "Weight Ticket"
+        case "run_ticket":        return "Run Ticket"
+        case "rate_confirmation": return "Rate Confirmation"
+        default:
+            return classifiedType.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
+    /// First non-nil, non-empty value across a set of candidate keys.
+    private static func firstValue(in dict: [String: String], keys: [String]) -> String? {
+        for k in keys {
+            if let v = dict[k] {
+                let t = v.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !t.isEmpty { return t }
+            }
+        }
+        return nil
+    }
+
+    /// Lenient truthiness for OCR'd boolean-ish strings.
+    private static func parseBool(_ raw: String) -> Bool? {
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "true", "yes", "y", "1", "present", "signed", "detected":
+            return true
+        case "false", "no", "n", "0", "absent", "unsigned", "missing", "none":
+            return false
+        default:
+            return nil
+        }
+    }
 }
 
 // MARK: - Previews

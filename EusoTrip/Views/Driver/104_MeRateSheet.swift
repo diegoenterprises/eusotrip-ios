@@ -37,6 +37,75 @@
 
 import SwiftUI
 
+// MARK: - Extracted rate-table structure
+//
+// The document-intelligence spine (`documentRouter.classifyAndRoute`)
+// runs an ADDED pass around the real `uploadDocument` call. For a
+// Schedule A the server emits these top-level `extractedFields`
+// (visionPrimitive FIELD_HINTS.rate_sheet):
+//
+//   carrierName, effectiveDate, expirationDate,
+//   lanes: [{ origin, destination, rate, equipment, minWeight, maxWeight }]
+//
+// Non-scalar values (the `lanes` array) arrive on the wire as a
+// JSON STRING — the server's `normalizeFields` / classify coercion
+// stringifies any object/array so the envelope stays scalar-keyed
+// ([String: FieldValue] decodes them as `.string`). We parse that
+// JSON back into typed lane rows here so the rate table renders as a
+// real structure (lanes · rates · weight bands · effective dates),
+// not raw image storage.
+struct ExtractedRateTable: Equatable {
+    struct Lane: Equatable, Identifiable {
+        let id = UUID()
+        var origin: String?
+        var destination: String?
+        var rate: String?
+        var equipment: String?
+        var minWeight: String?
+        var maxWeight: String?
+
+        /// "Origin → Destination" with graceful fallback.
+        var laneLabel: String {
+            switch (origin?.nilIfBlank, destination?.nilIfBlank) {
+            case let (o?, d?): return "\(o) → \(d)"
+            case let (o?, nil): return o
+            case let (nil, d?): return "→ \(d)"
+            case (nil, nil): return "Lane"
+            }
+        }
+
+        var weightBand: String? {
+            switch (minWeight?.nilIfBlank, maxWeight?.nilIfBlank) {
+            case let (mn?, mx?): return "\(mn)–\(mx) lb"
+            case let (mn?, nil): return "≥ \(mn) lb"
+            case let (nil, mx?): return "≤ \(mx) lb"
+            case (nil, nil): return nil
+            }
+        }
+    }
+
+    var carrierName: String?
+    var effectiveDate: String?
+    var expirationDate: String?
+    var lanes: [Lane]
+    var classifiedType: String
+    var confidence: Double
+    var summary: String
+    var warnings: [String]
+
+    var isEmpty: Bool {
+        carrierName == nil && effectiveDate == nil
+            && expirationDate == nil && lanes.isEmpty
+    }
+}
+
+private extension String {
+    var nilIfBlank: String? {
+        let t = trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? nil : t
+    }
+}
+
 // MARK: - Store
 
 @MainActor
@@ -206,6 +275,17 @@ struct MeRateSheet: View {
     @State private var uploadingName: String?
     @State private var uploadError: String?
 
+    /// The rate-table structure ESANG extracted from the most-recently
+    /// uploaded Schedule A. Surfaced in the Sheets pane so the driver
+    /// sees the lanes / rates / weight bands / effective dates that
+    /// were lifted out of the document — before this was raw image
+    /// storage with nothing visible until the carrier published a
+    /// machine-readable sheet.
+    @State private var extracted: ExtractedRateTable?
+    /// Phase label shown in the upload bar while the added
+    /// classification pass runs ahead of the real upload.
+    @State private var uploadPhase: String?
+
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             header
@@ -270,13 +350,38 @@ struct MeRateSheet: View {
         let name = url.lastPathComponent
         uploadingName = name
         uploadError = nil
-        defer { uploadingName = nil }
+        defer { uploadingName = nil; uploadPhase = nil }
 
         do {
             let data = try Data(contentsOf: url)
             let mime = mimeType(for: url)
             let base64 = data.base64EncodedString()
             let driverId = session.user?.id ?? ""
+
+            // ── ADDED PASS: run the document-intelligence spine FIRST so
+            // we extract the rate-table structure (lanes · rates ·
+            // weight bands · effective dates) into the screen, then
+            // store. Classification is best-effort — a failure here
+            // never blocks the real upload (the doc still lands and the
+            // server-side pipeline tags it).
+            uploadPhase = "Reading rate table…"
+            if let routerMime = DocumentRouterAPI.MimeType(rawValue: mime) {
+                do {
+                    let resp = try await EusoTripAPI.shared.documentRouter.classifyAndRoute(
+                        documentBase64: base64,
+                        mimeType: routerMime,
+                        callerContext: "driver Schedule A rate sheet — extract lanes, rates, weight bands, effective + expiration dates"
+                    )
+                    extracted = Self.parseRateTable(from: resp)
+                } catch {
+                    // Quiet: extraction is additive. The real upload below
+                    // is the source of truth; we just lose the preview.
+                }
+            }
+
+            // ── REAL UPLOAD (preserved verbatim) — stores the document
+            // so `rateSheet.listMyRateSheets` picks it up on refresh.
+            uploadPhase = "Storing document…"
             _ = try await EusoTripAPI.shared.documentManagement.uploadDocument(
                 name: name,
                 type: "rate_sheet",
@@ -293,6 +398,59 @@ struct MeRateSheet: View {
             uploadError = (error as? LocalizedError)?.errorDescription
                 ?? error.localizedDescription
         }
+    }
+
+    /// Build the typed rate table from the classifier envelope.
+    /// `lanes` arrives as a JSON-string array (the server stringifies
+    /// non-scalar `extractedFields` so the wire stays scalar-keyed);
+    /// we decode it back into typed rows. Falls back gracefully when
+    /// the model emits a single-lane flat shape instead of an array.
+    private static func parseRateTable(
+        from resp: DocumentRouterAPI.ClassifyResponse
+    ) -> ExtractedRateTable {
+        let f: [String: String] = resp.extractedFields.compactMapValues { $0.asString }
+
+        var lanes: [ExtractedRateTable.Lane] = []
+        if let raw = f["lanes"], let data = raw.data(using: .utf8) {
+            // Each lane object → [String: FieldValue] so origin/dest
+            // (strings) and rate/min/max (numbers) both survive.
+            if let arr = try? JSONDecoder().decode([[String: DocumentRouterAPI.FieldValue]].self, from: data) {
+                lanes = arr.map { obj in
+                    ExtractedRateTable.Lane(
+                        origin: obj["origin"]?.asString,
+                        destination: obj["destination"]?.asString,
+                        rate: obj["rate"]?.asString,
+                        equipment: obj["equipment"]?.asString,
+                        minWeight: obj["minWeight"]?.asString,
+                        maxWeight: obj["maxWeight"]?.asString
+                    )
+                }
+            }
+        }
+        // Flat single-lane fallback: model put origin/destination/rate
+        // at the top level instead of inside a `lanes` array.
+        if lanes.isEmpty,
+           f["origin"] != nil || f["destination"] != nil || f["rate"] != nil {
+            lanes = [ExtractedRateTable.Lane(
+                origin: f["origin"],
+                destination: f["destination"],
+                rate: f["rate"],
+                equipment: f["equipment"],
+                minWeight: f["minWeight"],
+                maxWeight: f["maxWeight"]
+            )]
+        }
+
+        return ExtractedRateTable(
+            carrierName: f["carrierName"],
+            effectiveDate: f["effectiveDate"],
+            expirationDate: f["expirationDate"],
+            lanes: lanes,
+            classifiedType: resp.classifiedType,
+            confidence: resp.confidence,
+            summary: resp.summary,
+            warnings: resp.warnings
+        )
     }
 
     private func mimeType(for url: URL) -> String {
@@ -549,6 +707,9 @@ struct MeRateSheet: View {
     private var sheetsPane: some View {
         VStack(spacing: Space.s3) {
             uploadBar
+            if let table = extracted, !table.isEmpty {
+                extractedTableCard(table)
+            }
             if store.sheetsLoading && store.sheets.isEmpty {
                 ProgressView()
                     .frame(maxWidth: .infinity)
@@ -587,7 +748,7 @@ struct MeRateSheet: View {
                         .progressViewStyle(.circular)
                         .controlSize(.small)
                         .tint(.white)
-                    Text("Uploading \(uploadingName ?? "")…")
+                    Text(uploadPhase ?? "Uploading \(uploadingName ?? "")…")
                         .font(EType.bodyStrong)
                         .foregroundStyle(.white)
                         .lineLimit(1)
@@ -611,6 +772,159 @@ struct MeRateSheet: View {
         }
         .buttonStyle(.plain)
         .disabled(uploadingName != nil)
+    }
+
+    // MARK: Extracted rate table (document-intelligence pass)
+
+    /// Renders the rate-table structure ESANG lifted out of the
+    /// uploaded Schedule A: header (carrier · effective/expiration ·
+    /// confidence), then one row per lane with its rate, equipment,
+    /// and weight band.
+    private func extractedTableCard(_ t: ExtractedRateTable) -> some View {
+        let conf = Int((t.confidence * 100).rounded())
+        return ActiveCard {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                // Title row
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text("EXTRACTED RATE TABLE")
+                        .font(EType.micro).tracking(0.8)
+                        .foregroundStyle(palette.textTertiary)
+                    Spacer()
+                    Text("\(conf)%")
+                        .font(EType.micro.weight(.heavy)).tracking(0.6)
+                        .foregroundStyle(conf >= 85 ? Brand.success : conf >= 60 ? Brand.warning : Brand.danger)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill((conf >= 85 ? Brand.success : conf >= 60 ? Brand.warning : Brand.danger).opacity(0.12)))
+                }
+
+                if let carrier = t.carrierName?.nilIfBlank {
+                    Text(carrier)
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                }
+
+                // Effective / expiration dates
+                if t.effectiveDate?.nilIfBlank != nil || t.expirationDate?.nilIfBlank != nil {
+                    HStack(spacing: Space.s4) {
+                        if let eff = t.effectiveDate?.nilIfBlank {
+                            extractedDate(label: "EFFECTIVE", value: eff, color: Brand.success)
+                        }
+                        if let exp = t.expirationDate?.nilIfBlank {
+                            extractedDate(label: "EXPIRES", value: exp, color: Brand.warning)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+
+                if !t.summary.isEmpty {
+                    Text(t.summary)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                // Lanes
+                if t.lanes.isEmpty {
+                    Text("No lanes parsed — the document stored, but its rate table wasn't machine-readable. Open it in Sheets once your carrier publishes a structured version.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Divider().overlay(palette.borderFaint)
+                    Text("LANES · \(t.lanes.count)")
+                        .font(EType.micro).tracking(0.8)
+                        .foregroundStyle(palette.textTertiary)
+                    VStack(spacing: 6) {
+                        ForEach(t.lanes) { lane in
+                            laneRow(lane)
+                        }
+                    }
+                }
+
+                // Warnings
+                ForEach(Array(t.warnings.prefix(3).enumerated()), id: \.offset) { _, w in
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 9, weight: .heavy))
+                            .foregroundStyle(Brand.warning)
+                        Text(w)
+                            .font(EType.caption)
+                            .foregroundStyle(Brand.warning)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+        }
+    }
+
+    private func extractedDate(label: String, value: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label)
+                .font(EType.micro).tracking(0.7)
+                .foregroundStyle(palette.textTertiary)
+            Text(value)
+                .font(EType.caption.weight(.semibold).monospacedDigit())
+                .foregroundStyle(color)
+        }
+    }
+
+    private func laneRow(_ lane: ExtractedRateTable.Lane) -> some View {
+        HStack(alignment: .top, spacing: Space.s3) {
+            Image(systemName: "arrow.left.arrow.right")
+                .font(.system(size: 11, weight: .heavy))
+                .foregroundStyle(LinearGradient.diagonal)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(palette.bgCardSoft))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(lane.laneLabel)
+                    .font(EType.body.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 6) {
+                    if let eq = lane.equipment?.nilIfBlank {
+                        metaChip(eq, system: "shippingbox")
+                    }
+                    if let band = lane.weightBand {
+                        metaChip(band, system: "scalemass")
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+            if let rate = lane.rate?.nilIfBlank {
+                Text(formattedRate(rate))
+                    .font(EType.bodyStrong.monospacedDigit())
+                    .foregroundStyle(LinearGradient.diagonal)
+            }
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.sm).strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
+    }
+
+    private func metaChip(_ text: String, system: String) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: system)
+                .font(.system(size: 8, weight: .heavy))
+            Text(text)
+                .font(EType.micro.weight(.semibold))
+        }
+        .foregroundStyle(palette.textSecondary)
+        .padding(.horizontal, 6).padding(.vertical, 2)
+        .background(Capsule().fill(palette.bgCardSoft))
+    }
+
+    /// Server emits rate as a normalized number string (e.g. "2.85").
+    /// Prefix "$" when it parses as a number; otherwise show verbatim.
+    private func formattedRate(_ raw: String) -> String {
+        if let d = Double(raw) {
+            return String(format: "$%.2f", d)
+        }
+        return raw
     }
 
     private func sheetRow(_ s: RateSheetAPI.RateSheetSummary) -> some View {
