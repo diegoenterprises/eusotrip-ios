@@ -1,15 +1,16 @@
 //
 //  SparkBriefCard.swift
-//  EusoTrip — Tier 1 #21/#23/#24 · Spark Overnight Brief
+//  EusoTrip — Tier 1 #21/#23/#24 · ESANG brief
 //
 //  Shared Home-screen card for Shipper / Dispatcher / Catalyst.
 //  Renders the headline + 3 role-specific count chips from the
-//  overnight Spark brief, plus a "Run Now" affordance when no
-//  brief exists yet (or when the most recent one is older than
-//  the configurable freshness window).
+//  ESANG brief. The brief AUTO-LOADS the moment the card appears
+//  (.task → store.refresh) — there is no required first tap. A
+//  subtle "Refresh" affordance re-pulls on demand; it is never the
+//  first interaction the role has to make.
 //
 //  Per home-widget doctrine the brief sits between the topBar and
-//  the weather card — "greeting → ESANG Morning Brief → Weather →
+//  the weather card — "greeting → ESANG brief → Weather →
 //  role-specific priority …".
 //
 //  Wires to the production tRPC surface:
@@ -33,9 +34,9 @@ enum SparkRole: String, Codable, Hashable {
 
     var eyebrow: String {
         switch self {
-        case .shipper:    return "SHIPPER · OVERNIGHT BRIEF"
-        case .dispatcher: return "DISPATCH · OVERNIGHT BRIEF"
-        case .catalyst:   return "CATALYST · OVERNIGHT BRIEF"
+        case .shipper:    return "ESANG · SHIPPER BRIEF"
+        case .dispatcher: return "ESANG · DISPATCH BRIEF"
+        case .catalyst:   return "ESANG · CATALYST BRIEF"
         }
     }
 
@@ -164,9 +165,10 @@ struct SparkRunBriefResponse: Decodable {
 // MARK: - Store
 
 /// One ObservableObject per role. The Home screen owns it via
-/// @StateObject so a pull-to-refresh re-pulls and a "Run Now"
-/// tap kicks the mutation while the existing brief stays on
-/// screen (no spinner blank-out).
+/// @StateObject. `autoLoad()` pulls the cached brief on appear and
+/// self-generates one if none exists; the subtle "Refresh" affordance
+/// re-pulls on demand while the existing brief stays on screen (no
+/// spinner blank-out).
 @MainActor
 final class SparkBriefStore: ObservableObject {
     @Published var brief: SparkBriefPayload?
@@ -174,6 +176,11 @@ final class SparkBriefStore: ObservableObject {
     @Published var loading: Bool = false
     @Published var running: Bool = false
     @Published var lastError: String?
+
+    /// Guards the auto-load so it fires exactly once per store
+    /// lifetime — `.task` re-runs on view identity changes, so this
+    /// debounces against re-fetching on every redraw / tab switch.
+    private var didAutoLoad: Bool = false
 
     let role: SparkRole
     init(role: SparkRole) { self.role = role }
@@ -190,12 +197,27 @@ final class SparkBriefStore: ObservableObject {
         return "\(days)d ago"
     }
     /// Stale when older than 18h — Spark cron runs ~03:00 UTC so
-    /// anything older than the morning means the cron didn't fire
-    /// for some reason; show the "Run Now" affordance.
+    /// anything older than the morning means the cron didn't fire for
+    /// some reason. Retained for diagnostics; the card now auto-loads
+    /// and self-refreshes rather than gating behind a manual run.
     var isStale: Bool {
         guard let iso = sampledAt,
               let date = SparkBriefStore.iso.date(from: iso) else { return true }
         return Date().timeIntervalSince(date) > (18 * 3600)
+    }
+
+    /// Auto-load entry point driven by the card's `.task`. Fetches the
+    /// cached brief once on appear and — if none exists yet — silently
+    /// generates one so the role never has to press a "Run now" button.
+    /// Debounced via `didAutoLoad` so view-identity churn / redraws
+    /// don't re-trigger the fanout.
+    func autoLoad() async {
+        guard !didAutoLoad else { return }
+        didAutoLoad = true
+        await refresh()
+        if brief == nil && !running {
+            await runNow()
+        }
     }
 
     /// Fetch the current cached brief.
@@ -275,10 +297,10 @@ struct SparkBriefCard: View {
                     .foregroundStyle(.primary)
                     .lineLimit(3)
                     .multilineTextAlignment(.leading)
-            } else if store.loading {
+            } else if store.loading || store.running {
                 ProgressView().controlSize(.small)
             } else {
-                Text("No overnight brief yet. Tap Run Now to generate one.")
+                Text("No ESANG brief yet — refresh to generate one.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -296,28 +318,28 @@ struct SparkBriefCard: View {
                         Label("Open Brief", systemImage: "doc.text.magnifyingglass")
                             .font(.footnote.weight(.semibold))
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                 }
                 Spacer()
+                // Subtle refresh only — the brief already auto-loads on
+                // appear (and self-generates if none exists), so this is
+                // never a required first tap. It re-pulls on demand.
                 Button {
                     Task { await store.runNow() }
                 } label: {
                     if store.running {
-                        HStack(spacing: 6) {
-                            ProgressView().controlSize(.mini)
-                            Text("Running…")
-                        }
-                        .font(.footnote.weight(.semibold))
+                        ProgressView().controlSize(.mini)
                     } else {
-                        Label(store.isStale || store.brief == nil ? "Run Now" : "Refresh",
-                              systemImage: "sparkles")
+                        Image(systemName: "arrow.clockwise")
                             .font(.footnote.weight(.semibold))
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
                 .controlSize(.small)
                 .disabled(store.running)
+                .accessibilityLabel("Refresh ESANG brief")
             }
 
             if let err = store.lastError {
@@ -335,7 +357,7 @@ struct SparkBriefCard: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
         )
-        .task { await store.refresh() }
+        .task { await store.autoLoad() }
         .sheet(isPresented: $showDetail) {
             SparkBriefDetailSheet(role: role, brief: store.brief)
         }
@@ -421,7 +443,7 @@ struct SparkBriefDetailSheet: View {
                 }
                 .padding(16)
             }
-            .navigationTitle(role.eyebrow.replacingOccurrences(of: " · OVERNIGHT BRIEF", with: " Brief"))
+            .navigationTitle("ESANG Brief")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

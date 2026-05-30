@@ -352,6 +352,16 @@ private final class PlaidLinkWebController: UIViewController, WKScriptMessageHan
     var onSuccess: ((_ publicToken: String, _ institution: String?) -> Void)?
 
     private var webView: WKWebView!
+    /// Spinner shown until the Plaid CDN script + Link iframe settle.
+    private lazy var spinner = WebHostStatusView(message: "Opening Plaid Link…")
+    /// Retry/error overlay shown when the CDN load fails. Previously the
+    /// controller had NO `didFail` handler at all — a CDN 404 / offline
+    /// device left the driver on an inert black screen with only Cancel.
+    private lazy var errorView = WebHostErrorView(
+        title: "Couldn't reach Plaid",
+        onRetry: { [weak self] in self?.reload() },
+        onCancel: { [weak self] in self?.onExit?() }
+    )
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -378,6 +388,10 @@ private final class PlaidLinkWebController: UIViewController, WKScriptMessageHan
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
 
+        pinFill(spinner)
+        pinFill(errorView)
+        errorView.isHidden = true
+
         // Close button
         let cancel = UIButton(type: .system)
         cancel.setTitle("Cancel", for: .normal)
@@ -390,11 +404,50 @@ private final class PlaidLinkWebController: UIViewController, WKScriptMessageHan
             cancel.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
         ])
 
+        reload()
+    }
+
+    private func pinFill(_ v: UIView) {
+        v.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(v)
+        NSLayoutConstraint.activate([
+            v.topAnchor.constraint(equalTo: view.topAnchor),
+            v.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            v.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            v.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+    }
+
+    private func reload() {
+        errorView.isHidden = true
+        spinner.isHidden = false
         webView.loadHTMLString(Self.html(linkToken: linkToken),
                                baseURL: URL(string: "https://cdn.plaid.com/"))
     }
 
     @objc private func cancelTapped() { onExit?() }
+
+    // MARK: WKNavigationDelegate — loading / error states
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        spinner.isHidden = true
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        if (error as NSError).code == NSURLErrorCancelled { return }
+        showFailure()
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        if (error as NSError).code == NSURLErrorCancelled { return }
+        showFailure()
+    }
+
+    private func showFailure() {
+        spinner.isHidden = true
+        errorView.isHidden = false
+        view.bringSubviewToFront(errorView)
+    }
 
     // Receive messages from Plaid Link JS callbacks.
     func userContentController(_ userContentController: WKUserContentController,
@@ -501,6 +554,14 @@ private final class StripeCardWebController: UIViewController, WKScriptMessageHa
     var onSuccess: ((_ paymentMethodId: String) -> Void)?
 
     private var webView: WKWebView!
+    private lazy var spinner = WebHostStatusView(message: "Loading secure card form…")
+    /// Retry/error overlay — same gap the Plaid host had: no `didFail`
+    /// meant a stripe.js CDN failure left a blank black screen.
+    private lazy var errorView = WebHostErrorView(
+        title: "Couldn't reach Stripe",
+        onRetry: { [weak self] in self?.reload() },
+        onCancel: { [weak self] in self?.onExit?() }
+    )
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -527,6 +588,10 @@ private final class StripeCardWebController: UIViewController, WKScriptMessageHa
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
 
+        pinFill(spinner)
+        pinFill(errorView)
+        errorView.isHidden = true
+
         let cancel = UIButton(type: .system)
         cancel.setTitle("Cancel", for: .normal)
         cancel.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
@@ -538,6 +603,23 @@ private final class StripeCardWebController: UIViewController, WKScriptMessageHa
             cancel.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
         ])
 
+        reload()
+    }
+
+    private func pinFill(_ v: UIView) {
+        v.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(v)
+        NSLayoutConstraint.activate([
+            v.topAnchor.constraint(equalTo: view.topAnchor),
+            v.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            v.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            v.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+    }
+
+    private func reload() {
+        errorView.isHidden = true
+        spinner.isHidden = false
         webView.loadHTMLString(
             Self.html(clientSecret: clientSecret, publishableKey: publishableKey),
             baseURL: URL(string: "https://js.stripe.com/")
@@ -545,6 +627,28 @@ private final class StripeCardWebController: UIViewController, WKScriptMessageHa
     }
 
     @objc private func cancelTapped() { onExit?() }
+
+    // MARK: WKNavigationDelegate — loading / error states
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        spinner.isHidden = true
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        if (error as NSError).code == NSURLErrorCancelled { return }
+        showFailure()
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        if (error as NSError).code == NSURLErrorCancelled { return }
+        showFailure()
+    }
+
+    private func showFailure() {
+        spinner.isHidden = true
+        errorView.isHidden = false
+        view.bringSubviewToFront(errorView)
+    }
 
     func userContentController(_ userContentController: WKUserContentController,
                                didReceive message: WKScriptMessage) {
@@ -654,6 +758,114 @@ private final class StripeCardWebController: UIViewController, WKScriptMessageHa
         s.replacingOccurrences(of: "\\", with: "\\\\")
          .replacingOccurrences(of: "\"", with: "\\\"")
     }
+}
+
+// MARK: - Web-host status & error overlays (UIKit)
+//
+// Shared chrome for the Plaid + Stripe WKWebView bridges. Before this,
+// neither host implemented `didFail`, so a CDN 404 / offline device left
+// the driver on an inert black screen with only a Cancel button — no
+// spinner while loading, no error, no retry. These two views give both
+// hosts a loading spinner and a recoverable error state.
+
+/// Centered spinner + caption shown over a web host while it loads.
+private final class WebHostStatusView: UIView {
+    init(message: String) {
+        super.init(frame: .zero)
+        backgroundColor = .black
+
+        let spinner = UIActivityIndicatorView(style: .large)
+        spinner.color = .white
+        spinner.startAnimating()
+
+        let label = UILabel()
+        label.text = message
+        label.textColor = UIColor(white: 1, alpha: 0.6)
+        label.font = .systemFont(ofSize: 13, weight: .regular)
+        label.textAlignment = .center
+
+        let stack = UIStackView(arrangedSubviews: [spinner, label])
+        stack.axis = .vertical
+        stack.spacing = 14
+        stack.alignment = .center
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+}
+
+/// Full-bleed error card with Retry + Cancel for a failed web-host load.
+private final class WebHostErrorView: UIView {
+    private let onRetry: () -> Void
+    private let onCancel: () -> Void
+
+    init(title: String, onRetry: @escaping () -> Void, onCancel: @escaping () -> Void) {
+        self.onRetry = onRetry
+        self.onCancel = onCancel
+        super.init(frame: .zero)
+        backgroundColor = .black
+
+        let icon = UIImageView(image: UIImage(systemName: "wifi.exclamationmark"))
+        icon.tintColor = UIColor(red: 1, green: 0.42, blue: 0.42, alpha: 1)
+        icon.contentMode = .scaleAspectFit
+        icon.preferredSymbolConfiguration = .init(pointSize: 30, weight: .semibold)
+
+        let titleLabel = UILabel()
+        titleLabel.text = title
+        titleLabel.textColor = .white
+        titleLabel.font = .systemFont(ofSize: 17, weight: .semibold)
+        titleLabel.textAlignment = .center
+
+        let subLabel = UILabel()
+        subLabel.text = "Check your connection and try again."
+        subLabel.textColor = UIColor(white: 1, alpha: 0.6)
+        subLabel.font = .systemFont(ofSize: 13)
+        subLabel.numberOfLines = 0
+        subLabel.textAlignment = .center
+
+        let retry = UIButton(type: .system)
+        var retryCfg = UIButton.Configuration.filled()
+        retryCfg.title = "Retry"
+        retryCfg.baseBackgroundColor = UIColor(red: 0.71, green: 0.29, blue: 1, alpha: 1)
+        retryCfg.baseForegroundColor = .white
+        retryCfg.cornerStyle = .medium
+        retryCfg.contentInsets = .init(top: 12, leading: 28, bottom: 12, trailing: 28)
+        retry.configuration = retryCfg
+        retry.addTarget(self, action: #selector(retryTapped), for: .touchUpInside)
+
+        let cancel = UIButton(type: .system)
+        cancel.setTitle("Cancel", for: .normal)
+        cancel.setTitleColor(UIColor(white: 1, alpha: 0.7), for: .normal)
+        cancel.titleLabel?.font = .systemFont(ofSize: 15, weight: .regular)
+        cancel.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
+
+        let stack = UIStackView(arrangedSubviews: [icon, titleLabel, subLabel, retry, cancel])
+        stack.axis = .vertical
+        stack.spacing = 12
+        stack.alignment = .center
+        stack.setCustomSpacing(20, after: subLabel)
+        stack.setCustomSpacing(6, after: retry)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 32),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -32),
+        ])
+    }
+
+    @objc private func retryTapped() { onRetry() }
+    @objc private func cancelTapped() { onCancel() }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 }
 
 // MARK: - Previews

@@ -46,7 +46,12 @@ struct NewsArticleReader: View {
     @State private var loadProgress: Double = 0.0
     @State private var failedToLoad: Bool = false
     @State private var canGoBack: Bool = false
+    @State private var canGoForward: Bool = false
     @State private var webViewGoBack: (() -> Void)? = nil
+    /// Forward-navigation handler mirroring `webViewGoBack`. Assigned by
+    /// the embedded WKWebView so the top-bar forward chevron can advance
+    /// the in-page history after the driver has gone back.
+    @State private var webViewGoForward: (() -> Void)? = nil
     /// Handler the embedded WKWebView assigns so the reader chrome can
     /// navigate it to a new URL without tearing it down. Used by the
     /// retry button to re-hit the original article URL.
@@ -195,6 +200,29 @@ struct NewsArticleReader: View {
             .buttonStyle(.plain)
             .accessibilityLabel(canGoBack ? "Back" : "Close article")
 
+            // Forward chevron — only surfaces once the driver has gone
+            // back inside the article's in-page history, so it never
+            // clutters the bar on a fresh load. Mirrors the back button's
+            // chrome exactly.
+            if canGoForward {
+                Button {
+                    webViewGoForward?()
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                        .frame(width: 36, height: 36)
+                        .background(palette.bgCardSoft)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                                .strokeBorder(palette.borderFaint)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Forward")
+            }
+
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: Space.s2) {
                     CategoryTag(category: article.typedCategory, compact: true)
@@ -336,12 +364,25 @@ struct NewsArticleReader: View {
     // silently refused to do.
 
     /// Pick-a-language → extract DOM text → present the Gemini sheet.
+    ///
+    /// ROOT-CAUSE FIX (2026-05-30): the previous guard bailed to the
+    /// "Translation not available" toast whenever `webViewExtractText`
+    /// was still nil — which is the common case when the driver taps
+    /// Translate before the WKWebView has finished its first layout (the
+    /// extractor handler is only assigned inside `makeUIView`), or when
+    /// the page failed to load entirely. In both cases we ALREADY hold a
+    /// perfectly translatable `article.summary` from the feed payload, so
+    /// there is never a reason to refuse translation. We now extract from
+    /// the DOM when the handler is available and ALWAYS fall back to the
+    /// summary — the toast is reserved for the genuine impossible case
+    /// where even the summary is empty.
     private func applyTranslation(to lang: TranslateLanguage) {
         activeLanguage = lang
 
-        guard article.articleURL != nil, let extract = webViewExtractText else {
-            showTranslationUnavailableAlert = true
-            activeLanguage = nil
+        // No DOM extractor yet (WebView not laid out, or load failed):
+        // translate the summary we already have rather than toasting.
+        guard let extract = webViewExtractText else {
+            presentTranslation(body: article.summary, lang: lang)
             return
         }
 
@@ -354,14 +395,21 @@ struct NewsArticleReader: View {
             // fall back to the article summary we already hold so the
             // driver still gets a translated gist rather than a toast.
             let bodyToTranslate = trimmed.count >= 40 ? trimmed : article.summary
-            guard !bodyToTranslate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                showTranslationUnavailableAlert = true
-                activeLanguage = nil
-                return
-            }
-            extractedArticleText = bodyToTranslate
-            showTranslationSheet = true
+            presentTranslation(body: bodyToTranslate, lang: lang)
         }
+    }
+
+    /// Final gate before the translation sheet: only the truly-empty
+    /// case (no DOM text AND no summary) falls through to the toast.
+    private func presentTranslation(body: String, lang: TranslateLanguage) {
+        let clean = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else {
+            showTranslationUnavailableAlert = true
+            activeLanguage = nil
+            return
+        }
+        extractedArticleText = clean
+        showTranslationSheet = true
     }
 
     /// Dismiss the translation overlay. The underlying WKWebView was
@@ -401,7 +449,9 @@ struct NewsArticleReader: View {
                     progress: $loadProgress,
                     failed: $failedToLoad,
                     canGoBack: $canGoBack,
+                    canGoForward: $canGoForward,
                     goBackHandler: $webViewGoBack,
+                    goForwardHandler: $webViewGoForward,
                     loadURLHandler: $webViewLoadURL,
                     extractTextHandler: $webViewExtractText
                 )
@@ -518,7 +568,11 @@ private struct ArticleWebView: UIViewRepresentable {
     @Binding var progress: Double
     @Binding var failed: Bool
     @Binding var canGoBack: Bool
+    @Binding var canGoForward: Bool
     @Binding var goBackHandler: (() -> Void)?
+    /// Forward-navigation handler the parent reader's top-bar chevron
+    /// drives once the driver has stepped back in the in-page history.
+    @Binding var goForwardHandler: (() -> Void)?
     /// Handler the parent reader assigns so it can push a new URL into
     /// the same WKWebView instance (retry flow).
     @Binding var loadURLHandler: ((URL) -> Void)?
@@ -547,6 +601,7 @@ private struct ArticleWebView: UIViewRepresentable {
 
         context.coordinator.observeProgress(on: webView)
         goBackHandler = { [weak webView] in webView?.goBack() }
+        goForwardHandler = { [weak webView] in webView?.goForward() }
         loadURLHandler = { [weak webView] newURL in
             webView?.load(URLRequest(url: newURL))
         }
@@ -601,6 +656,13 @@ private struct ArticleWebView: UIViewRepresentable {
         var parent: ArticleWebView
         private var progressObservation: NSKeyValueObservation?
         private var canGoBackObservation: NSKeyValueObservation?
+        private var canGoForwardObservation: NSKeyValueObservation?
+        /// Wall-clock guard: if a page neither finishes nor fails within
+        /// 12 s (publisher CDN black-holes the request, infinite redirect,
+        /// JS-heavy SPA that never settles), surface the error overlay so
+        /// the driver gets Retry / Open-in-Safari instead of a stuck
+        /// spinner. Reset on every fresh navigation start.
+        private var loadTimeoutTask: Task<Void, Never>?
 
         init(_ parent: ArticleWebView) {
             self.parent = parent
@@ -617,6 +679,11 @@ private struct ArticleWebView: UIViewRepresentable {
                     self?.parent.canGoBack = wv.canGoBack
                 }
             }
+            canGoForwardObservation = webView.observe(\.canGoForward, options: [.new]) { [weak self] wv, _ in
+                Task { @MainActor in
+                    self?.parent.canGoForward = wv.canGoForward
+                }
+            }
         }
 
         func stopObserving(_ webView: WKWebView) {
@@ -624,9 +691,31 @@ private struct ArticleWebView: UIViewRepresentable {
             progressObservation = nil
             canGoBackObservation?.invalidate()
             canGoBackObservation = nil
+            canGoForwardObservation?.invalidate()
+            canGoForwardObservation = nil
+            loadTimeoutTask?.cancel()
+            loadTimeoutTask = nil
+        }
+
+        /// Arm the stall watchdog for the current navigation.
+        private func armLoadTimeout() {
+            loadTimeoutTask?.cancel()
+            loadTimeoutTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 12_000_000_000)
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    guard let self else { return }
+                    // Only fire if the page never settled.
+                    if self.parent.isLoading {
+                        self.parent.isLoading = false
+                        self.parent.failed = true
+                    }
+                }
+            }
         }
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            armLoadTimeout()
             Task { @MainActor in
                 parent.isLoading = true
                 parent.failed = false
@@ -634,6 +723,8 @@ private struct ArticleWebView: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            loadTimeoutTask?.cancel()
+            loadTimeoutTask = nil
             Task { @MainActor in
                 parent.isLoading = false
                 parent.progress = 1.0
@@ -641,11 +732,18 @@ private struct ArticleWebView: UIViewRepresentable {
             // Translation is handled outside the webView entirely now —
             // no DOM injection, no reloads. The reader's translate
             // button pulls the page's text on demand via the
-            // `extractTextHandler` binding and feeds it to Apple's
-            // on-device Translation framework.
+            // `extractTextHandler` binding and feeds it to the Gemini
+            // (ESANG) translation backend.
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            loadTimeoutTask?.cancel()
+            loadTimeoutTask = nil
+            // -999 (NSURLErrorCancelled) fires whenever a new navigation
+            // supersedes an in-flight one (redirects, user tapping a link
+            // mid-load). It is NOT a real failure — treating it as one
+            // paints the error overlay over a perfectly good page.
+            if (error as NSError).code == NSURLErrorCancelled { return }
             Task { @MainActor in
                 parent.isLoading = false
                 parent.failed = true
@@ -653,6 +751,9 @@ private struct ArticleWebView: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            loadTimeoutTask?.cancel()
+            loadTimeoutTask = nil
+            if (error as NSError).code == NSURLErrorCancelled { return }
             Task { @MainActor in
                 parent.isLoading = false
                 parent.failed = true
@@ -1017,6 +1118,62 @@ private struct TranslatedArticleSheet: View {
 // download, no on-device detection no-op. Translating a foreign article
 // INTO English now works (the old Apple path silently refused it).
 
+/// Process-lifetime cache of completed translations keyed on
+/// (articleId · targetLang · body-hash). A driver who toggles a language
+/// off and back on — or re-opens the same article in a session — gets the
+/// translation instantly instead of paying the Gemini round-trip twice.
+/// Bounded so a long browsing session can't grow it without limit.
+private final class TranslationCache {
+    static let shared = TranslationCache()
+    private var store: [String: String] = [:]
+    private var order: [String] = []
+    private let limit = 60
+    private let lock = NSLock()
+
+    func key(articleId: String, lang: String, body: String) -> String {
+        "\(articleId)|\(lang)|\(body.hashValue)"
+    }
+
+    func get(_ key: String) -> String? {
+        lock.lock(); defer { lock.unlock() }
+        return store[key]
+    }
+
+    func set(_ key: String, _ value: String) {
+        lock.lock(); defer { lock.unlock() }
+        if store[key] == nil { order.append(key) }
+        store[key] = value
+        if order.count > limit, let oldest = order.first {
+            order.removeFirst()
+            store[oldest] = nil
+        }
+    }
+}
+
+/// Thrown when the Gemini translate call exceeds its deadline.
+private struct TranslationTimeoutError: Error {}
+
+/// Race `operation` against a wall-clock deadline. Whichever finishes
+/// first wins; the loser is cancelled. Prevents the translation spinner
+/// from hanging forever on a stalled connection.
+private func withTranslationTimeout<T: Sendable>(
+    seconds: Double,
+    _ operation: @escaping @Sendable () async throws -> T
+) async throws -> T {
+    try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask { try await operation() }
+        group.addTask {
+            try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            throw TranslationTimeoutError()
+        }
+        guard let first = try await group.next() else {
+            throw TranslationTimeoutError()
+        }
+        group.cancelAll()
+        return first
+    }
+}
+
 private struct GeminiTranslatedArticleReader: View {
     @Environment(\.palette) var palette
 
@@ -1073,25 +1230,54 @@ private struct GeminiTranslatedArticleReader: View {
             }
             return
         }
+
+        // Cache hit → render instantly, skip the network entirely.
+        let cacheKey = TranslationCache.shared.key(
+            articleId: article.id, lang: target.code, body: body
+        )
+        if let cached = TranslationCache.shared.get(cacheKey) {
+            await MainActor.run {
+                translatedText = cached
+                failureMessage = nil
+                isTranslating = false
+            }
+            return
+        }
+
         await MainActor.run {
             isTranslating = true
             failureMessage = nil
             translatedText = ""
         }
         do {
-            let result = try await EusoTripAPI.shared.news.translateArticle(
-                text: body,
-                targetLanguage: target.code,
-                sourceLanguage: nil,        // let ESANG auto-detect the source
-                articleId: article.id
-            )
+            // 8 s ceiling: ESANG normally returns in ~1–3 s, but a cold
+            // backend or a flaky cab-of-the-truck connection used to hang
+            // the spinner indefinitely. Race the call against a timeout so
+            // the driver always lands on either a translation or an
+            // actionable failure card.
+            let result = try await withTranslationTimeout(seconds: 8) {
+                try await EusoTripAPI.shared.news.translateArticle(
+                    text: body,
+                    targetLanguage: target.code,
+                    sourceLanguage: nil,        // let ESANG auto-detect the source
+                    articleId: article.id
+                )
+            }
             await MainActor.run {
                 if result.ok {
                     translatedText = result.translated
                     failureMessage = nil
+                    if !result.translated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        TranslationCache.shared.set(cacheKey, result.translated)
+                    }
                 } else {
                     failureMessage = result.error ?? "Translation failed. Try again."
                 }
+                isTranslating = false
+            }
+        } catch is TranslationTimeoutError {
+            await MainActor.run {
+                failureMessage = "Translation is taking too long. Check your connection and try again."
                 isTranslating = false
             }
         } catch {
