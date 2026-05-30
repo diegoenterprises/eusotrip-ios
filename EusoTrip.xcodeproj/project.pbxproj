@@ -21,6 +21,16 @@
 		A12E1A1C0010CE0FF100000D /* HereMatrixClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100000E /* HereMatrixClient.swift */; };
 		A12E1A1C0010CE0FF100000F /* HereTileOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000010 /* HereTileOverlay.swift */; };
 		A12E1A1C0010CE0FF1000011 /* HereMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000012 /* HereMapView.swift */; };
+		KITRADGBUILD1 /* RadialFillGauge.swift in Sources */ = {isa = PBXBuildFile; fileRef = KITRADGFREF1 /* RadialFillGauge.swift */; };
+		KITSCRDBUILD1 /* ScorecardRadar.swift in Sources */ = {isa = PBXBuildFile; fileRef = KITSCRDFREF1 /* ScorecardRadar.swift */; };
+		KITBANDBUILD1 /* BandTrendChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = KITBANDFREF1 /* BandTrendChart.swift */; };
+		KITTHRBBUILD1 /* ThresholdBars.swift in Sources */ = {isa = PBXBuildFile; fileRef = KITTHRBFREF1 /* ThresholdBars.swift */; };
+		KITSTGRBUILD1 /* StateGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = KITSTGRFREF1 /* StateGrid.swift */; };
+		KITTLERBUILD1 /* TimelineEventRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = KITTLERFREF1 /* TimelineEventRail.swift */; };
+		KITWFBRBUILD1 /* WaterfallBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = KITWFBRFREF1 /* WaterfallBridge.swift */; };
+		KITHCMXBUILD1 /* HeatCellMatrix.swift in Sources */ = {isa = PBXBuildFile; fileRef = KITHCMXFREF1 /* HeatCellMatrix.swift */; };
+		KITTSPKBUILD1 /* TrendSparkline.swift in Sources */ = {isa = PBXBuildFile; fileRef = KITTSPKFREF1 /* TrendSparkline.swift */; };
+		KITFNBRBUILD1 /* FunnelBars.swift in Sources */ = {isa = PBXBuildFile; fileRef = KITFNBRFREF1 /* FunnelBars.swift */; };
 		BMAPPROJBUILD1 /* BespokeMapProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = BMAPPROJFREF1 /* BespokeMapProjection.swift */; };
 		BMAPSTYLBUILD1 /* BespokeMapStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = BMAPSTYLFREF1 /* BespokeMapStyle.swift */; };
 		BMAPCNVSBUILD1 /* BespokeMapCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = BMAPCNVSFREF1 /* BespokeMapCanvas.swift */; };
@@ -785,6 +795,16 @@
 		A12E1A1C0010CE0FF100000E /* HereMatrixClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereMatrixClient.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000010 /* HereTileOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereTileOverlay.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000012 /* HereMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereMapView.swift; sourceTree = "<group>"; };
+		KITRADGFREF1 /* RadialFillGauge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Charts/RadialFillGauge.swift; sourceTree = "<group>"; };
+		KITSCRDFREF1 /* ScorecardRadar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Charts/ScorecardRadar.swift; sourceTree = "<group>"; };
+		KITBANDFREF1 /* BandTrendChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Charts/BandTrendChart.swift; sourceTree = "<group>"; };
+		KITTHRBFREF1 /* ThresholdBars.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Charts/ThresholdBars.swift; sourceTree = "<group>"; };
+		KITSTGRFREF1 /* StateGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Charts/StateGrid.swift; sourceTree = "<group>"; };
+		KITTLERFREF1 /* TimelineEventRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Charts/TimelineEventRail.swift; sourceTree = "<group>"; };
+		KITWFBRFREF1 /* WaterfallBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Charts/WaterfallBridge.swift; sourceTree = "<group>"; };
+		KITHCMXFREF1 /* HeatCellMatrix.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Charts/HeatCellMatrix.swift; sourceTree = "<group>"; };
+		KITTSPKFREF1 /* TrendSparkline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Charts/TrendSparkline.swift; sourceTree = "<group>"; };
+		KITFNBRFREF1 /* FunnelBars.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Charts/FunnelBars.swift; sourceTree = "<group>"; };
 		BMAPPROJFREF1 /* BespokeMapProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Map/BespokeMapProjection.swift; sourceTree = "<group>"; };
 		BMAPSTYLFREF1 /* BespokeMapStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Map/BespokeMapStyle.swift; sourceTree = "<group>"; };
 		BMAPCNVSFREF1 /* BespokeMapCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Map/BespokeMapCanvas.swift; sourceTree = "<group>"; };
@@ -2263,6 +2283,16 @@
 			isa = PBXGroup;
 			children = (
 				A12E1A1C0010CE0FF1000012 /* HereMapView.swift */,
+				KITRADGFREF1 /* RadialFillGauge.swift */,
+				KITSCRDFREF1 /* ScorecardRadar.swift */,
+				KITBANDFREF1 /* BandTrendChart.swift */,
+				KITTHRBFREF1 /* ThresholdBars.swift */,
+				KITSTGRFREF1 /* StateGrid.swift */,
+				KITTLERFREF1 /* TimelineEventRail.swift */,
+				KITWFBRFREF1 /* WaterfallBridge.swift */,
+				KITHCMXFREF1 /* HeatCellMatrix.swift */,
+				KITTSPKFREF1 /* TrendSparkline.swift */,
+				KITFNBRFREF1 /* FunnelBars.swift */,
 				BMAPPROJFREF1 /* BespokeMapProjection.swift */,
 				BMAPSTYLFREF1 /* BespokeMapStyle.swift */,
 				BMAPCNVSFREF1 /* BespokeMapCanvas.swift */,
@@ -2844,6 +2874,16 @@
 				A12E1A1C0010CE0FF100000D /* HereMatrixClient.swift in Sources */,
 				A12E1A1C0010CE0FF100000F /* HereTileOverlay.swift in Sources */,
 				A12E1A1C0010CE0FF1000011 /* HereMapView.swift in Sources */,
+				KITRADGBUILD1 /* RadialFillGauge.swift in Sources */,
+				KITSCRDBUILD1 /* ScorecardRadar.swift in Sources */,
+				KITBANDBUILD1 /* BandTrendChart.swift in Sources */,
+				KITTHRBBUILD1 /* ThresholdBars.swift in Sources */,
+				KITSTGRBUILD1 /* StateGrid.swift in Sources */,
+				KITTLERBUILD1 /* TimelineEventRail.swift in Sources */,
+				KITWFBRBUILD1 /* WaterfallBridge.swift in Sources */,
+				KITHCMXBUILD1 /* HeatCellMatrix.swift in Sources */,
+				KITTSPKBUILD1 /* TrendSparkline.swift in Sources */,
+				KITFNBRBUILD1 /* FunnelBars.swift in Sources */,
 				BMAPPROJBUILD1 /* BespokeMapProjection.swift in Sources */,
 				BMAPSTYLBUILD1 /* BespokeMapStyle.swift in Sources */,
 				BMAPCNVSBUILD1 /* BespokeMapCanvas.swift in Sources */,
