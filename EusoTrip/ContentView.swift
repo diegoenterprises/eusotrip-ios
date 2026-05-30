@@ -1949,6 +1949,15 @@ enum ScreenRegistry {
             .init(id: "Rail550", title: "Rail Engineer · Home",       role: .railEngineer) { p in AnyView(RailEngineerHomeScreen(theme: p)) },
             .init(id: "Rail551", title: "Rail Engineer · Shipments",  role: .railEngineer) { p in AnyView(RailShipmentsScreen(theme: p)) },
             .init(id: "Rail552", title: "Rail Engineer · Compliance", role: .railEngineer) { p in AnyView(RailComplianceScreen(theme: p)) },
+            // Phase B wave 7 — Rail NEW screens (verbatim ports, theme-only inits).
+            .init(id: "Rail607", title: "Rail Engineer · EDI Messages",        role: .railEngineer) { p in AnyView(RailEDIMessagesScreen(theme: p)) },
+            .init(id: "Rail616", title: "Rail Engineer · Free Time",           role: .railEngineer) { p in AnyView(RailFreeTimeScreen(theme: p)) },
+            .init(id: "Rail617", title: "Rail Engineer · Drayage Orders",      role: .railEngineer) { p in AnyView(RailDrayageOrdersScreen(theme: p)) },
+            .init(id: "Rail618", title: "Rail Engineer · Mode Optimization",   role: .railEngineer) { p in AnyView(RailModeOptimizationScreen(theme: p)) },
+            .init(id: "Rail619", title: "Rail Engineer · Per Diem Tracking",   role: .railEngineer) { p in AnyView(RailPerDiemTrackingScreen(theme: p)) },
+            .init(id: "Rail620", title: "Rail Engineer · Release Order",       role: .railEngineer) { p in AnyView(RailReleaseOrderScreen(theme: p)) },
+            .init(id: "Rail621", title: "Rail Engineer · Yard Move Queue",     role: .railEngineer) { p in AnyView(RailYardMoveQueueScreen(theme: p)) },
+            .init(id: "Rail622", title: "Rail Engineer · Move Scheduler",      role: .railEngineer) { p in AnyView(RailMoveSchedulerScreen(theme: p)) },
         ])
 
         // Vessel Operator surface (Vesl650–652).
