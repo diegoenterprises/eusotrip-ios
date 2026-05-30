@@ -116,6 +116,65 @@ public enum BespokeMapProjection {
               + cos(lat1) * cos(lat2) * sin(dLng / 2) * sin(dLng / 2)
         return 2.0 * earthRadius * asin(Swift.min(1.0, sqrt(h)))
     }
+
+    // MARK: Great-circle interpolation (slerp on the unit sphere)
+
+    /// Spherical-linear-interpolate (slerp) a single point a fraction `t`
+    /// (`0…1`) along the great-circle arc from `a` to `b`. At `t == 0` returns
+    /// `a`, at `t == 1` returns `b`. The interpolation is exact on the sphere,
+    /// so when the result is fed back through `project(_:)` it traces the
+    /// curved Mercator arc an ocean leg actually follows — NOT the straight
+    /// rhumb line a naïve lng/lat lerp would draw.
+    ///
+    /// Pure + deterministic (no `Date`, no RNG). Antimeridian-safe: it works in
+    /// 3-D Cartesian space, so a Shanghai→Long Beach leg that crosses 180°
+    /// interpolates correctly without longitude wraparound artefacts.
+    public static func slerp(_ a: HereLatLng, _ b: HereLatLng, t: Double) -> HereLatLng {
+        let tt = Swift.min(1.0, Swift.max(0.0, t))
+        // Geographic → unit Cartesian (right-handed, +Z = north pole).
+        let aLat = a.lat * .pi / 180.0, aLng = a.lng * .pi / 180.0
+        let bLat = b.lat * .pi / 180.0, bLng = b.lng * .pi / 180.0
+        let ax = cos(aLat) * cos(aLng), ay = cos(aLat) * sin(aLng), az = sin(aLat)
+        let bx = cos(bLat) * cos(bLng), by = cos(bLat) * sin(bLng), bz = sin(bLat)
+
+        // Angular distance between the two unit vectors.
+        let dot = Swift.min(1.0, Swift.max(-1.0, ax * bx + ay * by + az * bz))
+        let omega = acos(dot)
+        // Coincident / antipodal endpoints: no unique arc → fall back to the
+        // endpoint nearest `tt` (avoids a 0/0 in the sin(omega) divisor).
+        guard omega > 1e-9, sin(omega) > 1e-9 else {
+            return tt < 0.5 ? a : b
+        }
+        let s0 = sin((1.0 - tt) * omega) / sin(omega)
+        let s1 = sin(tt * omega) / sin(omega)
+        let x = s0 * ax + s1 * bx
+        let y = s0 * ay + s1 * by
+        let z = s0 * az + s1 * bz
+
+        let lat = atan2(z, sqrt(x * x + y * y)) * 180.0 / .pi
+        let lng = atan2(y, x) * 180.0 / .pi
+        return HereLatLng(clampLatitude(lat), lng)
+    }
+
+    /// Interpolate `count` points (inclusive of both endpoints, so
+    /// `count >= 2`) evenly along the great-circle arc from `origin` to `dest`.
+    /// The returned polyline curves correctly under Web Mercator and is the
+    /// ocean-route geometry the bespoke canvas paints (solid traveled →
+    /// dashed remaining, split at the live-position fraction).
+    public static func greatCircle(
+        from origin: HereLatLng,
+        to dest: HereLatLng,
+        count: Int = 48
+    ) -> [HereLatLng] {
+        let n = Swift.max(2, count)
+        var out: [HereLatLng] = []
+        out.reserveCapacity(n)
+        for i in 0..<n {
+            let t = Double(i) / Double(n - 1)
+            out.append(slerp(origin, dest, t: t))
+        }
+        return out
+    }
 }
 
 // MARK: - Viewport

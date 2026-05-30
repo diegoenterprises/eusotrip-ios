@@ -124,6 +124,36 @@ struct BespokeMapStyle {
         let omitted: Bool
         /// When non-nil, paint this glass-pill + diamond instead of circles.
         let destPill: DestPill?
+        /// OCEAN port-pin ring: when non-nil the renderer paints a HOLLOW disc
+        /// (filled `outerFill` = page bg) with a thick `ringStroke` ring of
+        /// `ringWidth` AT `outerRadius`, and skips the inner core entirely
+        /// (matches the 003 origin/dest port pins: `fill=#05060A stroke=… w3`).
+        /// nil on every non-ocean register (standard concentric behavior).
+        let ringStroke: Color?
+        /// Ring stroke width for the ocean port pin (ignored when `ringStroke == nil`).
+        let ringWidth: CGFloat
+
+        init(
+            outerRadius: CGFloat,
+            innerRadius: CGFloat,
+            outerFill: Color,
+            innerFill: Color,
+            innerGradient: [Color]?,
+            omitted: Bool,
+            destPill: DestPill?,
+            ringStroke: Color? = nil,
+            ringWidth: CGFloat = 0
+        ) {
+            self.outerRadius = outerRadius
+            self.innerRadius = innerRadius
+            self.outerFill = outerFill
+            self.innerFill = innerFill
+            self.innerGradient = innerGradient
+            self.omitted = omitted
+            self.destPill = destPill
+            self.ringStroke = ringStroke
+            self.ringWidth = ringWidth
+        }
     }
 
     /// Cosmos destination glyph: a glass pill backing + a small rounded
@@ -149,18 +179,57 @@ struct BespokeMapStyle {
     /// halo + ring + cab+box glyph. NO status dot (the green only ever appears
     /// in pills/chips, never on the puck).
     struct TruckMarker {
+        /// Which live-puck glyph the renderer paints inside the ring.
+        enum Glyph {
+            /// Cab + box two-rect truck silhouette (standard road registers).
+            case cabBox
+            /// Solid eusoDiagonal core disc + white hull chevron (the 003 AIS
+            /// vessel orb): NO ring stroke / disc, the gradient IS the body.
+            case aisHull
+        }
         let haloRadius: CGFloat
         /// Halo fill — gradient stops at low opacity.
         let haloStops: [Color]
         let haloOpacity: Double
         let ringRadius: CGFloat
-        /// Ring fill (the disc the glyph sits on).
+        /// Ring fill (the disc the glyph sits on). For `.aisHull` this is the
+        /// eusoDiagonal-gradient core fill (`coreGradient`), not a flat color.
         let ringFill: Color
         /// Ring stroke color.
         let ringStroke: Color
         let ringWidth: CGFloat
-        /// Glyph tint (the cab+box two-rect silhouette).
+        /// Glyph tint (the cab+box rects, or the hull chevron on `.aisHull`).
         let glyphColor: Color
+        /// Which glyph to paint. Defaults to `.cabBox` so existing standard
+        /// registers are unchanged; the ocean register selects `.aisHull`.
+        let glyph: Glyph
+        /// eusoDiagonal core gradient for the `.aisHull` orb body (nil ⇒ ring
+        /// stays a flat `ringFill` disc, i.e. the cab+box behavior).
+        let coreGradient: [Color]?
+
+        init(
+            haloRadius: CGFloat,
+            haloStops: [Color],
+            haloOpacity: Double,
+            ringRadius: CGFloat,
+            ringFill: Color,
+            ringStroke: Color,
+            ringWidth: CGFloat,
+            glyphColor: Color,
+            glyph: Glyph = .cabBox,
+            coreGradient: [Color]? = nil
+        ) {
+            self.haloRadius = haloRadius
+            self.haloStops = haloStops
+            self.haloOpacity = haloOpacity
+            self.ringRadius = ringRadius
+            self.ringFill = ringFill
+            self.ringStroke = ringStroke
+            self.ringWidth = ringWidth
+            self.glyphColor = glyphColor
+            self.glyph = glyph
+            self.coreGradient = coreGradient
+        }
     }
 
     /// Live "you are here" PING puck for the DRIVER registers (.cosmos /
@@ -632,6 +701,194 @@ struct BespokeMapStyle {
         )
     }()
 
+    // MARK: - OCEAN  (Vessel 003 "Live Tracking", dark — great-circle AIS map)
+    //
+    // VERBATIM from `06 Vessel/Dark-SVG/003 Vessel Live Tracking.svg`. The map
+    // card is a stylized great-circle ocean schematic: a deep navy basemap
+    // (#0A1422 + #1473FF@0.06), three faint white@0.06 latitude lines, two
+    // #27465F coast hints, the eusoPrimary solid traveled → white@0.14 dashed
+    // remaining great-circle route, hollow port pins (origin eusoPrimary ring /
+    // dest #6E7681 ring on a #05060A center), the AIS vessel orb (r20 #BE01FF
+    // @0.22 glow + r11 eusoDiagonal core + white hull chevron), and the
+    // location callout chip (#1C2128, #6E7681 mono coords / #F5F5F7 speed·hdg).
+
+    static let ocean: BespokeMapStyle = {
+        // basemap: #0A1422 navy (the #1473FF@0.06 overlay is folded by lifting
+        // the bottom stop a hair toward blue so the wash reads top→bottom).
+        let bg = Background(
+            stops: [Color(hex: 0x0C1726), Color(hex: 0x0A1422)],
+            locations: [0.0, 1.0],
+            isRadial: false,
+            radialCenter: .center,
+            radialRadius: 0.85
+        )
+        // latitude grid: white@0.06 stroke 1.
+        let grid = Grid(color: .white.opacity(0.06), width: 1)
+        // coast hints: #27465F stroke 2.
+        let silhouettes = Silhouettes(
+            colors: [Color(hex: 0x27465F)],
+            widths: [2]
+        )
+        // route traveled: eusoPrimary #1473FF→#BE01FF stroke 3.5 solid round.
+        let routeActive = RouteActive(stops: routeGradientStops, width: 3.5)
+        // route remaining: white@0.14 stroke 3.5 dash [2,7] round.
+        let routePending = RoutePending(
+            color: .white.opacity(0.14),
+            stops: nil,
+            width: 3.5,
+            dashPattern: [2, 7]
+        )
+        // origin port pin: hollow r6 #05060A center, eusoPrimary ring w3.
+        let originMarker = EndpointMarker(
+            outerRadius: 6, innerRadius: 0,
+            outerFill: Color(hex: 0x05060A),
+            innerFill: .clear,
+            innerGradient: nil,
+            omitted: false, destPill: nil,
+            ringStroke: Brand.blue, ringWidth: 3
+        )
+        // dest port pin: hollow r6 #05060A center, #6E7681 ring w3.
+        let destMarker = EndpointMarker(
+            outerRadius: 6, innerRadius: 0,
+            outerFill: Color(hex: 0x05060A),
+            innerFill: .clear,
+            innerGradient: nil,
+            omitted: false, destPill: nil,
+            ringStroke: Color(hex: 0x6E7681), ringWidth: 3
+        )
+        // AIS vessel orb: halo r20 #BE01FF@0.22 + r11 eusoDiagonal core +
+        // white hull chevron. ringStroke/ringWidth are unused for .aisHull.
+        let ais = TruckMarker(
+            haloRadius: 20,
+            haloStops: [Brand.magenta, Brand.magenta],
+            haloOpacity: 0.22,
+            ringRadius: 11,
+            ringFill: Brand.magenta,
+            ringStroke: .clear,
+            ringWidth: 0,
+            glyphColor: .white,
+            glyph: .aisHull,
+            coreGradient: routeGradientStops
+        )
+        // callout chip: #1C2128, mono coords #6E7681 / body #F5F5F7.
+        let pill = Pill(
+            fill: Color(hex: 0x1C2128),
+            cornerRadius: 8,
+            borderColor: .clear,
+            borderWidth: 0,
+            textPrimary: Color(hex: 0xF5F5F7),
+            textSecondary: Color(hex: 0x6E7681),
+            textSize: 11,
+            monoTextSize: 9,
+            scalePillEnabled: false
+        )
+        return BespokeMapStyle(
+            background: bg,
+            grid: grid,
+            silhouettes: silhouettes,
+            routeActive: routeActive,
+            routePending: routePending,
+            originMarker: originMarker,
+            destMarker: destMarker,
+            truckMarker: ais,
+            ping: nil,
+            pill: pill,
+            container: squareContainer
+        )
+    }()
+
+    // MARK: - LIGHT OCEAN  (Vessel 003 "Live Tracking", light)
+    //
+    // VERBATIM from `06 Vessel/Light-SVG/003 Vessel Live Tracking.svg`. Same
+    // great-circle schematic on a light water basemap: #CFE0F0 + #1473FF@0.05,
+    // white@0.55 latitude lines, #9DB4C9@0.7 coast hints, eusoPrimary solid →
+    // black@0.12 dashed route, white port pins (origin eusoPrimary ring / dest
+    // #8A96A3 ring), the AIS orb (r20 #BE01FF@0.18 glow + r11 core + hull), and
+    // the #FFFFFF callout chip (#8A96A3 mono coords / #0D1117 speed·hdg).
+
+    static let lightOcean: BespokeMapStyle = {
+        // water basemap: #CFE0F0 (#1473FF@0.05 overlay folded toward blue top).
+        let bg = Background(
+            stops: [Color(hex: 0xCBDDEE), Color(hex: 0xCFE0F0)],
+            locations: [0.0, 1.0],
+            isRadial: false,
+            radialCenter: .center,
+            radialRadius: 0.85
+        )
+        // latitude grid: white@0.55 stroke 1.
+        let grid = Grid(color: .white.opacity(0.55), width: 1)
+        // coast hints: #9DB4C9@0.7 stroke 2.
+        let silhouettes = Silhouettes(
+            colors: [Color(hex: 0x9DB4C9, alpha: 0.7)],
+            widths: [2]
+        )
+        // route traveled: eusoPrimary stroke 3.5 solid round.
+        let routeActive = RouteActive(stops: routeGradientStops, width: 3.5)
+        // route remaining: black@0.12 stroke 3.5 dash [2,7] round.
+        let routePending = RoutePending(
+            color: .black.opacity(0.12),
+            stops: nil,
+            width: 3.5,
+            dashPattern: [2, 7]
+        )
+        // origin port pin: hollow r6 #FFFFFF center, eusoPrimary ring w3.
+        let originMarker = EndpointMarker(
+            outerRadius: 6, innerRadius: 0,
+            outerFill: Color(hex: 0xFFFFFF),
+            innerFill: .clear,
+            innerGradient: nil,
+            omitted: false, destPill: nil,
+            ringStroke: Brand.blue, ringWidth: 3
+        )
+        // dest port pin: hollow r6 #FFFFFF center, #8A96A3 ring w3.
+        let destMarker = EndpointMarker(
+            outerRadius: 6, innerRadius: 0,
+            outerFill: Color(hex: 0xFFFFFF),
+            innerFill: .clear,
+            innerGradient: nil,
+            omitted: false, destPill: nil,
+            ringStroke: Color(hex: 0x8A96A3), ringWidth: 3
+        )
+        // AIS vessel orb: halo r20 #BE01FF@0.18 + r11 eusoDiagonal + hull.
+        let ais = TruckMarker(
+            haloRadius: 20,
+            haloStops: [Brand.magenta, Brand.magenta],
+            haloOpacity: 0.18,
+            ringRadius: 11,
+            ringFill: Brand.magenta,
+            ringStroke: .clear,
+            ringWidth: 0,
+            glyphColor: .white,
+            glyph: .aisHull,
+            coreGradient: routeGradientStops
+        )
+        // callout chip: #FFFFFF, mono coords #8A96A3 / body #0D1117.
+        let pill = Pill(
+            fill: Color(hex: 0xFFFFFF),
+            cornerRadius: 8,
+            borderColor: .clear,
+            borderWidth: 0,
+            textPrimary: Color(hex: 0x0D1117),
+            textSecondary: Color(hex: 0x8A96A3),
+            textSize: 11,
+            monoTextSize: 9,
+            scalePillEnabled: false
+        )
+        return BespokeMapStyle(
+            background: bg,
+            grid: grid,
+            silhouettes: silhouettes,
+            routeActive: routeActive,
+            routePending: routePending,
+            originMarker: originMarker,
+            destMarker: destMarker,
+            truckMarker: ais,
+            ping: nil,
+            pill: pill,
+            container: squareContainer
+        )
+    }()
+
     // MARK: - Light decoration tokens (breadcrumbs / hazard glyphs)
     //
     // Surfaced as static tokens because they're sprinkled along the route
@@ -663,5 +920,12 @@ struct BespokeMapStyle {
     /// `tilt > 0 || firstPerson`.
     static func driver(isDark: Bool) -> BespokeMapStyle {
         isDark ? .cosmos : .lightDriver
+    }
+
+    /// Picks the OCEAN ("Vessel Live Tracking" / 003) register for a renderer's
+    /// `isDark` flag. The renderer must call this (NOT `standard`) when the
+    /// caller signals the ocean great-circle surface via `style: .ocean`.
+    static func ocean(isDark: Bool) -> BespokeMapStyle {
+        isDark ? .ocean : .lightOcean
     }
 }
