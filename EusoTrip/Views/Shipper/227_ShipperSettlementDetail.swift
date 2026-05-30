@@ -176,6 +176,11 @@ struct ShipperSettlementDetail: View {
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    // Sheet→push (NAV remediation 2026-05-30): the File-dispute form
+    // renders in-stack via the surface's `\.rolePushDetail` layer
+    // (slide-in + BespokeBackBar) instead of a slide-up sheet. The
+    // rate-driver prompt stays modal (self-dismisses on submit).
+    @Environment(\.rolePushDetail) private var pushDetail
     @StateObject private var store: ShipperSettlementDetailStore
     @State private var showDispute: Bool = false
     @State private var disputeReason: String = ""
@@ -220,7 +225,6 @@ struct ShipperSettlementDetail: View {
         .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
             Task { await store.load() }
         }
-        .sheet(isPresented: $showDispute) { disputeSheet }
         .sheet(isPresented: $showRateDriver) {
             // Resolve everything the prompt needs from store.phase.
             // loadId now ships scalar on the SettlementDetail envelope
@@ -823,8 +827,8 @@ struct ShipperSettlementDetail: View {
             }
             if canDispute {
                 Button {
-                    showDispute = true
-                    // observability post — telemetry only; real effect is `showDispute = true` sheet binding above
+                    openDispute()
+                    // observability post — telemetry only; real effect is the dispute push above
                     NotificationCenter.default.post(
                         name: .eusoShipperSettlementDispute,
                         object: nil,
@@ -872,7 +876,19 @@ struct ShipperSettlementDetail: View {
         }
     }
 
-    // MARK: Dispute sheet
+    // MARK: Dispute form (sheet→push)
+
+    /// Sheet→push: render the File-dispute form in-stack via the surface
+    /// `\.rolePushDetail` layer (BespokeBackBar provided by the layer).
+    /// `showDispute` is retained so the inline `disputeSheet` body's
+    /// existing logic is untouched. Re-provides `\.palette`.
+    private func openDispute() {
+        showDispute = true
+        let p = palette
+        pushDetail?("File dispute") {
+            AnyView(disputeSheet.environment(\.palette, p))
+        }
+    }
 
     private var disputeSheet: some View {
         ScrollView {
@@ -900,6 +916,11 @@ struct ShipperSettlementDetail: View {
                 Button {
                     Task {
                         await store.dispute(reason: disputeReason)
+                        // Sheet→push: pop the in-stack detail layer instead
+                        // of dismissing a sheet. The Shipper surface listens
+                        // to `.eusoShipperNavBack` to clear the pushed detail
+                        // (detail-first pop).
+                        NotificationCenter.default.post(name: .eusoShipperNavBack, object: nil)
                         showDispute = false
                         disputeReason = ""
                     }

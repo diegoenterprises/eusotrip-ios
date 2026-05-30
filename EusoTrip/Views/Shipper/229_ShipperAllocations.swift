@@ -66,6 +66,11 @@ final class ShipperAllocationsStore: ObservableObject {
 
 struct ShipperAllocations: View {
     @Environment(\.palette) private var palette
+    // Sheet→push (NAV remediation 2026-05-30): the per-contract detail
+    // renders in-stack via the surface's `\.rolePushDetail` layer
+    // (slide-in + BespokeBackBar) instead of a slide-up sheet. The New-
+    // allocation create form stays modal (it owns a NavigationStack).
+    @Environment(\.rolePushDetail) private var pushDetail
     @StateObject private var store = ShipperAllocationsStore()
     @State private var selectedContract: AllocationsAPI.DailyContractRow? = nil
     @State private var presentingCreate: Bool = false
@@ -86,11 +91,6 @@ struct ShipperAllocations: View {
         .task { await store.load() }
         .onChange(of: store.date) { _, _ in Task { await store.load() } }
         .refreshable { await store.load() }
-        .sheet(item: $selectedContract) { c in
-            AllocationContractDetailSheet(contract: c, dateLabel: store.date)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-        }
         .sheet(isPresented: $presentingCreate) {
             NewAllocationContractSheet { _ in
                 Task { await store.load() }
@@ -299,8 +299,9 @@ struct ShipperAllocations: View {
             : 0
         return Button {
             // Founder doctrine 2026-05-07: tap-to-detail opens an
-            // in-app contract sheet instead of a MeAction stub.
-            selectedContract = c
+            // in-app contract detail. Sheet→push 2026-05-30 — renders
+            // in-stack via the surface `\.rolePushDetail` layer.
+            openContract(c)
         } label: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
@@ -405,6 +406,23 @@ struct ShipperAllocations: View {
 
     // MARK: - helpers
 
+    /// Sheet→push: render the per-contract detail in-stack via the
+    /// surface `\.rolePushDetail` layer (BespokeBackBar provided by the
+    /// layer; the detail's own X is suppressed via `showsClose: false`).
+    /// `selectedContract` is retained for future reads. Re-provides
+    /// `\.palette` since the pushed detail reads it.
+    private func openContract(_ c: AllocationsAPI.DailyContractRow) {
+        selectedContract = c
+        let p = palette
+        let label = store.date
+        pushDetail?(c.contractName ?? "Contract #\(c.contractId)") {
+            AnyView(
+                AllocationContractDetailSheet(contract: c, dateLabel: label, showsClose: false)
+                    .environment(\.palette, p)
+            )
+        }
+    }
+
     private func adjustDate(by days: Int) {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
@@ -475,6 +493,12 @@ struct AllocationContractDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
     let contract: AllocationsAPI.DailyContractRow
     let dateLabel: String
+    /// Sheet→push (NAV remediation 2026-05-30): when rendered in-stack
+    /// via the surface `\.rolePushDetail` layer, the BespokeBackBar
+    /// provides the back chevron, so the own X overlay is suppressed —
+    /// there's never both a chevron AND an X. Defaults true for any
+    /// remaining modal presentation.
+    var showsClose: Bool = true
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -491,13 +515,15 @@ struct AllocationContractDetailSheet: View {
         }
         .background(palette.bgPrimary)
         .overlay(alignment: .topTrailing) {
-            Button { dismiss() } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 22, weight: .heavy))
-                    .foregroundStyle(palette.textTertiary)
+            if showsClose {
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .padding(Space.s4)
             }
-            .buttonStyle(.plain)
-            .padding(Space.s4)
         }
     }
 

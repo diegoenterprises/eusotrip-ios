@@ -259,6 +259,11 @@ final class ShipperAgreementsStore: ObservableObject {
 struct ShipperAgreements: View {
     @Environment(\.palette) private var palette
     @Environment(\.openURL) private var openURL
+    // Sheet→push (NAV remediation 2026-05-30): the agreement detail
+    // renders in-stack via the surface's `\.rolePushDetail` layer
+    // (slide-in + BespokeBackBar) instead of a slide-up sheet. The PDF
+    // share sheet + in-detail PDF viewer + counter form stay modal.
+    @Environment(\.rolePushDetail) private var pushDetail
     @StateObject private var store = ShipperAgreementsStore()
     @EnvironmentObject private var session: EusoTripSession
     @State private var detail: ShipperAgreementsAPI.Agreement? = nil
@@ -288,11 +293,6 @@ struct ShipperAgreements: View {
         }
         .task { await store.load() }
         .onChange(of: store.lastSigned ?? "") { _, v in if !v.isEmpty { showSignedToast = true } }
-        .sheet(item: $detail) {
-            ShipperAgreementDetailSheet(row: $0)
-                .environmentObject(store)
-                .environmentObject(session)
-        }
         .sheet(item: $shareItem) { item in
             // Wraps UIActivityViewController so AirDrop / Files / Mail
             // / Print all light up natively. Founder mandate
@@ -939,7 +939,20 @@ struct ShipperAgreements: View {
 
     private func tapRow(_ row: ShipperAgreementsAPI.Agreement) {
         detail = row
-        // observability post — telemetry only; real effect is `detail = row` sheet binding above
+        // Sheet→push: render the agreement detail in-stack via the
+        // surface `\.rolePushDetail` layer (BespokeBackBar provided by
+        // the layer). `detail` is retained for future reads. Re-provides
+        // the store + session EnvironmentObjects the detail observes.
+        let s = store
+        let sess = session
+        pushDetail?(row.agreementNumber ?? "Agreement") {
+            AnyView(
+                ShipperAgreementDetailSheet(row: row)
+                    .environmentObject(s)
+                    .environmentObject(sess)
+            )
+        }
+        // observability post — telemetry only; real effect is the push above
         NotificationCenter.default.post(
             name: .eusoShipperAgreementRow,
             object: nil,

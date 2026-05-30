@@ -53,6 +53,10 @@ import SwiftUI
 struct ShipperSettings: View {
     @Environment(\.palette) var palette
     @Environment(\.openURL) private var openURL
+    // Sheet→push (NAV rollout 2026-05-30): the shared in-stack detail
+    // layer. When present, the About card renders in-stack with a
+    // BespokeBackBar instead of a pull-up sheet.
+    @Environment(\.shipperPushDetail) private var pushDetail
     @EnvironmentObject var session: EusoTripSession
     @StateObject private var prefsStore = NotificationPreferencesStore()
     @StateObject private var laneTemplatesStore = LoadTemplatesListStore()
@@ -138,13 +142,6 @@ struct ShipperSettings: View {
             async let a: Void = prefsStore.refresh()
             async let b: Void = laneTemplatesStore.refresh()
             _ = await (a, b)
-        }
-        .sheet(isPresented: $showAboutSheet) {
-            ShipperSettingsAboutSheet(
-                version: Self.shortVersion,
-                build: Self.buildNumber
-            )
-            .eusoSheetX()
         }
         .overlay(alignment: .bottom) {
             if let toast = lastToast {
@@ -1088,10 +1085,11 @@ struct ShipperSettings: View {
     }
 
     private func tapAbout() {
-        // Real action: present an in-app About sheet showing version,
+        // Real action: present an in-app About detail showing version,
         // build, copyright, and quick links to privacy + terms +
-        // support. Drives a SwiftUI `.sheet(isPresented:)` flag on
-        // the screen body. Replaces openURL("…/about") which 404'd.
+        // support. Sheet→push (NAV rollout 2026-05-30): renders in-stack
+        // with a BespokeBackBar instead of a pull-up sheet. Replaces
+        // openURL("…/about") which 404'd.
         NotificationCenter.default.post(
             name: .eusoShipperSettingsAbout,
             object: nil,
@@ -1103,6 +1101,15 @@ struct ShipperSettings: View {
             ]
         )
         showAboutSheet = true
+        let version = Self.shortVersion
+        let build = Self.buildNumber
+        let pal = palette
+        pushDetail?("About") {
+            AnyView(
+                ShipperSettingsAboutSheet(version: version, build: build)
+                    .environment(\.palette, pal)
+            )
+        }
     }
 
     // MARK: - Toast
@@ -1208,75 +1215,70 @@ struct ShipperSettingsScreen: View {
 private struct ShipperSettingsAboutSheet: View {
     @Environment(\.palette) private var palette
     @Environment(\.openURL) private var openURL
-    @Environment(\.dismiss) private var dismiss
     let version: String
     let build: String
 
     @State private var presentingLegalDoc: LegalDoc? = nil
 
+    // Sheet→push (NAV rollout 2026-05-30): no own NavigationStack /
+    // toolbar — the shared RoleDetailLayer supplies the BespokeBackBar
+    // (chevron + "About" title) that both titles the surface and closes
+    // it, so a self-painted nav bar would collide with the back chrome.
+    // The nested legal-doc viewer stays a modal sheet (document viewer).
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    Image(systemName: "shippingbox.fill")
-                        .resizable().scaledToFit()
-                        .frame(width: 56, height: 56)
-                        .foregroundStyle(LinearGradient.diagonal)
-                        .padding(.top, 24)
-                    Text("EusoTrip")
-                        .font(.system(size: 26, weight: .heavy))
-                        .foregroundStyle(palette.textPrimary)
-                    Text("Version \(version) (\(build))")
-                        .font(EType.caption).foregroundStyle(palette.textSecondary)
-                    Text("Eusorone Technologies, Inc.")
-                        .font(EType.caption).foregroundStyle(palette.textTertiary)
+        ScrollView {
+            VStack(spacing: 16) {
+                Image(systemName: "shippingbox.fill")
+                    .resizable().scaledToFit()
+                    .frame(width: 56, height: 56)
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .padding(.top, 24)
+                Text("EusoTrip")
+                    .font(.system(size: 26, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                Text("Version \(version) (\(build))")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+                Text("Eusorone Technologies, Inc.")
+                    .font(EType.caption).foregroundStyle(palette.textTertiary)
 
-                    LifecycleCard {
-                        VStack(spacing: 0) {
-                            // Founder doctrine 2026-05-07: legal docs
-                            // render IN-APP (LegalDocSheet) with the
-                            // embedded EusoTrip-canonical text. No
-                            // more web hand-offs for terms / privacy.
-                            row(icon: "doc.text", label: "Privacy Policy") {
-                                presentingLegalDoc = .privacyPolicy
-                            }
-                            Divider().overlay(palette.borderFaint)
-                            row(icon: "doc.text", label: "Terms of Service") {
-                                presentingLegalDoc = .termsOfService
-                            }
-                            Divider().overlay(palette.borderFaint)
-                            row(icon: "envelope.fill", label: "Email support") {
-                                if let u = URL(string: "mailto:support@eusotrip.com") { openURL(u) }
-                            }
-                            Divider().overlay(palette.borderFaint)
-                            row(icon: "globe", label: "eusotrip.com") {
-                                if let u = URL(string: "https://eusotrip.com") { openURL(u) }
-                            }
+                LifecycleCard {
+                    VStack(spacing: 0) {
+                        // Founder doctrine 2026-05-07: legal docs
+                        // render IN-APP (LegalDocSheet) with the
+                        // embedded EusoTrip-canonical text. No
+                        // more web hand-offs for terms / privacy.
+                        row(icon: "doc.text", label: "Privacy Policy") {
+                            presentingLegalDoc = .privacyPolicy
+                        }
+                        Divider().overlay(palette.borderFaint)
+                        row(icon: "doc.text", label: "Terms of Service") {
+                            presentingLegalDoc = .termsOfService
+                        }
+                        Divider().overlay(palette.borderFaint)
+                        row(icon: "envelope.fill", label: "Email support") {
+                            if let u = URL(string: "mailto:support@eusotrip.com") { openURL(u) }
+                        }
+                        Divider().overlay(palette.borderFaint)
+                        row(icon: "globe", label: "eusotrip.com") {
+                            if let u = URL(string: "https://eusotrip.com") { openURL(u) }
                         }
                     }
-                    .padding(.horizontal, 14)
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 56)
+
+                Text("Powered by ESANG AI™")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
                     .padding(.top, 56)
 
-                    Text("Powered by ESANG AI™")
-                        .font(EType.micro).tracking(0.6)
-                        .foregroundStyle(palette.textTertiary)
-                        .padding(.top, 56)
-
-                    Color.clear.frame(height: 32)
-                }
+                Color.clear.frame(height: 32)
             }
-            .navigationTitle("About")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-            .sheet(item: $presentingLegalDoc) { doc in
-                LegalDocSheet(doc: doc)
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
-            }
+        }
+        .sheet(item: $presentingLegalDoc) { doc in
+            LegalDocSheet(doc: doc)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
     }
 

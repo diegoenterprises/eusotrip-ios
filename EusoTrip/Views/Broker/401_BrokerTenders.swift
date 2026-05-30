@@ -84,6 +84,10 @@ private enum TenderFilter: String, CaseIterable, Identifiable {
 struct BrokerTenders: View {
     @Environment(\.palette) private var palette
     @EnvironmentObject private var session: EusoTripSession
+    // Sheet→push (NAV remediation 2026-05-30): the tender detail now pushes
+    // in-stack via the surface's detail layer + BespokeBackBar instead of
+    // presenting as a `.sheet`. Nil outside BrokerSurface.
+    @Environment(\.rolePushDetail) private var pushDetail
 
     @StateObject private var tenders = BrokerOpenTendersStore()
     @State private var filter: TenderFilter = .all
@@ -117,11 +121,6 @@ struct BrokerTenders: View {
         .refreshable {
             tenders.limit = 50
             await tenders.refresh()
-        }
-        .sheet(item: $inspectingTender) { row in
-            tenderDetailSheet(for: row)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
         }
     }
 
@@ -315,6 +314,8 @@ struct BrokerTenders: View {
     private func tenderRow(_ row: BrokerAPI.OpenTender) -> some View {
         Button {
             inspectingTender = row
+            let s = session
+            pushDetail?(row.loadNumber) { AnyView(tenderDetailSheet(for: row).environmentObject(s)) }
         } label: {
             HStack(alignment: .top, spacing: Space.s3) {
                 // Priority dot — gradient when zero responses

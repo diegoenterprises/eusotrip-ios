@@ -69,6 +69,11 @@ private let bulkColumns: [BulkColumn] = [
 
 private struct BulkBody: View {
     @Environment(\.palette) private var palette
+    // Sheet→push (NAV remediation 2026-05-30): the job detail now pushes
+    // in-stack via the surface's detail layer + BespokeBackBar instead of
+    // presenting as a `.sheet`. Nil outside a role surface that installs
+    // RoleDetailLayer.
+    @Environment(\.rolePushDetail) private var pushDetail
     let entityType: String
     @State private var jobs: [BulkJob] = []
     @State private var loading = true
@@ -98,7 +103,6 @@ private struct BulkBody: View {
         }
         .task { await load() }
         .refreshable { await load() }
-        .sheet(item: $sheetJob) { j in jobSheet(j) }
     }
 
     private var header: some View {
@@ -166,7 +170,10 @@ private struct BulkBody: View {
                     EusoEmptyState(systemImage: col.icon, title: "Empty stage", subtitle: "No jobs in this stage right now.")
                 } else {
                     ForEach(cards) { j in
-                        Button { sheetJob = j } label: { cardView(j, col: col) }
+                        Button {
+                            sheetJob = j
+                            pushDetail?(j.fileName) { AnyView(jobSheet(j)) }
+                        } label: { cardView(j, col: col) }
                             .buttonStyle(.plain)
                             // 2026-05-23 — Drag the job card to fire
                             // the SOURCE column's action without
@@ -287,6 +294,12 @@ private struct BulkBody: View {
         do {
             let _: Out = try await EusoTripAPI.shared.mutation(proc, input: In(jobId: j.id))
             lastAction = "\(proc.split(separator: ".").last ?? "") · job \(j.id) queued."
+            // If the action came from the pushed job detail (sheetJob set),
+            // pop the in-stack layer back to the funnel. The drag path
+            // leaves sheetJob nil, so no spurious pop.
+            if sheetJob != nil {
+                NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
+            }
             sheetJob = nil
             await load()
         } catch {
@@ -302,6 +315,10 @@ private struct BulkBody: View {
         do {
             let _: Out = try await EusoTripAPI.shared.mutation("bulkUpload.cancelJob", input: In(jobId: j.id))
             lastAction = "Cancelled job \(j.id)."
+            // Cancel only fires from the pushed job detail — pop it back.
+            if sheetJob != nil {
+                NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
+            }
             sheetJob = nil
             await load()
         } catch {

@@ -159,6 +159,10 @@ struct ShipperDispatchControl: View {
     @Environment(\.palette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var session: EusoTripSession
+    // Sheet→push (NAV remediation 2026-05-30): the active-load detail
+    // renders in-stack via the surface's `\.rolePushDetail` layer
+    // (slide-in + BespokeBackBar) instead of a slide-up sheet.
+    @Environment(\.rolePushDetail) private var pushDetail
     @StateObject private var store = ShipperDispatchControlStore()
     @State private var selected: ShipperAPI.ActiveLoad?
 
@@ -211,11 +215,6 @@ struct ShipperDispatchControl: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
             Task { await store.refresh() }
-        }
-        .sheet(item: $selected) { row in
-            DispatchDetailSheet(load: row, role: session.user?.role)
-                .environment(\.palette, palette)
-                .presentationDragIndicator(.visible)
         }
         .animation(
             reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.18),
@@ -643,12 +642,31 @@ struct ShipperDispatchControl: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
     }
 
+    // MARK: Row open (sheet→push)
+
+    /// Sheet→push: render the active-load detail in-stack via the
+    /// surface `\.rolePushDetail` layer (BespokeBackBar provided by the
+    /// layer). `selected` is retained for future reads. Re-provides
+    /// `\.palette` since the pushed detail reads it; role wiring stays
+    /// `session.user?.role`.
+    private func openLoad(_ row: ShipperAPI.ActiveLoad) {
+        selected = row
+        let p = palette
+        let r = session.user?.role
+        pushDetail?(row.loadNumber) {
+            AnyView(
+                DispatchDetailSheet(load: row, role: r)
+                    .environment(\.palette, p)
+            )
+        }
+    }
+
     // MARK: Load row
 
     private func loadRow(_ row: ShipperAPI.ActiveLoad) -> some View {
         let stage = LoadCycleStage.resolve(from: row.status)
         return Button {
-            selected = row
+            openLoad(row)
         } label: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {

@@ -38,6 +38,11 @@ private struct DriverPick: Decodable, Identifiable, Hashable {
 
 private struct ChatBody: View {
     @Environment(\.palette) private var palette
+    // Sheet→push (NAV remediation 2026-05-30): the compose-message form
+    // now pushes in-stack via the surface's detail layer + BespokeBackBar
+    // instead of presenting as a `.sheet`. Nil outside a role surface
+    // that installs RoleDetailLayer.
+    @Environment(\.rolePushDetail) private var pushDetail
     @State private var convs: [Conversation] = []
     @State private var drivers: [DriverPick] = []
     @State private var loading = true
@@ -62,7 +67,6 @@ private struct ChatBody: View {
         }
         .task { await loadAll() }
         .refreshable { await loadAll() }
-        .sheet(item: $composeFor) { d in composeSheet(for: d) }
     }
 
     private var header: some View {
@@ -111,7 +115,10 @@ private struct ChatBody: View {
             LifecycleCard {
                 LifecycleSection(label: "MESSAGE A DRIVER", icon: "person.3")
                 ForEach(drivers) { d in
-                    Button { composeFor = d; composeText = "" } label: {
+                    Button {
+                        composeFor = d; composeText = ""
+                        pushDetail?("Message \(d.name)") { AnyView(composeSheet(for: d)) }
+                    } label: {
                         HStack {
                             Image(systemName: "person.fill").foregroundStyle(LinearGradient.diagonal)
                             VStack(alignment: .leading, spacing: 2) {
@@ -139,7 +146,10 @@ private struct ChatBody: View {
                 .background(palette.bgCard)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             HStack {
-                Button { composeFor = nil } label: {
+                Button {
+                    composeFor = nil
+                    NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
+                } label: {
                     Text("Cancel").font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(palette.textSecondary)
                         .padding(.horizontal, 12).padding(.vertical, 8)
                 }.buttonStyle(.plain)
@@ -183,6 +193,8 @@ private struct ChatBody: View {
             sentEcho = "Sent to \(d.name)."
             composeFor = nil
             composeText = ""
+            // Pop the pushed compose form back to the chat list on success.
+            NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
             await loadAll()
         } catch {
             sendError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
