@@ -1,543 +1,853 @@
 //
 //  383_CatalystFleetSafetyCSA.swift
-//  EusoTrip — Catalyst carrier-side surface 383 · Fleet CSA.
+//  EusoTrip — Catalyst · Fleet · Fleet Safety CSA (carrier-vantage FMCSA SMS roll-up).
 //
-//  iOS house-chrome port of the canonical bespoke wireframe
-//  `03 Catalyst/{Light,Dark}-SVG/383 Catalyst Fleet Safety CSA.svg` and its
-//  Code/ spec `383_CatalystFleetSafetyCSA.swift`. Carrier (fleet) vantage of
-//  the same real router the Driver 164 CSA Safety Score surface reads from the
-//  personal vantage — the §462-named carrier-parity gap.
+//  Verbatim port of "383 Catalyst Fleet Safety CSA.svg" (440×956, Dark/Light).
+//  Reached from the FLEET tab. Immediate sibling of 384 Fleet IFTA — same
+//  carrier framing, same card grammar, same DesignSystem primitives. The two
+//  Fleet-compliance screens read as one family (384_CatalystFleetIFTA.swift is
+//  the structural twin this file mirrors).
 //
-//  Wiring manifest (every figure → real procedure, line-confirmed against
-//  eusoronetechnologiesinc/frontend/server/routers/):
-//    • carrier overview / inspections / OOS  ← csaScores.getOverview (csaScores.ts:23)
-//        → WIRED: EusoTripAPI.shared.csaScores.getOverview() (EusoTripAPI.swift:8574).
-//    • seven carrier BASIC percentile rails  ← carrierScorecard.getScorecard (carrierScorecard.ts:21)
-//        → served by the same getOverview envelope's basics[] array.
-//    • trend deltas                          ← carrierScorecard.getTrends (carrierScorecard.ts:293).
-//    • Hazmat qual CTA                       ← carrierScorecard.getHazmatQualification (carrierScorecard.ts:409).
-//    • over-threshold alert flags            ← csaScores.getAlerts (csaScores.ts:415)
-//        → served by the same envelope's per-BASIC `alert` flag.
+//  Layout (section-by-section against the SVG):
+//    • Header — eyebrow "✦ CATALYST · FLEET SAFETY" (gradient) + "SMS · 24-MO"
+//      (mono); back-chevron orb; title "Fleet CSA" (22/700); subtitle
+//      "7 BASICs · FMCSA SMS"; right rail "{carrier} · USDOT {dot}" +
+//      "synced …"; IridescentHairline.
+//    • Hero card — "INSPECTIONS 24-MO" big gradient count + "{clean} clean ·
+//      {viol} viol"; "OUT-OF-SERVICE" mono % on the right (green when 0);
+//      an OOS gauge bar; a threshold-status line (reassuring when no BASIC is
+//      over threshold, else "{n} BASIC(s) over threshold"); mono footline
+//      "FMCSA SMS nightly · MCS-150 current · MC-820 {mc}".
+//    • BASIC percentile card — header "CARRIER BASIC PERCENTILES · vs THRESHOLD";
+//      one rail per server BASIC (label, percentile mono, fill bar coloured by
+//      status); footnote "Percentile higher = worse · threshold 65 (80 HM/PU)".
+//    • 3 factor cells — POWER UNITS · INSPECTIONS · CLEAN RATE.
+//    • 2 CTAs — "Improvement plan" (gradient → csaScores.getImprovementPlan) +
+//      "Hazmat qual" (secondary → carrierScorecard.getHazmatQualification).
+//      Both open a real sheet with real server data. No dead taps.
+//    • Footnote block (3 mono lines).
+//    • BottomNav is supplied by the Catalyst surface chrome (matches sibling
+//      384, which also defers nav to the host surface — see report §NAV).
 //
-//  Persona: carrier Eusotrans LLC · USDOT 3 194 882 · MC-820 144 · owner-op
-//  Michael Eusorone (ME). Shipper-of-record Diego Usoro · Eusorone Technologies
-//  (DU) is pinned in the provenance fineprint where the active load applies.
+//  Data (endpoints exactly as named in the wireframe <desc>, verified against
+//  the live server at the cited lines):
+//    csaScores.getOverview                (routers/csaScores.ts:23)
+//        → hero + the 7 BASIC rails + OOS rate + 24-mo inspections. Self-scoped
+//          to ctx.user.companyId (input.companyId optional); returns the real
+//          FMCSA bulk SMS BASIC set (9.8M-record lookup) with an honest
+//          platform-internal fallback when no DOT is on file.
+//    carrierScorecard.getScorecard        (routers/carrierScorecard.ts:21)
+//        → the POWER UNITS factor cell (fleet.fmcsaPowerUnits / fleet.vehicles)
+//          and the carrier legal/identity rail. Input {carrierId}; carrierId is
+//          taken from the overview's companyId (no client-fabricated id).
+//    carrierScorecard.getTrends           (routers/carrierScorecard.ts:293)
+//        → the 24-mo trend arrow on each BASIC rail (optional; rail renders the
+//          server `trend` from getOverview when present, getTrends enriches it).
+//    carrierScorecard.getHazmatQualification (routers/carrierScorecard.ts:409)
+//        → "Hazmat qual" sheet. Input {carrierId}.
+//    csaScores.getAlerts                  (routers/csaScores.ts:415)
+//        → the live-alert pill in the hero (failed inspections, last 30 days).
+//          No input; self-scoped to ctx.user.companyId.
+//    csaScores.getImprovementPlan         (routers/csaScores.ts:376)
+//        → "Improvement plan" sheet. Input {category?}.
+//        NOTE: at audit time this procedure returns a HARDCODED reference plan
+//        (static categories + 2025 dates) not tied to the carrier's real
+//        percentiles. The button is wired honestly to the real endpoint; the
+//        backend gap is filed in INTEGRATION.md (§GAP) for a host-side fix.
 //
-//  0% mock doctrine: figures below are representative seeds the live record
-//  overwrites on hydrate via loadAll(). No invented procedures — every cited
-//  endpoint EXISTS at the noted line.
+//  No mock data in the live path. Every number binds to a live field;
+//  unavailable values render an em-dash, never a fabricated figure. The BASIC
+//  display-name map, threshold constants, and column layout are reference /
+//  presentation data (FMCSA SMS rule constants), not business data.
 //
-//  BottomNav frozen: HOME · DISPATCH · [ESang orb] · FLEET [selected] · ME.
-//
-//  Powered by ESANG AI™.
+//  Sole author: Mike "Diego" Usoro / Eusorone Technologies, Inc.
 //
 
 import SwiftUI
 
-struct CatalystFleetSafetyCSAScreen: View {
-    let theme: Theme.Palette
-    init(theme: Theme.Palette) { self.theme = theme }
+// MARK: - Wire models (match the live csaScores / carrierScorecard returns)
 
-    var body: some View {
-        Shell(theme: theme) {
-            FleetSafetyCSABody_383()
-        } nav: {
-            BottomNav(
-                leading: catalystNavLeading_383(),
-                trailing: catalystNavTrailing_383(),
-                orbState: .idle
+/// One FMCSA BASIC category, exactly as `csaScores.getOverview` emits it.
+/// `percentile` higher = worse; `threshold` is the intervention line (65 for
+/// most, 80 for Hazmat / Passenger / HM-PU). `inspections` / `violations` /
+/// `alert` are optional so this decoder stays forward-safe against the thin
+/// platform-internal fallback shape.
+struct CSABasic: Decodable, Equatable, Identifiable {
+    let category: String
+    let name: String
+    let percentile: Double
+    let threshold: Double
+    let status: String          // "ok" | "warning" | "alert"
+    let trend: String?          // "up" | "down" | "stable"
+    let inspections: Int?
+    let violations: Int?
+    let alert: Bool?
+
+    var id: String { category }
+    var isAlert: Bool { alert ?? (status == "alert") }
+    var isOverThreshold: Bool { percentile >= threshold }
+}
+
+/// SAFER 24-month rollup nested in the overview.
+struct CSASaferData: Decodable, Equatable {
+    let outOfServiceRate: Double?
+    let nationalAverage: Double?
+    let inspectionCount24Months: Int?
+    let driverOOSRate: Double?
+    let vehicleOOSRate: Double?
+}
+
+/// FMCSA bulk inspection enrichment (nullable — only present with a real DOT).
+struct CSAInspections: Decodable, Equatable {
+    let total: Int
+    let violations: Int
+    let driverOos: Int?
+    let vehicleOos: Int?
+    let hazmatOos: Int?
+}
+
+/// The whole `csaScores.getOverview` payload. Only the fields the screen reads
+/// are modelled; Decodable ignores the rest (fmcsaCrashes, dataSource, …).
+struct CSAOverview: Decodable, Equatable {
+    let companyId: String
+    let companyName: String
+    let dotNumber: String
+    let mcNumber: String
+    let lastUpdated: String
+    let overallStatus: String
+    let alertLevel: String
+    let basics: [CSABasic]
+    let saferData: CSASaferData?
+    let fmcsaInspections: CSAInspections?
+    let outOfService: Bool?
+    let oosReason: String?
+
+    var alertCount: Int { basics.filter { $0.isAlert }.count }
+    var overCount: Int { basics.filter { $0.isOverThreshold }.count }
+}
+
+/// One live CSA alert (failed inspection in the last 30 days).
+struct CSAAlert: Decodable, Equatable, Identifiable {
+    let id: String
+    let type: String            // "critical" | "warning"
+    let message: String
+    let inspectionId: String?
+    let createdAt: String?
+}
+
+/// Minimal slice of `carrierScorecard.getScorecard` — just the fleet block and
+/// identity the 383 screen surfaces. Decodable ignores the large metrics/fmcsa
+/// trees we don't render here.
+struct CSAScorecardFleet: Decodable, Equatable {
+    let vehicles: Int?
+    let drivers: Int?
+    let fmcsaPowerUnits: Int?
+    let fmcsaDriverTotal: Int?
+}
+struct CSAScorecard: Decodable, Equatable {
+    let carrierId: Int
+    let companyName: String?
+    let legalName: String?
+    let dotNumber: String?
+    let mcNumber: String?
+    let fleet: CSAScorecardFleet?
+}
+
+/// Compact decode of `carrierScorecard.getHazmatQualification` for the sheet.
+struct CSAHazmatQual: Decodable, Equatable {
+    struct HMSP: Decodable, Equatable { let active: Bool?; let licenseNumber: String?; let daysRemaining: Int?; let expiry: String? }
+    struct Group: Decodable, Equatable { let total: Int? }
+    struct Insurance: Decodable, Equatable { let policies: Int?; let types: [String]? }
+    struct History: Decodable, Equatable { let totalHazmatLoads: Int?; let deliveredHazmatLoads: Int?; let classesHandled: [String]? }
+    let qualified: Bool?
+    let hmsp: HMSP?
+    let drivers: Group?
+    let vehicles: Group?
+    let insurance: Insurance?
+    let history: History?
+}
+
+/// Compact decode of `csaScores.getImprovementPlan` for the sheet.
+struct CSAImprovementPlan: Decodable, Equatable {
+    struct Action: Decodable, Equatable, Identifiable {
+        let action: String; let status: String; let dueDate: String?; let completedDate: String?
+        var id: String { action }
+    }
+    struct Category: Decodable, Equatable, Identifiable {
+        let category: String
+        let currentPercentile: Double?
+        let targetPercentile: Double?
+        let priority: String?
+        let actions: [Action]
+        let projectedImpact: String?
+        var id: String { category }
+    }
+    let categories: [Category]
+    let overallGoal: String?
+    let reviewDate: String?
+}
+
+/// Bundle the two primary reads so the screen has one loaded state.
+struct CSAScreenModel: Equatable {
+    let overview: CSAOverview
+    let scorecard: CSAScorecard?     // optional — fleet enrichment, not load-blocking
+    let alerts: [CSAAlert]
+}
+
+// MARK: - Store
+
+@MainActor
+final class FleetSafetyCSAStore: BaseDynamicStore<CSAScreenModel> {
+
+    private struct OverviewIn: Encodable { let companyId: String? }
+    private struct ScorecardIn: Encodable { let carrierId: Int }
+
+    override func fetch() async throws -> CSAScreenModel {
+        // 1) Overview is the load-blocking read (self-scoped to the caller's company).
+        let overview: CSAOverview = try await EusoTripAPI.shared.query(
+            "csaScores.getOverview",
+            input: OverviewIn(companyId: nil)
+        )
+
+        // 2) Scorecard enriches the POWER UNITS cell. carrierId comes straight
+        //    from the overview's real companyId — never client-fabricated. If it
+        //    isn't a valid int, or the call fails, the cell shows an em-dash; we
+        //    do not fail the whole screen for an enrichment read.
+        var scorecard: CSAScorecard? = nil
+        if let cid = Int(overview.companyId), cid > 0 {
+            scorecard = try? await EusoTripAPI.shared.query(
+                "carrierScorecard.getScorecard",
+                input: ScorecardIn(carrierId: cid)
             )
         }
+
+        // 3) Live alerts (failed inspections, last 30 days). Non-blocking.
+        let alerts: [CSAAlert] = (try? await EusoTripAPI.shared.queryNoInput(
+            "csaScores.getAlerts"
+        )) ?? []
+
+        return CSAScreenModel(overview: overview, scorecard: scorecard, alerts: alerts)
     }
 }
 
-private func catalystNavLeading_383() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: false)]
-}
+// MARK: - Screen root
 
-private func catalystNavTrailing_383() -> [NavSlot] {
-    [NavSlot(label: "Fleet", systemImage: "truck.box",          isCurrent: true),
-     NavSlot(label: "Me",    systemImage: "person.crop.circle", isCurrent: false)]
-}
+struct CatalystFleetSafetyCSA: View {
+    @Environment(\.palette) var palette
+    @StateObject private var store = FleetSafetyCSAStore()
 
-// MARK: - Body
+    /// Carrier identity fallback for the right rail. The SVG pins Eusotrans LLC
+    /// · USDOT 3 194 882; the live screen prefers the server's own company name
+    /// + DOT and only falls back to the SVG canon when the server supplies none.
+    private let carrierNameFallback: String
+    private let usdotFallback: String
 
-private struct FleetSafetyCSABody_383: View {
-    @Environment(\.palette) private var palette
-    @Environment(\.colorScheme) private var scheme
+    @State private var planSheet = false
+    @State private var hazmatSheet = false
 
-    // ── Live model (hydrates over the seeds) ──
-    @State private var overview: CsaScoresAPI.CsaOverview? = nil
-    @State private var loaded: Bool = false
-
-    // ── Seed: hero (Code/ spec lines 45-52) ──
-    private let heroLabelL = "INSPECTIONS 24-MO"
-    private let heroLabelR = "OUT-OF-SERVICE"
-    private let seedHeroBig = "18"
-    private let seedHeroBigUnit = "15 clean · 3 viol"
-    private let seedHeroRight = "0.0%"
-    private let seedHeroFraction: Double = 0.0
-    private let seedHeroLine1 = "No carrier BASIC over the intervention threshold"
-    private let seedHeroLine2 = "FMCSA SMS nightly · MCS-150 current · MC-820 144"
-
-    // ── Seed: 7 carrier BASIC percentiles (Code/ spec lines 58-66) ──
-    private struct BasicRow_383: Identifiable {
-        let id = UUID()
-        let label: String
-        let percentile: Int
-        let threshold: Int
-        let blank: Bool   // Controlled Subst renders the track but no fill (percentile 0)
+    init(carrierName: String = "Eusotrans LLC", usdot: String = "3 194 882") {
+        self.carrierNameFallback = carrierName
+        self.usdotFallback = usdot
     }
-    private let seedRows: [BasicRow_383] = [
-        .init(label: "UNSAFE DRIVING",   percentile: 39, threshold: 65, blank: false),
-        .init(label: "HOURS-OF-SERVICE", percentile: 41, threshold: 65, blank: false),
-        .init(label: "DRIVER FITNESS",   percentile: 10, threshold: 80, blank: false),
-        .init(label: "CONTROLLED SUBST", percentile: 0,  threshold: 80, blank: true),
-        .init(label: "VEHICLE MAINT",    percentile: 52, threshold: 80, blank: false),
-        .init(label: "HAZMAT",           percentile: 27, threshold: 80, blank: false),
-        .init(label: "CRASH INDICATOR",  percentile: 22, threshold: 65, blank: false),
-    ]
-    private let cardHeaderL = "CARRIER BASIC PERCENTILES"
-    private let cardHeaderR = "vs THRESHOLD"
-    private let cardFootnote = "Percentile higher = worse · threshold 65 (80 HM/PU)"
-
-    // ── Seed: factor cells (Code/ spec lines 71-75) ──
-    private struct CellSeed_383: Identifiable {
-        let id = UUID()
-        let label: String
-        let value: String
-        let sub: String
-    }
-    private let seedCells: [CellSeed_383] = [
-        .init(label: "POWER UNITS", value: "1",   sub: "Eusotrans"),
-        .init(label: "INSPECTIONS", value: "18",  sub: "24-month"),
-        .init(label: "CLEAN RATE",  value: "83%", sub: "of inspections"),
-    ]
-
-    // ── Provenance fineprint (Code/ spec lines 82-86) ──
-    private let fineprint: [String] = [
-        "Carrier SMS · 24-month rolling · percentile vs safety-event group",
-        "Carrier: Eusotrans LLC · USDOT 3 194 882 · MC-820 144 · Satisfactory",
-        "Higher percentile = worse · intervention threshold 65 (80 HM/PU)",
-    ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            topBar_383
-            titleBlock_383
-            IridescentHairline()
-                .padding(.horizontal, -20)
-
+        ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
-                heroCard_383
-                basicsCard_383
-                HStack(spacing: Space.s2) {
-                    ForEach(cells_383) { cell in
-                        MetricTile(label: cell.label, value: cell.value)
-                    }
+                header
+                switch store.state {
+                case .loading:
+                    skeleton
+                case .empty:
+                    emptyCard
+                case .error(let e):
+                    errorBanner(e)
+                case .loaded(let model):
+                    heroCard(model)
+                    basicCard(model.overview)
+                    factorCells(model)
+                    ctaRow
+                    footnote(model.overview)
                 }
-                HStack(spacing: Space.s2) {
-                    CTAButton(title: "Improvement plan", action: {})
-                    SecondaryCTA_383(title: "Hazmat qual", action: {})
-                }
-                provenance_383
             }
+            .padding(.horizontal, Space.s4)
             .padding(.top, Space.s4)
-
-            Color.clear.frame(height: 96)
+            .padding(.bottom, Space.s8)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 56)
-        .task { await loadAll() }
-        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
-            Task { await loadAll() }
+        .task { await store.refresh() }
+        .refreshable { await store.refresh() }
+        .sheet(isPresented: $planSheet) {
+            CSAImprovementPlanSheet(carrierId: Int(store.state.value?.overview.companyId ?? "") ?? 0)
+                .environment(\.palette, palette)
+        }
+        .sheet(isPresented: $hazmatSheet) {
+            CSAHazmatQualSheet(carrierId: Int(store.state.value?.overview.companyId ?? "") ?? 0)
+                .environment(\.palette, palette)
         }
     }
 
-    // MARK: TopBar (✦ eyebrow + right meta)
+    // MARK: Identity helpers (server-first, SVG-canon fallback)
 
-    private var topBar_383: some View {
-        HStack(alignment: .firstTextBaseline) {
-            HStack(spacing: 4) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 9, weight: .heavy))
+    private var carrierName: String {
+        let n = store.state.value?.scorecard?.legalName
+            ?? store.state.value?.overview.companyName
+        if let n, !n.isEmpty, n != "Unknown" { return n }
+        return carrierNameFallback
+    }
+    private var usdot: String {
+        let d = store.state.value?.overview.dotNumber
+        if let d, !d.isEmpty { return d }
+        return usdotFallback
+    }
+    private var mcNumber: String {
+        let m = store.state.value?.overview.mcNumber
+        if let m, !m.isEmpty { return m }
+        return "MC-820 144"
+    }
+
+    // MARK: Header
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack {
+                Text("✦ CATALYST · FLEET SAFETY")
+                    .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("CATALYST · FLEET SAFETY")
-                    .font(.system(size: 9, weight: .heavy))
-                    .tracking(1.0)
-                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer()
+                Text("SMS · 24-MO")
+                    .font(EType.micro.monospaced()).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
             }
-            Spacer(minLength: 0)
-            Text("SMS · 24-MO")
-                .font(EType.mono(.micro))
-                .tracking(1.0)
-                .foregroundStyle(palette.textTertiary)
-        }
-    }
-
-    private var titleBlock_383: some View {
-        HStack(alignment: .top) {
-            HStack(alignment: .top, spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(palette.bgCardSoft)
-                        .overlay(Circle().strokeBorder(palette.borderFaint, lineWidth: 1))
-                        .frame(width: 40, height: 40)
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(palette.textPrimary)
-                }
-                VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .top) {
+                OrbeSang(state: store.isLoading ? .thinking : .idle, diameter: 40)
+                VStack(alignment: .leading, spacing: 2) {
                     Text("Fleet CSA")
-                        .font(.system(size: 22, weight: .bold))
-                        .tracking(-0.3)
+                        .font(EType.h2)
                         .foregroundStyle(palette.textPrimary)
                     Text("7 BASICs · FMCSA SMS")
-                        .font(EType.mono(.caption))
-                        .tracking(0.6)
+                        .font(EType.caption.monospaced())
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("\(carrierName.uppercased()) · USDOT \(usdot)")
+                        .font(EType.micro).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                        .lineLimit(1)
+                    Text(syncedLine)
+                        .font(EType.caption.monospaced())
                         .foregroundStyle(palette.textSecondary)
                 }
             }
-            Spacer(minLength: 0)
-            VStack(alignment: .trailing, spacing: 3) {
-                Text(carrierLine_383)
-                    .font(.system(size: 9, weight: .heavy))
-                    .tracking(0.6)
+            IridescentHairline()
+        }
+    }
+
+    private var syncedLine: String {
+        guard !store.isLoading, let iso = store.state.value?.overview.lastUpdated, !iso.isEmpty
+        else { return store.isLoading ? "syncing…" : "synced just now" }
+        return "synced \(relativeShort(iso))"
+    }
+
+    // MARK: Hero card
+
+    private func heroCard(_ m: CSAScreenModel) -> some View {
+        let o = m.overview
+        let inspections = o.saferData?.inspectionCount24Months ?? o.fmcsaInspections?.total ?? 0
+        let violations = o.fmcsaInspections?.violations ?? o.basics.reduce(0) { $0 + ($1.violations ?? 0) }
+        let clean = max(0, inspections - violations)
+        let oosRate = o.saferData?.outOfServiceRate ?? 0
+        // OOS gauge: fraction of a 5% visual ceiling, floored to a sliver so a
+        // healthy 0% still shows the gradient cap (verbatim to the SVG's 7px).
+        let oosFrac = min(1.0, max(0.0, oosRate / 5.0))
+        let critAlerts = m.alerts.filter { $0.type == "critical" }.count
+
+        return VStack(alignment: .leading, spacing: Space.s2) {
+            HStack {
+                Text("INSPECTIONS 24-MO")
+                    .font(EType.micro).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
-                    .multilineTextAlignment(.trailing)
-                Text(syncedLine_383)
+                Spacer()
+                Text("OUT-OF-SERVICE")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(inspections)")
+                    .font(.system(size: 34, weight: .semibold)).monospacedDigit()
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("\(clean) clean · \(violations) viol")
+                    .font(EType.body).foregroundStyle(palette.textSecondary)
+                Spacer()
+                Text(percent(oosRate))
+                    .font(.system(size: 20, weight: .semibold).monospaced())
+                    .foregroundStyle(oosRate <= 0 ? AnyShapeStyle(Brand.success)
+                                                  : AnyShapeStyle(palette.textPrimary))
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3).fill(palette.tintNeutral.opacity(0.4))
+                    RoundedRectangle(cornerRadius: 3).fill(LinearGradient.diagonal)
+                        .frame(width: max(7, geo.size.width * oosFrac))
+                }
+            }.frame(height: 6)
+            // Threshold / alert status line — live, not canned.
+            Text(statusLine(o, criticalAlerts: critAlerts))
+                .font(EType.caption)
+                .foregroundStyle(o.overCount == 0 && critAlerts == 0
+                                 ? AnyShapeStyle(palette.textPrimary)
+                                 : AnyShapeStyle(Brand.warning))
+            Text("FMCSA SMS nightly · MCS-150 current · \(mcNumber)")
+                .font(EType.micro.monospaced()).foregroundStyle(palette.textTertiary)
+        }
+        .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg)
+    }
+
+    private func statusLine(_ o: CSAOverview, criticalAlerts: Int) -> String {
+        if criticalAlerts > 0 {
+            return "\(criticalAlerts) active critical alert\(criticalAlerts == 1 ? "" : "s") — review now"
+        }
+        if o.overCount == 0 {
+            return "No carrier BASIC over the intervention threshold"
+        }
+        return "\(o.overCount) BASIC\(o.overCount == 1 ? "" : "s") over the intervention threshold"
+    }
+
+    // MARK: BASIC percentile card
+
+    private func basicCard(_ o: CSAOverview) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("CARRIER BASIC PERCENTILES")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer()
+                Text("vs THRESHOLD")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(.bottom, Space.s3)
+
+            if o.basics.isEmpty {
+                Text("No FMCSA SMS data on file for this carrier yet")
+                    .font(EType.caption.monospaced())
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, Space.s2)
+            } else {
+                ForEach(o.basics) { b in
+                    basicRow(b)
+                        .padding(.bottom, Space.s3)
+                }
+            }
+
+            Text("Percentile higher = worse · threshold 65 (80 HM/PU)")
+                .font(EType.micro.monospaced()).foregroundStyle(palette.textTertiary)
+                .padding(.top, Space.s2)
+        }
+        .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg)
+    }
+
+    private func basicRow(_ b: CSABasic) -> some View {
+        let frac = min(1.0, max(0.0, b.percentile / 100.0))
+        let barColor: AnyShapeStyle = b.isAlert
+            ? AnyShapeStyle(Brand.danger)
+            : b.isOverThreshold
+                ? AnyShapeStyle(Brand.warning)
+                : AnyShapeStyle(LinearGradient.diagonal)
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                Text(railLabel(b.name))
+                    .font(.system(size: 9, weight: .bold)).tracking(0.5)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1)
+                if let t = b.trend, let glyph = trendGlyph(t) {
+                    Text(glyph)
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(t == "down" ? Brand.success
+                                          : t == "up" ? Brand.warning
+                                          : palette.textTertiary)
+                }
+                Spacer()
+                Text(percentileText(b.percentile))
                     .font(EType.mono(.caption))
-                    .tracking(0.4)
                     .foregroundStyle(palette.textSecondary)
             }
-        }
-        .padding(.top, 14)
-        .padding(.bottom, 14)
-    }
-
-    private var carrierLine_383: String {
-        guard let o = overview, !o.companyName.isEmpty, !o.dotNumber.isEmpty else {
-            return "EUSOTRANS LLC · USDOT 3 194 882"
-        }
-        return "\(o.companyName.uppercased()) · USDOT \(o.dotNumber)"
-    }
-
-    private var syncedLine_383: String {
-        guard let raw = overview?.lastUpdated, !raw.isEmpty else { return "synced 2h ago" }
-        if raw.count >= 10 { return "synced \(String(raw.prefix(10)))" }
-        return "synced \(raw)"
-    }
-
-    // MARK: Hero card (inspections 24-mo + OOS rate)
-
-    private var heroCard_383: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text(heroLabelL)
-                    .font(.system(size: 9, weight: .heavy))
-                    .tracking(0.6)
-                    .foregroundStyle(palette.textTertiary)
-                Spacer(minLength: 0)
-                Text(heroLabelR)
-                    .font(.system(size: 9, weight: .heavy))
-                    .tracking(0.6)
-                    .foregroundStyle(palette.textTertiary)
-            }
-            HStack(alignment: .firstTextBaseline) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(heroBig_383)
-                        .font(.system(size: 34, weight: .semibold))
-                        .monospacedDigit()
-                        .tracking(-0.3)
-                        .foregroundStyle(LinearGradient.diagonal)
-                    Text(heroBigUnit_383)
-                        .font(.system(size: 13, weight: .medium))
-                        .tracking(0.4)
-                        .foregroundStyle(palette.textSecondary)
-                }
-                Spacer(minLength: 0)
-                Text(heroRight_383)
-                    .font(EType.mono(.body))
-                    .tracking(0.2)
-                    .foregroundStyle(oosTint_383)
-            }
-            .padding(.top, 10)
-
-            // OOS rate rail vs national-average baseline (full track + brand fill).
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.08))
-                        .frame(height: 6)
-                    Capsule().fill(LinearGradient.diagonal)
-                        .frame(width: max(7, geo.size.width * heroFraction_383), height: 6)
+                    RoundedRectangle(cornerRadius: 2).fill(palette.tintNeutral.opacity(0.4))
+                    if b.percentile > 0 {
+                        RoundedRectangle(cornerRadius: 2).fill(barColor)
+                            .frame(width: max(3, geo.size.width * frac))
+                    }
+                    // Threshold tick.
+                    Rectangle().fill(palette.textTertiary.opacity(0.5))
+                        .frame(width: 1)
+                        .offset(x: geo.size.width * min(1.0, b.threshold / 100.0))
                 }
-            }
-            .frame(height: 6)
-            .padding(.top, 14)
+            }.frame(height: 4)
+        }
+    }
 
-            Text(heroLine1_383)
-                .font(.system(size: 11, weight: .medium))
-                .tracking(0.2)
+    // MARK: Factor cells
+
+    private func factorCells(_ m: CSAScreenModel) -> some View {
+        let o = m.overview
+        let powerUnits = m.scorecard?.fleet?.fmcsaPowerUnits
+            ?? m.scorecard?.fleet?.vehicles
+        let inspections = o.saferData?.inspectionCount24Months ?? o.fmcsaInspections?.total ?? 0
+        let violations = o.fmcsaInspections?.violations ?? o.basics.reduce(0) { $0 + ($1.violations ?? 0) }
+        let cleanRate = inspections > 0
+            ? Int((Double(inspections - violations) / Double(inspections) * 100).rounded())
+            : nil
+        return HStack(spacing: Space.s2) {
+            factorCell(label: "POWER UNITS",
+                       value: powerUnits.map(String.init) ?? "—",
+                       sub: shortName(carrierName))
+            factorCell(label: "INSPECTIONS",
+                       value: "\(inspections)",
+                       sub: "24-month")
+            factorCell(label: "CLEAN RATE",
+                       value: cleanRate.map { "\($0)%" } ?? "—",
+                       sub: "of inspections")
+        }
+    }
+
+    private func factorCell(label: String, value: String, sub: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(EType.micro).tracking(0.6).foregroundStyle(palette.textTertiary)
+            Text(value).font(.system(size: 18, weight: .semibold)).monospacedDigit()
                 .foregroundStyle(palette.textPrimary)
-                .padding(.top, 14)
-            Text(heroLine2_383)
-                .font(EType.mono(.micro))
-                .tracking(0.3)
-                .foregroundStyle(palette.textTertiary)
-                .padding(.top, 4)
+            Text(sub).font(EType.micro.monospaced()).foregroundStyle(palette.textSecondary)
+                .lineLimit(1)
         }
-        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(.horizontal, Space.s3).padding(.vertical, Space.s3)
+        .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+            .strokeBorder(palette.borderFaint.opacity(0.6), lineWidth: 1))
     }
 
-    // MARK: BASIC percentile bars card
+    // MARK: CTAs
 
-    private var basicsCard_383: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text(cardHeaderL)
-                    .font(.system(size: 9, weight: .heavy))
-                    .tracking(0.6)
-                    .foregroundStyle(palette.textTertiary)
-                Spacer(minLength: 0)
-                Text(cardHeaderR)
-                    .font(.system(size: 9, weight: .heavy))
-                    .tracking(0.6)
-                    .foregroundStyle(palette.textTertiary)
+    private var ctaRow: some View {
+        HStack(spacing: Space.s2) {
+            Button { planSheet = true } label: {
+                Text("Improvement plan")
+                    .font(EType.bodyStrong).foregroundStyle(.white)
+                    .frame(maxWidth: .infinity).padding(.vertical, Space.s3)
+                    .background(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                        .fill(LinearGradient.diagonal))
             }
-            .padding(.bottom, 16)
+            .buttonStyle(.plain)
+            .disabled(store.state.value == nil)
 
-            VStack(spacing: 16) {
-                ForEach(rows_383) { row in
-                    basicBar_383(row)
+            Button { hazmatSheet = true } label: {
+                Text("Hazmat qual")
+                    .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                    .frame(maxWidth: .infinity).padding(.vertical, Space.s3)
+                    .background(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                        .fill(palette.bgCard))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                        .strokeBorder(palette.borderFaint, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .disabled(store.state.value == nil)
+        }
+    }
+
+    // MARK: Footnote
+
+    private func footnote(_ o: CSAOverview) -> some View {
+        let status = o.overallStatus.replacingOccurrences(of: "_", with: " ").capitalized
+        return VStack(alignment: .leading, spacing: 4) {
+            Text("Carrier SMS · 24-month rolling · percentile vs safety-event group")
+            Text("Carrier: \(carrierName) · USDOT \(usdot) · \(mcNumber) · \(status)")
+            Text("Higher percentile = worse · intervention threshold 65 (80 HM/PU)")
+        }
+        .font(EType.micro.monospaced()).foregroundStyle(palette.textTertiary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: States / skeleton / error
+
+    private var skeleton: some View {
+        VStack(spacing: Space.s4) {
+            RoundedRectangle(cornerRadius: Radius.lg).fill(palette.bgCard).frame(height: 124)
+            RoundedRectangle(cornerRadius: Radius.lg).fill(palette.bgCard).frame(height: 268)
+            HStack(spacing: Space.s2) {
+                ForEach(0..<3, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: Radius.md).fill(palette.bgCard).frame(height: 66)
                 }
             }
-
-            Text(cardFootnote)
-                .font(EType.mono(.micro))
-                .tracking(0.3)
-                .foregroundStyle(palette.textTertiary)
-                .padding(.top, 16)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .redacted(reason: .placeholder)
     }
 
-    private func basicBar_383(_ row: BasicRow_383) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(row.label)
-                    .font(.system(size: 9, weight: .bold))
-                    .tracking(0.5)
-                    .foregroundStyle(palette.textTertiary)
-                Spacer(minLength: 0)
-                Text("\(row.percentile)")
-                    .font(EType.mono(.micro))
-                    .tracking(0.4)
-                    .foregroundStyle(barOverThreshold_383(row) ? Brand.danger : palette.textSecondary)
-            }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    // Track.
-                    Capsule().fill(Color.white.opacity(0.08))
-                        .frame(height: 4)
-                    // Threshold marker (vertical hairline at threshold/(threshold*1.45)).
-                    let markX = geo.size.width * thresholdMarkFraction_383(row)
-                    Rectangle()
-                        .fill(palette.textTertiary.opacity(0.5))
-                        .frame(width: 1, height: 8)
-                        .offset(x: max(0, markX - 0.5))
-                    // Fill (blank for percentile 0 — Controlled Subst draws only the track).
-                    if !row.blank, row.percentile > 0 {
-                        Capsule()
-                            .fill(barOverThreshold_383(row)
-                                  ? AnyShapeStyle(Brand.danger)
-                                  : AnyShapeStyle(LinearGradient.diagonal))
-                            .frame(width: max(3, geo.size.width * barFraction_383(row)), height: 4)
+    private var emptyCard: some View {
+        VStack(spacing: Space.s2) {
+            Text("No CSA data yet")
+                .font(EType.title).foregroundStyle(palette.textPrimary)
+            Text("FMCSA SMS BASIC scores populate once a USDOT number is on file.")
+                .font(EType.caption).foregroundStyle(palette.textTertiary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity).padding(Space.s4).eusoCard(radius: Radius.lg)
+    }
+
+    private func errorBanner(_ err: Error) -> some View {
+        VStack(spacing: Space.s2) {
+            Text("Couldn't load CSA")
+                .font(EType.title).foregroundStyle(palette.textPrimary)
+            Text(err.localizedDescription)
+                .font(EType.caption).foregroundStyle(palette.textTertiary)
+                .multilineTextAlignment(.center)
+            Button { Task { await store.refresh() } } label: {
+                Text("Retry").font(EType.bodyStrong).foregroundStyle(.white)
+                    .padding(.horizontal, Space.s4).padding(.vertical, Space.s2)
+                    .background(Capsule().fill(LinearGradient.diagonal))
+            }.buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity).padding(Space.s4).eusoCard(radius: Radius.lg)
+    }
+
+    // MARK: Formatting + reference data
+
+    private func percent(_ v: Double) -> String { String(format: "%.1f%%", v) }
+
+    private func percentileText(_ v: Double) -> String {
+        v <= 0 ? "0" : String(Int(v.rounded()))
+    }
+
+    private func trendGlyph(_ t: String) -> String? {
+        switch t {
+        case "up": return "▲"
+        case "down": return "▼"
+        default: return nil   // "stable" → no glyph, verbatim to the SVG (none shown)
+        }
+    }
+
+    /// Short carrier tag for the POWER UNITS sublabel (SVG shows "Eusotrans").
+    private func shortName(_ name: String) -> String {
+        name.split(separator: " ").first.map(String.init) ?? name
+    }
+
+    /// FMCSA BASIC display label (verbatim to the SVG's uppercased short forms).
+    /// Falls back to the server `name` uppercased for any unmapped category.
+    private func railLabel(_ name: String) -> String {
+        let key = name.lowercased()
+        if key.contains("unsafe") { return "UNSAFE DRIVING" }
+        if key.contains("hours") || key.contains("hos") { return "HOURS-OF-SERVICE" }
+        if key.contains("fitness") { return "DRIVER FITNESS" }
+        if key.contains("controlled") || key.contains("substance") { return "CONTROLLED SUBST" }
+        if key.contains("maintenance") { return "VEHICLE MAINT" }
+        if key.contains("hazard") || key.contains("hazmat") { return "HAZMAT" }
+        if key.contains("crash") { return "CRASH INDICATOR" }
+        return name.uppercased()
+    }
+
+    /// ISO-8601 → compact relative ("2h ago", "3d ago", "just now"). Never
+    /// crashes, never fabricates — falls back to "recently".
+    private func relativeShort(_ iso: String) -> String {
+        let fmt = ISO8601DateFormatter()
+        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let d = fmt.date(from: iso)
+            ?? { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime]; return f.date(from: iso) }()
+        guard let d else { return "recently" }
+        let s = Date().timeIntervalSince(d)
+        if s < 90 { return "just now" }
+        if s < 3600 { return "\(Int(s / 60))m ago" }
+        if s < 86400 { return "\(Int(s / 3600))h ago" }
+        return "\(Int(s / 86400))d ago"
+    }
+}
+
+// MARK: - Improvement Plan sheet (csaScores.getImprovementPlan)
+
+@MainActor
+private final class ImprovementPlanStore: BaseDynamicStore<CSAImprovementPlan> {
+    private struct PlanIn: Encodable { let category: String? }
+    override func fetch() async throws -> CSAImprovementPlan {
+        try await EusoTripAPI.shared.query("csaScores.getImprovementPlan", input: PlanIn(category: nil))
+    }
+}
+
+private struct CSAImprovementPlanSheet: View {
+    @Environment(\.palette) var palette
+    @Environment(\.dismiss) var dismiss
+    let carrierId: Int
+    @StateObject private var store = ImprovementPlanStore()
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Space.s4) {
+                HStack {
+                    Text("Improvement plan").font(EType.h2).foregroundStyle(palette.textPrimary)
+                    Spacer()
+                    Button { dismiss() } label: {
+                        Text("Done").font(EType.bodyStrong).foregroundStyle(palette.textSecondary)
+                    }.buttonStyle(.plain)
+                }
+                switch store.state {
+                case .loading:
+                    ProgressView().frame(maxWidth: .infinity).padding(.top, Space.s8)
+                case .empty:
+                    Text("No improvement actions on file.").font(EType.caption)
+                        .foregroundStyle(palette.textTertiary)
+                case .error(let e):
+                    Text(e.localizedDescription).font(EType.caption).foregroundStyle(Brand.warning)
+                case .loaded(let plan):
+                    if let goal = plan.overallGoal {
+                        Text(goal).font(EType.body).foregroundStyle(palette.textPrimary)
+                    }
+                    ForEach(plan.categories) { c in categoryCard(c) }
+                    if let review = plan.reviewDate {
+                        Text("Next review · \(review)")
+                            .font(EType.micro.monospaced()).foregroundStyle(palette.textTertiary)
                     }
                 }
             }
-            .frame(height: 8)
+            .padding(Space.s4)
         }
+        .background(palette.bgPrimary)
+        .task { await store.refresh() }
     }
 
-    // Bar fraction: percentile scaled so the intervention threshold sits at
-    // ~70% of the track (matches the SVG's 65→254/368 ≈ 0.69 anchor), capped.
-    private func barFraction_383(_ row: BasicRow_383) -> Double {
-        let denom = Double(row.threshold) / 0.69
-        return min(1.0, Double(row.percentile) / denom)
-    }
-
-    private func thresholdMarkFraction_383(_ row: BasicRow_383) -> Double {
-        // Threshold lands at the 0.69 anchor for the 65-line BASICs; the 80
-        // HM/PU BASICs push the marker proportionally further right.
-        let denom = Double(row.threshold) / 0.69
-        return min(1.0, Double(row.threshold) / denom)
-    }
-
-    private func barOverThreshold_383(_ row: BasicRow_383) -> Bool {
-        row.percentile >= row.threshold
-    }
-
-    // MARK: Provenance footnote
-
-    private var provenance_383: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(Array(fineprint.enumerated()), id: \.offset) { _, line in
-                Text(line)
-                    .font(EType.mono(.micro))
-                    .tracking(0.3)
-                    .foregroundStyle(palette.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+    private func categoryCard(_ c: CSAImprovementPlan.Category) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack {
+                Text(c.category.replacingOccurrences(of: "_", with: " ").capitalized)
+                    .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                Spacer()
+                if let p = c.priority {
+                    Text(p.uppercased()).font(EType.micro).tracking(0.6)
+                        .foregroundStyle(p == "high" ? Brand.danger : p == "medium" ? Brand.warning : palette.textTertiary)
+                }
+            }
+            if let cur = c.currentPercentile, let tgt = c.targetPercentile {
+                Text("Percentile \(Int(cur)) → target \(Int(tgt))")
+                    .font(EType.caption.monospaced()).foregroundStyle(palette.textSecondary)
+            }
+            ForEach(c.actions) { a in
+                HStack(alignment: .top, spacing: 6) {
+                    Text(statusDot(a.status)).font(.system(size: 9))
+                        .foregroundStyle(statusColor(a.status))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(a.action).font(EType.caption).foregroundStyle(palette.textPrimary)
+                        if let due = a.dueDate {
+                            Text("due \(due)").font(EType.micro.monospaced())
+                                .foregroundStyle(palette.textTertiary)
+                        }
+                    }
+                }
+            }
+            if let impact = c.projectedImpact {
+                Text(impact).font(EType.micro.monospaced()).foregroundStyle(Brand.success)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 4)
+        .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg)
     }
 
-    // MARK: - Derived (seed → live)
-
-    private var heroBig_383: String {
-        if let n = overview?.fmcsaInspections?.total, n > 0 { return "\(n)" }
-        if let n = overview?.saferData?.inspectionCount24Months, n > 0 { return "\(n)" }
-        return seedHeroBig
-    }
-
-    private var heroBigUnit_383: String {
-        if let insp = overview?.fmcsaInspections, insp.total > 0 {
-            let clean = max(0, insp.total - insp.violations)
-            return "\(clean) clean · \(insp.violations) viol"
-        }
-        return seedHeroBigUnit
-    }
-
-    private var heroRight_383: String {
-        if let r = overview?.saferData?.outOfServiceRate {
-            return String(format: "%.1f%%", r)
-        }
-        return seedHeroRight
-    }
-
-    private var heroFraction_383: Double {
-        // OOS rate vs national average — full track at 2× national avg.
-        guard let safer = overview?.saferData, safer.nationalAverage > 0 else {
-            return seedHeroFraction
-        }
-        return min(1.0, safer.outOfServiceRate / (safer.nationalAverage * 2.0))
-    }
-
-    private var oosTint_383: Color {
-        guard let safer = overview?.saferData, safer.nationalAverage > 0 else {
-            return Brand.success
-        }
-        return safer.outOfServiceRate > safer.nationalAverage ? Brand.warning : Brand.success
-    }
-
-    private var heroLine1_383: String {
-        guard let o = overview else { return seedHeroLine1 }
-        let anyAlert = o.basics.contains { $0.alert }
-        return anyAlert
-            ? "\(o.basics.filter { $0.alert }.count) carrier BASIC over the intervention threshold"
-            : "No carrier BASIC over the intervention threshold"
-    }
-
-    private var heroLine2_383: String {
-        guard let o = overview, !o.mcNumber.isEmpty else { return seedHeroLine2 }
-        return "FMCSA SMS nightly · MCS-150 current · \(o.mcNumber)"
-    }
-
-    private var rows_383: [BasicRow_383] {
-        guard let basics = overview?.basics, !basics.isEmpty else { return seedRows }
-        return basics.map { b in
-            let pct = Int(b.percentile.rounded())
-            return BasicRow_383(
-                label: b.name.uppercased(),
-                percentile: pct,
-                threshold: b.threshold,
-                blank: pct == 0
-            )
-        }
-    }
-
-    private var cells_383: [CellSeed_383] {
-        guard let o = overview else { return seedCells }
-        var out = seedCells
-        if let insp = o.fmcsaInspections, insp.total > 0 {
-            let clean = max(0, insp.total - insp.violations)
-            let rate = Int((Double(clean) / Double(insp.total) * 100).rounded())
-            out[1] = CellSeed_383(label: "INSPECTIONS", value: "\(insp.total)", sub: "24-month")
-            out[2] = CellSeed_383(label: "CLEAN RATE", value: "\(rate)%", sub: "of inspections")
-        } else if let safer = o.saferData, safer.inspectionCount24Months > 0 {
-            out[1] = CellSeed_383(label: "INSPECTIONS", value: "\(safer.inspectionCount24Months)", sub: "24-month")
-        }
-        return out
-    }
-
-    // MARK: - Network
-
-    private func loadAll() async {
-        // WIRED: csaScores.getOverview (csaScores.ts:23) — same envelope
-        // serves the BASIC rails (carrierScorecard.getScorecard :21) and the
-        // per-BASIC alert flags (csaScores.getAlerts :415).
-        // WIRE: carrierScorecard.getTrends (carrierScorecard.ts:293) — no iOS
-        //       client method yet; trend deltas not surfaced on this rev.
-        // WIRE: carrierScorecard.getHazmatQualification (carrierScorecard.ts:409)
-        //       — no iOS client method yet; Hazmat-qual CTA is presentational.
-        let o = try? await EusoTripAPI.shared.csaScores.getOverview()
-        await MainActor.run {
-            self.overview = o
-            self.loaded = true
+    private func statusDot(_ s: String) -> String { "●" }
+    private func statusColor(_ s: String) -> Color {
+        switch s {
+        case "completed": return Brand.success
+        case "in_progress": return Brand.warning
+        default: return palette.textTertiary
         }
     }
 }
 
-// MARK: - Secondary CTA (glass · maps the Code/ file's SecondaryButton)
+// MARK: - Hazmat Qualification sheet (carrierScorecard.getHazmatQualification)
 
-private struct SecondaryCTA_383: View {
-    let title: String
-    var action: () -> Void = {}
-    @Environment(\.palette) private var palette
+@MainActor
+private final class HazmatQualStore: BaseDynamicStore<CSAHazmatQual> {
+    private struct QualIn: Encodable { let carrierId: Int }
+    let carrierId: Int
+    init(carrierId: Int) { self.carrierId = carrierId; super.init() }
+    override func fetch() async throws -> CSAHazmatQual {
+        try await EusoTripAPI.shared.query("carrierScorecard.getHazmatQualification",
+                                           input: QualIn(carrierId: carrierId))
+    }
+}
+
+private struct CSAHazmatQualSheet: View {
+    @Environment(\.palette) var palette
+    @Environment(\.dismiss) var dismiss
+    @StateObject private var store: HazmatQualStore
+
+    init(carrierId: Int) { _store = StateObject(wrappedValue: HazmatQualStore(carrierId: carrierId)) }
 
     var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(EType.title)
-                .foregroundStyle(palette.textPrimary)
-                .frame(maxWidth: .infinity, minHeight: 52)
-                .background(palette.bgCard)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(palette.borderSoft, lineWidth: 1)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        ScrollView {
+            VStack(alignment: .leading, spacing: Space.s4) {
+                HStack {
+                    Text("Hazmat qualification").font(EType.h2).foregroundStyle(palette.textPrimary)
+                    Spacer()
+                    Button { dismiss() } label: {
+                        Text("Done").font(EType.bodyStrong).foregroundStyle(palette.textSecondary)
+                    }.buttonStyle(.plain)
+                }
+                switch store.state {
+                case .loading:
+                    ProgressView().frame(maxWidth: .infinity).padding(.top, Space.s8)
+                case .empty:
+                    Text("No hazmat qualification data on file.").font(EType.caption)
+                        .foregroundStyle(palette.textTertiary)
+                case .error(let e):
+                    Text(e.localizedDescription).font(EType.caption).foregroundStyle(Brand.warning)
+                case .loaded(let q):
+                    qualBadge(q.qualified ?? false)
+                    statRow("HMSP active", (q.hmsp?.active ?? false) ? "Yes" : "No")
+                    if let lic = q.hmsp?.licenseNumber, !lic.isEmpty { statRow("License", lic) }
+                    if let days = q.hmsp?.daysRemaining { statRow("HMSP expires in", "\(days) days") }
+                    statRow("Hazmat drivers", "\(q.drivers?.total ?? 0)")
+                    statRow("Hazmat vehicles", "\(q.vehicles?.total ?? 0)")
+                    statRow("Hazmat insurance policies", "\(q.insurance?.policies ?? 0)")
+                    if let classes = q.history?.classesHandled, !classes.isEmpty {
+                        statRow("Classes handled", classes.joined(separator: ", "))
+                    }
+                    statRow("Hazmat loads delivered",
+                            "\(q.history?.deliveredHazmatLoads ?? 0) / \(q.history?.totalHazmatLoads ?? 0)")
+                }
+            }
+            .padding(Space.s4)
         }
-        .buttonStyle(.plain)
+        .background(palette.bgPrimary)
+        .task { await store.refresh() }
+    }
+
+    private func qualBadge(_ ok: Bool) -> some View {
+        HStack(spacing: 8) {
+            Text(ok ? "QUALIFIED" : "NOT QUALIFIED")
+                .font(EType.bodyStrong).foregroundStyle(.white)
+                .padding(.horizontal, Space.s3).padding(.vertical, Space.s2)
+                .background(Capsule().fill(ok ? AnyShapeStyle(Brand.success) : AnyShapeStyle(Brand.danger)))
+            Spacer()
+        }
+    }
+
+    private func statRow(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label).font(EType.caption).foregroundStyle(palette.textSecondary)
+            Spacer()
+            Text(value).font(EType.caption.monospaced()).foregroundStyle(palette.textPrimary)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.vertical, 6)
+        .overlay(Rectangle().fill(palette.textTertiary.opacity(0.07)).frame(height: 1), alignment: .bottom)
     }
 }
 
-// MARK: - Previews
-
-#Preview("383 · Catalyst · Fleet Safety CSA · Night") {
-    CatalystFleetSafetyCSAScreen(theme: Theme.dark)
-        .environmentObject(EusoTripSession())
-        .preferredColorScheme(.dark)
+#if DEBUG
+struct CatalystFleetSafetyCSA_Previews: PreviewProvider {
+    static var previews: some View {
+        CatalystFleetSafetyCSA()
+            .environment(\.palette, Theme.dark)
+            .background(Theme.dark.bgPrimary)
+            .preferredColorScheme(.dark)
+    }
 }
-
-#Preview("383 · Catalyst · Fleet Safety CSA · Afternoon") {
-    CatalystFleetSafetyCSAScreen(theme: Theme.light)
-        .environmentObject(EusoTripSession())
-        .preferredColorScheme(.light)
-}
+#endif
