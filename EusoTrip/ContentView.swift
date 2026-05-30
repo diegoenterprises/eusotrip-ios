@@ -2033,6 +2033,12 @@ enum ScreenRegistry {
             .init(id: "Vesl650", title: "Vessel Operator · Home",       role: .vesselOperator) { p in AnyView(VesselOperatorHomeScreen(theme: p)) },
             .init(id: "Vesl651", title: "Vessel Operator · Shipments",  role: .vesselOperator) { p in AnyView(VesselShipmentsScreen(theme: p)) },
             .init(id: "Vesl652", title: "Vessel Operator · Compliance", role: .vesselOperator) { p in AnyView(VesselComplianceScreen(theme: p)) },
+            .init(id: "Vesl653", title: "Vessel Operator · Booking Detail",      role: .vesselOperator) { p in AnyView(VesselBookingDetailCarrierScreen(theme: p, shipmentId: 0)) },
+            .init(id: "Vesl654", title: "Vessel Operator · Crew Certifications",  role: .vesselOperator) { p in AnyView(VesselCrewCertificationsScreen(theme: p)) },
+            .init(id: "Vesl655", title: "Vessel Operator · Container Positions",  role: .vesselOperator) { p in AnyView(VesselContainerPositionsScreen(theme: p)) },
+            .init(id: "Vesl656", title: "Vessel Operator · Account",             role: .vesselOperator) { p in AnyView(VesselOperatorAccountScreen(theme: p)) },
+            .init(id: "Vesl657", title: "Vessel Operator · Status Update",        role: .vesselOperator) { p in AnyView(VesselStatusUpdateScreen(theme: p, bookingId: 0, currentStatus: "")) },
+            .init(id: "Vesl658", title: "Vessel Operator · Demurrage & Detention", role: .vesselOperator) { p in AnyView(VesselDemurrageDetentionWatchScreen(theme: p)) },
         ])
 
         return list

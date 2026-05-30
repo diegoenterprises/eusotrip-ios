@@ -219,8 +219,8 @@ private struct VesselBookingDetailCarrierBody: View {
     private var actions: some View {
         HStack(spacing: Space.s2) {
             CTAButton(title: updating ? "Updating…" : "Update status",
-                      leadingIcon: "arrow.triangle.2.circlepath",
-                      action: { Task { await updateStatus() } })
+                      action: { Task { await updateStatus() } },
+                      leadingIcon: "arrow.triangle.2.circlepath")
             CTAButton(title: "B/L", leadingIcon: "doc.text")
         }
     }

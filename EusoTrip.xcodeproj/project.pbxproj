@@ -723,6 +723,12 @@
 		FD97CECF2FC1D7C80016DF5F /* 552_RailCompliance.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECE2FC1D7C80016DF5F /* 552_RailCompliance.swift */; };
 		FD97CED12FC1D8040016DF5F /* 651_VesselShipments.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CED02FC1D8040016DF5F /* 651_VesselShipments.swift */; };
 		FD97CED32FC1D8050016DF5F /* 652_VesselCompliance.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CED22FC1D8050016DF5F /* 652_VesselCompliance.swift */; };
+		FEB10000000000000000001A /* 653_VesselBookingDetailCarrier.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEB10000000000000000001B /* 653_VesselBookingDetailCarrier.swift */; };
+		FEB10000000000000000002A /* 654_VesselCrewCertifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEB10000000000000000002B /* 654_VesselCrewCertifications.swift */; };
+		FEB10000000000000000003A /* 655_VesselContainerPositions.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEB10000000000000000003B /* 655_VesselContainerPositions.swift */; };
+		FEB10000000000000000004A /* 656_VesselOperatorAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEB10000000000000000004B /* 656_VesselOperatorAccount.swift */; };
+		FEB10000000000000000005A /* 657_VesselStatusUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEB10000000000000000005B /* 657_VesselStatusUpdate.swift */; };
+		FEB10000000000000000006A /* 658_VesselDemurrageDetentionWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEB10000000000000000006B /* 658_VesselDemurrageDetentionWatch.swift */; };
 		FDCA0D262F96F83F0057AC19 /* EusoTrip Pulse Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = FDCA0D062F96F83E0057AC19 /* EusoTrip Pulse Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		FLCD2026051800000011A1 /* FMCSALookupCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FLCD2026051800000012A1 /* FMCSALookupCard.swift */; };
 		FPSH20260521000001 /* FacilityProfileSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FPSH20260521000002 /* FacilityProfileSheet.swift */; };
@@ -1536,6 +1542,12 @@
 		FD97CECE2FC1D7C80016DF5F /* 552_RailCompliance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 552_RailCompliance.swift; sourceTree = "<group>"; };
 		FD97CED02FC1D8040016DF5F /* 651_VesselShipments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 651_VesselShipments.swift; sourceTree = "<group>"; };
 		FD97CED22FC1D8050016DF5F /* 652_VesselCompliance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 652_VesselCompliance.swift; sourceTree = "<group>"; };
+		FEB10000000000000000001B /* 653_VesselBookingDetailCarrier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 653_VesselBookingDetailCarrier.swift; sourceTree = "<group>"; };
+		FEB10000000000000000002B /* 654_VesselCrewCertifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 654_VesselCrewCertifications.swift; sourceTree = "<group>"; };
+		FEB10000000000000000003B /* 655_VesselContainerPositions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 655_VesselContainerPositions.swift; sourceTree = "<group>"; };
+		FEB10000000000000000004B /* 656_VesselOperatorAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 656_VesselOperatorAccount.swift; sourceTree = "<group>"; };
+		FEB10000000000000000005B /* 657_VesselStatusUpdate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 657_VesselStatusUpdate.swift; sourceTree = "<group>"; };
+		FEB10000000000000000006B /* 658_VesselDemurrageDetentionWatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 658_VesselDemurrageDetentionWatch.swift; sourceTree = "<group>"; };
 		FDCA0D062F96F83E0057AC19 /* EusoTrip Pulse Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "EusoTrip Pulse Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		FDCA0D122F96F83F0057AC19 /* EusoTrip Pulse Watch AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "EusoTrip Pulse Watch AppTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		FDCA0D1C2F96F83F0057AC19 /* EusoTrip Pulse Watch AppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "EusoTrip Pulse Watch AppUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -2551,6 +2563,12 @@
 				VOTMFREF1 /* VesselOceanTrackMap.swift */,
 				FD97CED02FC1D8040016DF5F /* 651_VesselShipments.swift */,
 				FD97CED22FC1D8050016DF5F /* 652_VesselCompliance.swift */,
+				FEB10000000000000000001B /* 653_VesselBookingDetailCarrier.swift */,
+				FEB10000000000000000002B /* 654_VesselCrewCertifications.swift */,
+				FEB10000000000000000003B /* 655_VesselContainerPositions.swift */,
+				FEB10000000000000000004B /* 656_VesselOperatorAccount.swift */,
+				FEB10000000000000000005B /* 657_VesselStatusUpdate.swift */,
+				FEB10000000000000000006B /* 658_VesselDemurrageDetentionWatch.swift */,
 			);
 			path = Vessel;
 			sourceTree = "<group>";
@@ -3507,6 +3525,12 @@
 				D1A11111111111111111YM01 /* 702_TerminalYardMap.swift in Sources */,
 				D1A11111111111111111AH01 /* 800_AdminHome.swift in Sources */,
 				FD97CED32FC1D8050016DF5F /* 652_VesselCompliance.swift in Sources */,
+				FEB10000000000000000001A /* 653_VesselBookingDetailCarrier.swift in Sources */,
+				FEB10000000000000000002A /* 654_VesselCrewCertifications.swift in Sources */,
+				FEB10000000000000000003A /* 655_VesselContainerPositions.swift in Sources */,
+				FEB10000000000000000004A /* 656_VesselOperatorAccount.swift in Sources */,
+				FEB10000000000000000005A /* 657_VesselStatusUpdate.swift in Sources */,
+				FEB10000000000000000006A /* 658_VesselDemurrageDetentionWatch.swift in Sources */,
 				D1A11111111111111111ANC1 /* AdminNavController.swift in Sources */,
 				D1A11111111111111111CT01 /* 801_AdminControlTower.swift in Sources */,
 				D1A11111111111111111AT01 /* 802_AdminTenants.swift in Sources */,

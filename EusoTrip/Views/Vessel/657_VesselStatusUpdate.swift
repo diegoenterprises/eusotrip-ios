@@ -158,8 +158,8 @@ private struct VesselStatusUpdateBody: View {
             if done { Text("Status advanced.").font(EType.caption).foregroundStyle(Brand.success) }
             HStack(spacing: Space.s2) {
                 CTAButton(title: submitting ? "Confirming…" : "Confirm advance",
-                          leadingIcon: "arrow.triangle.2.circlepath",
-                          action: { Task { await confirm() } })
+                          action: { Task { await confirm() } },
+                          leadingIcon: "arrow.triangle.2.circlepath")
                 CTAButton(title: "Cancel")
             }
         }
