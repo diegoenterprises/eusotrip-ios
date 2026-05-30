@@ -36,6 +36,21 @@
 
 import SwiftUI
 
+// MARK: - Style hint
+
+/// Optional cartography-register hint a caller passes to `BespokeMapCanvas`.
+///
+/// `.auto` (the default) preserves the historical behavior: a forward-tilt /
+/// first-person camera resolves to the driver "Active Enroute" register and
+/// everything else to the flat shipper / catalyst board. `.ocean` forces the
+/// Vessel 003 "Live Tracking" great-circle register (`.ocean` dark /
+/// `.lightOcean` light) — the AIS orb, port pins, latitude grid, coast hints,
+/// and the speed/heading/coords callout chip.
+public enum BespokeMapStyleHint {
+    case auto
+    case ocean
+}
+
 // MARK: - Public entry (drop-in for HereMapWebViewRepresentable)
 
 /// In-house native map. Constructs a `BespokeMapStyle` from `isDark` + `tilt`
@@ -48,8 +63,12 @@ public struct BespokeMapCanvas: View {
     let tilt: Double
     let isDark: Bool
     let layers: [HereMapLayer]
+    let style: BespokeMapStyleHint
     let onSelectMarker: ((String) -> Void)?
 
+    /// Backward-compatible: the original 7-arg signature is preserved verbatim
+    /// (every existing caller compiles unchanged) and routes to the hinted
+    /// initializer with `style: .auto`.
     public init(
         center: HereLatLng,
         zoom: Int = 6,
@@ -59,12 +78,38 @@ public struct BespokeMapCanvas: View {
         layers: [HereMapLayer] = [],
         onSelectMarker: ((String) -> Void)? = nil
     ) {
+        self.init(
+            center: center,
+            zoom: zoom,
+            interactive: interactive,
+            tilt: tilt,
+            isDark: isDark,
+            layers: layers,
+            style: .auto,
+            onSelectMarker: onSelectMarker
+        )
+    }
+
+    /// Hinted initializer: pass `style: .ocean` for the Vessel 003 great-circle
+    /// register. `style:` carries no default here so it never shadows the
+    /// 7-arg overload above (which IS the backward-compatible default path).
+    public init(
+        center: HereLatLng,
+        zoom: Int = 6,
+        interactive: Bool = true,
+        tilt: Double = 0,
+        isDark: Bool = false,
+        layers: [HereMapLayer] = [],
+        style: BespokeMapStyleHint,
+        onSelectMarker: ((String) -> Void)? = nil
+    ) {
         self.center = center
         self.zoom = zoom
         self.interactive = interactive
         self.tilt = tilt
         self.isDark = isDark
         self.layers = layers
+        self.style = style
         self.onSelectMarker = onSelectMarker
     }
 
@@ -111,6 +156,11 @@ public struct BespokeMapCanvas: View {
     ///             → `.cosmos` (dark) / `.lightDriver` (light)
     ///   otherwise ⇒ flat shipper / catalyst board → `.dark` / `.light`.
     private var resolvedStyle: BespokeMapStyle {
+        // Explicit ocean hint wins over the tilt heuristic — the Vessel 003
+        // great-circle surface is a flat board with no first-person tilt.
+        if case .ocean = style {
+            return BespokeMapStyle.ocean(isDark: isDark)
+        }
         if tilt > 0 {
             return BespokeMapStyle.driver(isDark: isDark)
         }
@@ -212,6 +262,35 @@ public struct BespokeMapCanvas: View {
         if let id = m.id, !id.isEmpty { return id }
         return "\(m.kind.rawValue):\(String(format: "%.5f", m.at.lat)),\(String(format: "%.5f", m.at.lng))"
     }
+
+    /// The live puck coordinate: the first `.truck`-kind marker across all
+    /// marker layers (the AIS vessel on the ocean register, the truck on road
+    /// boards). nil when no live puck is present — callers fall back to the
+    /// authored route split.
+    static func liveMarkerCoord(_ layers: [HereMapLayer]) -> HereLatLng? {
+        for layer in layers {
+            switch layer {
+            case .markers(let ms), .missionPins(let ms):
+                if let truck = ms.first(where: { $0.kind == .truck }) { return truck.at }
+            default: break
+            }
+        }
+        return nil
+    }
+
+    /// Index of the polyline vertex geodesically closest to `target`. Used to
+    /// split the great-circle route at the live AIS position. Returns 0 for an
+    /// empty polyline (degenerate-safe; the caller clamps).
+    static func nearestVertexIndex(in poly: [HereLatLng], to target: HereLatLng) -> Int {
+        guard !poly.isEmpty else { return 0 }
+        var bestIndex = 0
+        var bestDist = Double.greatestFiniteMagnitude
+        for (i, v) in poly.enumerated() {
+            let d = BespokeMapProjection.haversineMeters(v, target)
+            if d < bestDist { bestDist = d; bestIndex = i }
+        }
+        return bestIndex
+    }
 }
 
 // MARK: - Canvas painting (static so no closures capture self)
@@ -233,11 +312,13 @@ extension BespokeMapCanvas {
         // 1 — background
         paintBackground(&context, rect: rect, bg: style.background)
 
-        // 2 — faint grid (straight authored lines at fixed spacing — no warp)
-        paintGrid(&context, rect: rect, grid: style.grid, isDriver: style.ping != nil)
+        // 2 — faint grid (straight authored lines at fixed spacing — no warp).
+        //     Ocean (003) = 3 horizontal latitude lines only (no longitude columns).
+        let isOcean = style.originMarker.ringStroke != nil   // unique to the .ocean port pin
+        paintGrid(&context, rect: rect, grid: style.grid, isDriver: style.ping != nil, isOcean: isOcean)
 
-        // 3 — abstract horizon silhouettes (NOT real streets)
-        paintSilhouettes(&context, rect: rect, silhouettes: style.silhouettes)
+        // 3 — abstract silhouettes. Ocean = two vertical edge coast hints.
+        paintSilhouettes(&context, rect: rect, silhouettes: style.silhouettes, isOcean: isOcean)
 
         // 4 — per-layer content, in the canonical z-order.
         // heatmap (under) → adZones → route → endpoints → markers.
@@ -251,9 +332,13 @@ extension BespokeMapCanvas {
                 paintAdZones(&context, polys: polys, viewport: viewport)
             }
         }
+        // The live position fraction: where the truck/AIS puck sits along the
+        // route. The ocean register splits solid(traveled)→dashed(remaining) at
+        // THIS fraction (the live AIS position), not the authored 0.62.
+        let liveCoord = Self.liveMarkerCoord(layers)
         for layer in layers {
             if case .route(let poly, _) = layer {
-                paintRoute(&context, poly: poly, style: style, viewport: viewport)
+                paintRoute(&context, poly: poly, style: style, viewport: viewport, liveCoord: liveCoord)
             }
         }
         // Endpoint markers come from the route geometry; pins from marker layers.
@@ -325,8 +410,21 @@ extension BespokeMapCanvas {
         _ context: inout GraphicsContext,
         rect: CGRect,
         grid: BespokeMapStyle.Grid,
-        isDriver: Bool
+        isDriver: Bool,
+        isOcean: Bool = false
     ) {
+        // OCEAN (003 Vessel): the SVG authors ONLY 3 horizontal latitude lines
+        // (no longitude verticals). Paint exactly those — never the board crosshatch.
+        if isOcean {
+            var oceanPath = Path()
+            for f in [0.30, 0.50, 0.70] as [CGFloat] {
+                let y = rect.minY + rect.height * f
+                oceanPath.move(to: CGPoint(x: rect.minX, y: y))
+                oceanPath.addLine(to: CGPoint(x: rect.maxX, y: y))
+            }
+            context.stroke(oceanPath, with: .color(grid.color), lineWidth: grid.width)
+            return
+        }
         // VERBATIM: straight authored graticule at FIXED spacing — NO
         // foreshorten / warp on horizontals. Driver register: 44pt square grid.
         // Shipper board: 60pt vertical columns / 80pt horizontal rows.
@@ -354,9 +452,30 @@ extension BespokeMapCanvas {
     static func paintSilhouettes(
         _ context: inout GraphicsContext,
         rect: CGRect,
-        silhouettes: BespokeMapStyle.Silhouettes?
+        silhouettes: BespokeMapStyle.Silhouettes?,
+        isOcean: Bool = false
     ) {
         guard let s = silhouettes else { return }
+        let w0 = rect.width, h0 = rect.height
+        // OCEAN (003 Vessel): the SVG hugs TWO discrete VERTICAL coast squiggles
+        // at the left + right card margins (not a horizontal horizon sweep).
+        if isOcean, s.colors.count > 0, s.widths.count > 0 {
+            let col = s.colors[0], lw = s.widths[0]
+            // Left edge coast hint (~x 0.09w): M40 200 q14 30 -2 60 q-12 26 6 50.
+            var left = Path()
+            left.move(to: CGPoint(x: 0.09 * w0, y: 0.36 * h0))
+            left.addQuadCurve(to: CGPoint(x: 0.06 * w0, y: 0.47 * h0), control: CGPoint(x: 0.12 * w0, y: 0.41 * h0))
+            left.addQuadCurve(to: CGPoint(x: 0.08 * w0, y: 0.56 * h0), control: CGPoint(x: 0.04 * w0, y: 0.52 * h0))
+            // Right edge coast hint (~x 0.91w), mirrored.
+            var right = Path()
+            right.move(to: CGPoint(x: 0.91 * w0, y: 0.62 * h0))
+            right.addQuadCurve(to: CGPoint(x: 0.94 * w0, y: 0.73 * h0), control: CGPoint(x: 0.88 * w0, y: 0.67 * h0))
+            right.addQuadCurve(to: CGPoint(x: 0.92 * w0, y: 0.82 * h0), control: CGPoint(x: 0.96 * w0, y: 0.78 * h0))
+            let st = StrokeStyle(lineWidth: lw, lineCap: .round, lineJoin: .round)
+            context.stroke(left, with: .color(col), style: st)
+            context.stroke(right, with: .color(col), style: st)
+            return
+        }
         // Paint min(colors,widths) layered horizon ribbons. These are ABSTRACT
         // (parametric fractions of the canvas), never real geometry — matching
         // the SVG's decorative silhouette band. Each stroke i uses colors[i] /
@@ -452,16 +571,24 @@ extension BespokeMapCanvas {
         _ context: inout GraphicsContext,
         poly: [HereLatLng],
         style: BespokeMapStyle,
-        viewport: BespokeMapViewport
+        viewport: BespokeMapViewport,
+        liveCoord: HereLatLng? = nil
     ) {
         guard poly.count >= 2 else { return }
         let pts = poly.map { viewport.screenPoint($0) }
 
-        // Split the polyline: first ~62% = traveled (solid), rest = remaining
-        // (dashed). The split index is purely presentational (the live truck
-        // would normally drive it); 0.62 mirrors the SVG's authored split.
-        let splitFraction = 0.62
-        let splitIndex = Swift.max(1, Swift.min(pts.count - 1, Int(Double(pts.count - 1) * splitFraction)))
+        // Split the polyline at the LIVE position when a live puck exists:
+        // first segment = traveled (solid), rest = remaining (dashed). The
+        // split vertex is the polyline point closest (geodesically) to the
+        // live AIS coordinate, so the solid/dashed seam tracks the real vessel.
+        // With no live puck we fall back to the SVG's authored 0.62 split.
+        let splitIndex: Int
+        if let live = liveCoord {
+            splitIndex = Swift.max(1, Swift.min(pts.count - 1, Self.nearestVertexIndex(in: poly, to: live)))
+        } else {
+            let splitFraction = 0.62
+            splitIndex = Swift.max(1, Swift.min(pts.count - 1, Int(Double(pts.count - 1) * splitFraction)))
+        }
 
         let activePts = Array(pts.prefix(splitIndex + 1))
         let pendingPts = Array(pts.suffix(from: splitIndex))
@@ -580,6 +707,18 @@ extension BespokeMapCanvas {
             return
         }
 
+        // VERBATIM (ocean 003): a HOLLOW port pin — `outerFill` center disc
+        // (page bg) with a thick `ringStroke` ring AT `outerRadius`, no inner
+        // core. Origin ring = eusoPrimary, dest ring = #6E7681 / #8A96A3.
+        if let ringStroke = marker.ringStroke, marker.ringWidth > 0 {
+            let ring = Path(ellipseIn: CGRect(
+                x: c.x - marker.outerRadius, y: c.y - marker.outerRadius,
+                width: marker.outerRadius * 2, height: marker.outerRadius * 2))
+            context.fill(ring, with: .color(marker.outerFill))
+            context.stroke(ring, with: .color(ringStroke), lineWidth: marker.ringWidth)
+            return
+        }
+
         // Standard concentric origin / dest.
         let outer = Path(ellipseIn: CGRect(
             x: c.x - marker.outerRadius, y: c.y - marker.outerRadius,
@@ -690,6 +829,36 @@ extension BespokeMapCanvas {
             Gradient.Stop(color: (truck.haloStops.last ?? Brand.magenta).opacity(0.0), location: 1.0)
         ])
         context.fill(halo, with: .radialGradient(haloGrad, center: c, startRadius: 0, endRadius: truck.haloRadius))
+
+        // OCEAN AIS orb (VERBATIM 003): r11 eusoDiagonal core disc (NO ring
+        // stroke) + a white hull chevron (`M-7 -1 H7 L4 5 H-4 Z`) with a small
+        // bridge rect on top. The gradient IS the body — there is no flat ring.
+        if truck.glyph == .aisHull {
+            let cr = truck.ringRadius
+            let core = Path(ellipseIn: CGRect(x: c.x - cr, y: c.y - cr, width: cr * 2, height: cr * 2))
+            context.fill(
+                core,
+                with: .linearGradient(
+                    Gradient(colors: truck.coreGradient ?? BespokeMapStyle.routeGradientStops),
+                    startPoint: CGPoint(x: c.x - cr, y: c.y + cr),
+                    endPoint: CGPoint(x: c.x + cr, y: c.y - cr)
+                )
+            )
+            // Hull chevron, scaled off the SVG's 14pt-wide authored glyph.
+            let u = cr / 11.0
+            var hull = Path()
+            hull.move(to: CGPoint(x: c.x - 7 * u, y: c.y - 1 * u))
+            hull.addLine(to: CGPoint(x: c.x + 7 * u, y: c.y - 1 * u))
+            hull.addLine(to: CGPoint(x: c.x + 4 * u, y: c.y + 5 * u))
+            hull.addLine(to: CGPoint(x: c.x - 4 * u, y: c.y + 5 * u))
+            hull.closeSubpath()
+            context.fill(hull, with: .color(truck.glyphColor))
+            let bridge = Path(roundedRect: CGRect(
+                x: c.x - 3 * u, y: c.y - 5 * u, width: 6 * u, height: 3 * u),
+                cornerRadius: 0.6 * u, style: .continuous)
+            context.fill(bridge, with: .color(truck.glyphColor))
+            return
+        }
 
         // Ring — filled core disc + token stroke.
         let ring = Path(ellipseIn: CGRect(

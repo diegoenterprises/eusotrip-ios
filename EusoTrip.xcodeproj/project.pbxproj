@@ -648,6 +648,7 @@
 		FD97CEC72FC1D4BC0016DF5F /* VesselOperatorNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CEC62FC1D4BC0016DF5F /* VesselOperatorNavController.swift */; };
 		FD97CEC92FC1D5110016DF5F /* 550_RailEngineerHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CEC82FC1D5110016DF5F /* 550_RailEngineerHome.swift */; };
 		FD97CECB2FC1D5120016DF5F /* 650_VesselOperatorHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */; };
+		VOTMBUILD1 /* VesselOceanTrackMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = VOTMFREF1 /* VesselOceanTrackMap.swift */; };
 		FD97CECD2FC1D7C70016DF5F /* 551_RailShipments.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */; };
 		FD97CECF2FC1D7C80016DF5F /* 552_RailCompliance.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECE2FC1D7C80016DF5F /* 552_RailCompliance.swift */; };
 		FD97CED12FC1D8040016DF5F /* 651_VesselShipments.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CED02FC1D8040016DF5F /* 651_VesselShipments.swift */; };
@@ -1390,6 +1391,7 @@
 		FD97CEC62FC1D4BC0016DF5F /* VesselOperatorNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VesselOperatorNavController.swift; sourceTree = "<group>"; };
 		FD97CEC82FC1D5110016DF5F /* 550_RailEngineerHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 550_RailEngineerHome.swift; sourceTree = "<group>"; };
 		FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 650_VesselOperatorHome.swift; sourceTree = "<group>"; };
+		VOTMFREF1 /* VesselOceanTrackMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VesselOceanTrackMap.swift; path = EusoTrip/Views/Vessel/VesselOceanTrackMap.swift; sourceTree = SOURCE_ROOT; };
 		FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 551_RailShipments.swift; sourceTree = "<group>"; };
 		FD97CECE2FC1D7C80016DF5F /* 552_RailCompliance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 552_RailCompliance.swift; sourceTree = "<group>"; };
 		FD97CED02FC1D8040016DF5F /* 651_VesselShipments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 651_VesselShipments.swift; sourceTree = "<group>"; };
@@ -2336,6 +2338,7 @@
 			children = (
 				FD97CEC62FC1D4BC0016DF5F /* VesselOperatorNavController.swift */,
 				FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */,
+				VOTMFREF1 /* VesselOceanTrackMap.swift */,
 				FD97CED02FC1D8040016DF5F /* 651_VesselShipments.swift */,
 				FD97CED22FC1D8050016DF5F /* 652_VesselCompliance.swift */,
 			);
@@ -2786,6 +2789,7 @@
 				AAPR2026051900000011A1 /* AppleAuthProvider.swift in Sources */,
 				FLCD2026051800000011A1 /* FMCSALookupCard.swift in Sources */,
 				FD97CECB2FC1D5120016DF5F /* 650_VesselOperatorHome.swift in Sources */,
+				VOTMBUILD1 /* VesselOceanTrackMap.swift in Sources */,
 				DIBS2026051800000011A1 /* DriverInviteBulkStep.swift in Sources */,
 				FBRS2026051800000011A1 /* FleetBulkRegisterStep.swift in Sources */,
 				VINS2026051800000011A1 /* VINScannerSheet.swift in Sources */,
