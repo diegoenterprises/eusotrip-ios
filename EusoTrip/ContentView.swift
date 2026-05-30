@@ -1949,6 +1949,15 @@ enum ScreenRegistry {
             .init(id: "Rail550", title: "Rail Engineer · Home",       role: .railEngineer) { p in AnyView(RailEngineerHomeScreen(theme: p)) },
             .init(id: "Rail551", title: "Rail Engineer · Shipments",  role: .railEngineer) { p in AnyView(RailShipmentsScreen(theme: p)) },
             .init(id: "Rail552", title: "Rail Engineer · Compliance", role: .railEngineer) { p in AnyView(RailComplianceScreen(theme: p)) },
+            // Phase B wave 11 — Rail detention/claims NEW screens (theme-only inits).
+            .init(id: "Rail648", title: "Rail Engineer · Demurrage Calculator", role: .railEngineer) { p in AnyView(RailDemurrageCalculatorScreen(theme: p)) },
+            .init(id: "Rail649", title: "Rail Engineer · Detention by Customer", role: .railEngineer) { p in AnyView(RailDetentionByCustomerScreen(theme: p)) },
+            .init(id: "Rail650", title: "Rail Engineer · Detention History", role: .railEngineer) { p in AnyView(RailDetentionHistoryScreen(theme: p)) },
+            .init(id: "Rail651", title: "Rail Engineer · Auto-Detention Rules", role: .railEngineer) { p in AnyView(RailAutoDetentionRulesScreen(theme: p)) },
+            .init(id: "Rail652", title: "Rail Engineer · Claims Dashboard", role: .railEngineer) { p in AnyView(RailClaimsDashboardScreen(theme: p)) },
+            .init(id: "Rail653", title: "Rail Engineer · Claims List", role: .railEngineer) { p in AnyView(RailClaimsListScreen(theme: p)) },
+            .init(id: "Rail654", title: "Rail Engineer · Claim Workflow", role: .railEngineer) { p in AnyView(RailClaimWorkflowScreen(theme: p)) },
+            .init(id: "Rail655", title: "Rail Engineer · Loss Prevention", role: .railEngineer) { p in AnyView(RailLossPreventionScreen(theme: p)) },
         ])
 
         // Vessel Operator surface (Vesl650–652).
