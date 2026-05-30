@@ -126,6 +126,7 @@ enum ScreenRegistry {
             .init(id: "057", title: "Driver Vehicle Card",         role: .driver) { p in AnyView(DriverVehicleCardScreen(theme: p)) },
             .init(id: "058", title: "Driver Weekly Plan",          role: .driver) { p in AnyView(DriverWeeklyPlanScreen(theme: p)) },
             .init(id: "059", title: "Driver Trips History",        role: .driver) { p in AnyView(DriverTripsHistoryScreen(theme: p)) },
+            .init(id: "059E", title: "Vehicle & Equipment",         role: .driver) { p in AnyView(VehicleAndEquipmentScreen(theme: p)) },
             .init(id: "060", title: "The Haul · Dashboard",         role: .driver) { p in AnyView(TheHaulDashboardScreen(theme: p)) },
             .init(id: "060L", title: "The Haul · Lobby",            role: .driver) { p in AnyView(TheHaulLobbyScreen(theme: p)) },
             .init(id: "074E", title: "ELD Device · Connect",         role: .driver) { p in AnyView(ELDConnectScreen(theme: p)) },

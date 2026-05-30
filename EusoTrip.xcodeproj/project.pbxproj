@@ -157,6 +157,7 @@
 		A70D0FA2CE1A4B7E0000D01D /* 070_MeSettlements.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70D0FA2CE1A4B7E0000D01E /* 070_MeSettlements.swift */; };
 		A71D0FA2CE1A4B7E0000D01F /* 071_MeTax.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71D0FA2CE1A4B7E0000D020 /* 071_MeTax.swift */; };
 		A72D0FA2CE1A4B7E0000D021 /* 072_MeDocs.swift in Sources */ = {isa = PBXBuildFile; fileRef = A72D0FA2CE1A4B7E0000D022 /* 072_MeDocs.swift */; };
+		A59D0FA2CE1A4B7E0000D059 /* 059_VehicleAndEquipment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59D0FA2CE1A4B7E0000D05A /* 059_VehicleAndEquipment.swift */; };
 		A73D0FA2CE1A4B7E0000D023 /* 073_MeVehicle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A73D0FA2CE1A4B7E0000D024 /* 073_MeVehicle.swift */; };
 		A74D0FA2CE1A4B7E0000D025 /* 074_MeHOSLogs.swift in Sources */ = {isa = PBXBuildFile; fileRef = A74D0FA2CE1A4B7E0000D026 /* 074_MeHOSLogs.swift */; };
 		A74E0FA2CE1A4B7E0000ELDD /* 074E_ELDConnect.swift in Sources */ = {isa = PBXBuildFile; fileRef = A74E0FA2CE1A4B7E0000ELDE /* 074E_ELDConnect.swift */; };
@@ -931,6 +932,7 @@
 		A70D0FA2CE1A4B7E0000D01E /* 070_MeSettlements.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 070_MeSettlements.swift; sourceTree = "<group>"; };
 		A71D0FA2CE1A4B7E0000D020 /* 071_MeTax.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 071_MeTax.swift; sourceTree = "<group>"; };
 		A72D0FA2CE1A4B7E0000D022 /* 072_MeDocs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 072_MeDocs.swift; sourceTree = "<group>"; };
+		A59D0FA2CE1A4B7E0000D05A /* 059_VehicleAndEquipment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 059_VehicleAndEquipment.swift; sourceTree = "<group>"; };
 		A73D0FA2CE1A4B7E0000D024 /* 073_MeVehicle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 073_MeVehicle.swift; sourceTree = "<group>"; };
 		A74D0FA2CE1A4B7E0000D026 /* 074_MeHOSLogs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 074_MeHOSLogs.swift; sourceTree = "<group>"; };
 		A74E0FA2CE1A4B7E0000ELDE /* 074E_ELDConnect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 074E_ELDConnect.swift; sourceTree = "<group>"; };
@@ -1706,6 +1708,7 @@
 				A70D0FA2CE1A4B7E0000D01E /* 070_MeSettlements.swift */,
 				A71D0FA2CE1A4B7E0000D020 /* 071_MeTax.swift */,
 				A72D0FA2CE1A4B7E0000D022 /* 072_MeDocs.swift */,
+				A59D0FA2CE1A4B7E0000D05A /* 059_VehicleAndEquipment.swift */,
 				A73D0FA2CE1A4B7E0000D024 /* 073_MeVehicle.swift */,
 				A74D0FA2CE1A4B7E0000D026 /* 074_MeHOSLogs.swift */,
 				A75D0FA2CE1A4B7E0000D028 /* 075_MeSafetyScore.swift */,
@@ -2763,6 +2766,7 @@
 				A70D0FA2CE1A4B7E0000D01D /* 070_MeSettlements.swift in Sources */,
 				A71D0FA2CE1A4B7E0000D01F /* 071_MeTax.swift in Sources */,
 				A72D0FA2CE1A4B7E0000D021 /* 072_MeDocs.swift in Sources */,
+				A59D0FA2CE1A4B7E0000D059 /* 059_VehicleAndEquipment.swift in Sources */,
 				A73D0FA2CE1A4B7E0000D023 /* 073_MeVehicle.swift in Sources */,
 				A74D0FA2CE1A4B7E0000D025 /* 074_MeHOSLogs.swift in Sources */,
 				A75D0FA2CE1A4B7E0000D027 /* 075_MeSafetyScore.swift in Sources */,
