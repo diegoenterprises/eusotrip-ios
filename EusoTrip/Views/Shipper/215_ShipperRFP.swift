@@ -203,6 +203,10 @@ struct ShipperRFP: View {
     @Environment(\.palette) private var palette
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // Sheet→push (NAV remediation 2026-05-30): the New-RFP composer
+    // pushes in-stack via the surface detail layer + BespokeBackBar
+    // instead of presenting as a `.sheet`.
+    @Environment(\.shipperPushDetail) private var pushDetail
     @StateObject private var store = ShipperRFPStore()
 
     @State private var selectedRfpId: String?
@@ -228,16 +232,6 @@ struct ShipperRFP: View {
         }
         .task { await store.refresh() }
         .refreshable { await store.refresh() }
-        .sheet(isPresented: $showNewRFPComposer) {
-            NewRFPComposerSheet { committed in
-                if committed {
-                    Task { await store.refresh() }
-                }
-                showNewRFPComposer = false
-            }
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
-        }
         // RealtimeService → RFPs refresh when carriers submit bids,
         // award decisions are made, or RFP windows open/close.
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
@@ -1417,6 +1411,24 @@ struct ShipperRFP: View {
             ]
         )
         showNewRFPComposer = true
+        // Sheet→push: render the composer in-stack with a
+        // BespokeBackBar. `onClose` posts NavBack to pop (works whether
+        // committed or cancelled); the composer's own header X is
+        // suppressed so the back bar is the sole close affordance.
+        if let pushDetail {
+            pushDetail("New RFP") {
+                AnyView(
+                    NewRFPComposerSheet(onClose: { committed in
+                        if committed {
+                            Task { await store.refresh() }
+                        }
+                        NotificationCenter.default.post(
+                            name: .eusoShipperNavBack, object: nil)
+                    }, showsCloseButton: false)
+                    .environment(\.palette, palette)
+                )
+            }
+        }
     }
 
     // MARK: Helpers
@@ -1573,6 +1585,11 @@ struct NewRFPComposerSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let onClose: (Bool) -> Void
+    /// When pushed in-stack (sheet→push), the surface's `BespokeBackBar`
+    /// is the sole back affordance — suppress the composer's own header
+    /// X so there are never two close controls on one screen. Defaults
+    /// to `true` for legacy modal callers that have no top bar.
+    var showsCloseButton: Bool = true
 
     @State private var origin: String = ""
     @State private var destination: String = ""
@@ -1599,12 +1616,14 @@ struct NewRFPComposerSheet: View {
                         .foregroundStyle(palette.textSecondary)
                 }
                 Spacer(minLength: 0)
-                Button { onClose(false) } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 22, weight: .heavy))
-                        .foregroundStyle(palette.textTertiary)
+                if showsCloseButton {
+                    Button { onClose(false) } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 22, weight: .heavy))
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
             .padding(Space.s5)
 

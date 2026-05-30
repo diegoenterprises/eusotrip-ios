@@ -175,6 +175,10 @@ final class ShipperRecurringLoadsStore: ObservableObject {
 
 struct ShipperRecurringLoads: View {
     @Environment(\.palette) private var palette
+    // Sheet→push (NAV remediation 2026-05-30): the recurring-load
+    // detail pushes in-stack via the surface detail layer +
+    // BespokeBackBar instead of presenting as a `.sheet`.
+    @Environment(\.shipperPushDetail) private var pushDetail
     @StateObject private var store = ShipperRecurringLoadsStore()
     @State private var detail: LoadTemplatesAPI.Template? = nil
     @State private var showAck: Bool = false
@@ -227,9 +231,6 @@ struct ShipperRecurringLoads: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
             Task { await store.load() }
-        }
-        .sheet(item: $detail) {
-            ShipperRecurringLoadDetail(template: $0).environmentObject(store)
         }
         .sheet(item: $composerSeed) { seed in
             switch seed {
@@ -531,10 +532,26 @@ struct ShipperRecurringLoads: View {
 
     // MARK: Template row (wireframe canon: tier rim + TPL id + status pill + lane + spec + 3-stat + countdown bar)
 
+    /// Open a recurring-load template detail. Sheet→push: renders
+    /// `ShipperRecurringLoadDetail` in-stack with a BespokeBackBar,
+    /// providing the `store` EnvironmentObject the detail needs.
+    private func openTemplate(_ t: LoadTemplatesAPI.Template) {
+        detail = t
+        if let pushDetail {
+            let s = store
+            pushDetail("Recurring Lane") {
+                AnyView(
+                    ShipperRecurringLoadDetail(template: t)
+                        .environmentObject(s)
+                )
+            }
+        }
+    }
+
     @ViewBuilder
     private func templateRowView(_ t: LoadTemplatesAPI.Template) -> some View {
         let canon = canonStatus(for: t)
-        Button(action: { detail = t }) {
+        Button(action: { openTemplate(t) }) {
             HStack(spacing: 0) {
                 tierRimShape(canon.tier)
                     .frame(width: 3)
@@ -948,6 +965,10 @@ struct ShipperRecurringLoadDetail: View {
             Button {
                 Task {
                     await store.post(template: template)
+                    // Sheet→push: pop the in-stack detail (no-op
+                    // `dismiss()` retained for any modal caller).
+                    NotificationCenter.default.post(
+                        name: .eusoShipperNavBack, object: nil)
                     dismiss()
                 }
             } label: {
@@ -976,6 +997,10 @@ struct ShipperRecurringLoadDetail: View {
                     object: template,
                     userInfo: ["templateId": template.id]
                 )
+                // Sheet→push: pop the in-stack detail so the inline
+                // composer (seeded by the post above) surfaces.
+                NotificationCenter.default.post(
+                    name: .eusoShipperNavBack, object: nil)
                 dismiss()
             } label: {
                 HStack(spacing: 6) {
