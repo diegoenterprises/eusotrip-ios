@@ -924,7 +924,17 @@ struct CarrierSurface: View {
     /// `\.rolePushDetail` env closure and renders the pushed detail
     /// in-stack with a `BespokeBackBar`.
     @State private var pushedDetail: RoleDetailPush? = nil
-    private static let tabRoots: Set<String> = ["300", "301", "302", "303"]
+    // tabRoots must equal the 4 BottomNav slot destinations. The Carrier
+    // bottom-nav (300 Home / Loads / Drivers / Me) resolves through
+    // `CarrierNavRoute.map`:
+    //   home→300 · loads→301 · drivers→304 · me→350.
+    // The previous literal {300,301,302,303} listed 302 (Load Detail) and
+    // 303 (Dispatch Board) — neither is a bottom-nav slot — and omitted the
+    // Drivers slot (304) and the Me slot (350). With 350 absent the Me tab
+    // never reset to its root (350 CarrierMe). Carrier's back-overlay uses a
+    // separate `backSuppress` set, so this change only corrects tab-reset
+    // semantics. Corrected to the real slot set. (IA recon 2026-05-30.)
+    private static let tabRoots: Set<String> = ["300", "301", "304", "350"]
 
     /// Carrier-side suppress list — same purpose as ShipperBackOverlay's
     /// `screensWithOwnBack`. Tab roots + leaves that draw their own
@@ -1028,7 +1038,19 @@ struct BrokerSurface: View {
     @State private var showeSang: Bool = false
     /// Shared sheet→push detail layer (NAV remediation 2026-05-30).
     @State private var pushedDetail: RoleDetailPush? = nil
-    private static let tabRoots: Set<String> = ["400", "401", "402", "403"]
+    // tabRoots must equal the 4 BottomNav slot destinations. The Broker
+    // bottom-nav (400 Home / Tenders / Carriers / Me) resolves through
+    // `BrokerNavRoute.map`:
+    //   home→400 · loads→401 · carriers→402b · me→404.
+    // The previous literal {400,401,402,403} listed 402 (Tender Detail)
+    // and 403 (Tender→Carrier) — neither is a bottom-nav slot — and
+    // omitted 402b (Carriers slot) and 404 (Me slot). With 404 absent the
+    // Me tab never reset to its root. Corrected to the real slot set.
+    // NOTE (flagged, not fixed): the 2nd slot's label is "Tenders" but the
+    // route map keys it as "loads"→401; "tenders" has no map entry, so that
+    // slot is currently a no-op until the label/key are reconciled — that is
+    // a BottomNav-destination bug, out of scope here. (IA recon 2026-05-30.)
+    private static let tabRoots: Set<String> = ["400", "401", "402b", "404"]
 
     private var currentScreenId: String { screenStack.last ?? "400" }
 
@@ -1114,7 +1136,15 @@ struct EscortSurface: View {
     @State private var showeSang: Bool = false
     /// Shared sheet→push detail layer (NAV remediation 2026-05-30).
     @State private var pushedDetail: RoleDetailPush? = nil
-    private static let tabRoots: Set<String> = ["600", "601", "602", "603"]
+    // tabRoots must equal the 4 BottomNav slot destinations. The Escort
+    // bottom-nav (600 Home / Assignments / Corridor / Me) resolves through
+    // `EscortNavRoute.map`:
+    //   home→600 · assignments→601 · corridor→602 · me→600.
+    // The previous literal listed 603 — not a bottom-nav slot and not a
+    // registered screen (verified). Me resolves to 600 (Home), already
+    // present. Corrected to the 3 distinct, real slot destinations.
+    // (IA recon 2026-05-30.)
+    private static let tabRoots: Set<String> = ["600", "601", "602"]
 
     private var currentScreenId: String { screenStack.last ?? "600" }
 
@@ -1194,7 +1224,15 @@ struct TerminalSurface: View {
     @State private var showeSang: Bool = false
     /// Shared sheet→push detail layer (NAV remediation 2026-05-30).
     @State private var pushedDetail: RoleDetailPush? = nil
-    private static let tabRoots: Set<String> = ["700", "701", "702", "703"]
+    // tabRoots must equal the 4 BottomNav slot destinations. The Terminal
+    // bottom-nav (700 Home / Movements / Yard / Me) resolves through
+    // `TerminalNavRoute.map`:
+    //   home→700 · movements→701 · yard→702 · me→700.
+    // The previous literal listed 703 — not a bottom-nav slot and not a
+    // registered screen (verified). Me resolves to 700 (Home), already
+    // present. Corrected to the 3 distinct, real slot destinations.
+    // (IA recon 2026-05-30.)
+    private static let tabRoots: Set<String> = ["700", "701", "702"]
 
     private var currentScreenId: String { screenStack.last ?? "700" }
 
@@ -1277,7 +1315,15 @@ struct AdminSurface: View {
     @State private var showeSang: Bool = false
     /// Shared sheet→push detail layer (NAV remediation 2026-05-30).
     @State private var pushedDetail: RoleDetailPush? = nil
-    private static let tabRoots: Set<String> = ["800", "801", "802", "803"]
+    // tabRoots must equal the 4 BottomNav slot destinations. The Admin
+    // bottom-nav (800 Home / Tickets / Tenants / Me) resolves through
+    // `AdminNavRoute.map`:
+    //   home→800 · tickets→801 · tenants→802 · me→800.
+    // The previous literal listed 803 (Tenant Detail) — a registered screen
+    // but NOT a bottom-nav slot (it's a push-detail drill from 802). Me
+    // resolves to 800 (Home), already present. Corrected to the 3 distinct
+    // slot destinations. (IA recon 2026-05-30.)
+    private static let tabRoots: Set<String> = ["800", "801", "802"]
 
     private var currentScreenId: String { screenStack.last ?? "800" }
 
@@ -1358,7 +1404,16 @@ struct DispatchSurface: View {
     @State private var showeSang: Bool = false
     /// Shared sheet→push detail layer (NAV remediation 2026-05-30).
     @State private var pushedDetail: RoleDetailPush? = nil
-    private static let tabRoots: Set<String> = ["Dpch700", "Dpch701", "Dpch702", "Dpch703"]
+    // tabRoots must equal the 4 BottomNav slot destinations. The Dispatch
+    // bottom-nav (700 Home / Drivers / Loads / Me) resolves through
+    // `DispatchNavRoute.map`:
+    //   home→Dpch700 · drivers→Dpch701 · loads→Dpch702 · me→Dpch713.
+    // The previous literal listed Dpch703 (Exception Triage) — not a
+    // bottom-nav slot — and omitted the Me slot (Dpch713, the dedicated
+    // Dispatch Me hub added 2026-05-21). With Dpch713 absent the Me tab
+    // never reset to its root. Corrected to the real slot set.
+    // (IA recon 2026-05-30.)
+    private static let tabRoots: Set<String> = ["Dpch700", "Dpch701", "Dpch702", "Dpch713"]
 
     private var currentScreenId: String { screenStack.last ?? "Dpch700" }
 
@@ -1439,7 +1494,15 @@ struct ComplianceSurface: View {
     @State private var showeSang: Bool = false
     /// Shared sheet→push detail layer (NAV remediation 2026-05-30).
     @State private var pushedDetail: RoleDetailPush? = nil
-    private static let tabRoots: Set<String> = ["900", "901", "902", "903"]
+    // tabRoots must equal the 4 BottomNav slot destinations. The Compliance
+    // bottom-nav (900 Home / Drivers / Audits / Me) resolves through
+    // `ComplianceNavRoute.map`:
+    //   home→900 · drivers→901 · audits→902 · me→900.
+    // The previous literal listed 903 — a screen that does NOT exist in
+    // ScreenRegistry (verified) — making it a phantom tab-root. Me resolves
+    // to 900 (Home), already present. Corrected to the 3 distinct, real,
+    // registered slot destinations. (IA recon 2026-05-30.)
+    private static let tabRoots: Set<String> = ["900", "901", "902"]
 
     private var currentScreenId: String { screenStack.last ?? "900" }
 
@@ -1519,7 +1582,17 @@ struct RailEngineerSurface: View {
     @State private var showeSang: Bool = false
     /// Shared sheet→push detail layer (NAV remediation 2026-05-30).
     @State private var pushedDetail: RoleDetailPush? = nil
-    private static let tabRoots: Set<String> = ["Rail550", "Rail551", "Rail552", "Rail553"]
+    // tabRoots must equal the set of screen IDs the 4 BottomNav slots
+    // actually navigate to. The Rail bottom-nav (550 Home / Shipments /
+    // Compliance / Me) resolves through `RailEngineerNavRoute.map`:
+    //   home→Rail550 · shipments→Rail551 · compliance→Rail552 · me→Rail550.
+    // The previous literal listed Rail553 — a deepMap-only Shipment Detail
+    // screen that NO bottom-nav slot reaches — and omitted nothing else
+    // (Me resolves to Rail550, already present). Rail553 as a phantom
+    // tab-root made the back chevron wrongly suppress when drilled into
+    // 553 and corrupted tab-reset semantics. Corrected to the 3 distinct
+    // slot destinations. (IA recon 2026-05-30.)
+    private static let tabRoots: Set<String> = ["Rail550", "Rail551", "Rail552"]
 
     private var currentScreenId: String { screenStack.last ?? "Rail550" }
 
@@ -1599,7 +1672,16 @@ struct VesselOperatorSurface: View {
     @State private var showeSang: Bool = false
     /// Shared sheet→push detail layer (NAV remediation 2026-05-30).
     @State private var pushedDetail: RoleDetailPush? = nil
-    private static let tabRoots: Set<String> = ["Vesl650", "Vesl651", "Vesl652", "Vesl653"]
+    // tabRoots must equal the 4 BottomNav slot destinations. The Vessel
+    // bottom-nav (650 Home / Shipments / Compliance / Me) resolves through
+    // `VesselOperatorNavRoute.map`:
+    //   home→Vesl650 · shipments→Vesl651 · compliance→Vesl652 · me→Vesl650.
+    // The previous literal listed Vesl653 — a deepMap-only Booking Detail
+    // screen that NO bottom-nav slot reaches. Me resolves to Vesl650 (Home),
+    // already present. Corrected to the 3 distinct slot destinations.
+    // Vesl653 remains in `screensWithOwnBack` below (explicit union), so its
+    // back-chevron behavior is unchanged. (IA recon 2026-05-30.)
+    private static let tabRoots: Set<String> = ["Vesl650", "Vesl651", "Vesl652"]
     /// Screens that draw their OWN top back affordance (a `BespokeBackBar`
     /// via `.injectBespokeBackBar`) so the surface's `RoleNavBackOverlay`
     /// must NOT paint a second chevron (avoids the founder-hated double
