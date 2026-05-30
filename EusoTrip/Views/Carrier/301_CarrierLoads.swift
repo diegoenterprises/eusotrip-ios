@@ -129,6 +129,10 @@ private struct CarrierLoadRow: Identifiable, Hashable {
 struct CarrierLoads: View {
     @Environment(\.palette) private var palette
     @EnvironmentObject private var session: EusoTripSession
+    // Sheet→push (NAV remediation 2026-05-30): the load detail now pushes
+    // in-stack via the surface's detail layer + BespokeBackBar instead of
+    // presenting as a `.sheet`. Nil outside CarrierSurface.
+    @Environment(\.rolePushDetail) private var pushDetail
 
     @StateObject private var active = CarrierActiveLoadsStore()
     @StateObject private var recent = CarrierRecentLoadsStore()
@@ -151,9 +155,6 @@ struct CarrierLoads: View {
         }
         .task { await refreshAll() }
         .refreshable { await refreshAll() }
-        .sheet(item: $detailRow) { row in
-            loadDetailSheet(for: row)
-        }
         .screenTileRoot()
     }
 
@@ -323,6 +324,8 @@ struct CarrierLoads: View {
                     ForEach(visibleRows) { row in
                         Button {
                             detailRow = row
+                            let s = session
+                            pushDetail?(row.loadNumber) { AnyView(loadDetailSheet(for: row).environmentObject(s)) }
                         } label: { rowView(row) }
                             .buttonStyle(.plain)
                     }
@@ -577,8 +580,6 @@ struct CarrierLoads: View {
             previewIsActive: row.isActive
         )
         .environmentObject(session)
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
     }
 
     // MARK: - Helpers

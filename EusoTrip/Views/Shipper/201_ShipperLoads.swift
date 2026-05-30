@@ -150,6 +150,11 @@ private struct ShipperLoadRow: Identifiable, Hashable {
 struct ShipperLoads: View {
     @Environment(\.palette) private var palette
     @EnvironmentObject private var session: EusoTripSession
+    // Sheet→push (NAV rollout 2026-05-30): the shared in-stack detail
+    // layer. When present, tapping a load row renders ShipperLoadDetail
+    // slid in from the trailing edge with a BespokeBackBar instead of a
+    // pull-up sheet. Aliased to the shared `\.rolePushDetail` key.
+    @Environment(\.shipperPushDetail) private var pushDetail
 
     @StateObject private var loads   = ShipperMyLoadsStore()
     @StateObject private var summary = ShipperLoadsSummaryStore()
@@ -226,20 +231,6 @@ struct ShipperLoads: View {
             }
             Button("Cancel", role: .cancel) { }
         }
-        .sheet(item: $detailRow) { row in
-            ShipperLoadDetail(
-                loadId: row.serverLoadId,
-                previewLoadNumber: row.loadNumber,
-                previewLane: row.lane
-            )
-            .padding(.horizontal, 14)
-            .padding(.top, Space.s4)
-            .padding(.bottom, Space.s4)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(palette.bgPage.ignoresSafeArea())
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
-        }
         .screenTileRoot()
     }
 
@@ -247,6 +238,29 @@ struct ShipperLoads: View {
         async let a: Void = loads.refresh()
         async let b: Void = summary.refresh()
         _ = await (a, b)
+    }
+
+    /// Sheet→push: render ShipperLoadDetail in-stack with a
+    /// BespokeBackBar instead of a pull-up sheet. `detailRow` is still
+    /// set so any future binding-driven code keeps working; the
+    /// presentation itself now flows through the shared detail layer.
+    /// The pushed detail must NOT add its own NavigationStack/back
+    /// chrome — the layer supplies BespokeBackBar.
+    private func openDetail(_ r: ShipperLoadRow) {
+        detailRow = r
+        pushDetail?("Load detail") {
+            AnyView(
+                ShipperLoadDetail(
+                    loadId: r.serverLoadId,
+                    previewLoadNumber: r.loadNumber,
+                    previewLane: r.lane
+                )
+                .padding(.horizontal, 14)
+                .padding(.top, Space.s4)
+                .padding(.bottom, Space.s4)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            )
+        }
     }
 
     // MARK: - TopBar
@@ -403,7 +417,7 @@ struct ShipperLoads: View {
         VStack(spacing: 0) {
             if rows.isEmpty { searchEmptyState } else {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { idx, r in
-                    Button { detailRow = r } label: { rowView(r) }
+                    Button { openDetail(r) } label: { rowView(r) }
                         .buttonStyle(.plain)
                     if idx < rows.count - 1 {
                         Divider().overlay(palette.borderFaint)

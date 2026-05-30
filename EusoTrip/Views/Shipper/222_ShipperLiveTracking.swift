@@ -148,6 +148,10 @@ final class ShipperLiveTrackingStore: ObservableObject {
 struct ShipperLiveTracking: View {
     @Environment(\.palette) private var palette
     @Environment(\.openURL) private var openURL
+    // Sheet→push (NAV remediation 2026-05-30): the per-load telemetry
+    // detail renders in-stack via the surface's `\.rolePushDetail` layer
+    // (slide-in + BespokeBackBar) instead of a slide-up sheet.
+    @Environment(\.rolePushDetail) private var pushDetail
     @StateObject private var store = ShipperLiveTrackingStore()
     @State private var detail: ShipperAPI.ActiveLoad? = nil
     @State private var modeFilter: LiveModeFilter = .all
@@ -172,7 +176,6 @@ struct ShipperLiveTracking: View {
         .refreshable { await store.refresh() }
         .task { store.startPolling() }
         .onDisappear { store.stopPolling() }
-        .sheet(item: $detail) { ShipperLiveTrackingDetail(load: $0) }
         // RealtimeService → any inbound load assignment / reassignment
         // / surface-refresh event triggers an immediate store refresh
         // on top of the standard polling cadence so the board reflects
@@ -511,7 +514,7 @@ struct ShipperLiveTracking: View {
         } else {
             VStack(spacing: Space.s2) {
                 ForEach(rows) { l in
-                    Button(action: { detail = l }) { shipmentRow(l) }
+                    Button(action: { openLoad(l) }) { shipmentRow(l) }
                         .buttonStyle(.plain)
                 }
             }
@@ -733,6 +736,23 @@ struct ShipperLiveTracking: View {
             Circle().fill(Brand.success).frame(width: 6, height: 6).offset(y: -3)
         }
         .frame(width: 18, height: 24)
+    }
+
+    // MARK: Row open (sheet→push)
+
+    /// Sheet→push: render the per-load telemetry detail in-stack via the
+    /// surface `\.rolePushDetail` layer (BespokeBackBar provided by the
+    /// layer). `detail` is retained for future reads. Re-provides
+    /// `\.palette` since the pushed detail reads it.
+    private func openLoad(_ l: ShipperAPI.ActiveLoad) {
+        detail = l
+        let p = palette
+        pushDetail?(l.loadNumber) {
+            AnyView(
+                ShipperLiveTrackingDetail(load: l)
+                    .environment(\.palette, p)
+            )
+        }
     }
 
     // MARK: View-all tap

@@ -50,6 +50,11 @@ private struct DriverPick: Decodable, Identifiable, Hashable {
 
 private struct LoadAssignBody: View {
     @Environment(\.palette) private var palette
+    // Sheet→push (NAV remediation 2026-05-30): the tap-fallback driver
+    // picker now pushes in-stack via the surface's detail layer +
+    // BespokeBackBar instead of presenting as a `.sheet`. Nil outside a
+    // role surface that installs RoleDetailLayer.
+    @Environment(\.rolePushDetail) private var pushDetail
     @State private var loads: [UnassignedLoad] = []
     @State private var drivers: [DriverPick] = []
     @State private var loading = true
@@ -99,7 +104,6 @@ private struct LoadAssignBody: View {
         }
         .task { await loadAll() }
         .refreshable { await loadAll() }
-        .sheet(item: $pickFor) { l in driverPickerSheet(for: l) }
     }
 
     private var header: some View {
@@ -148,7 +152,10 @@ private struct LoadAssignBody: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: Space.s3) {
                         ForEach(loads) { l in
-                            Button { pickFor = l } label: { loadCard(l) }
+                            Button {
+                                pickFor = l
+                                pushDetail?("Assign driver") { AnyView(driverPickerSheet(for: l)) }
+                            } label: { loadCard(l) }
                                 .buttonStyle(.plain)
                                 .draggable(l.id) {
                                     loadCard(l)
@@ -352,6 +359,12 @@ private struct LoadAssignBody: View {
                 input: In(loadId: loadId, driverId: driverId)
             )
             await MainActor.run {
+                // If the assignment came from the pushed picker (pickFor
+                // set), pop the in-stack detail layer back to the board.
+                // The drag path leaves pickFor nil, so no spurious pop.
+                if pickFor != nil {
+                    NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
+                }
                 lastAssigned = "Assigned · driver \(driverId) → \(pickedLabel)"
                 pickFor = nil
                 draggingLoadId = nil

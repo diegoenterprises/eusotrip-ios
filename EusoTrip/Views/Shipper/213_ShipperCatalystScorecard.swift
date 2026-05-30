@@ -260,6 +260,10 @@ private enum ScorecardFilter: String, CaseIterable, Identifiable {
 struct ShipperCatalystScorecard: View {
     @Environment(\.palette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // Sheet→push (NAV remediation 2026-05-30): the carrier-detail
+    // breakdown renders in-stack via the surface's `\.rolePushDetail`
+    // layer (slide-in + BespokeBackBar) instead of a slide-up sheet.
+    @Environment(\.rolePushDetail) private var pushDetail
     @StateObject private var store = ShipperCatalystScorecardStore()
     @State private var selected: ShipperCatalystScorecardStore.MergedRow?
     @State private var filter: ScorecardFilter = .all
@@ -292,11 +296,6 @@ struct ShipperCatalystScorecard: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
             Task { await store.refresh() }
-        }
-        .sheet(item: $selected) { row in
-            CatalystDetailSheet(row: row)
-                .environment(\.palette, palette)
-                .presentationDragIndicator(.visible)
         }
         .animation(
             reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.18),
@@ -657,7 +656,7 @@ struct ShipperCatalystScorecard: View {
     }
 
     private func carrierRow(_ c: ShipperCatalystScorecardStore.MergedRow) -> some View {
-        Button(action: { selected = c }) {
+        Button(action: { openCarrier(c) }) {
             HStack(alignment: .top, spacing: Space.s3) {
                 avatarBadge(monogram: c.monogram, tone: c.avatarTone)
                     .padding(.top, 2)
@@ -884,6 +883,23 @@ struct ShipperCatalystScorecard: View {
                 .strokeBorder(palette.borderFaint, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    // MARK: - Row open (sheet→push)
+
+    /// Sheet→push: render the carrier breakdown in-stack via the
+    /// surface `\.rolePushDetail` layer (BespokeBackBar provided by the
+    /// layer). `selected` is retained for accessibility / future reads.
+    /// Re-provides `\.palette` since the pushed detail reads it.
+    private func openCarrier(_ c: ShipperCatalystScorecardStore.MergedRow) {
+        selected = c
+        let p = palette
+        pushDetail?(c.name) {
+            AnyView(
+                CatalystDetailSheet(row: c)
+                    .environment(\.palette, p)
+            )
+        }
     }
 
     // MARK: - Notification posts (§20.4)

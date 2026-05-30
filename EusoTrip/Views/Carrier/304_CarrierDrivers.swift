@@ -128,6 +128,10 @@ private struct CarrierDriverRosterRow: Identifiable, Hashable {
 struct CarrierDrivers: View {
     @Environment(\.palette) private var palette
     @EnvironmentObject private var session: EusoTripSession
+    // Sheet→push (NAV remediation 2026-05-30): the roster→load detail now
+    // pushes in-stack via the surface's detail layer + BespokeBackBar
+    // instead of presenting as a `.sheet`. Nil outside CarrierSurface.
+    @Environment(\.rolePushDetail) private var pushDetail
 
     @StateObject private var active = CarrierActiveLoadsStore()
 
@@ -148,9 +152,6 @@ struct CarrierDrivers: View {
         }
         .task { await active.refresh() }
         .refreshable { await active.refresh() }
-        .sheet(item: $detailRow) { row in
-            rosterDetailSheet(for: row)
-        }
         .screenTileRoot()
     }
 
@@ -318,7 +319,11 @@ struct CarrierDrivers: View {
             } else {
                 VStack(spacing: Space.s2) {
                     ForEach(visibleRoster) { row in
-                        Button { detailRow = row } label: {
+                        Button {
+                            detailRow = row
+                            let s = session
+                            pushDetail?(row.displayName) { AnyView(rosterDetailSheet(for: row).environmentObject(s)) }
+                        } label: {
                             rosterRowView(row)
                         }
                         .buttonStyle(.plain)
@@ -544,8 +549,6 @@ struct CarrierDrivers: View {
             previewIsActive: true
         )
         .environmentObject(session)
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
     }
 
     // MARK: - Helpers

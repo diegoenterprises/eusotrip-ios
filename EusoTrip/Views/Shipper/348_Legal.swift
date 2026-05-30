@@ -19,8 +19,8 @@ struct LegalScreen: View {
 
 private struct LegalBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.rolePushDetail) private var pushDetail
     @State private var presentingDoc: LegalDoc? = nil
-    @State private var presentingAbout: Bool = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -50,7 +50,11 @@ private struct LegalBody: View {
                 }
                 LifecycleCard {
                     LifecycleSection(label: "ABOUT", icon: "info.circle")
-                    Button { presentingAbout = true } label: {
+                    Button {
+                        pushDetail?("About EusoTrip") {
+                            AnyView(AboutThisAppSheet(showsCloseButton: false))
+                        }
+                    } label: {
                         HStack {
                             Image(systemName: "sparkles")
                                 .foregroundStyle(LinearGradient.diagonal)
@@ -76,11 +80,6 @@ private struct LegalBody: View {
         }
         .sheet(item: $presentingDoc) { doc in
             LegalDocSheet(doc: doc)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-        }
-        .sheet(isPresented: $presentingAbout) {
-            AboutThisAppSheet()
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
@@ -594,6 +593,10 @@ enum LegalDocCopy {
 struct AboutThisAppSheet: View {
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
+    /// When presented in-stack via `\.rolePushDetail`, the surface's
+    /// `BespokeBackBar` provides the chevron, so the sheet's own X is
+    /// suppressed (no chevron + X). Modal presenters keep it (default).
+    var showsCloseButton: Bool = true
 
     private var marketingVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
@@ -604,16 +607,18 @@ struct AboutThisAppSheet: View {
 
     var body: some View {
         VStack(alignment: .center, spacing: 0) {
-            HStack {
-                Spacer(minLength: 0)
-                Button { dismiss() } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 22, weight: .heavy))
-                        .foregroundStyle(palette.textTertiary)
+            if showsCloseButton {
+                HStack {
+                    Spacer(minLength: 0)
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 22, weight: .heavy))
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                .padding(Space.s4)
             }
-            .padding(Space.s4)
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: Space.s5) {

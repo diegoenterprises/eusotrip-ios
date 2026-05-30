@@ -74,6 +74,11 @@ final class ShipperBOLsStore: ObservableObject {
 
 struct ShipperBOLs: View {
     @Environment(\.palette) private var palette
+    // Sheet→push (NAV remediation 2026-05-30): the Generate-BOL load
+    // picker renders in-stack via the surface's `\.rolePushDetail`
+    // layer (slide-in + BespokeBackBar) instead of a slide-up sheet.
+    // The EusoPDFViewer BOL preview stays modal.
+    @Environment(\.rolePushDetail) private var pushDetail
     @StateObject private var store = ShipperBOLsStore()
     @State private var generateLoadId: String = ""
     @State private var showGenerateSheet: Bool = false
@@ -116,7 +121,6 @@ struct ShipperBOLs: View {
         .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
             Task { await store.load() }
         }
-        .sheet(isPresented: $showGenerateSheet) { generateSheet }
         .sheet(item: $pdfPreview) { p in
             EusoPDFViewer(
                 title: "BOL · \(p.bolNumber)",
@@ -178,7 +182,7 @@ struct ShipperBOLs: View {
             }
             Spacer(minLength: 0)
             Button {
-                showGenerateSheet = true
+                openGenerate()
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "plus.rectangle.fill").font(.system(size: 11, weight: .heavy))
@@ -383,19 +387,39 @@ struct ShipperBOLs: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
+    /// Sheet→push: render the Generate-BOL load picker in-stack via the
+    /// surface `\.rolePushDetail` layer (BespokeBackBar provided by the
+    /// layer). `showGenerateSheet` is retained so the inline
+    /// `generateSheet` body's callbacks are untouched apart from the
+    /// self-close, which now pops the detail layer.
+    private func openGenerate() {
+        showGenerateSheet = true
+        let p = palette
+        pushDetail?("Generate BOL") {
+            AnyView(generateSheet.environment(\.palette, p))
+        }
+    }
+
     private var generateSheet: some View {
         ShipperBOLGeneratePicker(
             generatingFor: store.generatingFor,
             onPick: { loadId in
                 Task {
                     await store.generate(loadId: loadId)
+                    // Sheet→push: pop the in-stack detail layer instead of
+                    // dismissing a sheet. The Shipper surface listens to
+                    // `.eusoShipperNavBack` to clear the pushed detail.
+                    NotificationCenter.default.post(name: .eusoShipperNavBack, object: nil)
                     showGenerateSheet = false
                 }
             },
             onUpload: {
                 // Hand off to the existing 229 BOL upload screen via
                 // the shipper nav swap; 229 already handles file pick
-                // + bol.uploadDocument mutation.
+                // + bol.uploadDocument mutation. The nav swap clears the
+                // pushed detail itself (the surface nils pushedDetail on
+                // any explicit screen swap), so no separate NavBack post
+                // is needed here.
                 NotificationCenter.default.post(
                     name: .eusoShipperNavSwap, object: nil,
                     userInfo: ["screenId": "229"]

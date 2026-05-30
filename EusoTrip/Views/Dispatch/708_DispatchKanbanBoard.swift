@@ -97,6 +97,11 @@ private let kanbanColumns: [KanbanColumn] = [
 
 private struct KanbanBody: View {
     @Environment(\.palette) private var palette
+    // Sheet→push (NAV remediation 2026-05-30): the card detail now pushes
+    // in-stack via the surface's detail layer + BespokeBackBar instead of
+    // presenting as a `.sheet`. Nil outside a role surface that installs
+    // RoleDetailLayer.
+    @Environment(\.rolePushDetail) private var pushDetail
     @State private var byColumn: [String: [KanbanLoad]] = [:]
     @State private var loading = true
     @State private var loadError: String? = nil
@@ -128,7 +133,6 @@ private struct KanbanBody: View {
         }
         .task { await load() }
         .refreshable { await load() }
-        .sheet(item: $sheetLoad) { l in cardSheet(l) }
     }
 
     private var header: some View {
@@ -197,7 +201,10 @@ private struct KanbanBody: View {
                     EusoEmptyState(systemImage: col.icon, title: "Column empty", subtitle: "No loads in this stage right now.")
                 } else {
                     ForEach(cards) { l in
-                        Button { sheetLoad = l } label: { cardView(l, col: col) }
+                        Button {
+                            sheetLoad = l
+                            pushDetail?(l.loadNumber) { AnyView(cardSheet(l)) }
+                        } label: { cardView(l, col: col) }
                             .buttonStyle(.plain)
                             // 2026-05-23 — Drag-to-advance. Drag any
                             // card across the snap pager onto another
@@ -364,6 +371,12 @@ private struct KanbanBody: View {
         do {
             let _: Out = try await EusoTripAPI.shared.mutation("dispatch.updateLoadStatus", input: In(loadId: String(load.id), status: next))
             lastAdvance = "\(load.loadNumber) → \(next.replacingOccurrences(of: "_", with: " ").uppercased())"
+            // If the advance came from the pushed card detail (sheetLoad
+            // set), pop the in-stack layer back to the board. The drag
+            // path leaves sheetLoad nil, so no spurious pop.
+            if sheetLoad != nil {
+                NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
+            }
             sheetLoad = nil
             await self.load()
         } catch {
