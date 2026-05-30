@@ -1,33 +1,33 @@
 //
 //  HereMapView.swift
-//  EusoTrip — SwiftUI wrapper around MKMapView.
+//  EusoTrip — SwiftUI map wrapper (legacy raster API surface).
 //
-//  Rendering modes:
-//    1. HERE basemap (DEFAULT) — HERE Platform raster tiles (v3) served
-//       via `HereTileOverlay` on top of MKMapView. `canReplaceMapContent`
-//       is set, so HERE completely owns the canvas (Apple's basemap is
-//       suppressed, no beige land, no Apple POIs). `explore.day` in
-//       light mode, `explore.night` in dark mode. This is the only
-//       on-brand mapping surface across the app — iPhone, Watch, and
-//       the web platform all render HERE tiles. (Build 48, 2026-04-22.)
-//    2. Brand basemap (fallback only) — MKStandardMapConfiguration with
-//       `emphasisStyle: .muted` is applied as an invisible floor so the
-//       map never shows Apple's default beige if a HERE tile 404s. In
-//       the normal case the HERE overlay paints over the top of it and
-//       the Apple basemap is never visible. Only kicks in if the HERE
-//       API key is missing (dev builds without xcconfig).
+//  2026-05-29 — MAP ENGINE SWAP. This view's *public API* is unchanged
+//  (same `HereMapView(...)` memberwise init, same nested `Lane` /
+//  `LoadMarker` types, same stored properties), but the rendering engine
+//  is now the in-house native `BespokeMapCanvas` (SwiftUI Canvas) instead
+//  of `MKMapView` + a HERE raster-tile overlay. The HERE plan tier never
+//  served raster tiles (every request came back empty → blank grid), and
+//  the whole app is consolidating onto the single bespoke renderer.
 //
-//  Data model:
-//    • `stops: [LoadLocation]`          — individual pins (legacy API).
-//    • `lanes: [Lane]`                   — per-load (pickup, delivery)
-//                                          pairs used to draw a
-//                                          blue→magenta gradient polyline
-//                                          per lane and to color pins
-//                                          (blue = pickup, magenta =
-//                                          delivery).
-//    • `route: HereRoute?`               — optional decoded HERE truck
-//                                          route; rendered as a single
-//                                          blue→magenta gradient polyline.
+//  The legacy inputs are mapped onto the canonical `[HereMapLayer]`
+//  contract (HereMapWebView.swift):
+//    • `stops` (first = Pickup, last = Delivery, middle = stops)  → markers
+//    • `lanes` (pickup→delivery pairs)                            → route +
+//                                                                   pickup/
+//                                                                   delivery
+//                                                                   markers
+//    • `markers` (one pin per load at pickup)                     → markers
+//    • `route` (decoded HERE truck route)                         → route
+//    • `yardLayoutPolygons` ([MKPolygon] dock lanes / staging)    → .adZones
+//                                                                   polygons
+//  Camera center is derived from the data (or the supplied
+//  `initialRegion`), and dark/light follows `@Environment(\.colorScheme)`
+//  exactly as before. `onSelectMarker` is forwarded straight through to
+//  the canvas, which hit-tests taps against the marker pins.
+//
+//  Only this file changed — the 022_DockAssigned yardmap caller and every
+//  other call site keep their existing `HereMapView(...)` calls verbatim.
 //
 //  Powered by ESANG AI™.
 //
@@ -35,15 +35,22 @@
 import SwiftUI
 import MapKit
 
-struct HereMapView: UIViewRepresentable {
+struct HereMapView: View {
 
     // MARK: - Input
+    //
+    // Stored properties are IDENTICAL to the legacy MKMapView version so the
+    // memberwise initializer every caller uses keeps the same shape. A few
+    // are no longer read by the native renderer (they were MapKit-specific:
+    // `useHereTiles`, `userTracking`, `showsUserLocation`, `showsCompass`,
+    // `extraAnnotations`); they remain part of the public init for source
+    // compatibility and are intentionally retained even though unused here.
 
-    /// Optional preferred HERE tile style. Only used when
-    /// `useHereTiles == true`. If nil, follows `@Environment(\.colorScheme)`.
+    /// Optional preferred HERE tile style. Retained for API compatibility;
+    /// the native renderer follows `@Environment(\.colorScheme)`.
     var style: HereTileStyle? = nil
 
-    /// A decoded HERE route to render as a blue→magenta gradient polyline.
+    /// A decoded HERE route to render as a route polyline.
     var route: HereRoute? = nil
 
     /// Legacy stop list (flat pins). First = Pickup, last = Delivery.
@@ -51,60 +58,49 @@ struct HereMapView: UIViewRepresentable {
     /// distinguished per lane.
     var stops: [LoadLocation] = []
 
-    /// Per-load pickup → delivery pairs. Each lane renders as a gradient
-    /// polyline plus two pins (pickup blue, delivery magenta).
+    /// Per-load pickup → delivery pairs. Each lane renders as a route
+    /// polyline plus two pins (pickup, delivery).
     /// Legacy — prefer `markers` for the public board view.
     var lanes: [Lane] = []
 
-    /// One pin per load at its pickup coordinate. Use this on the public
-    /// Eusoboards surface where drivers want a clean overview of available
-    /// loads (no polylines, no clutter). Tapping a pin invokes
+    /// One pin per load at its pickup coordinate. Tapping a pin invokes
     /// `onSelectMarker(id)` so the caller can present a detail sheet.
     var markers: [LoadMarker] = []
 
-    /// Invoked when the user taps a marker annotation. Wired via MKMapView's
-    /// `didSelect` delegate callback; the coordinator stores the latest
-    /// closure so it doesn't capture a stale struct.
+    /// Invoked when the user taps a marker. Forwarded straight to the
+    /// canvas, which hit-tests taps and bubbles the marker id back.
     var onSelectMarker: ((String) -> Void)? = nil
 
-    /// Whether to render HERE Platform raster tiles as the basemap.
-    /// Default ON — HERE is our canonical mapping provider (brand parity
-    /// with the web platform, truck-aware routing on the same stack,
-    /// uniform dark/light palette). Callers should leave this alone
-    /// unless a test/preview explicitly wants the Apple fallback.
-    /// (Build 48, 2026-04-22 — flipped from false → true to unify
-    /// mapping across iOS + Watch + Web on HERE.)
+    /// Retained for API compatibility (was the MapKit HERE-raster toggle).
+    /// The native renderer always paints the bespoke cartography.
     var useHereTiles: Bool = true
 
-    /// Optional extra annotations (e.g. truck position, dispatch markers).
+    /// Retained for API compatibility (MapKit annotation passthrough).
     var extraAnnotations: [MKPointAnnotation] = []
 
-    /// Optional GeoJSON polygon overlay rendered on top of the basemap.
-    /// Used by the terminal yardmap surface (022_DockAssigned.swift)
-    /// when the active terminal's `TerminalCapabilities.yardLayoutGeoJson`
-    /// is populated. Caller pre-parses the GeoJSON into MKPolygon
-    /// instances; HereMapView paints them with a Brand.blue stroke +
-    /// translucent fill so dock lanes / staging zones / hazmat
-    /// segregation areas read clearly over the HERE tiles.
+    /// Optional yard-layout polygon overlay (terminal dock lanes / staging /
+    /// hazmat segregation). Caller pre-parses the terminal's GeoJSON into
+    /// `MKPolygon` instances; we convert each to a `HerePolygon` and render
+    /// it as an `.adZones` layer (translucent brand-blue fill + stroke) on
+    /// the native canvas.
     var yardLayoutPolygons: [MKPolygon] = []
 
-    /// Initial map camera. If nil, the view auto-fits to `stops`/`lanes`/route.
+    /// Initial map camera. If nil, the view auto-centers on the data.
     var initialRegion: MKCoordinateRegion? = nil
 
-    /// User-location tracking mode (none / follow / followWithHeading).
+    /// User-location tracking mode. Retained for API compatibility.
     var userTracking: MKUserTrackingMode = .none
 
-    /// Whether to show the user-location blue dot.
+    /// Whether to show the user-location dot. Retained for API compatibility.
     var showsUserLocation: Bool = false
 
-    /// Whether to show the compass control.
+    /// Whether to show the compass control. Retained for API compatibility.
     var showsCompass: Bool = true
 
     // MARK: - Lane
 
-    /// A single bookable lane — pickup → delivery — used to draw a per-load
-    /// gradient polyline and to color the pins (pickup = blue, delivery =
-    /// magenta) so the map reads as a real load board.
+    /// A single bookable lane — pickup → delivery — rendered as a route
+    /// polyline with pickup/delivery pins.
     struct Lane: Identifiable, Hashable {
         let id: String
         let originTitle: String
@@ -116,9 +112,8 @@ struct HereMapView: UIViewRepresentable {
         func hash(into hasher: inout Hasher) { hasher.combine(id) }
     }
 
-    /// A single pickup pin on the public load board. No polylines, no
-    /// delivery pin — the driver sees only where loads start. Tapping a pin
-    /// opens the load detail sheet.
+    /// A single pickup pin on the public load board. Tapping a pin opens the
+    /// load detail sheet via `onSelectMarker`.
     struct LoadMarker: Identifiable, Hashable {
         let id: String
         let title: String          // e.g. "Dallas, TX"
@@ -133,494 +128,161 @@ struct HereMapView: UIViewRepresentable {
 
     @Environment(\.colorScheme) private var colorScheme
 
-    private var effectiveStyle: HereTileStyle {
-        style ?? (colorScheme == .dark ? .dark : .light)
+    // MARK: - Body (native renderer)
+
+    var body: some View {
+        BespokeMapCanvas(
+            center: derivedCenter,
+            zoom: derivedZoom,
+            interactive: true,
+            tilt: 0,
+            isDark: colorScheme == .dark,
+            layers: buildLayers(),
+            onSelectMarker: onSelectMarker
+        )
     }
 
+    // MARK: - Input → contract mapping
 
-    // MARK: - Coordinator (MKMapView delegate)
+    /// Translate the legacy inputs into the canonical `[HereMapLayer]`.
+    private func buildLayers() -> [HereMapLayer] {
+        var layers: [HereMapLayer] = []
 
-    final class Coordinator: NSObject, MKMapViewDelegate {
-        var tileOverlay: HereTileOverlay?
-        weak var mapView: MKMapView?
-
-        /// NotificationCenter observer for `eusoHereNightTileBlocked`.
-        /// Stored so the observer can be removed in `deinit` to avoid
-        /// leaking after the SwiftUI view is dismantled.
-        var nightBlockedObserver: NSObjectProtocol?
-        deinit {
-            if let obs = nightBlockedObserver {
-                NotificationCenter.default.removeObserver(obs)
-            }
+        // Yard-layout polygons → ad-zone polygons (brand-blue, translucent).
+        let zonePolys = yardLayoutPolygons.compactMap(Self.herePolygon(from:))
+        if !zonePolys.isEmpty {
+            layers.append(.adZones(zonePolys))
         }
 
-        /// Cached selection callback — refreshed on every `updateUIView` so
-        /// we never hold a stale struct's closure.
-        var onSelectMarker: ((String) -> Void)?
-
-        /// Road-following polylines for each lane id, fetched once via
-        /// `MKDirections` and re-used across subsequent `apply(...)` passes.
-        /// Without this cache every state change would re-request the same
-        /// route and replace a smooth curved line with a blink of straight
-        /// A→B until the fresh response landed. (Wave-5, 2026-04-20.)
-        var laneRouteCache: [String: MKPolyline] = [:]
-
-        /// Lane ids currently in flight against `MKDirections` — prevents
-        /// duplicate requests when SwiftUI drives multiple rapid
-        /// `updateUIView` passes (scroll, theme flip, fitCamera, …).
-        var pendingLaneRequests: Set<String> = []
-
-        // Tint colors for pickup vs delivery pins.
-        static let blue    = UIColor(red: 0.08,  green: 0.45,  blue: 1.0, alpha: 1.0)
-        static let magenta = UIColor(red: 0.745, green: 0.004, blue: 1.0, alpha: 1.0)
-
-        // Annotation subtitle role tags used by viewFor + didSelect.
-        static let markerRolePrefix = "marker"
-
-        func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
-            if let tile = overlay as? HereTileOverlay {
-                // Tinting renderer: draws the HERE tile, then — only when
-                // dark mode is rendering the `explore.day` *fallback*
-                // (HERE plan tier rejected `explore.night`) — lays a
-                // translucent blue-slate fill on top to give the
-                // appearance of a night basemap. When `explore.night`
-                // does serve, the tile is already dark and the tint is
-                // omitted so the night raster reads with full saturation
-                // (matching the Apple-Maps-Standard-night look the
-                // founder asked for via the 2026-05-10 reference shot).
-                let needsFallbackTint = tile.style == .dark
-                                     && !tile.style.isRenderingNightRaster
-                return TintingTileOverlayRenderer(
-                    tileOverlay: tile,
-                    tint: needsFallbackTint
-                        ? UIColor(red: 0.08, green: 0.11, blue: 0.18, alpha: 0.62)
-                        : nil
-                )
-            }
-            if let tile = overlay as? MKTileOverlay {
-                return MKTileOverlayRenderer(tileOverlay: tile)
-            }
-            if let poly = overlay as? MKPolyline {
-                // Brand gradient polyline: Brand.blue → Brand.magenta sweeps
-                // from the pickup end to the delivery end. Same treatment
-                // whether it's a single full HERE truck route or a straight
-                // lane connector for the market-board view.
-                let renderer = MKGradientPolylineRenderer(polyline: poly)
-                renderer.setColors(
-                    [Coordinator.blue, Coordinator.magenta],
-                    locations: [0.0, 1.0]
-                )
-                renderer.lineWidth = 5
-                renderer.lineCap   = .round
-                renderer.lineJoin  = .round
-                return renderer
-            }
-            if let polygon = overlay as? MKPolygon {
-                // Yard-layout polygon: terminal admin uploads a
-                // GeoJSON describing dock lanes / staging / hazmat
-                // segregation. Translucent fill + Brand.blue stroke
-                // so the polygons read on top of HERE tiles without
-                // burying the underlying basemap.
-                let renderer = MKPolygonRenderer(polygon: polygon)
-                renderer.fillColor   = Coordinator.blue.withAlphaComponent(0.18)
-                renderer.strokeColor = Coordinator.blue.withAlphaComponent(0.85)
-                renderer.lineWidth   = 1.5
-                return renderer
-            }
-            return MKOverlayRenderer(overlay: overlay)
-        }
-
-        func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
-            if annotation is MKUserLocation { return nil }
-            let id = "stop"
-            let view = (mapView.dequeueReusableAnnotationView(withIdentifier: id) as? MKMarkerAnnotationView)
-                ?? MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: id)
-            view.annotation         = annotation
-            view.titleVisibility    = .adaptive
-            view.subtitleVisibility = .adaptive
-            view.glyphTintColor     = .white
-            view.canShowCallout     = false    // we present our own detail sheet
-
-            // `subtitle` carries a tagged role from `apply(...)` — "pickup",
-            // "delivery", or "marker" — so the annotation view can pick a
-            // brand color without needing a custom MKAnnotation subclass.
-            let role = (annotation.subtitle ?? nil) ?? ""
-            if role.hasPrefix(Coordinator.markerRolePrefix) {
-                // Public load board marker: single pin per load at pickup.
-                // Use magenta as the brand accent so it reads as "tappable
-                // detail" rather than a pickup/delivery role marker.
-                view.markerTintColor = Coordinator.magenta
-                view.glyphImage      = UIImage(systemName: "shippingbox.fill")
-            } else if role.hasPrefix("pickup") {
-                view.markerTintColor = Coordinator.blue
-                view.glyphImage      = UIImage(systemName: "arrow.up.circle.fill")
-            } else if role.hasPrefix("delivery") {
-                view.markerTintColor = Coordinator.magenta
-                view.glyphImage      = UIImage(systemName: "flag.fill")
-            } else {
-                view.markerTintColor = Coordinator.magenta
-            }
-            return view
-        }
-
-        /// Route taps on load-board markers back to the SwiftUI caller's
-        /// `onSelectMarker` closure. The subtitle carries the load id
-        /// (format: `"marker · <id>"`).
-        func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
-            guard let sub = view.annotation?.subtitle ?? nil else { return }
-            guard sub.hasPrefix(Coordinator.markerRolePrefix) else { return }
-            // Strip "marker · " prefix.
-            let id = sub.replacingOccurrences(of: "\(Coordinator.markerRolePrefix) · ",
-                                              with: "")
-            onSelectMarker?(id)
-            // Deselect so repeated taps on the same marker fire again.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                mapView.deselectAnnotation(view.annotation, animated: false)
-            }
-        }
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    // MARK: - Lifecycle
-
-    func makeUIView(context: Context) -> MKMapView {
-        let map = MKMapView(frame: .zero)
-        map.delegate             = context.coordinator
-        map.showsCompass         = showsCompass
-        map.showsScale           = false
-        map.showsUserLocation    = showsUserLocation
-        map.userTrackingMode     = userTracking
-        map.pointOfInterestFilter = .excludingAll       // we render our own POIs
-        context.coordinator.mapView = map
-        context.coordinator.onSelectMarker = onSelectMarker
-
-        // When the HERE tile pipeline learns the plan tier doesn't
-        // serve `explore.night`, the next dark-mode tile request
-        // automatically uses `explore.day`. The visible tiles already
-        // on screen need to be re-rendered through the renderer one
-        // more time so the new fallback tint paints. Listening once
-        // per HereMapView instance ensures every map flips together.
-        context.coordinator.nightBlockedObserver = NotificationCenter.default
-            .addObserver(forName: Notification.Name("eusoHereNightTileBlocked"),
-                         object: nil,
-                         queue: .main) { [weak map, weak coordinator = context.coordinator] _ in
-                guard let map, let coordinator else { return }
-                guard let old = coordinator.tileOverlay, old.style == .dark else { return }
-                map.removeOverlay(old)
-                let fresh = HereTileOverlay(style: .dark)
-                map.addOverlay(fresh, level: .aboveLabels)
-                coordinator.tileOverlay = fresh
-            }
-
-        // Apply the brand basemap (muted + no POIs) so land reads near-white
-        // / deep-slate instead of Apple's default beige / green.
-        applyBrandBasemap(to: map)
-
-        // HERE tile overlay is opt-in. Gated on the presence of OAuth
-        // Bearer credentials (access key id + secret + token endpoint).
-        // If they're missing, the tile overlay is omitted and the muted
-        // Apple basemap shows through — same "no creds" UX as before.
-        // Token-exchange failures at runtime are handled inside
-        // `HereTileOverlay.loadTile(...)` (serves a transparent PNG) so
-        // a transient OAuth outage never blanks the whole map.
-        if useHereTiles, HereMapsConfig.hasBearerCredentials {
-            let overlay = HereTileOverlay(style: effectiveStyle)
-            map.addOverlay(overlay, level: .aboveLabels)
-            context.coordinator.tileOverlay = overlay
-        }
-
-        apply(map: map, coordinator: context.coordinator)
-        return map
-    }
-
-    func updateUIView(_ map: MKMapView, context: Context) {
-        // Keep basemap in sync with the current register.
-        applyBrandBasemap(to: map)
-
-        // Refresh the selection callback so we never hold a stale struct's
-        // closure.
-        context.coordinator.onSelectMarker = onSelectMarker
-
-        // Manage HERE tile overlay visibility. Same no-creds fallback
-        // as `makeUIView`: if the OAuth credentials aren't wired or the
-        // token exchange is otherwise unavailable, drop the overlay and
-        // fall back to the muted Apple basemap.
-        let wantsHere = useHereTiles && HereMapsConfig.hasBearerCredentials
-        if wantsHere {
-            if context.coordinator.tileOverlay?.style != effectiveStyle {
-                if let old = context.coordinator.tileOverlay {
-                    map.removeOverlay(old)
-                }
-                let overlay = HereTileOverlay(style: effectiveStyle)
-                map.addOverlay(overlay, level: .aboveLabels)
-                context.coordinator.tileOverlay = overlay
-            }
-        } else if let old = context.coordinator.tileOverlay {
-            map.removeOverlay(old)
-            context.coordinator.tileOverlay = nil
-        }
-
-        apply(map: map, coordinator: context.coordinator)
-    }
-
-    // MARK: - Basemap
-
-    /// Sets the Apple basemap to a brand-friendly configuration — muted
-    /// emphasis on iOS 17+, no points of interest. This is what kills the
-    /// beige look: `.muted` renders land as a soft near-white (light mode)
-    /// and deep-slate (dark mode), both of which sit comfortably alongside
-    /// our blue→magenta gradient polylines.
-    private func applyBrandBasemap(to map: MKMapView) {
-        if #available(iOS 17.0, *) {
-            let config = MKStandardMapConfiguration(
-                elevationStyle: .flat,
-                emphasisStyle: .muted
-            )
-            config.pointOfInterestFilter = .excludingAll
-            config.showsTraffic          = false
-            map.preferredConfiguration   = config
-        } else {
-            map.mapType = .mutedStandard
-        }
-    }
-
-    // MARK: - Render
-
-    private func apply(map: MKMapView, coordinator: Coordinator) {
-        // Remove old polylines + annotations (but keep the tile overlay).
-        map.removeOverlays(map.overlays.filter { !($0 is MKTileOverlay) })
-        map.removeAnnotations(map.annotations)
-
-        // Yard-layout polygon overlays — caller pre-parses the
-        // terminal's GeoJSON (DockYardmapSheet does so when caps
-        // are populated). Painted under polylines + pins so dock
-        // lanes / staging zones render as background context.
-        for poly in yardLayoutPolygons {
-            map.addOverlay(poly, level: .aboveRoads)
-        }
-
-        // Full HERE route polyline (detail view).
+        // Full HERE route → route polyline.
         if let route {
             let coords = HereRoutingClient.polyline(for: route)
-            if !coords.isEmpty {
-                let poly = MKPolyline(coordinates: coords, count: coords.count)
-                map.addOverlay(poly, level: .aboveLabels)
+            if coords.count >= 2 {
+                layers.append(.route(polyline: coords.map { HereLatLng($0) },
+                                     colorHex: "#1473FF"))
             }
         }
 
-        // Public load-board markers: one pin per load at pickup. No
-        // polylines, no delivery pin — the driver gets a clean overview,
-        // and taps surface a full load-detail sheet.
-        for marker in markers {
-            let a = MKPointAnnotation()
-            a.coordinate = marker.coordinate
-            a.title      = marker.title
-            a.subtitle   = "\(Coordinator.markerRolePrefix) · \(marker.id)"
-            map.addAnnotation(a)
-        }
-
-        // Per-lane road-following route + colored pins. Kept for the
-        // single-load detail/map view; the public Eusoboards surface uses
-        // `markers` above instead.
-        //
-        // Routing (Wave-5, 2026-04-20): we no longer draw a naive
-        // straight A→B `MKPolyline` here — that line cut across state
-        // lines and read as a placeholder. Instead we request a real
-        // driveable route via `MKDirections` (Apple's on-device routing)
-        // and cache the resulting polyline on the Coordinator so repeat
-        // `apply(...)` passes don't refetch. First paint of a lane shows
-        // pins only for the ~300 ms the request takes; the smooth curved
-        // route then lands and replaces nothing since there was no
-        // stopgap straight line to remove.
-        //
-        // Defensive guard (2026-04-19): never render lane connectors OR
-        // the dual pickup/delivery pins when `markers` is populated. The
-        // Eusoboards public board is a pick-a-load surface — origin →
-        // destination polylines do not belong on it. If a caller passes
-        // both `markers` and `lanes` by mistake, `markers` wins and the
-        // lanes are silently dropped so the user never sees the
-        // "polyline + dual pin" clutter again.
-        if markers.isEmpty {
-            for lane in lanes {
-                // Pickup/delivery pins always render immediately so the
-                // user sees *where* the load is even before the route
-                // comes back.
-                let pickup = MKPointAnnotation()
-                pickup.coordinate = lane.pickup
-                pickup.title      = lane.originTitle
-                pickup.subtitle   = "pickup · \(lane.id)"
-                map.addAnnotation(pickup)
-
-                let delivery = MKPointAnnotation()
-                delivery.coordinate = lane.delivery
-                delivery.title      = lane.destinationTitle
-                delivery.subtitle   = "delivery · \(lane.id)"
-                map.addAnnotation(delivery)
-
-                // Real driveable polyline. Cache hit → draw now. Cache
-                // miss → kick off one `MKDirections.calculate` request,
-                // cache the result, and add the overlay on the main
-                // thread when it lands.
-                if let cached = coordinator.laneRouteCache[lane.id] {
-                    map.addOverlay(cached, level: .aboveLabels)
-                } else if !coordinator.pendingLaneRequests.contains(lane.id) {
-                    coordinator.pendingLaneRequests.insert(lane.id)
-
-                    let req = MKDirections.Request()
-                    req.source        = MKMapItem(placemark: MKPlacemark(coordinate: lane.pickup))
-                    req.destination   = MKMapItem(placemark: MKPlacemark(coordinate: lane.delivery))
-                    req.transportType = .automobile
-
-                    MKDirections(request: req).calculate { [weak map, weak coordinator] response, _ in
-                        guard let map, let coordinator else { return }
-                        coordinator.pendingLaneRequests.remove(lane.id)
-
-                        // Pick the chosen route (first is fastest). Fall
-                        // back to a straight line only if Apple's router
-                        // can't produce one (e.g. across water without a
-                        // bridge) — this keeps the map from ever looking
-                        // empty, while still giving the user a real
-                        // curved route 99 % of the time.
-                        let poly: MKPolyline
-                        if let route = response?.routes.first {
-                            poly = route.polyline
-                        } else {
-                            var coords = [lane.pickup, lane.delivery]
-                            poly = MKPolyline(coordinates: &coords, count: coords.count)
-                        }
-                        poly.title = lane.id
-                        coordinator.laneRouteCache[lane.id] = poly
-                        map.addOverlay(poly, level: .aboveLabels)
-                    }
-                }
+        // Public load-board markers: one pin per load at pickup.
+        if !markers.isEmpty {
+            let pins = markers.map { m in
+                HereMarker(at: HereLatLng(m.coordinate),
+                           kind: .pickup,
+                           label: m.title,
+                           id: m.id)
             }
-        }
-
-        // Legacy flat-stop rendering (single-load detail view).
-        for (i, stop) in stops.enumerated() {
-            let a = MKPointAnnotation()
-            a.coordinate = CLLocationCoordinate2D(latitude: stop.lat, longitude: stop.lng)
-            let role: String
-            if i == 0 {
-                role = "pickup"
-                a.title = "Pickup"
-            } else if i == stops.count - 1 {
-                role = "delivery"
-                a.title = "Delivery"
-            } else {
-                role = "waypoint"
-                a.title = "Stop \(i)"
-            }
-            a.subtitle = "\(role) · \(stop.cityState)"
-            map.addAnnotation(a)
-        }
-        for extra in extraAnnotations { map.addAnnotation(extra) }
-
-        // Camera.
-        if let region = initialRegion {
-            map.setRegion(region, animated: true)
+            layers.append(.markers(pins))
         } else {
-            fitCamera(map: map)
-        }
-
-        map.userTrackingMode  = userTracking
-        map.showsUserLocation = showsUserLocation
-        map.showsCompass      = showsCompass
-    }
-
-    /// Auto-fits the camera to enclose every coord we're rendering.
-    /// When there are no markers / lanes / stops to fit (typical first
-    /// paint before the data store has resolved), we fall back to a
-    /// continental-US framing instead of leaving MKMapView at its
-    /// default zoom-0 world view (which centers on null island and
-    /// reads as Australia/Indian-Ocean to a US driver — verified
-    /// 2026-05-06 via HotZonesWidget on driver home).
-    private func fitCamera(map: MKMapView) {
-        var rect = MKMapRect.null
-        let eps  = MKMapSize(width: 0.01, height: 0.01)
-
-        if let route {
-            for section in route.sections {
-                for c in HereRoutingClient.polyline(for: section) {
-                    rect = rect.union(MKMapRect(origin: MKMapPoint(c), size: eps))
-                }
-            }
-        }
-        // Mirror the apply() guard: when markers are present (public
-        // Eusoboards surface) we deliberately do not render lanes, so
-        // they shouldn't influence the camera fit either.
-        if markers.isEmpty {
+            // Lanes → per-lane route polyline + pickup/delivery pins.
+            // (Mirrors the legacy guard: lanes are only drawn when the public
+            //  board `markers` surface isn't in use.)
             for lane in lanes {
-                rect = rect.union(MKMapRect(origin: MKMapPoint(lane.pickup),   size: eps))
-                rect = rect.union(MKMapRect(origin: MKMapPoint(lane.delivery), size: eps))
+                layers.append(.route(
+                    polyline: [HereLatLng(lane.pickup), HereLatLng(lane.delivery)],
+                    colorHex: "#1473FF"))
+                layers.append(.markers([
+                    HereMarker(at: HereLatLng(lane.pickup),
+                               kind: .pickup, label: lane.originTitle, id: lane.id),
+                    HereMarker(at: HereLatLng(lane.delivery),
+                               kind: .delivery, label: lane.destinationTitle, id: lane.id),
+                ]))
             }
         }
-        for marker in markers {
-            rect = rect.union(MKMapRect(origin: MKMapPoint(marker.coordinate), size: eps))
+
+        // Legacy flat-stop pins (single-load detail view): first = pickup,
+        // last = delivery, middle = generic stops.
+        if !stops.isEmpty {
+            let pins: [HereMarker] = stops.enumerated().map { i, stop in
+                let kind: HereMarker.Kind
+                let label: String
+                if i == 0 {
+                    kind = .pickup; label = stop.cityState.isEmpty ? "Pickup" : stop.cityState
+                } else if i == stops.count - 1 {
+                    kind = .delivery; label = stop.cityState.isEmpty ? "Delivery" : stop.cityState
+                } else {
+                    kind = .stop; label = "Stop \(i)"
+                }
+                return HereMarker(at: HereLatLng(stop.lat, stop.lng), kind: kind, label: label)
+            }
+            layers.append(.markers(pins))
         }
-        for stop in stops {
-            let p = MKMapPoint(CLLocationCoordinate2D(latitude: stop.lat, longitude: stop.lng))
-            rect = rect.union(MKMapRect(origin: p, size: eps))
-        }
 
-        if rect.isNull {
-            // Continental-US default framing so the map never opens at
-            // MKMapView's zoom-0 world view. Same center used by the
-            // legacy MapKit heatmap fallback (HotZonesWidget.swift L690)
-            // — keeps the visual contract consistent.
-            let conus = MKCoordinateRegion(
-                center: CLLocationCoordinate2D(latitude: 39.5, longitude: -98.35),
-                span:   MKCoordinateSpan(latitudeDelta: 36, longitudeDelta: 60)
-            )
-            map.setRegion(conus, animated: false)
-            return
-        }
-        let padding = UIEdgeInsets(top: 56, left: 48, bottom: 56, right: 48)
-        map.setVisibleMapRect(rect, edgePadding: padding, animated: true)
-    }
-}
-
-// MARK: - Dark-mode tint renderer
-
-/// MKTileOverlayRenderer subclass that draws the underlying HERE tile
-/// then, in dark mode, lays a translucent dark-slate fill on top of
-/// the same tile rectangle. Tints ONLY the basemap pixels — pins and
-/// polylines render via MKMapView's own renderers above this layer
-/// and stay vivid. The HERE plan tier rejects `explore.night` so we
-/// can't ask HERE for a real night raster; this is the same strategy
-/// the web platform uses to dim HERE day tiles for dark mode.
-final class TintingTileOverlayRenderer: MKTileOverlayRenderer {
-    /// `MKTileOverlayRenderer.init(tileOverlay:)` is a convenience that
-    /// dispatches through Obj-C back to `init(overlay:)` on the
-    /// receiving Swift subclass. When the subclass adds a `let` stored
-    /// property, Swift's auto-synthesised bridge inserts a precondition
-    /// that traps with `brk 1` (EXC_BREAKPOINT / SIGTRAP) before our
-    /// override gains control — TestFlight crash 2026-05-06 build 209
-    /// fired immediately on splash → home transition when the HotZones
-    /// widget allocated this renderer.
-    ///
-    /// Fix: keep `tint` as a `var` with a default value so the property
-    /// is always initialised before any init runs, expose a
-    /// `convenience init` that delegates to Apple's designated
-    /// `init(tileOverlay:)`, and assign `tint` after delegation. No
-    /// stored-property invariant for the bridge to check, no override
-    /// of `init(overlay:)`, no trap.
-    var tint: UIColor? = nil
-
-    convenience init(tileOverlay: MKTileOverlay, tint: UIColor?) {
-        self.init(tileOverlay: tileOverlay)
-        self.tint = tint
+        return layers
     }
 
-    override func draw(_ mapRect: MKMapRect,
-                       zoomScale: MKZoomScale,
-                       in context: CGContext) {
-        super.draw(mapRect, zoomScale: zoomScale, in: context)
-        guard let tint else { return }
-        context.setFillColor(tint.cgColor)
-        context.setBlendMode(.normal)
-        context.fill(rect(for: mapRect))
+    /// Camera center: explicit `initialRegion` wins; otherwise the centroid
+    /// of whatever data we're rendering; otherwise a continental-US default
+    /// so the canvas never opens on null island.
+    private var derivedCenter: HereLatLng {
+        if let region = initialRegion {
+            return HereLatLng(region.center)
+        }
+        var lats: [Double] = []
+        var lngs: [Double] = []
+        if let route {
+            for c in HereRoutingClient.polyline(for: route) {
+                lats.append(c.latitude); lngs.append(c.longitude)
+            }
+        }
+        for lane in lanes {
+            lats.append(lane.pickup.latitude);   lngs.append(lane.pickup.longitude)
+            lats.append(lane.delivery.latitude); lngs.append(lane.delivery.longitude)
+        }
+        for m in markers {
+            lats.append(m.coordinate.latitude); lngs.append(m.coordinate.longitude)
+        }
+        for s in stops where !(s.lat == 0 && s.lng == 0) {
+            lats.append(s.lat); lngs.append(s.lng)
+        }
+        for poly in yardLayoutPolygons {
+            for c in Self.coordinates(of: poly) {
+                lats.append(c.latitude); lngs.append(c.longitude)
+            }
+        }
+        guard !lats.isEmpty else {
+            // Continental-US default framing.
+            return HereLatLng(39.5, -98.35)
+        }
+        let cLat = lats.reduce(0, +) / Double(lats.count)
+        let cLng = lngs.reduce(0, +) / Double(lngs.count)
+        return HereLatLng(cLat, cLng)
+    }
+
+    /// Zoom is informational only when a route exists (the canvas fits to the
+    /// route), so a sensible mid-range default is fine. When the caller hands
+    /// an `initialRegion`, approximate a zoom from its longitude span.
+    private var derivedZoom: Int {
+        guard let region = initialRegion else { return 6 }
+        let span = region.span.longitudeDelta
+        switch span {
+        case ..<0.05:  return 14
+        case ..<0.2:   return 12
+        case ..<1:     return 10
+        case ..<5:     return 8
+        case ..<20:    return 6
+        default:       return 4
+        }
+    }
+
+    // MARK: - MKPolygon → HerePolygon
+
+    /// Pull the ring coordinates out of an `MKPolygon`.
+    private static func coordinates(of polygon: MKPolygon) -> [CLLocationCoordinate2D] {
+        let count = polygon.pointCount
+        guard count > 0 else { return [] }
+        var coords = [CLLocationCoordinate2D](
+            repeating: CLLocationCoordinate2D(), count: count)
+        polygon.getCoordinates(&coords, range: NSRange(location: 0, length: count))
+        return coords
+    }
+
+    /// Convert an `MKPolygon` (dock lane / staging zone) to a `HerePolygon`
+    /// rendered by the native canvas as a translucent brand-blue ad-zone.
+    private static func herePolygon(from polygon: MKPolygon) -> HerePolygon? {
+        let ring = coordinates(of: polygon).map { HereLatLng($0) }
+        guard ring.count > 2 else { return nil }
+        return HerePolygon(ring: ring, fillHex: "#1473FF", opacity: 0.18,
+                           label: polygon.title)
     }
 }
 

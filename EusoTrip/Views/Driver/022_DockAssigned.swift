@@ -36,6 +36,13 @@ struct DockAssigned: View {
 
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: Load?
+    // Live appointment row for the active load — carries the
+    // server-assigned dock door (`dockNumber`), the appointment
+    // `status` (cleared / waiting / loading), and the scheduled push
+    // time. Mirrors the same `appointments.getByLoad` read that the
+    // sibling lifecycle screens (015 At-Gate, 024 Unloading) hydrate.
+    @State private var appointment: AppointmentsAPI.ByLoadAppointment?
+    @State private var isLoading: Bool = true
     @State private var isConfirming: Bool = false
 
     enum Register { case night, afternoon }
@@ -47,16 +54,70 @@ struct DockAssigned: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
-    // MARK: - Figma fallback
-    private let fallbackFacility = "—"
-    private let fallbackTrailer  = "—"
-    private let fallbackGuard    = "Guard · 00:30  Dwell 17m"
-    private let fallbackDoor     = "12"
-    private let fallbackAisle    = "2"
-    private let fallbackPushTime = "—"
-    private let fallbackAisleLine = "Aisle 2 · night receiving"
-    private let fallbackApproachSub = "Blind-side · flush to the rubber"
-    private let fallbackYardLine = "YARD · SC 2718"
+    // MARK: - Empty-state sentinels
+    //
+    // Em-dash placeholders for fields that have no live source yet.
+    // Trailer id + guard dwell line + per-aisle approach copy are not
+    // yet first-class on `loads.getById` / `appointments.getByLoad`
+    // (same backend gap 024 Unloading documents) — they render as the
+    // honest em-dash sentinel rather than a fabricated value, never on
+    // the live path as a literal.
+    private let dash = "—"
+
+    // MARK: - Live-derived dock fields
+    //
+    // The dock door is the spine of this screen. `appointments.getByLoad`
+    // returns the server-written `dockNumber` the guard / terminal
+    // pushed — that is the ONE live datum 022 exists to surface. When
+    // the appointment has no dock yet, every dock field collapses to the
+    // em-dash sentinel and the screen renders its honest empty state.
+
+    /// Server-assigned dock door, trimmed. Empty when not yet assigned.
+    private var liveDock: String {
+        (appointment?.dockNumber ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    private var hasDock: Bool { !liveDock.isEmpty }
+
+    private var facilityLine: String {
+        let f = ctx.facets.deliveryFacility
+        return f == LiveLoadFacets.dash ? dash : f
+    }
+    private var trailerLine: String { dash }
+    private var guardLine: String {
+        // Guard dwell ticker is a terminal-ops backend gap — show the
+        // appointment status verbatim when present (cleared / waiting),
+        // em-dash otherwise. Never a fabricated dwell timer.
+        guard let s = appointment?.status, !s.isEmpty else { return dash }
+        return s.replacingOccurrences(of: "_", with: " ").uppercased()
+    }
+    private var doorValue: String { hasDock ? liveDock : dash }
+    /// Aisle isn't a discrete column yet — derived em-dash sentinel.
+    private var aisleValue: String { dash }
+    private var pushTime: String {
+        guard let raw = appointment?.scheduledAt, !raw.isEmpty else { return dash }
+        // Render HH:mm from an ISO-8601 timestamp; fall back to the raw
+        // string's time slice if the formatter can't parse it.
+        if let d = ISO8601DateFormatter().date(from: raw) {
+            let f = DateFormatter()
+            f.dateFormat = "HH:mm"
+            return f.string(from: d)
+        }
+        if raw.count >= 16, raw.contains("T") {
+            return String(raw.dropFirst(11).prefix(5))
+        }
+        return dash
+    }
+    private var aisleLine: String {
+        hasDock ? "Door \(liveDock) · receiving" : "Awaiting dock assignment"
+    }
+    private var approachSub: String {
+        hasDock ? "\(ctx.defaultApproach) · flush to the rubber" : dash
+    }
+    private var yardLine: String {
+        let n = activeLoad?.loadNumber
+        if let n, !n.isEmpty { return "YARD · \(n)" }
+        return "YARD"
+    }
 
     // MARK: - Body
 
@@ -64,11 +125,17 @@ struct DockAssigned: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
-                clearedStrip
-                dockCard
-                yardMap
-                actionRow
-                tipBanner
+                if isLoading {
+                    loadingState
+                } else if !hasDock {
+                    emptyState
+                } else {
+                    clearedStrip
+                    dockCard
+                    yardMap
+                    actionRow
+                    tipBanner
+                }
                 footerActions
                 Color.clear.frame(height: 96)
             }
@@ -79,14 +146,14 @@ struct DockAssigned: View {
         .sheet(isPresented: $showYardmap) {
             DockYardmapSheet(
                 load: activeLoad,
-                dockNumber: fallbackDoor,
+                dockNumber: doorValue,
                 caps: terminalCaps
             )
             .environment(\.palette, palette)
         }
         .sheet(isPresented: $showDockCamPicker) {
             DockCamSourcePicker(
-                doorNumber: fallbackDoor,
+                doorNumber: doorValue,
                 terminalCaps: terminalCaps,
                 carrierCaps: carrierCaps,
                 onPickPhoneFallback: {
@@ -136,7 +203,7 @@ struct DockAssigned: View {
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
-                Text(fallbackTrailer)
+                Text(trailerLine)
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
@@ -158,9 +225,35 @@ struct DockAssigned: View {
 
     private var deliveryTitle: String {
         guard let loc = activeLoad?.deliveryLocation,
-              !loc.cityState.isEmpty else { return fallbackFacility }
+              !loc.cityState.isEmpty else { return facilityLine }
         let brand = loc.address.isEmpty ? loc.cityState : loc.address
         return "\(brand) · \(loc.cityState)"
+    }
+
+    // MARK: Loading + empty states
+
+    /// Honest in-flight state while the appointment + load hydrate.
+    private var loadingState: some View {
+        VStack(spacing: Space.s3) {
+            ProgressView().controlSize(.large)
+            Text("Loading dock assignment…")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 220)
+    }
+
+    /// Shown once hydration finishes but no dock door has been pushed
+    /// to this load yet. No fabricated "B → 12" graphic on the live
+    /// path — the driver sees a truthful "waiting on the guard" panel
+    /// and can still call dispatch from the footer CTA.
+    private var emptyState: some View {
+        EusoEmptyState(
+            systemImage: "door.garage.closed",
+            title: "No dock assigned yet",
+            subtitle: "The guard hasn't pushed a dock door for this load. You'll see the door, aisle, and approach the moment it's assigned."
+        )
+        .frame(maxWidth: .infinity, minHeight: 220)
     }
 
     // MARK: Cleared strip
@@ -173,7 +266,7 @@ struct DockAssigned: View {
             Text("CLEARED")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                 .foregroundStyle(Brand.success)
-            Text(fallbackGuard)
+            Text(guardLine)
                 .font(EType.mono(.micro)).tracking(0.4)
                 .foregroundStyle(palette.textSecondary)
             Spacer(minLength: 0)
@@ -189,7 +282,7 @@ struct DockAssigned: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                     .foregroundStyle(Brand.success)
                 Spacer(minLength: 0)
-                Text(fallbackPushTime)
+                Text(pushTime)
                     .font(EType.mono(.micro)).tracking(0.4)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -201,23 +294,23 @@ struct DockAssigned: View {
                 Image(systemName: "arrow.right")
                     .font(.system(size: 26, weight: .bold))
                     .foregroundStyle(LinearGradient.diagonal)
-                Text(fallbackDoor)
+                Text(doorValue)
                     .font(.system(size: 78, weight: .heavy, design: .rounded))
                     .foregroundStyle(LinearGradient.diagonal)
                     .monospacedDigit()
                 Spacer(minLength: 0)
             }
 
-            Text(fallbackAisleLine)
+            Text(aisleLine)
                 .font(EType.body.weight(.semibold))
                 .foregroundStyle(palette.textPrimary)
-            Text(fallbackApproachSub)
+            Text(approachSub)
                 .font(EType.mono(.micro)).tracking(0.3)
                 .foregroundStyle(palette.textSecondary)
 
             HStack(spacing: Space.s2) {
-                dockMetric(label: "DOOR", value: fallbackDoor)
-                dockMetric(label: "AISLE", value: fallbackAisle)
+                dockMetric(label: "DOOR", value: doorValue)
+                dockMetric(label: "AISLE", value: aisleValue)
                 dockMetric(label: "APPROACH", value: ctx.defaultApproach)
             }
         }
@@ -253,7 +346,7 @@ struct DockAssigned: View {
     private var yardMap: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text(fallbackYardLine)
+                Text(yardLine)
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: 0)
@@ -348,7 +441,7 @@ struct DockAssigned: View {
             }
             actionButton(symbol: "camera.fill",
                          label: "Dock cam",
-                         sub: "Door \(fallbackDoor)") {
+                         sub: "Door \(doorValue)") {
                 showDockCamPicker = true
             }
             actionButton(symbol: "message.fill", label: "Message", sub: "Lumper") {
@@ -394,7 +487,7 @@ struct DockAssigned: View {
             Image(systemName: "arrow.turn.down.right")
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(Brand.success)
-            Text("Green at door \(fallbackDoor) = back in \(ctx.defaultApproach.lowercased()). Check the rear once flush, then walk the BOL packet to receiving on aisle \(fallbackAisle).")
+            Text("Green at door \(doorValue) = back in \(ctx.defaultApproach.lowercased()). Check the rear once flush, then walk the BOL packet to receiving on aisle \(aisleValue).")
                 .font(EType.body)
                 .foregroundStyle(palette.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -414,8 +507,8 @@ struct DockAssigned: View {
     private var footerActions: some View {
         HStack(spacing: Space.s3) {
             CTAButton(
-                title: "I'm at door \(fallbackDoor)",
-                action: { Task { await markAtDoor() } },
+                title: hasDock ? "I'm at door \(doorValue)" : "Refresh dock",
+                action: { Task { hasDock ? await markAtDoor() : await hydrateLiveTrip() } },
                 isLoading: isConfirming
             )
 
@@ -447,10 +540,19 @@ struct DockAssigned: View {
     // MARK: Hydration + actions
 
     private func hydrateLiveTrip() async {
+        isLoading = true
+        defer { isLoading = false }
         await lifecycle.hydrateActiveLoad()
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
         activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        // The dock door this whole screen exists to surface comes off
+        // the appointment row — same `appointments.getByLoad` read the
+        // sibling lifecycle screens (015 / 024) hydrate. `dockNumber`,
+        // `status`, and `scheduledAt` drive the door graphic, the
+        // cleared strip, and the push-time stamp respectively.
+        appointment = try? await EusoTripAPI.shared.appointments
+            .getByLoad(loadId: lifecycle.loadId)
         await hydrateCapabilities()
     }
 
