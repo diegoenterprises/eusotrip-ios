@@ -817,9 +817,47 @@ struct DriverHome: View {
 
     // MARK: TopBar
 
-    // Figma 212:444 — two-line display greeting left, uppercase right-column label,
-    // chat round button with magenta iridescent badge dot.
+    // Figma 212:444 / SVG 010 — bespoke eyebrow chip ("✦ DRIVER · DASHBOARD"
+    // gradient, GOOD-NIGHT · CITY tertiary on the right), then a two-line
+    // display greeting left, uppercase right-column label, chat round button
+    // with magenta iridescent badge dot. The eyebrow is the SVG's defining
+    // header motif (sparkle glyph used exactly once per surface, §4.3 budget).
     private var topBar: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            // Bespoke eyebrow row — gradient role chip + tertiary
+            // time-of-day · location, matching the Dark-SVG header and
+            // the Shipper-200 idiom so the role homes read as one family.
+            HStack {
+                Text("✦ DRIVER · DASHBOARD")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(LinearGradient.primary)
+                Spacer(minLength: Space.s2)
+                Text("\(timeOfDayGreeting.uppercased()) · \(vm.locationCity.uppercased())")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+
+            headerRow
+        }
+        .padding(.horizontal, Space.s5)
+        .padding(.top, Space.s5)
+        .padding(.bottom, Space.s3)
+        // Founder mandate 2026-05-05: replace the bottom-sheet pull-up
+        // with a real full-screen messaging page (mirrors the web
+        // platform). `MessagesScreen` owns the inbox + push-to-
+        // conversation + new-message compose + back chevron.
+        .fullScreenCover(isPresented: $showMessages) {
+            MessagesScreen()
+                .environment(\.palette, palette)
+        }
+    }
+
+    // Greeting + right-rail location/time + chat glyph. Split out of
+    // `topBar` so the new bespoke eyebrow can sit above it without
+    // exploding the type-check budget on one giant view literal.
+    private var headerRow: some View {
         HStack(alignment: .top, spacing: Space.s3) {
             Text(greetingFirstName.isEmpty ? "Welcome back" : "Hey, \(greetingFirstName)")
                 .font(.system(size: 40, weight: .heavy))
@@ -870,17 +908,6 @@ struct DriverHome: View {
             // increments on `message:new` WebSocket fan-outs.
             MessagesBadgeButton(showMessages: $showMessages, palette: palette)
                 .padding(.top, 2)
-        }
-        .padding(.horizontal, Space.s5)
-        .padding(.top, Space.s5)
-        .padding(.bottom, Space.s3)
-        // Founder mandate 2026-05-05: replace the bottom-sheet pull-up
-        // with a real full-screen messaging page (mirrors the web
-        // platform). `MessagesScreen` owns the inbox + push-to-
-        // conversation + new-message compose + back chevron.
-        .fullScreenCover(isPresented: $showMessages) {
-            MessagesScreen()
-                .environment(\.palette, palette)
         }
     }
 
@@ -1004,12 +1031,10 @@ struct DriverHome: View {
                     .foregroundStyle(palette.textTertiary)
             }
             .padding(Space.s3)
-            .background(palette.bgCard)
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.lg)
-                    .strokeBorder(palette.borderFaint)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+            // Bespoke EusoCard surface — iridescent outline + glow so the
+            // enable-location CTA reads as a first-class card, not a flat
+            // bordered box, matching the SVG card language.
+            .eusoCard(radius: Radius.lg)
         }
         .buttonStyle(.plain)
     }
@@ -1496,12 +1521,10 @@ struct MessagesWidget: View {
             }
             .padding(Space.s3)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(palette.bgCard)
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .strokeBorder(palette.borderFaint, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            // Bespoke EusoCard surface — iridescent outline + glow,
+            // replacing the flat bgCard + faint border so the tile reads
+            // in the SVG card language.
+            .eusoCard(radius: Radius.lg)
         }
         .buttonStyle(.plain)
     }
@@ -1666,12 +1689,10 @@ struct NotificationsWidget: View {
             }
             .padding(Space.s3)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(palette.bgCard)
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .strokeBorder(palette.borderFaint, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            // Bespoke EusoCard surface — iridescent outline + glow,
+            // replacing the flat bgCard + faint border so the tile reads
+            // in the SVG card language.
+            .eusoCard(radius: Radius.lg)
         }
         .buttonStyle(.plain)
         .task { await load() }
@@ -1746,12 +1767,10 @@ struct WeatherAlertsWidget: View {
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        // Bespoke EusoCard surface — iridescent blue→magenta outline +
+        // ambient glow (dark) replacing the flat bgCard + faint-border
+        // washout, bringing this tile up to the SVG card language.
+        .eusoCard(radius: Radius.lg)
     }
 }
 
@@ -1799,12 +1818,10 @@ struct EarningsSummaryWidget: View {
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        // Bespoke EusoCard surface — iridescent blue→magenta outline +
+        // ambient glow (dark) replacing the flat bgCard + faint-border
+        // washout, bringing this tile up to the SVG card language.
+        .eusoCard(radius: Radius.lg)
     }
 }
 
@@ -1869,12 +1886,10 @@ struct NextDeliveryWidget: View {
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        // Bespoke EusoCard surface — iridescent blue→magenta outline +
+        // ambient glow (dark) replacing the flat bgCard + faint-border
+        // washout, bringing this tile up to the SVG card language.
+        .eusoCard(radius: Radius.lg)
     }
 }
 
@@ -1924,12 +1939,10 @@ struct HosTrackerWidget: View {
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        // Bespoke EusoCard surface — iridescent blue→magenta outline +
+        // ambient glow (dark) replacing the flat bgCard + faint-border
+        // washout, bringing this tile up to the SVG card language.
+        .eusoCard(radius: Radius.lg)
     }
 }
 
@@ -2097,9 +2110,10 @@ struct MileageTrackerWidget: View {
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        // Bespoke EusoCard surface — iridescent blue→magenta outline +
+        // ambient glow (dark) replacing the flat bgCard + faint-border
+        // washout, bringing this tile up to the SVG card language.
+        .eusoCard(radius: Radius.lg)
         .task { await load() }
     }
 
@@ -2211,9 +2225,10 @@ struct VehicleHealthWidget: View {
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        // Bespoke EusoCard surface — iridescent blue→magenta outline +
+        // ambient glow (dark) replacing the flat bgCard + faint-border
+        // washout, bringing this tile up to the SVG card language.
+        .eusoCard(radius: Radius.lg)
         .task { await load() }
     }
 
@@ -2308,9 +2323,10 @@ struct PerformanceScoreWidget: View {
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        // Bespoke EusoCard surface — iridescent blue→magenta outline +
+        // ambient glow (dark) replacing the flat bgCard + faint-border
+        // washout, bringing this tile up to the SVG card language.
+        .eusoCard(radius: Radius.lg)
         .task { await load() }
     }
 
@@ -2427,12 +2443,10 @@ struct RestAreasWidget: View {
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        // Bespoke EusoCard surface — iridescent blue→magenta outline +
+        // ambient glow (dark) replacing the flat bgCard + faint-border
+        // washout, bringing this tile up to the SVG card language.
+        .eusoCard(radius: Radius.lg)
         .task { await load() }
     }
 
@@ -2551,12 +2565,10 @@ struct FuelStationsWidget: View {
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        // Bespoke EusoCard surface — iridescent blue→magenta outline +
+        // ambient glow (dark) replacing the flat bgCard + faint-border
+        // washout, bringing this tile up to the SVG card language.
+        .eusoCard(radius: Radius.lg)
         .task { await load() }
     }
 
@@ -2662,12 +2674,10 @@ struct CurrentRouteWidget: View {
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        // Bespoke EusoCard surface — iridescent blue→magenta outline +
+        // ambient glow (dark) replacing the flat bgCard + faint-border
+        // washout, bringing this tile up to the SVG card language.
+        .eusoCard(radius: Radius.lg)
     }
 }
 
