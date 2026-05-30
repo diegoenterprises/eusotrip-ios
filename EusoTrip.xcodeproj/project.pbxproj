@@ -644,6 +644,14 @@
 		FD97CEC52FC1D4BC0016DF5F /* RailEngineerNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CEC42FC1D4BC0016DF5F /* RailEngineerNavController.swift */; };
 		FD97CEC72FC1D4BC0016DF5F /* VesselOperatorNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CEC62FC1D4BC0016DF5F /* VesselOperatorNavController.swift */; };
 		FD97CEC92FC1D5110016DF5F /* 550_RailEngineerHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CEC82FC1D5110016DF5F /* 550_RailEngineerHome.swift */; };
+		FDE000000000000000000000 /* 598_RailEquipmentSpecs.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDF000000000000000000000 /* 598_RailEquipmentSpecs.swift */; };
+		FDE010000000000000000000 /* 599_RailFreightBillAudit.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDF010000000000000000000 /* 599_RailFreightBillAudit.swift */; };
+		FDE020000000000000000000 /* 600_RailRampOperationsConsole.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDF020000000000000000000 /* 600_RailRampOperationsConsole.swift */; };
+		FDE030000000000000000000 /* 601_RailChassisPool.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDF030000000000000000000 /* 601_RailChassisPool.swift */; };
+		FDE040000000000000000000 /* 602_RailDetentionTracking.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDF040000000000000000000 /* 602_RailDetentionTracking.swift */; };
+		FDE050000000000000000000 /* 603_RailDockSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDF050000000000000000000 /* 603_RailDockSchedule.swift */; };
+		FDE060000000000000000000 /* 604_RailYardAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDF060000000000000000000 /* 604_RailYardAnalytics.swift */; };
+		FDE070000000000000000000 /* 605_RailCargoClaim.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDF070000000000000000000 /* 605_RailCargoClaim.swift */; };
 		FD97CECB2FC1D5120016DF5F /* 650_VesselOperatorHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */; };
 		FD97CECD2FC1D7C70016DF5F /* 551_RailShipments.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */; };
 		FD97CECF2FC1D7C80016DF5F /* 552_RailCompliance.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECE2FC1D7C80016DF5F /* 552_RailCompliance.swift */; };
@@ -1383,6 +1391,14 @@
 		FD97CEC42FC1D4BC0016DF5F /* RailEngineerNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RailEngineerNavController.swift; sourceTree = "<group>"; };
 		FD97CEC62FC1D4BC0016DF5F /* VesselOperatorNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VesselOperatorNavController.swift; sourceTree = "<group>"; };
 		FD97CEC82FC1D5110016DF5F /* 550_RailEngineerHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 550_RailEngineerHome.swift; sourceTree = "<group>"; };
+		FDF000000000000000000000 /* 598_RailEquipmentSpecs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 598_RailEquipmentSpecs.swift; sourceTree = "<group>"; };
+		FDF010000000000000000000 /* 599_RailFreightBillAudit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 599_RailFreightBillAudit.swift; sourceTree = "<group>"; };
+		FDF020000000000000000000 /* 600_RailRampOperationsConsole.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 600_RailRampOperationsConsole.swift; sourceTree = "<group>"; };
+		FDF030000000000000000000 /* 601_RailChassisPool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 601_RailChassisPool.swift; sourceTree = "<group>"; };
+		FDF040000000000000000000 /* 602_RailDetentionTracking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 602_RailDetentionTracking.swift; sourceTree = "<group>"; };
+		FDF050000000000000000000 /* 603_RailDockSchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 603_RailDockSchedule.swift; sourceTree = "<group>"; };
+		FDF060000000000000000000 /* 604_RailYardAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 604_RailYardAnalytics.swift; sourceTree = "<group>"; };
+		FDF070000000000000000000 /* 605_RailCargoClaim.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 605_RailCargoClaim.swift; sourceTree = "<group>"; };
 		FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 650_VesselOperatorHome.swift; sourceTree = "<group>"; };
 		FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 551_RailShipments.swift; sourceTree = "<group>"; };
 		FD97CECE2FC1D7C80016DF5F /* 552_RailCompliance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 552_RailCompliance.swift; sourceTree = "<group>"; };
@@ -2316,6 +2332,14 @@
 			children = (
 				FD97CEC42FC1D4BC0016DF5F /* RailEngineerNavController.swift */,
 				FD97CEC82FC1D5110016DF5F /* 550_RailEngineerHome.swift */,
+				FDF000000000000000000000 /* 598_RailEquipmentSpecs.swift */,
+				FDF010000000000000000000 /* 599_RailFreightBillAudit.swift */,
+				FDF020000000000000000000 /* 600_RailRampOperationsConsole.swift */,
+				FDF030000000000000000000 /* 601_RailChassisPool.swift */,
+				FDF040000000000000000000 /* 602_RailDetentionTracking.swift */,
+				FDF050000000000000000000 /* 603_RailDockSchedule.swift */,
+				FDF060000000000000000000 /* 604_RailYardAnalytics.swift */,
+				FDF070000000000000000000 /* 605_RailCargoClaim.swift */,
 				FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */,
 				FD97CECE2FC1D7C80016DF5F /* 552_RailCompliance.swift */,
 			);
@@ -2977,6 +3001,14 @@
 				D2Q0000000000000000ABF4 /* 400_BulkUploadShell.swift in Sources */,
 				D2R0000000000000000ABF3 /* 410_LoadsFilterSheet.swift in Sources */,
 				FD97CEC92FC1D5110016DF5F /* 550_RailEngineerHome.swift in Sources */,
+				FDE000000000000000000000 /* 598_RailEquipmentSpecs.swift in Sources */,
+				FDE010000000000000000000 /* 599_RailFreightBillAudit.swift in Sources */,
+				FDE020000000000000000000 /* 600_RailRampOperationsConsole.swift in Sources */,
+				FDE030000000000000000000 /* 601_RailChassisPool.swift in Sources */,
+				FDE040000000000000000000 /* 602_RailDetentionTracking.swift in Sources */,
+				FDE050000000000000000000 /* 603_RailDockSchedule.swift in Sources */,
+				FDE060000000000000000000 /* 604_RailYardAnalytics.swift in Sources */,
+				FDE070000000000000000000 /* 605_RailCargoClaim.swift in Sources */,
 				D2R0100000000000000ABF3 /* 411_LoadsSortSheet.swift in Sources */,
 				D2R0200000000000000ABF3 /* 412_DraftsList.swift in Sources */,
 				D2R0300000000000000ABF3 /* 413_ArchivedLoads.swift in Sources */,
