@@ -1258,6 +1258,19 @@ enum ScreenRegistry {
         list.append(.init(id: "380", title: "Catalyst · M-05 Competing Quote", role: .catalyst) { p in AnyView(CatalystM05CompetingQuoteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) })
         list.append(.init(id: "381", title: "Catalyst · M-05 Third Quote",   role: .catalyst) { p in AnyView(CatalystM05ThirdQuoteScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) })
         list.append(.init(id: "382", title: "Catalyst · M-05 Awarded Aurora", role: .catalyst) { p in AnyView(CatalystM05AwardedAuroraScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) })
+        // 2026-05-29 — Catalyst fleet/finance band 383-390 (port wave 12).
+        // Bespoke ports of `03 Catalyst/Code/` canonical bricks, wired to real
+        // routers (csaScores, ifta, dataqs, fuelMgmt, shipperFreightClaims) with
+        // honest // WIRE: markers where no iOS client method exists yet. Numeric
+        // 383-390 are Shipper slots, so these take role-prefixed Cat383-Cat390 ids.
+        list.append(.init(id: "Cat383", title: "Catalyst · Fleet Safety CSA",     role: .catalyst) { p in AnyView(CatalystFleetSafetyCSAScreen(theme: p)) })
+        list.append(.init(id: "Cat384", title: "Catalyst · Fleet IFTA",           role: .catalyst) { p in AnyView(CatalystFleetIFTAScreen(theme: p)) })
+        list.append(.init(id: "Cat385", title: "Catalyst · Roadside DataQ",       role: .catalyst) { p in AnyView(CatalystRoadsideDataQScreen(theme: p)) })
+        list.append(.init(id: "Cat386", title: "Catalyst · Fuel Card Fleet",      role: .catalyst) { p in AnyView(CatalystFuelCardFleetScreen(theme: p)) })
+        list.append(.init(id: "Cat387", title: "Catalyst · Reefer Fleet Monitor", role: .catalyst) { p in AnyView(CatalystReeferFleetMonitorScreen(theme: p)) })
+        list.append(.init(id: "Cat388", title: "Catalyst · Tanker Fleet Monitor", role: .catalyst) { p in AnyView(CatalystTankerFleetMonitorScreen(theme: p)) })
+        list.append(.init(id: "Cat389", title: "Catalyst · Cargo Claim",          role: .catalyst) { p in AnyView(CatalystCargoClaimScreen(theme: p)) })
+        list.append(.init(id: "Cat390", title: "Catalyst · EDI Messages",         role: .catalyst) { p in AnyView(CatalystEDIMessagesScreen(theme: p)) })
         // 2026-04-27 — eusotrip-killers 134th firing
         // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
         // Second Catalyst-track brick lands in production. The Matches
