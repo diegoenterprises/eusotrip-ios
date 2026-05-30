@@ -1956,6 +1956,15 @@ enum ScreenRegistry {
             .init(id: "Vesl650", title: "Vessel Operator · Home",       role: .vesselOperator) { p in AnyView(VesselOperatorHomeScreen(theme: p)) },
             .init(id: "Vesl651", title: "Vessel Operator · Shipments",  role: .vesselOperator) { p in AnyView(VesselShipmentsScreen(theme: p)) },
             .init(id: "Vesl652", title: "Vessel Operator · Compliance", role: .vesselOperator) { p in AnyView(VesselComplianceScreen(theme: p)) },
+            // Phase B wave 1 — Vessel operator NEW screens (verbatim ports of the canonical Dark-SVGs).
+            .init(id: "Vesl659", title: "Vessel Operator · Port Directory",       role: .vesselOperator) { p in AnyView(VesselPortDirectoryScreen(theme: p)) },
+            .init(id: "Vesl666", title: "Vessel Operator · Container Timeline",   role: .vesselOperator) { p in AnyView(VesselContainerTimelineScreen(theme: p)) },
+            .init(id: "Vesl667", title: "Vessel Operator · Chain of Custody",      role: .vesselOperator) { p in AnyView(VesselChainOfCustodyScreen(theme: p)) },
+            .init(id: "Vesl668", title: "Vessel Operator · IMDG Hazmat Manifest",  role: .vesselOperator) { p in AnyView(VesselIMDGHazmatManifestScreen(theme: p)) },
+            .init(id: "Vesl676", title: "Vessel Operator · Equipment Health",      role: .vesselOperator) { p in AnyView(VesselEquipmentHealthScreen(theme: p)) },
+            .init(id: "Vesl681", title: "Vessel Operator · Emissions CII",         role: .vesselOperator) { p in AnyView(VesselEmissionsCIIScreen(theme: p)) },
+            .init(id: "Vesl682", title: "Vessel Operator · Carrier Scorecard",     role: .vesselOperator) { p in AnyView(VesselCarrierScorecardScreen(theme: p)) },
+            .init(id: "Vesl683", title: "Vessel Operator · Fleet Health",          role: .vesselOperator) { p in AnyView(VesselFleetHealthScreen(theme: p)) },
         ])
 
         return list
