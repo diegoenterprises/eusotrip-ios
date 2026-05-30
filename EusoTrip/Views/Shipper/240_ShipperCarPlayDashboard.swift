@@ -694,7 +694,7 @@ private struct CarPlayMapPreview: View {
                     style: StrokeStyle(lineWidth: 3, lineCap: .round))
 
             ZStack {
-                Circle().fill(Color(red: 0.078, green: 0.451, blue: 1.0))
+                Circle().fill(Brand.blue)
                     .frame(width: 12, height: 12)
                 Circle().fill(Color.white)
                     .frame(width: 4, height: 4)
@@ -702,7 +702,7 @@ private struct CarPlayMapPreview: View {
             .offset(x: 8, y: 76)
 
             ZStack {
-                Circle().fill(Color(red: 0.745, green: 0.004, blue: 1.0))
+                Circle().fill(Brand.magenta)
                     .frame(width: 12, height: 12)
                 Circle().fill(Color.white)
                     .frame(width: 4, height: 4)

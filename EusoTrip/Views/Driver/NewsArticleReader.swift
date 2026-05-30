@@ -1235,7 +1235,7 @@ private struct NewsInAppSafari: UIViewControllerRepresentable {
         cfg.barCollapsingEnabled = true
         let vc = SFSafariViewController(url: url, configuration: cfg)
         vc.dismissButtonStyle = .done
-        vc.preferredControlTintColor = UIColor(red: 0.745, green: 0.004, blue: 1.0, alpha: 1)
+        vc.preferredControlTintColor = UIColor(Brand.magenta)
         return vc
     }
     func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}

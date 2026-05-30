@@ -571,7 +571,7 @@ private struct DotPattern: View {
                 .frame(width: 6, height: 6)
         case .medium:
             Circle()
-                .fill(Color(red: 1.0, green: 0.478, blue: 0.0))
+                .fill(Brand.warning)
                 .frame(width: 5, height: 5)
         case .soft:
             Circle()
@@ -584,7 +584,7 @@ private struct DotPattern: View {
                     .frame(width: 4, height: 4)
             } else {
                 Circle()
-                    .fill(Color(red: 1.0, green: 0.478, blue: 0.0))
+                    .fill(Brand.warning)
                     .frame(width: 5, height: 5)
             }
         }
