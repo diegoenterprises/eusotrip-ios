@@ -26,6 +26,12 @@ struct VesselBookingDetailCarrierScreen: View {
                 orbState: .idle
             )
         }
+        // Real top back affordance (replaces the old decorative chevron in
+        // the body header). Fixed leading slot → never overlaps the title;
+        // posts the shared NavBack the VesselOperatorSurface pops on.
+        .injectBespokeBackBar(title: nil) {
+            NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
+        }
     }
 }
 
@@ -119,7 +125,6 @@ private struct VesselBookingDetailCarrierBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Image(systemName: "ferry.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("VESSEL OPERATOR · BOOKING DETAIL")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)

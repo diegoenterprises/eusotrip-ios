@@ -36,6 +36,12 @@ struct VesselStatusUpdateScreen: View {
                 orbState: .idle
             )
         }
+        // Real top back affordance (replaces the old decorative chevron in
+        // the body header). Fixed leading slot → never overlaps the title;
+        // posts the shared NavBack the VesselOperatorSurface pops on.
+        .injectBespokeBackBar(title: nil) {
+            NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
+        }
     }
 }
 
@@ -80,7 +86,6 @@ private struct VesselStatusUpdateBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("VESSEL OPERATOR · UPDATE STATUS").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
@@ -160,7 +165,8 @@ private struct VesselStatusUpdateBody: View {
                 CTAButton(title: submitting ? "Confirming…" : "Confirm advance",
                           action: { Task { await confirm() } },
                           leadingIcon: "arrow.triangle.2.circlepath")
-                CTAButton(title: "Cancel")
+                CTAButton(title: "Cancel",
+                          action: { NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil) })
             }
         }
     }
@@ -174,6 +180,9 @@ private struct VesselStatusUpdateBody: View {
                 "vesselShipments.updateVesselShipmentStatus",
                 input: StatusIn(id: bookingId, status: selected))
             done = true
+            // Submit-and-return: pop back to the booking detail so the
+            // updated status reloads there (no stale entry left on stack).
+            NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
         } catch {
             errorText = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }

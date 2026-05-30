@@ -126,7 +126,7 @@ struct MeAutoAcceptRulesView: View {
         .task { await store.load() }
         .refreshable { await store.load() }
         .sheet(isPresented: $showCreateSheet) {
-            CreateRuleSheet().environmentObject(store)
+            CreateRuleSheet().environmentObject(store).eusoSheet()
         }
         .onChange(of: store.lastAck ?? "") { _, v in if !v.isEmpty { showAck = true } }
         .alert("Done", isPresented: $showAck, actions: {
@@ -371,6 +371,11 @@ private struct CreateRuleSheet: View {
             .padding(.top, 12)
         }
         .background(palette.bgPage)
+        // Visible, working close (drag-to-dismiss was the only way out).
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton { dismiss() }
+                .padding(Space.s4)
+        }
     }
 
     private var hero: some View {
