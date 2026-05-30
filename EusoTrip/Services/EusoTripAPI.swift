@@ -12082,6 +12082,12 @@ struct ShipperAPI {
             let biddingEnds: String?
             let specialInstructions: String?
             let spectraMatchVerified: Bool?
+            // Server-derived lane relationship for the in-transit echo
+            // re-skin. "head_haul" | "backhaul" | "matrix". Optional &
+            // forward-safe: thin payloads that omit it still decode and
+            // render as head_haul (the base look) — a web lane is adding
+            // the server side in parallel.
+            let relationship: String?
         }
         struct Stop: Decodable, Hashable, Identifiable {
             let id: Int
