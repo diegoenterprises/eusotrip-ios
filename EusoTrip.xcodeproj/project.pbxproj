@@ -273,6 +273,14 @@
 		CDV020260521000001 /* CV320B_CatalystDriverBVariantOctet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDV020260521000002 /* CV320B_CatalystDriverBVariantOctet.swift */; };
 		CFT020260521000001 /* CV375_CatalystM04FleetTrackPair.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFT020260521000002 /* CV375_CatalystM04FleetTrackPair.swift */; };
 		CFV020260521000001 /* 303_CatalystFleetVehicles.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFV020260521000002 /* 303_CatalystFleetVehicles.swift */; };
+		CATW13391BUILDF01 /* 391_CatalystDetentionAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW13391FILEREF1 /* 391_CatalystDetentionAlerts.swift */; };
+		CATW13392BUILDF01 /* 392_CatalystCargoInsurance.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW13392FILEREF1 /* 392_CatalystCargoInsurance.swift */; };
+		CATW13393BUILDF01 /* 393_CatalystDocumentIngest.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW13393FILEREF1 /* 393_CatalystDocumentIngest.swift */; };
+		CATW13394BUILDF01 /* 394_CatalystFactoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW13394FILEREF1 /* 394_CatalystFactoring.swift */; };
+		CATW13395BUILDF01 /* 395_CatalystFuelSurchargeSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW13395FILEREF1 /* 395_CatalystFuelSurchargeSchedule.swift */; };
+		CATW13396BUILDF01 /* 396_CatalystLaneRateSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW13396FILEREF1 /* 396_CatalystLaneRateSheet.swift */; };
+		CATW13397BUILDF01 /* 397_CatalystCarrierTier.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW13397FILEREF1 /* 397_CatalystCarrierTier.swift */; };
+		CATW13398BUILDF01 /* 398_CatalystBackhaulOptimizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW13398FILEREF1 /* 398_CatalystBackhaulOptimizer.swift */; };
 		CATW12383BUILDF01 /* 383_CatalystFleetSafetyCSA.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW12383FILEREF1 /* 383_CatalystFleetSafetyCSA.swift */; };
 		CATW12384BUILDF01 /* 384_CatalystFleetIFTA.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW12384FILEREF1 /* 384_CatalystFleetIFTA.swift */; };
 		CATW12385BUILDF01 /* 385_CatalystRoadsideDataQ.swift in Sources */ = {isa = PBXBuildFile; fileRef = CATW12385FILEREF1 /* 385_CatalystRoadsideDataQ.swift */; };
@@ -989,6 +997,14 @@
 		CDV020260521000002 /* CV320B_CatalystDriverBVariantOctet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CV320B_CatalystDriverBVariantOctet.swift; path = EusoTrip/Views/Catalyst/CV320B_CatalystDriverBVariantOctet.swift; sourceTree = SOURCE_ROOT; };
 		CFT020260521000002 /* CV375_CatalystM04FleetTrackPair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CV375_CatalystM04FleetTrackPair.swift; path = EusoTrip/Views/Catalyst/CV375_CatalystM04FleetTrackPair.swift; sourceTree = SOURCE_ROOT; };
 		CFV020260521000002 /* 303_CatalystFleetVehicles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 303_CatalystFleetVehicles.swift; path = EusoTrip/Views/Catalyst/303_CatalystFleetVehicles.swift; sourceTree = SOURCE_ROOT; };
+		CATW13391FILEREF1 /* 391_CatalystDetentionAlerts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 391_CatalystDetentionAlerts.swift; path = EusoTrip/Views/Catalyst/391_CatalystDetentionAlerts.swift; sourceTree = SOURCE_ROOT; };
+		CATW13392FILEREF1 /* 392_CatalystCargoInsurance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 392_CatalystCargoInsurance.swift; path = EusoTrip/Views/Catalyst/392_CatalystCargoInsurance.swift; sourceTree = SOURCE_ROOT; };
+		CATW13393FILEREF1 /* 393_CatalystDocumentIngest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 393_CatalystDocumentIngest.swift; path = EusoTrip/Views/Catalyst/393_CatalystDocumentIngest.swift; sourceTree = SOURCE_ROOT; };
+		CATW13394FILEREF1 /* 394_CatalystFactoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 394_CatalystFactoring.swift; path = EusoTrip/Views/Catalyst/394_CatalystFactoring.swift; sourceTree = SOURCE_ROOT; };
+		CATW13395FILEREF1 /* 395_CatalystFuelSurchargeSchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 395_CatalystFuelSurchargeSchedule.swift; path = EusoTrip/Views/Catalyst/395_CatalystFuelSurchargeSchedule.swift; sourceTree = SOURCE_ROOT; };
+		CATW13396FILEREF1 /* 396_CatalystLaneRateSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 396_CatalystLaneRateSheet.swift; path = EusoTrip/Views/Catalyst/396_CatalystLaneRateSheet.swift; sourceTree = SOURCE_ROOT; };
+		CATW13397FILEREF1 /* 397_CatalystCarrierTier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 397_CatalystCarrierTier.swift; path = EusoTrip/Views/Catalyst/397_CatalystCarrierTier.swift; sourceTree = SOURCE_ROOT; };
+		CATW13398FILEREF1 /* 398_CatalystBackhaulOptimizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 398_CatalystBackhaulOptimizer.swift; path = EusoTrip/Views/Catalyst/398_CatalystBackhaulOptimizer.swift; sourceTree = SOURCE_ROOT; };
 		CATW12383FILEREF1 /* 383_CatalystFleetSafetyCSA.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 383_CatalystFleetSafetyCSA.swift; path = EusoTrip/Views/Catalyst/383_CatalystFleetSafetyCSA.swift; sourceTree = SOURCE_ROOT; };
 		CATW12384FILEREF1 /* 384_CatalystFleetIFTA.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 384_CatalystFleetIFTA.swift; path = EusoTrip/Views/Catalyst/384_CatalystFleetIFTA.swift; sourceTree = SOURCE_ROOT; };
 		CATW12385FILEREF1 /* 385_CatalystRoadsideDataQ.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 385_CatalystRoadsideDataQ.swift; path = EusoTrip/Views/Catalyst/385_CatalystRoadsideDataQ.swift; sourceTree = SOURCE_ROOT; };
@@ -2004,6 +2020,14 @@
 				D1A11111111111111111CDS2 /* 320_CatalystDriverScorecard.swift */,
 				D1A11111111111111111CDC2 /* 326_CatalystDriverCompliance.swift */,
 				CFV020260521000002 /* 303_CatalystFleetVehicles.swift */,
+				CATW13391FILEREF1 /* 391_CatalystDetentionAlerts.swift */,
+				CATW13392FILEREF1 /* 392_CatalystCargoInsurance.swift */,
+				CATW13393FILEREF1 /* 393_CatalystDocumentIngest.swift */,
+				CATW13394FILEREF1 /* 394_CatalystFactoring.swift */,
+				CATW13395FILEREF1 /* 395_CatalystFuelSurchargeSchedule.swift */,
+				CATW13396FILEREF1 /* 396_CatalystLaneRateSheet.swift */,
+				CATW13397FILEREF1 /* 397_CatalystCarrierTier.swift */,
+				CATW13398FILEREF1 /* 398_CatalystBackhaulOptimizer.swift */,
 				CATW12383FILEREF1 /* 383_CatalystFleetSafetyCSA.swift */,
 				CATW12384FILEREF1 /* 384_CatalystFleetIFTA.swift */,
 				CATW12385FILEREF1 /* 385_CatalystRoadsideDataQ.swift */,
@@ -3196,6 +3220,14 @@
 				D1A11111111111111111CDS1 /* 320_CatalystDriverScorecard.swift in Sources */,
 				D1A11111111111111111CDC1 /* 326_CatalystDriverCompliance.swift in Sources */,
 				CFV020260521000001 /* 303_CatalystFleetVehicles.swift in Sources */,
+				CATW13391BUILDF01 /* 391_CatalystDetentionAlerts.swift in Sources */,
+				CATW13392BUILDF01 /* 392_CatalystCargoInsurance.swift in Sources */,
+				CATW13393BUILDF01 /* 393_CatalystDocumentIngest.swift in Sources */,
+				CATW13394BUILDF01 /* 394_CatalystFactoring.swift in Sources */,
+				CATW13395BUILDF01 /* 395_CatalystFuelSurchargeSchedule.swift in Sources */,
+				CATW13396BUILDF01 /* 396_CatalystLaneRateSheet.swift in Sources */,
+				CATW13397BUILDF01 /* 397_CatalystCarrierTier.swift in Sources */,
+				CATW13398BUILDF01 /* 398_CatalystBackhaulOptimizer.swift in Sources */,
 				CATW12383BUILDF01 /* 383_CatalystFleetSafetyCSA.swift in Sources */,
 				CATW12384BUILDF01 /* 384_CatalystFleetIFTA.swift in Sources */,
 				CATW12385BUILDF01 /* 385_CatalystRoadsideDataQ.swift in Sources */,
