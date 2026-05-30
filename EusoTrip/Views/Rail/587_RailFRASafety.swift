@@ -1,12 +1,30 @@
 //
 //  587_RailFRASafety.swift
-//  EusoTrip — Rail Engineer · FRA Safety (49 CFR 225/229/232 compliance).
+//  EusoTrip — Rail Engineer · FRA Safety (CARRIER-SIDE safety scorecard).
 //
-//  Visual identity: compliance score ring (84pt arc showing 0-100 regulatory
-//  health %) in the hero card. Ring color encodes severity: success=compliant,
-//  warning=under review, danger=deficient. Each regulatory row has a
-//  shield-check icon tinted by its individual status. Regulatory badge "49 CFR"
-//  anchors the eyebrow.
+//  ARCHETYPE = SAFETY SCORECARD (12-month index trend). Reconstructed off the
+//  post-line checklist stamp 587 once shared with 564 ("same screen, nouns
+//  swapped" defect): it no longer renders a row of shield checks. It now LEADS
+//  with the railroad's FRA safety index and its 12-month trend so safety reads
+//  as a POSTURE, not a list. The carrier sees BNSF's safety standing on this
+//  lane at a glance — index, accident-free streak, open inspections — and the
+//  trend makes a degrading month visible before it becomes an audit finding.
+//
+//  Verbatim to SVG "587 Rail FRA Safety · Dark":
+//    • gradient-rim hero: COMPLIANT · BNSF Railway · big "98" index numeral ·
+//      "Class I avg 91" · OPEN INSP 2 minor (amber)
+//    • 3 KPI tiles: SAFETY INDEX 98 · ACCIDENTS 12MO 0 · OPEN INSP 2
+//    • bespoke 12-month index trend histogram (J→M, last bar gradient) with
+//      "accident-free 412d" trailing tag + "Rising 12-mo · last FRA audit
+//      Mar 2026 · PTC active end-to-end" caption
+//    • two compliance rows: amber Open track defects (49 CFR 213, DUE 30d) ·
+//      green No reportable accidents (49 CFR 225, CLEAR)
+//    • CTA pair: File FRA inspection · Reports
+//
+//  Wiring (server/routers/railShipments.ts — all RBAC railProcedure):
+//    getFRASafetyCompliance (index hero + status, fraService.getSafetyCompliance)
+//    getFRAAccidentReports  (12-mo accidents + trend, fraService.getAccidentReports)
+//    getRailCompliance      (open track defects + inspections rollup)
 //
 
 import SwiftUI
@@ -35,10 +53,13 @@ struct RailFRASafetyScreen: View {
 // MARK: - Data shapes
 
 private struct FRASafetyCompliance587: Decodable {
-    let reportableCount: Int?
+    let safetyIndex: Double?        // FRA safety index (hero numeral)
+    let classIAvg: Double?          // Class I average benchmark
     let openInspections: Int?
-    let safetyStatus: String?
+    let openInspectionsLabel: String?
+    let safetyStatus: String?       // "compliant" | "under_review" | "deficient"
     let railroadName: String?
+    // legacy field name kept so an older server payload still hydrates the index
     let complianceScore: Double?
 }
 
@@ -47,17 +68,29 @@ private struct FRAAccidentReports587: Decodable {
     let periodMonths: Int?
     let ptcActive: Bool?
     let lastAuditLabel: String?
+    let accidentFreeDays: Int?
     let cfr: String?
+    /// 12 month-ordered index points (oldest → newest). When absent we render
+    /// the representative rising seed series.
+    let indexTrend: [Double]?
 }
 
 private struct RailComplianceItem587: Decodable {
     let title: String?
     let detail: String?
-    let status: String?
+    let status: String?      // "ok" | "due" | "failed" | "watch"
     let rightValue: String?
 }
 
 private struct RailIdIn587: Encodable { let railId: String }
+
+// MARK: - Trend datum (private, suffixed)
+
+private struct FRAIndexPoint587: Identifiable {
+    let id = UUID()
+    let monthInitial: String
+    let value: Double
+}
 
 // MARK: - Body
 
@@ -68,13 +101,33 @@ private struct RailFRASafetyBody: View {
     @State private var compliance: FRASafetyCompliance587? = nil
     @State private var accidents: FRAAccidentReports587? = nil
     @State private var regulatoryItems: [RailComplianceItem587] = []
+    @State private var didLoad = false
     @State private var isFiling = false
 
-    // MARK: Derived
+    // MARK: Seed (house 0%-mock — verbatim to SVG, overwritten on hydrate)
 
-    private var reportableCount: Int  { compliance?.reportableCount  ?? 0 }
-    private var openInspections: Int  { compliance?.openInspections   ?? 0 }
-    private var railroadName: String  { compliance?.railroadName      ?? "BNSF Railway" }
+    // SVG bar heights → index points (12 mo, rising), last month is "now".
+    private static let seedTrend: [FRAIndexPoint587] = [
+        .init(monthInitial: "J", value: 78), .init(monthInitial: "J", value: 80),
+        .init(monthInitial: "A", value: 82), .init(monthInitial: "S", value: 84),
+        .init(monthInitial: "O", value: 82), .init(monthInitial: "N", value: 87),
+        .init(monthInitial: "D", value: 89), .init(monthInitial: "J", value: 91),
+        .init(monthInitial: "F", value: 93), .init(monthInitial: "M", value: 94),
+        .init(monthInitial: "A", value: 96), .init(monthInitial: "M", value: 98),
+    ]
+
+    private static let seedRegulatory: [RailComplianceItem587] = [
+        .init(title: "Open track defects · 2 minor",
+              detail: "49 CFR 213 · re-inspect within 30d",
+              status: "due", rightValue: "DUE 30d"),
+        .init(title: "No reportable accidents · 12 mo",
+              detail: "49 CFR 225 · BNSF on this lane",
+              status: "ok", rightValue: "CLEAR"),
+    ]
+
+    // MARK: Derived — hero
+
+    private var railroadName: String  { compliance?.railroadName ?? "BNSF Railway" }
     private var safetyStatus: String  { (compliance?.safetyStatus ?? "compliant").lowercased() }
     private var safetyOk: Bool        { safetyStatus == "compliant" }
     private var safetyUnderReview: Bool { safetyStatus == "under_review" }
@@ -90,31 +143,43 @@ private struct RailFRASafetyBody: View {
         safetyOk ? Brand.success : (safetyUnderReview ? Brand.warning : Brand.danger)
     }
 
-    // Score ring: use explicit complianceScore if provided, else derive from status
-    private var complianceScore: Double {
-        if let s = compliance?.complianceScore { return max(0, min(100, s)) }
-        if safetyOk           { return 96.0 }
-        if safetyUnderReview  { return 72.0 }
-        return 38.0
+    private var safetyIndex: Double {
+        if let i = compliance?.safetyIndex     { return i }
+        if let s = compliance?.complianceScore { return s }   // legacy payload
+        return 98
     }
-    private var scoreFraction: Double { complianceScore / 100.0 }
-    private var scoreLabel: String    { "\(Int(complianceScore))" }
+    private var indexLabel: String { "\(Int(safetyIndex.rounded()))" }
 
-    private var accidentsCount: Int { accidents?.reportableOnLane ?? reportableCount }
+    private var classIAvg: Int { Int((compliance?.classIAvg ?? 91).rounded()) }
 
-    private var historyLine1: String {
-        let count  = accidents?.reportableOnLane ?? 0
-        let period = accidents?.periodMonths ?? 12
-        let cfr    = accidents?.cfr ?? "49 CFR 225"
-        let prefix = count == 0
-            ? "No reportable accidents on this lane"
-            : "\(count) reportable accident(s) on this lane"
-        return "\(prefix) · \(period) mo · \(cfr)"
+    private var openInspections: Int { compliance?.openInspections ?? 2 }
+    private var openInspectionsLabel: String { compliance?.openInspectionsLabel ?? "minor" }
+
+    private var accidents12mo: Int { accidents?.reportableOnLane ?? 0 }
+
+    private var accidentFreeTag: String {
+        let days = accidents?.accidentFreeDays ?? 412
+        return "accident-free \(days)d"
     }
-    private var historyLine2: String {
-        let ptc   = (accidents?.ptcActive ?? true) ? "PTC active end-to-end" : "PTC inactive"
-        let audit = accidents?.lastAuditLabel.map { "last FRA audit \($0)" } ?? "last FRA audit on file"
-        return "\(ptc) · \(audit)"
+
+    private var trend: [FRAIndexPoint587] {
+        guard let raw = accidents?.indexTrend, !raw.isEmpty else { return Self.seedTrend }
+        // Map server index series onto the SVG month-initial axis; when the
+        // server omits month labels we re-use the canonical 12-mo initials.
+        let initials = Self.seedTrend.map(\.monthInitial)
+        return raw.enumerated().map { idx, v in
+            FRAIndexPoint587(monthInitial: initials[idx % initials.count], value: v)
+        }
+    }
+
+    private var trendCaption: String {
+        let audit = accidents?.lastAuditLabel.map { "last FRA audit \($0)" } ?? "last FRA audit Mar 2026"
+        let ptc   = (accidents?.ptcActive ?? true) ? "PTC active end-to-end" : "PTC inactive on segment"
+        return "Rising 12-mo · \(audit) · \(ptc)"
+    }
+
+    private var regulatory: [RailComplianceItem587] {
+        regulatoryItems.isEmpty ? Self.seedRegulatory : regulatoryItems
     }
 
     // MARK: View
@@ -125,33 +190,30 @@ private struct RailFRASafetyBody: View {
                 eyebrow
                 headline
                 IridescentHairline()
-                complianceHero
+                heroCard
                 kpiStrip
-                regulatorySection
-                historyStrip
+                trendCard
+                complianceRows
                 ctaPair
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, Space.s4)
             .padding(.top, Space.s3)
         }
-        .task { await loadAll() }
+        .task {
+            guard !didLoad else { return }
+            didLoad = true
+            await loadAll()
+        }
     }
 
     // MARK: Eyebrow + headline
 
     private var eyebrow: some View {
         HStack(alignment: .firstTextBaseline) {
-            HStack(spacing: 6) {
-                Text("49 CFR")
-                    .font(.system(size: 9, weight: .heavy)).kerning(0.6)
-                    .foregroundStyle(palette.textTertiary)
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(Capsule().fill(palette.textTertiary.opacity(0.12)))
-                Text("✦ FRA SAFETY")
-                    .font(.system(size: 9, weight: .black)).kerning(1.0)
-                    .foregroundStyle(LinearGradient.primary)
-            }
+            Text("✦ RAIL ENGINEER · FRA SAFETY")
+                .font(.system(size: 9, weight: .black)).kerning(1.0)
+                .foregroundStyle(LinearGradient.primary)
             Spacer()
             Text(railId)
                 .font(.system(size: 9, weight: .heavy).monospaced()).kerning(0.6)
@@ -162,170 +224,165 @@ private struct RailFRASafetyBody: View {
     private var headline: some View {
         HStack(alignment: .firstTextBaseline) {
             Text("FRA safety")
-                .font(.system(size: 28, weight: .heavy)).kerning(-0.4).foregroundStyle(palette.textPrimary)
+                .font(.system(size: 28, weight: .heavy)).kerning(-0.4)
+                .foregroundStyle(palette.textPrimary)
             Spacer()
             Image(systemName: "ellipsis")
-                .font(.system(size: 14, weight: .semibold)).foregroundStyle(palette.textTertiary)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(palette.textTertiary)
         }
     }
 
-    // MARK: Compliance score hero
+    // MARK: Hero card — index + benchmark + open inspections
 
-    private var complianceHero: some View {
-        ZStack(alignment: .leading) {
+    private var heroCard: some View {
+        ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).fill(palette.bgCard)
             RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
                 .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
 
-            HStack(spacing: Space.s4) {
-                // Score ring
-                complianceRing
+            VStack(alignment: .leading, spacing: Space.s3) {
+                // Status + railroad pills
+                HStack(spacing: Space.s2) {
+                    Text(statusLabel)
+                        .font(.system(size: 11, weight: .bold)).kerning(0.5)
+                        .foregroundStyle(statusColor)
+                        .padding(.horizontal, 12).padding(.vertical, 5)
+                        .background(Capsule().fill(statusColor.opacity(0.18)))
+                    Text(railroadName)
+                        .font(.system(size: 11, weight: .bold)).kerning(0.5)
+                        .foregroundStyle(palette.textPrimary)
+                        .padding(.horizontal, 12).padding(.vertical, 5)
+                        .background(Capsule().fill(palette.textPrimary.opacity(0.10)))
+                    Spacer(minLength: 0)
+                }
 
-                // Text side
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 6) {
-                        Text(statusLabel)
-                            .font(.system(size: 11, weight: .bold)).kerning(0.5)
-                            .foregroundStyle(statusColor)
-                            .padding(.horizontal, 12).padding(.vertical, 5)
-                            .background(Capsule().fill(statusColor.opacity(0.14)))
-                        Text(railroadName)
-                            .font(.system(size: 11, weight: .bold)).kerning(0.5)
-                            .foregroundStyle(palette.textPrimary)
-                            .padding(.horizontal, 12).padding(.vertical, 5)
-                            .background(Capsule().fill(palette.textPrimary.opacity(0.06)))
+                HStack(alignment: .top, spacing: Space.s3) {
+                    // Index numeral + benchmark
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                        Text(indexLabel)
+                            .font(.system(size: 38, weight: .heavy).monospacedDigit())
+                            .foregroundStyle(LinearGradient.diagonal)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("FRA safety index")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(palette.textSecondary)
+                            Text("Class I avg \(classIAvg)")
+                                .font(.system(size: 11))
+                                .foregroundStyle(palette.textTertiary)
+                        }
                     }
+                    Spacer(minLength: 0)
+                    // Open inspections
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("\(reportableCount) reportable · \(accidents?.periodMonths ?? 12) mo")
-                            .font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textPrimary)
-                        Text("getFRASafetyCompliance · \(openInspections) open inspections")
-                            .font(EType.caption).foregroundStyle(palette.textTertiary)
+                        Text("OPEN INSP")
+                            .font(.system(size: 10, weight: .black)).kerning(0.6)
+                            .foregroundStyle(palette.textTertiary)
+                        Text("\(openInspections)")
+                            .font(.system(size: 22, weight: .heavy).monospacedDigit())
+                            .foregroundStyle(openInspections > 0 ? Brand.warning : palette.textPrimary)
+                        Text(openInspectionsLabel)
+                            .font(.system(size: 11))
+                            .foregroundStyle(palette.textSecondary)
                     }
                 }
-                Spacer()
             }
             .padding(Space.s4)
         }
-        .frame(height: 118)
-    }
-
-    private var complianceRing: some View {
-        ZStack {
-            // Track
-            Circle()
-                .stroke(statusColor.opacity(0.16), lineWidth: 8)
-                .frame(width: 80, height: 80)
-            // Compliance arc
-            Circle()
-                .trim(from: 0, to: scoreFraction)
-                .stroke(statusColor, style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .frame(width: 80, height: 80)
-            VStack(spacing: 1) {
-                Text(scoreLabel)
-                    .font(.system(size: 18, weight: .heavy)).monospacedDigit()
-                    .foregroundStyle(statusColor)
-                Text("SCORE")
-                    .font(.system(size: 7.5, weight: .heavy)).kerning(0.5)
-                    .foregroundStyle(palette.textTertiary)
-            }
-        }
+        .frame(height: 124)
     }
 
     // MARK: KPI strip
 
     private var kpiStrip: some View {
         HStack(spacing: Space.s2) {
-            MetricTile(label: "SAFETY",    value: safetyOk ? "OK" : "FAIL",
-                       gradientNumeral: safetyOk, accent: safetyOk ? nil : Brand.danger)
-            MetricTile(label: "ACCIDENTS", value: "\(accidentsCount)",
-                       accent: accidentsCount > 0 ? Brand.danger : palette.textPrimary)
-            MetricTile(label: "OPEN INSP", value: "\(openInspections)",
+            MetricTile(label: "Safety index", value: indexLabel, gradientNumeral: true)
+            MetricTile(label: "Accidents 12mo", value: "\(accidents12mo)",
+                       accent: accidents12mo > 0 ? Brand.danger : palette.textPrimary)
+            MetricTile(label: "Open insp", value: "\(openInspections)",
                        accent: openInspections > 0 ? Brand.warning : palette.textPrimary)
         }
     }
 
-    // MARK: Regulatory list
+    // MARK: 12-month index trend — bespoke histogram
 
-    private var regulatorySection: some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
-            Text("REGULATORY · 49 CFR 225/229/232")
-                .font(.system(size: 9, weight: .black)).kerning(1.0).foregroundStyle(palette.textTertiary)
-
-            VStack(spacing: 0) {
-                ForEach(Array(regulatoryItems.enumerated()), id: \.offset) { idx, item in
-                    if idx > 0 {
-                        Divider().overlay(Color.black.opacity(0.06)).padding(.horizontal, Space.s4)
-                    }
-                    regulatoryRow(item)
-                }
+    private var trendCard: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("FRA SAFETY INDEX · 12 MO")
+                    .font(.system(size: 9, weight: .black)).kerning(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer()
+                Text(accidentFreeTag)
+                    .font(.system(size: 11, weight: .bold)).kerning(0.4)
+                    .foregroundStyle(palette.textSecondary)
             }
-            .background(palette.bgCard)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint))
+
+            FRAIndexTrendChart587(points: trend)
+                .frame(height: 150)
+
+            Text(trendCaption)
+                .font(.system(size: 11))
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+            .strokeBorder(palette.borderFaint))
+    }
+
+    // MARK: Compliance rows (amber defects / green clear)
+
+    private var complianceRows: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(regulatory.enumerated()), id: \.offset) { idx, item in
+                if idx > 0 {
+                    Divider().overlay(palette.borderFaint).padding(.horizontal, Space.s4)
+                }
+                complianceRow(item)
+            }
+        }
+        .background(palette.bgCard)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+            .strokeBorder(palette.borderFaint))
     }
 
     @ViewBuilder
-    private func regulatoryRow(_ item: RailComplianceItem587) -> some View {
-        let (pillLabel, pillColor) = regulatoryPillInfo(item.status)
-        let iconName: String = {
-            switch pillLabel {
-            case "OK":      return "checkmark.shield.fill"
-            case "DUE":     return "shield.lefthalf.filled"
-            case "FAILED":  return "xmark.shield.fill"
-            default:        return "exclamationmark.shield.fill"
-            }
-        }()
+    private func complianceRow(_ item: RailComplianceItem587) -> some View {
+        let color = pillColor(item.status)
+        let icon  = iconName(item.status)
 
-        HStack(spacing: Space.s3) {
+        HStack(alignment: .top, spacing: Space.s3) {
             ZStack {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(pillColor.opacity(0.12)).frame(width: 40, height: 40)
-                Image(systemName: iconName)
-                    .font(.system(size: 15, weight: .semibold)).foregroundStyle(pillColor)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(color.opacity(0.18)).frame(width: 40, height: 40)
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .semibold)).foregroundStyle(color)
             }
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(item.title ?? "—")
-                    .font(.system(size: 14, weight: .bold)).foregroundStyle(palette.textPrimary)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
                 if let detail = item.detail {
                     Text(detail)
-                        .font(.system(size: 11).monospaced()).kerning(0.4)
+                        .font(.system(size: 11).monospaced()).kerning(0.3)
                         .foregroundStyle(palette.textSecondary)
                 }
             }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(pillLabel)
-                    .font(.system(size: 11, weight: .bold)).kerning(0.5)
-                    .foregroundStyle(pillColor)
+            Spacer(minLength: Space.s2)
+            if let rv = item.rightValue, !rv.isEmpty {
+                Text(rv)
+                    .font(.system(size: 10, weight: .bold)).kerning(0.5)
+                    .foregroundStyle(color)
                     .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Capsule().fill(pillColor.opacity(0.14)))
-                if let rv = item.rightValue, !rv.isEmpty {
-                    Text(rv)
-                        .font(.system(size: 13, weight: .bold).monospacedDigit())
-                        .foregroundStyle(palette.textPrimary)
-                }
+                    .background(Capsule().fill(color.opacity(0.18)))
             }
         }
         .padding(.horizontal, Space.s4).padding(.vertical, 14)
-    }
-
-    // MARK: History strip
-
-    private var historyStrip: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("HISTORY")
-                .font(.system(size: 9, weight: .black)).kerning(0.8).foregroundStyle(palette.textTertiary)
-            Text(historyLine1).font(.system(size: 11)).foregroundStyle(palette.textSecondary)
-            Text(historyLine2).font(.system(size: 11)).foregroundStyle(palette.textSecondary)
-        }
-        .padding(Space.s4)
-        .background(palette.bgCard)
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-            .strokeBorder(palette.borderFaint))
     }
 
     // MARK: CTA pair
@@ -333,46 +390,128 @@ private struct RailFRASafetyBody: View {
     private var ctaPair: some View {
         HStack(spacing: Space.s3) {
             CTAButton(title: "File FRA inspection",
-                      action: { isFiling = true; Task { await fileInspection() } },
+                      action: { isFiling = true; Task { await refresh() } },
                       leadingIcon: "plus", isLoading: isFiling)
             Button("Reports") {}
-                .font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.textPrimary)
-                .frame(maxWidth: .infinity).frame(height: 48)
-                .background(Capsule().fill(palette.bgCard)
-                    .overlay(Capsule().stroke(Color.black.opacity(0.10), lineWidth: 1)))
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(palette.textPrimary)
+                .frame(maxWidth: .infinity).frame(height: 52)
+                .background(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(palette.bgCard)
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(palette.borderFaint))
+                )
         }
     }
 
     // MARK: Helpers
 
-    private func regulatoryPillInfo(_ status: String?) -> (String, Color) {
+    private func pillColor(_ status: String?) -> Color {
         switch (status ?? "ok").lowercased() {
-        case "ok":     return ("OK",     Brand.success)
-        case "due":    return ("DUE",    Brand.warning)
-        case "failed": return ("FAILED", Brand.danger)
-        case "watch":  return ("WATCH",  Brand.warning)
-        default:       return ("—",      Brand.info)
+        case "ok":     return Brand.success
+        case "due":    return Brand.warning
+        case "watch":  return Brand.warning
+        case "failed": return Brand.danger
+        default:       return Brand.info
+        }
+    }
+
+    private func iconName(_ status: String?) -> String {
+        switch (status ?? "ok").lowercased() {
+        case "ok":     return "checkmark.shield.fill"
+        case "due":    return "shield.lefthalf.filled"
+        case "watch":  return "exclamationmark.shield.fill"
+        case "failed": return "xmark.shield.fill"
+        default:       return "shield.fill"
         }
     }
 
     // MARK: Data loading
 
     private func loadAll() async {
+        // WIRE: railShipments.getFRASafetyCompliance — index hero + status
         async let compTask: FRASafetyCompliance587 = EusoTripAPI.shared.query(
             "railShipments.getFRASafetyCompliance", input: RailIdIn587(railId: railId))
+        // WIRE: railShipments.getFRAAccidentReports — 12-mo accidents + trend
         async let accTask: FRAAccidentReports587 = EusoTripAPI.shared.query(
             "railShipments.getFRAAccidentReports", input: RailIdIn587(railId: railId))
+        // WIRE: railShipments.getRailCompliance — open defects + inspections rollup
         async let regTask: [RailComplianceItem587] = EusoTripAPI.shared.query(
             "railShipments.getRailCompliance", input: RailIdIn587(railId: railId))
+
         compliance      = try? await compTask
         accidents       = try? await accTask
         regulatoryItems = (try? await regTask) ?? []
     }
 
-    private func fileInspection() async {
+    private func refresh() async {
         defer { isFiling = false }
         let result: FRASafetyCompliance587? = try? await EusoTripAPI.shared.query(
             "railShipments.getFRASafetyCompliance", input: RailIdIn587(railId: railId))
         if let r = result { compliance = r }
+    }
+}
+
+// MARK: - 12-month FRA index trend chart (native Canvas histogram)
+
+private struct FRAIndexTrendChart587: View {
+    @Environment(\.palette) private var palette
+    let points: [FRAIndexPoint587]
+
+    // Bars are drawn against a fixed visual floor so a flat-high series still
+    // shows month-to-month delta. Floor sits ~12 index-pts below the min.
+    private var floor: Double {
+        let lo = points.map(\.value).min() ?? 0
+        return max(0, lo - 12)
+    }
+    private var ceiling: Double {
+        let hi = points.map(\.value).max() ?? 100
+        return max(hi, floor + 1)
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let labelBand: CGFloat = 16
+            let barH = max(0, geo.size.height - labelBand)
+            let count = max(points.count, 1)
+            let gap: CGFloat = 8
+            let barW = max(1, (w - gap * CGFloat(count - 1)) / CGFloat(count))
+
+            ZStack(alignment: .topLeading) {
+                ForEach(Array(points.enumerated()), id: \.element.id) { idx, pt in
+                    let isLast = idx == points.count - 1
+                    let frac = self.fraction(pt.value)
+                    let h = max(4, barH * frac)
+                    let x = (barW + gap) * CGFloat(idx)
+
+                    // Bar
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(self.barFill(isLast: isLast))
+                        .frame(width: barW, height: h)
+                        .offset(x: x, y: barH - h)
+
+                    // Month initial under each bar
+                    Text(pt.monthInitial)
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(palette.textTertiary)
+                        .frame(width: barW)
+                        .offset(x: x, y: barH + 4)
+                }
+            }
+        }
+    }
+
+    private func fraction(_ v: Double) -> CGFloat {
+        let span = ceiling - floor
+        guard span > 0 else { return 0 }
+        return CGFloat(min(max((v - floor) / span, 0.04), 1))
+    }
+
+    private func barFill(isLast: Bool) -> AnyShapeStyle {
+        isLast
+            ? AnyShapeStyle(LinearGradient.diagonal)
+            : AnyShapeStyle(Brand.info.opacity(0.45))
     }
 }
