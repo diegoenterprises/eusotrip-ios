@@ -220,6 +220,21 @@ private struct FacilityStatus586: Decodable {
 
 private struct RailIdIn586: Encodable { let railId: String }
 
+// The consolidated lineup `railShipments.getServiceLineup` returns: the
+// train header (TrainConsist586 fields) plus the ordered per-call list.
+// Honest-empty (`calls: []`, header nulls) when the server has no lineup.
+private struct ServiceLineup586: Decodable {
+    let trainSymbol: String?
+    let carCount: Int?
+    let scheduledCalls: Int?
+    let clearedCalls: Int?
+    let estimatedTransitHours: Int?
+    let status: String?
+    let nextCallLabel: String?
+    let nextCallYardName: String?
+    let calls: [ServiceCall586]?
+}
+
 // MARK: - Body
 
 private struct RailServiceLineupBody: View {
@@ -228,6 +243,7 @@ private struct RailServiceLineupBody: View {
 
     @State private var detail: RailShipmentDetail586? = nil
     @State private var tracking: RailTracking586? = nil
+    @State private var lineup: ServiceLineup586? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var notifyArmed = false
@@ -278,8 +294,8 @@ private struct RailServiceLineupBody: View {
 
     // ───────── Derived (live-refined where the API serves it) ─────────
 
-    private var trainSymbol: String { detail?.shipmentNumber ?? seedTrainSymbol }
-    private var carCount: Int        { detail?.numberOfCars ?? seedCars }
+    private var trainSymbol: String { lineup?.trainSymbol ?? detail?.shipmentNumber ?? seedTrainSymbol }
+    private var carCount: Int        { lineup?.carCount ?? detail?.numberOfCars ?? seedCars }
     private var statusOk: Bool {
         let s = (detail?.status ?? "in_transit").lowercased()
         return s == "in_transit" || s == "en_route"
@@ -298,9 +314,26 @@ private struct RailServiceLineupBody: View {
         return "\(plan)  ·  \(carCount) cars · \(seedLengthFt) · \(seedTons)"
     }
 
-    // Live-refined calls: when tracking events exist, advance the call states
-    // from the latest beat; otherwise show the representative seed lineup.
+    // Live-refined calls. Prefer the consolidated getServiceLineup rollup when
+    // the server served real calls; fall back to advancing the seed states off
+    // tracking events; otherwise show the representative seed lineup.
     private var calls: [LineupCall586] {
+        if let live = lineup?.calls, !live.isEmpty {
+            return live.enumerated().map { idx, c in
+                let st = (c.status ?? "").uppercased()
+                let state: TimelineEventState =
+                    st.contains("DEPART") || st.contains("ARRIV") || st.contains("CLEAR") ? .done
+                    : (st.contains("NEXT") || st.contains("INTERCHANGE")) ? .current
+                    : .future
+                return LineupCall586(
+                    id: "live-\(idx)",
+                    station: c.yardName ?? "—",
+                    detail: c.detail ?? "",
+                    timeLabel: c.timeLabel ?? "",
+                    state: state,
+                    statusLabel: st.isEmpty ? "SCHEDULED" : st)
+            }
+        }
         guard let events = tracking?.events, !events.isEmpty else { return seedCalls }
         // Map known event types onto call states without fabricating times we
         // don't have — keep the seed clock labels, refine only the state/chip.
@@ -549,15 +582,18 @@ private struct RailServiceLineupBody: View {
         loading = true; loadError = nil
         let numericId = Int(railId.filter(\.isNumber)) ?? 0
 
-        // getServiceLineup would return the consolidated lineup (per-call
-        // clock times, dwell, set-out/pick-up, next-departure countdown).
-        // No such procedure exists on the railShipments router yet, so we
-        // hydrate the train header + call states from the two procedures
-        // that DO exist and keep representative seed for the rest.
-        // WIRE: railShipments.getServiceLineup (proposed rollup — not on disk)
+        // getServiceLineup returns the consolidated lineup (per-call clock
+        // times, dwell, set-out/pick-up, next-departure countdown). It accepts
+        // the shipmentNumber string directly, so it's the primary hydrate; the
+        // detail/tracking procs still refine the header + per-call states.
+
+        // Primary: the consolidated lineup (resolves by shipmentNumber).
+        self.lineup = try? await EusoTripAPI.shared.query(
+            "railShipments.getServiceLineup", input: RailIdIn586(railId: railId))
 
         guard numericId > 0 else {
-            // No resolvable shipment id — present the scheduled seed rotation.
+            // No resolvable numeric id — the lineup above (if any) plus the
+            // scheduled seed rotation carry the screen.
             loading = false
             return
         }

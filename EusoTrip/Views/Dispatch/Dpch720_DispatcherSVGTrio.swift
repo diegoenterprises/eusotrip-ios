@@ -368,15 +368,16 @@ private struct TenderQueueBody: View {
 
     private func load() async {
         loading = true; defer { loading = false }
-        struct In: Encodable { let status: String; let limit: Int }
-        struct Out: Decodable {
-            let loads: [PendingTender]?
-            let items: [PendingTender]?
-        }
+        struct In: Encodable { let limit: Int }
         do {
-            let r: Out = try await EusoTripAPI.shared.query("loads.list", input: In(status: "pending", limit: 30))
-            tenders = r.loads ?? r.items ?? []
-        } catch { /* */ }
+            // Real tender queue scoped to the dispatcher's org.
+            let env: PendingTendersEnvelope = try await EusoTripAPI.shared.query(
+                "dispatch.getPendingTenders", input: In(limit: 30))
+            tenders = env.rows
+        } catch {
+            // Honest empty — surface no fabricated rows if the proc errors.
+            tenders = []
+        }
     }
 }
 
