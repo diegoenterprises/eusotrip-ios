@@ -220,6 +220,10 @@ struct ShipperSurface: View {
     /// without a manual refresh.
     @State private var avatarPickerItem: PhotosPickerItem? = nil
     @State private var avatarPickerOpen: Bool = false
+    /// Surfaces a failed avatar upload to the user. Was previously a
+    /// silent `try?`/`if let` — on failure nothing happened and the
+    /// user re-picked the photo forever. (the-oath §6 FIX 6.)
+    @State private var avatarUploadError: String? = nil
 
     /// The single generic detail layer pushed in-stack via the shared
     /// `\.rolePushDetail` (aliased to `\.shipperPushDetail` for the four
@@ -325,6 +329,11 @@ struct ShipperSurface: View {
                     avatarPickerItem = nil
                 }
             }
+            .alert("Profile photo", isPresented: Binding(
+                get: { avatarUploadError != nil },
+                set: { if !$0 { avatarUploadError = nil } })) {
+                Button("OK", role: .cancel) { avatarUploadError = nil }
+            } message: { Text(avatarUploadError ?? "") }
             .sheet(item: Binding<ShipperWebContinuationItem?>(
                 get: { webContinuationURL.map(ShipperWebContinuationItem.init) },
                 set: { webContinuationURL = $0?.url }
@@ -446,14 +455,26 @@ struct ShipperSurface: View {
 
         struct In: Encodable { let avatarUrl: String }
         struct Out: Decodable { let success: Bool; let avatarUrl: String }
-        if let _: Out = try? await EusoTripAPI.shared.mutation(
-            "profile.updateAvatar",
-            input: In(avatarUrl: dataURL)
-        ) {
-            // Surface a refresh notification so any avatar-rendering
-            // surface (Me hero, top-bar `duAvatar`, MeProfile card)
-            // can re-fetch the profile and pick up the new picture.
-            NotificationCenter.default.post(name: .eusoProfileAvatarUpdated, object: nil)
+        do {
+            let out: Out = try await EusoTripAPI.shared.mutation(
+                "profile.updateAvatar",
+                input: In(avatarUrl: dataURL)
+            )
+            if out.success {
+                // Post the LIVE profile-updated event so avatar-rendering
+                // surfaces re-fetch and pick up the new picture. Was
+                // `.eusoProfileAvatarUpdated`, which had ZERO observers anywhere
+                // (a dead post); `.eusoProfileUpdated` is the event the
+                // real-time profile-refresh path actually listens on.
+                NotificationCenter.default.post(name: .eusoProfileUpdated, object: nil)
+            } else {
+                avatarUploadError = "Your photo didn't upload. Please try again."
+            }
+        } catch {
+            // Was `try?` — a failed upload silently did nothing and the
+            // user re-picked the photo forever. Surface the real error.
+            avatarUploadError = (error as? EusoTripAPIError)?.errorDescription
+                ?? "Your photo didn't upload. Please try again."
         }
     }
 

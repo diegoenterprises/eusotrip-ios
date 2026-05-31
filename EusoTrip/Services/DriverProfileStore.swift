@@ -40,6 +40,11 @@ final class DriverProfileStore: ObservableObject {
     @Published var memberSinceYear: String      // e.g. "2023"
     @Published var phone: String
 
+    /// Set when a server write behind a Save fails. Editors read this to
+    /// show the user that their save did not reach the server (instead of
+    /// the prior `try?` which silently dropped it). Cleared on next success.
+    @Published var lastSaveError: String? = nil
+
     // MARK: - Driver-specific fields (CDL / medical / TWIC)
     //
     // Persisted server-side via `profile.updateDriverProfile`
@@ -248,11 +253,22 @@ final class DriverProfileStore: ObservableObject {
             hazmatEndorsement: hazmatEndorsement, tankerEndorsement: tankerEndorsement,
             homeTerminal: homeTerminal, hireDate: hireDate, yearsExperience: yearsExperience
         )
-        Task {
-            let _: Out? = try? await EusoTripAPI.shared.mutation(
-                "profile.updateDriverProfile",
-                input: payload
-            )
+        Task { @MainActor in
+            do {
+                let out: Out? = try await EusoTripAPI.shared.mutation(
+                    "profile.updateDriverProfile",
+                    input: payload
+                )
+                // updateDriverProfile returns {success:false} when the DB write
+                // can't resolve the user — treat that as a real failure so the
+                // driver isn't told their CDL is on file when it isn't.
+                lastSaveError = (out?.success == true)
+                    ? nil
+                    : "Your credentials didn't save. Please try again."
+            } catch {
+                lastSaveError = (error as? EusoTripAPIError)?.errorDescription
+                    ?? "Your credentials didn't save. Please try again."
+            }
         }
     }
 
@@ -342,13 +358,23 @@ final class DriverProfileStore: ObservableObject {
                 let phone: String
             }
             struct Out: Decodable { let success: Bool }
-            let _: Out? = try? await EusoTripAPI.shared.mutation(
-                "profile.updateProfile",
-                input: In(firstName: firstSnapshot,
-                          lastName:  lastSnapshot,
-                          email:     emailSnapshot,
-                          phone:     phoneSnapshot)
-            )
+            do {
+                let _: Out? = try await EusoTripAPI.shared.mutation(
+                    "profile.updateProfile",
+                    input: In(firstName: firstSnapshot,
+                              lastName:  lastSnapshot,
+                              email:     emailSnapshot,
+                              phone:     phoneSnapshot)
+                )
+                await MainActor.run { lastSaveError = nil }
+            } catch {
+                // Local edit is kept (offline-first); refreshFromServer() will
+                // reconcile. But the failure is no longer invisible.
+                await MainActor.run {
+                    lastSaveError = (error as? EusoTripAPIError)?.errorDescription
+                        ?? "Profile changes didn't sync. They'll retry on next refresh."
+                }
+            }
         }
 
         // Avatar round-trip — separate mutation. Compresses the picked
@@ -376,10 +402,18 @@ final class DriverProfileStore: ObservableObject {
                 let dataURL = "data:image/jpeg;base64,\(bytes.base64EncodedString())"
                 struct AIn: Encodable { let avatarUrl: String }
                 struct AOut: Decodable { let success: Bool; let avatarUrl: String }
-                let _: AOut? = try? await EusoTripAPI.shared.mutation(
-                    "profile.updateAvatar",
-                    input: AIn(avatarUrl: dataURL)
-                )
+                do {
+                    let _: AOut? = try await EusoTripAPI.shared.mutation(
+                        "profile.updateAvatar",
+                        input: AIn(avatarUrl: dataURL)
+                    )
+                    await MainActor.run { lastSaveError = nil }
+                } catch {
+                    await MainActor.run {
+                        lastSaveError = (error as? EusoTripAPIError)?.errorDescription
+                            ?? "Your photo didn't upload. Please try again."
+                    }
+                }
             }
         }
     }

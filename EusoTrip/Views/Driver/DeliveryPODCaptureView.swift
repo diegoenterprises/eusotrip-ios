@@ -89,8 +89,7 @@ struct DeliveryPODCaptureView: View {
 
     @State private var photoItem: PhotosPickerItem? = nil
     @State private var photoImage: UIImage? = nil
-    @State private var signatureStrokes: [SignatureStroke] = []
-    @State private var liveStroke: SignatureStroke = SignatureStroke()
+    @State private var signatureStrokes: [[CGPoint]] = [[]]
     @State private var receiverName: String = ""
     @State private var notes: String = ""
 
@@ -943,10 +942,9 @@ struct DeliveryPODCaptureView: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                     .foregroundStyle(LinearGradient.diagonal)
                 Spacer(minLength: 0)
-                if !signatureStrokes.isEmpty || !liveStroke.points.isEmpty {
+                if EusoGradientInkCanvas.hasInk(signatureStrokes) {
                     Button {
-                        signatureStrokes = []
-                        liveStroke = SignatureStroke()
+                        signatureStrokes = [[]]
                     } label: {
                         Text("Clear")
                             .font(EType.caption).fontWeight(.semibold)
@@ -957,11 +955,10 @@ struct DeliveryPODCaptureView: View {
                 }
             }
 
-            PODSignaturePad(
-                strokes: $signatureStrokes,
-                liveStroke: $liveStroke,
-                inkColor: palette.textPrimary
-            )
+            // Shared bespoke gradient-ink surface — replaces the hand-rolled
+            // PODSignaturePad whose ink was solid (.textPrimary on-screen,
+            // .black rasterized), violating the gradient mandate.
+            EusoGradientInkCanvas(strokes: $signatureStrokes)
             .frame(height: 180)
             .background(palette.bgCardSoft)
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
@@ -983,7 +980,7 @@ struct DeliveryPODCaptureView: View {
         .background(palette.bgCard)
         .overlay(
             RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(LinearGradient.diagonal.opacity(signatureStrokes.isEmpty ? 0.35 : 0.55), lineWidth: 1)
+                .strokeBorder(LinearGradient.diagonal.opacity(EusoGradientInkCanvas.hasInk(signatureStrokes) ? 0.55 : 0.35), lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
@@ -1071,7 +1068,7 @@ struct DeliveryPODCaptureView: View {
     private var canSubmit: Bool {
         let hasReceiver = !receiverName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let hasPhoto    = photoImage != nil
-        let hasSig      = !signatureStrokes.isEmpty
+        let hasSig      = EusoGradientInkCanvas.hasInk(signatureStrokes)
         return hasReceiver && hasPhoto && hasSig && !inFlight
     }
 
@@ -1131,9 +1128,11 @@ struct DeliveryPODCaptureView: View {
 
         let photoB64 = photoImage.flatMap { $0.jpegData(compressionQuality: 0.7) }?
             .base64EncodedString()
-        let sigB64 = renderSignaturePNGBase64(
-            strokes: signatureStrokes,
-            inkColor: .black,    // signature ink is always opaque black on the rendered PNG
+        // Gradient-ink signature via the shared renderer — was solid .black,
+        // which violated the founder gradient mandate; now matches the on-screen
+        // EusoTrip gradient ink the receiver drew.
+        let sigB64 = EusoGradientInkCanvas.renderPNGBase64(
+            signatureStrokes,
             size: CGSize(width: 600, height: 180)
         )
 
@@ -1158,94 +1157,9 @@ struct DeliveryPODCaptureView: View {
     }
 }
 
-// MARK: - SignatureStroke + PODSignaturePad
-
-/// One continuous pen-down → pen-up stroke. The pad accumulates
-/// strokes; each stroke is a polyline of CGPoints in pad-local
-/// coordinates. Rendered into a PNG at submit time.
-struct SignatureStroke: Equatable {
-    var points: [CGPoint] = []
-}
-
-/// SwiftUI Canvas-backed signature pad. The live stroke is drawn
-/// on top of the committed strokes so dragging feels immediate
-/// without flushing through the @State-array on every gesture
-/// update.
-struct PODSignaturePad: View {
-    @Binding var strokes: [SignatureStroke]
-    @Binding var liveStroke: SignatureStroke
-    let inkColor: Color
-
-    var body: some View {
-        Canvas { ctx, _ in
-            for stroke in strokes {
-                drawStroke(ctx: ctx, stroke: stroke)
-            }
-            drawStroke(ctx: ctx, stroke: liveStroke)
-        }
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { value in
-                    liveStroke.points.append(value.location)
-                }
-                .onEnded { _ in
-                    if !liveStroke.points.isEmpty {
-                        strokes.append(liveStroke)
-                        liveStroke = SignatureStroke()
-                    }
-                }
-        )
-    }
-
-    private func drawStroke(ctx: GraphicsContext, stroke: SignatureStroke) {
-        guard stroke.points.count > 1 else { return }
-        var path = Path()
-        path.move(to: stroke.points[0])
-        for p in stroke.points.dropFirst() {
-            path.addLine(to: p)
-        }
-        ctx.stroke(
-            path,
-            with: .color(inkColor),
-            style: StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round)
-        )
-    }
-}
-
-// MARK: - PNG export
-
-/// Render the signature strokes into a fixed-size PNG, base64-
-/// encoded for the server `signatureBase64` field. The strokes
-/// live in pad-local coordinates; we scale them to the target
-/// canvas based on the original pad height of 180pt.
-func renderSignaturePNGBase64(
-    strokes: [SignatureStroke],
-    inkColor: UIColor,
-    size: CGSize
-) -> String? {
-    guard !strokes.isEmpty else { return nil }
-    let renderer = UIGraphicsImageRenderer(size: size)
-    let img = renderer.image { uiCtx in
-        let ctx = uiCtx.cgContext
-        ctx.setStrokeColor(inkColor.cgColor)
-        ctx.setLineWidth(2.4)
-        ctx.setLineCap(.round)
-        ctx.setLineJoin(.round)
-        // Strokes captured at ~180pt height. Map directly — the
-        // user's pad is the same aspect ratio as the export size
-        // (180:600 vs 180:600). If the device was different we'd
-        // scale; the typical case maps cleanly.
-        for stroke in strokes {
-            guard stroke.points.count > 1 else { continue }
-            ctx.move(to: stroke.points[0])
-            for p in stroke.points.dropFirst() {
-                ctx.addLine(to: p)
-            }
-            ctx.strokePath()
-        }
-    }
-    return img.pngData()?.base64EncodedString()
-}
+// SignatureStroke / PODSignaturePad / renderSignaturePNGBase64 removed: the POD
+// signature now uses the shared EusoGradientInkCanvas (gradient ink + rasterizer)
+// like every other bespoke signing surface — see EusoPDFViewer.swift.
 
 // MARK: - DocIntel · POD doc-read model (2026-05-30)
 

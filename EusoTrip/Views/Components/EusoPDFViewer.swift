@@ -466,8 +466,7 @@ struct EusoSignaturePadSheet: View {
 
     let onCommit: (UIImage) -> Void
 
-    @State private var strokes: [[CGPoint]] = []
-    @State private var current: [CGPoint] = []
+    @State private var strokes: [[CGPoint]] = [[]]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -493,30 +492,10 @@ struct EusoSignaturePadSheet: View {
                         RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                             .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1)
                     )
-                Canvas { context, size in
-                    // Render committed strokes + active stroke with
-                    // the EusoTrip gradient ink.
-                    let allStrokes = strokes + (current.isEmpty ? [] : [current])
-                    for stroke in allStrokes {
-                        guard stroke.count > 1 else { continue }
-                        var path = Path()
-                        path.addLines(stroke)
-                        context.stroke(
-                            path,
-                            with: .linearGradient(
-                                Gradient(colors: [Brand.blue, Brand.magenta]),
-                                startPoint: .zero,
-                                endPoint: CGPoint(x: size.width, y: size.height)
-                            ),
-                            style: StrokeStyle(
-                                lineWidth: 3,
-                                lineCap: .round,
-                                lineJoin: .round
-                            )
-                        )
-                    }
-                }
-                if strokes.isEmpty && current.isEmpty {
+                // Shared bespoke gradient-ink surface — single source of the
+                // EusoTrip-gradient drawing + rasterization (EusoGradientInkCanvas).
+                EusoGradientInkCanvas(strokes: $strokes)
+                if !EusoGradientInkCanvas.hasInk(strokes) {
                     VStack(spacing: 4) {
                         Image(systemName: "signature")
                             .font(.system(size: 24, weight: .heavy))
@@ -528,23 +507,12 @@ struct EusoSignaturePadSheet: View {
                     .allowsHitTesting(false)
                 }
             }
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { v in current.append(v.location) }
-                    .onEnded { _ in
-                        if !current.isEmpty {
-                            strokes.append(current)
-                            current = []
-                        }
-                    }
-            )
             .padding(Space.s4)
 
             // Footer actions
             HStack(spacing: Space.s2) {
                 Button {
-                    strokes.removeAll()
-                    current.removeAll()
+                    strokes = [[]]
                 } label: {
                     Text("Clear")
                         .font(.system(size: 13, weight: .heavy))
@@ -556,12 +524,10 @@ struct EusoSignaturePadSheet: View {
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(strokes.isEmpty)
+                .disabled(!EusoGradientInkCanvas.hasInk(strokes))
 
                 Button {
-                    if let img = renderImage() {
-                        onCommit(img)
-                    }
+                    onCommit(EusoGradientInkCanvas.renderPNG(strokes, size: CGSize(width: 600, height: 240)))
                 } label: {
                     Text("Commit signature")
                         .font(.system(size: 13, weight: .heavy))
@@ -572,7 +538,7 @@ struct EusoSignaturePadSheet: View {
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(strokes.isEmpty)
+                .disabled(!EusoGradientInkCanvas.hasInk(strokes))
             }
             .padding(.horizontal, Space.s4)
             .padding(.bottom, Space.s5)
@@ -580,62 +546,6 @@ struct EusoSignaturePadSheet: View {
         .background(palette.bgPrimary)
     }
 
-    /// Rasterizes the committed strokes into a 600×240 PNG. Caller
-    /// receives the UIImage; can also encode to base64 for upload.
-    private func renderImage() -> UIImage? {
-        let size = CGSize(width: 600, height: 240)
-        let renderer = UIGraphicsImageRenderer(size: size)
-        return renderer.image { ctx in
-            let cg = ctx.cgContext
-            // Solid white background — most BOLs / contracts expect
-            // a clean signature on white.
-            UIColor.white.setFill()
-            cg.fill(CGRect(origin: .zero, size: size))
-            // Approximate the on-screen pad → render-target scale.
-            // Strokes are stored in pad-local coordinates (~ 0..360
-            // wide). Rough scale to 600 keeps proportions.
-            let scaleX: CGFloat = size.width / 360.0
-            let scaleY: CGFloat = size.height / 200.0
-            cg.translateBy(x: 0, y: 0)
-            cg.scaleBy(x: scaleX, y: scaleY)
-            cg.setLineWidth(3 / max(scaleX, 1))
-            cg.setLineCap(.round)
-            cg.setLineJoin(.round)
-            // Gradient ink: render each stroke segment with a linear
-            // gradient. Keep simple — UIKit doesn't expose
-            // CGContext.linearGradient on a stroked path directly,
-            // so use brand magenta as the rasterized ink color
-            // (the SwiftUI canvas already shows the gradient
-            // preview).
-            let cgColors = [
-                UIColor(Brand.blue).cgColor,
-                UIColor(Brand.magenta).cgColor
-            ]
-            for stroke in strokes {
-                guard stroke.count > 1 else { continue }
-                cg.beginPath()
-                cg.move(to: stroke[0])
-                for p in stroke.dropFirst() {
-                    cg.addLine(to: p)
-                }
-                cg.replacePathWithStrokedPath()
-                cg.clip()
-                if let grad = CGGradient(
-                    colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                    colors: cgColors as CFArray,
-                    locations: [0.0, 1.0]
-                ) {
-                    cg.drawLinearGradient(
-                        grad,
-                        start: .zero,
-                        end: CGPoint(x: size.width / scaleX, y: size.height / scaleY),
-                        options: []
-                    )
-                }
-                cg.resetClip()
-            }
-        }
-    }
 }
 
 // MARK: - Previews
@@ -648,4 +558,110 @@ struct EusoSignaturePadSheet: View {
         allowSigning: true
     )
     .preferredColorScheme(.dark)
+}
+
+// MARK: - EusoGradientInkCanvas (shared bespoke gradient-ink signature surface)
+//
+// The ONE place the EusoTrip-gradient signature DRAWING surface + its stroke→PNG
+// rasterizer live. Every bespoke signing sheet (EusoSignaturePadSheet above, 435
+// partner agreements, Driver-103 agreements, POD capture) embeds THIS and keeps
+// its own chrome (title, name field, Clear/Commit/Submit, endpoint) — so the ink
+// can never diverge per-screen again. The Driver-103 "solid black under a
+// Gradient-Ink label" defect and the POD solid-ink defect both came from
+// hand-copied pads; this is the de-duplication that prevents recurrence.
+// Canonical ink: the 3-stop brand gradient #1473FF → #7B3AFF → #BE01FF, rendered
+// identically on-screen (linearGradient shading) and in the PNG (CGGradient
+// clipped to the stroked path), reproducing the prior EusoSignaturePadSheet
+// renderer exactly so 435/PDF keep byte-identical output.
+//
+// (Kept in this file: Views/Components is explicitly referenced in the Xcode
+// project rather than a synchronized group, so a standalone new file would not
+// auto-join the target.)
+struct EusoGradientInkCanvas: View {
+    /// Drawn polylines. The last sub-array is the in-progress stroke; a new
+    /// empty sub-array is pushed on each gesture end. Initialize with `[[]]`.
+    @Binding var strokes: [[CGPoint]]
+    var lineWidth: CGFloat = 3
+
+    /// Canonical 3-stop EusoTrip brand gradient stops (#1473FF→#7B3AFF→#BE01FF).
+    static let inkStops: [Color] = [Brand.blue, Color(hex: 0x7B3AFF), Brand.magenta]
+
+    var body: some View {
+        Canvas { context, size in
+            for stroke in strokes where stroke.count > 1 {
+                var path = Path()
+                path.addLines(stroke)
+                context.stroke(
+                    path,
+                    with: .linearGradient(
+                        Gradient(colors: Self.inkStops),
+                        startPoint: .zero,
+                        endPoint: CGPoint(x: size.width, y: size.height)
+                    ),
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round)
+                )
+            }
+        }
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { v in
+                    if strokes.isEmpty { strokes = [[]] }
+                    strokes[strokes.count - 1].append(v.location)
+                }
+                .onEnded { _ in strokes.append([]) }
+        )
+    }
+
+    /// True once any stroke has ≥2 points (the user actually drew something).
+    static func hasInk(_ strokes: [[CGPoint]]) -> Bool { strokes.contains { $0.count > 1 } }
+
+    /// Rasterize the strokes to a gradient-ink PNG on a white background.
+    /// `size` is the export size — callers pick their aspect (600×240 PDF/435,
+    /// 600×200 agreements, 600×180 POD).
+    static func renderPNG(_ strokes: [[CGPoint]], size: CGSize, lineWidth: CGFloat = 3) -> UIImage {
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { ctx in
+            let cg = ctx.cgContext
+            UIColor.white.setFill()
+            cg.fill(CGRect(origin: .zero, size: size))
+            let scaleX: CGFloat = size.width / 360.0
+            let scaleY: CGFloat = size.height / 200.0
+            cg.scaleBy(x: scaleX, y: scaleY)
+            cg.setLineWidth(lineWidth / max(scaleX, 1))
+            cg.setLineCap(.round)
+            cg.setLineJoin(.round)
+            let cgColors = [
+                UIColor(red: 20 / 255,  green: 115 / 255, blue: 255 / 255, alpha: 1).cgColor,
+                UIColor(red: 123 / 255, green: 58 / 255,  blue: 255 / 255, alpha: 1).cgColor,
+                UIColor(red: 190 / 255, green: 1 / 255,   blue: 255 / 255, alpha: 1).cgColor,
+            ]
+            for stroke in strokes where stroke.count > 1 {
+                cg.beginPath()
+                cg.move(to: stroke[0])
+                for p in stroke.dropFirst() { cg.addLine(to: p) }
+                cg.replacePathWithStrokedPath()
+                cg.clip()
+                if let grad = CGGradient(
+                    colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                    colors: cgColors as CFArray,
+                    locations: [0.0, 0.5, 1.0]
+                ) {
+                    cg.drawLinearGradient(
+                        grad,
+                        start: .zero,
+                        end: CGPoint(x: size.width / scaleX, y: size.height / scaleY),
+                        options: []
+                    )
+                }
+                cg.resetClip()
+            }
+        }
+    }
+
+    /// Convenience: rasterize + base64-encode the PNG (the shape every signing
+    /// endpoint accepts).
+    static func renderPNGBase64(_ strokes: [[CGPoint]], size: CGSize, lineWidth: CGFloat = 3) -> String {
+        renderPNG(strokes, size: size, lineWidth: lineWidth).pngData()?.base64EncodedString() ?? ""
+    }
 }

@@ -4,7 +4,6 @@
 //
 
 import SwiftUI
-import PencilKit
 
 struct RateConSignScreen: View {
     let theme: Theme.Palette
@@ -17,7 +16,7 @@ struct RateConSignScreen: View {
 private struct RateConSignBody: View {
     @Environment(\.palette) private var palette
     let loadId: String
-    @State private var canvas = PKCanvasView()
+    @State private var strokes: [[CGPoint]] = [[]]
     @State private var sending: Bool = false
     @State private var sent: Bool = false
     @State private var actionError: String? = nil
@@ -46,8 +45,10 @@ private struct RateConSignBody: View {
         }
     }
 
+    // Shared bespoke gradient-ink surface — was PencilKit (solid .label ink);
+    // rate-con signatures now render the EusoTrip brand gradient.
     private var pad: some View {
-        SignaturePad(canvas: $canvas)
+        EusoGradientInkCanvas(strokes: $strokes)
             .frame(height: 200)
             .background(palette.bgCard)
             .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
@@ -56,7 +57,7 @@ private struct RateConSignBody: View {
 
     private var ctaRow: some View {
         HStack(spacing: 10) {
-            Button { canvas.drawing = PKDrawing() } label: {
+            Button { strokes = [[]] } label: {
                 Text("Clear").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(palette.textPrimary)
                     .padding(.horizontal, 18).padding(.vertical, 12)
                     .background(palette.tintNeutral).clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
@@ -71,15 +72,14 @@ private struct RateConSignBody: View {
                 .padding(.horizontal, 18).padding(.vertical, 12)
                 .background(LinearGradient.diagonal)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }.buttonStyle(.plain).disabled(sending)
+            }.buttonStyle(.plain).disabled(sending || !EusoGradientInkCanvas.hasInk(strokes))
         }
     }
 
     private func submit() async {
         sending = true; actionError = nil
-        let bounds = canvas.bounds
-        let img = canvas.drawing.image(from: bounds, scale: UIScreen.main.scale)
-        let b64 = img.pngData()?.base64EncodedString() ?? ""
+        // Gradient-ink signature via the shared renderer (was PencilKit solid).
+        let b64 = EusoGradientInkCanvas.renderPNGBase64(strokes, size: CGSize(width: 600, height: 200))
         struct In: Encodable { let loadId: Int; let signatureBase64: String }
         struct Out: Decodable { let success: Bool }
         let n = Int(loadId.replacingOccurrences(of: "load_", with: "")) ?? 0
@@ -91,16 +91,6 @@ private struct RateConSignBody: View {
         }
         sending = false
     }
-}
-
-private struct SignaturePad: UIViewRepresentable {
-    @Binding var canvas: PKCanvasView
-    func makeUIView(context: Context) -> PKCanvasView {
-        canvas.tool = PKInkingTool(.pen, color: .label, width: 4)
-        canvas.drawingPolicy = .anyInput
-        return canvas
-    }
-    func updateUIView(_ uiView: PKCanvasView, context: Context) {}
 }
 
 #Preview("307 · Rate-con sign · Night") {

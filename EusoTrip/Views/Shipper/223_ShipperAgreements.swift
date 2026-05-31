@@ -1565,6 +1565,8 @@ struct ShipperAgreementDetailSheet: View {
     }
 
     @State private var presentingPDFViewer: Bool = false
+    @State private var signSubmitError: String? = nil
+    @State private var signSubmitConfirmed: Bool = false
 
     /// Renders the contract IN-APP via EusoPDFViewer with gradient-
     /// ink signing capabilities. Replaces the prior "Open full
@@ -1608,7 +1610,7 @@ struct ShipperAgreementDetailSheet: View {
                 row: row,
                 allowSigning: (row.status ?? "").lowercased() == "pending_signature",
                 onSigned: { _, base64 in
-                    Task {
+                    Task { @MainActor in
                         struct In: Encodable {
                             let agreementId: Int
                             let signatureBase64: String
@@ -1616,18 +1618,41 @@ struct ShipperAgreementDetailSheet: View {
                         }
                         struct Out: Decodable { let success: Bool? }
                         let iso = ISO8601DateFormatter().string(from: Date())
-                        let _: Out? = try? await EusoTripAPI.shared.mutation(
-                            "agreements.submitSignature",
-                            input: In(
-                                agreementId: row.id,
-                                signatureBase64: base64,
-                                signedAt: iso
+                        do {
+                            // do/catch (not `try?`) so a real failure reaches the
+                            // signer instead of vanishing. agreementId stays Int —
+                            // matches server z.number() after §6 FIX 1.
+                            let out: Out? = try await EusoTripAPI.shared.mutation(
+                                "agreements.submitSignature",
+                                input: In(
+                                    agreementId: row.id,
+                                    signatureBase64: base64,
+                                    signedAt: iso
+                                )
                             )
-                        )
+                            if out?.success == true {
+                                signSubmitError = nil
+                                signSubmitConfirmed = true
+                            } else {
+                                signSubmitError = "Signature was not recorded. Please try again."
+                            }
+                        } catch {
+                            signSubmitError =
+                                (error as? EusoTripAPIError)?.errorDescription
+                                ?? "Couldn't submit signature. Please try again."
+                        }
                     }
                 }
             )
         }
+        .alert("Signature", isPresented: Binding(
+            get: { signSubmitError != nil },
+            set: { if !$0 { signSubmitError = nil } })) {
+            Button("OK", role: .cancel) { signSubmitError = nil }
+        } message: { Text(signSubmitError ?? "") }
+        .alert("Signed", isPresented: $signSubmitConfirmed) {
+            Button("OK", role: .cancel) { signSubmitConfirmed = false }
+        } message: { Text("Your signature was recorded.") }
     }
 }
 

@@ -552,52 +552,20 @@ private struct SignSheet: View {
         }
     }
 
-    private var hasStroke: Bool {
-        strokes.contains { $0.count > 2 }
-    }
+    private var hasStroke: Bool { EusoGradientInkCanvas.hasInk(strokes) }
 
+    // Bespoke gradient-ink draw surface — the shared EusoGradientInkCanvas
+    // (single source of the EusoTrip-gradient ink + rasterizer). Was a
+    // hand-rolled Canvas + rasterizer copy whose ink had to be patched in
+    // place once already; consolidated so it can't diverge per-screen again.
     private var signaturePad: some View {
-        Canvas { ctx, size in
-            for stroke in strokes where stroke.count > 1 {
-                var path = Path()
-                path.move(to: stroke[0])
-                for pt in stroke.dropFirst() {
-                    path.addLine(to: pt)
-                }
-                ctx.stroke(path, with: .color(.primary), lineWidth: 2)
-            }
-        }
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { value in
-                    strokes[strokes.count - 1].append(value.location)
-                }
-                .onEnded { _ in
-                    strokes.append([])
-                }
-        )
+        EusoGradientInkCanvas(strokes: $strokes)
     }
 
-    /// Render the signature strokes to a PNG and base64-encode so
-    /// the server can SHA-256 the bytes and stash them as the
-    /// agreement's signature hash.
+    /// Render the signature strokes to a base64 PNG for the server's SHA-256
+    /// hash, via the shared gradient-ink rasterizer.
     private func encodeSignatureBase64() -> String {
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 200))
-        let image = renderer.image { ctx in
-            UIColor.white.setFill()
-            ctx.fill(CGRect(x: 0, y: 0, width: 600, height: 200))
-            UIColor.black.setStroke()
-            let path = UIBezierPath()
-            path.lineWidth = 2
-            for stroke in strokes where stroke.count > 1 {
-                path.move(to: stroke[0])
-                for pt in stroke.dropFirst() {
-                    path.addLine(to: pt)
-                }
-            }
-            path.stroke()
-        }
-        return image.pngData()?.base64EncodedString() ?? ""
+        EusoGradientInkCanvas.renderPNGBase64(strokes, size: CGSize(width: 600, height: 200))
     }
 }
 
