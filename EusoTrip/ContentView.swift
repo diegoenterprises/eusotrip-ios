@@ -2082,6 +2082,11 @@ enum ScreenRegistry {
             .init(id: "Vesl700", title: "Vessel Operator · Freight Bill Audit",   role: .vesselOperator) { p in AnyView(VesselFreightBillAuditScreen(theme: p)) },
             .init(id: "Vesl701", title: "Vessel Operator · IMDG DG Rules",        role: .vesselOperator) { p in AnyView(VesselIMDGDGRulesScreen(theme: p)) },
             .init(id: "Vesl702", title: "Vessel Operator · Reefer Monitoring",    role: .vesselOperator) { p in AnyView(VesselReeferMonitoringScreen(theme: p)) },
+            // Phase B wave 4 — last Vessel operator NEW screens (verbatim ports, theme-only inits).
+            .init(id: "Vesl705", title: "Vessel Operator · CBP Alerts",       role: .vesselOperator) { p in AnyView(VesselCBPAlertsScreen(theme: p)) },
+            .init(id: "Vesl710", title: "Vessel Operator · Marine Casualty",  role: .vesselOperator) { p in AnyView(VesselMarineCasualtyScreen(theme: p)) },
+            .init(id: "Vesl711", title: "Vessel Operator · Crew Rest Hours",  role: .vesselOperator) { p in AnyView(VesselCrewRestHoursScreen(theme: p)) },
+            .init(id: "Vesl712", title: "Vessel Operator · Financial Summary",role: .vesselOperator) { p in AnyView(VesselFinancialSummaryScreen(theme: p)) },
         ])
 
         return list
