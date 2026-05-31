@@ -6401,6 +6401,72 @@ struct ZeunMechanicsAPI {
         try await api.mutation("zeunMechanics.reportBreakdown", input: input)
     }
 
+    // MARK: - diagnosePart (vision part-diagnosis)
+    //
+    // Mirrors the server's `diagnosePart` mutation
+    // (frontend/server/routers/zeunMechanics.ts). The driver/equipment
+    // user captures a photo of a part; the vision primitive returns the
+    // visible faults it can actually see — `issues` is empty when the
+    // part looks sound (HONEST: the server never invents a fault). When
+    // `grounded` is true, each issue's `box` is an NVIDIA-grounded region
+    // [x, y, w, h]. Every field below is decoded exactly as the proc
+    // emits it: `severity` and `recommendation` stay optional because the
+    // model leaves them null when it can't tell.
+
+    struct PartDiagnosisIssue: Decodable, Identifiable, Hashable {
+        let label: String
+        let confidence: Double          // 0..1
+        let severity: String?           // LOW | MEDIUM | HIGH | CRITICAL | nil
+        let recommendation: String?
+        let box: [Double]?              // [x, y, w, h] when grounded
+
+        // No server id — synthesize a stable one from the decoded fields
+        // so SwiftUI `ForEach` has a key without fabricating data.
+        var id: String { "\(label)#\(confidence)" }
+
+        private enum CodingKeys: String, CodingKey {
+            case label, confidence, severity, recommendation, box
+        }
+    }
+
+    struct PartDiagnosis: Decodable {
+        let success: Bool
+        let issues: [PartDiagnosisIssue]
+        let summary: String?
+        let recommendations: [String]
+        let grounded: Bool
+        let warnings: [String]
+        let aiModel: String?
+        let processingTimeMs: Int?
+    }
+
+    struct DiagnosePartInput: Encodable {
+        let photoBase64: String
+        let mime: String                // default image/jpeg server-side
+        let equipmentType: String?
+        let partName: String?
+        let context: String?
+    }
+
+    func diagnosePart(
+        photoBase64: String,
+        mime: String = "image/jpeg",
+        equipmentType: String? = nil,
+        partName: String? = nil,
+        context: String? = nil
+    ) async throws -> PartDiagnosis {
+        try await api.mutation(
+            "zeunMechanics.diagnosePart",
+            input: DiagnosePartInput(
+                photoBase64: photoBase64,
+                mime: mime,
+                equipmentType: equipmentType,
+                partName: partName,
+                context: context
+            )
+        )
+    }
+
     // MARK: - getBreakdownReport (single drill-in)
 
     struct BreakdownDetail: Decodable {

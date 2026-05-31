@@ -29,6 +29,7 @@
 import SwiftUI
 import SafariServices
 import CoreLocation
+import PhotosUI
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -1240,7 +1241,417 @@ struct ZeunMaintenanceTracker: View {
     }
 }
 
+// ════════════════════════════════════════════════════════════════════
+// MARK: - 6. Part Diagnosis (vision · `zeunMechanics.diagnosePart`)
+// ════════════════════════════════════════════════════════════════════
+//
+// Capture/select a photo of an equipment part → base64 → the live
+// `diagnosePart` vision proc → render the diagnosed issues with %
+// confidence + tinted severity pills. Reuses the same PhotosPicker →
+// JPEG-compress → base64 capture primitive that CredentialScanCard and
+// AIVisualScanButton already ship (no new camera UI). HONEST: renders
+// only what the proc returns — empty issues surfaces a real "No faults
+// detected" state, never a fabricated fault.
+
+@MainActor
+final class ZeunPartDiagnosisStore: ObservableObject {
+
+    // Capture
+    @Published var pickerItem: PhotosPickerItem? = nil
+    @Published private(set) var capturedImage: UIImage? = nil
+    private var photoBase64: String? = nil
+
+    // Optional context inputs (both honest-optional)
+    @Published var equipmentType: String = ""
+    @Published var partName: String = ""
+
+    // Flow state
+    @Published private(set) var isDiagnosing: Bool = false
+    @Published private(set) var result: ZeunMechanicsAPI.PartDiagnosis? = nil
+    @Published var lastError: String? = nil
+
+    var hasPhoto: Bool { photoBase64 != nil }
+
+    /// PhotosPicker → Data → JPEG ≤ 900KB → base64. Mirrors the exact
+    /// compression loop CredentialScanCard.scanFromData uses so the
+    /// multimodal payload stays under the vision-primitive cap.
+    func loadPhoto(_ item: PhotosPickerItem) async {
+        lastError = nil
+        result = nil
+        guard let data = try? await item.loadTransferable(type: Data.self), !data.isEmpty else {
+            lastError = "Couldn't read that photo. Try another."
+            pickerItem = nil
+            return
+        }
+        var jpeg = data
+        if let img = UIImage(data: data) {
+            capturedImage = img
+            var quality: CGFloat = 0.85
+            while quality > 0.3 {
+                if let d = img.jpegData(compressionQuality: quality), d.count <= 900_000 {
+                    jpeg = d
+                    break
+                }
+                quality -= 0.1
+            }
+        }
+        photoBase64 = jpeg.base64EncodedString()
+        pickerItem = nil
+    }
+
+    func diagnose() async {
+        guard !isDiagnosing else { return }
+        guard let base64 = photoBase64 else {
+            lastError = "Capture or pick a part photo first."
+            return
+        }
+        isDiagnosing = true
+        defer { isDiagnosing = false }
+        lastError = nil
+
+        let eqType = equipmentType.trimmingCharacters(in: .whitespacesAndNewlines)
+        let part = partName.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        do {
+            result = try await EusoTripAPI.shared.zeunMechanics.diagnosePart(
+                photoBase64: base64,
+                mime: "image/jpeg",
+                equipmentType: eqType.isEmpty ? nil : eqType,
+                partName: part.isEmpty ? nil : part,
+                context: nil
+            )
+        } catch let e {
+            lastError = "Diagnosis failed: \((e as? EusoTripAPIError)?.errorDescription ?? e.localizedDescription)"
+        }
+    }
+}
+
+struct ZeunPartDiagnosisScreen: View {
+    @Environment(\.palette) var palette
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var store = ZeunPartDiagnosisStore()
+
+    var body: some View {
+        VStack(spacing: 0) {
+            chrome
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    captureCard
+                    contextCard
+                    if let err = store.lastError {
+                        ActiveCard {
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "exclamationmark.octagon.fill")
+                                    .foregroundStyle(Brand.danger)
+                                Text(err)
+                                    .font(EType.caption)
+                                    .foregroundStyle(Brand.danger)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+                    if let r = store.result {
+                        resultsView(r)
+                    }
+                }
+                .padding(.horizontal, Space.s4)
+                .padding(.top, Space.s3)
+                .padding(.bottom, Space.s8)
+            }
+            bottomCTA
+        }
+        .background(palette.bgPage.ignoresSafeArea())
+        .onChange(of: store.pickerItem) { _, item in
+            guard let item else { return }
+            Task { await store.loadPhoto(item) }
+        }
+    }
+
+    // MARK: Chrome
+
+    private var chrome: some View {
+        HStack {
+            BackChevron { dismiss() }
+            Spacer()
+            Text("Diagnose a part")
+                .font(EType.bodyStrong)
+                .foregroundStyle(palette.textPrimary)
+            Spacer()
+            SheetCloseButton { dismiss() }
+        }
+        .padding(.horizontal, Space.s4)
+        .padding(.vertical, Space.s3)
+        .background(palette.bgPage)
+    }
+
+    // MARK: Capture
+
+    private var captureCard: some View {
+        ActiveCard {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles.tv.fill")
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text("PART PHOTO")
+                        .font(EType.micro).tracking(0.8)
+                        .foregroundStyle(palette.textTertiary)
+                }
+                Text("Snap or pick a clear photo of the part. ESANG reads visible faults, wear, and damage.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let img = store.capturedImage {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 200)
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                .strokeBorder(palette.borderFaint)
+                        )
+                }
+
+                PhotosPicker(selection: $store.pickerItem, matching: .images, photoLibrary: .shared()) {
+                    HStack(spacing: 6) {
+                        Image(systemName: store.hasPhoto ? "arrow.triangle.2.circlepath" : "camera.fill")
+                            .font(.system(size: 12, weight: .heavy))
+                        Text(store.hasPhoto ? "Retake / pick another" : "Capture part photo")
+                            .font(.system(size: 13, weight: .heavy))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .foregroundStyle(.white)
+                    .background(LinearGradient.diagonal)
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(store.isDiagnosing)
+            }
+        }
+    }
+
+    private var contextCard: some View {
+        ActiveCard {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                Text("CONTEXT (optional)")
+                    .font(EType.micro).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+                TextField("Equipment type — e.g. Class 8 tractor, reefer trailer", text: $store.equipmentType)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(store.isDiagnosing)
+                TextField("Part name — e.g. brake chamber, serpentine belt", text: $store.partName)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(store.isDiagnosing)
+                Text("Both optional — they sharpen the read but ESANG diagnoses from the photo regardless.")
+                    .font(EType.micro)
+                    .foregroundStyle(palette.textTertiary)
+            }
+        }
+    }
+
+    // MARK: Results
+
+    @ViewBuilder
+    private func resultsView(_ r: ZeunMechanicsAPI.PartDiagnosis) -> some View {
+        // Summary + grounded badge
+        ActiveCard {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                HStack {
+                    Text("DIAGNOSIS")
+                        .font(EType.micro).tracking(0.8)
+                        .foregroundStyle(palette.textTertiary)
+                    Spacer()
+                    if r.grounded {
+                        HStack(spacing: 4) {
+                            Image(systemName: "scope")
+                                .font(.system(size: 9, weight: .heavy))
+                            Text("GROUNDED")
+                                .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Capsule().fill(LinearGradient.diagonal))
+                    }
+                }
+                if let summary = r.summary, !summary.isEmpty {
+                    Text(summary)
+                        .font(EType.body)
+                        .foregroundStyle(palette.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let model = r.aiModel, let ms = r.processingTimeMs {
+                    Text("\(model) · \(ms) ms")
+                        .font(EType.micro.monospacedDigit())
+                        .foregroundStyle(palette.textTertiary)
+                }
+            }
+        }
+
+        // Issues — honest empty state when none
+        if r.issues.isEmpty {
+            EusoEmptyState(
+                systemImage: "checkmark.shield.fill",
+                title: "No faults detected",
+                subtitle: "ESANG couldn't see any visible damage, wear, or fault in this photo. Re-shoot from another angle if you suspect an issue."
+            )
+            .padding(.top, Space.s2)
+        } else {
+            ForEach(r.issues) { issue in
+                issueRow(issue)
+            }
+        }
+
+        // Top-level recommendations
+        if !r.recommendations.isEmpty {
+            ActiveCard {
+                VStack(alignment: .leading, spacing: Space.s2) {
+                    Text("RECOMMENDATIONS")
+                        .font(EType.micro).tracking(0.8)
+                        .foregroundStyle(palette.textTertiary)
+                    ForEach(r.recommendations, id: \.self) { rec in
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "wrench.and.screwdriver.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(LinearGradient.diagonal)
+                            Text(rec)
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textPrimary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Warnings — surfaced verbatim
+        if !r.warnings.isEmpty {
+            ActiveCard {
+                VStack(alignment: .leading, spacing: Space.s2) {
+                    Text("WARNINGS")
+                        .font(EType.micro).tracking(0.8)
+                        .foregroundStyle(palette.textTertiary)
+                    ForEach(r.warnings, id: \.self) { w in
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Brand.warning)
+                            Text(w)
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textPrimary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func issueRow(_ issue: ZeunMechanicsAPI.PartDiagnosisIssue) -> some View {
+        let pct = Int((issue.confidence * 100).rounded())
+        return ActiveCard {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(issue.label)
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: Space.s2)
+                    Text("\(pct)%")
+                        .font(EType.bodyStrong.monospacedDigit())
+                        .foregroundStyle(palette.textSecondary)
+                }
+                HStack(spacing: 6) {
+                    if let sev = issue.severity {
+                        StatusPill(text: sev, kind: severityPillKind(sev))
+                    }
+                    // Confidence meter — honest 0..1 → bar fill.
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(palette.bgCardSoft)
+                            Capsule()
+                                .fill(LinearGradient.diagonal)
+                                .frame(width: max(0, min(1, issue.confidence)) * geo.size.width)
+                        }
+                    }
+                    .frame(height: 6)
+                }
+                if let rec = issue.recommendation, !rec.isEmpty {
+                    Text(rec)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    // MARK: Bottom CTA
+
+    private var bottomCTA: some View {
+        VStack {
+            CTAButton(
+                title: store.isDiagnosing ? "Diagnosing…" : "Diagnose part",
+                action: { Task { await store.diagnose() } },
+                isLoading: store.isDiagnosing
+            )
+            .opacity(store.hasPhoto ? 1 : 0.5)
+            .disabled(!store.hasPhoto || store.isDiagnosing)
+            if store.isDiagnosing {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("ESANG is reading the photo…")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            } else {
+                Text("Vision-grounded read via zeunMechanics.diagnosePart. ESANG reports only faults it can actually see.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, Space.s4)
+            }
+        }
+        .padding(.horizontal, Space.s4)
+        .padding(.vertical, Space.s3)
+        .background(palette.bgPage)
+    }
+
+    private func severityPillKind(_ s: String) -> StatusPill.Kind {
+        switch s.uppercased() {
+        case "LOW":      return .success
+        case "MEDIUM":   return .warning
+        case "HIGH":     return .danger
+        case "CRITICAL": return .danger
+        default:         return .neutral
+        }
+    }
+}
+
+/// Registry-facing wrapper. Mirrors the `MeSupportScreen(theme:)` /
+/// `CatalystMaintenanceZeunScreen(theme:)` shape so the screen can be
+/// painted by the A→Z registry walker with a palette injected. The
+/// production reach is through `MeZeunView` (driver Me-hub · Zeun),
+/// presented as an `.eusoSheet()` exactly like its sibling Zeun
+/// surfaces — so it's gated to the equipment role the same way they are.
+struct MeZeunDiagnoseScreen: View {
+    let theme: Theme.Palette
+    var body: some View {
+        ZeunPartDiagnosisScreen()
+            .environment(\.palette, theme)
+    }
+}
+
 // MARK: - Previews
+
+#Preview("Part Diagnosis · Dark") {
+    ZeunPartDiagnosisScreen()
+        .environment(\.palette, Theme.dark)
+        .preferredColorScheme(.dark)
+}
 
 #Preview("Breakdown Reporter · Dark") {
     ZeunBreakdownReporter()
