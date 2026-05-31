@@ -25,10 +25,12 @@
 //
 //    • KPI strip → `brokers.getDashboardStats` via
 //      `BrokerHomeDashboardStore` (LiveDataStores.swift). Server
-//      returns a six-figure envelope: openTenders, awardedThisWeek,
-//      deliveredThisWeek, marginPerLoad, onTimeRate,
-//      grossMarginThisWeek. Backend convention mirrors
-//      `carriers.getDashboardStats`.
+//      returns a six-figure envelope (verbatim from
+//      `frontend/server/routers/brokers.ts`): activeLoads,
+//      pendingMatches, weeklyVolume, commissionEarned, marginAverage,
+//      loadToCatalystRatio. Each is decoded as optional so a deploy
+//      that drops/adds a key decodes cleanly; any omitted field
+//      renders as an em-dash rather than a fabricated zero.
 //    • "Needs your attention" alert strip →
 //      `brokers.getLoadsRequiringAttention` via
 //      `BrokerAlertsStore`. Empty until the broker exception engine
@@ -245,12 +247,13 @@ struct BrokerHome: View {
     }
 
     /// Right-rail eyebrow caption. Pairs the live time-of-day with the
-    /// open-tender count once the dashboard resolves, so the eyebrow
-    /// carries real context rather than static chrome.
+    /// active-load count once the dashboard resolves, so the eyebrow
+    /// carries real context rather than static chrome. Falls back to
+    /// just the time-of-day when the proc omits the count.
     private var eyebrowContext: String {
         let tod = timeOfDayGreeting
-        if let outer = dashboard.state.value, let s = outer {
-            return "\(tod) · \(s.openTenders) open"
+        if let outer = dashboard.state.value, let s = outer, let active = s.activeLoads {
+            return "\(tod) · \(active) active"
         }
         return tod
     }
@@ -276,9 +279,9 @@ struct BrokerHome: View {
 
     private var subhead: String {
         if let outer = dashboard.state.value, let s = outer {
-            let tenders = s.openTenders
-            let awarded = s.awardedThisWeek
-            return "\(tenders) open tender\(tenders == 1 ? "" : "s") · \(awarded) awarded · 7d"
+            let active = s.activeLoads.map { "\($0) active load\($0 == 1 ? "" : "s")" } ?? "— active loads"
+            let pending = s.pendingMatches.map { "\($0) pending match\($0 == 1 ? "" : "es")" } ?? "— pending matches"
+            return "\(active) · \(pending)"
         }
         return "Loading brokerage fabric…"
     }
@@ -331,10 +334,10 @@ struct BrokerHome: View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.s2),
                             GridItem(.flexible(), spacing: Space.s2)],
                   spacing: Space.s2) {
-            kpiTile(label: "OPEN TENDERS",   value: "\(s.openTenders)",        sub: "awaiting carrier")
-            kpiTile(label: "AWARDED · 7D",   value: "\(s.awardedThisWeek)",    sub: "carrier accepted")
-            kpiTile(label: "DELIVERED · 7D", value: "\(s.deliveredThisWeek)",  sub: "completed this week")
-            kpiTile(label: "MARGIN · 7D",    value: dollars(s.grossMarginThisWeek), sub: "gross margin · 7d")
+            kpiTile(label: "ACTIVE LOADS",    value: count(s.activeLoads),         sub: "on your plate")
+            kpiTile(label: "PENDING MATCHES", value: count(s.pendingMatches),      sub: "awaiting carrier")
+            kpiTile(label: "VOLUME · 7D",     value: count(s.weeklyVolume),        sub: "posted this week")
+            kpiTile(label: "COMMISSION · 7D", value: dollarsOpt(s.commissionEarned.map(Double.init)), sub: "est. earned · 7d")
         }
     }
 
@@ -362,6 +365,20 @@ struct BrokerHome: View {
         f.maximumFractionDigits = 0
         f.currencyCode = "USD"
         return f.string(from: NSNumber(value: v)) ?? "$\(Int(v))"
+    }
+
+    /// Honest em-dash when the proc omits a numeric field — never a
+    /// fabricated zero or placeholder.
+    private func count(_ v: Int?) -> String {
+        guard let v = v else { return "—" }
+        return "\(v)"
+    }
+
+    /// Currency rendering that em-dashes a nil server field rather than
+    /// printing "$0" for "unknown".
+    private func dollarsOpt(_ v: Double?) -> String {
+        guard let v = v else { return "—" }
+        return dollars(v)
     }
 
     // MARK: - Attention strip
@@ -675,10 +692,17 @@ struct BrokerHome: View {
 
     private func marginTiles(_ s: BrokerAPI.DashboardStats) -> some View {
         HStack(spacing: Space.s2) {
-            kpiTile(label: "MARGIN · 7D",  value: dollars(s.grossMarginThisWeek), sub: "gross this week")
-            kpiTile(label: "PER LOAD",     value: dollars(s.marginPerLoad),        sub: "avg margin")
-            kpiTile(label: "ON-TIME",      value: String(format: "%.1f%%", s.onTimeRate * 100), sub: "delivery rate")
+            kpiTile(label: "AVG MARGIN",  value: dollarsOpt(s.marginAverage),          sub: "per load")
+            kpiTile(label: "COMMISSION",  value: dollarsOpt(s.commissionEarned.map(Double.init)), sub: "earned · 7d")
+            kpiTile(label: "COVERAGE",    value: ratio(s.loadToCatalystRatio),          sub: "load : catalyst")
         }
+    }
+
+    /// Renders the load-to-catalyst ratio as "3.2×", em-dashing when the
+    /// proc omits it.
+    private func ratio(_ v: Double?) -> String {
+        guard let v = v else { return "—" }
+        return String(format: "%.1f×", v)
     }
 
     private func inlineError(_ error: Error, retry: @escaping () -> Void) -> some View {

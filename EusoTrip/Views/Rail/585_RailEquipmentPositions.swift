@@ -20,7 +20,8 @@
 //        Railinc RailSight live speed/position for the lead in-motion car (hero AVG SPD)
 //    railShipments.trackIntermodalContainer EXISTS railShipments.ts:893 → { containerNumber } →
 //        Vizion intermodal container track → CONTAINER strip
-//  Seed figures are house 0%-mock (representative of live return shapes), overwritten on hydrate.
+//  No seed data: an empty getRailcars pool renders an honest "No railcar positions"
+//  empty state. Every figure on screen comes from the live procs above or not at all.
 //
 //  CONTRACT-DRIFT HARDENING (origin/oath/contract-drift-fixes): the getRailcars
 //  envelope tolerates BOTH the keyed `{ railcars:[…], total }` object AND a server
@@ -224,20 +225,9 @@ private struct RailEquipmentPositionsBody: View {
     /// REAL `routeProgress`. Reduce-motion snaps to it. (oath/anim-equipment-polish #3)
     @State private var shownProgress: Double = 0
 
-    // MARK: Seed — house 0%-mock representative of live return shapes (overwritten on hydrate)
-
-    private static let seedRailcars: [Railcar585] = {
-        func make(_ json: String) -> Railcar585 {
-            try! JSONDecoder().decode(Railcar585.self, from: Data(json.utf8))
-        }
-        return [
-            make(#"{"carNumber":"DTTX 748213","carType":"well_car","status":"in_transit","currentLocation":"near Amarillo TX","containerNumber":"TCNU 7693120","speedMph":38,"progressFraction":0.62}"#),
-            make(#"{"carNumber":"TTAX 553902","carType":"well_car","status":"at_ramp","currentLocation":"Logistics Park CHI · awaiting dray","dwellHours":2}"#),
-            make(#"{"carNumber":"DTTX 690114","carType":"well_car","status":"at_yard","currentLocation":"Barstow BNSF · demurrage approaching","dwellHours":14}"#)
-        ]
-    }()
-
-    private var rows: [Railcar585] { railcars.isEmpty ? Self.seedRailcars : railcars }
+    /// POSITIONS rows — the real `railShipments.getRailcars` envelope, never a
+    /// fabricated-on-empty seed. An empty pool renders an honest empty state.
+    private var rows: [Railcar585] { railcars }
 
     // MARK: Derived counts (live, from the real getRailcars envelope)
 
@@ -254,13 +244,13 @@ private struct RailEquipmentPositionsBody: View {
     private var inMotionCount: Int { rows.filter { bucket($0.status) == "in_motion" }.count }
     private var atYardCount: Int   { rows.filter { bucket($0.status) == "at_yard" }.count }
     private var badOrderCount: Int { rows.filter { bucket($0.status) == "bad_order" }.count }
-    private var poolSize: Int      { railcars.isEmpty ? 6 : (railcars.count) }
+    private var poolSize: Int      { railcars.count }
 
     private var avgSpeed: Int {
         // Prefer the Railinc live feed for the lead car; else average rolling in-motion rows.
         if let s = live?.speed, s > 0 { return Int(s.rounded()) }
         let moving = rows.compactMap { bucket($0.status) == "in_motion" ? $0.speedMph : nil }.filter { $0 > 0 }
-        guard !moving.isEmpty else { return inMotionCount > 0 ? 38 : 0 }
+        guard !moving.isEmpty else { return 0 }
         return Int((moving.reduce(0, +) / Double(moving.count)).rounded())
     }
 
@@ -277,17 +267,18 @@ private struct RailEquipmentPositionsBody: View {
 
     // MARK: Container strip values
 
-    private var containerNumber: String {
+    /// Lead container number — live Vizion track, else the first real railcar that
+    /// carries one. `nil` when neither exists (the strip then hides itself).
+    private var containerNumber: String? {
         container?.containerNumber
             ?? rows.first(where: { $0.containerNumber != nil })?.containerNumber
-            ?? "TCNU 7693120"
     }
-    private var containerLocation: String { container?.location ?? "Amarillo TX" }
-    private var containerMinsAgo: Int { container?.lastReadMinutesAgo ?? 22 }
-    private var containerIsoOk: Bool { container?.iso6346Verified ?? true }
+    private var containerLocation: String? { container?.location }
+    private var containerMinsAgo: Int? { container?.lastReadMinutesAgo }
+    private var containerIsoOk: Bool? { container?.iso6346Verified }
     private var extraUnits: Int {
         if let a = container?.additionalUnits, a > 0 { return a }
-        return max(0, poolSize - rows.count) > 0 ? max(0, poolSize - rows.count) : 3
+        return max(0, poolSize - rows.count)
     }
 
     // MARK: View
@@ -305,16 +296,21 @@ private struct RailEquipmentPositionsBody: View {
                             .font(EType.caption).foregroundStyle(palette.textSecondary)
                             .padding(.vertical, 8)
                     }
-                } else {
-                    if let err = loadError {
-                        LifecycleCard(accentDanger: true) {
-                            Text(err).font(EType.caption).foregroundStyle(Brand.danger).padding(.vertical, 6)
-                        }
+                } else if let err = loadError {
+                    LifecycleCard(accentDanger: true) {
+                        Text(err).font(EType.caption).foregroundStyle(Brand.danger).padding(.vertical, 6)
                     }
+                    ctaPair
+                } else if rows.isEmpty {
+                    EusoEmptyState(systemImage: "tram.fill",
+                                   title: "No railcar positions",
+                                   subtitle: "AEI positions for this lane's railcars will appear here the moment the carrier reports them.")
+                    ctaPair
+                } else {
                     heroCard
                     kpiStrip
                     positionsSection
-                    containerStrip
+                    if containerNumber != nil { containerStrip }
                     ctaPair
                 }
                 Color.clear.frame(height: 96)
@@ -507,28 +503,50 @@ private struct RailEquipmentPositionsBody: View {
 
     // MARK: CONTAINER · AEI strip
 
+    @ViewBuilder
     private var containerStrip: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("CONTAINER")
-                    .font(.system(size: 9, weight: .black)).kerning(0.8)
-                    .foregroundStyle(palette.textTertiary)
-                Spacer()
-                Text("ISO 6346")
-                    .font(.system(size: 11).monospaced())
-                    .foregroundStyle(palette.textSecondary)
+        // Only rendered when `containerNumber != nil`. Each sub-detail (AEI read,
+        // extra units, ISO verification) shows only when the live track supplies it.
+        if let cnum = containerNumber {
+            // Compose the AEI read line from whatever the Vizion track returned.
+            let aeiLine: String? = {
+                guard containerLocation != nil || containerMinsAgo != nil else { return nil }
+                var parts = ["last AEI read"]
+                if let loc = containerLocation { parts.append(loc) }
+                if let mins = containerMinsAgo { parts.append("\(mins) min ago") }
+                return parts.joined(separator: " ")
+            }()
+            let isoLine: String? = {
+                var parts: [String] = []
+                if extraUnits > 0 { parts.append("+\(extraUnits) more units off-screen") }
+                if let ok = containerIsoOk { parts.append("ISO 6346 \(ok ? "verified" : "pending")") }
+                return parts.isEmpty ? nil : parts.joined(separator: " · ")
+            }()
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("CONTAINER")
+                        .font(.system(size: 9, weight: .black)).kerning(0.8)
+                        .foregroundStyle(palette.textTertiary)
+                    Spacer()
+                    Text("ISO 6346")
+                        .font(.system(size: 11).monospaced())
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Text(aeiLine.map { "\(cnum) · \($0)" } ?? cnum)
+                    .font(.system(size: 11)).foregroundStyle(palette.textSecondary).lineLimit(1)
+                if let isoLine {
+                    Text(isoLine)
+                        .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+                }
             }
-            Text("\(containerNumber) · last AEI read \(containerLocation) · \(containerMinsAgo) min ago")
-                .font(.system(size: 11)).foregroundStyle(palette.textSecondary).lineLimit(1)
-            Text("+\(extraUnits) more units off-screen · ISO 6346 \(containerIsoOk ? "verified" : "pending")")
-                .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Space.s4)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.lg).fill(palette.bgCard)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(palette.borderFaint))
+            )
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Space.s4)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.lg).fill(palette.bgCard)
-                .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(palette.borderFaint))
-        )
     }
 
     // MARK: CTA pair — View on map (gradient) · Refresh
@@ -587,8 +605,8 @@ private struct RailEquipmentPositionsBody: View {
             railcars = env.railcars
 
             // 2. Lead in-motion railcar → Railinc RailSight live speed/position (best-effort).
-            if let lead = (railcars.isEmpty ? Self.seedRailcars : railcars)
-                .first(where: { bucket($0.status) == "in_motion" }),
+            //    Only fires when the real pool actually has an in-motion car.
+            if let lead = railcars.first(where: { bucket($0.status) == "in_motion" }),
                let num = lead.carNumber {
                 live = try? await EusoTripAPI.shared.query(
                     "railShipments.liveTrackRailcar",
@@ -596,8 +614,8 @@ private struct RailEquipmentPositionsBody: View {
             }
 
             // 3. Lead container → Vizion intermodal container track (best-effort).
-            if let cnum = (railcars.isEmpty ? Self.seedRailcars : railcars)
-                .compactMap({ $0.containerNumber }).first {
+            //    Only fires when a real railcar actually carries a container.
+            if let cnum = railcars.compactMap({ $0.containerNumber }).first {
                 container = try? await EusoTripAPI.shared.query(
                     "railShipments.trackIntermodalContainer",
                     input: ContainerNumberIn585(containerNumber: cnum))
