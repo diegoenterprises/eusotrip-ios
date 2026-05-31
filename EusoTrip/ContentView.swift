@@ -2064,6 +2064,15 @@ enum ScreenRegistry {
             .init(id: "Vesl681", title: "Vessel Operator · Emissions CII",         role: .vesselOperator) { p in AnyView(VesselEmissionsCIIScreen(theme: p)) },
             .init(id: "Vesl682", title: "Vessel Operator · Carrier Scorecard",     role: .vesselOperator) { p in AnyView(VesselCarrierScorecardScreen(theme: p)) },
             .init(id: "Vesl683", title: "Vessel Operator · Fleet Health",          role: .vesselOperator) { p in AnyView(VesselFleetHealthScreen(theme: p)) },
+            // Phase B wave 2 — Vessel operator NEW screens (verbatim ports). Required ids defaulted for registry construction.
+            .init(id: "Vesl662", title: "Vessel Operator · Exceptions & Holds",     role: .vesselOperator) { p in AnyView(VesselExceptionsHoldsScreen(theme: p)) },
+            .init(id: "Vesl663", title: "Vessel Operator · CBP Entry Detail",       role: .vesselOperator) { p in AnyView(VesselCBPEntryDetailScreen(theme: p, entryNumber: "", importerId: "")) },
+            .init(id: "Vesl664", title: "Vessel Operator · Terminal Appointment",   role: .vesselOperator) { p in AnyView(VesselTerminalAppointmentScreen(theme: p)) },
+            .init(id: "Vesl671", title: "Vessel Operator · Marine Weather Routing", role: .vesselOperator) { p in AnyView(VesselMarineWeatherRoutingScreen(theme: p)) },
+            .init(id: "Vesl673", title: "Vessel Operator · Container Lease",        role: .vesselOperator) { p in AnyView(VesselContainerLeaseScreen(theme: p)) },
+            .init(id: "Vesl677", title: "Vessel Operator · Carrier Tender Workflow",role: .vesselOperator) { p in AnyView(VesselCarrierTenderWorkflowScreen(theme: p, shipmentId: 0)) },
+            .init(id: "Vesl678", title: "Vessel Operator · Port State Control",     role: .vesselOperator) { p in AnyView(VesselPortStateControlScreen(theme: p)) },
+            .init(id: "Vesl680", title: "Vessel Operator · Intermodal Segment Board",role: .vesselOperator) { p in AnyView(VesselIntermodalSegmentBoardScreen(theme: p, shipmentId: 0)) },
         ])
 
         return list
