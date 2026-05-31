@@ -2262,12 +2262,15 @@ struct CreateAccountView: View {
                 detail: motusVerifiedDetail
             )
         case .pending:
-            motusVerdictBanner(
-                icon: "hourglass",
-                tint: Brand.warning,
-                title: "Proofed · government attestation pending",
-                detail: motusPendingDetail
-            )
+            VStack(alignment: .leading, spacing: Space.s2) {
+                motusVerdictBanner(
+                    icon: "hourglass",
+                    tint: Brand.warning,
+                    title: "Proofed · finish at FMCSA Motus",
+                    detail: motusPendingDetail
+                )
+                motusHandoffLink
+            }
         case .failed(let msg):
             motusVerdictBanner(
                 icon: "xmark.seal.fill",
@@ -2341,6 +2344,32 @@ struct CreateAccountView: View {
                         .stroke(tint.opacity(0.28), lineWidth: 1)
                 )
         )
+    }
+
+    /// Deep-link hand-off to the official FMCSA Motus web flow (motus.dot.gov)
+    /// — the federal identity-proofing step has no third-party API, so the
+    /// carrier completes it there (Login.gov + IDEMIA/CLEAR). We pre-proofed
+    /// and pre-filled; this is the last federal step.
+    @ViewBuilder
+    private var motusHandoffLink: some View {
+        if let url = URL(string: motusResult?.dedup.motusAttestation.motusUrl ?? "https://motus.dot.gov") {
+            Link(destination: url) {
+                HStack(spacing: 8) {
+                    Image(systemName: "building.columns.fill")
+                    Text("Continue to FMCSA Motus")
+                    Spacer(minLength: 0)
+                    Image(systemName: "arrow.up.forward")
+                }
+                .font(EType.bodyStrong)
+                .foregroundStyle(.white)
+                .padding(Space.s3)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(LinearGradient.diagonal)
+                )
+            }
+        }
     }
 
     private var motusVerifiedDetail: String {

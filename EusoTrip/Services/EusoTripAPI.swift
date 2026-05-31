@@ -14007,11 +14007,14 @@ struct MotusAPI {
     /// government API isn't configured — NEVER a fabricated verdict. Backs
     /// the service `MotusAttestation`.
     struct MotusAttestation: Decodable, Hashable {
-        /// "verified" | "rejected" only ever come from the REAL Motus API;
-        /// otherwise "pending" | "error".
+        /// FMCSA Motus has no third-party API → "handoff_required" is the honest
+        /// default (finish at motus.dot.gov). "verified" | "rejected" come only
+        /// from a configured commercial provider (CLEAR/IDEMIA). Else "pending"/"error".
         let status: String
-        /// "fmcsa_motus_api" | "env_gated_seam_unconfigured"
+        /// "commercial_identity_provider" | "motus_web_handoff"
         let source: String
+        /// Deep-link to the official FMCSA Motus registration/proofing web flow.
+        let motusUrl: String?
         let reference: String?
         let detail: String
     }
