@@ -770,6 +770,19 @@
 		FEB050000000000000000000 /* 681_VesselEmissionsCII.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA050000000000000000000 /* 681_VesselEmissionsCII.swift */; };
 		FEB060000000000000000000 /* 682_VesselCarrierScorecard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA060000000000000000000 /* 682_VesselCarrierScorecard.swift */; };
 		FEB070000000000000000000 /* 683_VesselFleetHealth.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA070000000000000000000 /* 683_VesselFleetHealth.swift */; };
+		RE5C0E010000000000000000 /* 327B_CatalystDriverQuarterDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE5C0E010000000000000000 /* 327B_CatalystDriverQuarterDetail.swift */; };
+		RE5C0E020000000000000000 /* 330B_CatalystVehicleScorecardAxisDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE5C0E020000000000000000 /* 330B_CatalystVehicleScorecardAxisDetail.swift */; };
+		RE5C0E030000000000000000 /* 400_DispatcherHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE5C0E030000000000000000 /* 400_DispatcherHome.swift */; };
+		RE5C0E040000000000000000 /* 401_DispatcherKanban.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE5C0E040000000000000000 /* 401_DispatcherKanban.swift */; };
+		RE5C0E050000000000000000 /* 111_DriverPaperwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE5C0E050000000000000000 /* 111_DriverPaperwork.swift */; };
+		RE5C0E060000000000000000 /* 001_RailShipperHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE5C0E060000000000000000 /* 001_RailShipperHome.swift */; };
+		RE5C0E070000000000000000 /* 002_RailShipmentDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE5C0E070000000000000000 /* 002_RailShipmentDetail.swift */; };
+		RE5C0E080000000000000000 /* 570_RailDemurrageDispute.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE5C0E080000000000000000 /* 570_RailDemurrageDispute.swift */; };
+		RE5C0E090000000000000000 /* 244_ShipperAtDock.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE5C0E090000000000000000 /* 244_ShipperAtDock.swift */; };
+		RE5C0E100000000000000000 /* 245_ShipperDeparting.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE5C0E100000000000000000 /* 245_ShipperDeparting.swift */; };
+		RE5C0E110000000000000000 /* 001_VesselShipperHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE5C0E110000000000000000 /* 001_VesselShipperHome.swift */; };
+		RE5C0E120000000000000000 /* 002_VesselBookingDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE5C0E120000000000000000 /* 002_VesselBookingDetail.swift */; };
+		RE5C0E130000000000000000 /* 003_VesselLiveTracking.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE5C0E130000000000000000 /* 003_VesselLiveTracking.swift */; };
 		FFB000000000000000000000 /* 662_VesselExceptionsHolds.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFA000000000000000000000 /* 662_VesselExceptionsHolds.swift */; };
 		FFB010000000000000000000 /* 663_VesselCBPEntryDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFA010000000000000000000 /* 663_VesselCBPEntryDetail.swift */; };
 		FFB020000000000000000000 /* 664_VesselTerminalAppointment.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFA020000000000000000000 /* 664_VesselTerminalAppointment.swift */; };
@@ -1697,6 +1710,19 @@
 		FEA050000000000000000000 /* 681_VesselEmissionsCII.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 681_VesselEmissionsCII.swift; sourceTree = "<group>"; };
 		FEA060000000000000000000 /* 682_VesselCarrierScorecard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 682_VesselCarrierScorecard.swift; sourceTree = "<group>"; };
 		FEA070000000000000000000 /* 683_VesselFleetHealth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 683_VesselFleetHealth.swift; sourceTree = "<group>"; };
+		FE5C0E010000000000000000 /* 327B_CatalystDriverQuarterDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 327B_CatalystDriverQuarterDetail.swift; path = EusoTrip/Views/Catalyst/327B_CatalystDriverQuarterDetail.swift; sourceTree = SOURCE_ROOT; };
+		FE5C0E020000000000000000 /* 330B_CatalystVehicleScorecardAxisDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 330B_CatalystVehicleScorecardAxisDetail.swift; path = EusoTrip/Views/Catalyst/330B_CatalystVehicleScorecardAxisDetail.swift; sourceTree = SOURCE_ROOT; };
+		FE5C0E030000000000000000 /* 400_DispatcherHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 400_DispatcherHome.swift; path = EusoTrip/Views/Dispatch/400_DispatcherHome.swift; sourceTree = SOURCE_ROOT; };
+		FE5C0E040000000000000000 /* 401_DispatcherKanban.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 401_DispatcherKanban.swift; path = EusoTrip/Views/Dispatch/401_DispatcherKanban.swift; sourceTree = SOURCE_ROOT; };
+		FE5C0E050000000000000000 /* 111_DriverPaperwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 111_DriverPaperwork.swift; path = EusoTrip/Views/Driver/111_DriverPaperwork.swift; sourceTree = SOURCE_ROOT; };
+		FE5C0E060000000000000000 /* 001_RailShipperHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 001_RailShipperHome.swift; sourceTree = "<group>"; };
+		FE5C0E070000000000000000 /* 002_RailShipmentDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 002_RailShipmentDetail.swift; sourceTree = "<group>"; };
+		FE5C0E080000000000000000 /* 570_RailDemurrageDispute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 570_RailDemurrageDispute.swift; sourceTree = "<group>"; };
+		FE5C0E090000000000000000 /* 244_ShipperAtDock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 244_ShipperAtDock.swift; path = EusoTrip/Views/Shipper/244_ShipperAtDock.swift; sourceTree = SOURCE_ROOT; };
+		FE5C0E100000000000000000 /* 245_ShipperDeparting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 245_ShipperDeparting.swift; path = EusoTrip/Views/Shipper/245_ShipperDeparting.swift; sourceTree = SOURCE_ROOT; };
+		FE5C0E110000000000000000 /* 001_VesselShipperHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 001_VesselShipperHome.swift; sourceTree = "<group>"; };
+		FE5C0E120000000000000000 /* 002_VesselBookingDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 002_VesselBookingDetail.swift; sourceTree = "<group>"; };
+		FE5C0E130000000000000000 /* 003_VesselLiveTracking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 003_VesselLiveTracking.swift; sourceTree = "<group>"; };
 		FFA000000000000000000000 /* 662_VesselExceptionsHolds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 662_VesselExceptionsHolds.swift; sourceTree = "<group>"; };
 		FFA010000000000000000000 /* 663_VesselCBPEntryDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 663_VesselCBPEntryDetail.swift; sourceTree = "<group>"; };
 		FFA020000000000000000000 /* 664_VesselTerminalAppointment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 664_VesselTerminalAppointment.swift; sourceTree = "<group>"; };
@@ -2451,6 +2477,13 @@
 				FE410000000000000000298F /* 298_ShipperDetentionExposure.swift */,
 				FE410000000000000000533F /* 533_DispatcherAIDispatchAssist.swift */,
 				FE410000000000000000539F /* 539_DispatcherCarrierScorecard.swift */,
+				FE5C0E010000000000000000 /* 327B_CatalystDriverQuarterDetail.swift */,
+				FE5C0E020000000000000000 /* 330B_CatalystVehicleScorecardAxisDetail.swift */,
+				FE5C0E030000000000000000 /* 400_DispatcherHome.swift */,
+				FE5C0E040000000000000000 /* 401_DispatcherKanban.swift */,
+				FE5C0E050000000000000000 /* 111_DriverPaperwork.swift */,
+				FE5C0E090000000000000000 /* 244_ShipperAtDock.swift */,
+				FE5C0E100000000000000000 /* 245_ShipperDeparting.swift */,
 			);
 			path = Driver;
 			sourceTree = "<group>";
@@ -2747,6 +2780,9 @@
 			children = (
 				FD97CEC42FC1D4BC0016DF5F /* RailEngineerNavController.swift */,
 				FD97CEC82FC1D5110016DF5F /* 550_RailEngineerHome.swift */,
+				FE5C0E060000000000000000 /* 001_RailShipperHome.swift */,
+				FE5C0E070000000000000000 /* 002_RailShipmentDetail.swift */,
+				FE5C0E080000000000000000 /* 570_RailDemurrageDispute.swift */,
 				FBA000000000000000000000 /* 559_RailYardOperations.swift */,
 				FBA010000000000000000000 /* 591_RailConsigneeTrackingLink.swift */,
 				FBA020000000000000000000 /* 592_RailForwarderPortal.swift */,
@@ -2853,6 +2889,9 @@
 			children = (
 				FD97CEC62FC1D4BC0016DF5F /* VesselOperatorNavController.swift */,
 				FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */,
+				FE5C0E110000000000000000 /* 001_VesselShipperHome.swift */,
+				FE5C0E120000000000000000 /* 002_VesselBookingDetail.swift */,
+				FE5C0E130000000000000000 /* 003_VesselLiveTracking.swift */,
 				VOTMFREF1 /* VesselOceanTrackMap.swift */,
 				FEA000000000000000000000 /* 659_VesselPortDirectory.swift */,
 				FEA010000000000000000000 /* 666_VesselContainerTimeline.swift */,
@@ -3373,6 +3412,19 @@
 				FEB050000000000000000000 /* 681_VesselEmissionsCII.swift in Sources */,
 				FEB060000000000000000000 /* 682_VesselCarrierScorecard.swift in Sources */,
 				FEB070000000000000000000 /* 683_VesselFleetHealth.swift in Sources */,
+				RE5C0E010000000000000000 /* 327B_CatalystDriverQuarterDetail.swift in Sources */,
+				RE5C0E020000000000000000 /* 330B_CatalystVehicleScorecardAxisDetail.swift in Sources */,
+				RE5C0E030000000000000000 /* 400_DispatcherHome.swift in Sources */,
+				RE5C0E040000000000000000 /* 401_DispatcherKanban.swift in Sources */,
+				RE5C0E050000000000000000 /* 111_DriverPaperwork.swift in Sources */,
+				RE5C0E060000000000000000 /* 001_RailShipperHome.swift in Sources */,
+				RE5C0E070000000000000000 /* 002_RailShipmentDetail.swift in Sources */,
+				RE5C0E080000000000000000 /* 570_RailDemurrageDispute.swift in Sources */,
+				RE5C0E090000000000000000 /* 244_ShipperAtDock.swift in Sources */,
+				RE5C0E100000000000000000 /* 245_ShipperDeparting.swift in Sources */,
+				RE5C0E110000000000000000 /* 001_VesselShipperHome.swift in Sources */,
+				RE5C0E120000000000000000 /* 002_VesselBookingDetail.swift in Sources */,
+				RE5C0E130000000000000000 /* 003_VesselLiveTracking.swift in Sources */,
 				FFB000000000000000000000 /* 662_VesselExceptionsHolds.swift in Sources */,
 				FFB010000000000000000000 /* 663_VesselCBPEntryDetail.swift in Sources */,
 				FFB020000000000000000000 /* 664_VesselTerminalAppointment.swift in Sources */,
