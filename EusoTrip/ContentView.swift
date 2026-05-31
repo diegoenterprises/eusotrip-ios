@@ -254,6 +254,10 @@ enum ScreenRegistry {
             .init(id: "111", title: "Me · Bonus Tracker",           role: .driver) { p in AnyView(DriverBonusTrackerScreen(theme: p)) },
             // 2026-05-31 — Rescue land: bespoke Driver Paperwork (full port). SVG 111 axis; iOS 111 already maps to Me·Bonus, so id 111p.
             .init(id: "111p", title: "Driver · Paperwork",            role: .driver) { p in AnyView(DriverPaperworkScreen(theme: p)) },
+            // 2026-05-31 — Zeun #45 part-diagnosis (vision · zeunMechanics.diagnosePart).
+            // Reached in production through MeZeunView's "Diagnose a part with
+            // a photo" action; registry row paints it for the A→Z walker.
+            .init(id: "113", title: "Me · Zeun Part Diagnosis",     role: .driver) { p in AnyView(MeZeunDiagnoseScreen(theme: p)) },
             // Driver Me hub — parent + 7 children mirroring the
             // Shipper 320/320a-g design. Founder feedback 2026-05-04:
             // wanted the same parent-child IA on driver. The catalog

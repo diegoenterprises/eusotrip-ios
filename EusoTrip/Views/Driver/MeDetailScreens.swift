@@ -1597,6 +1597,7 @@ struct MeZeunView: View {
     /// provider directory, breakdown drill-in, maintenance scheduler).
     @State private var showReporter: Bool = false
     @State private var showProviders: Bool = false
+    @State private var showPartDiagnosis: Bool = false
     @State private var openReportId: Int? = nil
 
     var body: some View {
@@ -1676,6 +1677,27 @@ struct MeZeunView: View {
                     showReporter = true
                 }
                 Button {
+                    MeAction.fire("zeun.diagnose-part")
+                    showPartDiagnosis = true
+                } label: {
+                    HStack {
+                        Image(systemName: "sparkles.tv.fill")
+                            .foregroundStyle(LinearGradient.diagonal)
+                        Text("Diagnose a part with a photo")
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(palette.textPrimary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, Space.s3)
+                    .background(palette.bgCard)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.sm).strokeBorder(palette.borderFaint))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
+                }
+                .buttonStyle(.plain)
+                Button {
                     MeAction.fire("zeun.find-provider")
                     showProviders = true
                 } label: {
@@ -1700,6 +1722,9 @@ struct MeZeunView: View {
         }
         .sheet(isPresented: $showReporter) {
             ZeunBreakdownReporter().eusoSheet()
+        }
+        .sheet(isPresented: $showPartDiagnosis) {
+            ZeunPartDiagnosisScreen().eusoSheet()
         }
         .sheet(isPresented: $showProviders) {
             ZeunProviderNetwork().eusoSheet()
