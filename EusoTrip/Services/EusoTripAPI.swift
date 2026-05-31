@@ -13287,32 +13287,27 @@ struct BrokerAPI {
     /// Dashboard KPI envelope. Mirrors the convention of
     /// `carriers.getDashboardStats` on the Broker role's home.
     /// Backend path: `brokers.getDashboardStats`.
+    /// Mirrors the EXACT envelope emitted by `brokers.getDashboardStats`
+    /// on `origin/main` (`frontend/server/routers/brokers.ts`):
+    /// `{ activeLoads, pendingMatches, weeklyVolume, commissionEarned,
+    ///    marginAverage, loadToCatalystRatio }`. Every field is optional
+    /// so an older/newer deploy that drops or adds a key decodes cleanly
+    /// rather than throwing — the home em-dashes any field the proc omits
+    /// instead of failing the whole KPI strip.
     struct DashboardStats: Decodable, Hashable {
-        /// Open tenders the broker has posted that haven't been
-        /// awarded yet (carriers may have responded but no award
-        /// is recorded). Broker-side analog of Shipper's
-        /// `pendingBids` and Carrier's `openOffers`.
-        let openTenders: Int
-        /// Tenders the broker awarded to a carrier in the
-        /// trailing 7-day window (regardless of whether the load
-        /// has delivered yet).
-        let awardedThisWeek: Int
-        /// Loads delivered through the broker's lane in the
-        /// trailing 7-day window.
-        let deliveredThisWeek: Int
-        /// Average broker margin per delivered load over the
-        /// trailing 7-day window (USD).
-        let marginPerLoad: Double
-        /// On-time delivery rate (0.0…1.0) over the trailing 30-
-        /// day window.
-        let onTimeRate: Double
-        /// Gross broker margin in the trailing 7-day window
-        /// (after platform fee, before any factoring discount).
-        /// Broker-side analog of Carrier's `weeklyRevenue` and
-        /// Shipper's `totalSpendThisMonth` — reframed as
-        /// margin since the broker doesn't capture the load
-        /// rate, only the spread.
-        let grossMarginThisWeek: Double
+        /// Loads currently on the broker's plate (all statuses).
+        let activeLoads: Int?
+        /// Loads awaiting a carrier match.
+        let pendingMatches: Int?
+        /// Loads posted in the trailing 7-day window.
+        let weeklyVolume: Int?
+        /// Estimated broker commission earned in the trailing 7-day
+        /// window (USD, server-side projection of load rate).
+        let commissionEarned: Int?
+        /// Average broker margin across the window (USD).
+        let marginAverage: Double?
+        /// Server-projected load-to-catalyst coverage ratio.
+        let loadToCatalystRatio: Double?
     }
 
     func getDashboardStats() async throws -> DashboardStats {
