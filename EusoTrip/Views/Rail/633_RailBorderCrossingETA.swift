@@ -418,7 +418,7 @@ private struct RailBorderCrossingETABody: View {
     }
 
     private var crossingDetail: String {
-        guard let p = point else { return "interchange hand-off" }
+        guard point != nil else { return "interchange hand-off" }
         return "\(interchangeMark) hand-off"
     }
 

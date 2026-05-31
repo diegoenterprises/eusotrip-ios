@@ -1415,23 +1415,31 @@ struct ZeunPartDiagnosisScreen: View {
                         )
                 }
 
-                PhotosPicker(selection: $store.pickerItem, matching: .images, photoLibrary: .shared()) {
-                    HStack(spacing: 6) {
-                        Image(systemName: store.hasPhoto ? "arrow.triangle.2.circlepath" : "camera.fill")
-                            .font(.system(size: 12, weight: .heavy))
-                        Text(store.hasPhoto ? "Retake / pick another" : "Capture part photo")
-                            .font(.system(size: 13, weight: .heavy))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 11)
-                    .foregroundStyle(.white)
-                    .background(LinearGradient.diagonal)
-                    .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .disabled(store.isDiagnosing)
+                capturePhotoPicker
             }
         }
+    }
+
+    /// Capture-photo picker. `store.hasPhoto` is read in this @MainActor view
+    /// scope and captured as a plain Bool, so the PhotosPicker label closure
+    /// never touches the actor-isolated property (silences the concurrency warning).
+    private var capturePhotoPicker: some View {
+        let has = store.hasPhoto
+        return PhotosPicker(selection: $store.pickerItem, matching: .images, photoLibrary: .shared()) {
+            HStack(spacing: 6) {
+                Image(systemName: has ? "arrow.triangle.2.circlepath" : "camera.fill")
+                    .font(.system(size: 12, weight: .heavy))
+                Text(has ? "Retake / pick another" : "Capture part photo")
+                    .font(.system(size: 13, weight: .heavy))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 11)
+            .foregroundStyle(.white)
+            .background(LinearGradient.diagonal)
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(store.isDiagnosing)
     }
 
     private var contextCard: some View {

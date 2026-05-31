@@ -446,7 +446,7 @@ private struct RailIntermodalTransferBody: View {
             let newStatus: String
         }
         do {
-            let result: AdvanceSegmentResponse = try await EusoTripAPI.shared.query(
+            let _: AdvanceSegmentResponse = try await EusoTripAPI.shared.query(
                 "intermodal.advanceSegment",
                 input: AdvIn(intermodalShipmentId: shipmentId, fromSegmentId: t.fromSegmentId ?? 0, toSegmentId: t.toSegmentId ?? 0))
             await load()

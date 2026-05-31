@@ -789,7 +789,7 @@ private struct FuelOverrideBody: View {
     }
 
     private func load() async {
-        loading = true; defer { loading = false }
+        loading = false  // empty-state stub until fuel-station lookup is wired
         // Wire to fuel-station lookup via HERE add-ons (existing
         // HereMapsAPI exposes a fuel-prices client). Until that
         // surface is wired, render empty state.

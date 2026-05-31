@@ -453,7 +453,7 @@ private struct RailLiveTrackingBody: View {
     }
 
     private func shortDate(_ iso: String) -> String {
-        var f = ISO8601DateFormatter()
+        let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         var d = f.date(from: iso)
         if d == nil {
