@@ -2066,6 +2066,15 @@ enum ScreenRegistry {
             .init(id: "Rail636", title: "Rail Engineer · X-Border Crew Certs",    role: .railEngineer) { p in AnyView(RailCrossBorderCrewCertsScreen(theme: p)) },
             .init(id: "Rail637", title: "Rail Engineer · X-Border DG Regs",       role: .railEngineer) { p in AnyView(RailCrossBorderDGRegsScreen(theme: p)) },
             .init(id: "Rail638", title: "Rail Engineer · X-Border Compliance",    role: .railEngineer) { p in AnyView(RailCrossBorderComplianceCheckScreen(theme: p)) },
+            // Phase B wave 10 — Rail analytics NEW screens (verbatim ports, theme-only inits).
+            .init(id: "Rail640", title: "Rail Engineer · Diesel Fuel Index",     role: .railEngineer) { p in AnyView(RailDieselFuelIndexScreen(theme: p)) },
+            .init(id: "Rail641", title: "Rail Engineer · Demurrage Analytics",   role: .railEngineer) { p in AnyView(RailDemurrageAnalyticsScreen(theme: p)) },
+            .init(id: "Rail642", title: "Rail Engineer · Accessorial Analytics", role: .railEngineer) { p in AnyView(RailAccessorialAnalyticsScreen(theme: p)) },
+            .init(id: "Rail643", title: "Rail Engineer · ETA Prediction",        role: .railEngineer) { p in AnyView(RailETAPredictionScreen(theme: p)) },
+            .init(id: "Rail644", title: "Rail Engineer · Transit Comparison",    role: .railEngineer) { p in AnyView(RailTransitComparisonScreen(theme: p)) },
+            .init(id: "Rail645", title: "Rail Engineer · Detention Dashboard",   role: .railEngineer) { p in AnyView(RailDetentionDashboardScreen(theme: p)) },
+            .init(id: "Rail646", title: "Rail Engineer · Rebooking Options",     role: .railEngineer) { p in AnyView(RailRebookingOptionsScreen(theme: p)) },
+            .init(id: "Rail647", title: "Rail Engineer · Multimodal Analytics",  role: .railEngineer) { p in AnyView(RailMultimodalAnalyticsScreen(theme: p)) },
         ])
 
         // Vessel Operator surface (Vesl650–652).

@@ -725,6 +725,14 @@
 		EAG050000000000000000000 /* 636_RailCrossBorderCrewCerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAH050000000000000000000 /* 636_RailCrossBorderCrewCerts.swift */; };
 		EAG060000000000000000000 /* 637_RailCrossBorderDGRegs.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAH060000000000000000000 /* 637_RailCrossBorderDGRegs.swift */; };
 		EAG070000000000000000000 /* 638_RailCrossBorderComplianceCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAH070000000000000000000 /* 638_RailCrossBorderComplianceCheck.swift */; };
+		EBG000000000000000000000 /* 640_RailDieselFuelIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBH000000000000000000000 /* 640_RailDieselFuelIndex.swift */; };
+		EBG010000000000000000000 /* 641_RailDemurrageAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBH010000000000000000000 /* 641_RailDemurrageAnalytics.swift */; };
+		EBG020000000000000000000 /* 642_RailAccessorialAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBH020000000000000000000 /* 642_RailAccessorialAnalytics.swift */; };
+		EBG030000000000000000000 /* 643_RailETAPrediction.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBH030000000000000000000 /* 643_RailETAPrediction.swift */; };
+		EBG040000000000000000000 /* 644_RailTransitComparison.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBH040000000000000000000 /* 644_RailTransitComparison.swift */; };
+		EBG050000000000000000000 /* 645_RailDetentionDashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBH050000000000000000000 /* 645_RailDetentionDashboard.swift */; };
+		EBG060000000000000000000 /* 646_RailRebookingOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBH060000000000000000000 /* 646_RailRebookingOptions.swift */; };
+		EBG070000000000000000000 /* 647_RailMultimodalAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBH070000000000000000000 /* 647_RailMultimodalAnalytics.swift */; };
 		FD97CECB2FC1D5120016DF5F /* 650_VesselOperatorHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */; };
 		VOTMBUILD1 /* VesselOceanTrackMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = VOTMFREF1 /* VesselOceanTrackMap.swift */; };
 		FEB000000000000000000000 /* 659_VesselPortDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA000000000000000000000 /* 659_VesselPortDirectory.swift */; };
@@ -1616,6 +1624,14 @@
 		EAH050000000000000000000 /* 636_RailCrossBorderCrewCerts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 636_RailCrossBorderCrewCerts.swift; sourceTree = "<group>"; };
 		EAH060000000000000000000 /* 637_RailCrossBorderDGRegs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 637_RailCrossBorderDGRegs.swift; sourceTree = "<group>"; };
 		EAH070000000000000000000 /* 638_RailCrossBorderComplianceCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 638_RailCrossBorderComplianceCheck.swift; sourceTree = "<group>"; };
+		EBH000000000000000000000 /* 640_RailDieselFuelIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 640_RailDieselFuelIndex.swift; sourceTree = "<group>"; };
+		EBH010000000000000000000 /* 641_RailDemurrageAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 641_RailDemurrageAnalytics.swift; sourceTree = "<group>"; };
+		EBH020000000000000000000 /* 642_RailAccessorialAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 642_RailAccessorialAnalytics.swift; sourceTree = "<group>"; };
+		EBH030000000000000000000 /* 643_RailETAPrediction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 643_RailETAPrediction.swift; sourceTree = "<group>"; };
+		EBH040000000000000000000 /* 644_RailTransitComparison.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 644_RailTransitComparison.swift; sourceTree = "<group>"; };
+		EBH050000000000000000000 /* 645_RailDetentionDashboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 645_RailDetentionDashboard.swift; sourceTree = "<group>"; };
+		EBH060000000000000000000 /* 646_RailRebookingOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 646_RailRebookingOptions.swift; sourceTree = "<group>"; };
+		EBH070000000000000000000 /* 647_RailMultimodalAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 647_RailMultimodalAnalytics.swift; sourceTree = "<group>"; };
 		FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 650_VesselOperatorHome.swift; sourceTree = "<group>"; };
 		VOTMFREF1 /* VesselOceanTrackMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VesselOceanTrackMap.swift; path = EusoTrip/Views/Vessel/VesselOceanTrackMap.swift; sourceTree = SOURCE_ROOT; };
 		FEA000000000000000000000 /* 659_VesselPortDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 659_VesselPortDirectory.swift; sourceTree = "<group>"; };
@@ -2696,6 +2712,14 @@
 				EAH050000000000000000000 /* 636_RailCrossBorderCrewCerts.swift */,
 				EAH060000000000000000000 /* 637_RailCrossBorderDGRegs.swift */,
 				EAH070000000000000000000 /* 638_RailCrossBorderComplianceCheck.swift */,
+				EBH000000000000000000000 /* 640_RailDieselFuelIndex.swift */,
+				EBH010000000000000000000 /* 641_RailDemurrageAnalytics.swift */,
+				EBH020000000000000000000 /* 642_RailAccessorialAnalytics.swift */,
+				EBH030000000000000000000 /* 643_RailETAPrediction.swift */,
+				EBH040000000000000000000 /* 644_RailTransitComparison.swift */,
+				EBH050000000000000000000 /* 645_RailDetentionDashboard.swift */,
+				EBH060000000000000000000 /* 646_RailRebookingOptions.swift */,
+				EBH070000000000000000000 /* 647_RailMultimodalAnalytics.swift */,
 				FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */,
 				FD97CECE2FC1D7C80016DF5F /* 552_RailCompliance.swift */,
 				FDA10000000000000000553F /* 553_RailShipmentDetailCarrier.swift */,
@@ -3556,6 +3580,14 @@
 				EAG050000000000000000000 /* 636_RailCrossBorderCrewCerts.swift in Sources */,
 				EAG060000000000000000000 /* 637_RailCrossBorderDGRegs.swift in Sources */,
 				EAG070000000000000000000 /* 638_RailCrossBorderComplianceCheck.swift in Sources */,
+				EBG000000000000000000000 /* 640_RailDieselFuelIndex.swift in Sources */,
+				EBG010000000000000000000 /* 641_RailDemurrageAnalytics.swift in Sources */,
+				EBG020000000000000000000 /* 642_RailAccessorialAnalytics.swift in Sources */,
+				EBG030000000000000000000 /* 643_RailETAPrediction.swift in Sources */,
+				EBG040000000000000000000 /* 644_RailTransitComparison.swift in Sources */,
+				EBG050000000000000000000 /* 645_RailDetentionDashboard.swift in Sources */,
+				EBG060000000000000000000 /* 646_RailRebookingOptions.swift in Sources */,
+				EBG070000000000000000000 /* 647_RailMultimodalAnalytics.swift in Sources */,
 				D2R0100000000000000ABF3 /* 411_LoadsSortSheet.swift in Sources */,
 				D2R0200000000000000ABF3 /* 412_DraftsList.swift in Sources */,
 				D2R0300000000000000ABF3 /* 413_ArchivedLoads.swift in Sources */,
