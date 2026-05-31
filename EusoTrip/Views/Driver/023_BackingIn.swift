@@ -24,6 +24,12 @@ struct BackingIn: View {
     @StateObject private var uwb = EusoNISession()
     @StateObject private var doorScanner = DoorMarkerScanner()
     @State private var activeLoad: Load?
+    // Live appointment row for the active load — carries the
+    // server-assigned dock door (`dockNumber`) the guard / terminal
+    // pushed. Same `appointments.getByLoad` read the sibling lifecycle
+    // screens (022 Dock Assigned, 024 Unloading) hydrate. The door is
+    // the ONE non-sensor live datum this screen can surface.
+    @State private var appointment: AppointmentsAPI.ByLoadAppointment?
     @State private var isConfirming: Bool = false
     @State private var liveFeedPaused: Bool = false
     @State private var terminalCaps: CapabilitiesAPI.TerminalCapabilities? = nil
@@ -38,17 +44,57 @@ struct BackingIn: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
-    // MARK: - Figma fallback
-    private let fallbackDoor          = "12"
-    private let fallbackAisle         = "Aisle 2 · night receiving"
-    private let fallbackTrailer       = "—"
-    private let fallbackCameraStamp   = "00:32:48"
-    private let fallbackCameraId      = "cam-R · 1080p"
-    private let fallbackDriverSide    = "28\""
-    private let fallbackCenterRear    = "3' 1\""
-    private let fallbackBlindSide     = "11\""
-    private let fallbackAlignmentDeg  = "+3°"
-    private let fallbackAlignmentNote = "too sharp"
+    // MARK: - Empty-state sentinels + live-derived fields
+    //
+    // FOUNDER BAR: 0 fabricated business data. The back-in alignment
+    // numbers (driver-side / center-rear / blind-side inches, the
+    // alignment degrees, the IR-camera timestamp) have NO live source
+    // unless a UWB anchor or an ARKit door marker is paired for this
+    // door — that hardware is the only thing on this screen that can
+    // measure a real distance. When no sensor is active every
+    // measurement collapses to the honest em-dash sentinel and the
+    // tiles read "no sensor". They are NEVER rendered as fabricated
+    // inches/degrees. The live overlay path (uwbCenterlineCard /
+    // arkitMarkerCard) is unchanged — it renders the real numbers when
+    // the hardware is present. Pattern mirrors sibling 022/024/039.
+    private let dash = "—"
+
+    /// Server-assigned dock door, trimmed. Empty when not yet assigned.
+    private var liveDock: String {
+        (appointment?.dockNumber ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    private var hasDock: Bool { !liveDock.isEmpty }
+    /// Door label used across the header / camera overlay / sensor
+    /// cards. Live dock number when assigned, em-dash otherwise.
+    private var doorLabel: String { hasDock ? liveDock : dash }
+
+    /// True when a real alignment sensor is actively measuring — either
+    /// the UWB anchor is ranging or the ARKit door-marker fallback is
+    /// tracking. Gates whether the measurement readouts may show
+    /// numbers at all.
+    private var sensorActive: Bool { uwbActive || arkitFallbackActive }
+
+    /// True when the active terminal has declared a partner camera feed
+    /// for this dock door. There is no WebRTC player wired into this
+    /// screen yet, so even when `true` we don't claim a LIVE stream —
+    /// but when `false` we positively label the canvas "NO FEED" rather
+    /// than implying a live IR feed exists.
+    private var hasCameraFeed: Bool {
+        guard hasDock, let caps = terminalCaps else { return false }
+        return caps.hasCameraFeed(doorNumber: liveDock)
+    }
+
+    /// Aisle / receiving line. No discrete aisle column exists on
+    /// `loads.getById` / `appointments.getByLoad` (same backend gap 022
+    /// documents) — derive an honest "Door N · receiving" when a dock is
+    /// assigned, else an awaiting-assignment line. Never a fabricated
+    /// "Aisle 2" literal.
+    private var aisleLine: String {
+        hasDock ? "Door \(liveDock) · receiving" : "Awaiting dock assignment"
+    }
+    /// Trailer id isn't first-class on the live projection yet —
+    /// em-dash sentinel.
+    private var trailerLine: String { dash }
 
     // MARK: - Body
 
@@ -94,7 +140,8 @@ struct BackingIn: View {
     /// for this dock door — gates whether the ARKit fallback can
     /// activate at all.
     private var hasDoorMarker: Bool {
-        terminalCaps?.doorMarkers.contains { $0.doorNumber == fallbackDoor } ?? false
+        guard hasDock else { return false }
+        return terminalCaps?.doorMarkers.contains { $0.doorNumber == liveDock } ?? false
     }
 
     /// Card that fires only when UWB has lost LOS and a door marker
@@ -120,7 +167,7 @@ struct BackingIn: View {
                         .font(EType.body.weight(.heavy))
                         .foregroundStyle(palette.textPrimary)
                         .monospacedDigit()
-                    Text("AR FALLBACK · DOOR \(fallbackDoor)")
+                    Text("AR FALLBACK · DOOR \(doorLabel)")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                         .foregroundStyle(palette.textSecondary)
                 }
@@ -214,7 +261,7 @@ struct BackingIn: View {
 
     private var uwbCenterlineSub: String {
         if uwb.lostLineOfSight { return "LOST LINE-OF-SIGHT · ROTATE PHONE" }
-        return "UWB CENTERLINE · DOOR \(fallbackDoor)"
+        return "UWB CENTERLINE · DOOR \(doorLabel)"
     }
 
     // MARK: Header
@@ -236,19 +283,19 @@ struct BackingIn: View {
                     Text("BACKING IN")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(LinearGradient.diagonal)
-                    Text("· DOOR \(fallbackDoor)")
+                    Text("· DOOR \(doorLabel)")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(palette.textSecondary)
                     LoadModeBadge(modeRaw: activeLoad?.transportMode,
                                   multiVehicleCount: activeLoad?.multiVehicleCount,
                                   compact: true)
                 }
-                Text("\(ctx.defaultApproach) · \(fallbackAisle)")
+                Text("\(ctx.defaultApproach) · \(aisleLine)")
                     .font(.system(size: 20, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(2)
                     .minimumScaleFactor(0.85)
-                Text(fallbackTrailer)
+                Text(trailerLine)
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
@@ -271,6 +318,17 @@ struct BackingIn: View {
     }
 
     // MARK: Camera canvas
+
+    /// "LIVE"/"PAUSED" only when a partner feed is declared; otherwise
+    /// the honest "NO FEED" badge.
+    private var feedStatusText: String {
+        guard hasCameraFeed else { return "NO FEED" }
+        return liveFeedPaused ? "PAUSED" : "LIVE"
+    }
+    private var feedDotColor: Color {
+        guard hasCameraFeed else { return .white.opacity(0.55) }
+        return liveFeedPaused ? .white.opacity(0.7) : Brand.danger
+    }
 
     private var cameraCanvas: some View {
         ZStack(alignment: .top) {
@@ -303,43 +361,66 @@ struct BackingIn: View {
             .frame(height: 220)
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
 
-            // Top overlay — LIVE + DOOR 12 + cam id
+            // Top overlay — feed status + door.
+            //
+            // There is no WebRTC player wired into this screen, so the
+            // guide rectangle below is a drawn alignment frame, NOT a
+            // camera image. We only badge "LIVE" when a partner camera
+            // feed is actually declared for this door; otherwise we
+            // label the canvas honestly as "NO FEED" so the driver is
+            // never told a fabricated IR stream is live.
             HStack {
                 HStack(spacing: 4) {
                     Circle()
-                        .fill(liveFeedPaused ? Color.white.opacity(0.7) : Brand.danger)
+                        .fill(feedDotColor)
                         .frame(width: 6, height: 6)
-                    Text(liveFeedPaused ? "PAUSED" : "LIVE")
+                    Text(feedStatusText)
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                        .foregroundStyle(liveFeedPaused ? .white.opacity(0.7) : Brand.danger)
+                        .foregroundStyle(feedDotColor)
                 }
                 .padding(.horizontal, 6).padding(.vertical, 3)
                 .background(Capsule().fill(Color.black.opacity(0.55)))
-                Text("DOOR \(fallbackDoor)")
+                Text("DOOR \(doorLabel)")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(.white.opacity(0.9))
                 Spacer()
-                Text("REAR · IR")
+                Text(hasCameraFeed ? "REAR · IR" : "ALIGNMENT GUIDE")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(.white.opacity(0.9))
             }
             .padding(.horizontal, Space.s3)
             .padding(.top, Space.s2)
 
-            // Bottom overlay — timestamp + cam id
-            VStack {
-                Spacer()
-                HStack {
-                    Text(fallbackCameraStamp)
-                        .font(EType.mono(.micro)).tracking(0.4)
-                        .foregroundStyle(.white.opacity(0.85))
+            // Bottom overlay — only carries a timestamp/cam id when a
+            // real feed is declared. With no live feed there is no
+            // honest stamp to show, so the strip collapses rather than
+            // print a fabricated "00:32:48 · cam-R" pair.
+            if hasCameraFeed {
+                VStack {
                     Spacer()
-                    Text(fallbackCameraId)
-                        .font(EType.mono(.micro)).tracking(0.4)
-                        .foregroundStyle(.white.opacity(0.85))
+                    HStack {
+                        Text(liveFeedPaused ? "PAUSED" : "STREAMING")
+                            .font(EType.mono(.micro)).tracking(0.4)
+                            .foregroundStyle(.white.opacity(0.85))
+                        Spacer()
+                        Text("DOOR \(doorLabel)")
+                            .font(EType.mono(.micro)).tracking(0.4)
+                            .foregroundStyle(.white.opacity(0.85))
+                    }
+                    .padding(.horizontal, Space.s3)
+                    .padding(.bottom, Space.s2)
                 }
-                .padding(.horizontal, Space.s3)
-                .padding(.bottom, Space.s2)
+            } else {
+                VStack {
+                    Spacer()
+                    Text("No partner camera at this door — drawn alignment guide only")
+                        .font(EType.mono(.micro)).tracking(0.3)
+                        .foregroundStyle(.white.opacity(0.7))
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, Space.s3)
+                        .padding(.bottom, Space.s2)
+                }
             }
         }
         .frame(height: 220)
@@ -349,13 +430,42 @@ struct BackingIn: View {
         )
     }
 
-    // MARK: Distance tiles
+    // MARK: Distance tiles — live wiring
+    //
+    // Per-corner clearance (driver-side / blind-side inches) has NO live
+    // source: a UWB anchor reports a single centerline range, not three
+    // corner distances, and there's no per-corner LiDAR feed wired here.
+    // So those two tiles always render the em-dash sentinel. The CENTER
+    // REAR tile maps to the one real datum we do have — the UWB
+    // centerline distance — when the UWB session is ranging with LOS;
+    // otherwise it too is "—". No fabricated inches, ever.
+
+    /// Center-rear distance derived from the live UWB range, rendered in
+    /// feet+inches. Em-dash when no UWB range is available.
+    private var centerRearValue: String {
+        guard uwbActive, !uwb.lostLineOfSight, let m = uwb.distance else { return dash }
+        let totalInches = Int((Double(m) * 39.3701).rounded())
+        if totalInches < 12 { return "\(totalInches)\"" }
+        return "\(totalInches / 12)' \(totalInches % 12)\""
+    }
+    private var centerRearSub: String {
+        (uwbActive && !uwb.lostLineOfSight && uwb.distance != nil) ? "to dock rubber" : "no sensor"
+    }
 
     private var distanceTiles: some View {
         HStack(spacing: Space.s2) {
-            distanceTile(label: "DRIVER-SIDE", value: fallbackDriverSide, sub: "clear", color: Brand.success)
-            distanceTile(label: "CENTER REAR", value: fallbackCenterRear, sub: "to dock rubber", color: palette.textPrimary)
-            distanceTile(label: "BLIND-SIDE",  value: fallbackBlindSide,  sub: "narrow", color: Brand.warning)
+            distanceTile(label: "DRIVER-SIDE",
+                         value: dash,
+                         sub: sensorActive ? "no per-corner sensor" : "no sensor",
+                         color: palette.textTertiary)
+            distanceTile(label: "CENTER REAR",
+                         value: centerRearValue,
+                         sub: centerRearSub,
+                         color: centerRearValue == dash ? palette.textTertiary : palette.textPrimary)
+            distanceTile(label: "BLIND-SIDE",
+                         value: dash,
+                         sub: sensorActive ? "no per-corner sensor" : "no sensor",
+                         color: palette.textTertiary)
         }
     }
 
@@ -385,6 +495,30 @@ struct BackingIn: View {
 
     // MARK: Alignment card
 
+    /// Lateral drift fraction across the alignment bar, 0...1, where
+    /// 0.5 is dead-center. Derived from the live UWB direction unit
+    /// vector when the session is ranging with LOS; clamps to a sane
+    /// span so the marker never leaves the track. `nil` when there's no
+    /// live alignment sensor — the marker then parks dead-center and the
+    /// degree readout renders the em-dash sentinel.
+    private var alignmentFraction: CGFloat? {
+        guard uwbActive, !uwb.lostLineOfSight,
+              let dist = uwb.distance, let dir = uwb.direction else { return nil }
+        let lateralM = Double(dir.x) * Double(dist)
+        // Map roughly ±0.5 m of drift onto the full ±0.4 of the bar.
+        let frac = 0.5 + max(-0.4, min(0.4, lateralM / 1.0))
+        return CGFloat(frac)
+    }
+    private var alignmentReadout: String {
+        guard let f = alignmentFraction else { return dash }
+        let cm = Int(((Double(f) - 0.5) * 100).rounded())
+        if cm == 0 { return "centered" }
+        return "\(abs(cm)) cm \(cm > 0 ? "right" : "left")"
+    }
+    private var alignmentReadoutColor: Color {
+        alignmentFraction == nil ? palette.textTertiary : Brand.warning
+    }
+
     private var alignmentCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
@@ -392,9 +526,9 @@ struct BackingIn: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("\(fallbackAlignmentDeg) \(fallbackAlignmentNote)")
+                Text(alignmentReadout)
                     .font(.system(size: 12, weight: .heavy))
-                    .foregroundStyle(Brand.warning)
+                    .foregroundStyle(alignmentReadoutColor)
             }
             GeometryReader { geo in
                 ZStack {
@@ -406,11 +540,14 @@ struct BackingIn: View {
                         .fill(palette.borderFaint)
                         .frame(width: 1, height: 14)
                         .position(x: geo.size.width / 2, y: 10)
-                    // Actual alignment marker
+                    // Alignment marker — live UWB-derived drift when a
+                    // sensor is ranging, dead-center (neutral) otherwise.
                     Circle()
-                        .fill(LinearGradient.diagonal)
+                        .fill(alignmentFraction == nil
+                              ? AnyShapeStyle(palette.borderSoft)
+                              : AnyShapeStyle(LinearGradient.diagonal))
                         .frame(width: 12, height: 12)
-                        .position(x: geo.size.width * 0.60, y: 10)
+                        .position(x: geo.size.width * (alignmentFraction ?? 0.5), y: 10)
                 }
             }
             .frame(height: 20)
@@ -439,6 +576,17 @@ struct BackingIn: View {
 
     // MARK: Advisory
 
+    /// Advisory copy is general back-in guidance — but it must NOT quote
+    /// a specific clearance number unless a sensor is actually measuring
+    /// one. With no sensor we give the honest "no live distance / use
+    /// mirrors + GOAL" advisory instead of a fabricated inch count.
+    private var advisoryText: String {
+        guard sensorActive else {
+            return "No alignment sensor paired at this door — no live clearance reading. Use your mirrors, get out and look, and re-pull if you aren't square. No spotter overnight."
+        }
+        return "Counter-steer and hold it. Straighten before you close the last foot. Watch the live centerline above. No spotter overnight — re-pull if you aren't square."
+    }
+
     private var advisoryCard: some View {
         HStack(alignment: .top, spacing: Space.s3) {
             ZStack {
@@ -449,7 +597,7 @@ struct BackingIn: View {
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
             }
-            Text("Counter-steer, hold it. Blind-side is \(fallbackBlindSide). Straighten to ±1° before you close the last foot. No spotter overnight — re-pull if you aren't square.")
+            Text(advisoryText)
                 .font(EType.body)
                 .foregroundStyle(palette.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -496,6 +644,10 @@ struct BackingIn: View {
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
         activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        // Live dock door — the one non-sensor datum this screen surfaces.
+        // Same `appointments.getByLoad` read 022/024 hydrate.
+        appointment = try? await EusoTripAPI.shared.appointments
+            .getByLoad(loadId: lifecycle.loadId)
         terminalCaps = try? await EusoTripAPI.shared.capabilities
             .getTerminal(terminalId: 0)
         startUwbIfPaired()
@@ -505,8 +657,9 @@ struct BackingIn: View {
     /// active dock door. Caller is responsible for stopping the
     /// session on screen disappear (handled below via `.onDisappear`).
     private func startUwbIfPaired() {
+        guard hasDock else { return }
         guard let anchor = terminalCaps?.uwbAnchors
-            .first(where: { $0.doorNumber == fallbackDoor }) else { return }
+            .first(where: { $0.doorNumber == liveDock }) else { return }
         guard let data = Data(base64Encoded: anchor.accessoryConfigData) else { return }
         let bt = anchor.bluetoothPeerIdentifier.flatMap { UUID(uuidString: $0) }
         uwb.startAccessory(configData: data, btIdentifier: bt)

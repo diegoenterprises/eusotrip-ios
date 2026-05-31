@@ -1,52 +1,49 @@
 //
 //  229_ShipperBOLUpload.swift
-//  EusoTrip 2027 UI — Shipper · BOL Upload (parity-reconciled 2026-04-29)
+//  EusoTrip 2027 UI — Shipper · BOL Upload (de-fabricated 2026-05-31)
 //
-//  PARITY AUDIT 2026-04-29 — new file at slot 229 to match wireframe
-//  canon at /02 Shipper/Code/229_ShipperBOLUpload.swift. Persona:
-//  Diego Usoro / Eusorone Technologies (companyId 1) per §11. The
-//  per-load BOL detail surface that opens from the load card.
+//  DE-FABRICATION 2026-05-31 — this surface previously rendered a
+//  fully hardcoded BOL (Houston→Dallas tanker, fixed BOL id, three
+//  canned §11 signatory rows) with NO network fetch despite a header
+//  claiming `documents.getAll`. FOUNDER BAR: zero fake/seed business
+//  data. The hero card + KPI quartet now render LIVE rows from
+//  `documents.getAll` filtered to the BOL category (mirrors
+//  300_DocumentsAll's proc-call + state pattern). Where no live source
+//  exists, the field shows an honest em-dash "—"; where no endpoint
+//  exists at all (the per-party signatory state), the section shows an
+//  honest empty state — never fabricated rows.
 //
-//  Note: slot 229 also holds `229_ShipperAllocations.swift` in the
-//  iOS tree (different scope, different struct names — no compile
-//  conflict). Wireframe canon governs the UI of this file
-//  specifically.
-//
-//  Layout (top → bottom):
-//    1. TopBar           ✦ SHIPPER · BOL UPLOAD / "{N}/3 SIGNED" status counter
+//  Layout (top → bottom), bespoke UI unchanged:
+//    1. TopBar           ✦ SHIPPER · BOL UPLOAD / live "N BOL" counter
 //    2. Back chevron + breadcrumb "Loads"
-//    3. Title block      32pt "BOL detail" + sub line citing lane + cargo
+//    3. Title block      32pt "BOL detail" + sub line from live doc
 //    4. IridescentHairline
-//    5. Hero BOL card    3pt success tier rim + BOL id + status pill +
-//                        lane title + spec line + Uploaded-by Diego +
-//                        4-stage lifecycle strip (UPLOADED · VERIFIED ·
-//                        SIGNED · FILED)
+//    5. Hero BOL card    3pt rim + live BOL id + live status pill +
+//                        live name + uploaded-at + lifecycle strip
+//                        driven by live status
 //    6. KPI quartet      4-cell · PAGES · SIZE · INTEGRITY · SIGNED
-//    7. SIGNATORIES      section eyebrow + 3 signatory rows + 1 audit-log row
+//                        (SIZE live; the rest honest em-dash w/ gap ref)
+//    7. SIGNATORIES      honest empty state — no signatory endpoint
 //    8. View audit trail gradient mid-link
 //
-//  Real wiring: iOS doesn't yet have a per-BOL detail endpoint;
-//  surfaces real document metadata via `documents.getAll` filtered
-//  to BOL category (placeholder). The signatory state is canonical
-//  §11.4 anchor data with explicit EUSO-2147 backend gap.
+//  Real wiring: `documents.getAll(category:"BOL")` via DocumentsAPI.
+//  When a `loadId` is supplied we surface the BOL whose name carries
+//  that anchor; otherwise the most-recent BOL row. Empty + error +
+//  loading states all mirror the sibling live screen.
 //
-//  Backend gaps surfaced (logged in audit log, no fake data):
-//    EUSO-2147 — `documents.bol.getDetail(loadId:)` not yet on
-//                iOS API. Hero card uses canonical §11.4 row 1 anchor
-//                values (Houston→Dallas tanker, BOL-260427-A38FB12C7E)
-//                until backend ships the per-BOL detail envelope.
-//    EUSO-2148 — Signatory state (3-party · WET / E-SIGN / device /
-//                timestamp) not shipped. Signatory rows use
-//                §11 persona canon (Diego shipper · Michael Eusorone
-//                carrier · receiver pending) explicitly until backend
-//                ships `documents.bol.getSignatories(bolId:)`.
+//  Backend gaps surfaced HONESTLY (no fake data fills them):
+//    EUSO-2147 — `documents.bol.getDetail(loadId:)` not yet on iOS
+//                API. Lane / spec / page-count / SHA-256 integrity are
+//                NOT in the `documents.getAll` projection, so they
+//                render "—" until that envelope ships.
+//    EUSO-2148 — `documents.bol.getSignatories(bolId:)` not shipped.
+//                The SIGNATORIES section renders an honest empty state
+//                (was three fabricated persona rows) until it lands.
 //
-//  Doctrine refs: §2 LOADS-tab nav (handled by ContentView); §3
-//  numbers-first copy; §4.3 single iridescent hairline; §11 / §11.2 /
-//  §11.4 / §15.3 audit-trail BOL-{hex} suffix; §17.2 KPI quartet
-//  recipe; §19.2 file-scoped LifecycleStrip4BOL + successGrad +
-//  warnGrad helpers; §20.4 no dead buttons; §22.2 Brand.success
-//  counter for healthy state.
+//  Doctrine refs: §2 LOADS-tab nav; §3 numbers-first copy; §4.3 single
+//  iridescent hairline; §15.3 audit-trail BOL-{hex} suffix; §17.2 KPI
+//  quartet recipe; §19.2 file-scoped LifecycleStrip4BOL + paint
+//  helpers; §20.4 no dead buttons.
 //
 
 import SwiftUI
@@ -64,34 +61,17 @@ private enum BOLStage: CaseIterable {
         case .filed:    return "FILED"
         }
     }
-}
 
-// MARK: - Signatory model
-
-private struct Signatory: Identifiable {
-    let id = UUID()
-    let initials: String
-    let chipLabel: String
-    let chipStyle: ChipStyle
-    let partyName: String
-    let credLine: String
-    let badge: BadgeKind
-    let tierRim: TierRim
-    let stats: [SigStat]
-
-    enum ChipStyle { case gradient, successHollow, warnHollow }
-    enum BadgeKind {
-        case shipper(String, CGFloat)
-        case carrier(String, CGFloat)
-        case receiver(String, CGFloat)
-    }
-    enum TierRim { case gradient, success, warn, neutral }
-    struct SigStat: Identifiable {
-        let id = UUID()
-        let value: String
-        let unit: String
-        let color: ValueColor
-        enum ValueColor { case primary, success, warn }
+    /// Derive the lifecycle anchor from the live `documents.getAll`
+    /// `status` string. Unknown / missing → uploaded (the floor) so the
+    /// strip never invents a later stage than the backend reports.
+    static func from(status: String?) -> BOLStage {
+        switch (status ?? "").lowercased() {
+        case let s where s.contains("file"):                 return .filed
+        case let s where s.contains("sign"):                 return .signed
+        case let s where s.contains("verif") || s.contains("valid"): return .verified
+        default:                                             return .uploaded
+        }
     }
 }
 
@@ -104,72 +84,33 @@ struct ShipperBOLUpload: View {
     @Environment(\.openURL) private var openURL
     @State private var inAppLink: EusoSafariLink? = nil
 
-    init(loadId: String = "LD-260427-A38FB12C7E") {
+    @State private var bol: DocumentsAPI.Document? = nil
+    @State private var bolCount: Int = 0
+    @State private var loading = true
+    @State private var loadError: String? = nil
+
+    init(loadId: String = "") {
         self.loadId = loadId
     }
 
-    // §11 / §11.4 row 1 anchor canon — used until EUSO-2147 lands a
-    // per-BOL detail endpoint.
-    private var bolId: String {
-        // Reuse the LD- hex tail per §15.3 audit-trail suffix doctrine.
-        let suffix = loadId.replacingOccurrences(of: "LD-", with: "")
-        return "BOL-\(suffix)"
-    }
-    private let lane = "Houston TX → Dallas TX"
-    private let specLine = "MC-306 · Gasoline UN1203 · 8,200 gal · 53′ tanker · ETA in 4h 12min"
     private let titleText = "BOL detail"
-    private let titleSubline = "Eusorone Technologies · Houston→Dallas gasoline · MC-306"
-    private let counterEyebrow = "PICKUP SIGNED · 2/3"
 
-    private let activeStage: BOLStage = .signed
+    // §15.3 audit-trail suffix — derived from the LIVE document id when
+    // present, otherwise from the supplied loadId, otherwise honest "—".
+    private var bolId: String {
+        if let id = bol?.id, !id.isEmpty { return id }
+        if !loadId.isEmpty {
+            let suffix = loadId.replacingOccurrences(of: "LD-", with: "")
+            return "BOL-\(suffix)"
+        }
+        return "—"
+    }
 
-    private let signatories: [Signatory] = [
-        Signatory(
-            initials: "DU",
-            chipLabel: "SIGNED",
-            chipStyle: .gradient,
-            partyName: "Diego Usoro",
-            credLine: "Eusorone Technologies · companyId 1 · BOL author",
-            badge: .shipper("SHIPPER", 92),
-            tierRim: .gradient,
-            stats: [
-                .init(value: "2h ago", unit: "when",     color: .primary),
-                .init(value: "WET",    unit: "method",   color: .primary),
-                .init(value: "✓",      unit: "verified", color: .success),
-                .init(value: "iPhone", unit: "device",   color: .primary)
-            ]
-        ),
-        Signatory(
-            initials: "ME",
-            chipLabel: "SIGNED",
-            chipStyle: .successHollow,
-            partyName: "Michael Eusorone",
-            credLine: "Eusotrans LLC · USDOT 3 194 882 · MC-820 144 · A+ grade",
-            badge: .carrier("CARRIER", 60),
-            tierRim: .success,
-            stats: [
-                .init(value: "1h ago", unit: "when",     color: .primary),
-                .init(value: "E-SIGN", unit: "method",   color: .primary),
-                .init(value: "✓",      unit: "verified", color: .success),
-                .init(value: "iOS",    unit: "device",   color: .primary)
-            ]
-        ),
-        Signatory(
-            initials: "CD",
-            chipLabel: "PENDING",
-            chipStyle: .warnHollow,
-            partyName: "Costco Distribution Center",
-            credLine: "Dallas TX · DC-04 · awaiting delivery in ~4h 12min",
-            badge: .receiver("RECEIVER", 72),
-            tierRim: .warn,
-            stats: [
-                .init(value: "3:54 PM", unit: "ETA",         color: .warn),
-                .init(value: "E-SIGN",  unit: "ready",       color: .primary),
-                .init(value: "—",       unit: "at delivery", color: .warn),
-                .init(value: "DC-04",   unit: "site",        color: .primary)
-            ]
-        )
-    ]
+    private var activeStage: BOLStage { BOLStage.from(status: bol?.status) }
+
+    private var counterEyebrow: String {
+        bolCount > 0 ? "\(bolCount) BOL" : "—"
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -184,36 +125,82 @@ struct ShipperBOLUpload: View {
                     .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s4)
 
-                heroCard
-                    .padding(.horizontal, Space.s3)
-                    .padding(.top, Space.s4)
-
-                kpiQuartet
-                    .padding(.horizontal, Space.s3)
-                    .padding(.top, Space.s4)
-
-                sectionLabel("SIGNATORIES · 2/3 SIGNED")
-                    .padding(.top, Space.s5)
-
-                VStack(spacing: Space.s3) {
-                    ForEach(signatories) { sig in
-                        signatoryRow(sig)
-                    }
-                    auditLogRow
-                }
-                .padding(.horizontal, Space.s3)
-                .padding(.top, Space.s3)
-
-                viewAuditTrailLink
-                    .padding(.horizontal, Space.s3)
-                    .padding(.top, Space.s4)
-
-                Color.clear.frame(height: 96)
+                content
             }
         }
+        .task { await load() }
         .sheet(item: $inAppLink) { link in
             EusoInAppSafari(url: link.url).ignoresSafeArea()
         }
+    }
+
+    // MARK: Content states (mirror 300_DocumentsAll)
+
+    @ViewBuilder
+    private var content: some View {
+        if loading {
+            loadingCard
+                .padding(.horizontal, Space.s3)
+                .padding(.top, Space.s4)
+        } else if let err = loadError {
+            errorCard(err)
+                .padding(.horizontal, Space.s3)
+                .padding(.top, Space.s4)
+        } else if let doc = bol {
+            loadedBody(doc)
+        } else {
+            EusoEmptyState(
+                systemImage: "doc.text",
+                title: "No BOLs yet",
+                subtitle: "Bills of lading appear here once a load is tendered and the BOL is uploaded."
+            )
+            .padding(.horizontal, Space.s3)
+            .padding(.top, Space.s5)
+        }
+    }
+
+    private var loadingCard: some View {
+        cardShell {
+            Text("Loading BOL…")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .padding(Space.s4)
+        }
+    }
+
+    private func errorCard(_ message: String) -> some View {
+        cardShell {
+            Text(message)
+                .font(EType.caption)
+                .foregroundStyle(Brand.danger)
+                .padding(Space.s4)
+        }
+    }
+
+    @ViewBuilder
+    private func loadedBody(_ doc: DocumentsAPI.Document) -> some View {
+        heroCard(doc)
+            .padding(.horizontal, Space.s3)
+            .padding(.top, Space.s4)
+
+        kpiQuartet(doc)
+            .padding(.horizontal, Space.s3)
+            .padding(.top, Space.s4)
+
+        // EUSO-2148 — no signatory endpoint. Honest empty state, never
+        // fabricated party rows.
+        sectionLabel("SIGNATORIES")
+            .padding(.top, Space.s5)
+
+        signatoriesUnavailable
+            .padding(.horizontal, Space.s3)
+            .padding(.top, Space.s3)
+
+        viewAuditTrailLink
+            .padding(.horizontal, Space.s3)
+            .padding(.top, Space.s4)
+
+        Color.clear.frame(height: 96)
     }
 
     // MARK: TopBar
@@ -230,8 +217,8 @@ struct ShipperBOLUpload: View {
             Text(counterEyebrow)
                 .font(EType.micro)
                 .tracking(1.0)
-                .foregroundStyle(Brand.success)
-                .accessibilityLabel("Pickup signed, two of three parties")
+                .foregroundStyle(bolCount > 0 ? Brand.success : palette.textTertiary)
+                .accessibilityLabel(bolCount > 0 ? "\(bolCount) bills of lading" : "No bills of lading")
         }
         .padding(.horizontal, Space.s3)
     }
@@ -257,7 +244,6 @@ struct ShipperBOLUpload: View {
     }
 
     private func tapBack() {
-        // observability post — real effect: dismiss() env handler
         dismiss()
         NotificationCenter.default.post(
             name: .eusoShipperBolUploadBack,
@@ -284,6 +270,13 @@ struct ShipperBOLUpload: View {
         .padding(.horizontal, Space.s3)
     }
 
+    private var titleSubline: String {
+        if let doc = bol {
+            return "\(dashIfEmpty(doc.name)) · \(dashIfEmpty(doc.category)) · \(humanISO(doc.uploadedAt, format: "MMM d"))"
+        }
+        return "Bills of lading for your tendered loads"
+    }
+
     // MARK: Section label
 
     @ViewBuilder
@@ -296,10 +289,28 @@ struct ShipperBOLUpload: View {
             .padding(.horizontal, Space.s3)
     }
 
-    // MARK: Hero BOL card
+    // MARK: Card shell
 
-    private var heroCard: some View {
-        HStack(spacing: 0) {
+    @ViewBuilder
+    private func cardShell<Content: View>(@ViewBuilder _ inner: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) { inner() }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.lg)
+                    .fill(palette.bgCard)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(palette.borderFaint)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    // MARK: Hero BOL card (live)
+
+    private func heroCard(_ doc: DocumentsAPI.Document) -> some View {
+        let statusUpper = doc.status.isEmpty ? "—" : doc.status.uppercased()
+        return HStack(spacing: 0) {
             RoundedRectangle(cornerRadius: 1.5)
                 .fill(LinearGradient.bolSuccessGrad)
                 .frame(width: 3)
@@ -309,30 +320,35 @@ struct ShipperBOLUpload: View {
                         .font(EType.mono(.micro))
                         .tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                     Spacer()
-                    Text("PICKUP SIGNED · 2/3")
+                    Text(statusUpper)
                         .font(EType.micro)
                         .tracking(0.6)
                         .foregroundStyle(.white)
-                        .frame(width: 148, height: 20)
+                        .padding(.horizontal, 12)
+                        .frame(height: 20)
                         .background(Capsule().fill(LinearGradient.bolSuccessGrad))
                 }
                 .padding(.top, Space.s4)
 
-                Text(lane)
+                Text(dashIfEmpty(doc.name))
                     .font(.system(size: 17, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)
                     .padding(.top, Space.s2 + 2)
 
-                Text(specLine)
+                // Lane + spec are NOT in the documents.getAll projection
+                // (EUSO-2147). Honest em-dash, no fabricated lane.
+                Text("Lane — · spec — (EUSO-2147)")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
                     .padding(.top, 4)
 
-                uploadedByRow
+                uploadedAtRow(doc)
                     .padding(.top, Space.s2 + 2)
 
                 LifecycleStrip4BOL(activeStage: activeStage)
@@ -353,21 +369,17 @@ struct ShipperBOLUpload: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(bolId), pickup signed two of three, \(lane), \(specLine), uploaded by Diego Usoro, Eusorone Technologies")
+        .accessibilityLabel("\(bolId), \(statusUpper), \(dashIfEmpty(doc.name))")
     }
 
-    private var uploadedByRow: some View {
+    private func uploadedAtRow(_ doc: DocumentsAPI.Document) -> some View {
         HStack(spacing: Space.s2) {
-            ZStack {
-                Circle().fill(LinearGradient.diagonal).frame(width: 14, height: 14)
-                Text("DU")
-                    .font(.system(size: 6.5, weight: .bold))
-                    .foregroundStyle(.white)
-            }
+            Image(systemName: "clock")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(palette.textTertiary)
             HStack(spacing: 0) {
-                Text("Uploaded by ").foregroundStyle(palette.textSecondary)
-                Text("Diego Usoro").fontWeight(.bold).foregroundStyle(palette.textPrimary)
-                Text(" · Eusorone Technologies · 2h ago").foregroundStyle(palette.textSecondary)
+                Text("Uploaded ").foregroundStyle(palette.textSecondary)
+                Text(humanISO(doc.uploadedAt)).fontWeight(.bold).foregroundStyle(palette.textPrimary)
             }
             .font(.system(size: 10.5))
             .lineLimit(1)
@@ -376,17 +388,21 @@ struct ShipperBOLUpload: View {
         }
     }
 
-    // MARK: KPI quartet
+    // MARK: KPI quartet (live SIZE; others honest em-dash)
 
-    private var kpiQuartet: some View {
+    private func kpiQuartet(_ doc: DocumentsAPI.Document) -> some View {
         HStack(spacing: 0) {
-            kpiCellView(label: "PAGES", value: "—", style: .gradient, sub: "EUSO-2147")
+            // PAGES not in projection → honest "—" w/ gap ref.
+            kpiCellView(label: "PAGES", value: "—", style: .primary, sub: "EUSO-2147")
             kpiDivider
-            kpiCellView(label: "SIZE", value: "—", style: .primary, sub: "encrypted")
+            // SIZE is live.
+            kpiCellView(label: "SIZE", value: humanBytes(doc.size), style: .gradient, sub: "on file")
             kpiDivider
+            // INTEGRITY hash not in projection → honest "—".
             kpiCellView(label: "INTEGRITY", value: "—", style: .primary, sub: "SHA-256")
             kpiDivider
-            kpiCellView(label: "SIGNED", value: "2/3", style: .warn, sub: "+1 pending")
+            // No signatory endpoint (EUSO-2148) → honest "—".
+            kpiCellView(label: "SIGNED", value: "—", style: .primary, sub: "EUSO-2148")
         }
         .padding(.vertical, Space.s4)
         .frame(maxWidth: .infinity)
@@ -422,6 +438,8 @@ struct ShipperBOLUpload: View {
                 }
             }
             .font(.system(size: 22, weight: .bold).monospacedDigit())
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
             Text(sub)
                 .font(.system(size: 9))
                 .foregroundStyle(palette.textSecondary)
@@ -432,175 +450,41 @@ struct ShipperBOLUpload: View {
         .padding(.horizontal, 8)
     }
 
-    // MARK: Signatory row
-
-    private func signatoryRow(_ sig: Signatory) -> some View {
-        let rim: AnyShapeStyle = {
-            switch sig.tierRim {
-            case .gradient: return AnyShapeStyle(LinearGradient.diagonal)
-            case .success:  return AnyShapeStyle(Brand.success)
-            case .warn:     return AnyShapeStyle(LinearGradient.bolWarnGrad)
-            case .neutral:  return AnyShapeStyle(palette.textTertiary)
-            }
-        }()
-        return HStack(spacing: 0) {
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(rim)
-                .frame(width: 3)
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .center) {
-                    avatarChip(sig)
-                    Spacer()
-                    badgeView(sig.badge)
-                }
-                .padding(.top, Space.s4)
-
-                Text(sig.partyName)
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
-                    .lineLimit(1)
-                    .padding(.top, Space.s2 + 2)
-
-                Text(sig.credLine)
-                    .font(EType.mono(.caption))
-                    .tracking(0.3)
-                    .foregroundStyle(palette.textSecondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
-                    .padding(.top, 4)
-
-                statRow(sig.stats)
-                    .padding(.top, Space.s2 + 2)
-                    .padding(.bottom, Space.s4)
-            }
-            .padding(.leading, Space.s4)
-            .padding(.trailing, Space.s4)
+    private func humanBytes(_ bytes: Int) -> String {
+        guard bytes > 0 else { return "—" }
+        let units = ["B", "KB", "MB", "GB"]
+        var value = Double(bytes)
+        var idx = 0
+        while value >= 1024 && idx < units.count - 1 {
+            value /= 1024
+            idx += 1
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.lg)
-                .fill(palette.bgCard)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+        return idx == 0 ? "\(bytes) B" : String(format: "%.1f %@", value, units[idx])
     }
 
-    private func avatarChip(_ sig: Signatory) -> some View {
-        HStack(spacing: 6) {
-            ZStack {
-                Circle().fill(initialsPaint(sig)).frame(width: 28, height: 28)
-                Text(sig.initials)
-                    .font(.system(size: 10, weight: .heavy))
-                    .foregroundStyle(initialsTextColor(sig))
-            }
-            Text(sig.chipLabel)
-                .font(EType.micro).tracking(0.5)
-                .foregroundStyle(chipTextColor(sig.chipStyle))
-        }
-    }
+    // MARK: Signatories — honest unavailable state (EUSO-2148)
 
-    private func initialsPaint(_ sig: Signatory) -> AnyShapeStyle {
-        switch sig.chipStyle {
-        case .gradient:      return AnyShapeStyle(LinearGradient.diagonal)
-        case .successHollow: return AnyShapeStyle(Brand.success.opacity(0.18))
-        case .warnHollow:    return AnyShapeStyle(LinearGradient.bolWarnGrad.opacity(0.18))
-        }
-    }
-
-    private func initialsTextColor(_ sig: Signatory) -> Color {
-        switch sig.chipStyle {
-        case .gradient:      return .white
-        case .successHollow: return Brand.success
-        case .warnHollow:    return Brand.warning
-        }
-    }
-
-    private func chipTextColor(_ style: Signatory.ChipStyle) -> Color {
-        switch style {
-        case .gradient:      return palette.textPrimary
-        case .successHollow: return Brand.success
-        case .warnHollow:    return Brand.warning
-        }
-    }
-
-    @ViewBuilder
-    private func badgeView(_ kind: Signatory.BadgeKind) -> some View {
-        switch kind {
-        case .shipper(let label, let width):
-            Text(label)
-                .font(EType.micro).tracking(0.5)
-                .foregroundStyle(.white)
-                .frame(width: width, height: 18)
-                .background(Capsule().fill(LinearGradient.diagonal))
-        case .carrier(let label, let width):
-            Text(label)
-                .font(EType.micro).tracking(0.5)
-                .foregroundStyle(Brand.success)
-                .frame(width: width, height: 18)
-                .background(Capsule().fill(Brand.success.opacity(0.14)))
-        case .receiver(let label, let width):
-            Text(label)
-                .font(EType.micro).tracking(0.5)
-                .foregroundStyle(Brand.warning)
-                .frame(width: width, height: 18)
-                .overlay(Capsule().strokeBorder(Brand.warning.opacity(0.5), lineWidth: 0.75))
-                .background(Capsule().fill(palette.bgCardSoft))
-        }
-    }
-
-    private func statRow(_ stats: [Signatory.SigStat]) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 0) {
-            ForEach(stats) { stat in
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(stat.value)
-                        .font(.system(size: 11, weight: .bold).monospacedDigit())
-                        .foregroundStyle(statColor(stat.color))
-                    Text(stat.unit)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(palette.textSecondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-    }
-
-    private func statColor(_ c: Signatory.SigStat.ValueColor) -> Color {
-        switch c {
-        case .primary: return palette.textPrimary
-        case .success: return Brand.success
-        case .warn:    return Brand.warning
-        }
-    }
-
-    // MARK: Audit log row
-
-    private var auditLogRow: some View {
+    private var signatoriesUnavailable: some View {
         HStack(spacing: 0) {
             RoundedRectangle(cornerRadius: 1.5)
                 .fill(palette.textTertiary)
                 .frame(width: 3)
             HStack(alignment: .center, spacing: Space.s3) {
-                Text("12")
-                    .font(.system(size: 12, weight: .heavy, design: .rounded))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 28, height: 20)
-                    .background(palette.bgCardSoft)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                Image(systemName: "person.2.slash")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Audit log · 12 events")
+                    Text("Signatory state not available")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
-                    Text("Upload 2h · Verify 1h 58m · Shipper-sign 1h 50m · Carrier-sign 1h · …")
+                    Text("Per-party signing (method · device · timestamp) ships with documents.bol.getSignatories · EUSO-2148")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.78)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.82)
                 }
-                Spacer()
+                Spacer(minLength: 0)
             }
             .padding(.horizontal, Space.s4)
             .padding(.vertical, Space.s3)
@@ -621,7 +505,7 @@ struct ShipperBOLUpload: View {
 
     private var viewAuditTrailLink: some View {
         Button(action: tapAuditTrail) {
-            Text("View audit trail · 12 events · SHA-256 chain")
+            Text("View audit trail · SHA-256 chain")
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(LinearGradient.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -641,6 +525,26 @@ struct ShipperBOLUpload: View {
         if let url = URL(string: "https://app.eusotrip.com/shipper/bol/\(bolId)/audit-trail") {
             inAppLink = EusoSafariLink(url: url)
         }
+    }
+
+    // MARK: Load (mirror 300_DocumentsAll proc-call pattern)
+
+    private func load() async {
+        loading = true; loadError = nil
+        do {
+            let docs = try await EusoTripAPI.shared.documents.getAll(category: "BOL")
+            bolCount = docs.count
+            // Prefer the BOL whose name carries the supplied loadId
+            // anchor; otherwise surface the first (most-recent) BOL.
+            if !loadId.isEmpty {
+                bol = docs.first(where: { $0.name.localizedCaseInsensitiveContains(loadId) }) ?? docs.first
+            } else {
+                bol = docs.first
+            }
+        } catch {
+            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        loading = false
     }
 }
 
@@ -742,14 +646,14 @@ extension Notification.Name {
 // MARK: - Previews
 
 #Preview("229 · BOL Upload · Dark") {
-    ShipperBOLUpload(loadId: "LD-260427-A38FB12C7E")
+    ShipperBOLUpload()
         .environment(\.palette, Theme.dark)
         .preferredColorScheme(.dark)
         .background(Theme.dark.bgPage)
 }
 
 #Preview("229 · BOL Upload · Light") {
-    ShipperBOLUpload(loadId: "LD-260427-A38FB12C7E")
+    ShipperBOLUpload()
         .environment(\.palette, Theme.light)
         .preferredColorScheme(.light)
         .background(Theme.light.bgPage)
