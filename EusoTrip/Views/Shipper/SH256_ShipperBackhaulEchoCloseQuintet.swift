@@ -11,9 +11,18 @@
 //
 //  Closes the Shipper backhaul-echo chain that began at SH250.
 //  Shipper-vantage echo of the Catalyst CV364-CV368 close quintet.
-//  All 5 share `ShipperBackhaulEchoCloseBody`. Body reads
-//  `loads.getById`. Bottom nav frozen (Shipper: Home / Loads / ESANG
-//  / Me).
+//  All 5 share `ShipperBackhaulEchoCloseBody`.
+//
+//  Wire bindings (mirror 248_ShipperPODReceipt):
+//    loads.getById(loadId)         — load context (number, route, carrier,
+//                                     pallets, status, delivery time)
+//    podCapture.getForLoad(loadId) — POD record (pallets reconciled, seal,
+//                                     signature chain, payable status)
+//
+//  Every dock / pallet / BOL / HOS / POD field renders from the fetched
+//  load + POD record, or an honest em-dash "—" where no live source
+//  exists. No fabricated bay / pallet / BOL literals. Bottom nav frozen
+//  (Shipper: Home / Loads / ESANG / Me).
 //
 
 import SwiftUI
@@ -23,8 +32,25 @@ private struct SCLoadCtx: Decodable, Hashable {
     let loadNumber: String?
     let pickupCity: String?
     let destCity: String?
+    let trailerType: String?
     let rate: String?
+    let status: String?
+    let palletCount: Int?
+    let carrierName: String?
+    let actualDeliveryDate: String?
     let podCertId: String?
+}
+
+private struct SCPodCtx: Decodable, Hashable {
+    let loadId: Int?
+    let palletsReceived: Int?
+    let palletsExpected: Int?
+    let sealNumber: String?
+    let temperatureF: Double?
+    let signedByDriver: Bool?
+    let signedByReceiver: Bool?
+    let signedByShipper: Bool?
+    let payableStatus: String?
 }
 
 enum ShipperBackhaulEchoCloseKind: String {
@@ -36,8 +62,6 @@ private struct SCConfig {
     let citation: String
     let title: String
     let subhead: String
-    let pillCopy: String
-    let chainPill: String
     let echoState: String
 }
 
@@ -46,43 +70,33 @@ private extension ShipperBackhaulEchoCloseKind {
         switch self {
         case .dockedLoading:
             return .init(eyebrow: "SHIPPER · LOADS · CLOSED · DOCKED LOADING ECHO",
-                         citation: "§339 · BH-7C3A · DOCKED 4/N · SUB-AXIS 4/N",
-                         title: "Delivery · ME at bay 7B",
-                         subhead: "BH-7C3A · §339 · DOCKED 4/N",
-                         pillCopy: "Pallets 12/72 · DEPART 06:42 MST · 0:24 left · HOS 02:30 ON-DUTY · 8h 30m left · ledger sealed",
-                         chainPill: "BACKHAUL DELIVERY · MC-942 008 · ME BAY 7B PALLETS 12/72 · SUB-AXIS 4/N",
+                         citation: "§339 · DOCKED 4/N · SUB-AXIS 4/N",
+                         title: "Delivery · docked loading",
+                         subhead: "§339 · DOCKED 4/N",
                          echoState: "DOCKED LOADING")
         case .bolPreSign:
             return .init(eyebrow: "SHIPPER · LOADS · CLOSED · BOL PRE-SIGN ECHO",
-                         citation: "§346 · BH-7C3A · BOL 4/N · SUB-AXIS 4/N",
-                         title: "Delivery · ME at bay 7B",
-                         subhead: "BH-7C3A · §346 · BOL 4/N",
-                         pillCopy: "BOL DRAFT · packet BOL-NLR-LA · DEPART 06:42 MST · 0:02 left · HOS 02:52 · ledger sealed",
-                         chainPill: "BACKHAUL DELIVERY · MC-942 008 · ME BAY 7B BOL DRAFT 4 OF 4 · SUB-AXIS 4/N",
+                         citation: "§346 · BOL 4/N · SUB-AXIS 4/N",
+                         title: "Delivery · BOL pre-sign",
+                         subhead: "§346 · BOL 4/N",
                          echoState: "BOL PRE-SIGN")
         case .bolSigned:
             return .init(eyebrow: "SHIPPER · LOADS · CLOSED · BOL SIGNED ECHO",
-                         citation: "§350 · BH-7C3A · BOL SIGNED 4/N · SUB-AXIS 4/N",
-                         title: "Delivery · ME at bay 7B",
-                         subhead: "BH-7C3A · §350 · BOL SIGNED 4/N",
-                         pillCopy: "BOL SIGNED 0x9F1C · packet BOL-NLR-LA SIGNED · DEPART 06:42 MST window closed · HOS 03:01 · ledger sealed",
-                         chainPill: "BACKHAUL DELIVERY · MC-942 008 · ME BAY 7B BOL SIGNED 4 OF 4 · SUB-AXIS 4/N",
+                         citation: "§350 · BOL SIGNED 4/N · SUB-AXIS 4/N",
+                         title: "Delivery · BOL signed",
+                         subhead: "§350 · BOL SIGNED 4/N",
                          echoState: "BOL SIGNED")
         case .paperwork:
             return .init(eyebrow: "SHIPPER · LOADS · CLOSED · PAPERWORK ECHO",
-                         citation: "§354 · BH-7C3A · PAPERWORK 4/4 · QUARTET SEALED",
+                         citation: "§354 · PAPERWORK 4/4 · QUARTET SEALED",
                          title: "Paperwork · quartet 4 of 4 sealed",
-                         subhead: "BH-7C3A · §354 · PAPERWORK 4/4",
-                         pillCopy: "PAPERWORK OPEN · packet FILED · POD watch armed · DEPART 06:42 MST · HOS 03:05 · ledger sealed",
-                         chainPill: "BACKHAUL PAPERWORK · MC-942 008 · ME BAY 7B CLEARED · QUARTET 4 OF 4 · SEALED",
+                         subhead: "§354 · PAPERWORK 4/4",
                          echoState: "PAPERWORK")
         case .closedSeal:
             return .init(eyebrow: "SHIPPER · LOADS · CLOSED · CHAIN SEAL",
-                         citation: "§358 · BH-7C3A · CLOSED 4/4 · CHAIN SEALED",
+                         citation: "§358 · CLOSED 4/4 · CHAIN SEALED",
                          title: "Closed · chain sealed at four of four",
-                         subhead: "BH-7C3A · §358 · CLOSED 4/4 · CHAIN SEALED",
-                         pillCopy: "CLOSED SEALED · POD archived · wallet CREDITED · NET-30 · HOS 03:09 · BH-7C3A sealed",
-                         chainPill: "BACKHAUL CLOSED · MC-942 008 · ME BAY 7B CLEARED · CHAIN SEALED · QUARTET 4 OF 4",
+                         subhead: "§358 · CLOSED 4/4 · CHAIN SEALED",
                          echoState: "CLOSED SEAL")
         }
     }
@@ -110,6 +124,35 @@ private struct ShipperBackhaulEchoCloseBody: View {
 
     @Environment(\.palette) private var palette
     @State private var load: SCLoadCtx?
+    @State private var pod: SCPodCtx?
+
+    private static let dash = "—"
+
+    // ── Derived live values (em-dash where no live source) ──────────
+    private var loadLabel: String { load?.loadNumber ?? (load?.id.map { "LD-\($0)" } ?? Self.dash) }
+    private var routeLine: String {
+        guard let l = load else { return Self.dash }
+        let from = l.pickupCity ?? Self.dash
+        let to = l.destCity ?? Self.dash
+        let eq = l.trailerType ?? Self.dash
+        return "\(loadLabel) · \(from) → \(to) · \(eq)"
+    }
+    private var palletExpected: Int? { pod?.palletsExpected ?? load?.palletCount }
+    private var palletReceived: Int? { pod?.palletsReceived }
+    private var carrierLabel: String { load?.carrierName ?? Self.dash }
+    private var sealLabel: String { pod?.sealNumber ?? Self.dash }
+    private var podCertLabel: String { load?.podCertId ?? Self.dash }
+    private var payableLabel: String { (pod?.payableStatus).map { $0.uppercased() } ?? Self.dash }
+    private var podArchived: Bool { pod?.signedByReceiver == true && pod?.signedByShipper == true }
+
+    private func palletsFraction(_ rcv: Int?, _ exp: Int?) -> String {
+        switch (rcv, exp) {
+        case let (r?, e?): return "\(r)/\(e)"
+        case let (nil, e?): return "—/\(e)"
+        case let (r?, nil): return "\(r)/—"
+        default: return Self.dash
+        }
+    }
 
     var body: some View {
         let c = kind.config
@@ -119,14 +162,14 @@ private struct ShipperBackhaulEchoCloseBody: View {
                 citationPill(c)
                 chainPill(c)
                 identityRow
-                kpiGrid(c)
+                kpiGrid
                 nextStepCard
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 8)
         }
-        .task { await loadCtx() }
-        .refreshable { await loadCtx() }
+        .task { await loadAll() }
+        .refreshable { await loadAll() }
     }
 
     private func header(_ c: SCConfig) -> some View {
@@ -140,21 +183,25 @@ private struct ShipperBackhaulEchoCloseBody: View {
         }
     }
 
+    // Citation pill: §-anchored stage copy is static doctrine; the load
+    // line beneath it binds to the live fetched load (em-dash if absent).
     private func citationPill(_ c: SCConfig) -> some View {
         LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(c.citation).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text(c.pillCopy).font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true)
-                Text("LD-BH7C3A · PHX-WVDC dock 7B → Naturipe LA RDC").font(.caption2).foregroundStyle(palette.textSecondary)
+                Text("\(c.echoState) · ledger sealed").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true)
+                Text(routeLine).font(.caption2).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
     private func chainPill(_ c: SCConfig) -> some View {
-        LifecycleCard {
+        let carrier = carrierLabel
+        let pallets = palletsFraction(palletReceived, palletExpected)
+        return LifecycleCard {
             VStack(alignment: .leading, spacing: 4) {
                 Text("\(c.echoState) · ECHO CLOSED").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.green)
-                Text(c.chainPill).font(.caption2).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+                Text("BACKHAUL · \(carrier) · \(loadLabel) · PALLETS \(pallets)").font(.caption2).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -165,51 +212,57 @@ private struct ShipperBackhaulEchoCloseBody: View {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
                     .overlay(Text("DU").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Eusorone Technologies · Diego Usoro · shipper-of-record").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("companyId 1 · LD-BH7C3A · ledger sealed · backhaul echo only").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text("Shipper-of-record · backhaul echo only").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                    Text("\(loadLabel) · ledger sealed").font(.caption2).foregroundStyle(palette.textTertiary)
                 }
                 Spacer()
             }
         }
     }
 
-    private func kpiGrid(_ c: SCConfig) -> some View {
+    private var kpiGrid: some View {
+        let exp = palletExpected
+        let rcv = palletReceived
+        let pallets = palletsFraction(rcv, exp)
+        let palletsLoaded = exp.map { "\($0)/\($0)" } ?? Self.dash
         let kpis: [(String, String, String, Color)] = {
             switch kind {
             case .dockedLoading:
                 return [
-                    ("BAY",     "7B",                 "OCCUPIED · live",         .orange),
-                    ("PALLETS", "12/72",                "loading · 4 ppm",        .blue),
-                    ("DEPART",  "06:42",                 "MST · 0:24 left",       .blue),
-                    ("LEDGER",  "SEALED",                  "your chain · closed", .green),
+                    ("CARRIER", carrierLabel,                "backhaul",                .blue),
+                    ("PALLETS", pallets,                      exp == nil ? "—" : "loading", .blue),
+                    ("SEAL",    sealLabel,                    pod?.sealNumber == nil ? "—" : "live", .blue),
+                    ("LEDGER",  "SEALED",                     "your chain · closed",     .green),
                 ]
             case .bolPreSign:
                 return [
-                    ("BOL",     "DRAFT",                 "BOL-NLR-LA · ME signing", .blue),
-                    ("PALLETS", "72/72",                  "LOADED · sealed",       .green),
-                    ("DEPART",  "06:42",                   "MST · 0:02 left",      .orange),
-                    ("LEDGER",  "SEALED",                    "your chain · closed", .green),
+                    ("BOL",     pod == nil ? Self.dash : "DRAFT", pod == nil ? "—" : "pre-sign", .blue),
+                    ("PALLETS", palletsLoaded,                exp == nil ? "—" : "LOADED",   .green),
+                    ("SEAL",    sealLabel,                    pod?.sealNumber == nil ? "—" : "applied", .blue),
+                    ("LEDGER",  "SEALED",                     "your chain · closed",     .green),
                 ]
             case .bolSigned:
+                let bolSigned = pod?.signedByDriver == true
                 return [
-                    ("BOL",     "SIGNED",                  "0x9F1C · verified",   .green),
-                    ("DEPART",  "WINDOW",                   "closed · departing", .green),
-                    ("HOS",     "03:01",                     "ON-DUTY · clean",   .green),
-                    ("LEDGER",  "SEALED",                      "your chain · closed", .green),
+                    ("BOL",     bolSigned ? "SIGNED" : Self.dash, bolSigned ? "verified" : "—", bolSigned ? .green : .blue),
+                    ("PALLETS", pallets,                      exp == nil ? "—" : "in transit", bolSigned ? .green : .blue),
+                    ("SEAL",    sealLabel,                    pod?.sealNumber == nil ? "—" : "intact", .blue),
+                    ("LEDGER",  "SEALED",                     "your chain · closed",     .green),
                 ]
             case .paperwork:
+                let filed = pod != nil
                 return [
-                    ("PACKET",  "FILED",                    "BH7C3A-FILED",       .green),
-                    ("POD",     "WATCH",                      "armed",            .blue),
-                    ("QUARTET", "4/4",                          "sealed · §354",    .green),
-                    ("LEDGER",  "SEALED",                         "your chain · closed", .green),
+                    ("PACKET",  filed ? "FILED" : Self.dash,  filed ? "POD watch" : "—",     filed ? .green : .blue),
+                    ("POD",     podArchived ? "ARCHIVED" : "WATCH", podArchived ? "co-signed" : "armed", podArchived ? .green : .blue),
+                    ("QUARTET", "4/4",                        "sealed · §354",           .green),
+                    ("LEDGER",  "SEALED",                     "your chain · closed",     .green),
                 ]
             case .closedSeal:
                 return [
-                    ("POD",     "ARCHIVED",                       load?.podCertId ?? "BH7C3A-POD-archived", .green),
-                    ("WALLET",  "CREDITED",                          "NET-30 wired", .green),
-                    ("QUARTET", "4/4",                                "chain sealed",  .green),
-                    ("LEDGER",  "SEALED",                                 "BH-7C3A closed", .green),
+                    ("POD",     podArchived ? "ARCHIVED" : Self.dash, podCertLabel, podArchived ? .green : .blue),
+                    ("PAYABLE", payableLabel,                 pod?.payableStatus == nil ? "—" : "NET-30", payableLabel == Self.dash ? .blue : .green),
+                    ("QUARTET", "4/4",                        "chain sealed",            .green),
+                    ("LEDGER",  "SEALED",                     "\(loadLabel) closed",     .green),
                 ]
             }
         }()
@@ -232,11 +285,11 @@ private struct ShipperBackhaulEchoCloseBody: View {
     private var nextStepCard: some View {
         let copy: String = {
             switch kind {
-            case .dockedLoading: return "ME at bay 7B loading at 4 ppm. Echo closes on dock-out; no shipper action needed."
-            case .bolPreSign:    return "BOL draft armed for ME signature. Echo closes when sig-hash lands."
-            case .bolSigned:     return "BOL signed and verified (0x9F1C). ME rolls; paperwork-watch arms on packet filing."
-            case .paperwork:     return "Paperwork filed and POD watch armed. POD-ink fires when receiver co-signs."
-            case .closedSeal:    return "Chain sealed. POD archived to BH-7C3A, ME wallet credited NET-30. Backhaul echo fully closed."
+            case .dockedLoading: return "Carrier docked and loading. Echo closes on dock-out; no shipper action needed."
+            case .bolPreSign:    return "BOL draft armed for carrier signature. Echo closes when the sig-hash lands."
+            case .bolSigned:     return "BOL signed and verified. Carrier rolls; paperwork-watch arms on packet filing."
+            case .paperwork:     return "Paperwork filed and POD watch armed. POD-ink fires when the receiver co-signs."
+            case .closedSeal:    return "Chain sealed. POD archived, carrier wallet credited. Backhaul echo fully closed."
             }
         }()
         return LifecycleCard {
@@ -247,9 +300,18 @@ private struct ShipperBackhaulEchoCloseBody: View {
         }
     }
 
+    private func loadAll() async {
+        async let l: Void = loadCtx()
+        async let p: Void = loadPOD()
+        _ = await (l, p)
+    }
     private func loadCtx() async {
         struct In: Encodable { let id: String }
         do { load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId)) } catch { /* */ }
+    }
+    private func loadPOD() async {
+        struct In: Encodable { let loadId: String }
+        do { pod = try await EusoTripAPI.shared.query("podCapture.getForLoad", input: In(loadId: loadId)) } catch { /* */ }
     }
 }
 

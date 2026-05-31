@@ -771,10 +771,6 @@ enum ScreenRegistry {
         // ids/empty strings so the registry walker can paint them; live
         // call sites override with the real value at navigation time.
         // Skipped intentionally:
-        //   • 260 (PostedAwaitingBidsScreen) — `#if false` shelved per
-        //     the file header doctrine: references LoadsAPI.cancel and
-        //     OrbeSang.State.alert, which don't exist on the iOS
-        //     client today. Resurrect once those APIs land.
         //   • 324 (ComplianceDashboardScreen) — superseded by 216
         //     ("Shipper · Compliance"), which Me hub 320e routes to.
         //   • 410 LoadsFilterSheetScreen / 411 LoadsSortSheetScreen —
@@ -857,9 +853,11 @@ enum ScreenRegistry {
         list.append(.init(id: "257", title: "Shipper · Post Load · Hazmat",    role: .shipper) { p in AnyView(PostLoadHazmatSubformScreen(theme: p, draft: PostLoadDraft())) })
         list.append(.init(id: "258", title: "Shipper · Post Load · Reefer",    role: .shipper) { p in AnyView(PostLoadReeferSubformScreen(theme: p, draft: PostLoadDraft())) })
         list.append(.init(id: "259", title: "Shipper · Post Load · Templates", role: .shipper) { p in AnyView(PostLoadTemplatesScreen(theme: p, draft: PostLoadDraft())) })
-        // 260 (PostedAwaitingBids) is shelved (LoadsAPI.cancel missing)
-        // and intentionally NOT registered — see the `#if false` wrap
-        // in the file header.
+        // 260 (PostedAwaitingBids) un-shelved 2026-05-31 — renders
+        // from `shippers.getLifecycleSnapshot` + cancels via the real
+        // `loads.cancel` proc. 254 "Track this load" deep-links here
+        // for a freshly posted load (POSTED / awaiting-bids state).
+        list.append(.init(id: "260", title: "Shipper · Posted · Awaiting Bids", role: .shipper) { p in AnyView(PostedAwaitingBidsScreen(theme: p, loadId: "0")) })
         // 261-269 lifecycle surfaces (load-context detail screens).
         // Each takes a `loadId`; we hand `"0"` for registry-walker
         // entry. Production reaches these via load detail or push

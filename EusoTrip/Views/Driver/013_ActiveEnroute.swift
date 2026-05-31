@@ -20,12 +20,18 @@
 //      on the closest matching forward hop + chains into the
 //      local `lifecycleAdvance` closure so the trip walks to 014.
 //    • `Call shipper` deeplinks to `tel:` using the shipper's
-//      phone from the Load record.
-//    • `HereMapView` renders HERE Platform raster tiles + a
-//      gradient polyline from the driver's current fix to the
-//      pickup coordinate. Truck-aware routing (hazmat avoid-
-//      tunnels, low-clearance) is server-computed via HERE
-//      Routing v8 per the doctrine.
+//      phone from the Load record; disables honestly ("No phone
+//      on file") while the wire shape carries no contact phone.
+//    • The HUD figures (ETA clock, remaining mi, remaining drive
+//      time, approach progress) are computed LIVE from a HERE
+//      Routing v8 leg between the driver's CoreLocation fix and
+//      the pickup coordinate. No seeded constants — any field
+//      without a live source renders an honest em-dash "—"
+//      (e.g. instantaneous FUEL BURN: no truck-telemetry feed
+//      exists, so it is always "—").
+//    • `HereLiveMapView` renders the OMV vector map + a polyline
+//      from pickup to delivery. Truck-aware routing is computed
+//      via HERE Routing v8 per the doctrine.
 //
 //  Role + vertical awareness:
 //    • DRIVER / CATALYST / ESCORT → "En route · Pickup"
@@ -64,32 +70,40 @@ struct ActiveEnroute: View {
     enum Register { case night, morning }
     let register: Register
 
+    @Environment(\.openURL) private var openURL
+
     // Live server-backed state
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: Load?
 
-    // MARK: - Figma-verbatim fallback values
+    // MARK: - Live nav state (HERE Routing v8 · current fix → pickup)
     //
-    // The Figma frame (013 En Route to Pickup.png) shows Marcus
-    // Reyes / Koch Fertilizer Belle Plaine / 412 mi of 624 mi
-    // remaining / NH3 tanker. These constants are the source-of-
-    // truth for preview + first-run render when the backend has
-    // no active load; once the driver actually has a load on
-    // file, every field below is replaced from `activeLoad`.
+    // FOUNDER BAR: every HUD figure below is computed from a real
+    // source — the HERE-routed leg from the driver's live GPS fix
+    // to the pickup coordinate, or the load's own pickup window.
+    // There are NO seeded constants. When a source isn't available
+    // (no active load, no GPS fix, no truck-telemetry fuel feed),
+    // the field renders an honest em-dash "—".
 
-    private let figmaManeuverDistance   = "In 2.4 mi"
-    private let figmaManeuverDetail     = "Take Exit 228 · IA-21 · Belle Plaine"
-    private let figmaClock              = "08:14 CDT"
-    private let figmaEtaLabel           = "ETA · CDT"
-    private let figmaMilesLabel         = "412 mi of 624 mi"
-    private let figmaTimeRemaining      = "2h 08m remaining"
-    private let figmaProgress: Double   = 0.66   // 412 / 624
-    private let figmaFacility           = "Koch Fertilizer Belle Plaine"
-    private let figmaAddress            = "820 3rd St E · Belle Plaine IA 52208"
-    private let figmaAppt               = "09:00 CDT"
-    private let figmaDistanceLeft       = "42.7 mi"
-    private let figmaDriveTime          = "0h 51m"
-    private let figmaFuelBurn           = "6.1 gal"
+    /// Remaining distance to the pickup, in meters, from the last
+    /// HERE route between the live GPS fix and the pickup coordinate.
+    @State private var remainingMeters: Double?
+    /// Remaining drive time to pickup, in seconds (HERE summary).
+    @State private var remainingSeconds: Double?
+    /// ISO-8601 arrival time HERE computed for the pickup.
+    @State private var etaISO: String?
+    /// First-measured fix→pickup distance (meters). Captured once so
+    /// the approach-progress bar has an honest live denominator: the
+    /// fraction is (baseline − remaining) / baseline, both numbers
+    /// being real HERE measurements.
+    @State private var baselineMeters: Double?
+
+    // NOTE: turn-by-turn maneuver narration ("Take Exit 228 · …") has
+    // NO live source — `HereRouteModels.HereRouteSection` does not
+    // decode the `actions` array, so the next-step instruction text is
+    // not available on the wire. The maneuver card therefore renders
+    // the honest remaining-distance heading + the pickup road/city
+    // from the load, never a fabricated exit string.
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -139,7 +153,56 @@ struct ActiveEnroute: View {
         await lifecycle.hydrateActiveLoad()
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
-        activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        let load = try? await EusoTripAPI.shared.loads.getById(n)
+        activeLoad = load
+        if let load { await refreshLiveNav(for: load) }
+    }
+
+    /// Computes the live remaining leg from the driver's current GPS
+    /// fix to the pickup coordinate via HERE Routing v8 (truck-aware),
+    /// and caches the summary numbers that drive the HUD. Every value
+    /// is a real measurement; on any failure (no fix, no pickup, HERE
+    /// error) the cached values stay nil and the HUD shows "—".
+    @MainActor
+    private func refreshLiveNav(for load: Load) async {
+        guard let pickup = load.pickupLocation,
+              pickup.lat != 0 || pickup.lng != 0 else { return }
+
+        // Live GPS fix. nil when denied / timed out → HUD reads "—".
+        guard let fix = await DriverLocationResolver.shared.currentCoordinate() else {
+            remainingMeters = nil
+            remainingSeconds = nil
+            etaISO = nil
+            return
+        }
+
+        let stops = HereStops(
+            origin: fix,
+            destination: CLLocationCoordinate2D(latitude: pickup.lat, longitude: pickup.lng)
+        )
+        let profile = TruckProfile.from(load: load)
+        do {
+            let resp = try await HereRoutingClient.shared.route(stops: stops, profile: profile)
+            guard let section = resp.routes.first?.sections.first,
+                  let summary = section.summary else {
+                remainingMeters = nil
+                remainingSeconds = nil
+                etaISO = nil
+                return
+            }
+            remainingMeters = Double(summary.length)
+            remainingSeconds = Double(summary.duration)
+            etaISO = section.arrival.time
+            // Capture the approach baseline exactly once so the
+            // progress bar has an honest live denominator.
+            if baselineMeters == nil { baselineMeters = Double(summary.length) }
+        } catch {
+            // Honest failure: leave the numbers nil so the HUD shows
+            // "—" rather than a stale or fabricated figure.
+            remainingMeters = nil
+            remainingSeconds = nil
+            etaISO = nil
+        }
     }
 
     /// Fires the next forward state transition on the server
@@ -160,14 +223,102 @@ struct ActiveEnroute: View {
         advance?()
     }
 
-    // MARK: - Data bindings (live → fixture)
+    // MARK: - Data bindings (live HERE leg → honest em-dash)
 
-    private var titleHeading: String {
-        figmaManeuverDistance
+    private static let metersPerMile = 1609.344
+
+    /// "42.7 mi" from the live HERE remaining length, else "—".
+    private var remainingMilesText: String {
+        guard let m = remainingMeters else { return "—" }
+        return String(format: "%.1f mi", m / Self.metersPerMile)
     }
 
+    /// "0h 51m" from the live HERE remaining duration, else "—".
+    private var remainingDriveText: String {
+        guard let s = remainingSeconds, s.isFinite, s >= 0 else { return "—" }
+        let total = Int(s.rounded())
+        let h = total / 3600
+        let mins = (total % 3600) / 60
+        return "\(h)h \(String(format: "%02dm", mins))"
+    }
+
+    /// "08:14" local clock from the live HERE arrival ISO, else "—".
+    private var etaClockText: String {
+        guard let iso = etaISO,
+              let date = Self.parseISO(iso) else { return "—" }
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f.string(from: date)
+    }
+
+    /// "ETA · CDT" with the device timezone abbreviation, else "ETA".
+    private var etaLabelText: String {
+        guard etaISO != nil else { return "ETA" }
+        let tz = TimeZone.current.abbreviation() ?? ""
+        return tz.isEmpty ? "ETA" : "ETA · \(tz)"
+    }
+
+    /// "412 mi" — live remaining distance for the miles row, else "—".
+    private var milesLabelText: String { remainingMilesText }
+
+    /// "2h 08m remaining" from the live duration, else "—".
+    private var timeRemainingText: String {
+        guard let s = remainingSeconds, s.isFinite, s >= 0 else { return "—" }
+        let total = Int(s.rounded())
+        let h = total / 3600
+        let mins = (total % 3600) / 60
+        return "\(h)h \(String(format: "%02dm", mins)) remaining"
+    }
+
+    /// Honest approach fraction: (baseline − remaining) / baseline,
+    /// both real HERE measurements. 0 when no live leg is on file.
+    private var liveProgress: Double {
+        guard let base = baselineMeters, base > 0,
+              let rem = remainingMeters else { return 0 }
+        let consumed = base - rem
+        return min(max(consumed / base, 0), 1)
+    }
+
+    /// Pickup-window clock from the load's `pickupDate` (the APPT
+    /// shown beside the pickup facility), else "—".
+    private var appointmentText: String {
+        guard let iso = activeLoad?.pickupDate,
+              let date = Self.parseISO(iso) else { return "—" }
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        let tz = TimeZone.current.abbreviation() ?? ""
+        return tz.isEmpty ? f.string(from: date) : "\(f.string(from: date)) \(tz)"
+    }
+
+    /// Instantaneous FUEL BURN has NO live source — there is no
+    /// truck-telemetry feed anywhere in the platform — so it renders
+    /// an honest em-dash, never a fabricated gallons figure.
+    private var fuelBurnText: String { "—" }
+
+    /// Maneuver heading: live remaining distance to the pickup. HERE
+    /// turn-by-turn `actions` are not decoded by the route models, so
+    /// we never fabricate an exit-narration string.
+    private var titleHeading: String {
+        guard remainingMeters != nil else { return "—" }
+        return "In \(remainingMilesText)"
+    }
+
+    /// Maneuver detail: the live pickup destination (city/state) from
+    /// the load, else an honest em-dash.
     private var titleDetail: String {
-        figmaManeuverDetail
+        if let load = activeLoad, let loc = load.pickupLocation, !loc.cityState.isEmpty {
+            return "Next stop · \(loc.cityState)"
+        }
+        return "—"
+    }
+
+    /// Lenient ISO-8601 parse (with and without fractional seconds).
+    private static func parseISO(_ s: String) -> Date? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f.date(from: s) { return d }
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: s)
     }
 
     private var destinationFacility: String {
@@ -177,7 +328,7 @@ struct ActiveEnroute: View {
             let stateSuffix = loc.state.isEmpty ? "" : ", \(loc.state)"
             return "\(loc.city)\(stateSuffix)"
         }
-        return figmaFacility
+        return "—"
     }
 
     private var destinationAddress: String {
@@ -190,7 +341,7 @@ struct ActiveEnroute: View {
             if !loc.zipCode.isEmpty { parts.append(loc.zipCode) }
             return parts.joined(separator: " · ")
         }
-        return figmaAddress
+        return "—"
     }
 
     // MARK: - Commodity chip row
@@ -209,10 +360,10 @@ struct ActiveEnroute: View {
 
     private var chips: [EnrouteChip] {
         var out: [EnrouteChip] = []
-        // HAZMAT chip — hidden when load has no hazmat class.
+        // HAZMAT chip — rendered only when the live load actually
+        // carries a hazmat class. No load = no fabricated chip.
         let isHazmat = (activeLoad?.hazmatClass ?? "").isEmpty == false
-        let alwaysShowHazmat = activeLoad == nil  // Figma frame shows it
-        if isHazmat || alwaysShowHazmat {
+        if isHazmat {
             out.append(EnrouteChip(label: "HAZMAT ROUTE LOCKED", tint: Brand.info, icon: "lock.shield"))
         }
         // 2026-05-17 — Mode chip on the driver en-route header. Hidden
@@ -252,16 +403,11 @@ struct ActiveEnroute: View {
                     icon: nil
                 ))
             }
-        } else {
-            out.append(EnrouteChip(label: "NH3 · UN1005 · TANK", tint: Brand.success, icon: nil))
         }
-        // Low-clearance chip — HERE route segment attribute. Only
-        // rendered when a real clearance warning is within the
-        // next ~5 mi. Figma fixture uses 13'06" · 4 MI as the
-        // source-of-truth placeholder.
-        if activeLoad == nil {
-            out.append(EnrouteChip(label: "LOW-CLEARANCE · 13'06\" · 4 MI", tint: Brand.warning, icon: nil))
-        }
+        // Low-clearance chip — sourced from HERE route span
+        // truck-attributes. The route models don't currently decode
+        // per-span clearance limits, so there is no live source for a
+        // clearance warning and we never fabricate one.
         return out
     }
 
@@ -293,15 +439,15 @@ struct ActiveEnroute: View {
                 addOns: .driverEnRoute
             )
         } else {
-            figmaMapFallback
+            mapPlaceholder
         }
     }
 
-    /// Stylized canvas preview used when no active load is on
-    /// file (previews + first-run). Matches the Figma's ghost-
-    /// grid + gradient polyline so the visual still reads
-    /// on-brand without real tiles.
-    private var figmaMapFallback: some View {
+    /// Stylized ghost-grid canvas shown only when no active load
+    /// is on file (previews + first-run). It carries NO business
+    /// data — it's a neutral on-brand backdrop, not a fabricated
+    /// route.
+    private var mapPlaceholder: some View {
         ZStack {
             palette.bgPage.ignoresSafeArea()
             Canvas { ctx, size in
@@ -393,10 +539,10 @@ struct ActiveEnroute: View {
                 .foregroundStyle(palette.textPrimary)
             Spacer()
             VStack(alignment: .trailing, spacing: 0) {
-                Text(figmaClock)
+                Text(etaClockText)
                     .font(EType.bodyStrong.monospaced())
                     .foregroundStyle(palette.textPrimary)
-                Text(figmaEtaLabel)
+                Text(etaLabelText)
                     .font(EType.micro)
                     .tracking(1.1)
                     .foregroundStyle(palette.textTertiary)
@@ -416,7 +562,7 @@ struct ActiveEnroute: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(palette.tintNeutral.opacity(0.4))
                 Capsule().fill(LinearGradient.diagonal)
-                    .frame(width: max(4, geo.size.width * figmaProgress))
+                    .frame(width: max(4, geo.size.width * liveProgress))
             }
         }
         .frame(height: 4)
@@ -424,11 +570,11 @@ struct ActiveEnroute: View {
 
     private var milesRow: some View {
         HStack {
-            Text(figmaMilesLabel)
+            Text(milesLabelText)
                 .font(EType.caption.monospaced())
                 .foregroundStyle(palette.textTertiary)
             Spacer()
-            Text(figmaTimeRemaining)
+            Text(timeRemainingText)
                 .font(EType.caption.monospaced())
                 .foregroundStyle(palette.textTertiary)
         }
@@ -489,7 +635,7 @@ struct ActiveEnroute: View {
                         .font(EType.micro)
                         .tracking(1.3)
                         .foregroundStyle(palette.textTertiary)
-                    Text(figmaAppt)
+                    Text(appointmentText)
                         .font(EType.bodyStrong.monospaced())
                         .foregroundStyle(palette.textPrimary)
                 }
@@ -497,9 +643,9 @@ struct ActiveEnroute: View {
 
             // Tiles
             HStack(spacing: Space.s2) {
-                tile(label: "DISTANCE", value: figmaDistanceLeft)
-                tile(label: "DRIVE TIME", value: figmaDriveTime)
-                tile(label: "FUEL BURN", value: figmaFuelBurn)
+                tile(label: "DISTANCE", value: remainingMilesText)
+                tile(label: "DRIVE TIME", value: remainingDriveText)
+                tile(label: "FUEL BURN", value: fuelBurnText)
             }
 
             // CTAs
@@ -507,10 +653,10 @@ struct ActiveEnroute: View {
                 Button {
                     callShipper()
                 } label: {
-                    Text("Call shipper")
+                    Text(shipperPhone == nil ? "No phone on file" : "Call shipper")
                         .font(EType.body)
                         .fontWeight(.semibold)
-                        .foregroundStyle(palette.textPrimary)
+                        .foregroundStyle(shipperPhone == nil ? palette.textTertiary : palette.textPrimary)
                         .frame(maxWidth: .infinity, minHeight: 48)
                         .overlay(
                             RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
@@ -518,6 +664,7 @@ struct ActiveEnroute: View {
                         )
                 }
                 .buttonStyle(.plain)
+                .disabled(shipperPhone == nil)
 
                 Button {
                     Task { await continueRoute() }
@@ -589,16 +736,26 @@ struct ActiveEnroute: View {
 
     // MARK: - Helpers
 
-    /// Deeplink to `tel:` using the shipper's phone on the
-    /// active load. Falls through to a silent no-op when no
-    /// phone is attached — never fabricate a contact.
+    /// The shipper's dialable phone, when the live `Load` carries
+    /// one. The current `Load` Codable shape does NOT surface a
+    /// shipper/contact phone (no field on the wire), so this stays
+    /// nil and the Call button disables itself honestly — we never
+    /// fabricate a number. Mirrors the receiver-call pattern on 038.
+    private var shipperPhone: String? {
+        // Wired to a real value once `loads.getById` surfaces
+        // `shipper.phone`. Until then there is no live source.
+        nil
+    }
+
+    /// Deeplink to `tel:` using the shipper's phone on the active
+    /// load. No-op when no phone is on file — never fabricate a
+    /// contact, never dial a placeholder number.
     private func callShipper() {
-        // The `Load` struct doesn't expose shipperPhone in its
-        // current shape. In production this pulls from
-        // `contacts.getById(shipperId)`. For now this button
-        // goes through the driver nav for dispatch relay — a
-        // follow-up firing wires the direct shipper phone.
+        guard let raw = shipperPhone, !raw.isEmpty else { return }
+        let digits = raw.filter { "+0123456789".contains($0) }
+        guard !digits.isEmpty, let url = URL(string: "tel:\(digits)") else { return }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        openURL(url)
     }
 }
 

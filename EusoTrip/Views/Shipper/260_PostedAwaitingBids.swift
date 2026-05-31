@@ -1,24 +1,30 @@
-// SHELVED 2026-05-01 — pre-existing references to APIs that don't
-// exist on the current iOS client (e.g. LoadsAPI.cancel,
-// OrbeSang.State.alert). Not registered in ScreenRegistry, so the
-// file is dead-coded today. Wrapped in `#if false` so the file
-// reference stays in the Xcode target but the body skips
-// compilation. Resurrect when the role-by-role audit reaches this
-// surface and the missing API endpoints are added.
-#if false
 //
 //  260_PostedAwaitingBids.swift
 //  EusoTrip — Shipper · Lifecycle Stage 1 · POSTED · awaiting bids.
 //
-//  Round 4 / Arc E. Refactored 2026-04-28 to consume
-//  `shippers.getLifecycleSnapshot(loadId)` via `ShipperLifecycleSnapshotStore`.
-//  Every field renders from the server snapshot — no fabricated values.
+//  Un-shelved 2026-05-31. The prior SHELVED header cited
+//  `LoadsAPI.cancel` / `OrbeSang.State.alert` as missing — but
+//  `EusoTripAPI.shared.loads.cancel(loadId:reason:waiveTonus:)` is a
+//  real proc (`loads.cancel`, loads.ts:1245 → `CancelAck`), and the
+//  stale `OrbeSang.State.alert` reference was already removed in the
+//  2026-04-28 snapshot-store refactor. Body now compiles against the
+//  live API surface unchanged in shape.
+//
+//  Every field renders from `shippers.getLifecycleSnapshot(loadId)`
+//  via `LifecycleScaffold` — no fabricated values. Empty/zero states
+//  render honest em-dashes and "no bids yet" copy.
 //
 //  Surfaces:
-//    • Reach card  — server-side bidsSummary (count) + recommendedBidId.
-//    • CTA row     — Edit load (mutates `shippers.update`) · Cancel
-//                    (mutates `loads.cancel`). Buttons fire real async
-//                    mutations and refresh the snapshot.
+//    • Reach card  — server-side bidsSummary (count / topBid /
+//                    averageBid) + recommendedBidId.
+//    • Load card   — posted rate / distance / equipment / windows
+//                    straight from the snapshot's `load`.
+//    • CTA row     — Edit load (deep-links to the 204/post-load editor)
+//                    · Cancel (mutates the real `loads.cancel` proc,
+//                    then routes back to the loads list).
+//
+//  Reached from 254 ("Track this load") for a freshly posted load,
+//  which is in the POSTED / awaiting-bids state this screen owns.
 //
 
 import SwiftUI
@@ -184,5 +190,3 @@ private struct PostedBody: View {
         .environmentObject(EusoTripSession())
         .preferredColorScheme(.light)
 }
-
-#endif
