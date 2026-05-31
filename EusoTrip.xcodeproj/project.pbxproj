@@ -733,6 +733,14 @@
 		EBG050000000000000000000 /* 645_RailDetentionDashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBH050000000000000000000 /* 645_RailDetentionDashboard.swift */; };
 		EBG060000000000000000000 /* 646_RailRebookingOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBH060000000000000000000 /* 646_RailRebookingOptions.swift */; };
 		EBG070000000000000000000 /* 647_RailMultimodalAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBH070000000000000000000 /* 647_RailMultimodalAnalytics.swift */; };
+		ECG000000000000000000000 /* 648_RailDemurrageCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECH000000000000000000000 /* 648_RailDemurrageCalculator.swift */; };
+		ECG010000000000000000000 /* 649_RailDetentionByCustomer.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECH010000000000000000000 /* 649_RailDetentionByCustomer.swift */; };
+		ECG020000000000000000000 /* 650_RailDetentionHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECH020000000000000000000 /* 650_RailDetentionHistory.swift */; };
+		ECG030000000000000000000 /* 651_RailAutoDetentionRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECH030000000000000000000 /* 651_RailAutoDetentionRules.swift */; };
+		ECG040000000000000000000 /* 652_RailClaimsDashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECH040000000000000000000 /* 652_RailClaimsDashboard.swift */; };
+		ECG050000000000000000000 /* 653_RailClaimsList.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECH050000000000000000000 /* 653_RailClaimsList.swift */; };
+		ECG060000000000000000000 /* 654_RailClaimWorkflow.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECH060000000000000000000 /* 654_RailClaimWorkflow.swift */; };
+		ECG070000000000000000000 /* 655_RailLossPrevention.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECH070000000000000000000 /* 655_RailLossPrevention.swift */; };
 		FD97CECB2FC1D5120016DF5F /* 650_VesselOperatorHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */; };
 		VOTMBUILD1 /* VesselOceanTrackMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = VOTMFREF1 /* VesselOceanTrackMap.swift */; };
 		FEB000000000000000000000 /* 659_VesselPortDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA000000000000000000000 /* 659_VesselPortDirectory.swift */; };
@@ -1632,6 +1640,14 @@
 		EBH050000000000000000000 /* 645_RailDetentionDashboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 645_RailDetentionDashboard.swift; sourceTree = "<group>"; };
 		EBH060000000000000000000 /* 646_RailRebookingOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 646_RailRebookingOptions.swift; sourceTree = "<group>"; };
 		EBH070000000000000000000 /* 647_RailMultimodalAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 647_RailMultimodalAnalytics.swift; sourceTree = "<group>"; };
+		ECH000000000000000000000 /* 648_RailDemurrageCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 648_RailDemurrageCalculator.swift; sourceTree = "<group>"; };
+		ECH010000000000000000000 /* 649_RailDetentionByCustomer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 649_RailDetentionByCustomer.swift; sourceTree = "<group>"; };
+		ECH020000000000000000000 /* 650_RailDetentionHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 650_RailDetentionHistory.swift; sourceTree = "<group>"; };
+		ECH030000000000000000000 /* 651_RailAutoDetentionRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 651_RailAutoDetentionRules.swift; sourceTree = "<group>"; };
+		ECH040000000000000000000 /* 652_RailClaimsDashboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 652_RailClaimsDashboard.swift; sourceTree = "<group>"; };
+		ECH050000000000000000000 /* 653_RailClaimsList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 653_RailClaimsList.swift; sourceTree = "<group>"; };
+		ECH060000000000000000000 /* 654_RailClaimWorkflow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 654_RailClaimWorkflow.swift; sourceTree = "<group>"; };
+		ECH070000000000000000000 /* 655_RailLossPrevention.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 655_RailLossPrevention.swift; sourceTree = "<group>"; };
 		FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 650_VesselOperatorHome.swift; sourceTree = "<group>"; };
 		VOTMFREF1 /* VesselOceanTrackMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VesselOceanTrackMap.swift; path = EusoTrip/Views/Vessel/VesselOceanTrackMap.swift; sourceTree = SOURCE_ROOT; };
 		FEA000000000000000000000 /* 659_VesselPortDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 659_VesselPortDirectory.swift; sourceTree = "<group>"; };
@@ -2720,6 +2736,14 @@
 				EBH050000000000000000000 /* 645_RailDetentionDashboard.swift */,
 				EBH060000000000000000000 /* 646_RailRebookingOptions.swift */,
 				EBH070000000000000000000 /* 647_RailMultimodalAnalytics.swift */,
+				ECH000000000000000000000 /* 648_RailDemurrageCalculator.swift */,
+				ECH010000000000000000000 /* 649_RailDetentionByCustomer.swift */,
+				ECH020000000000000000000 /* 650_RailDetentionHistory.swift */,
+				ECH030000000000000000000 /* 651_RailAutoDetentionRules.swift */,
+				ECH040000000000000000000 /* 652_RailClaimsDashboard.swift */,
+				ECH050000000000000000000 /* 653_RailClaimsList.swift */,
+				ECH060000000000000000000 /* 654_RailClaimWorkflow.swift */,
+				ECH070000000000000000000 /* 655_RailLossPrevention.swift */,
 				FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */,
 				FD97CECE2FC1D7C80016DF5F /* 552_RailCompliance.swift */,
 				FDA10000000000000000553F /* 553_RailShipmentDetailCarrier.swift */,
@@ -3588,6 +3612,14 @@
 				EBG050000000000000000000 /* 645_RailDetentionDashboard.swift in Sources */,
 				EBG060000000000000000000 /* 646_RailRebookingOptions.swift in Sources */,
 				EBG070000000000000000000 /* 647_RailMultimodalAnalytics.swift in Sources */,
+				ECG000000000000000000000 /* 648_RailDemurrageCalculator.swift in Sources */,
+				ECG010000000000000000000 /* 649_RailDetentionByCustomer.swift in Sources */,
+				ECG020000000000000000000 /* 650_RailDetentionHistory.swift in Sources */,
+				ECG030000000000000000000 /* 651_RailAutoDetentionRules.swift in Sources */,
+				ECG040000000000000000000 /* 652_RailClaimsDashboard.swift in Sources */,
+				ECG050000000000000000000 /* 653_RailClaimsList.swift in Sources */,
+				ECG060000000000000000000 /* 654_RailClaimWorkflow.swift in Sources */,
+				ECG070000000000000000000 /* 655_RailLossPrevention.swift in Sources */,
 				D2R0100000000000000ABF3 /* 411_LoadsSortSheet.swift in Sources */,
 				D2R0200000000000000ABF3 /* 412_DraftsList.swift in Sources */,
 				D2R0300000000000000ABF3 /* 413_ArchivedLoads.swift in Sources */,
