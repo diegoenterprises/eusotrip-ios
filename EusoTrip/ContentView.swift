@@ -2073,6 +2073,15 @@ enum ScreenRegistry {
             .init(id: "Vesl677", title: "Vessel Operator · Carrier Tender Workflow",role: .vesselOperator) { p in AnyView(VesselCarrierTenderWorkflowScreen(theme: p, shipmentId: 0)) },
             .init(id: "Vesl678", title: "Vessel Operator · Port State Control",     role: .vesselOperator) { p in AnyView(VesselPortStateControlScreen(theme: p)) },
             .init(id: "Vesl680", title: "Vessel Operator · Intermodal Segment Board",role: .vesselOperator) { p in AnyView(VesselIntermodalSegmentBoardScreen(theme: p, shipmentId: 0)) },
+            // Phase B wave 3 — Vessel operator NEW screens (verbatim ports, theme-only inits).
+            .init(id: "Vesl684", title: "Vessel Operator · Settlement",          role: .vesselOperator) { p in AnyView(VesselSettlementScreen(theme: p)) },
+            .init(id: "Vesl685", title: "Vessel Operator · Bunker FSC Schedule",  role: .vesselOperator) { p in AnyView(VesselBunkerFSCScheduleScreen(theme: p)) },
+            .init(id: "Vesl687", title: "Vessel Operator · Ocean Rate Lookup",    role: .vesselOperator) { p in AnyView(VesselOceanRateLookupScreen(theme: p)) },
+            .init(id: "Vesl688", title: "Vessel Operator · Sailing Schedule",     role: .vesselOperator) { p in AnyView(VesselSailingScheduleScreen(theme: p)) },
+            .init(id: "Vesl698", title: "Vessel Operator · Berth Window",         role: .vesselOperator) { p in AnyView(VesselBerthWindowScreen(theme: p)) },
+            .init(id: "Vesl700", title: "Vessel Operator · Freight Bill Audit",   role: .vesselOperator) { p in AnyView(VesselFreightBillAuditScreen(theme: p)) },
+            .init(id: "Vesl701", title: "Vessel Operator · IMDG DG Rules",        role: .vesselOperator) { p in AnyView(VesselIMDGDGRulesScreen(theme: p)) },
+            .init(id: "Vesl702", title: "Vessel Operator · Reefer Monitoring",    role: .vesselOperator) { p in AnyView(VesselReeferMonitoringScreen(theme: p)) },
         ])
 
         return list

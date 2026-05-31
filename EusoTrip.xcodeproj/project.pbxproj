@@ -719,6 +719,14 @@
 		FFB050000000000000000000 /* 677_VesselCarrierTenderWorkflow.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFA050000000000000000000 /* 677_VesselCarrierTenderWorkflow.swift */; };
 		FFB060000000000000000000 /* 678_VesselPortStateControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFA060000000000000000000 /* 678_VesselPortStateControl.swift */; };
 		FFB070000000000000000000 /* 680_VesselIntermodalSegmentBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFA070000000000000000000 /* 680_VesselIntermodalSegmentBoard.swift */; };
+		FAB000000000000000000000 /* 684_VesselSettlement.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAA000000000000000000000 /* 684_VesselSettlement.swift */; };
+		FAB010000000000000000000 /* 685_VesselBunkerFSCSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAA010000000000000000000 /* 685_VesselBunkerFSCSchedule.swift */; };
+		FAB020000000000000000000 /* 687_VesselOceanRateLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAA020000000000000000000 /* 687_VesselOceanRateLookup.swift */; };
+		FAB030000000000000000000 /* 688_VesselSailingSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAA030000000000000000000 /* 688_VesselSailingSchedule.swift */; };
+		FAB040000000000000000000 /* 698_VesselBerthWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAA040000000000000000000 /* 698_VesselBerthWindow.swift */; };
+		FAB050000000000000000000 /* 700_VesselFreightBillAudit.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAA050000000000000000000 /* 700_VesselFreightBillAudit.swift */; };
+		FAB060000000000000000000 /* 701_VesselIMDGDGRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAA060000000000000000000 /* 701_VesselIMDGDGRules.swift */; };
+		FAB070000000000000000000 /* 702_VesselReeferMonitoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAA070000000000000000000 /* 702_VesselReeferMonitoring.swift */; };
 		FD97CECD2FC1D7C70016DF5F /* 551_RailShipments.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */; };
 		FDA10000000000000000553B /* 553_RailShipmentDetailCarrier.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000553F /* 553_RailShipmentDetailCarrier.swift */; };
 		FDA10000000000000000554B /* 554_RailCrewHOSRoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000554F /* 554_RailCrewHOSRoster.swift */; };
@@ -1574,6 +1582,14 @@
 		FFA050000000000000000000 /* 677_VesselCarrierTenderWorkflow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 677_VesselCarrierTenderWorkflow.swift; sourceTree = "<group>"; };
 		FFA060000000000000000000 /* 678_VesselPortStateControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 678_VesselPortStateControl.swift; sourceTree = "<group>"; };
 		FFA070000000000000000000 /* 680_VesselIntermodalSegmentBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 680_VesselIntermodalSegmentBoard.swift; sourceTree = "<group>"; };
+		FAA000000000000000000000 /* 684_VesselSettlement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 684_VesselSettlement.swift; sourceTree = "<group>"; };
+		FAA010000000000000000000 /* 685_VesselBunkerFSCSchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 685_VesselBunkerFSCSchedule.swift; sourceTree = "<group>"; };
+		FAA020000000000000000000 /* 687_VesselOceanRateLookup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 687_VesselOceanRateLookup.swift; sourceTree = "<group>"; };
+		FAA030000000000000000000 /* 688_VesselSailingSchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 688_VesselSailingSchedule.swift; sourceTree = "<group>"; };
+		FAA040000000000000000000 /* 698_VesselBerthWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 698_VesselBerthWindow.swift; sourceTree = "<group>"; };
+		FAA050000000000000000000 /* 700_VesselFreightBillAudit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 700_VesselFreightBillAudit.swift; sourceTree = "<group>"; };
+		FAA060000000000000000000 /* 701_VesselIMDGDGRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 701_VesselIMDGDGRules.swift; sourceTree = "<group>"; };
+		FAA070000000000000000000 /* 702_VesselReeferMonitoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 702_VesselReeferMonitoring.swift; sourceTree = "<group>"; };
 		FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 551_RailShipments.swift; sourceTree = "<group>"; };
 		FDA10000000000000000553F /* 553_RailShipmentDetailCarrier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 553_RailShipmentDetailCarrier.swift; sourceTree = "<group>"; };
 		FDA10000000000000000554F /* 554_RailCrewHOSRoster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 554_RailCrewHOSRoster.swift; sourceTree = "<group>"; };
@@ -2667,6 +2683,14 @@
 				FFA050000000000000000000 /* 677_VesselCarrierTenderWorkflow.swift */,
 				FFA060000000000000000000 /* 678_VesselPortStateControl.swift */,
 				FFA070000000000000000000 /* 680_VesselIntermodalSegmentBoard.swift */,
+				FAA000000000000000000000 /* 684_VesselSettlement.swift */,
+				FAA010000000000000000000 /* 685_VesselBunkerFSCSchedule.swift */,
+				FAA020000000000000000000 /* 687_VesselOceanRateLookup.swift */,
+				FAA030000000000000000000 /* 688_VesselSailingSchedule.swift */,
+				FAA040000000000000000000 /* 698_VesselBerthWindow.swift */,
+				FAA050000000000000000000 /* 700_VesselFreightBillAudit.swift */,
+				FAA060000000000000000000 /* 701_VesselIMDGDGRules.swift */,
+				FAA070000000000000000000 /* 702_VesselReeferMonitoring.swift */,
 				FD97CED02FC1D8040016DF5F /* 651_VesselShipments.swift */,
 				FD97CED22FC1D8050016DF5F /* 652_VesselCompliance.swift */,
 				FEB10000000000000000001B /* 653_VesselBookingDetailCarrier.swift */,
@@ -3165,6 +3189,14 @@
 				FFB050000000000000000000 /* 677_VesselCarrierTenderWorkflow.swift in Sources */,
 				FFB060000000000000000000 /* 678_VesselPortStateControl.swift in Sources */,
 				FFB070000000000000000000 /* 680_VesselIntermodalSegmentBoard.swift in Sources */,
+				FAB000000000000000000000 /* 684_VesselSettlement.swift in Sources */,
+				FAB010000000000000000000 /* 685_VesselBunkerFSCSchedule.swift in Sources */,
+				FAB020000000000000000000 /* 687_VesselOceanRateLookup.swift in Sources */,
+				FAB030000000000000000000 /* 688_VesselSailingSchedule.swift in Sources */,
+				FAB040000000000000000000 /* 698_VesselBerthWindow.swift in Sources */,
+				FAB050000000000000000000 /* 700_VesselFreightBillAudit.swift in Sources */,
+				FAB060000000000000000000 /* 701_VesselIMDGDGRules.swift in Sources */,
+				FAB070000000000000000000 /* 702_VesselReeferMonitoring.swift in Sources */,
 				DIBS2026051800000011A1 /* DriverInviteBulkStep.swift in Sources */,
 				FBRS2026051800000011A1 /* FleetBulkRegisterStep.swift in Sources */,
 				VINS2026051800000011A1 /* VINScannerSheet.swift in Sources */,
