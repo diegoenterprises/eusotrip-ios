@@ -698,6 +698,18 @@ final class EusoTripAPI: ObservableObject {
     /// accessors.
     lazy var escort: EscortAPI = EscortAPI(api: self)
 
+    /// FMCSA **Motus** identity-proofing + registration-acceleration
+    /// surface — `motusIdentity.*` tRPC namespace
+    /// (`frontend/server/routers/motusIdentity.ts`). Wired into iOS
+    /// onboarding (`Views/Auth/002_CreateAccount.swift`) to pre-proof the
+    /// same evidence Motus collects (gov-ID + selfie via the existing
+    /// `CredentialScanCard`) and pull real FMCSA registration data to
+    /// prefill the form. When the government attestation seam is
+    /// unconfigured the server returns an honest `"pending"` status — the
+    /// UI surfaces pending, never a fabricated "verified". Mirrors the
+    /// convention of the `escort` / `broker` / `shipper` accessors.
+    lazy var motus: MotusAPI = MotusAPI(api: self)
+
     /// Terminal Manager role surface — `terminals.*` tRPC namespace.
     /// Added in the 107th eusotrip-killers firing alongside the
     /// 700 Terminal Home brick. Mirrors the convention of the
@@ -13941,6 +13953,239 @@ struct EscortAPI {
 // `EusoEmptyState`. This satisfies doctrine §11 (no mock data) and
 // the `MockDataGuard` self-check wired at `EusoTripApp.swift:101`.
 // =====================================================================
+
+// =====================================================================
+// MARK: - MotusAPI  (FMCSA Motus identity-proofing + registration accel)
+// =====================================================================
+//
+// Live tRPC handle for the **FMCSA Motus** identity-proofing +
+// registration-acceleration spine. Backend lives at
+// `frontend/server/routers/motusIdentity.ts` (mounted as the
+// `motusIdentity` key in `frontend/server/routers.ts`) on top of the
+// real vision spine (`visionPrimitive` → classifyDocument /
+// extractFields / compareFaces) and the existing `fmcsaRouter`.
+//
+// Three procedures — all `isolatedProcedure` (auth + RLS + audit), the
+// same gate `onboarding.ts` uses, because identity proofing runs after
+// the account exists (signed in, not yet verified):
+//   • verifyIdentity         (mutation) — gov-ID scan + selfie face-match.
+//   • accelerateRegistration (mutation) — FMCSA pull → prefill + link.
+//   • getMyCredential        (query)    — read back the reusable credential.
+//
+// The Decodable structs below mirror the EXACT objects each proc
+// returns (read off the router bodies + the service typedefs). Every
+// nullable server field is a Swift optional with an honest `nil` — we
+// never fabricate a verdict. When MOTUS_API_ENDPOINT/MOTUS_API_KEY are
+// absent on the server, `dedup.motusAttestation.status` is the honest
+// string `"pending"` (NOT an error) — the UI must surface that as
+// pending, never as verified.
+//
+// If a stale build hasn't shipped the router yet the call throws
+// `EusoTripAPIError.trpcError`; per doctrine §11 the onboarding screen
+// surfaces an honest error/pending state rather than fake data.
+struct MotusAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: verifyIdentity
+
+    /// Identity fields the vision spine extracted off the government ID.
+    /// Backs `VerifyIdentityResult.extractedIdentity` (service
+    /// `ExtractedIdentity`). All fields except `documentType` are
+    /// nullable on the server (`string | null`) → Swift optionals;
+    /// `documentType` is always present (the classifier's type string).
+    struct ExtractedIdentity: Decodable, Hashable {
+        let fullName: String?
+        let dateOfBirth: String?           // ISO yyyy-mm-dd when readable
+        let documentNumber: String?        // license # / passport #
+        let expirationDate: String?
+        let issuingJurisdiction: String?
+        let documentType: String           // classifier type, always present
+    }
+
+    /// The REAL FMCSA Motus government attestation. `status` is the honest
+    /// `"pending"` (with `source == "env_gated_seam_unconfigured"`) when the
+    /// government API isn't configured — NEVER a fabricated verdict. Backs
+    /// the service `MotusAttestation`.
+    struct MotusAttestation: Decodable, Hashable {
+        /// FMCSA Motus has no third-party API → "handoff_required" is the honest
+        /// default (finish at motus.dot.gov). "verified" | "rejected" come only
+        /// from a configured commercial provider (CLEAR/IDEMIA). Else "pending"/"error".
+        let status: String
+        /// "commercial_identity_provider" | "motus_web_handoff"
+        let source: String
+        /// Deep-link to the official FMCSA Motus registration/proofing web flow.
+        let motusUrl: String?
+        let reference: String?
+        let detail: String
+    }
+
+    /// The fraud/dedup gate result. `duplicate == true` means this identity
+    /// (face/ID fingerprint) is already linked to another verified account,
+    /// which downgrades `identityVerified` to false on the server. Backs the
+    /// `dedup` object the router returns (subset of the service `DedupResult`).
+    struct Dedup: Decodable, Hashable {
+        let duplicate: Bool
+        let conflictingUserIds: [Int]
+        let reason: String?
+        let motusAttestation: MotusAttestation
+    }
+
+    /// Return shape of `motusIdentity.verifyIdentity`. Mirrors the object the
+    /// router's `.mutation` returns verbatim:
+    ///   { identityVerified, faceMatchScore, extractedIdentity, livenessOk,
+    ///     biometricAttestedByService, dedup, credentialStored, warnings }
+    /// `livenessOk` is `bool | null` on the server (honest "not assessed")
+    /// → Swift optional.
+    struct VerifyResult: Decodable, Hashable {
+        /// True only when the biometric face matched AND a minimally-
+        /// distinguishing identity was read AND no duplicate was detected.
+        let identityVerified: Bool
+        /// 0…1 same-person biometric score from the spine's compareFaces.
+        let faceMatchScore: Double
+        let extractedIdentity: ExtractedIdentity
+        /// `null` = liveness not assessed (no fabricated pass).
+        let livenessOk: Bool?
+        /// True once a real biometric service (NVIDIA NIM) produced the score.
+        let biometricAttestedByService: Bool
+        let dedup: Dedup
+        /// Whether the reusable verified-identity credential was persisted.
+        let credentialStored: Bool
+        let warnings: [String]
+    }
+
+    /// `motusIdentity.verifyIdentity` — POST mutation. Runs the gov-ID
+    /// document-intelligence + selfie↔ID biometric face-match through the
+    /// live vision spine, then the local dedup gate + env-gated government
+    /// attestation seam. Raw images are never stored or returned.
+    func verifyIdentity(idDocBase64: String, selfieBase64: String) async throws -> VerifyResult {
+        struct Input: Encodable {
+            let idDocBase64: String
+            let idMime: String
+            let selfieBase64: String
+        }
+        // CredentialScanCard returns JPEG base64 → the server's default mime.
+        return try await api.mutation(
+            "motusIdentity.verifyIdentity",
+            input: Input(idDocBase64: idDocBase64, idMime: "image/jpeg", selfieBase64: selfieBase64)
+        )
+    }
+
+    // MARK: accelerateRegistration
+
+    /// Physical-address block inside the FMCSA registration prefill. Backs
+    /// `RegistrationPrefill.address` — every field is `string | null`.
+    struct PrefillAddress: Decodable, Hashable {
+        let street: String?
+        let city: String?
+        let state: String?
+        let zip: String?
+        let country: String?
+    }
+
+    /// The FMCSA registration-prefill object mapped off the real
+    /// `fmcsaRouter.lookupByDOT` envelope (service `mapFmcsaToPrefill` →
+    /// `RegistrationPrefill`). Used to skip manual entry on the form. Every
+    /// scalar is `string | null` except `allowedToOperate` (`boolean | null`)
+    /// and `isBlocked` (`boolean`).
+    struct Prefill: Decodable, Hashable {
+        let legalName: String?
+        let dbaName: String?
+        let dotNumber: String?
+        let mcNumber: String?              // formatted "MC-<docket>"
+        let authorityStatus: String?       // ACTIVE / INACTIVE
+        let allowedToOperate: Bool?
+        let safetyRating: String?
+        let address: PrefillAddress
+        let phone: String?
+        let email: String?
+        let isBlocked: Bool
+        let blockReason: String?
+        let warnings: [String]
+    }
+
+    /// The provable human↔registration link stamped on the credential when an
+    /// already-verified identity is tied to the resolved USDOT/MC. `null` when
+    /// the link wasn't established (no prior verified identity, etc.). Backs
+    /// the router's `link` object.
+    struct RegistrationLink: Decodable, Hashable {
+        let userId: Int
+        let dotNumber: String
+        let mcNumber: String?
+    }
+
+    /// Return shape of `motusIdentity.accelerateRegistration`. Mirrors the
+    /// router's returned object:
+    ///   { found, prefill, identityLinked, link, warnings }
+    /// `prefill`/`link` are `null` when nothing resolved → Swift optionals.
+    struct AccelerateResult: Decodable, Hashable {
+        /// True when an FMCSA record was found for the resolved USDOT.
+        let found: Bool
+        /// `nil` when no record resolved (honest empty — do not prefill).
+        let prefill: Prefill?
+        /// Whether the verified identity was tied to this USDOT/MC.
+        let identityLinked: Bool
+        let link: RegistrationLink?
+        let warnings: [String]
+    }
+
+    /// `motusIdentity.accelerateRegistration` — POST mutation. Pulls the
+    /// carrier's real FMCSA registration data (via the existing fmcsaRouter)
+    /// to prefill the form and tie the verified identity to the USDOT/MC.
+    /// At least one of `dotNumber` / `mcNumber` is required by the server's
+    /// zod `.refine`; we send only the non-empty ones.
+    func accelerateRegistration(dotNumber: String?, mcNumber: String?) async throws -> AccelerateResult {
+        struct Input: Encodable {
+            let dotNumber: String?
+            let mcNumber: String?
+        }
+        func cleaned(_ s: String?) -> String? {
+            let t = s?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (t?.isEmpty ?? true) ? nil : t
+        }
+        return try await api.mutation(
+            "motusIdentity.accelerateRegistration",
+            input: Input(dotNumber: cleaned(dotNumber), mcNumber: cleaned(mcNumber))
+        )
+    }
+
+    // MARK: getMyCredential
+
+    /// The reusable verified-identity credential persisted on the user record
+    /// (`metadata.motusIdentity`). Backs the service `MotusCredentialRecord`.
+    /// Raw biometric images are never stored — only the proofing result +
+    /// the linked USDOT/MC. `linkedDotNumber`/`linkedMcNumber` are
+    /// `string | null`; `livenessOk` is `bool | null`.
+    struct Credential: Decodable, Hashable {
+        let identityVerified: Bool
+        let faceMatchScore: Double
+        let livenessOk: Bool?
+        let biometricAttestedByService: Bool
+        let identityFingerprint: String?
+        let extractedIdentity: ExtractedIdentity
+        let linkedDotNumber: String?
+        let linkedMcNumber: String?
+        /// Mirrors `MotusAttestation["status"]` — "verified"|"rejected"|"pending"|"error".
+        let motusAttestationStatus: String
+        let verifiedAt: String             // ISO
+        let v: Int                         // credential schema version
+    }
+
+    /// Envelope returned by `motusIdentity.getMyCredential`:
+    ///   { hasCredential, credential }
+    /// `credential` is `null` when none on file → Swift optional.
+    struct CredentialEnvelope: Decodable, Hashable {
+        let hasCredential: Bool
+        let credential: Credential?
+    }
+
+    /// `motusIdentity.getMyCredential` — GET query, no input. Reads back the
+    /// caller's reusable verified-identity credential (`nil` when none on
+    /// file). The convenience return surfaces the inner credential directly.
+    func getMyCredential() async throws -> Credential? {
+        let env: CredentialEnvelope = try await api.queryNoInput("motusIdentity.getMyCredential")
+        return env.hasCredential ? env.credential : nil
+    }
+}
 
 struct TerminalAPI {
     unowned let api: EusoTripAPI

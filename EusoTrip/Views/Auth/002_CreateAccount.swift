@@ -15,6 +15,8 @@
 //
 
 import SwiftUI
+import PhotosUI
+import VisionKit
 
 struct CreateAccountView: View {
     @Environment(\.palette) var palette
@@ -59,6 +61,56 @@ struct CreateAccountView: View {
     // card so re-entry (e.g. resend flow) replays the celebration.
     @State private var verifyBounceTrigger = false
 
+    // MARK: FMCSA Motus identity-proofing state
+    //
+    // Wires the FMCSA Motus identity-proofing + registration-acceleration
+    // path (`motusIdentity.*` on the server) into onboarding. The user
+    // captures a government ID + a facial selfie — the same evidence the
+    // real Motus / Login.gov flow collects — and we pre-proof it through
+    // the live vision spine before they ever reach Motus. Every field here
+    // is honest: a captured image is the raw JPEG base64 we hand to the
+    // proc; the verdict mirrors the REAL server result (verified / pending
+    // / failed). "pending" is the honest state when the government
+    // attestation seam is unconfigured — never a fabricated "verified".
+
+    /// Captured-image phase. `.idle` until the user starts, `.capturedX`
+    /// as each image lands, then the verdict from the REAL proc.
+    enum MotusPhase: Equatable {
+        case idle               // nothing captured yet
+        case capturing          // a capture sheet / picker is in flight
+        case readyToVerify      // both images captured, not yet verified
+        case verifying          // verifyIdentity call in flight
+        case verified           // proc returned identityVerified == true
+        case pending            // proofed, government attestation pending (honest)
+        case failed(String)     // identity not established / duplicate / error
+    }
+
+    @State private var motusPhase: MotusPhase = .idle
+
+    /// Raw JPEG base64 of the captured government ID (no data: prefix).
+    @State private var motusIdDocBase64: String? = nil
+    /// Raw JPEG base64 of the captured facial selfie.
+    @State private var motusSelfieBase64: String? = nil
+    /// Lightweight thumbnails so the user can see what they captured.
+    @State private var motusIdDocThumb: UIImage? = nil
+    @State private var motusSelfieThumb: UIImage? = nil
+
+    /// The REAL verifyIdentity result — drives the verdict + warnings UI.
+    @State private var motusResult: MotusAPI.VerifyResult? = nil
+    /// The REAL accelerateRegistration prefill, when the role has USDOT/MC.
+    @State private var motusPrefill: MotusAPI.Prefill? = nil
+    /// Honest banner explaining the accelerate-registration outcome.
+    @State private var motusAccelNote: String? = nil
+    /// True once the prefill has been applied to the form (so we don't
+    /// clobber a value the user has since edited on a re-verify).
+    @State private var motusPrefillApplied = false
+
+    // Capture routing — which slot a picker/camera result fills.
+    enum MotusSlot { case idDoc, selfie }
+    @State private var motusActiveSlot: MotusSlot = .idDoc
+    @State private var motusShowCamera = false
+    @State private var motusPickerItem: PhotosPickerItem? = nil
+
     // MARK: Body
 
     var body: some View {
@@ -96,6 +148,20 @@ struct CreateAccountView: View {
         .animation(.easeOut(duration: 0.2), value: vm.phase)
         .sheet(isPresented: $showTerms) { TermsOfServiceView().eusoSheet() }
         .sheet(isPresented: $showPrivacy) { PrivacyPolicyView().eusoSheet() }
+        // FMCSA Motus capture — reuses the same VisionKit document-camera
+        // primitive the credential scanner uses; never a new camera design.
+        .sheet(isPresented: $motusShowCamera) {
+            MotusImageCaptureSheet { data in
+                motusShowCamera = false
+                guard let data else { motusPhase = motusCaptureResetPhase(); return }
+                Task { await ingestMotusImage(data) }
+            }
+            .ignoresSafeArea()
+        }
+        .onChange(of: motusPickerItem) { _, item in
+            guard let item else { return }
+            Task { await ingestMotusPickerItem(item) }
+        }
         .onChange(of: vm.phase) { _, new in
             if case .success = new { step = .verifyEmailSent }
         }
@@ -740,6 +806,11 @@ struct CreateAccountView: View {
                 .focused($focus, equals: .confirm)
 
             roleSpecificFields
+
+            // FMCSA Motus identity-proofing — gov-ID + selfie biometric
+            // pre-proof and (for USDOT/MC roles) FMCSA registration
+            // acceleration. Bespoke glass section in the screen's DNA.
+            motusIdentitySection
 
             // T&C + Privacy
             GlassToggleRow(
@@ -1960,6 +2031,555 @@ struct CreateAccountView: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.md)
                     .strokeBorder(Brand.danger.opacity(0.35)))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+    }
+
+    // MARK: - FMCSA Motus identity-proofing section
+
+    /// Whether the selected role registers with a USDOT / MC number — the
+    /// roles where a successful proof can fast-path FMCSA registration by
+    /// auto-pulling the carrier record to prefill the form.
+    private var motusRoleHasUSDOTorMC: Bool {
+        switch vm.role {
+        case .catalyst, .broker, .railCatalyst, .railBroker:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// The DOT / MC the user has entered (or a prior scan filled), used to
+    /// drive accelerateRegistration. Broker uses `brokerMcNumber`.
+    private var motusDOTInput: String? {
+        let t = vm.dotNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? nil : t
+    }
+    private var motusMCInput: String? {
+        let primary = (vm.role == .broker ? vm.brokerMcNumber : vm.mcNumber)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !primary.isEmpty { return primary }
+        // Fall back to the other MC field if the role-specific one is blank.
+        let alt = (vm.role == .broker ? vm.mcNumber : vm.brokerMcNumber)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return alt.isEmpty ? nil : alt
+    }
+
+    @ViewBuilder
+    private var motusIdentitySection: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            // Heading — matches the ALL-CAPS micro-label idiom used by the
+            // other role sections (companyBlock, FRA cert, etc.).
+            HStack(spacing: 8) {
+                Image(systemName: "person.badge.shield.checkmark.fill")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Verify your identity (FMCSA Motus)")
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("FMCSA's new USDOT system (Motus) requires identity proofing. Scan your government ID and take a selfie — we pre-proof the same evidence so you can fast-path registration.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+
+            // Two capture tiles — gov-ID + facial selfie.
+            HStack(spacing: Space.s3) {
+                motusCaptureTile(
+                    slot: .idDoc,
+                    icon: "doc.text.image",
+                    title: "Government ID",
+                    thumb: motusIdDocThumb,
+                    captured: motusIdDocBase64 != nil
+                )
+                motusCaptureTile(
+                    slot: .selfie,
+                    icon: "person.crop.square.badge.camera",
+                    title: "Facial selfie",
+                    thumb: motusSelfieThumb,
+                    captured: motusSelfieBase64 != nil
+                )
+            }
+
+            // Verify CTA — only enabled once both images are captured.
+            if motusIdDocBase64 != nil && motusSelfieBase64 != nil {
+                Button {
+                    Task { await verifyMotusIdentity() }
+                } label: {
+                    HStack(spacing: Space.s2) {
+                        if isMotusVerifying {
+                            ProgressView().tint(.white).scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "checkmark.shield.fill")
+                                .font(.system(size: 14, weight: .heavy))
+                        }
+                        Text(isMotusVerifying ? "Verifying identity…" : "Verify identity")
+                            .font(EType.bodyStrong)
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .background(LinearGradient.diagonal)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(isMotusVerifying)
+                .opacity(isMotusVerifying ? 0.7 : 1)
+            }
+
+            // Honest verdict surface — verified / pending / failed, never faked.
+            motusVerdict
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCardSoft.opacity(0.55))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(LinearGradient.diagonal.opacity(0.35), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var isMotusVerifying: Bool {
+        if case .verifying = motusPhase { return true }
+        return false
+    }
+
+    /// One capture tile — tapping presents the document camera; a long-
+    /// press / "Library" affordance offers the photo picker. Mirrors the
+    /// camera-first, library-fallback dual path the credential scanner uses.
+    @ViewBuilder
+    private func motusCaptureTile(
+        slot: MotusSlot,
+        icon: String,
+        title: String,
+        thumb: UIImage?,
+        captured: Bool
+    ) -> some View {
+        VStack(spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(palette.bgCardSoft.opacity(0.7))
+                    .frame(height: 96)
+                if let thumb {
+                    Image(uiImage: thumb)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(height: 96)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    if captured {
+                        VStack { Spacer(); HStack {
+                            Spacer()
+                            Image(systemName: "checkmark.seal.fill")
+                                .font(.system(size: 14, weight: .heavy))
+                                .foregroundStyle(Brand.success)
+                                .padding(6)
+                        } }
+                    }
+                } else {
+                    Image(systemName: icon)
+                        .font(.system(size: 26, weight: .regular))
+                        .foregroundStyle(LinearGradient.diagonal)
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(captured ? Brand.success.opacity(0.5) : palette.borderSoft, lineWidth: 1)
+            )
+
+            Text(title.uppercased())
+                .font(.system(size: 9, weight: .heavy)).tracking(0.7)
+                .foregroundStyle(palette.textTertiary)
+
+            HStack(spacing: 6) {
+                // Camera capture — preferred path.
+                Button {
+                    motusActiveSlot = slot
+                    motusPhase = .capturing
+                    motusShowCamera = true
+                } label: {
+                    motusTileAction(systemImage: "camera.fill",
+                                    label: captured ? "Retake" : "Scan",
+                                    filled: !captured)
+                }
+                .buttonStyle(.plain)
+
+                // Library fallback.
+                PhotosPicker(selection: motusPickerBinding(for: slot),
+                             matching: .images,
+                             photoLibrary: .shared()) {
+                    motusTileAction(systemImage: "photo.on.rectangle",
+                                    label: "Library",
+                                    filled: false)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// Binding that records which slot a PhotosPicker selection should fill,
+    /// then forwards to the single `motusPickerItem` the body observes.
+    private func motusPickerBinding(for slot: MotusSlot) -> Binding<PhotosPickerItem?> {
+        Binding(
+            get: { motusActiveSlot == slot ? motusPickerItem : nil },
+            set: { newValue in
+                motusActiveSlot = slot
+                motusPickerItem = newValue
+            }
+        )
+    }
+
+    private func motusTileAction(systemImage: String, label: String, filled: Bool) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: systemImage)
+                .font(.system(size: 11, weight: .heavy))
+            Text(label)
+                .font(.system(size: 12, weight: .heavy))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .foregroundStyle(filled ? .white : palette.textPrimary)
+        .background(filled ? AnyView(LinearGradient.diagonal) : AnyView(palette.bgCardSoft))
+        .overlay(filled ? AnyView(EmptyView())
+                        : AnyView(Capsule().strokeBorder(palette.borderSoft)))
+        .clipShape(Capsule())
+    }
+
+    /// Honest verdict block. Reads only from the REAL `motusResult` /
+    /// `motusPhase` — never fabricates a verdict. Pending is its own
+    /// neutral state (the government attestation seam is unconfigured),
+    /// distinct from a failure.
+    @ViewBuilder
+    private var motusVerdict: some View {
+        switch motusPhase {
+        case .verified:
+            motusVerdictBanner(
+                icon: "checkmark.seal.fill",
+                tint: Brand.success,
+                title: "Identity verified",
+                detail: motusVerifiedDetail
+            )
+        case .pending:
+            VStack(alignment: .leading, spacing: Space.s2) {
+                motusVerdictBanner(
+                    icon: "hourglass",
+                    tint: Brand.warning,
+                    title: "Proofed · finish at FMCSA Motus",
+                    detail: motusPendingDetail
+                )
+                motusHandoffLink
+            }
+        case .failed(let msg):
+            motusVerdictBanner(
+                icon: "xmark.seal.fill",
+                tint: Brand.danger,
+                title: "Identity not verified",
+                detail: msg
+            )
+        default:
+            EmptyView()
+        }
+
+        // Accelerate-registration outcome (only for USDOT/MC roles).
+        if let note = motusAccelNote {
+            HStack(alignment: .top, spacing: Space.s2) {
+                Image(systemName: motusPrefill != nil ? "wand.and.stars" : "info.circle")
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(motusPrefill != nil ? Brand.blue : palette.textTertiary)
+                Text(note)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+        }
+
+        // Surface real server warnings verbatim (expired ID, low face score,
+        // skipped dedup, etc.) so the user knows exactly what happened.
+        if let warnings = motusResult?.warnings, !warnings.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(warnings, id: \.self) { w in
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 10, weight: .heavy))
+                            .foregroundStyle(Brand.warning)
+                        Text(w)
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Bespoke verdict banner — tinted glass row (icon + title + honest detail),
+    /// matching the wizard's glass design language.
+    @ViewBuilder
+    private func motusVerdictBanner(icon: String, tint: Color, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: Space.s2) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .heavy))
+                .foregroundStyle(tint)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Text(detail)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s3)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .fill(tint.opacity(0.10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .stroke(tint.opacity(0.28), lineWidth: 1)
+                )
+        )
+    }
+
+    /// Deep-link hand-off to the official FMCSA Motus web flow (motus.dot.gov)
+    /// — the federal identity-proofing step has no third-party API, so the
+    /// carrier completes it there (Login.gov + IDEMIA/CLEAR). We pre-proofed
+    /// and pre-filled; this is the last federal step.
+    @ViewBuilder
+    private var motusHandoffLink: some View {
+        if let url = URL(string: motusResult?.dedup.motusAttestation.motusUrl ?? "https://motus.dot.gov") {
+            Link(destination: url) {
+                HStack(spacing: 8) {
+                    Image(systemName: "building.columns.fill")
+                    Text("Continue to FMCSA Motus")
+                    Spacer(minLength: 0)
+                    Image(systemName: "arrow.up.forward")
+                }
+                .font(EType.bodyStrong)
+                .foregroundStyle(.white)
+                .padding(Space.s3)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(LinearGradient.diagonal)
+                )
+            }
+        }
+    }
+
+    private var motusVerifiedDetail: String {
+        guard let r = motusResult else { return "Biometric face-match passed." }
+        let pct = Int((r.faceMatchScore * 100).rounded())
+        let svc = r.biometricAttestedByService ? " · biometric service-attested" : ""
+        return "Face-match \(pct)%\(svc). Your verified identity is on file and reusable."
+    }
+
+    private var motusPendingDetail: String {
+        // Prefer the real server detail (e.g. the env-gated-seam message).
+        if let detail = motusResult?.dedup.motusAttestation.detail, !detail.isEmpty {
+            return detail
+        }
+        return "Proofed biometrically. FMCSA Motus government attestation is pending — we'll never mark it verified until the government confirms."
+    }
+
+    // MARK: - Motus capture + verify pipeline
+
+    /// Reset target after a cancelled capture: if we have one image we go
+    /// back to idle-with-progress, otherwise idle.
+    private func motusCaptureResetPhase() -> MotusPhase {
+        (motusIdDocBase64 != nil && motusSelfieBase64 != nil) ? .readyToVerify : .idle
+    }
+
+    @MainActor
+    private func ingestMotusPickerItem(_ item: PhotosPickerItem) async {
+        defer { motusPickerItem = nil }
+        guard let data = try? await item.loadTransferable(type: Data.self), !data.isEmpty else {
+            motusPhase = .failed("Couldn't read the selected photo.")
+            return
+        }
+        await ingestMotusImage(data)
+    }
+
+    /// Compress to JPEG (matching the credential scanner's payload budget)
+    /// and stash the raw base64 + a thumbnail into the active slot.
+    @MainActor
+    private func ingestMotusImage(_ data: Data) async {
+        var jpeg = data
+        if let img = UIImage(data: data) {
+            var quality: CGFloat = 0.85
+            while quality > 0.3 {
+                if let d = img.jpegData(compressionQuality: quality), d.count <= 900_000 {
+                    jpeg = d
+                    break
+                }
+                quality -= 0.1
+            }
+        }
+        let base64 = jpeg.base64EncodedString()
+        let thumb = UIImage(data: jpeg)
+
+        switch motusActiveSlot {
+        case .idDoc:
+            motusIdDocBase64 = base64
+            motusIdDocThumb = thumb
+        case .selfie:
+            motusSelfieBase64 = base64
+            motusSelfieThumb = thumb
+        }
+
+        // A fresh capture invalidates any prior verdict — re-proof required.
+        motusResult = nil
+        motusPhase = (motusIdDocBase64 != nil && motusSelfieBase64 != nil) ? .readyToVerify : .idle
+    }
+
+    /// Call the REAL `motusIdentity.verifyIdentity` proc, then surface the
+    /// honest verdict. On a successful proof for a USDOT/MC role, chain
+    /// `accelerateRegistration` and prefill the form from the real result.
+    @MainActor
+    private func verifyMotusIdentity() async {
+        guard let idDoc = motusIdDocBase64, let selfie = motusSelfieBase64 else { return }
+        motusPhase = .verifying
+        motusAccelNote = nil
+
+        do {
+            let result = try await EusoTripAPI.shared.motus.verifyIdentity(
+                idDocBase64: idDoc,
+                selfieBase64: selfie
+            )
+            motusResult = result
+
+            if result.identityVerified {
+                // The honest split: identity proofed biometrically. If the
+                // government attestation came back "verified" we say so; the
+                // common unconfigured-seam case is the honest "pending".
+                let attestation = result.dedup.motusAttestation.status.lowercased()
+                motusPhase = (attestation == "verified") ? .verified : .pending
+
+                // Fast-path FMCSA registration for USDOT/MC roles.
+                if motusRoleHasUSDOTorMC {
+                    await accelerateMotusRegistration()
+                }
+            } else if result.dedup.duplicate {
+                motusPhase = .failed(result.dedup.reason
+                    ?? "This identity is already linked to another verified account.")
+            } else {
+                motusPhase = .failed("We couldn't establish your identity from the captured images. Make sure the ID is fully visible and your selfie is well-lit, then retake.")
+            }
+        } catch let e as EusoTripAPIError {
+            motusPhase = .failed(e.errorDescription ?? "Identity verification failed.")
+        } catch {
+            motusPhase = .failed(error.localizedDescription)
+        }
+    }
+
+    /// Pull the real FMCSA registration record and prefill the form. Only
+    /// fills fields the proc actually returned, and only when the user
+    /// hasn't already typed a value (we never clobber their input).
+    @MainActor
+    private func accelerateMotusRegistration() async {
+        guard motusDOTInput != nil || motusMCInput != nil else {
+            motusAccelNote = "Enter your USDOT or MC number above to auto-pull your FMCSA registration."
+            return
+        }
+        do {
+            let accel = try await EusoTripAPI.shared.motus.accelerateRegistration(
+                dotNumber: motusDOTInput,
+                mcNumber: motusMCInput
+            )
+            if accel.found, let p = accel.prefill {
+                motusPrefill = p
+                applyMotusPrefill(p)
+                motusPrefillApplied = true
+                let linked = accel.identityLinked ? " Identity linked to your USDOT/MC." : ""
+                motusAccelNote = "FMCSA registration found — we prefilled your details below. Confirm and edit as needed.\(linked)"
+            } else {
+                motusPrefill = nil
+                // Surface the first real warning, else an honest not-found.
+                motusAccelNote = accel.warnings.first
+                    ?? "No FMCSA registration record found for that USDOT/MC yet."
+            }
+        } catch let e as EusoTripAPIError {
+            motusAccelNote = e.errorDescription ?? "FMCSA registration lookup failed."
+        } catch {
+            motusAccelNote = error.localizedDescription
+        }
+    }
+
+    /// Apply only the fields the prefill proc actually returned, and only
+    /// where the user hasn't already filled a value. Mirrors the existing
+    /// `applyFMCSALookup` semantics (physical address, legal name, DOT/MC).
+    @MainActor
+    private func applyMotusPrefill(_ p: MotusAPI.Prefill) {
+        if let legal = p.legalName, !legal.isEmpty, vm.companyName.isEmpty {
+            vm.companyName = legal
+        }
+        if let dot = p.dotNumber, !dot.isEmpty, vm.dotNumber.isEmpty {
+            vm.dotNumber = dot
+        }
+        if let mc = p.mcNumber, !mc.isEmpty {
+            if vm.role == .broker {
+                if vm.brokerMcNumber.isEmpty { vm.brokerMcNumber = mc }
+            } else if vm.mcNumber.isEmpty {
+                vm.mcNumber = mc
+            }
+        }
+        if let street = p.address.street, !street.isEmpty, vm.address.isEmpty {
+            vm.address = street
+        }
+        if let city = p.address.city, !city.isEmpty, vm.city.isEmpty {
+            vm.city = city
+        }
+        if let state = p.address.state, !state.isEmpty, vm.state.isEmpty {
+            vm.state = state
+        }
+        if let zip = p.address.zip, !zip.isEmpty, vm.zip.isEmpty {
+            vm.zip = zip
+        }
+    }
+}
+
+// MARK: - Motus image capture sheet
+//
+// SwiftUI wrapper around VisionKit's document camera — the SAME primitive
+// the credential scanner uses, so the gov-ID / selfie capture rides the
+// established, edge-detecting, perspective-correcting camera rather than a
+// new bespoke camera UI. Returns page-0's JPEG-encoded data (nil on cancel
+// or failure). The host compresses + base64-encodes for the Motus proc.
+
+private struct MotusImageCaptureSheet: UIViewControllerRepresentable {
+    let onResult: (Data?) -> Void
+
+    func makeUIViewController(context: Context) -> VNDocumentCameraViewController {
+        let vc = VNDocumentCameraViewController()
+        vc.delegate = context.coordinator
+        return vc
+    }
+    func updateUIViewController(_ uiViewController: VNDocumentCameraViewController, context: Context) {}
+
+    func makeCoordinator() -> Coord { Coord(onResult: onResult) }
+
+    final class Coord: NSObject, VNDocumentCameraViewControllerDelegate {
+        let onResult: (Data?) -> Void
+        init(onResult: @escaping (Data?) -> Void) { self.onResult = onResult }
+
+        func documentCameraViewController(_ controller: VNDocumentCameraViewController,
+                                          didFinishWith scan: VNDocumentCameraScan) {
+            guard scan.pageCount > 0 else { onResult(nil); return }
+            let image = scan.imageOfPage(at: 0)
+            onResult(image.jpegData(compressionQuality: 0.9))
+        }
+        func documentCameraViewControllerDidCancel(_ controller: VNDocumentCameraViewController) {
+            onResult(nil)
+        }
+        func documentCameraViewController(_ controller: VNDocumentCameraViewController,
+                                          didFailWithError error: Error) {
+            onResult(nil)
+        }
     }
 }
 
