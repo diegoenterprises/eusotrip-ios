@@ -709,6 +709,14 @@
 		FBB050000000000000000000 /* 595_RailCrewCertifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBA050000000000000000000 /* 595_RailCrewCertifications.swift */; };
 		FBB060000000000000000000 /* 596_RailDutyHTSEstimate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBA060000000000000000000 /* 596_RailDutyHTSEstimate.swift */; };
 		FBB070000000000000000000 /* 597_RailHazmatDGRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBA070000000000000000000 /* 597_RailHazmatDGRules.swift */; };
+		FEG000000000000000000000 /* 607_RailEDIMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEH000000000000000000000 /* 607_RailEDIMessages.swift */; };
+		FEG010000000000000000000 /* 616_RailFreeTime.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEH010000000000000000000 /* 616_RailFreeTime.swift */; };
+		FEG020000000000000000000 /* 617_RailDrayageOrders.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEH020000000000000000000 /* 617_RailDrayageOrders.swift */; };
+		FEG030000000000000000000 /* 618_RailModeOptimization.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEH030000000000000000000 /* 618_RailModeOptimization.swift */; };
+		FEG040000000000000000000 /* 619_RailPerDiemTracking.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEH040000000000000000000 /* 619_RailPerDiemTracking.swift */; };
+		FEG050000000000000000000 /* 620_RailReleaseOrder.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEH050000000000000000000 /* 620_RailReleaseOrder.swift */; };
+		FEG060000000000000000000 /* 621_RailYardMoveQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEH060000000000000000000 /* 621_RailYardMoveQueue.swift */; };
+		FEG070000000000000000000 /* 622_RailMoveScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEH070000000000000000000 /* 622_RailMoveScheduler.swift */; };
 		FD97CECB2FC1D5120016DF5F /* 650_VesselOperatorHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */; };
 		VOTMBUILD1 /* VesselOceanTrackMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = VOTMFREF1 /* VesselOceanTrackMap.swift */; };
 		FEB000000000000000000000 /* 659_VesselPortDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA000000000000000000000 /* 659_VesselPortDirectory.swift */; };
@@ -1584,6 +1592,14 @@
 		FBA050000000000000000000 /* 595_RailCrewCertifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 595_RailCrewCertifications.swift; sourceTree = "<group>"; };
 		FBA060000000000000000000 /* 596_RailDutyHTSEstimate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 596_RailDutyHTSEstimate.swift; sourceTree = "<group>"; };
 		FBA070000000000000000000 /* 597_RailHazmatDGRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 597_RailHazmatDGRules.swift; sourceTree = "<group>"; };
+		FEH000000000000000000000 /* 607_RailEDIMessages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 607_RailEDIMessages.swift; sourceTree = "<group>"; };
+		FEH010000000000000000000 /* 616_RailFreeTime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 616_RailFreeTime.swift; sourceTree = "<group>"; };
+		FEH020000000000000000000 /* 617_RailDrayageOrders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 617_RailDrayageOrders.swift; sourceTree = "<group>"; };
+		FEH030000000000000000000 /* 618_RailModeOptimization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 618_RailModeOptimization.swift; sourceTree = "<group>"; };
+		FEH040000000000000000000 /* 619_RailPerDiemTracking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 619_RailPerDiemTracking.swift; sourceTree = "<group>"; };
+		FEH050000000000000000000 /* 620_RailReleaseOrder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 620_RailReleaseOrder.swift; sourceTree = "<group>"; };
+		FEH060000000000000000000 /* 621_RailYardMoveQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 621_RailYardMoveQueue.swift; sourceTree = "<group>"; };
+		FEH070000000000000000000 /* 622_RailMoveScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 622_RailMoveScheduler.swift; sourceTree = "<group>"; };
 		FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 650_VesselOperatorHome.swift; sourceTree = "<group>"; };
 		VOTMFREF1 /* VesselOceanTrackMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VesselOceanTrackMap.swift; path = EusoTrip/Views/Vessel/VesselOceanTrackMap.swift; sourceTree = SOURCE_ROOT; };
 		FEA000000000000000000000 /* 659_VesselPortDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 659_VesselPortDirectory.swift; sourceTree = "<group>"; };
@@ -2648,6 +2664,14 @@
 				FBA050000000000000000000 /* 595_RailCrewCertifications.swift */,
 				FBA060000000000000000000 /* 596_RailDutyHTSEstimate.swift */,
 				FBA070000000000000000000 /* 597_RailHazmatDGRules.swift */,
+				FEH000000000000000000000 /* 607_RailEDIMessages.swift */,
+				FEH010000000000000000000 /* 616_RailFreeTime.swift */,
+				FEH020000000000000000000 /* 617_RailDrayageOrders.swift */,
+				FEH030000000000000000000 /* 618_RailModeOptimization.swift */,
+				FEH040000000000000000000 /* 619_RailPerDiemTracking.swift */,
+				FEH050000000000000000000 /* 620_RailReleaseOrder.swift */,
+				FEH060000000000000000000 /* 621_RailYardMoveQueue.swift */,
+				FEH070000000000000000000 /* 622_RailMoveScheduler.swift */,
 				FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */,
 				FD97CECE2FC1D7C80016DF5F /* 552_RailCompliance.swift */,
 				FDA10000000000000000553F /* 553_RailShipmentDetailCarrier.swift */,
@@ -3492,6 +3516,14 @@
 				FBB050000000000000000000 /* 595_RailCrewCertifications.swift in Sources */,
 				FBB060000000000000000000 /* 596_RailDutyHTSEstimate.swift in Sources */,
 				FBB070000000000000000000 /* 597_RailHazmatDGRules.swift in Sources */,
+				FEG000000000000000000000 /* 607_RailEDIMessages.swift in Sources */,
+				FEG010000000000000000000 /* 616_RailFreeTime.swift in Sources */,
+				FEG020000000000000000000 /* 617_RailDrayageOrders.swift in Sources */,
+				FEG030000000000000000000 /* 618_RailModeOptimization.swift in Sources */,
+				FEG040000000000000000000 /* 619_RailPerDiemTracking.swift in Sources */,
+				FEG050000000000000000000 /* 620_RailReleaseOrder.swift in Sources */,
+				FEG060000000000000000000 /* 621_RailYardMoveQueue.swift in Sources */,
+				FEG070000000000000000000 /* 622_RailMoveScheduler.swift in Sources */,
 				D2R0100000000000000ABF3 /* 411_LoadsSortSheet.swift in Sources */,
 				D2R0200000000000000ABF3 /* 412_DraftsList.swift in Sources */,
 				D2R0300000000000000ABF3 /* 413_ArchivedLoads.swift in Sources */,
