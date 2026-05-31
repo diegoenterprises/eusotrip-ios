@@ -24,6 +24,7 @@ private struct SpectraResult: Decodable, Hashable {
 private struct SpectraMatchBody: View {
     @Environment(\.palette) private var palette
     @State private var apiGravity: Double? = nil
+    @State private var bsw: Double? = nil
     @State private var sulfur: Double? = nil
     @State private var pourPoint: Double? = nil
     @State private var loading = false
@@ -59,6 +60,7 @@ private struct SpectraMatchBody: View {
         LifecycleCard {
             LifecycleSection(label: "SPEC SHEET", icon: "doc.text")
             field("API gravity (°API)", value: $apiGravity)
+            field("BS&W (% vol)", value: $bsw)
             field("Sulfur content (% wt)", value: $sulfur)
             field("Pour point (°F)", value: $pourPoint)
         }
@@ -95,14 +97,14 @@ private struct SpectraMatchBody: View {
             .frame(maxWidth: .infinity).padding(.vertical, 12)
             .background(LinearGradient.diagonal)
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-        }.buttonStyle(.plain).disabled(loading || apiGravity == nil)
+        }.buttonStyle(.plain).disabled(loading || apiGravity == nil || bsw == nil)
     }
 
     private func match() async {
         loading = true; actionError = nil
-        struct In: Encodable { let api: Double; let sulfur: Double?; let pour: Double? }
+        struct In: Encodable { let apiGravity: Double; let bsw: Double; let sulfur: Double?; let pourPoint: Double? }
         do {
-            let r: SpectraResult = try await EusoTripAPI.shared.query("spectraMatch.identify", input: In(api: apiGravity ?? 0, sulfur: sulfur, pour: pourPoint))
+            let r: SpectraResult = try await EusoTripAPI.shared.query("spectraMatch.identify", input: In(apiGravity: apiGravity ?? 0, bsw: bsw ?? 0, sulfur: sulfur, pourPoint: pourPoint))
             result = r
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

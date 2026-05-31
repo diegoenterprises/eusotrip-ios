@@ -53,6 +53,26 @@ private struct DispatchExceptionRow: Decodable, Hashable {
     let status: String?
     let transportMode: String?
     let multiVehicleCount: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id, type, severity, driverName, loadNumber, location, createdAt, status, transportMode, multiVehicleCount
+        case description = "message"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(String.self, forKey: .id)
+        self.type = try c.decodeIfPresent(String.self, forKey: .type)
+        self.severity = try c.decodeIfPresent(String.self, forKey: .severity)
+        self.driverName = try c.decodeIfPresent(String.self, forKey: .driverName)
+        self.loadNumber = try c.decodeIfPresent(String.self, forKey: .loadNumber)
+        self.location = try c.decodeIfPresent(String.self, forKey: .location)
+        self.description = try c.decodeIfPresent(String.self, forKey: .description)
+        self.createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
+        self.status = try c.decodeIfPresent(String.self, forKey: .status)
+        self.transportMode = try c.decodeIfPresent(String.self, forKey: .transportMode)
+        self.multiVehicleCount = try c.decodeIfPresent(Int.self, forKey: .multiVehicleCount)
+    }
 }
 
 /// `zeunMechanics.getFleetBreakdowns` row (subset of fields we render).
@@ -68,6 +88,45 @@ private struct DispatchTriageBreakdownRow: Decodable, Hashable {
     let longitude: Double?
     let createdAt: String?
     let status: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case id, severity, issueCategory, canDrive, driverName, driverId
+        case vehicleVin, latitude, longitude, createdAt, status
+    }
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(Int.self, forKey: .id)
+        self.severity = try c.decodeIfPresent(String.self, forKey: .severity)
+        self.issueCategory = try c.decodeIfPresent(String.self, forKey: .issueCategory)
+        self.canDrive = try c.decodeIfPresent(Bool.self, forKey: .canDrive)
+        self.driverName = try c.decodeIfPresent(String.self, forKey: .driverName)
+        self.driverId = try c.decodeIfPresent(Int.self, forKey: .driverId)
+        self.vehicleVin = try c.decodeIfPresent(String.self, forKey: .vehicleVin)
+        self.createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
+        self.status = try c.decodeIfPresent(String.self, forKey: .status)
+        
+        // latitude ships as STRING (decimal database field from tRPC MySQL driver).
+        // Tolerate both Double and String representations.
+        if let d = try? c.decodeIfPresent(Double.self, forKey: .latitude) {
+            self.latitude = d
+        } else if let s = try? c.decodeIfPresent(String.self, forKey: .latitude),
+                  let d = Double(s) {
+            self.latitude = d
+        } else {
+            self.latitude = nil
+        }
+        
+        // longitude ships as STRING for the same reason.
+        if let d = try? c.decodeIfPresent(Double.self, forKey: .longitude) {
+            self.longitude = d
+        } else if let s = try? c.decodeIfPresent(String.self, forKey: .longitude),
+                  let d = Double(s) {
+            self.longitude = d
+        } else {
+            self.longitude = nil
+        }
+    }
 }
 
 /// `eld.getDriverStatus` row (subset).
@@ -78,6 +137,29 @@ private struct EldDriverStatusRow: Decodable, Hashable {
     let hasViolation: Bool?
     let driveTimeRemaining: Double?       // minutes
     let lastUpdate: String?
+
+    enum CodingKeys: String, CodingKey {
+        case driverId, id, name, hasViolation, driveTimeRemaining, lastUpdate
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // Server returns driverId as string (e.g., "d123" or UUID).
+        // Parse it; if non-numeric, store nil.
+        if let dIdStr = try c.decodeIfPresent(String.self, forKey: .driverId),
+           let dIdInt = Int(dIdStr) {
+            self.driverId = dIdInt
+        } else if let dIdInt = try c.decodeIfPresent(Int.self, forKey: .driverId) {
+            self.driverId = dIdInt
+        } else {
+            self.driverId = nil
+        }
+        self.id = try c.decodeIfPresent(Int.self, forKey: .id)
+        self.name = try c.decodeIfPresent(String.self, forKey: .name)
+        self.hasViolation = try c.decodeIfPresent(Bool.self, forKey: .hasViolation)
+        self.driveTimeRemaining = try c.decodeIfPresent(Double.self, forKey: .driveTimeRemaining)
+        self.lastUpdate = try c.decodeIfPresent(String.self, forKey: .lastUpdate)
+    }
 }
 
 /// Unified UI alert row. `source` drives the badge + the resolve

@@ -41,12 +41,36 @@ private struct CrossingTime583: Decodable {
     let estimatedHours: Double?
 }
 
+private struct ComplianceCheckEnvelope583: Decodable {
+    let interchangePoint: String?
+    let direction: String?
+    let regulatory: [ComplianceCheck583]?
+    let overallCompliant: Bool?
+}
+
 private struct ComplianceCheck583: Decodable {
     let checkName: String?
     let checkCode: String?
     let detail: String?
     let status: String?
     let category: String?
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        checkName = try container.decodeIfPresent(String.self, forKey: .checkName)
+        checkCode = try container.decodeIfPresent(String.self, forKey: .checkCode)
+        detail = try container.decodeIfPresent(String.self, forKey: .detail)
+        status = try container.decodeIfPresent(String.self, forKey: .status)
+        category = try container.decodeIfPresent(String.self, forKey: .category)
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case checkName = "requirement"
+        case checkCode = "regulation"
+        case detail = "details"
+        case status
+        case category
+    }
 }
 
 private struct CrewCerts583: Decodable {
@@ -55,6 +79,45 @@ private struct CrewCerts583: Decodable {
     let reliefType: String?
     let hazmatBlock: Bool?
     let carCount: Int?
+
+    init(from decoder: Decoder) throws {
+        // Server endpoint getCrewCertRequirements returns RailCrewCertification[]
+        // (bare array), not a single CrewCerts583 object.
+        // Tolerate bare array by decoding into singleValueContainer and extracting first element.
+        let container = try decoder.singleValueContainer()
+        if let certs = try? container.decode([RailCrewCertObj].self) {
+            // Array case: extract first cert's properties
+            let first = certs.first
+            self.certified = first?.certType.lowercased().contains("certified") ?? false
+            self.reliefCarrier = nil
+            self.reliefType = nil
+            self.hazmatBlock = false
+            self.carCount = nil
+        } else {
+            // Object case (fallback): decode as keyed container
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.certified = try c.decodeIfPresent(Bool.self, forKey: .certified)
+            self.reliefCarrier = try c.decodeIfPresent(String.self, forKey: .reliefCarrier)
+            self.reliefType = try c.decodeIfPresent(String.self, forKey: .reliefType)
+            self.hazmatBlock = try c.decodeIfPresent(Bool.self, forKey: .hazmatBlock)
+            self.carCount = try c.decodeIfPresent(Int.self, forKey: .carCount)
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case certified, reliefCarrier, reliefType, hazmatBlock, carCount
+    }
+
+    private struct RailCrewCertObj: Decodable {
+        let country: String?
+        let certType: String
+        let description: String?
+        let issuingAuthority: String?
+        let regulation: String?
+        let validityYears: Int?
+        let requiredFor: String?
+        let crossBorderReciprocity: String?
+    }
 }
 
 private struct RailIdIn583: Encodable { let railId: String }

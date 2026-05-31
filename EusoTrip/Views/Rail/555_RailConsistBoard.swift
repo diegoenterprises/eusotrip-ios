@@ -30,6 +30,31 @@ private struct TrainConsist: Decodable, Identifiable {
     let hazmatCars: Int?
     let status: String?
     let note: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, consistNumber, totalCars, status
+        case originYardId, destinationYardId
+        case locomotiveUnits, totalWeight, totalLengthFeet, trainType
+        case departureTime, arrivalTime, engineerId, conductorId, railroadId, ptcActive
+        case createdAt, updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(Int.self, forKey: .id)
+        self.consistNumber = try c.decodeIfPresent(String.self, forKey: .consistNumber)
+        self.totalCars = try c.decodeIfPresent(Int.self, forKey: .totalCars)
+        self.status = try c.decodeIfPresent(String.self, forKey: .status)
+        // Server returns IDs; iOS struct expects display strings. Default to nil if ID missing.
+        let originYardId = try c.decodeIfPresent(Int.self, forKey: .originYardId)
+        let destYardId = try c.decodeIfPresent(Int.self, forKey: .destinationYardId)
+        self.originYard = originYardId.map { "Yard #\($0)" }
+        self.destinationYard = destYardId.map { "Yard #\($0)" }
+        // Server doesn't provide assignedCars or hazmatCars; default to nil.
+        self.assignedCars = nil
+        self.hazmatCars = nil
+        self.note = nil
+    }
 }
 
 private struct ConsistsResponse: Decodable {

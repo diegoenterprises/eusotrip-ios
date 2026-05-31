@@ -33,16 +33,26 @@ struct RailTenderWorkflowScreen: View {
 // MARK: - Data shapes
 
 private struct ActiveTender569: Decodable {
-    let id: String?
-    let origin: String?
-    let destination: String?
-    let rateUsd: Double?
-    let ratePerMile: Double?
-    let railroad: String?
-    let equipmentType: String?
-    let note: String?
-    let respondByMinutes: Int?
-    let respondByIso: String?
+    // Server actually returns EDI submission metadata, not tender details.
+    // Keep stored properties as the server sends them.
+    let tenderId: String?
+    let controlNumber: String?
+    let ediDocument: String?
+    let status: String?
+    let submittedAt: String?
+    let awaiting: String?
+    
+    // Computed accessors for tender details (nil, since server doesn't return them).
+    var id: String? { tenderId }
+    var origin: String? { nil }
+    var destination: String? { nil }
+    var rateUsd: Double? { nil }
+    var ratePerMile: Double? { nil }
+    var railroad: String? { nil }
+    var equipmentType: String? { nil }
+    var note: String? { nil }
+    var respondByMinutes: Int? { nil }
+    var respondByIso: String? { nil }
 }
 
 private struct TenderStats569: Decodable {
@@ -59,6 +69,27 @@ private struct TenderHistoryItem569: Decodable, Identifiable {
     let outcome: String?        // "accepted" | "declined" | "counter"
     let outcomeNote: String?
     let rateUsd: Double?
+}
+
+// Envelope wrapper that tolerates server's {tenders:[], total:, note:} shape
+private struct TenderHistoryResponse: Decodable {
+    let items: [TenderHistoryItem569]
+    
+    init(from decoder: Decoder) throws {
+        // Try bare-array shape first
+        if let single = try? decoder.singleValueContainer(),
+           let bare = try? single.decode([TenderHistoryItem569].self) {
+            self.items = bare
+            return
+        }
+        // Fall back to envelope shape {tenders, total, note}
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.items = try container.decode([TenderHistoryItem569].self, forKey: .tenders)
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case tenders, total, note
+    }
 }
 
 // MARK: - Body

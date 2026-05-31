@@ -100,6 +100,126 @@ private struct LineupCall586: Identifiable {
     let statusLabel: String    // "DEPARTED" / "SCHEDULED" / "ON ETA"
 }
 
+// MARK: - Contract-drift-tolerant lineup DTOs
+//
+// These mirror the proposed getServiceLineup rollup contract. They are kept
+// here as the crash-preventing decode path: the server can return either the
+// iOS-shaped object or a bare railYards row, and the custom init(from:)
+// reconciles both without throwing. Retained so that when getServiceLineup
+// lands, hydration is contract-drift safe out of the box.
+
+private struct TrainConsist586: Decodable {
+    let trainSymbol: String?
+    let carCount: Int?
+    let scheduledCalls: Int?
+    let clearedCalls: Int?
+    let estimatedTransitHours: Int?
+    let status: String?
+    let nextCallLabel: String?
+    let nextCallYardName: String?
+}
+
+private struct ServiceCall586: Decodable {
+    let yardName: String?
+    let detail: String?
+    let status: String?
+    let timeLabel: String?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+
+        // Decode iOS struct fields directly if they exist (for future direct API shape)
+        if let yn = try? c.decodeIfPresent(String.self, forKey: .yardName) {
+            self.yardName = yn
+            self.detail = try? c.decodeIfPresent(String.self, forKey: .detail)
+            self.status = try? c.decodeIfPresent(String.self, forKey: .status)
+            self.timeLabel = try? c.decodeIfPresent(String.self, forKey: .timeLabel)
+        } else {
+            // Server returns raw railYards row; map to iOS shape
+            let name = try? c.decodeIfPresent(String.self, forKey: .name)
+            let city = try? c.decodeIfPresent(String.self, forKey: .city)
+            let state = try? c.decodeIfPresent(String.self, forKey: .state)
+            let splcCode = try? c.decodeIfPresent(String.self, forKey: .splcCode)
+            let serverStatus = try? c.decodeIfPresent(String.self, forKey: .status)
+            let operatingHours = try? c.decodeIfPresent([String: String].self, forKey: .operatingHours)
+
+            self.yardName = name
+
+            // detail = city, state (or splcCode if available)
+            var parts: [String] = []
+            if let c = city { parts.append(c) }
+            if let st = state { parts.append(st) }
+            self.detail = parts.isEmpty ? splcCode : parts.joined(separator: ", ")
+
+            self.status = serverStatus
+
+            // timeLabel from operatingHours if available
+            if let hours = operatingHours,
+               let open = hours["open"],
+               let close = hours["close"] {
+                self.timeLabel = "\(open) - \(close)"
+            } else {
+                self.timeLabel = nil
+            }
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case yardName
+        case detail
+        case status
+        case timeLabel
+        // railYards table fields for server shape
+        case name
+        case city
+        case state
+        case splcCode
+        case operatingHours
+    }
+}
+
+private struct FacilityStatus586: Decodable {
+    let facilityName: String?
+    let rampStatus: String?
+    let gateAvgMinutes: Int?
+    let etaNote: String?
+    let advisoryNote: String?
+
+    enum CodingKeys: String, CodingKey {
+        case facilityName, gates, operatingStatus
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        facilityName = try? container.decode(String.self, forKey: .facilityName)
+
+        // Extract rampStatus from operatingStatus enum ("NORMAL" → "open", etc.)
+        let operatingStatus = try? container.decode(String.self, forKey: .operatingStatus)
+        rampStatus = operatingStatus.map { status in
+            status.lowercased() == "normal" ? "open" : "closed"
+        }
+
+        // Compute gateAvgMinutes from gates array average waitTime
+        let gates = try? container.decode([GateInfo].self, forKey: .gates)
+        if let gates = gates, !gates.isEmpty {
+            let avgWaitTime = gates.map { $0.waitTime }.reduce(0, +) / gates.count
+            gateAvgMinutes = avgWaitTime
+        } else {
+            gateAvgMinutes = nil
+        }
+
+        etaNote = nil
+        advisoryNote = nil
+    }
+
+    private struct GateInfo: Decodable {
+        let waitTime: Int
+    }
+}
+
+private struct RailIdIn586: Encodable { let railId: String }
+
 // MARK: - Body
 
 private struct RailServiceLineupBody: View {

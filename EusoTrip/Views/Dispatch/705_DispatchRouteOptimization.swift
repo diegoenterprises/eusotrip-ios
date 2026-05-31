@@ -30,6 +30,35 @@ private struct FleetPin: Decodable, Identifiable, Hashable {
     let heading: Double?
     let lastPingISO: String?
     let etaISO: String?
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(String.self, forKey: .driverId)
+        self.driverName = try c.decodeIfPresent(String.self, forKey: .name)
+        self.loadNumber = try c.decodeIfPresent(String.self, forKey: .loadNumber)
+        self.speed = nil
+        self.heading = nil
+        self.etaISO = nil
+        
+        // Extract latitude/longitude from nested lastKnownLocation
+        if let locContainer = try c.decodeIfPresent([String: Double].self, forKey: .lastKnownLocation) {
+            self.latitude = locContainer["lat"]
+            self.longitude = locContainer["lng"]
+            if let updatedAt = try c.decodeIfPresent([String: String].self, forKey: .lastKnownLocation)?["updatedAt"] {
+                self.lastPingISO = updatedAt
+            } else {
+                self.lastPingISO = nil
+            }
+        } else {
+            self.latitude = nil
+            self.longitude = nil
+            self.lastPingISO = nil
+        }
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case driverId, name, loadNumber, lastKnownLocation
+    }
 }
 
 private struct RouteBody: View {

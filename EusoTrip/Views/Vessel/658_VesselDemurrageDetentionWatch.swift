@@ -49,6 +49,32 @@ private struct DDContainer: Decodable, Identifiable {
     let reefer: Bool?
     let imdgClass: String?         // e.g. "8" if dangerous goods
     let detail: String?
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(Int.self, forKey: .id)
+        containerNumber = try container.decodeIfPresent(String.self, forKey: .containerNumber)
+        containerSize = try container.decodeIfPresent(String.self, forKey: .containerSize)
+        kind = try container.decodeIfPresent(String.self, forKey: .chargeType)
+        lastFreeDay = try container.decodeIfPresent(String.self, forKey: .endDate)
+        chargeUsd = try container.decodeIfPresent(Double.self, forKey: .totalCharge)
+        daysOver = try container.decodeIfPresent(Int.self, forKey: .chargeableDays)
+        freeDaysLeft = try container.decodeIfPresent(Int.self, forKey: .freeTimeDays)
+        reefer = nil
+        imdgClass = nil
+        detail = nil
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case containerNumber
+        case containerSize
+        case chargeType
+        case endDate
+        case totalCharge
+        case chargeableDays
+        case freeTimeDays
+    }
 }
 
 private struct DDWatch: Decodable {
@@ -56,6 +82,36 @@ private struct DDWatch: Decodable {
     let detentionUsd: Double?
     let lfdPassedCount: Int?
     let containers: [DDContainer]?
+    
+    init(from decoder: Decoder) throws {
+        var unkeyedContainer = try decoder.unkeyedContainer()
+        var rows: [DDContainer] = []
+        while !unkeyedContainer.isAtEnd {
+            let row = try unkeyedContainer.decode(DDContainer.self)
+            rows.append(row)
+        }
+        
+        containers = rows.isEmpty ? nil : rows
+        
+        var demurrage: Double = 0
+        var detention: Double = 0
+        var lfdCount: Int = 0
+        
+        for row in rows {
+            if row.kind == "demurrage" {
+                demurrage += row.chargeUsd ?? 0
+            } else if row.kind == "detention" {
+                detention += row.chargeUsd ?? 0
+            }
+            if (row.daysOver ?? 0) > 0 {
+                lfdCount += 1
+            }
+        }
+        
+        demurrageUsd = demurrage > 0 ? demurrage : nil
+        detentionUsd = detention > 0 ? detention : nil
+        lfdPassedCount = lfdCount > 0 ? lfdCount : nil
+    }
 }
 
 // MARK: - Body

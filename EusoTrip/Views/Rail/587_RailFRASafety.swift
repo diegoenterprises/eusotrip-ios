@@ -26,6 +26,14 @@
 //    getFRAAccidentReports  (12-mo accidents + trend, fraService.getAccidentReports)
 //    getRailCompliance      (open track defects + inspections rollup)
 //
+//  CONTRACT-DRIFT NOTE: the server has historically returned drifting shapes for
+//  these procedures — getFRAAccidentReports answers with a BARE ARRAY of report
+//  rows rather than the aggregate object the UI wants, and getFRASafetyCompliance
+//  keys differently (totalViolations / totalInspections / overallRating /
+//  complianceRate). The custom `init(from:)` decoders below tolerate BOTH the
+//  legacy and current shapes so a drift never crashes the screen; the bespoke UI
+//  still hydrates (or falls back to the verbatim seed series).
+//
 
 import SwiftUI
 
@@ -61,6 +69,64 @@ private struct FRASafetyCompliance587: Decodable {
     let railroadName: String?
     // legacy field name kept so an older server payload still hydrates the index
     let complianceScore: Double?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+
+        railroadName = try? c.decode(String.self, forKey: .railroadName)
+
+        // Hero index numeral: prefer an explicit safetyIndex; tolerate the
+        // current server which only sends complianceRate (0-1) -> derived below.
+        safetyIndex = try? c.decode(Double.self, forKey: .safetyIndex)
+
+        // Class I benchmark (new on main). Optional everywhere.
+        classIAvg = try? c.decode(Double.self, forKey: .classIAvg)
+
+        // Open inspections: prefer the dedicated key, else fall back to the
+        // server's totalInspections (best-effort proxy for the legacy shape).
+        if let open = try? c.decode(Int.self, forKey: .openInspections) {
+            openInspections = open
+        } else {
+            openInspections = try? c.decode(Int.self, forKey: .totalInspections)
+        }
+
+        // Inspection qualifier label (new on main). Optional.
+        openInspectionsLabel = try? c.decode(String.self, forKey: .openInspectionsLabel)
+
+        // Derive safetyStatus from overallRating when the explicit status is absent.
+        if let status = try? c.decode(String.self, forKey: .safetyStatus) {
+            safetyStatus = status
+        } else if let rating = try? c.decode(String.self, forKey: .overallRating) {
+            safetyStatus = rating == "SATISFACTORY" ? "compliant" :
+                          rating == "UNSATISFACTORY" ? "deficient" : "under_review"
+        } else {
+            safetyStatus = nil
+        }
+
+        // Legacy index payload: complianceScore direct, else convert complianceRate (0-1 -> 0-100).
+        if let score = try? c.decode(Double.self, forKey: .complianceScore) {
+            complianceScore = score
+        } else if let rate = try? c.decode(Double.self, forKey: .complianceRate) {
+            complianceScore = rate * 100.0
+        } else {
+            complianceScore = nil
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case safetyIndex
+        case classIAvg
+        case openInspections
+        case openInspectionsLabel
+        case safetyStatus
+        case railroadName
+        case complianceScore
+        // legacy / drifting server keys
+        case totalViolations
+        case totalInspections
+        case overallRating
+        case complianceRate
+    }
 }
 
 private struct FRAAccidentReports587: Decodable {
@@ -73,6 +139,43 @@ private struct FRAAccidentReports587: Decodable {
     /// 12 month-ordered index points (oldest → newest). When absent we render
     /// the representative rising seed series.
     let indexTrend: [Double]?
+
+    init(from decoder: Decoder) throws {
+        // Server has historically returned FRAAccidentReport[] (a BARE ARRAY),
+        // but this screen aggregates the metrics into one object. Tolerate the
+        // array: extract count as reportableOnLane, default the rest. New
+        // main-side fields (accidentFreeDays, indexTrend) default to nil so the
+        // bespoke UI falls back to its verbatim seed series.
+        if let arr = try? decoder.singleValueContainer().decode([FRAAccidentReportDTO].self) {
+            reportableOnLane = arr.count
+            periodMonths = 12
+            ptcActive = true
+            lastAuditLabel = nil
+            accidentFreeDays = nil
+            cfr = "49 CFR 225"
+            indexTrend = nil
+        } else {
+            // Fallback: decode as a keyed aggregate object (current/expected shape).
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            reportableOnLane = try c.decodeIfPresent(Int.self, forKey: .reportableOnLane)
+            periodMonths     = try c.decodeIfPresent(Int.self, forKey: .periodMonths)
+            ptcActive        = try c.decodeIfPresent(Bool.self, forKey: .ptcActive)
+            lastAuditLabel   = try c.decodeIfPresent(String.self, forKey: .lastAuditLabel)
+            accidentFreeDays = try c.decodeIfPresent(Int.self, forKey: .accidentFreeDays)
+            cfr              = try c.decodeIfPresent(String.self, forKey: .cfr)
+            indexTrend       = try c.decodeIfPresent([Double].self, forKey: .indexTrend)
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case reportableOnLane, periodMonths, ptcActive, lastAuditLabel
+        case accidentFreeDays, cfr, indexTrend
+    }
+
+    // Minimal DTO for decoding server array items (only needs to compile, not fully decoded)
+    private struct FRAAccidentReportDTO: Decodable {
+        // Intentionally empty; we only care that this is a decodable array
+    }
 }
 
 private struct RailComplianceItem587: Decodable {
@@ -80,6 +183,57 @@ private struct RailComplianceItem587: Decodable {
     let detail: String?
     let status: String?      // "ok" | "due" | "failed" | "watch"
     let rightValue: String?
+}
+
+private struct RailComplianceEnvelope587: Decodable {
+    struct InspectionRecord: Decodable {
+        let inspectionType: String?
+        let result: String?
+        let notes: String?
+        let inspectionDate: String?
+    }
+    struct PermitRecord: Decodable {
+        let permitNumber: String?
+        let status: String?
+        let expirationDate: String?
+    }
+
+    let inspections: [InspectionRecord]?
+    let hazmatPermits: [PermitRecord]?
+    let status: String?
+    let totalInspections: Int?
+    let failedCount: Int?
+
+    func asRegulatoryItems() -> [RailComplianceItem587] {
+        var items: [RailComplianceItem587] = []
+
+        // Map inspections
+        if let insp = inspections {
+            items.append(contentsOf: insp.map { record in
+                let typeLabel = (record.inspectionType ?? "inspection").replacingOccurrences(of: "_", with: " ").uppercased()
+                return RailComplianceItem587(
+                    title: typeLabel,
+                    detail: record.notes,
+                    status: record.result?.lowercased(),
+                    rightValue: record.inspectionDate
+                )
+            })
+        }
+
+        // Map permits
+        if let permits = hazmatPermits {
+            items.append(contentsOf: permits.map { record in
+                return RailComplianceItem587(
+                    title: "HAZMAT PERMIT",
+                    detail: record.permitNumber,
+                    status: record.status?.lowercased(),
+                    rightValue: record.expirationDate
+                )
+            })
+        }
+
+        return items
+    }
 }
 
 private struct RailIdIn587: Encodable { let railId: String }

@@ -63,6 +63,19 @@ private struct AvailableDriver: Decodable, Hashable, Identifiable {
     let hosRemainingMin: Int?
     let currentLocation: String?
     let utilizationPct: Double?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(String.self, forKey: .id)
+        self.name = try c.decodeIfPresent(String.self, forKey: .name)
+        self.hosRemainingMin = try c.decodeIfPresent(Int.self, forKey: .hosRemainingMin)
+        self.currentLocation = try c.decodeIfPresent(String.self, forKey: .currentLocation)
+        self.utilizationPct = try c.decodeIfPresent(Double.self, forKey: .utilizationPct)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, hosRemainingMin, currentLocation, utilizationPct
+    }
 }
 
 struct DispatcherHOSReassignmentScreen: View {

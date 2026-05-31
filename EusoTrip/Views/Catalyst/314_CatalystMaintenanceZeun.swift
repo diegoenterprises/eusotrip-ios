@@ -23,6 +23,22 @@ private struct FleetHealth: Decodable, Hashable {
     let nextPmDate: String?
     let oosRisk: Int?
     let cost30d: Double?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Server returns fleet vehicle health: totalVehicles, healthy, warning, critical, averageScore.
+        // Map totalVehicles (fleet count) → assets. Other iOS fields have no server equivalent.
+        let totalVehicles = try container.decodeIfPresent(Int.self, forKey: .totalVehicles) ?? 0
+        self.assets = totalVehicles > 0 ? totalVehicles : nil
+        self.nextPmDays = nil
+        self.nextPmDate = nil
+        self.oosRisk = nil
+        self.cost30d = nil
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case totalVehicles, healthy, warning, critical, averageScore
+    }
 }
 
 private struct ZeunEvent: Decodable, Hashable, Identifiable {
@@ -34,6 +50,34 @@ private struct ZeunEvent: Decodable, Hashable, Identifiable {
     let detail: String?
     let dueAt: String?
     let mileageTarget: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, vehicleId, serviceType, nextDueDate, priority, isOverdue
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(String.self, forKey: .id)
+        let vehicleId = try c.decodeIfPresent(String.self, forKey: .vehicleId)
+        self.axis = vehicleId  // Map vehicleId to axis
+        let serviceType = try c.decodeIfPresent(String.self, forKey: .serviceType)
+        self.title = serviceType  // Map serviceType to title
+        self.summary = nil  // Not provided by server
+        self.detail = nil   // Not provided by server
+        self.dueAt = try c.decodeIfPresent(String.self, forKey: .nextDueDate)
+        self.mileageTarget = nil  // Not provided by server
+        
+        // Infer urgency from priority and isOverdue status
+        let priority = try c.decodeIfPresent(String.self, forKey: .priority) ?? "MEDIUM"
+        let isOverdue = try c.decodeIfPresent(Bool.self, forKey: .isOverdue) ?? false
+        if isOverdue {
+            self.urgency = "active"
+        } else if priority.uppercased() == "HIGH" {
+            self.urgency = "due"
+        } else {
+            self.urgency = "cleared"
+        }
+    }
 }
 
 struct CatalystMaintenanceZeunScreen: View {

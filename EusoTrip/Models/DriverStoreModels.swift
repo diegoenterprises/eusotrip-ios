@@ -277,6 +277,39 @@ struct DriverReferral: Codable, Identifiable, Hashable {
     let bonusAmount: Double?
     let invitedAt: String?
     let activatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case inviteeName = "refereeName"
+        case inviteeEmail
+        case status = "refereeStatus"
+        case bonusAmount
+        case invitedAt = "signedUpAt"
+        case activatedAt = "firstLoadAt"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        inviteeName = try container.decodeIfPresent(String.self, forKey: .inviteeName)
+        inviteeEmail = try container.decodeIfPresent(String.self, forKey: .inviteeEmail)
+        status = try container.decode(String.self, forKey: .status)
+        // Server sends bonusAmount as non-optional number; coerce to optional
+        bonusAmount = try container.decodeIfPresent(Double.self, forKey: .bonusAmount)
+        invitedAt = try container.decodeIfPresent(String.self, forKey: .invitedAt)
+        activatedAt = try container.decodeIfPresent(String.self, forKey: .activatedAt)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encodeIfPresent(inviteeName, forKey: .inviteeName)
+        try container.encodeIfPresent(inviteeEmail, forKey: .inviteeEmail)
+        try container.encode(status, forKey: .status)
+        try container.encodeIfPresent(bonusAmount, forKey: .bonusAmount)
+        try container.encodeIfPresent(invitedAt, forKey: .invitedAt)
+        try container.encodeIfPresent(activatedAt, forKey: .activatedAt)
+    }
 }
 
 // MARK: - Fleet
@@ -320,7 +353,7 @@ struct ZeunBreakdownRow: Codable, Identifiable, Hashable {
     let severity: String
     let status: String
     let canDrive: Bool?
-    let symptoms: String?
+    let symptoms: [String]?
     let createdAt: String?
     let resolvedAt: String?
     let actualCost: Double?

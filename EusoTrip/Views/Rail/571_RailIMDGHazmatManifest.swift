@@ -47,12 +47,76 @@ private struct IMDGCompliance571: Decodable {
     let vehicleType: String?
     let route: String?
     let declarationStatus: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case containerNumber, unNumber, commodityName, imdgClass, packingGroup
+        case volume, vehicleType, route, declarationStatus
+        case loadId, imdgProperShippingName, packingGroupCode, packingGroupDescription
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // Server returns database fields; map them to iOS struct fields
+        self.imdgClass = try c.decodeIfPresent(String.self, forKey: .imdgClass)
+        self.packingGroup = try c.decodeIfPresent(String.self, forKey: .packingGroupCode)
+        self.commodityName = try c.decodeIfPresent(String.self, forKey: .imdgProperShippingName)
+        self.declarationStatus = try c.decodeIfPresent(String.self, forKey: .packingGroupDescription)
+        // Fields that server does not provide; set to nil
+        self.containerNumber = try c.decodeIfPresent(String.self, forKey: .containerNumber)
+        self.unNumber = try c.decodeIfPresent(String.self, forKey: .unNumber)
+        self.volume = try c.decodeIfPresent(String.self, forKey: .volume)
+        self.vehicleType = try c.decodeIfPresent(String.self, forKey: .vehicleType)
+        self.route = try c.decodeIfPresent(String.self, forKey: .route)
+    }
 }
 
 private struct HazmatPlacard571: Decodable {
     let imdgClass: String?
     let unNumber: String?
     let packingGroup: String?
+    let placards: [PlacardInfo]?
+    let subsidiaryPlacards: [PlacardInfo]?
+    let useDangerousPlacardOption: Bool?
+    let dangerousPlacardNote: String?
+    let totalMaterials: Int?
+
+    struct PlacardInfo: Decodable {
+        let hazmatClass: String?
+        let placardName: String?
+        let color: String?
+        let required: Bool?
+        let reason: String?
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Decode the server's actual envelope fields
+        placards = try container.decodeIfPresent([PlacardInfo].self, forKey: .placards)
+        subsidiaryPlacards = try container.decodeIfPresent([PlacardInfo].self, forKey: .subsidiaryPlacards)
+        useDangerousPlacardOption = try container.decodeIfPresent(Bool.self, forKey: .useDangerousPlacardOption)
+        dangerousPlacardNote = try container.decodeIfPresent(String.self, forKey: .dangerousPlacardNote)
+        totalMaterials = try container.decodeIfPresent(Int.self, forKey: .totalMaterials)
+        
+        // Extract legacy fields from first placard for backward compatibility
+        if let first = placards?.first {
+            imdgClass = first.hazmatClass
+            unNumber = nil  // Server doesn't provide UN in the response
+            packingGroup = nil  // Server doesn't provide packing group in the response
+        } else {
+            imdgClass = nil
+            unNumber = nil
+            packingGroup = nil
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case placards
+        case subsidiaryPlacards
+        case useDangerousPlacardOption
+        case dangerousPlacardNote
+        case totalMaterials
+    }
 }
 
 private struct SegregationCheck571: Decodable, Identifiable {
@@ -65,6 +129,39 @@ private struct SegregationCheck571: Decodable, Identifiable {
     let phoneNumber: String?
 }
 
+private struct SegregationCheckEnvelope571: Decodable {
+    let compatible: Bool
+    let violations: [ViolationItem]
+    let materialCount: Int
+    let regulation: String
+    
+    struct ViolationItem: Decodable, Identifiable {
+        let id: Int
+        let classA: String
+        let classB: String
+        let nameA: String
+        let nameB: String
+        let regulation: String
+        let severity: String
+        
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.classA = try c.decode(String.self, forKey: .classA)
+            self.classB = try c.decode(String.self, forKey: .classB)
+            self.nameA = try c.decode(String.self, forKey: .nameA)
+            self.nameB = try c.decode(String.self, forKey: .nameB)
+            self.regulation = try c.decode(String.self, forKey: .regulation)
+            self.severity = try c.decode(String.self, forKey: .severity)
+            // Generate synthetic id from classA/classB pair
+            self.id = "\(classA)-\(classB)".hashValue
+        }
+        
+        private enum CodingKeys: String, CodingKey {
+            case classA, classB, nameA, nameB, regulation, severity
+        }
+    }
+}
+
 private struct EmergencyContact571: Decodable, Identifiable {
     let id: Int
     let name: String?
@@ -72,6 +169,30 @@ private struct EmergencyContact571: Decodable, Identifiable {
     let availability: String?       // "24/7"
     let ergGuide: String?
     let description: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case name, description
+        case contact = "phone"
+        case availability = "available"
+        case purpose
+        case ergGuide
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.name = try c.decodeIfPresent(String.self, forKey: .name)
+        self.contact = try c.decodeIfPresent(String.self, forKey: .contact)
+        self.availability = try c.decodeIfPresent(String.self, forKey: .availability)
+        self.ergGuide = try c.decodeIfPresent(String.self, forKey: .ergGuide)
+        self.description = try c.decodeIfPresent(String.self, forKey: .purpose)
+        // Generate id from name hash for unique identification
+        self.id = self.name?.hashValue ?? 0
+    }
+}
+
+private struct HazmatEmergencyContactsResponse: Decodable {
+    let contacts: [EmergencyContact571]
+    // (server may also send `ergContacts`; ignored here — not surfaced in the UI)
 }
 
 // MARK: - Unified list item
@@ -389,12 +510,12 @@ private struct RailIMDGHazmatManifestBody: View {
 
     private func generateDeclaration() async {
         isGenerating = true
-        struct DeclIn: Encodable { let containerNumber: String; let railId: String }
-        struct DeclOut: Decodable {}
+        struct DeclIn: Encodable { let loadId: Int; let url: String }
+        struct DeclOut: Decodable { let success: Bool }
         do {
             let _: DeclOut = try await EusoTripAPI.shared.query(
                 "imdg.setDGDeclarationUrl",
-                input: DeclIn(containerNumber: containerNumber, railId: railId))
+                input: DeclIn(loadId: 0, url: ""))
         } catch { /* non-fatal */ }
         isGenerating = false
     }

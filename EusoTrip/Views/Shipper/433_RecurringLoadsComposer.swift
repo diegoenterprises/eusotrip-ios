@@ -24,7 +24,10 @@ private struct RecurringComposerBody: View {
     @State private var saved = false
     @State private var actionError: String? = nil
 
-    private let cadences = ["daily", "weekly", "biweekly", "monthly"]
+    // Server (recurringLoads.create) accepts weekly | biweekly | monthly only;
+    // "daily" was offered here but rejected at validation (silent failure).
+    // Removed until the server gains a daily cadence + daily recurrence advance.
+    private let cadences = ["weekly", "biweekly", "monthly"]
     private let days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
     var body: some View {

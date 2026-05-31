@@ -325,11 +325,15 @@ private struct VesselShipmentsBody: View {
         loading = true; loadError = nil
         struct ListIn: Encodable { let limit: Int; let offset: Int }
         do {
-            let result: [VesselShipment] = try await EusoTripAPI.shared.query(
+            struct ShipmentsEnvelope: Decodable {
+                let shipments: [VesselShipment]
+                let total: Int
+            }
+            let envelope: ShipmentsEnvelope = try await EusoTripAPI.shared.query(
                 "vesselShipments.getVesselShipments",
                 input: ListIn(limit: 50, offset: 0)
             )
-            self.shipments = result
+            self.shipments = envelope.shipments
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }

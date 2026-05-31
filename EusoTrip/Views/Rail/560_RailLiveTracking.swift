@@ -86,6 +86,59 @@ private struct LiveTrack560: Decodable {
     let eta: String?
     let dwellRisk: String?
     let currentLocation: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case eta
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        eta = try container.decodeIfPresent(String.self, forKey: .eta)
+        
+        // Extract optional fields from the full ShipmentTrackingResult structure
+        // The server returns 13 fields; we selectively map only the 4 we use
+        let allKeys = try decoder.container(keyedBy: AnyCodingKey.self)
+        
+        // speed: not in server response, leave nil (best-effort fallback)
+        speed = nil
+        
+        // currentLocation: from server's location.city + location.station
+        if let loc = try allKeys.decodeIfPresent(LocationContainer.self, forKey: AnyCodingKey(stringValue: "location")) {
+            let parts = [loc.station, loc.city].compactMap { $0 }.joined(separator: ", ")
+            currentLocation = parts.isEmpty ? nil : parts
+        } else {
+            currentLocation = nil
+        }
+        
+        // dwellRisk: not in server response; compute as nil (can be enhanced with facility data)
+        dwellRisk = nil
+    }
+}
+
+// Helper struct to decode the nested location object
+private struct LocationContainer: Decodable {
+    let latitude: Double?
+    let longitude: Double?
+    let station: String?
+    let city: String?
+    let state: String?
+    let railroad: String?
+    let reportedAt: String?
+}
+
+// Helper for dynamic coding key lookup
+private struct AnyCodingKey: CodingKey {
+    var stringValue: String
+    var intValue: Int?
+    
+    init(stringValue: String) {
+        self.stringValue = stringValue
+        self.intValue = nil
+    }
+    
+    init?(intValue: Int) {
+        return nil
+    }
 }
 
 // MARK: - Body

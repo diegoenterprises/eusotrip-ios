@@ -58,6 +58,24 @@ private struct TrainWindow582: Decodable, Identifiable {
     let status: String?
     let trailerNumber: String?
     let estimatedDurationMin: Int?
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(String.self, forKey: .id)
+        self.dockId = try? c.decode(String.self, forKey: .dockId)
+        self.carrierId = try? c.decode(String.self, forKey: .carrierId)
+        self.type = try? c.decode(String.self, forKey: .type)
+        self.status = try? c.decode(String.self, forKey: .status)
+        self.trailerNumber = try? c.decode(String.self, forKey: .trailerNumber)
+        self.estimatedDurationMin = try? c.decode(Int.self, forKey: .estimatedDurationMin)
+        // Server sends 'scheduledStart' for the appointment time, map it to 'scheduledAt'
+        self.scheduledAt = try? c.decode(String.self, forKey: .scheduledStart)
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case id, dockId, carrierId, type, status, trailerNumber, estimatedDurationMin
+        case scheduledStart
+    }
 }
 
 private struct AppointmentCompliance582: Decodable {
@@ -74,11 +92,25 @@ private struct GateLog582: Decodable {
 }
 
 private struct GateEntry582: Decodable, Identifiable {
-    let id: Int
+    let id: String
     let loadNumber: String?
     let trailerNumber: String?
     let status: String?
     let updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, type, timestamp, trailerNumber, loadId, driverName, carrierName, gate, purpose, notes, sealNumber, tractorNumber
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // Server sends: id (string like "GL-123"), loadId, type, timestamp
+        self.id = try c.decode(String.self, forKey: .id)
+        self.loadNumber = try c.decodeIfPresent(String.self, forKey: .loadId)
+        self.trailerNumber = try c.decodeIfPresent(String.self, forKey: .trailerNumber)
+        self.status = try c.decodeIfPresent(String.self, forKey: .type)
+        self.updatedAt = try c.decodeIfPresent(String.self, forKey: .timestamp)
+    }
 }
 
 private struct GateSummary582: Decodable {

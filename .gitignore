@@ -13,3 +13,6 @@ EusoTrip.xcconfig.local
 # Swift Package Manager
 .swiftpm/
 Package.resolved
+
+# Local build derived data (xcodebuild -derivedDataPath ./DD)
+DD/

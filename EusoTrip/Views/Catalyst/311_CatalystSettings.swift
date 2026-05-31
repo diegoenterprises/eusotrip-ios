@@ -25,6 +25,37 @@ private struct NotifPrefs: Decodable, Hashable {
     let push: Bool?
     let email: Bool?
     let sms: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case tenderAwarded, lifecycleStage, dvirHosAlerts, push, email, sms
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.tenderAwarded = try c.decodeIfPresent(Bool.self, forKey: .tenderAwarded)
+        self.lifecycleStage = try c.decodeIfPresent(Bool.self, forKey: .lifecycleStage)
+        self.dvirHosAlerts = try c.decodeIfPresent(Bool.self, forKey: .dvirHosAlerts)
+        
+        // Server returns push, email, sms as objects with nested booleans (e.g., { loadUpdates: bool, ... })
+        // Coerce to scalar by extracting the loadUpdates field from each object
+        if let pushObj = try c.decodeIfPresent([String: Bool].self, forKey: .push) {
+            self.push = pushObj["loadUpdates"]
+        } else {
+            self.push = try c.decodeIfPresent(Bool.self, forKey: .push)
+        }
+        
+        if let emailObj = try c.decodeIfPresent([String: Bool].self, forKey: .email) {
+            self.email = emailObj["loadUpdates"]
+        } else {
+            self.email = try c.decodeIfPresent(Bool.self, forKey: .email)
+        }
+        
+        if let smsObj = try c.decodeIfPresent([String: Bool].self, forKey: .sms) {
+            self.sms = smsObj["loadUpdates"]
+        } else {
+            self.sms = try c.decodeIfPresent(Bool.self, forKey: .sms)
+        }
+    }
 }
 private struct DisplayPrefs: Decodable, Hashable {
     let theme: String?

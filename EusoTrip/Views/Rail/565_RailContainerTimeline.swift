@@ -48,6 +48,37 @@ private struct TrackingEvent565: Decodable, Identifiable {
     let heading: String?
     let trainId: String?
     let lastPingMinutesAgo: Int?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(Int.self, forKey: .id)
+        self.eventType = try container.decodeIfPresent(String.self, forKey: .eventType)
+        self.description = try container.decodeIfPresent(String.self, forKey: .description)
+        self.timestamp = try container.decodeIfPresent(String.self, forKey: .timestamp)
+        self.details = nil
+        self.isCurrent = nil
+        self.isPredicted = nil
+        self.speedMph = nil
+        self.heading = nil
+        self.trainId = nil
+        self.lastPingMinutesAgo = nil
+        // location is a JSON object {lat, lng, description?} from server, but we store it as String?
+        if let locationObj = try container.decodeIfPresent(LocationObject.self, forKey: .location) {
+            self.location = locationObj.description ?? "Unknown Location"
+        } else {
+            self.location = nil
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, eventType, description, location, timestamp, yardId, railcarId, metadata
+    }
+
+    private struct LocationObject: Decodable {
+        let lat: Double?
+        let lng: Double?
+        let description: String?
+    }
 }
 
 private struct TrackingData565: Decodable {
@@ -57,6 +88,31 @@ private struct TrackingData565: Decodable {
     let currentHeading: String?
     let trainId: String?
     let lastPingMinutesAgo: Int?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.events = try container.decodeIfPresent([TrackingEvent565].self, forKey: .events)
+        self.currentSpeedMph = nil
+        self.currentHeading = nil
+        self.trainId = nil
+        self.lastPingMinutesAgo = nil
+        // currentLocation is a JSON object {lat, lng, description?} from server, but we store it as String?
+        if let locObj = try container.decodeIfPresent(LocationObject.self, forKey: .currentLocation) {
+            self.currentLocation = locObj.description ?? "Unknown Location"
+        } else {
+            self.currentLocation = nil
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case events, currentLocation
+    }
+
+    private struct LocationObject: Decodable {
+        let lat: Double?
+        let lng: Double?
+        let description: String?
+    }
 }
 
 private struct ContainerInfo565: Decodable {

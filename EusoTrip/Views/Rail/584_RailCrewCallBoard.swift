@@ -36,6 +36,24 @@ private struct CrewAvailability584: Decodable {
     let boardStatus: String?
     let yardName: String?
     let yardRailroad: String?
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // Server returns totalAvailable/totalOnDuty/railroad; iOS uses callableNow/calledCount/yardRailroad.
+        self.callableNow    = try (c.decodeIfPresent(Int.self, forKey: .callableNow) ?? c.decodeIfPresent(Int.self, forKey: .totalAvailable))
+        self.calledCount    = try (c.decodeIfPresent(Int.self, forKey: .calledCount) ?? c.decodeIfPresent(Int.self, forKey: .totalOnDuty))
+        self.extraBoardDepth = try c.decodeIfPresent(Int.self, forKey: .extraBoardDepth)
+        self.avgTurnHours   = try c.decodeIfPresent(Double.self, forKey: .avgTurnHours)
+        self.boardStatus    = try c.decodeIfPresent(String.self, forKey: .boardStatus)
+        self.yardName       = try c.decodeIfPresent(String.self, forKey: .yardName)
+        self.yardRailroad   = try (c.decodeIfPresent(String.self, forKey: .yardRailroad) ?? c.decodeIfPresent(String.self, forKey: .railroad))
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case callableNow, calledCount, extraBoardDepth, avgTurnHours, boardStatus, yardName, yardRailroad
+        // Server's actual key names mapped above.
+        case totalAvailable, totalOnDuty, railroad
+    }
 }
 
 private struct CrewMember584: Decodable {
@@ -44,13 +62,48 @@ private struct CrewMember584: Decodable {
     let boardPosition: String?
     let hosAvailableHours: Double?
     let status: String?
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Server fields from railCrewAssignments table
+        let userId = try container.decodeIfPresent(Int.self, forKey: .userId)
+        let role = try container.decodeIfPresent(String.self, forKey: .role)
+        let hoursOnDuty = try container.decodeIfPresent(String.self, forKey: .hoursOnDuty)
+        let hoursOfServiceCompliant = try container.decodeIfPresent(Bool.self, forKey: .hoursOfServiceCompliant)
+        
+        // Map server fields to iOS struct fields
+        self.crewId = userId.map { String($0) }
+        self.craft = role
+        self.boardPosition = nil
+        self.hosAvailableHours = hoursOnDuty.flatMap { Double($0) }
+        self.status = hoursOfServiceCompliant == true ? "callable" : "unavailable"
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case userId, role, hoursOnDuty, hoursOfServiceCompliant
+    }
 }
 
 private struct NextCall584: Decodable {
-    let trainSymbol: String?
-    let consistLead: String?
-    let onDutyInMinutes: Int?
-    let railId: String?
+    let crewMemberId: String?
+    let crewMemberName: String?
+    let role: String?
+    let currentStatus: String?
+    let hoursOnDuty: Double?
+    let hoursAvailable: Double?
+    let restRequired: Double?
+    let lastReportTime: String?
+    let shiftStart: String?
+    let maxAllowedHours: Double?
+    let fraComplianceStatus: String?
+    let consecutiveDaysWorked: Int?
+    
+    // Computed accessors for legacy iOS view code
+    var trainSymbol: String? { nil }
+    var consistLead: String? { nil }
+    var onDutyInMinutes: Int? { hoursOnDuty.map { Int($0 * 60) } }
+    var railId: String? { nil }
 }
 
 private struct YardIdIn584: Encodable { let yardId: String }

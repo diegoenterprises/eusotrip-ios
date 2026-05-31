@@ -22,6 +22,49 @@ private struct DriverPerf: Decodable, Hashable {
     let mpgDelta: Double?           // change vs prior period
     let utilizationPct: Double?
     let revenuePerMile: Double?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.driverId = try c.decodeIfPresent(String.self, forKey: .driverId)
+        // Server returns driverName; iOS struct expects name
+        self.name = try c.decodeIfPresent(String.self, forKey: .name)
+            ?? (try c.decodeIfPresent(String.self, forKey: .driverName))
+        self.companyName = try c.decodeIfPresent(String.self, forKey: .companyName)
+        // Server returns overallScore (number); iOS struct expects grade (letter).
+        // Convert overallScore to letter grade: 90+ => A+, 80+ => A, 70+ => B, 60+ => C, <60 => F
+        if let score = try c.decodeIfPresent(Double.self, forKey: .overallScore) {
+            switch score {
+            case 90...: self.grade = "A+"
+            case 85..<90: self.grade = "A"
+            case 80..<85: self.grade = "B+"
+            case 75..<80: self.grade = "B"
+            case 70..<75: self.grade = "C+"
+            case 65..<70: self.grade = "C"
+            default: self.grade = "F"
+            }
+        } else {
+            self.grade = try c.decodeIfPresent(String.self, forKey: .grade)
+        }
+        self.milesPeriod = try c.decodeIfPresent(Double.self, forKey: .milesPeriod)
+        self.mpg = try c.decodeIfPresent(Double.self, forKey: .mpg)
+        self.mpgDelta = try c.decodeIfPresent(Double.self, forKey: .mpgDelta)
+        self.utilizationPct = try c.decodeIfPresent(Double.self, forKey: .utilizationPct)
+        self.revenuePerMile = try c.decodeIfPresent(Double.self, forKey: .revenuePerMile)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case driverId
+        case name
+        case driverName
+        case companyName
+        case grade
+        case overallScore
+        case milesPeriod
+        case mpg
+        case mpgDelta
+        case utilizationPct
+        case revenuePerMile
+    }
 }
 
 struct CatalystDriverPerformanceScreen: View {

@@ -35,6 +35,24 @@ struct RailCarrierScorecardScreen: View {
 
 // MARK: - Data shapes
 
+/// Tolerant value box for skipping heterogeneous server array items during
+/// decode. File-private per the codebase pattern.
+private struct AnyCodable: Decodable {
+    let value: Any
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() { value = NSNull() }
+        else if let b = try? c.decode(Bool.self) { value = b }
+        else if let i = try? c.decode(Int.self) { value = i }
+        else if let d = try? c.decode(Double.self) { value = d }
+        else if let s = try? c.decode(String.self) { value = s }
+        else if let a = try? c.decode([AnyCodable].self) { value = a.map { $0.value } }
+        else if let o = try? c.decode([String: AnyCodable].self) { value = o.mapValues { $0.value } }
+        else { value = NSNull() }
+    }
+}
+
 private struct Scorecard574: Decodable {
     let compositeScore: Double?
     let compositeGrade: String?
@@ -50,6 +68,72 @@ private struct Scorecard574: Decodable {
     let tenderAcceptDelta: Double?
     let billingAccuracyPercent: Double?
     let billingAccuracyDelta: Double?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Try direct flat mapping first (for backward compatibility)
+        var composite = try? c.decode(Double.self, forKey: .compositeScore)
+        var grade = try? c.decode(String.self, forKey: .compositeGrade)
+        qoqDelta = try? c.decode(Double.self, forKey: .qoqDelta)
+        carrierCount = try? c.decode(Int.self, forKey: .carrierCount)
+        carCount = try? c.decode(Int.self, forKey: .carCount)
+        period = try? c.decode(String.self, forKey: .period)
+        var ontime = try? c.decode(Double.self, forKey: .ontimePercent)
+        ontimeDelta = try? c.decode(Double.self, forKey: .ontimeDelta)
+        var claimsFree = try? c.decode(Double.self, forKey: .claimsFreePercent)
+        claimsFreeDelta = try? c.decode(Double.self, forKey: .claimsFreeDelta)
+        var tenderAccept = try? c.decode(Double.self, forKey: .tenderAcceptPercent)
+        tenderAcceptDelta = try? c.decode(Double.self, forKey: .tenderAcceptDelta)
+        var billingAccuracy = try? c.decode(Double.self, forKey: .billingAccuracyPercent)
+        billingAccuracyDelta = try? c.decode(Double.self, forKey: .billingAccuracyDelta)
+
+        // If flat fields not present, map from server's actual shape:
+        // overallScore → compositeScore, grade → compositeGrade, metrics.* → percent fields
+        if composite == nil {
+            composite = try? c.decode(Double.self, forKey: CodingKeys(stringValue: "overallScore") ?? .compositeScore)
+        }
+        if grade == nil {
+            grade = try? c.decode(String.self, forKey: CodingKeys(stringValue: "grade") ?? .compositeGrade)
+        }
+        if ontime == nil, let metrics = try? c.nestedContainer(keyedBy: MetricsCodingKeys.self, forKey: CodingKeys(stringValue: "metrics") ?? .compositeScore),
+           let onTimeDelivery = try? metrics.nestedContainer(keyedBy: MetricsFieldCodingKeys.self, forKey: .onTimeDelivery) {
+            ontime = try? onTimeDelivery.decode(Double.self, forKey: .rate)
+        }
+        if claimsFree == nil, let metrics = try? c.nestedContainer(keyedBy: MetricsCodingKeys.self, forKey: CodingKeys(stringValue: "metrics") ?? .compositeScore),
+           let safety = try? metrics.nestedContainer(keyedBy: MetricsFieldCodingKeys.self, forKey: .safety) {
+            claimsFree = try? safety.decode(Double.self, forKey: .score)
+        }
+        if tenderAccept == nil, let metrics = try? c.nestedContainer(keyedBy: MetricsCodingKeys.self, forKey: CodingKeys(stringValue: "metrics") ?? .compositeScore),
+           let bidAcceptance = try? metrics.nestedContainer(keyedBy: MetricsFieldCodingKeys.self, forKey: .bidAcceptance) {
+            tenderAccept = try? bidAcceptance.decode(Double.self, forKey: .rate)
+        }
+        if billingAccuracy == nil, let metrics = try? c.nestedContainer(keyedBy: MetricsCodingKeys.self, forKey: CodingKeys(stringValue: "metrics") ?? .compositeScore),
+           let completionRate = try? metrics.nestedContainer(keyedBy: MetricsFieldCodingKeys.self, forKey: .completionRate) {
+            billingAccuracy = try? completionRate.decode(Double.self, forKey: .rate)
+        }
+
+        compositeScore = composite
+        compositeGrade = grade
+        ontimePercent = ontime
+        claimsFreePercent = claimsFree
+        tenderAcceptPercent = tenderAccept
+        billingAccuracyPercent = billingAccuracy
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case compositeScore, compositeGrade, qoqDelta, carrierCount, carCount, period
+        case ontimePercent, ontimeDelta, claimsFreePercent, claimsFreeDelta
+        case tenderAcceptPercent, tenderAcceptDelta, billingAccuracyPercent, billingAccuracyDelta
+    }
+    
+    enum MetricsCodingKeys: String, CodingKey {
+        case onTimeDelivery, safety, compliance, completionRate, bidAcceptance, hazmat
+    }
+    
+    enum MetricsFieldCodingKeys: String, CodingKey {
+        case rate, score
+    }
 }
 
 private struct TrendData574: Decodable {
@@ -70,6 +154,25 @@ private struct CarrierRow574: Decodable, Identifiable {
     let carCount: Int?
     let laneCount: Int?
     let routeSummary: String?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // Server (carrierScorecard.getTopCarriers) returns carrierId/companyName/totalLoads;
+        // code/initials/laneCount/routeSummary aren't in that response (stay nil).
+        self.id = (try (c.decodeIfPresent(Int.self, forKey: .id) ?? c.decodeIfPresent(Int.self, forKey: .carrierId))) ?? 0
+        self.name = try (c.decodeIfPresent(String.self, forKey: .name) ?? c.decodeIfPresent(String.self, forKey: .companyName))
+        self.code = try c.decodeIfPresent(String.self, forKey: .code)
+        self.initials = try c.decodeIfPresent(String.self, forKey: .initials)
+        self.score = try c.decodeIfPresent(Double.self, forKey: .score)
+        self.grade = try c.decodeIfPresent(String.self, forKey: .grade)
+        self.carCount = try (c.decodeIfPresent(Int.self, forKey: .carCount) ?? c.decodeIfPresent(Int.self, forKey: .totalLoads))
+        self.laneCount = try c.decodeIfPresent(Int.self, forKey: .laneCount)
+        self.routeSummary = try c.decodeIfPresent(String.self, forKey: .routeSummary)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, carrierId, name, companyName, code, initials, score, grade, carCount, totalLoads, laneCount, routeSummary
+    }
 }
 
 // MARK: - Body
@@ -426,7 +529,14 @@ private struct RailCarrierScorecardBody: View {
     private func compareCarriers() async {
         isComparing = true
         struct EmptyIn: Encodable {}
-        struct CompareOut: Decodable {}
+        struct CompareOut: Decodable {
+            init(from decoder: Decoder) throws {
+                // Server returns a bare array of carrier comparison objects.
+                // Decode and discard — we don't use the data yet.
+                let c = try decoder.singleValueContainer()
+                _ = try c.decode([AnyCodable].self)
+            }
+        }
         do {
             let _: CompareOut = try await EusoTripAPI.shared.query(
                 "carrierScorecard.compareScorecards", input: EmptyIn())

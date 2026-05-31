@@ -37,6 +37,29 @@ struct VesselBookingDetailCarrierScreen: View {
 
 // MARK: - Data shapes (mirror getVesselShipmentDetail return)
 
+/// Tolerant value box for heterogeneous server fields (e.g. nested port objects
+/// the API returns as `{ name, code, ... }`). File-private per the codebase pattern.
+private struct AnyCodable: Decodable {
+    let value: Any
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() { value = NSNull() }
+        else if let b = try? c.decode(Bool.self) { value = b }
+        else if let i = try? c.decode(Int.self) { value = i }
+        else if let d = try? c.decode(Double.self) { value = d }
+        else if let s = try? c.decode(String.self) { value = s }
+        else if let a = try? c.decode([AnyCodable].self) { value = a.map { $0.value } }
+        else if let o = try? c.decode([String: AnyCodable].self) { value = o.mapValues { $0.value } }
+        else { value = NSNull() }
+    }
+
+    var stringValue: String? { value as? String }
+    var intValue: Int?       { value as? Int }
+    var doubleValue: Double? { value as? Double }
+    var boolValue: Bool?     { value as? Bool }
+}
+
 private struct VesselEvent653: Decodable, Identifiable {
     let id: Int
     let eventType: String?
@@ -72,6 +95,53 @@ private struct VesselShipmentDetail653: Decodable {
     let events: [VesselEvent653]?
     let containers: [OceanContainer653]?
     let demurrage: [VesselDemurrageRow653]?
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(Int.self, forKey: .id)
+        self.bookingNumber = try c.decodeIfPresent(String.self, forKey: .bookingNumber)
+        self.status = try c.decodeIfPresent(String.self, forKey: .status)
+        self.voyageNumber = try c.decodeIfPresent(String.self, forKey: .voyageNumber)
+        self.events = try c.decodeIfPresent([VesselEvent653].self, forKey: .events)
+        self.containers = try c.decodeIfPresent([OceanContainer653].self, forKey: .containers)
+        self.demurrage = try c.decodeIfPresent([VesselDemurrageRow653].self, forKey: .demurrage)
+        
+        // Extract port names from port objects
+        if let originPortObj = try c.decodeIfPresent([String: AnyCodable].self, forKey: .originPort) {
+            self.origin = originPortObj["name"]?.stringValue
+        } else {
+            self.origin = try c.decodeIfPresent(String.self, forKey: .origin)
+        }
+        
+        if let destPortObj = try c.decodeIfPresent([String: AnyCodable].self, forKey: .destinationPort) {
+            self.destination = destPortObj["name"]?.stringValue
+        } else {
+            self.destination = try c.decodeIfPresent(String.self, forKey: .destination)
+        }
+        
+        // Map vesselId to vessel name (server only sends ID, extract from vesselId field as fallback)
+        self.vesselName = try c.decodeIfPresent(String.self, forKey: .vesselName)
+        
+        // Map numberOfContainers to teuCount
+        if let numContainers = try c.decodeIfPresent(Int.self, forKey: .numberOfContainers) {
+            self.teuCount = numContainers
+        } else {
+            self.teuCount = try c.decodeIfPresent(Int.self, forKey: .teuCount)
+        }
+        
+        // Map eta to estimatedArrival
+        if let eta = try c.decodeIfPresent(String.self, forKey: .eta) {
+            self.estimatedArrival = eta
+        } else {
+            self.estimatedArrival = try c.decodeIfPresent(String.self, forKey: .estimatedArrival)
+        }
+    }
+    
+    private enum CodingKeys: String, CodingKey {
+        case id, bookingNumber, status, voyageNumber, events, containers, demurrage
+        case origin, destination, vesselName, teuCount, estimatedArrival
+        case originPort, destinationPort, numberOfContainers, eta
+    }
 }
 
 // MARK: - Body
@@ -247,12 +317,12 @@ private struct VesselBookingDetailCarrierBody: View {
 
     private func updateStatus() async {
         updating = true
-        struct StatusIn: Encodable { let id: Int; let status: String }
+        struct StatusIn: Encodable { let id: Int; let newStatus: String }
         struct Empty653: Decodable {}
         do {
             let _: Empty653 = try await EusoTripAPI.shared.mutation(
                 "vesselShipments.updateVesselShipmentStatus",
-                input: StatusIn(id: shipmentId, status: "arrived"))
+                input: StatusIn(id: shipmentId, newStatus: "arrived"))
             await load()
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

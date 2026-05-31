@@ -35,6 +35,32 @@ private struct RailCrewMember: Decodable, Identifiable {
     let remainingHours: Double?
     let dutyStatus: String?     // on_duty | off_duty | near_limit
     let endorsement: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, role, crewId, onDutyHours, remainingHours, dutyStatus, endorsement
+        case hoursOnDuty
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(Int.self, forKey: .id)
+        self.role = try c.decodeIfPresent(String.self, forKey: .role)
+        self.crewId = try c.decodeIfPresent(String.self, forKey: .crewId)
+        
+        // Server sends hoursOnDuty as decimal string, iOS expects Double
+        if let hoursStr = try c.decodeIfPresent(String.self, forKey: .hoursOnDuty),
+           let hours = Double(hoursStr) {
+            self.onDutyHours = hours
+        } else if let hours = try c.decodeIfPresent(Double.self, forKey: .hoursOnDuty) {
+            self.onDutyHours = hours
+        } else {
+            self.onDutyHours = nil
+        }
+        
+        self.remainingHours = try c.decodeIfPresent(Double.self, forKey: .remainingHours)
+        self.dutyStatus = try c.decodeIfPresent(String.self, forKey: .dutyStatus)
+        self.endorsement = try c.decodeIfPresent(String.self, forKey: .endorsement)
+    }
 }
 
 // MARK: - Body

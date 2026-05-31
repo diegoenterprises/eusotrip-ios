@@ -44,6 +44,34 @@ private struct TariffData580: Decodable {
     let rateMileUsd: Double?
     let carCount: Int?
     let routings: [TariffRouting580]?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Server sends 'baseRate' but iOS struct stores as 'rate'
+        rate = try (container.decodeIfPresent(Double.self, forKey: .rate)
+            ?? container.decodeIfPresent(Double.self, forKey: .baseRate))
+        currency = try container.decodeIfPresent(String.self, forKey: .currency)
+        ruleType = try container.decodeIfPresent(String.self, forKey: .ruleType)
+        routeLabel = try container.decodeIfPresent(String.self, forKey: .routeLabel)
+        routeMiles = try container.decodeIfPresent(Int.self, forKey: .routeMiles)
+        transitDays = try container.decodeIfPresent(Double.self, forKey: .transitDays)
+        rateMileUsd = try container.decodeIfPresent(Double.self, forKey: .rateMileUsd)
+        carCount = try container.decodeIfPresent(Int.self, forKey: .carCount)
+        routings = try container.decodeIfPresent([TariffRouting580].self, forKey: .routings)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case rate
+        case baseRate   // server's name for the rate field
+        case currency
+        case ruleType
+        case routeLabel
+        case routeMiles
+        case transitDays
+        case rateMileUsd
+        case carCount
+        case routings
+    }
 }
 
 private struct TariffRouting580: Decodable, Identifiable {

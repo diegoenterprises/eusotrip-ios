@@ -51,6 +51,19 @@ private struct CrewCertification: Decodable, Identifiable {
     let userId: Int?
     let title: String?
     let expiryDate: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case id, userId, expiryDate
+        case title = "name"
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(Int.self, forKey: .id)
+        userId = try container.decodeIfPresent(Int.self, forKey: .userId)
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        expiryDate = try container.decodeIfPresent(String.self, forKey: .expiryDate)
+    }
 }
 
 private struct VesselCrewResponse: Decodable {

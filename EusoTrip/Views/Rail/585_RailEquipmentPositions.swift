@@ -22,6 +22,11 @@
 //        Vizion intermodal container track → CONTAINER strip
 //  Seed figures are house 0%-mock (representative of live return shapes), overwritten on hydrate.
 //
+//  CONTRACT-DRIFT HARDENING (origin/oath/contract-drift-fixes): the getRailcars
+//  envelope tolerates BOTH the keyed `{ railcars:[…], total }` object AND a server
+//  that returns a BARE ARRAY of railcars; every detail DTO uses a tolerant custom
+//  `init(from:)` so a missing/renamed key never throws a decode crash.
+//
 
 import SwiftUI
 
@@ -48,10 +53,38 @@ struct RailEquipmentPositionsScreen: View {
 
 // MARK: - Data shapes (mirror the real tRPC return envelopes)
 
-/// railShipments.getRailcars → { railcars:[…], total }
+/// railShipments.getRailcars → `{ railcars:[…], total }` OR a bare `[…]` array.
+/// Contract-drift tolerant: decodes either the keyed object or the bare array so a
+/// drifting server contract can never throw a decode crash on hydrate.
 private struct GetRailcarsEnvelope585: Decodable {
     let railcars: [Railcar585]
     let total: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case railcars, total, items, data
+    }
+
+    init(from decoder: Decoder) throws {
+        // Preferred: keyed object `{ railcars:[…], total }` (also tolerate items/data aliases).
+        if let c = try? decoder.container(keyedBy: CodingKeys.self) {
+            let rows = (try? c.decode([Railcar585].self, forKey: .railcars))
+                ?? (try? c.decode([Railcar585].self, forKey: .items))
+                ?? (try? c.decode([Railcar585].self, forKey: .data))
+            if let rows {
+                railcars = rows
+                total = (try? c.decode(Int.self, forKey: .total)) ?? rows.count
+                return
+            }
+        }
+        // Fallback: server returned a BARE ARRAY of railcars.
+        if let arr = try? decoder.singleValueContainer().decode([Railcar585].self) {
+            railcars = arr
+            total = arr.count
+            return
+        }
+        railcars = []
+        total = 0
+    }
 }
 
 private struct Railcar585: Decodable, Identifiable {
@@ -63,21 +96,25 @@ private struct Railcar585: Decodable, Identifiable {
     let containerNumber: String?
     let speedMph: Double?
     let dwellHours: Double?
+    let progressFraction: Double?   // (main hero) interpolation along route arc, if server supplies it
 
     private enum CodingKeys: String, CodingKey {
-        case carNumber, reportingMark, number
+        case carNumber, reportingMark, number, railcarNumber
         case carType, status
         case currentLocation, location, currentLocationName
         case containerNumber, container
         case speedMph, speed
         case dwellHours, dwell
+        case progressFraction
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        // carNumber, or reportingMark + number composed
+        // carNumber, or railcarNumber alias, or reportingMark + number composed
         if let cn = try? c.decode(String.self, forKey: .carNumber) {
             carNumber = cn
+        } else if let rn = try? c.decode(String.self, forKey: .railcarNumber) {
+            carNumber = rn
         } else {
             let mark = (try? c.decode(String.self, forKey: .reportingMark)) ?? ""
             let num  = (try? c.decode(String.self, forKey: .number)) ?? ""
@@ -91,30 +128,57 @@ private struct Railcar585: Decodable, Identifiable {
             ?? (try? c.decode(String.self, forKey: .currentLocationName))
         containerNumber = (try? c.decode(String.self, forKey: .containerNumber))
             ?? (try? c.decode(String.self, forKey: .container))
-        speedMph  = (try? c.decode(Double.self, forKey: .speedMph)) ?? (try? c.decode(Double.self, forKey: .speed))
-        dwellHours = (try? c.decode(Double.self, forKey: .dwellHours)) ?? (try? c.decode(Double.self, forKey: .dwell))
+        // speed may arrive as Double or Int → tolerate both before falling back to the `speed` alias.
+        speedMph  = (try? c.decode(Double.self, forKey: .speedMph))
+            ?? (try? c.decode(Int.self, forKey: .speedMph)).map(Double.init)
+            ?? (try? c.decode(Double.self, forKey: .speed))
+            ?? (try? c.decode(Int.self, forKey: .speed)).map(Double.init)
+        dwellHours = (try? c.decode(Double.self, forKey: .dwellHours))
+            ?? (try? c.decode(Int.self, forKey: .dwellHours)).map(Double.init)
+            ?? (try? c.decode(Double.self, forKey: .dwell))
+            ?? (try? c.decode(Int.self, forKey: .dwell)).map(Double.init)
+        progressFraction = try? c.decode(Double.self, forKey: .progressFraction)
     }
 }
 
-/// railShipments.liveTrackRailcar → Railinc RailSight position (best-effort shape)
+/// railShipments.liveTrackRailcar → Railinc RailSight position (best-effort, tolerant shape).
 private struct LiveRailcar585: Decodable {
     let speed: Double?
     let location: String?
     let status: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case speed, speedMph
+        case location, currentLocation
+        case status
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        speed = (try? c.decode(Double.self, forKey: .speed))
+            ?? (try? c.decode(Int.self, forKey: .speed)).map(Double.init)
+            ?? (try? c.decode(Double.self, forKey: .speedMph))
+            ?? (try? c.decode(Int.self, forKey: .speedMph)).map(Double.init)
+        location = (try? c.decode(String.self, forKey: .location))
+            ?? (try? c.decode(String.self, forKey: .currentLocation))
+        status = try? c.decode(String.self, forKey: .status)
+    }
 }
 
-/// railShipments.trackIntermodalContainer → Vizion track (best-effort shape)
+/// railShipments.trackIntermodalContainer → Vizion track (best-effort, tolerant shape).
 private struct IntermodalContainer585: Decodable {
     let containerNumber: String?
     let location: String?
     let lastReadMinutesAgo: Int?
     let iso6346Verified: Bool?
+    let additionalUnits: Int?
 
     private enum CodingKeys: String, CodingKey {
         case containerNumber, container
         case location, lastLocation, lastAEILocation
         case lastReadMinutesAgo, minutesAgo
         case iso6346Verified, verified
+        case additionalUnits
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -127,6 +191,7 @@ private struct IntermodalContainer585: Decodable {
             ?? (try? c.decode(Int.self, forKey: .minutesAgo))
         iso6346Verified = (try? c.decode(Bool.self, forKey: .iso6346Verified))
             ?? (try? c.decode(Bool.self, forKey: .verified))
+        additionalUnits = try? c.decode(Int.self, forKey: .additionalUnits)
     }
 }
 
@@ -200,7 +265,10 @@ private struct RailEquipmentPositionsBody: View {
     private var containerLocation: String { container?.location ?? "Amarillo TX" }
     private var containerMinsAgo: Int { container?.lastReadMinutesAgo ?? 22 }
     private var containerIsoOk: Bool { container?.iso6346Verified ?? true }
-    private var extraUnits: Int { max(0, poolSize - rows.count) > 0 ? max(0, poolSize - rows.count) : 3 }
+    private var extraUnits: Int {
+        if let a = container?.additionalUnits, a > 0 { return a }
+        return max(0, poolSize - rows.count) > 0 ? max(0, poolSize - rows.count) : 3
+    }
 
     // MARK: View
 
@@ -469,6 +537,8 @@ private struct RailEquipmentPositionsBody: View {
         loadError = nil
         do {
             // 1. Railcar pool → POSITIONS rows + KPI buckets (real envelope).
+            //    GetRailcarsEnvelope585 tolerates BOTH the keyed `{ railcars:[…] }`
+            //    object AND a bare `[…]` array (contract-drift hardening).
             let env: GetRailcarsEnvelope585 = try await EusoTripAPI.shared.query(
                 "railShipments.getRailcars",
                 input: GetRailcarsIn585(limit: 50, offset: 0))

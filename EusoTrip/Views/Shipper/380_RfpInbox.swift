@@ -19,6 +19,34 @@ private struct RfpRow: Decodable, Identifiable, Hashable {
     let dueDate: String?
     let lanes: Int?
     let bidsReceived: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, status
+        case dueDate = "responseDeadline"
+        case lanes
+        case bidsReceived = "responsesReceived"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(String.self, forKey: .id)
+        self.title = try c.decodeIfPresent(String.self, forKey: .title)
+        self.status = try c.decodeIfPresent(String.self, forKey: .status)
+        self.dueDate = try c.decodeIfPresent(String.self, forKey: .dueDate)
+        
+        // lanes ship as an array of objects; count them
+        if let lanesArray = try c.decodeIfPresent([AnyCodable].self, forKey: .lanes) {
+            self.lanes = lanesArray.count
+        } else {
+            self.lanes = nil
+        }
+        
+        self.bidsReceived = try c.decodeIfPresent(Int.self, forKey: .bidsReceived)
+    }
+}
+
+private struct AnyCodable: Decodable {
+    // Wrapper to count array elements without fully decoding
 }
 
 private struct RfpInboxBody: View {

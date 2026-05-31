@@ -29,6 +29,54 @@ public struct AIVisualScanResult: Decodable, Hashable {
         public let description: String?
         public let recommendation: String?
     }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Try to decode as a discriminated union { type, data }
+        if let typeStr = try? container.decode(String.self, forKey: .type),
+           typeStr == "DVIR_INSPECTION" {
+            // Server returns { type: "DVIR_INSPECTION", data: {...} }
+            let dataContainer = try container.nestedContainer(keyedBy: DVIRCodingKeys.self, forKey: .data)
+            
+            // Extract DVIR fields and synthesize iOS-compatible properties
+            let inspectionPoint = try? dataContainer.decode(String.self, forKey: .inspectionPoint)
+            let condition = try? dataContainer.decode(String.self, forKey: .condition)
+            let defectsFound = try? dataContainer.decode([DVIRDefect].self, forKey: .defectsFound)
+            let visualNotes = try? dataContainer.decode(String.self, forKey: .visualNotes)
+            
+            // Map DVIR response to iOS shape
+            self.summary = [inspectionPoint, condition, visualNotes]
+                .compactMap { $0 }.joined(separator: " · ")
+            self.overallSeverity = condition?.lowercased()
+            self.findings = defectsFound?.map { defect in
+                Finding(
+                    severity: defect.severity,
+                    description: defect.description,
+                    recommendation: nil
+                )
+            }
+        } else {
+            // Fall back to flat iOS shape (for testing, or if server shape changes)
+            self.summary = try? container.decode(String.self, forKey: .summary)
+            self.overallSeverity = try? container.decode(String.self, forKey: .overallSeverity)
+            self.findings = try? container.decode([Finding].self, forKey: .findings)
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type, data, summary, overallSeverity, findings
+    }
+
+    enum DVIRCodingKeys: String, CodingKey {
+        case inspectionPoint, condition, defectsFound, visualNotes
+    }
+
+    struct DVIRDefect: Decodable {
+        let description: String
+        let severity: String
+        let requiresImmediate: Bool
+    }
 }
 
 public struct AIVisualScanButton: View {

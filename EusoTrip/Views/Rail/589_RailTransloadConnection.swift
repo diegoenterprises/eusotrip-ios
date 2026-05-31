@@ -34,11 +34,81 @@ private struct IntermodalTracking589: Decodable {
     let legDescription: String?
     let status: String?
     let locationName: String?
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Decode the server's envelope shape
+        let segments = (try? container.decode([AnyCodable].self, forKey: .segments)) ?? []
+        let currentMode = try? container.decode(String?.self, forKey: .currentMode)
+        
+        // Derive summary values from segments
+        self.legCount = segments.count > 0 ? segments.count : nil
+        self.status = currentMode != nil ? "in_progress" : "pending"
+        self.drayTimeLabel = "—"
+        self.legDescription = currentMode != nil ? "\(currentMode?.lowercased() ?? "rail") + dray" : "rail + dray"
+        self.locationName = currentMode != nil ? currentMode : nil
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case segments, containers, currentMode, activeSegmentId
+    }
+}
+
+private struct AnyCodable: Codable {
+    let value: Any
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let int = try? container.decode(Int.self) {
+            value = int
+        } else if let string = try? container.decode(String.self) {
+            value = string
+        } else if let bool = try? container.decode(Bool.self) {
+            value = bool
+        } else if let double = try? container.decode(Double.self) {
+            value = double
+        } else {
+            value = NSNull()
+        }
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        if let int = value as? Int {
+            try container.encode(int)
+        } else if let string = value as? String {
+            try container.encode(string)
+        } else if let bool = value as? Bool {
+            try container.encode(bool)
+        } else if let double = value as? Double {
+            try container.encode(double)
+        }
+    }
 }
 
 private struct TransferInfo589: Decodable {
     let transferCostUsd: Double?
     let cutoffLabel: String?
+
+    init(from decoder: Decoder) throws {
+        // Server returns bare array of transfer records; take the first one
+        let c = try decoder.singleValueContainer()
+        let records = try c.decode([TransferRecord].self)
+        let first = records.first
+        
+        // Map server's transferCost (Decimal) to our transferCostUsd (Double)
+        self.transferCostUsd = first.flatMap { Double($0.transferCost) }
+        // Server has no cutoffLabel field; remain nil
+        self.cutoffLabel = nil
+    }
+    
+    private struct TransferRecord: Decodable {
+        let id: Int
+        let intermodalShipmentId: Int
+        let transferCost: String  // Server sends Decimal as String via JSON
+        let status: String
+    }
 }
 
 private struct IntermodalSegment589: Decodable {
@@ -54,6 +124,23 @@ private struct ContainerInfo589: Decodable {
     let lastEventTime: String?
     let drayCutoffLabel: String?
     let slackLabel: String?
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.containerNumber = try c.decodeIfPresent(String.self, forKey: .containerNumber)
+        self.lastEventLabel = try c.decodeIfPresent(String.self, forKey: .lastEventLabel)
+        self.lastEventTime = try c.decodeIfPresent(String.self, forKey: .lastEventTime)
+        self.drayCutoffLabel = try c.decodeIfPresent(String.self, forKey: .drayCutoffLabel)
+        self.slackLabel = try c.decodeIfPresent(String.self, forKey: .slackLabel)
+    }
+    
+    private enum CodingKeys: String, CodingKey {
+        case containerNumber
+        case lastEventLabel
+        case lastEventTime
+        case drayCutoffLabel
+        case slackLabel
+    }
 }
 
 private struct RailIdIn589: Encodable { let railId: String }

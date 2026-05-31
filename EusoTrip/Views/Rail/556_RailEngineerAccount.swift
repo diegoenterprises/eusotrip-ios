@@ -29,6 +29,22 @@ private struct RailAccountProfile: Decodable {
     let role: String?
     let companyName: String?
     let crewId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, role, companyName, crewId, email, companyId
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(Int.self, forKey: .id)
+        self.name = try c.decodeIfPresent(String.self, forKey: .name)
+        self.role = try c.decodeIfPresent(String.self, forKey: .role)
+        self.companyName = try c.decodeIfPresent(String.self, forKey: .companyName)
+        self.crewId = try c.decodeIfPresent(String.self, forKey: .crewId)
+        // Server returns extra fields (email, companyId) that we ignore
+        _ = try c.decodeIfPresent(String.self, forKey: .email)
+        _ = try c.decodeIfPresent(Int.self, forKey: .companyId)
+    }
 }
 
 private struct RailCredential: Decodable, Identifiable {
@@ -193,7 +209,21 @@ private struct RailEngineerAccountBody: View {
     private func load() async {
         loading = true; loadError = nil
         struct Empty: Encodable {}
-        struct ProfileOut: Decodable { let credentials: [RailCredential]?; let crewHOS: RailCrewHOSRow? }
+        struct ProfileOut: Decodable {
+            let credentials: [RailCredential]?
+            let crewHOS: RailCrewHOSRow?
+            
+            init(from decoder: any Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                credentials = try? c.decode([RailCredential].self, forKey: .credentials)
+                crewHOS = try? c.decode(RailCrewHOSRow.self, forKey: .crewHOS)
+            }
+            
+            enum CodingKeys: String, CodingKey {
+                case credentials
+                case crewHOS
+            }
+        }
         do {
             self.me = try await EusoTripAPI.shared.query("users.me", input: Empty())
             let p: ProfileOut = try await EusoTripAPI.shared.query("users.getProfile", input: Empty())

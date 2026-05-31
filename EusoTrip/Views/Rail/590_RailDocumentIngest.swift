@@ -49,6 +49,82 @@ private struct ExtractedFields590: Decodable {
     let containerDesc: String?
     let commodity: String?
     let terms: String?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Try to decode as flat structure first (direct field access)
+        var wb = try? c.decodeIfPresent(String.self, forKey: .waybillNumber)
+        var cn = try? c.decodeIfPresent(String.self, forKey: .carrierName)
+        var ts = try? c.decodeIfPresent(String.self, forKey: .trainSymbol)
+        var ln = try? c.decodeIfPresent(String.self, forKey: .lane)
+        var etd = try? c.decodeIfPresent(String.self, forKey: .etdLabel)
+        var eta = try? c.decodeIfPresent(String.self, forKey: .etaLabel)
+        var cd = try? c.decodeIfPresent(String.self, forKey: .containerDesc)
+        var cm = try? c.decodeIfPresent(String.self, forKey: .commodity)
+        var tm = try? c.decodeIfPresent(String.self, forKey: .terms)
+
+        // If the flat fields are empty, fall back to the server envelope (extractedData)
+        if wb == nil && cn == nil && ts == nil,
+           let ext = try? c.decodeIfPresent([String: AnyCodable].self, forKey: .extractedData) {
+            wb = ext["waybillNumber"]?.value as? String
+            cn = ext["carrierName"]?.value as? String
+            ts = ext["trainSymbol"]?.value as? String
+            ln = ext["lane"]?.value as? String
+            etd = ext["etdLabel"]?.value as? String
+            eta = ext["etaLabel"]?.value as? String
+            cd = ext["containerDesc"]?.value as? String
+            cm = ext["commodity"]?.value as? String
+            tm = ext["terms"]?.value as? String
+        }
+
+        waybillNumber = wb
+        carrierName = cn
+        trainSymbol = ts
+        lane = ln
+        etdLabel = etd
+        etaLabel = eta
+        containerDesc = cd
+        commodity = cm
+        terms = tm
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case waybillNumber, carrierName, trainSymbol, lane, etdLabel, etaLabel, containerDesc, commodity, terms
+        case extractedData
+    }
+}
+
+private struct AnyCodable: Codable {
+    let value: Any
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let int = try? container.decode(Int.self) {
+            value = int
+        } else if let string = try? container.decode(String.self) {
+            value = string
+        } else if let bool = try? container.decode(Bool.self) {
+            value = bool
+        } else if let double = try? container.decode(Double.self) {
+            value = double
+        } else {
+            value = NSNull()
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        if let int = value as? Int {
+            try container.encode(int)
+        } else if let string = value as? String {
+            try container.encode(string)
+        } else if let bool = value as? Bool {
+            try container.encode(bool)
+        } else if let double = value as? Double {
+            try container.encode(double)
+        }
+    }
 }
 
 private struct DraftShipment590: Decodable {
@@ -58,8 +134,26 @@ private struct DraftShipment590: Decodable {
 }
 
 private struct DocDashboard590: Decodable {
-    let docsToday: Int?
-    let docsStatusLabel: String?
+    let totalDocuments: Int?
+    let pendingReview: Int?
+    let expiringSoon: Int?
+    let expired: Int?
+    let recentUploads: [[String: AnyCodable]]?
+    let byCategory: [[String: AnyCodable]]?
+    let byType: [[String: AnyCodable]]?
+    let byStatus: [[String: AnyCodable]]?
+    let activeWorkflows: Int?
+    let pendingSignatures: Int?
+    let templatesAvailable: Int?
+
+    // Backward-compat computed properties for the view
+    var docsToday: Int? { totalDocuments }
+    var docsStatusLabel: String? {
+        if let pending = pendingReview, pending > 0 {
+            return "\(pending) pending review"
+        }
+        return nil
+    }
 }
 
 private struct DocIdIn590: Encodable { let documentId: String }

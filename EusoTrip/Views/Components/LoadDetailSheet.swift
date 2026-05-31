@@ -305,7 +305,7 @@ struct LoadDetailSheet: View {
                     subtitle: "EusoWallet adaptive fee · live preview") {
             VStack(alignment: .leading, spacing: Space.s3) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(String(format: "$%.2f", f.carrierPayment))
+                    Text(String(format: "$%.2f", f.carrierPayment ?? 0))
                         .font(.system(size: 36, weight: .bold).monospacedDigit())
                         .foregroundStyle(LinearGradient.diagonal)
                     Spacer()
@@ -322,27 +322,29 @@ struct LoadDetailSheet: View {
                 Text("MULTIPLIER BREAKDOWN")
                     .font(EType.micro).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
-                feeBreakdownRow("Base rate",         value: String(format: "%.2f%%", f.breakdown.baseRate * 100))
-                feeBreakdownRow("Country",           value: String(format: "× %.2f", f.breakdown.countryMultiplier))
-                feeBreakdownRow("Vertical",          value: String(format: "× %.2f", f.breakdown.verticalMultiplier))
-                feeBreakdownRow("Equipment",         value: String(format: "× %.2f", f.breakdown.productMultiplier))
-                feeBreakdownRow("Hazmat",            value: String(format: "× %.2f", f.breakdown.hazmatMultiplier))
-                feeBreakdownRow("Distance",          value: String(format: "× %.2f", f.breakdown.distanceMultiplier))
-                feeBreakdownRow("Cycle dampener",    value: String(format: "× %.2f", f.breakdown.cycleDampener))
-                feeBreakdownRow("Spot/contract",     value: String(format: "× %.2f", f.breakdown.loadTypeAdjustment))
-                if f.breakdown.gamificationDiscount > 0 {
-                    feeBreakdownRow(
-                        "Gamification discount",
-                        value: String(format: "−%.2f%%", f.breakdown.gamificationDiscount * 100),
-                        positive: true
-                    )
-                }
-                HStack {
-                    Image(systemName: cyclePhaseGlyph(f.breakdown.cyclePhase))
-                        .foregroundStyle(cyclePhaseTint(f.breakdown.cyclePhase))
-                    Text("Market \(f.breakdown.cyclePhase.capitalized) · MHI \(Int(f.breakdown.marketHealthIndex.rounded()))")
-                        .font(EType.caption.weight(.semibold))
-                        .foregroundStyle(palette.textPrimary)
+                if let breakdown = f.breakdown {
+                    feeBreakdownRow("Base rate",         value: String(format: "%.2f%%", breakdown.baseRate * 100))
+                    feeBreakdownRow("Country",           value: String(format: "× %.2f", breakdown.countryMultiplier))
+                    feeBreakdownRow("Vertical",          value: String(format: "× %.2f", breakdown.verticalMultiplier))
+                    feeBreakdownRow("Equipment",         value: String(format: "× %.2f", breakdown.productMultiplier))
+                    feeBreakdownRow("Hazmat",            value: String(format: "× %.2f", breakdown.hazmatMultiplier))
+                    feeBreakdownRow("Distance",          value: String(format: "× %.2f", breakdown.distanceMultiplier))
+                    feeBreakdownRow("Cycle dampener",    value: String(format: "× %.2f", breakdown.cycleDampener))
+                    feeBreakdownRow("Spot/contract",     value: String(format: "× %.2f", breakdown.loadTypeAdjustment))
+                    if breakdown.gamificationDiscount > 0 {
+                        feeBreakdownRow(
+                            "Gamification discount",
+                            value: String(format: "−%.2f%%", breakdown.gamificationDiscount * 100),
+                            positive: true
+                        )
+                    }
+                    HStack {
+                        Image(systemName: cyclePhaseGlyph(breakdown.cyclePhase))
+                            .foregroundStyle(cyclePhaseTint(breakdown.cyclePhase))
+                        Text("Market \(breakdown.cyclePhase.capitalized) · MHI \(Int(breakdown.marketHealthIndex.rounded()))")
+                            .font(EType.caption.weight(.semibold))
+                            .foregroundStyle(palette.textPrimary)
+                    }
                 }
             }
         }

@@ -40,7 +40,7 @@ private struct FinancialSummary581: Decodable {
 
 private struct Settlement581: Decodable, Identifiable {
     let id: Int
-    let loadId: String?
+    let loadId: Int?
     let shipmentNumber: String?
     let origin: String?
     let destination: String?
@@ -281,9 +281,11 @@ private struct RailSettlementSummaryBody: View {
             }
             return s.shipmentNumber ?? "Settlement #\(s.id)"
         }()
-        let sub = "\(s.shipmentNumber ?? s.loadId ?? "—")"
-            + (s.carCount.map { " · \($0) car\($0 == 1 ? "" : "s")" } ?? "")
-            + (s.notes.map { " · \($0.prefix(16))" } ?? "")
+        // Split into typed sub-expressions to keep the Swift type-checker fast.
+        let idPart: String = s.shipmentNumber ?? s.loadId.map(String.init) ?? "—"
+        let carPart: String = s.carCount.map { " · \($0) car\($0 == 1 ? "" : "s")" } ?? ""
+        let notePart: String = s.notes.map { " · \($0.prefix(16))" } ?? ""
+        let sub: String = idPart + carPart + notePart
         let amountStr: String = {
             let v = settlementAmount(s)
             if v == 0 { return "—" }
