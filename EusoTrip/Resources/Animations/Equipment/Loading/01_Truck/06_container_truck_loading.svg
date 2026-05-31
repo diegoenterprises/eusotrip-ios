@@ -42,52 +42,79 @@
        90-100%: hold + reset
     ================================================================================= */
 
-    .container-lower { animation: container-lower 7s ease-in-out infinite;
+    /* NESTING NOTE: the container <g class="container-lower"> is nested INSIDE
+       <g class="spreader-with-container">, so the container's on-screen Y is the
+       SUM of both transforms. They are choreographed so:
+         - descent (0-27%): spreader carries the whole load down (sum = -160 -> 0)
+         - seated (27-62%): sum held at 0 on the chassis
+         - hoist-away (62-90%): spreader rises (-150) while the container adds an
+           equal +150 to CANCEL it, so the LANDED CONTAINER STAYS ON THE CHASSIS
+           while only the empty spreader/boom climbs away. */
+    /* COUPLED MOTION (the container <g class="container-lower"> is nested INSIDE
+       <g class="spreader-with-container">, so container screen-Y = SPREADER + CONTAINER):
+         - The spreader (with its cones locked on the container TOP castings) carries
+           the RIGID load down: spreader -160 -> +50, container stays 0  => sum -160 -> +50.
+           Seated = +50 because the container's static bottom castings sit ~50px ABOVE
+           the chassis twist-lock pads, so the assembly drops 50px to seat on the chassis.
+         - After the chassis locks take the load and the spreader cones release (~64%),
+           the empty spreader hoists up (-100) while the container adds +150 to CANCEL it,
+           so the LANDED CONTAINER STAYS SEATED at +50 and only the spreader/boom climbs. */
+    .container-lower { animation: container-lower 7s infinite;
                        transform-box: fill-box; transform-origin: center top; }
     @keyframes container-lower {
-      0%, 15%   { transform: translateY(-160px); opacity: 1; }
-      30%, 70%  { transform: translateY(0);      opacity: 1; }
-      90%, 100% { transform: translateY(0);      opacity: 1; }
+      0%, 62%   { transform: translateY(0); animation-timing-function: cubic-bezier(0.4,0,0.2,1); }
+      90%, 100% { transform: translateY(150px); }   /* +150 cancels spreader -100 -> container stays at +50 */
     }
 
-    .spreader-with-container { animation: spreader-stay 7s ease-in-out infinite;
+    /* Spreader frame: lowers the rigid load to its seat, holds while the chassis
+       twist-locks engage and its own cones release, then hoists straight up empty. */
+    .spreader-with-container { animation: spreader-stay 7s infinite;
                                transform-box: fill-box; transform-origin: center top; }
     @keyframes spreader-stay {
-      0%, 15%   { transform: translateY(-110px); }
-      30%, 55%  { transform: translateY(50px); }
-      70%, 100% { transform: translateY(-130px); }
+      0%, 14%   { transform: translateY(-160px); animation-timing-function: cubic-bezier(0.4,0,0.2,1); }
+      27%       { transform: translateY(52px); }    /* feathered over-travel into the seat */
+      31%, 62%  { transform: translateY(50px); animation-timing-function: cubic-bezier(0.4,0,0.2,1); }
+      90%, 100% { transform: translateY(-100px); }
     }
 
-    .boom-retract { animation: boom-retract 7s ease-in-out infinite;
+    /* Boom only lifts AFTER the spreader cones release (~62%), so the empty
+       spreader rises with the boom while the loaded container stays on chassis. */
+    .boom-retract { animation: boom-retract 7s infinite;
                     transform-box: fill-box; transform-origin: bottom right; }
     @keyframes boom-retract {
-      0%, 55%   { transform: translateY(0)    scale(1); }
-      70%       { transform: translateY(-14px) scale(0.985); }
+      0%, 62%   { transform: translateY(0)    scale(1); animation-timing-function: cubic-bezier(0.4,0,0.2,1); }
+      78%       { transform: translateY(-14px) scale(0.985); }
       90%, 100% { transform: translateY(-22px) scale(0.97); }
     }
 
-    .twist-lock-engage { animation: twist-lock-engage 7s ease-in-out infinite;
+    /* Twist-lock cam: stays open until the casting seats (touchdown ~31%),
+       then snaps 90° to LOCKED with a spring-like overshoot. */
+    .twist-lock-engage { animation: twist-lock-engage 7s infinite;
                          transform-box: fill-box; transform-origin: center; }
     @keyframes twist-lock-engage {
-      0%, 30%   { transform: rotate(0deg);  fill: #6A6F78; }
-      40%, 50%  { transform: rotate(90deg); fill: #FFD200; }
+      0%, 31%   { transform: rotate(0deg);  fill: #6A6F78; animation-timing-function: cubic-bezier(0.34,1.56,0.64,1); }
+      42%       { transform: rotate(98deg); fill: #FFD200; }
+      48%, 50%  { transform: rotate(90deg); fill: #FFD200; }
       90%, 100% { transform: rotate(90deg); fill: #FFD200; }
     }
 
+    /* Lock-confirm pulse fires the instant the cam snaps to LOCKED (~42%). */
     .twist-lock-glow { animation: twist-lock-glow 7s ease-in-out infinite;
                        transform-box: fill-box; transform-origin: center; }
     @keyframes twist-lock-glow {
-      0%, 30%   { opacity: 0;    transform: scale(0.6); }
-      40%       { opacity: 0.95; transform: scale(1.6); }
+      0%, 31%   { opacity: 0;    transform: scale(0.6); }
+      42%       { opacity: 0.95; transform: scale(1.6); }
       55%, 90%  { opacity: 0.55; transform: scale(1.1); }
       100%      { opacity: 0;    transform: scale(0.6); }
     }
 
+    /* Spreader cones stay LOCKED until the chassis has the load (~58%), then
+       release to grey just before the boom hoists the empty spreader away. */
     .spreader-release { animation: spreader-release 7s ease-in-out infinite;
                         transform-box: fill-box; transform-origin: center; }
     @keyframes spreader-release {
-      0%, 55%   { fill: #FFD200; opacity: 1; }
-      62%, 70%  { fill: #6A6F78; opacity: 0.85; }
+      0%, 58%   { fill: #FFD200; opacity: 1; }
+      64%, 70%  { fill: #6A6F78; opacity: 0.85; }
       90%, 100% { fill: #6A6F78; opacity: 0.85; }
     }
 
@@ -115,6 +142,18 @@
       0%, 100% { opacity: 0.25; transform: scale(0.85); }
       50%      { opacity: 1;    transform: scale(1.15); }
     }
+
+    /* ============ COUNTRY-SWITCHABLE DG PLACARD SELECTION ============
+       The renderer sets data-country on the root <svg>; CSS shows the single
+       matching placard variant.  Default markup has US visible, MX/CA display:none.
+       (Hosts that cannot style by attribute can instead toggle the `display`
+       attribute on the .country-XX groups directly.) */
+    svg[data-country="US"] .placard-country:not(.country-US) { display: none; }
+    svg[data-country="US"] .placard-country.country-US       { display: inline; }
+    svg[data-country="MX"] .placard-country:not(.country-MX) { display: none; }
+    svg[data-country="MX"] .placard-country.country-MX       { display: inline; }
+    svg[data-country="CA"] .placard-country:not(.country-CA) { display: none; }
+    svg[data-country="CA"] .placard-country.country-CA       { display: inline; }
 
     @media (prefers-reduced-motion: reduce) {
       .beacon-flash,
@@ -851,6 +890,64 @@
           <text x="700" y="358" text-anchor="middle"
                 font-family="Inter, system-ui, sans-serif"
                 font-weight="600" font-size="8" letter-spacing="2.4" fill="#FFFFFF" opacity="0.78">INTERMODAL</text>
+        </g>
+
+        <!-- ============================================================
+             COUNTRY-SWITCHABLE DANGEROUS-GOODS PLACARD (intermodal box is a
+             "transport vehicle" — when DG-laden it must carry the diamond on
+             ALL FOUR sides + UN id).  Example shown: Class 3 Flammable Liquid,
+             UN 1203 (gasoline) — a routine intermodal commodity.
+
+             RENDERER SELECTION: exactly one of the three sibling groups is shown
+             by toggling `display`.  The app sets data-country (US|MX|CA) on the
+             root <svg> and shows the matching group:
+               .placard-country.country-US { display: none }   (etc.)
+             Default below = US visible, MX/CA hidden.
+               US  — 49 CFR 172.500: diamond, UN number in the placard centre.
+               CA  — TDG SOR/2001-286: diamond + separate orange UN panel
+                     (300x120mm @ scale); Class 9 IS placarded in Canada.
+               MX  — NOM-004-SCT2: rombo (diamond); no generic "DANGEROUS"
+                     placard; proper shipping name appears in Spanish.
+             ============================================================ -->
+        <g class="dg-placard" transform="translate(300 396)">
+          <!-- US (default visible) -->
+          <g class="placard-country country-US">
+            <g transform="rotate(45 18 18)">
+              <rect x="0" y="0" width="36" height="36" rx="2" fill="#E5350D" stroke="#FFFFFF" stroke-width="1.4"/>
+              <rect x="2.4" y="2.4" width="31.2" height="31.2" rx="1.4" fill="none" stroke="#FFFFFF" stroke-width="0.8" opacity="0.7"/>
+            </g>
+            <!-- flame glyph -->
+            <path d="M18 6 C20 11 24 12 23 17 C26 15 26 12 26 12 C28 16 27 22 18 24 C11 23 9 17 13 12 C13 15 15 15 15 15 C14 11 17 9 18 6 Z" fill="#FFFFFF" transform="translate(0 0)"/>
+            <text x="18" y="29" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6.6" fill="#FFFFFF">3</text>
+            <!-- UN id centred in placard (US style) -->
+            <rect x="6" y="17" width="24" height="8" fill="#FFFFFF"/>
+            <text x="18" y="23.4" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6" letter-spacing="0.4" fill="#000000">1203</text>
+          </g>
+          <!-- Mexico (hidden by default) -->
+          <g class="placard-country country-MX" display="none">
+            <g transform="rotate(45 18 18)">
+              <rect x="0" y="0" width="36" height="36" rx="2" fill="#E5350D" stroke="#FFFFFF" stroke-width="1.4"/>
+              <rect x="2.4" y="2.4" width="31.2" height="31.2" rx="1.4" fill="none" stroke="#FFFFFF" stroke-width="0.8" opacity="0.7"/>
+            </g>
+            <path d="M18 6 C20 11 24 12 23 17 C26 15 26 12 26 12 C28 16 27 22 18 24 C11 23 9 17 13 12 C13 15 15 15 15 15 C14 11 17 9 18 6 Z" fill="#FFFFFF"/>
+            <text x="18" y="29" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6.6" fill="#FFFFFF">3</text>
+            <rect x="6" y="17" width="24" height="8" fill="#FFFFFF"/>
+            <text x="18" y="23.4" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6" letter-spacing="0.4" fill="#000000">1203</text>
+            <!-- NOM-004: Spanish proper shipping name -->
+            <text x="18" y="46" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="4.4" letter-spacing="0.6" fill="#FFFFFF" opacity="0.9">GASOLINA</text>
+          </g>
+          <!-- Canada (hidden by default) — diamond + separate orange UN panel -->
+          <g class="placard-country country-CA" display="none">
+            <g transform="rotate(45 18 18)">
+              <rect x="0" y="0" width="36" height="36" rx="2" fill="#E5350D" stroke="#FFFFFF" stroke-width="1.4"/>
+              <rect x="2.4" y="2.4" width="31.2" height="31.2" rx="1.4" fill="none" stroke="#FFFFFF" stroke-width="0.8" opacity="0.7"/>
+            </g>
+            <path d="M18 6 C20 11 24 12 23 17 C26 15 26 12 26 12 C28 16 27 22 18 24 C11 23 9 17 13 12 C13 15 15 15 15 15 C14 11 17 9 18 6 Z" fill="#FFFFFF"/>
+            <text x="18" y="31" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="7" fill="#FFFFFF">3</text>
+            <!-- TDG orange panel (300x120mm proportion ~ 2.5:1), UN id, no prefix -->
+            <rect x="42" y="13" width="30" height="12" fill="#E08A3A" stroke="#1A1F2E" stroke-width="0.6"/>
+            <text x="57" y="22" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="7" letter-spacing="0.6" fill="#000000">1203</text>
+          </g>
         </g>
 
         <!-- CSC plate on door end -->

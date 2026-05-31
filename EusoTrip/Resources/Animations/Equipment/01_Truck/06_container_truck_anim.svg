@@ -104,6 +104,17 @@
       50%      { opacity: 1; }
     }
 
+    /* ============ COUNTRY-SWITCHABLE DG PLACARD SELECTION ============
+       Renderer sets data-country (US|MX|CA) on the root <svg>; CSS shows the one
+       matching variant. Default markup = US visible, MX/CA display:none. Hosts
+       unable to style by attribute may toggle `display` on the groups. */
+    svg[data-country="US"] .placard-country:not(.country-US) { display: none; }
+    svg[data-country="US"] .placard-country.country-US       { display: inline; }
+    svg[data-country="MX"] .placard-country:not(.country-MX) { display: none; }
+    svg[data-country="MX"] .placard-country.country-MX       { display: inline; }
+    svg[data-country="CA"] .placard-country:not(.country-CA) { display: none; }
+    svg[data-country="CA"] .placard-country.country-CA       { display: inline; }
+
     @media (prefers-reduced-motion: reduce) {
       .chassis-bob, .cab-sway, .mudflap, .streak, .bow-air, .tire-dust,
       .sheen, .wordmark, .badge-e, .headlight-glow, .airlines, .chevron,
@@ -240,6 +251,45 @@
     <!-- Owner code + serial -->
     <text x="775" y="320" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="38" fill="#FFFFFF" opacity="0.9" letter-spacing="3">EUSO 7142</text>
     <text x="775" y="350" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="16" fill="#FFFFFF" opacity="0.7" letter-spacing="2">45G1</text>
+    <!-- ============================================================
+         COUNTRY-SWITCHABLE DANGEROUS-GOODS PLACARD (idle silhouette).
+         Class 3 Flammable Liquid, UN 1203 (gasoline) — sample DG load.
+         RENDERER: data-country (US|MX|CA) on the root <svg> picks one variant
+         (default US). US = diamond w/ centred UN id; CA = diamond + orange UN
+         panel (TDG); MX = rombo + Spanish proper shipping name (NOM-004-SCT2). -->
+    <g class="dg-placard" transform="translate(510 352)">
+      <g class="placard-country country-US">
+        <g transform="rotate(45 23 23)">
+          <rect x="0" y="0" width="46" height="46" rx="2.5" fill="#E5350D" stroke="#FFFFFF" stroke-width="1.8"/>
+          <rect x="3" y="3" width="40" height="40" rx="1.8" fill="none" stroke="#FFFFFF" stroke-width="1" opacity="0.7"/>
+        </g>
+        <path d="M23 7 C25.5 14 31 15 29.5 22 C33 19 33 15 33 15 C36 21 34 29 23 31 C14 30 11 22 16.5 15 C16.5 19 19 19 19 19 C18 14 21.5 11 23 7 Z" fill="#FFFFFF"/>
+        <text x="23" y="38" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="9" fill="#FFFFFF">3</text>
+        <rect x="8" y="22" width="30" height="10" fill="#FFFFFF"/>
+        <text x="23" y="30" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="7.6" letter-spacing="0.6" fill="#000000">1203</text>
+      </g>
+      <g class="placard-country country-MX" display="none">
+        <g transform="rotate(45 23 23)">
+          <rect x="0" y="0" width="46" height="46" rx="2.5" fill="#E5350D" stroke="#FFFFFF" stroke-width="1.8"/>
+          <rect x="3" y="3" width="40" height="40" rx="1.8" fill="none" stroke="#FFFFFF" stroke-width="1" opacity="0.7"/>
+        </g>
+        <path d="M23 7 C25.5 14 31 15 29.5 22 C33 19 33 15 33 15 C36 21 34 29 23 31 C14 30 11 22 16.5 15 C16.5 19 19 19 19 19 C18 14 21.5 11 23 7 Z" fill="#FFFFFF"/>
+        <text x="23" y="38" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="9" fill="#FFFFFF">3</text>
+        <rect x="8" y="22" width="30" height="10" fill="#FFFFFF"/>
+        <text x="23" y="30" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="7.6" letter-spacing="0.6" fill="#000000">1203</text>
+        <text x="23" y="58" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="6" letter-spacing="0.8" fill="#FFFFFF" opacity="0.92">GASOLINA</text>
+      </g>
+      <g class="placard-country country-CA" display="none">
+        <g transform="rotate(45 23 23)">
+          <rect x="0" y="0" width="46" height="46" rx="2.5" fill="#E5350D" stroke="#FFFFFF" stroke-width="1.8"/>
+          <rect x="3" y="3" width="40" height="40" rx="1.8" fill="none" stroke="#FFFFFF" stroke-width="1" opacity="0.7"/>
+        </g>
+        <path d="M23 7 C25.5 14 31 15 29.5 22 C33 19 33 15 33 15 C36 21 34 29 23 31 C14 30 11 22 16.5 15 C16.5 19 19 19 19 19 C18 14 21.5 11 23 7 Z" fill="#FFFFFF"/>
+        <text x="23" y="40" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="9.5" fill="#FFFFFF">3</text>
+        <rect x="54" y="16" width="40" height="16" fill="#E08A3A" stroke="#1A1F2E" stroke-width="0.8"/>
+        <text x="74" y="28" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="9.5" letter-spacing="0.8" fill="#000000">1203</text>
+      </g>
+    </g>
     <!-- DOT reflectors -->
     <g><rect x="478" y="442" width="20" height="5" fill="#E5350D"/><rect x="498" y="442" width="20" height="5" fill="#FFFFFF"/>
        <rect x="990" y="442" width="20" height="5" fill="#FFFFFF"/><rect x="1010" y="442" width="20" height="5" fill="#E5350D"/><rect x="1030" y="442" width="20" height="5" fill="#FFFFFF"/><rect x="1050" y="442" width="20" height="5" fill="#E5350D"/></g>

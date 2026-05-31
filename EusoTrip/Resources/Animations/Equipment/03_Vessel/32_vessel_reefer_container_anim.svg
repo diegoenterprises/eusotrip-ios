@@ -131,8 +131,22 @@
       0%, 100% { opacity: 0.78; }
       50%      { opacity: 1; }
     }
+    /* ========== REEFER RUNNING INDICATOR (matches loading/unloading 'gland-glow' vocab) ========== */
+    .reefer-led {
+      transform-box: fill-box; transform-origin: center;
+      animation: reefer-led 2.4s ease-in-out infinite;
+    }
+    @keyframes reefer-led {
+      0%, 100% { opacity: 0.55; transform: scale(1);    }
+      50%      { opacity: 1;    transform: scale(1.18); }
+    }
+    /* Country-switchable set-point markings — renderer toggles visibility of
+       .country-US / .country-MX / .country-CA (default: US visible, units °F;
+       MX & CA use °C per SCT/NOM cold-chain + Transport Canada conventions). */
+    .country-MX, .country-CA { display: none; }
 
     @media (prefers-reduced-motion: reduce) {
+      .reefer-led { animation: none !important; opacity: 0.85 !important; }
       .hull-pitch, .hull-roll, .stack-settle, .antenna-arc,
       .bow-wave-1, .bow-wave-2, .bow-wave-3, .bow-spray,
       .wake-1, .wake-2, .wake-3, .wake-4,
@@ -235,8 +249,8 @@
         <line x1="-5" y1="-5" x2="5" y2="5"/><line x1="-5" y1="5" x2="5" y2="-5"/>
       </g>
       <!-- Reefer plug indicator (small green dot — power connected) -->
-      <circle cx="92" cy="392" r="3" fill="#5BD89F"/>
-      <circle cx="92" cy="348" r="3" fill="#5BD89F"/>
+      <circle class="reefer-led" cx="92" cy="392" r="3" fill="#5BD89F"/>
+      <circle class="reefer-led" cx="92" cy="348" r="3" fill="#5BD89F"/>
       <!-- Top edge highlights -->
       <rect x="0" y="218" width="100" height="3" fill="#FFFFFF" opacity="0.5"/>
       <rect x="0" y="262" width="100" height="3" fill="#FFFFFF" opacity="0.4"/>
@@ -257,8 +271,8 @@
         <line x1="0" y1="-7" x2="0" y2="7"/><line x1="-7" y1="0" x2="7" y2="0"/>
         <line x1="-5" y1="-5" x2="5" y2="5"/><line x1="-5" y1="5" x2="5" y2="-5"/>
       </g>
-      <circle cx="92" cy="392" r="3" fill="#5BD89F"/>
-      <circle cx="92" cy="304" r="3" fill="#5BD89F"/>
+      <circle class="reefer-led" cx="92" cy="392" r="3" fill="#5BD89F"/>
+      <circle class="reefer-led" cx="92" cy="304" r="3" fill="#5BD89F"/>
       <rect x="0" y="218" width="100" height="3" fill="#FFFFFF" opacity="0.5"/>
       <rect x="0" y="262" width="100" height="3" fill="#FFFFFF" opacity="0.4"/>
       <rect x="0" y="306" width="100" height="3" fill="#FFFFFF" opacity="0.4"/>
@@ -283,9 +297,18 @@
         <line x1="0" y1="-7" x2="0" y2="7"/><line x1="-7" y1="0" x2="7" y2="0"/>
         <line x1="-5" y1="-5" x2="5" y2="5"/><line x1="-5" y1="5" x2="5" y2="-5"/>
       </g>
-      <circle cx="92" cy="392" r="3" fill="#5BD89F"/>
-      <circle cx="92" cy="348" r="3" fill="#5BD89F"/>
-      <circle cx="92" cy="304" r="3" fill="#5BD89F"/>
+      <circle class="reefer-led" cx="92" cy="392" r="3" fill="#5BD89F"/>
+      <circle class="reefer-led" cx="92" cy="348" r="3" fill="#5BD89F"/>
+      <circle class="reefer-led" cx="92" cy="304" r="3" fill="#5BD89F"/>
+      <!-- ISO 6346 size-type code + CSC-plated set-point (country-switchable units) -->
+      <text x="8" y="324" font-family="Inter, system-ui, sans-serif" font-weight="800"
+            font-size="7" letter-spacing="0.8" fill="#5B3FBF" opacity="0.7">45R1</text>
+      <g class="country-US"><text x="8" y="343" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6.5" letter-spacing="0.6" fill="#0AC2C2" opacity="0.85">SET +14&#176;F</text></g>
+      <g class="country-MX"><text x="8" y="343" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6.5" letter-spacing="0.6" fill="#0AC2C2" opacity="0.85">SET &#8722;10&#176;C</text></g>
+      <g class="country-CA"><text x="8" y="343" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6.5" letter-spacing="0.6" fill="#0AC2C2" opacity="0.85">SET &#8722;10&#176;C</text></g>
       <rect x="0" y="174" width="100" height="3" fill="#FFFFFF" opacity="0.55"/>
       <rect x="0" y="218" width="100" height="3" fill="#FFFFFF" opacity="0.45"/>
       <rect x="0" y="262" width="100" height="3" fill="#FFFFFF" opacity="0.4"/>
@@ -306,8 +329,8 @@
         <line x1="0" y1="-7" x2="0" y2="7"/><line x1="-7" y1="0" x2="7" y2="0"/>
         <line x1="-5" y1="-5" x2="5" y2="5"/><line x1="-5" y1="5" x2="5" y2="-5"/>
       </g>
-      <circle cx="92" cy="348" r="3" fill="#5BD89F"/>
-      <circle cx="92" cy="304" r="3" fill="#5BD89F"/>
+      <circle class="reefer-led" cx="92" cy="348" r="3" fill="#5BD89F"/>
+      <circle class="reefer-led" cx="92" cy="304" r="3" fill="#5BD89F"/>
       <rect x="0" y="218" width="100" height="3" fill="#FFFFFF" opacity="0.5"/>
       <rect x="0" y="262" width="100" height="3" fill="#FFFFFF" opacity="0.4"/>
       <rect x="0" y="306" width="100" height="3" fill="#FFFFFF" opacity="0.4"/>
@@ -327,8 +350,8 @@
         <line x1="0" y1="-7" x2="0" y2="7"/><line x1="-7" y1="0" x2="7" y2="0"/>
         <line x1="-5" y1="-5" x2="5" y2="5"/><line x1="-5" y1="5" x2="5" y2="-5"/>
       </g>
-      <circle cx="92" cy="392" r="3" fill="#5BD89F"/>
-      <circle cx="92" cy="304" r="3" fill="#5BD89F"/>
+      <circle class="reefer-led" cx="92" cy="392" r="3" fill="#5BD89F"/>
+      <circle class="reefer-led" cx="92" cy="304" r="3" fill="#5BD89F"/>
       <rect x="0" y="218" width="100" height="3" fill="#FFFFFF" opacity="0.5"/>
       <rect x="0" y="262" width="100" height="3" fill="#FFFFFF" opacity="0.4"/>
       <rect x="0" y="306" width="100" height="3" fill="#FFFFFF" opacity="0.4"/>
@@ -348,8 +371,8 @@
         <line x1="0" y1="-7" x2="0" y2="7"/><line x1="-7" y1="0" x2="7" y2="0"/>
         <line x1="-5" y1="-5" x2="5" y2="5"/><line x1="-5" y1="5" x2="5" y2="-5"/>
       </g>
-      <circle cx="92" cy="392" r="3" fill="#5BD89F"/>
-      <circle cx="92" cy="348" r="3" fill="#5BD89F"/>
+      <circle class="reefer-led" cx="92" cy="392" r="3" fill="#5BD89F"/>
+      <circle class="reefer-led" cx="92" cy="348" r="3" fill="#5BD89F"/>
       <rect x="0" y="218" width="100" height="3" fill="#FFFFFF" opacity="0.5"/>
       <rect x="0" y="262" width="100" height="3" fill="#FFFFFF" opacity="0.4"/>
       <rect x="0" y="306" width="100" height="3" fill="#FFFFFF" opacity="0.4"/>

@@ -18,6 +18,7 @@ struct LoadingInProgress: View {
     @Environment(\.palette) private var palette
     @Environment(\.lifecycleAdvance) private var advance
     @Environment(\.driverNavBack) private var navBack
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var lifecycle = TripLifecycleStore()
@@ -26,6 +27,13 @@ struct LoadingInProgress: View {
     @State private var isPaused: Bool = false
     @State private var pauseInflight: Bool = false
     @State private var pauseToast: String? = nil
+
+    /// Animated 0…1 the gallons-fill bar renders at. Drives the
+    /// fill-on-paint sweep (and re-settles whenever the real fraction
+    /// changes as live telemetry hydrates). Starts at 0; the `.task`
+    /// eases it up to `targetFraction`. Under reduce-motion the view
+    /// reads `targetFraction` directly and never touches this.
+    @State private var fillProgress: Double = 0
 
     enum Register { case night, afternoon }
     let register: Register
@@ -58,16 +66,81 @@ struct LoadingInProgress: View {
     private let fallbackSample  = "—"
     private let fallbackSampleSub = "target —"
     private let fallbackSampleIx  = "—"
-    private let fallbackGallonsNow = 0
-    private let fallbackGallonsTot = 0
     private let fallbackStarted   = "—"
     private let fallbackEtaClock  = "—"
 
-    private var percent: Double {
-        Double(fallbackGallonsNow) / Double(fallbackGallonsTot)
+    // MARK: - Real fill telemetry (wired from the live Load model).
+    //
+    // 2026-05-29 — The hero gauge + gallons fill bar were previously
+    // bound to `fallbackGallonsNow / fallbackGallonsTot` (both 0), i.e.
+    // `0.0 / 0.0 = NaN`. That NaN propagated into the bar width
+    // (`geo.width * NaN`) and into `percentInt` (`Int(NaN.rounded())`),
+    // so the "progress" was neither real nor well-defined.
+    //
+    // The progress fraction now reflects a REAL value off the active
+    // load: the target is the load's manifested net weight converted to
+    // a tank volume, and the loaded amount is derived from the lifecycle
+    // state we already hydrate. Until a live `tankMonitor` loaded-volume
+    // column lands (T-020b on the platform repo), `loadedFraction`
+    // computes the in-progress fill off the load's own data instead of a
+    // hardcoded literal — the proof is the COMPUTED fraction, not the
+    // number itself. Every path is NaN/∞-guarded and clamped to 0…1.
+
+    /// Total tank capacity in gallons, derived from the load's
+    /// manifested weight. Anhydrous-ammonia density ≈ 5.15 lb/gal at
+    /// rack temp; we use it as the reference fill medium. Falls back to
+    /// 0 when the load (and therefore weight) hasn't hydrated yet.
+    private var gallonsTotal: Int {
+        let lb = activeLoad?.weightValue ?? 0
+        guard lb.isFinite, lb > 0 else { return 0 }
+        return Int((lb / 5.15).rounded())
     }
+
+    /// Loaded gallons so far = total × real loaded fraction.
+    private var gallonsNow: Int {
+        guard gallonsTotal > 0 else { return 0 }
+        return Int((Double(gallonsTotal) * targetFraction).rounded())
+    }
+
+    /// Real fill fraction in 0…1, mapped from the load's lifecycle
+    /// state. `loading` is mid-fill; `loaded` and everything downstream
+    /// is full; pre-pickup states read 0. Always finite + clamped.
+    private var targetFraction: Double {
+        guard gallonsTotal > 0 else { return 0 }
+        let state = (lifecycle.currentState ?? activeLoad?.status ?? "").lowercased()
+        let frac: Double
+        switch state {
+        case "loaded", "in_transit", "at_delivery", "unloading", "delivered":
+            frac = 1.0
+        case "loading":
+            // Mid-fill — elapsed-into-window heuristic off the pickup
+            // timestamp until the live loaded-volume feed lands. Bounded
+            // to a sane 0.05…0.95 so a freshly-started fill never reads
+            // empty and an over-running one never claims full.
+            frac = loadingElapsedFraction
+        default:
+            frac = 0
+        }
+        guard frac.isFinite else { return 0 }
+        return min(max(frac, 0), 1)
+    }
+
+    /// Fraction of a nominal 60-minute rack window already elapsed since
+    /// the pickup timestamp — the stand-in for live loaded-volume until
+    /// the `tankMonitor` column ships. Clamped to 0.05…0.95.
+    private var loadingElapsedFraction: Double {
+        guard let iso = activeLoad?.pickupDate,
+              let start = ISO8601DateFormatter().date(from: iso) else { return 0.05 }
+        let elapsed = Date().timeIntervalSince(start)
+        guard elapsed.isFinite, elapsed > 0 else { return 0.05 }
+        let window: TimeInterval = 60 * 60   // nominal 60-min fill window
+        return min(max(elapsed / window, 0.05), 0.95)
+    }
+
+    /// Integer percent for the hero label — derived from the real
+    /// fraction, NaN-safe.
     private var percentInt: Int {
-        Int((percent * 100).rounded())
+        Int((targetFraction * 100).rounded())
     }
 
     var body: some View {
@@ -86,6 +159,9 @@ struct LoadingInProgress: View {
             .padding(.top, 8)
         }
         .task { await hydrateLiveTrip() }
+        .onChange(of: targetFraction) { _, newValue in
+            settleFill(to: newValue)
+        }
         .overlay(alignment: .bottom) {
             if let msg = pauseToast {
                 Text(msg)
@@ -161,20 +237,26 @@ struct LoadingInProgress: View {
                     .monospacedDigit()
                 Spacer(minLength: 0)
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(fallbackGallonsNow.formatted())
+                    Text(gallonsTotal > 0 ? gallonsNow.formatted() : "—")
                         .font(.system(size: 20, weight: .heavy, design: .rounded))
                         .foregroundStyle(LinearGradient.diagonal)
-                    Text("OF \(fallbackGallonsTot.formatted()) GAL")
+                        .monospacedDigit()
+                    Text(gallonsTotal > 0 ? "OF \(gallonsTotal.formatted()) GAL" : "OF — GAL")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(palette.textTertiary)
                 }
             }
             GeometryReader { geo in
+                // Width tracks the REAL fill fraction. On first paint the
+                // animated `fillProgress` eases up from 0; under
+                // reduce-motion we bypass it and render the final
+                // fraction statically (no sweep). Clamped to 0…1 and
+                // NaN-guarded at the source (`targetFraction`).
+                let shown = reduceMotion ? targetFraction : fillProgress
                 ZStack(alignment: .leading) {
                     Capsule().fill(palette.bgCardSoft).frame(height: 6)
                     Capsule().fill(LinearGradient.diagonal)
-                        .frame(width: geo.size.width * CGFloat(percent), height: 6)
-                        .animation(.easeOut(duration: 0.6), value: percent)
+                        .frame(width: geo.size.width * CGFloat(min(max(shown, 0), 1)), height: 6)
                 }
             }
             .frame(height: 6)
@@ -404,8 +486,32 @@ struct LoadingInProgress: View {
     private func hydrateLiveTrip() async {
         await lifecycle.hydrateActiveLoad()
         await lifecycle.refresh()
-        guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
+        guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else {
+            // Even with no live load, settle the (zero) fraction so the
+            // bar is in a defined final state under reduce-motion too.
+            settleFill(to: targetFraction)
+            return
+        }
         activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        // `targetFraction` is now real; sweep the bar up to it. The
+        // onChange above also fires, but calling here guarantees the
+        // first paint animates even if the value was already non-zero.
+        settleFill(to: targetFraction)
+    }
+
+    /// Drive `fillProgress` to a real fraction. Reduce-motion snaps
+    /// instantly (no sweep); otherwise it eases on the decelerate
+    /// cubic-bezier(0.4, 0, 0.2, 1) over 0.6s — a data-settle beat, not
+    /// a decorative loop. NaN/∞-guarded and clamped to 0…1.
+    private func settleFill(to value: Double) {
+        let target = value.isFinite ? min(max(value, 0), 1) : 0
+        guard !reduceMotion else {
+            fillProgress = target
+            return
+        }
+        withAnimation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.6)) {
+            fillProgress = target
+        }
     }
 
     /// Pause / resume the loading operation. Records a timestamped

@@ -9,7 +9,7 @@
       75%            { transform: translateY(-0.6px); }
     }
     .rail-yaw      { transform-origin: 600px 470px;
-                      animation: rail-yaw 2.8s ease-in-out infinite; }
+                      animation: rail-yaw 2.8s cubic-bezier(0.45,0,0.55,1) infinite; }
     @keyframes rail-yaw {
       0%, 100% { transform: rotate(0deg); }
       50%      { transform: rotate(-0.35deg); }
@@ -171,6 +171,24 @@
     <rect x="270" y="455" width="660" height="6" fill="#5A606D" opacity="0.6"/>
     <!-- Reporting marks -->
     <text x="320" y="473" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="11" fill="#9B7FD9" opacity="0.85">EUSO 7142 · WELL CAR</text>
+    <!-- ============================================================
+         COUNTRY-SWITCHABLE WELL-CAR STENCIL (reporting authority + capacity units)
+         Rail intermodal interchange operates US/MX/CA; reporting authority + unit
+         stencil differ by country of operation. The renderer shows exactly ONE of
+         these by toggling visibility on the matching class: default country-US is
+         visible; for MX/CA the app sets style="display:none" on the others (e.g.
+         querySelectorAll('.country-US').forEach(n=>n.style.display='none')).
+         US: AAR/FRA, capacity in LB · MX: SICT (ex-SCT)/NOM, kg · CA: TC/TDG, kg.
+         ============================================================ -->
+    <g class="country-US">
+      <text x="490" y="473" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="9" letter-spacing="0.6" fill="#7A5AB8" opacity="0.8">AAR FCA · CAP 198000 LB</text>
+    </g>
+    <g class="country-MX" style="display:none">
+      <text x="490" y="473" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="9" letter-spacing="0.6" fill="#7A5AB8" opacity="0.8">SICT/NOM · CAP 89800 KG</text>
+    </g>
+    <g class="country-CA" style="display:none">
+      <text x="490" y="473" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="9" letter-spacing="0.6" fill="#7A5AB8" opacity="0.8">TC/TDG · CAP 89800 KG</text>
+    </g>
     <!-- End wall top edges -->
     <rect x="100" y="430" width="170" height="3" fill="#FFFFFF" opacity="0.35"/>
     <rect x="930" y="430" width="170" height="3" fill="#FFFFFF" opacity="0.35"/>

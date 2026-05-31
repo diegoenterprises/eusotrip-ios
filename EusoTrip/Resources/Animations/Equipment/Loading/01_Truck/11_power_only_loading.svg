@@ -32,37 +32,9 @@
       0%, 100% { opacity: 0.3; }
       50%      { opacity: 0.65; }
     }
-    /* ============ CARGO HANDLING MOTION ============ */
-    .forklift-cycle { animation: forklift-cycle 6s ease-in-out infinite; }
-    @keyframes forklift-cycle {
-      0%   { transform: translateX(280px); opacity: 0; }
-      6%   { opacity: 1; }
-      30%  { transform: translateX(0);     opacity: 1; }
-      36%  { opacity: 0; }
-      60%  { transform: translateX(0);     opacity: 0; }
-      66%  { transform: translateX(280px); opacity: 0; }
-      100% { transform: translateX(280px); opacity: 0; }
-    }
-    .forklift-cycle-rev { animation: forklift-cycle-rev 6s ease-in-out infinite; }
-    @keyframes forklift-cycle-rev {
-      0%   { transform: translateX(0);     opacity: 0; }
-      6%   { opacity: 1; }
-      30%  { transform: translateX(280px); opacity: 1; }
-      36%  { opacity: 0; }
-      60%  { transform: translateX(280px); opacity: 0; }
-      66%  { transform: translateX(0);     opacity: 0; }
-      100% { transform: translateX(0);     opacity: 0; }
-    }
-
-    .strap-cinch { animation: strap-cinch 6s ease-in-out infinite;
-                   transform-box: fill-box; transform-origin: top; }
-    @keyframes strap-cinch {
-      0%, 25%   { transform: scaleY(0);    opacity: 0; }
-      35%       { transform: scaleY(1);    opacity: 0.95; }
-      75%, 100% { transform: scaleY(1);    opacity: 0.95; }
-    }
-
     /* ============ POWER-ONLY COUPLING MOTION VOCAB ============ */
+    /* (Generic forklift/strap-cinch dry-van vocab intentionally omitted —
+       power-only carries no cargo: the "load" event is the coupling itself.) */
     /* Master cycle 6.5s. We use multiple classed groups, each with its
        own keyframes that share the 6.5s duration so phases line up. */
 
@@ -72,10 +44,15 @@
 
     .tractor-rig { animation: po-tractor-shift 6.5s ease-in-out infinite; }
     @keyframes po-tractor-shift {
-      0%   { transform: translateX(-6px); }
-      14%  { transform: translateX(0); }
-      18%  { transform: translateX(2px); }   /* tug-test bump */
+      0%   { transform: translateX(-6px); }   /* still rolling back under */
+      14%  { transform: translateX(0); }       /* kingpin seats in throat */
+      18%  { transform: translateX(2px); }     /* back-rock as jaws snap shut */
       22%  { transform: translateX(0); }
+      /* TUG TEST: tractor pulls forward (LEFT) against the locked kingpin,
+         can't move, settles back — proves the lock holds. */
+      93%  { transform: translateX(0); }
+      96%  { transform: translateX(-3px); }
+      99%  { transform: translateX(0); }
       100% { transform: translateX(0); }
     }
 
@@ -87,10 +64,13 @@
       100%     { transform: translateX(0); }
     }
 
+    /* Jaw pivots sit at each jaw's hinge root on the 5th-wheel throat
+       (left jaw root x=484, right jaw root x=522) so the jaws swing about
+       their real hinge instead of arcing from a phantom point. */
     .jaws-clamp .jaw-left  { animation: po-jaw-left  6.5s ease-in-out infinite;
-                              transform-box: fill-box; transform-origin: 414px 378px; }
+                              transform-box: fill-box; transform-origin: 484px 378px; }
     .jaws-clamp .jaw-right { animation: po-jaw-right 6.5s ease-in-out infinite;
-                              transform-box: fill-box; transform-origin: 446px 378px; }
+                              transform-box: fill-box; transform-origin: 522px 378px; }
     @keyframes po-jaw-left {
       0%, 14%  { transform: rotate(-22deg) translateX(-3px); }
       24%      { transform: rotate(0deg) translateX(0); }
@@ -213,22 +193,6 @@
       <stop offset="0%" stop-color="#C5C9D2"/>
       <stop offset="100%" stop-color="#7A7F88"/>
     </linearGradient>
-    <linearGradient id="palletWood" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#D4A872"/>
-      <stop offset="100%" stop-color="#8C6535"/>
-    </linearGradient>
-    <linearGradient id="forkliftBody" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#FFC34D"/>
-      <stop offset="100%" stop-color="#D67A00"/>
-    </linearGradient>
-    <linearGradient id="craneSteel" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#FFD03A"/>
-      <stop offset="100%" stop-color="#C77A0A"/>
-    </linearGradient>
-    <linearGradient id="containerBlue" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#7DBEEC"/>
-      <stop offset="100%" stop-color="#3D7CB8"/>
-    </linearGradient>
     <linearGradient id="reeferWhite" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#FFFFFF"/>
       <stop offset="100%" stop-color="#D8E4EC"/>
@@ -238,34 +202,6 @@
       <stop offset="55%" stop-color="#A8AFBC"/>
       <stop offset="100%" stop-color="#5A606D"/>
     </linearGradient>
-    <linearGradient id="fluidGas" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#FFEC99"/>
-      <stop offset="100%" stop-color="#F2B27A"/>
-    </linearGradient>
-    <linearGradient id="fluidDiesel" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#7DD8A9"/>
-      <stop offset="100%" stop-color="#3DA86F"/>
-    </linearGradient>
-    <linearGradient id="fluidWater" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#BFE9F3"/>
-      <stop offset="100%" stop-color="#5BA3D8"/>
-    </linearGradient>
-    <linearGradient id="fluidLPG" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#E1F0FA"/>
-      <stop offset="100%" stop-color="#6BB6E0"/>
-    </linearGradient>
-    <linearGradient id="fluidEthanol" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#F4D77A"/>
-      <stop offset="100%" stop-color="#B8843D"/>
-    </linearGradient>
-    <linearGradient id="fluidCrude" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#5A4B36"/>
-      <stop offset="100%" stop-color="#2A1F12"/>
-    </linearGradient>
-    <linearGradient id="grainFlow" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#F4D77A"/>
-      <stop offset="100%" stop-color="#B8843D"/>
-    </linearGradient>
     <linearGradient id="hullDark" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#2A3045"/>
       <stop offset="100%" stop-color="#0F1320"/>
@@ -274,14 +210,6 @@
       <stop offset="0%" stop-color="#5A606D"/>
       <stop offset="80%" stop-color="#3A3F4A"/>
       <stop offset="100%" stop-color="#1F2330"/>
-    </radialGradient>
-    <radialGradient id="mistGlow" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0%" stop-color="#BFE9F3" stop-opacity="0.85"/>
-      <stop offset="100%" stop-color="#BFE9F3" stop-opacity="0"/>
-    </radialGradient>
-    <radialGradient id="vaporCloud" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.85"/>
-      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
     </radialGradient>
     <pattern id="diamondPlate" x="0" y="0" width="14" height="14" patternUnits="userSpaceOnUse">
       <rect width="14" height="14" fill="#9DA2AB"/>
@@ -297,14 +225,6 @@
     <filter id="softBlur" x="-50%" y="-50%" width="200%" height="200%">
       <feGaussianBlur stdDeviation="3"/>
     </filter>
-    <symbol id="forkliftWheel" overflow="visible">
-      <circle cx="0" cy="0" r="11" fill="#1A1A1A"/>
-      <circle cx="0" cy="0" r="6" fill="url(#rim)"/>
-      <line x1="0" y1="-7" x2="0" y2="-3" stroke="#3A3F4A" stroke-width="1.4"/>
-      <line x1="6" y1="-2" x2="3" y2="-1" stroke="#3A3F4A" stroke-width="1.4"/>
-      <line x1="0" y1="7"  x2="0" y2="3"  stroke="#3A3F4A" stroke-width="1.4"/>
-      <line x1="-6" y1="-2" x2="-3" y2="-1" stroke="#3A3F4A" stroke-width="1.4"/>
-    </symbol>
   </defs>
 
   <rect class="card-bg" x="20" y="20" width="1160" height="560" rx="22" fill="#FAFBFD"/>
@@ -1499,6 +1419,34 @@
     <g transform="translate(1066 70)" fill="#FFFFFF"><rect x="0" y="2" width="8" height="6" rx="1"/><rect x="9" y="0" width="6" height="8" rx="1"/><circle cx="3" cy="10" r="1.5"/><circle cx="12" cy="10" r="1.5"/></g>
     <text x="1115" y="79" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
           font-weight="800" font-size="14" letter-spacing="1.8" fill="#FFFFFF">TRUCK</text>
+  </g>
+
+  <!-- ============================================================
+       COUNTRY-SWITCHABLE WEIGHT-UNIT CHIP
+       Power-only is an UNREGULATED rig (no commodity aboard the bare
+       tractor => no hazmat placard / orange panel). The only locale
+       difference is the tare weight UNIT: US = lbs, MX (NOM-012-SCT-2)
+       and CA = kg. Renderer shows exactly ONE of these groups by
+       country: keep .country-US visible by default and set
+       display:none on .country-MX / .country-CA, or toggle visibility
+       from the booking's origin country code (US|MX|CA).
+       ============================================================ -->
+  <g class="units-chip">
+    <g class="country-US">
+      <rect x="1072" y="98" width="60" height="22" rx="11" ry="11" fill="#FFFFFF" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+      <text x="1102" y="113" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">LBS</text>
+    </g>
+    <g class="country-MX" style="display:none">
+      <rect x="1072" y="98" width="60" height="22" rx="11" ry="11" fill="#FFFFFF" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+      <text x="1102" y="113" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">KG</text>
+    </g>
+    <g class="country-CA" style="display:none">
+      <rect x="1072" y="98" width="60" height="22" rx="11" ry="11" fill="#FFFFFF" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+      <text x="1102" y="113" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">KG</text>
+    </g>
   </g>
 
 

@@ -151,40 +151,11 @@ private struct RailDemurrageWatchBody: View {
                     }
                 }
                 Spacer()
-                breachRing
+                BreachClockRing558(fraction: worstCarFraction, color: breachClockColor)
             }
             .padding(Space.s4)
         }
         .frame(height: 120)
-    }
-
-    private var breachRing: some View {
-        let frac = worstCarFraction
-        let color = breachClockColor
-        return ZStack {
-            // Track
-            Circle().stroke(color.opacity(0.16), lineWidth: 7).frame(width: 72, height: 72)
-            // Filled arc — clock-style trim
-            Circle()
-                .trim(from: 0, to: frac)
-                .stroke(color, style: StrokeStyle(lineWidth: 7, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .frame(width: 72, height: 72)
-            // Clock hand tick mark
-            Rectangle()
-                .fill(color)
-                .frame(width: 2, height: 10)
-                .offset(y: -26)
-                .rotationEffect(.degrees(frac * 360 - 90))
-            VStack(spacing: 1) {
-                Image(systemName: "clock.fill")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(color)
-                Text(frac >= 1 ? "BREACH" : "\(Int(frac * 100))%")
-                    .font(.system(size: 9, weight: .heavy)).monospacedDigit()
-                    .foregroundStyle(color)
-            }
-        }
     }
 
     // MARK: KPI strip
@@ -237,18 +208,8 @@ private struct RailDemurrageWatchBody: View {
         let frac = min(accrued / max(free, 1), 1.0)
 
         return HStack(spacing: Space.s3) {
-            // Accrual arc
-            ZStack {
-                Circle().stroke(color.opacity(0.18), lineWidth: 5).frame(width: 44, height: 44)
-                Circle()
-                    .trim(from: 0, to: frac)
-                    .stroke(color, style: StrokeStyle(lineWidth: 5, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    .frame(width: 44, height: 44)
-                Image(systemName: r == .breached ? "exclamationmark" : "clock")
-                    .font(.system(size: 11, weight: .heavy))
-                    .foregroundStyle(color)
-            }
+            // Accrual arc — sweeps to the car's real accrued/free fraction
+            CarAccrualRing558(fraction: frac, color: color, breached: r == .breached)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text("\(c.loadId ?? "—") · \(c.carNumber ?? "—")")
@@ -293,6 +254,127 @@ private struct RailDemurrageWatchBody: View {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
+    }
+}
+
+// MARK: - Breach clock ring (hero)
+//
+// The arc + clock hand sweep from empty up to the worst car's real accrual
+// fraction (accruedHours / freeTimeHours) using a decelerating settle spring,
+// so the hero reads as the clock "winding up" to its true position. Once a car
+// has actually breached free time (fraction >= 1) the ring carries an ambient
+// breathing glow — a seamless continuous loop that signals live, ongoing
+// charge accrual. Under Reduce Motion the ring snaps straight to its final
+// state with no sweep and no pulse.
+private struct BreachClockRing558: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Real worst-car fraction (0…1) from the data model.
+    let fraction: Double
+    let color: Color
+
+    /// The fraction the arc/hand currently animate toward. Starts at 0 so the
+    /// clock winds up into its true position on appear.
+    @State private var shown: Double = 0
+    /// Drives the ambient breach pulse (continuous, breached-only).
+    @State private var breathing = false
+
+    private var isBreached: Bool { fraction >= 1.0 }
+
+    var body: some View {
+        let pulse = isBreached && !reduceMotion
+        return ZStack {
+            // Track
+            Circle().stroke(color.opacity(0.16), lineWidth: 7).frame(width: 72, height: 72)
+            // Filled arc — clock-style trim, bound to the real fraction
+            Circle()
+                .trim(from: 0, to: shown)
+                .stroke(color, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .frame(width: 72, height: 72)
+                .shadow(color: pulse ? color.opacity(breathing ? 0.55 : 0.15) : .clear,
+                        radius: pulse ? (breathing ? 7 : 3) : 0)
+            // Clock hand tick mark — tracks the same real fraction
+            Rectangle()
+                .fill(color)
+                .frame(width: 2, height: 10)
+                .offset(y: -26)
+                .rotationEffect(.degrees(shown * 360 - 90))
+            VStack(spacing: 1) {
+                Image(systemName: "clock.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(color)
+                Text(fraction >= 1 ? "BREACH" : "\(Int(fraction * 100))%")
+                    .font(.system(size: 9, weight: .heavy)).monospacedDigit()
+                    .foregroundStyle(color)
+            }
+            // Scale breathing on the whole ring while breached.
+            .scaleEffect(pulse ? (breathing ? 1.0 : 0.97) : 1.0)
+        }
+        .onAppear { settle() }
+        .onChange(of: fraction) { _, _ in settle() }
+    }
+
+    private func settle() {
+        if reduceMotion {
+            shown = fraction
+            breathing = false
+            return
+        }
+        // Decelerating settle — the clock winds up to its true position.
+        withAnimation(.spring(response: 0.55, dampingFraction: 0.82)) {
+            shown = fraction
+        }
+        // Ambient breach pulse: seamless autoreversing loop (start == end).
+        if isBreached {
+            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+                breathing = true
+            }
+        } else {
+            breathing = false
+        }
+    }
+}
+
+// MARK: - Per-car accrual ring (list row)
+//
+// Each row's compact ring sweeps from empty up to that car's real accrued/free
+// fraction with a decelerating settle spring, so the list reads as the cars
+// filling toward their free-time limit. Reduce Motion snaps straight to final.
+private struct CarAccrualRing558: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Real accrued/free fraction (0…1) for this car.
+    let fraction: Double
+    let color: Color
+    let breached: Bool
+
+    @State private var shown: Double = 0
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(color.opacity(0.18), lineWidth: 5).frame(width: 44, height: 44)
+            Circle()
+                .trim(from: 0, to: shown)
+                .stroke(color, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .frame(width: 44, height: 44)
+            Image(systemName: breached ? "exclamationmark" : "clock")
+                .font(.system(size: 11, weight: .heavy))
+                .foregroundStyle(color)
+        }
+        .onAppear { settle() }
+        .onChange(of: fraction) { _, _ in settle() }
+    }
+
+    private func settle() {
+        if reduceMotion {
+            shown = fraction
+            return
+        }
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
+            shown = fraction
+        }
     }
 }
 

@@ -108,6 +108,13 @@
       .chassis-bob, .cab-sway, .mudflap, .streak, .bow-air, .tire-dust,
       .sheen, .wordmark, .badge-e, .headlight-glow, .airlines, .chevron,
       .sky-shimmer, .ground-line, .brand-mark, .brand-word { animation: none !important; }
+      /* The motion cues that read as "speeding" are stilled outright so the
+         idle rig sits calm: hide the speed streaks, tire-kick dust, bow-wave
+         haze, and the SMIL-driven exhaust plume (CSS animation:none cannot
+         freeze SMIL, so we hide that layer instead). The wheel spin is SMIL
+         <animateTransform>; we leave a single slow rotation rather than a
+         hard stop — a parked wheel reads fine and SMIL has no media gate. */
+      .streak, .tire-dust, .bow-air, .exhaust-puffs { display: none !important; }
     }
   
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
@@ -167,12 +174,18 @@
       <feGaussianBlur stdDeviation="3"/>
     </filter>
   </defs>
-  <g class="chassis-bob">
-
+  <!-- ===== STATIC BACKDROP (sky + road + ground shadow) =====
+       Pulled OUT of the .chassis-bob group: the road and sky are the
+       fixed world frame and must NOT bounce with the rig's suspension.
+       Only the rig body bobs (below). The road dashes scroll via the
+       design-system .ground-line vocab; the haze band drifts via .sky-shimmer. -->
   <rect class="sky-bg" width="1200" height="600" fill="url(#sky)"/>
-  <rect x="0" y="380" width="1200" height="70" fill="#FFFFFF" opacity="0.18"/>
-  <line x1="60" y1="475" x2="1140" y2="475" stroke="#9B7FD9" stroke-width="4" stroke-dasharray="14 9" stroke-linecap="round" opacity="0.55"/>
+  <rect class="sky-shimmer" x="0" y="380" width="1200" height="70" fill="#FFFFFF" opacity="0.18"/>
+  <line class="ground-line" x1="60" y1="475" x2="1140" y2="475" stroke="#9B7FD9" stroke-width="4" stroke-linecap="round" opacity="0.55"/>
   <ellipse cx="640" cy="486" rx="430" ry="7" fill="#1A1F2E" opacity="0.13"/>
+
+  <!-- ===== RIG BODY (rides the suspension — this is what bobs) ===== -->
+  <g class="chassis-bob">
 
   <!-- CAB (canonical Class-8) -->
   <g filter="url(#rigShadow)">
@@ -273,7 +286,10 @@
   <!-- ========== BOW AIR DISPLACEMENT ========== -->
   <ellipse class="bow-air" cx="180" cy="410" rx="38" ry="55" fill="url(#bowHaze)"/>
   <!-- ========== EXHAUST PUFFS ========== -->
-  <g filter="url(#softBlur)" opacity="0.5">
+  <!-- .exhaust-puffs is SMIL-driven (CSS animation:none can't freeze SMIL),
+       so reduced-motion HIDES this looping layer instead — see the
+       prefers-reduced-motion block above. -->
+  <g class="exhaust-puffs" filter="url(#softBlur)" opacity="0.5">
     <circle cx="292" cy="200" r="6" fill="#C8CDD8">
       <animate attributeName="cy" from="200" to="120" dur="2.6s" repeatCount="indefinite"/>
       <animate attributeName="r"  from="6" to="14" dur="2.6s" repeatCount="indefinite"/>

@@ -63,9 +63,10 @@
                   animation: wheel-spin 1.4s linear infinite; }
     @keyframes wheel-spin { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
 
-    /* Lumber stack grows over the cycle */
+    /* Lumber stack grows over the cycle — decel curve so each course of
+       bundles eases into its resting height (design-system decel token). */
     .lumber-stack-grow { transform-box: fill-box; transform-origin: bottom;
-                         animation: lumber-stack-grow 7s ease-in-out infinite; }
+                         animation: lumber-stack-grow 7s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes lumber-stack-grow {
       0%, 12%   { transform: scaleY(0);    opacity: 0.2; }
       35%       { transform: scaleY(0.3);  opacity: 0.85; }
@@ -119,6 +120,12 @@
       .wheel-spin {
         animation: none !important;
       }
+      /* Settle to the FULLY-LOADED still frame: both stacks full + balanced,
+         banding straps cinched, forklift parked out of view. */
+      .lumber-stack-grow { transform: scaleY(1) !important; opacity: 1 !important; }
+      .banding-strap     { opacity: 0.85 !important; transform: scaleY(1) !important; }
+      .forklift-cycle    { opacity: 0 !important; }
+      .strobe-amber      { opacity: 0.6 !important; transform: scale(1) !important; }
     }
 
   ]]></style>
@@ -370,7 +377,11 @@
       <rect x="546" y="316" width="8" height="6" rx="0.6" fill="#FFD23A" stroke="#1A1F2E" stroke-width="0.4"/>
     </g>
 
-    <!-- RIGHT lumber stack (being loaded — grows during cycle) -->
+    <!-- RIGHT lumber stack (being loaded — grows during cycle).
+         SYMMETRY RULE: a centerbeam MUST be loaded with equal payload on
+         both sides of the partition or it can tip — so this stack carries
+         the SAME 4-bundle (88px) profile as the left stack, and both share
+         the .lumber-stack-grow class so they rise in lock-step. -->
     <g transform="translate(626 395)"><g class="lumber-stack-grow">
       <rect x="0" y="-22" width="304" height="22" fill="url(#lumberWrap)" stroke="#6B5230" stroke-width="0.6"/>
       <rect x="0" y="-22" width="304" height="2" fill="#FFFFFF" opacity="0.4"/>
@@ -378,25 +389,28 @@
       <rect x="0" y="-44" width="304" height="2" fill="#FFFFFF" opacity="0.4"/>
       <rect x="0" y="-66" width="304" height="22" fill="url(#lumberWrap)" stroke="#6B5230" stroke-width="0.6"/>
       <rect x="0" y="-66" width="304" height="2" fill="#FFFFFF" opacity="0.4"/>
+      <rect x="0" y="-88" width="304" height="22" fill="url(#lumberWrap)" stroke="#6B5230" stroke-width="0.6"/>
+      <rect x="0" y="-88" width="304" height="2" fill="#FFFFFF" opacity="0.4"/>
       <g stroke="#6B5230" stroke-width="0.4" opacity="0.5">
-        <line x1="40" y1="-22" x2="40" y2="-66"/>
-        <line x1="80" y1="-22" x2="80" y2="-66"/>
-        <line x1="120" y1="-22" x2="120" y2="-66"/>
-        <line x1="160" y1="-22" x2="160" y2="-66"/>
-        <line x1="200" y1="-22" x2="200" y2="-66"/>
-        <line x1="240" y1="-22" x2="240" y2="-66"/>
-        <line x1="280" y1="-22" x2="280" y2="-66"/>
+        <line x1="40" y1="-22" x2="40" y2="-88"/>
+        <line x1="80" y1="-22" x2="80" y2="-88"/>
+        <line x1="120" y1="-22" x2="120" y2="-88"/>
+        <line x1="160" y1="-22" x2="160" y2="-88"/>
+        <line x1="200" y1="-22" x2="200" y2="-88"/>
+        <line x1="240" y1="-22" x2="240" y2="-88"/>
+        <line x1="280" y1="-22" x2="280" y2="-88"/>
       </g>
     </g></g>
 
-    <!-- RIGHT BANDING STRAPS -->
+    <!-- RIGHT BANDING STRAPS — anchored at y=307 to match the left side
+         (equal stack height ⇒ equal strap reach over the load). -->
     <g class="banding-strap" style="transform-origin: 778px 350px">
-      <line x1="700" y1="328" x2="700" y2="395" stroke="#3A3F4A" stroke-width="1.6"/>
-      <line x1="780" y1="328" x2="780" y2="395" stroke="#3A3F4A" stroke-width="1.6"/>
-      <line x1="860" y1="328" x2="860" y2="395" stroke="#3A3F4A" stroke-width="1.6"/>
-      <rect x="696" y="334" width="8" height="6" rx="0.6" fill="#FFD23A" stroke="#1A1F2E" stroke-width="0.4"/>
-      <rect x="776" y="334" width="8" height="6" rx="0.6" fill="#FFD23A" stroke="#1A1F2E" stroke-width="0.4"/>
-      <rect x="856" y="334" width="8" height="6" rx="0.6" fill="#FFD23A" stroke="#1A1F2E" stroke-width="0.4"/>
+      <line x1="700" y1="307" x2="700" y2="395" stroke="#3A3F4A" stroke-width="1.6"/>
+      <line x1="780" y1="307" x2="780" y2="395" stroke="#3A3F4A" stroke-width="1.6"/>
+      <line x1="860" y1="307" x2="860" y2="395" stroke="#3A3F4A" stroke-width="1.6"/>
+      <rect x="696" y="316" width="8" height="6" rx="0.6" fill="#FFD23A" stroke="#1A1F2E" stroke-width="0.4"/>
+      <rect x="776" y="316" width="8" height="6" rx="0.6" fill="#FFD23A" stroke="#1A1F2E" stroke-width="0.4"/>
+      <rect x="856" y="316" width="8" height="6" rx="0.6" fill="#FFD23A" stroke="#1A1F2E" stroke-width="0.4"/>
     </g>
 
     <!-- ============================================================
@@ -417,10 +431,33 @@
     <text x="616" y="240" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
           font-weight="900" font-size="11" fill="#1A1F2E" opacity="0.92" letter-spacing="2.4">EUSOTRIP &#183; LUMBER SERVICE</text>
 
-    <!-- Capacity stencil at right bulkhead -->
-    <text x="954" y="266" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
-          font-weight="900" font-size="9" fill="#FFFFFF" letter-spacing="0.8"
-          transform="rotate(-90 954 266)">CAPY 100 TON</text>
+    <!-- ============================================================
+         CAPACITY / LOAD-LIMIT STENCIL — COUNTRY-SWITCHABLE
+         Centerbeam lumber is a NON-hazmat commodity: there are NO DOT/
+         PHMSA / SCT / TDG placards. The only country-specific text is the
+         AAR weight stencil's UNITS. NA interchange (US/MX/CA) shares one
+         AAR fleet, so the LD LMT figure is the same — only the unit label
+         changes by destination jurisdiction:
+           country-US : short tons  (CAPY 100 TON / LD LMT 220000 LB)
+           country-CA : metric      (CAPY 90 t / LD LMT 99800 kg)  — TC/RAC
+           country-MX : Spanish     (CAP 90 t / LIM CARGA 99800 kg) — SCT/ARTF
+         RENDERER: show exactly one of these groups (default .country-US
+         visible). The host sets `display:none` on the two it does not want,
+         keyed off the shipment's destination country (loads.dest_country). -->
+    <g class="country-stencil" transform="rotate(-90 954 266)">
+      <g class="country-US">
+        <text x="954" y="266" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+              font-weight="900" font-size="9" fill="#FFFFFF" letter-spacing="0.8">CAPY 100 TON</text>
+      </g>
+      <g class="country-CA" style="display:none">
+        <text x="954" y="266" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+              font-weight="900" font-size="9" fill="#FFFFFF" letter-spacing="0.8">CAPY 90 t</text>
+      </g>
+      <g class="country-MX" style="display:none">
+        <text x="954" y="266" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+              font-weight="900" font-size="9" fill="#FFFFFF" letter-spacing="0.8">CAP 90 t</text>
+      </g>
+    </g>
 
     <!-- FRA Part 224 conspicuity stripes -->
     <g>

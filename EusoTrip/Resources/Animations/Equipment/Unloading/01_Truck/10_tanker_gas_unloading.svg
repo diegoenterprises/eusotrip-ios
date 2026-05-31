@@ -228,6 +228,22 @@
       50%      { transform: scaleY(1.08) scaleX(1.04); opacity: 0.85; }
     }
 
+    /* ============ COUNTRY-SWITCHABLE PLACARD WORDING ============
+       Division 2.1 (flammable gas / UN1075) is UN-model-harmonised, so
+       the red diamond + flame + UN number are identical for US (49 CFR),
+       Canada (TDG) and Mexico (NOM-004-SCT). Only the worded text and
+       the side stencil units differ. The host renderer sets
+       data-country="US" | "MX" | "CA" on the root <svg>; default is US.
+       Selectors below show exactly one localisation group. */
+    .country-MX, .country-CA { display: none; }
+    .country-US { display: inline; }
+    svg[data-country="MX"] .country-US,
+    svg[data-country="MX"] .country-CA { display: none; }
+    svg[data-country="MX"] .country-MX { display: inline; }
+    svg[data-country="CA"] .country-US,
+    svg[data-country="CA"] .country-MX { display: none; }
+    svg[data-country="CA"] .country-CA { display: inline; }
+
     @media (prefers-reduced-motion: reduce) {
       .arm-articulate, .arm-elbow,
       .brand-lockup, .brand-mark, .brand-word,
@@ -416,10 +432,33 @@
       <g transform="translate(0 -18)" fill="#FFFFFF">
         <path d="M 0 -8 C -3 -3 -6 0 -5 4 C -7 3 -8 0 -7 -2 C -9 0 -10 5 -7 8 C -9 7 -9 4 -9 7 C -7 10 -4 11 0 11 C 4 11 7 10 9 7 C 9 4 9 7 7 8 C 10 5 9 0 7 -2 C 8 0 7 3 5 4 C 6 0 3 -3 0 -8 Z"/>
       </g>
-      <!-- "FLAMMABLE GAS" word — white on red upper half -->
-      <text y="-4" text-anchor="middle"
-            font-family="Inter, system-ui, sans-serif"
-            font-weight="800" font-size="4.4" fill="#FFFFFF" letter-spacing="0.3">FLAMMABLE GAS</text>
+      <!-- COUNTRY-SWITCHABLE worded text on the red upper half.
+           Division 2.1 is UN-model-harmonised across all three NA
+           regimes (US 49 CFR · CA TDG · MX NOM-004-SCT), so the RED
+           diamond + white flame + UN1075 are identical everywhere;
+           only the WORD TEXT differs by jurisdiction. The renderer
+           sets data-country="US|MX|CA" on the root <svg> (default US)
+           and the CSS below shows exactly one group. -->
+      <g class="country-US">
+        <text y="-4" text-anchor="middle"
+              font-family="Inter, system-ui, sans-serif"
+              font-weight="800" font-size="4.4" fill="#FFFFFF" letter-spacing="0.3">FLAMMABLE GAS</text>
+      </g>
+      <g class="country-CA">
+        <!-- TDG bilingual (English / French) per SOR/2001-286 -->
+        <text y="-6" text-anchor="middle"
+              font-family="Inter, system-ui, sans-serif"
+              font-weight="800" font-size="4" fill="#FFFFFF" letter-spacing="0.2">FLAMMABLE GAS</text>
+        <text y="-1.5" text-anchor="middle"
+              font-family="Inter, system-ui, sans-serif"
+              font-weight="700" font-size="3.4" fill="#FFFFFF" letter-spacing="0.2">GAZ INFLAMMABLE</text>
+      </g>
+      <g class="country-MX">
+        <!-- NOM-004-SCT/2008 Spanish wording -->
+        <text y="-4" text-anchor="middle"
+              font-family="Inter, system-ui, sans-serif"
+              font-weight="800" font-size="4.4" fill="#FFFFFF" letter-spacing="0.3">GAS INFLAMABLE</text>
+      </g>
 
       <!-- UN1075 ID number — black text on the white lower half -->
       <text y="13" text-anchor="middle"
@@ -1348,12 +1387,28 @@
   </g>
 
   <!-- Capacity stencil — LPG industry convention is WATER CAPACITY
-       (legal-for-trade is mass; volume varies with temperature). -->
+       (legal-for-trade is mass; volume varies with temperature).
+       Country-switchable units: US gallons / MX·CA metric litres
+       (11,500 gal ≈ 43,500 L). MAWP 250 psig ≈ 1724 kPa. -->
   <g>
-    <text x="448" y="416"
-          font-family="Inter, system-ui, sans-serif"
-          font-weight="900" font-size="13" fill="#1A1F2E" opacity="0.85"
-          letter-spacing="1.6">WATER CAPACITY 11,500 GAL</text>
+    <g class="country-US">
+      <text x="448" y="416"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="13" fill="#1A1F2E" opacity="0.85"
+            letter-spacing="1.6">WATER CAPACITY 11,500 GAL</text>
+    </g>
+    <g class="country-MX">
+      <text x="448" y="416"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="13" fill="#1A1F2E" opacity="0.85"
+            letter-spacing="1.6">CAPACIDAD AGUA 43,500 L</text>
+    </g>
+    <g class="country-CA">
+      <text x="448" y="416"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="13" fill="#1A1F2E" opacity="0.85"
+            letter-spacing="1.6">WATER CAPACITY 43,500 L</text>
+    </g>
     <text x="448" y="430"
           font-family="Inter, system-ui, sans-serif"
           font-weight="700" font-size="7" fill="#3A3F4A" opacity="0.78"

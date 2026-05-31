@@ -35,19 +35,21 @@
 
     /* ============ LOWBOY / RGN DRIVE-OFF MOTION (cycle ~7s, mirror of loading) ============ */
     /* Excavator starts on the deck (top of ramp) and drives DOWN+FORWARD to ground */
-    .excavator-drive { animation: excavator-drive 7s ease-in-out infinite;
+    .excavator-drive { animation: excavator-drive 7s infinite;
                        transform-box: fill-box; transform-origin: center; }
     @keyframes excavator-drive {
-      0%,  15%  { transform: translate(180px, -50px); }   /* on deck */
-      50%, 70%  { transform: translate(0px,    0px); }    /* arrived at ground */
-      90%,100%  { transform: translate(180px, -50px); }   /* reset to deck */
+      /* hold on deck (brakes off), roll down the ramp gravity-assisted then
+         BRAKE to a controlled stop on the ground (decel), hold, reset to deck */
+      0%,  15%  { transform: translate(180px, -50px); animation-timing-function: cubic-bezier(0.55,0,0.45,1); }
+      50%, 70%  { transform: translate(0px,    0px);  animation-timing-function: cubic-bezier(0.4,0,1,1); }
+      90%, 100% { transform: translate(180px, -50px); }
     }
-    .track-spin { animation: track-spin 7s linear infinite;
+    .track-spin { animation: track-spin 7s infinite;
                   transform-box: fill-box; transform-origin: center; }
     @keyframes track-spin {
-      0%,  15%  { transform: translateX(0px); }
+      0%,  15%  { transform: translateX(0px); animation-timing-function: cubic-bezier(0.55,0,0.45,1); }
       50%       { transform: translateX(-28px); }
-      70%,100%  { transform: translateX(-28px); }
+      70%, 100% { transform: translateX(-28px); }
     }
     .hyd-pulse { animation: hyd-pulse 3.4s ease-in-out infinite;
                  transform-box: fill-box; transform-origin: center; }
@@ -77,6 +79,14 @@
       85%       { transform: rotate(-26deg); }
       95%, 100% { transform: rotate(0deg); }
     }
+    /* Oversize-load warning flags catch the breeze at the banner corners */
+    .flag-flutter { transform-box: fill-box; transform-origin: left center;
+                    animation: flag-flutter 1.1s ease-in-out infinite; }
+    .flag-flutter.f2 { transform-origin: right center; animation-delay: -0.55s; }
+    @keyframes flag-flutter {
+      0%, 100% { transform: skewX(0deg)  scaleX(1);    }
+      50%      { transform: skewX(-7deg) scaleX(0.92); }
+    }
 
     @media (prefers-reduced-motion: reduce) {
       .brand-lockup,
@@ -85,6 +95,7 @@
       .chevron,
       .dust-kick,
       .excavator-drive,
+      .flag-flutter,
       .foreman-wave,
       .hyd-pulse,
       .load-pill,
@@ -633,6 +644,49 @@
       <rect x="918" y="486" width="3" height="2"/>
       <rect x="924" y="486" width="3" height="2"/>
       <rect x="930" y="486" width="3" height="2"/>
+    </g>
+  </g>
+
+  <!-- ============================================================
+       OVERSIZE-LOAD BANNER — country-switchable regulatory signage.
+       Banner stays mounted on the rig during unload (removed once empty/legal).
+       Wording/units differ by jurisdiction:
+         US  — DOT/state FHWA: black "OVERSIZE LOAD" on yellow, 7' x 18" min, LBS
+         CA  — TC / provincial: "OVERSIZE LOAD" (EN) on yellow, 400mm min, KG
+         MX  — SCT NOM-012-SCT-2: "EXCEDE DIMENSIONES" on yellow, KG
+       RENDERER: show exactly ONE of .country-US / .country-CA / .country-MX
+       (set the other two to display:none, or strip them server-side).
+       Default = US visible. Flags (red US / orange CA/MX) flutter. -->
+  <g class="oversize-banner" transform="translate(560 458)">
+    <g class="country-US">
+      <rect x="-72" y="-13" width="144" height="20" rx="2" fill="#FFD200" stroke="#1A1F2E" stroke-width="0.8"/>
+      <rect x="-72" y="-13" width="144" height="2.4" fill="#FFFFFF" opacity="0.4"/>
+      <text x="0" y="1.5" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="10" letter-spacing="1.2" fill="#1A1F2E">OVERSIZE LOAD</text>
+      <g fill="#D11B1B" stroke="#1A1F2E" stroke-width="0.4">
+        <polygon class="flag-flutter" points="-86,-13 -74,-9 -86,-5"/>
+        <polygon class="flag-flutter f2" points="86,-13 74,-9 86,-5"/>
+      </g>
+    </g>
+    <g class="country-CA" style="display:none">
+      <rect x="-72" y="-13" width="144" height="20" rx="2" fill="#FFD200" stroke="#1A1F2E" stroke-width="0.8"/>
+      <rect x="-72" y="-13" width="144" height="2.4" fill="#FFFFFF" opacity="0.4"/>
+      <text x="0" y="1.5" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="10" letter-spacing="1.2" fill="#1A1F2E">OVERSIZE LOAD</text>
+      <g fill="#FF7A1F" stroke="#1A1F2E" stroke-width="0.4">
+        <polygon class="flag-flutter" points="-86,-13 -74,-9 -86,-5"/>
+        <polygon class="flag-flutter f2" points="86,-13 74,-9 86,-5"/>
+      </g>
+    </g>
+    <g class="country-MX" style="display:none">
+      <rect x="-78" y="-13" width="156" height="20" rx="2" fill="#FFD200" stroke="#1A1F2E" stroke-width="0.8"/>
+      <rect x="-78" y="-13" width="156" height="2.4" fill="#FFFFFF" opacity="0.4"/>
+      <text x="0" y="1.5" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="8.5" letter-spacing="0.6" fill="#1A1F2E">EXCEDE DIMENSIONES</text>
+      <g fill="#FF7A1F" stroke="#1A1F2E" stroke-width="0.4">
+        <polygon class="flag-flutter" points="-92,-13 -80,-9 -92,-5"/>
+        <polygon class="flag-flutter f2" points="92,-13 80,-9 92,-5"/>
+      </g>
     </g>
   </g>
 
@@ -1513,13 +1567,20 @@
           font-weight="800" font-size="14" letter-spacing="1.8" fill="#FFFFFF">TRUCK</text>
   </g>
 
-  <!-- LBS unit badge -->
+  <!-- Unit badge — country-switchable (US=LBS, CA/MX=KG). RENDERER toggles to
+       match the active .country-* banner above. Default US (LBS) visible. -->
   <g>
     <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
           fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
-    <text x="1102" y="112" text-anchor="middle"
+    <text class="country-US" x="1102" y="112" text-anchor="middle"
           font-family="Inter, system-ui, sans-serif"
           font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">LBS</text>
+    <text class="country-CA" x="1102" y="112" text-anchor="middle" style="display:none"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">KG</text>
+    <text class="country-MX" x="1102" y="112" text-anchor="middle" style="display:none"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">KG</text>
   </g>
 
   <!-- UNLOADING pill (amber #F2B27A) -->

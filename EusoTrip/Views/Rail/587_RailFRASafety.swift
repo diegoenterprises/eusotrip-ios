@@ -34,6 +34,12 @@
 //  legacy and current shapes so a drift never crashes the screen; the bespoke UI
 //  still hydrates (or falls back to the verbatim seed series).
 //
+//  MOTION NOTE (#3 anim-equipment-polish): the hero safety-index ring sweeps from
+//  0 up into the REAL fraction (safetyIndex / 100) on appear, and re-sweeps when
+//  fresh compliance data lands. The numeral inside the ring counts up in lockstep
+//  with the arc (both driven by `shownFraction`). Reduce-motion snaps straight to
+//  the final value with no animation.
+//
 
 import SwiftUI
 
@@ -250,6 +256,7 @@ private struct FRAIndexPoint587: Identifiable {
 
 private struct RailFRASafetyBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let railId: String
 
     @State private var compliance: FRASafetyCompliance587? = nil
@@ -257,6 +264,12 @@ private struct RailFRASafetyBody: View {
     @State private var regulatoryItems: [RailComplianceItem587] = []
     @State private var didLoad = false
     @State private var isFiling = false
+
+    /// The fraction the hero safety-index ring currently animates toward. Starts
+    /// at 0 so the ring sweeps up into the real `scoreFraction` on appear and
+    /// re-sweeps when fresh compliance data lands. Reduce-motion snaps straight
+    /// to the value (see `animateScore`).
+    @State private var shownFraction: Double = 0
 
     // MARK: Seed (house 0%-mock — verbatim to SVG, overwritten on hydrate)
 
@@ -303,6 +316,12 @@ private struct RailFRASafetyBody: View {
         return 98
     }
     private var indexLabel: String { "\(Int(safetyIndex.rounded()))" }
+
+    /// The REAL 0-1 fraction the hero ring settles on — driven by ours' live
+    /// `safetyIndex` (0-100 FRA index), clamped. The animated `shownFraction`
+    /// sweeps toward this on appear and on every hydrate.
+    private var scoreFraction: Double { max(0, min(1, safetyIndex / 100.0)) }
+    private var scoreLabel: String    { indexLabel }
 
     private var classIAvg: Int { Int((compliance?.classIAvg ?? 91).rounded()) }
 
@@ -387,7 +406,7 @@ private struct RailFRASafetyBody: View {
         }
     }
 
-    // MARK: Hero card — index + benchmark + open inspections
+    // MARK: Hero card — animated index ring + benchmark + open inspections
 
     private var heroCard: some View {
         ZStack(alignment: .topLeading) {
@@ -412,12 +431,13 @@ private struct RailFRASafetyBody: View {
                 }
 
                 HStack(alignment: .top, spacing: Space.s3) {
-                    // Index numeral + benchmark
-                    HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
-                        Text(indexLabel)
-                            .font(.system(size: 38, weight: .heavy).monospacedDigit())
-                            .foregroundStyle(LinearGradient.diagonal)
+                    // Animated safety-index ring + numeral + benchmark
+                    HStack(alignment: .center, spacing: Space.s2) {
+                        complianceRing
                         VStack(alignment: .leading, spacing: 2) {
+                            Text(indexLabel)
+                                .font(.system(size: 38, weight: .heavy).monospacedDigit())
+                                .foregroundStyle(LinearGradient.diagonal)
                             Text("FRA safety index")
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(palette.textSecondary)
@@ -444,6 +464,53 @@ private struct RailFRASafetyBody: View {
             .padding(Space.s4)
         }
         .frame(height: 124)
+    }
+
+    // MARK: Hero safety-index ring (arc-sweep animation — #3 anim-equipment-polish)
+
+    private var complianceRing: some View {
+        ZStack {
+            // Track
+            Circle()
+                .stroke(statusColor.opacity(0.16), lineWidth: 8)
+                .frame(width: 80, height: 80)
+            // Index arc — trims to the live, animated fraction so the sweep
+            // tracks the real 0-100 FRA safety index.
+            Circle()
+                .trim(from: 0, to: shownFraction)
+                .stroke(statusColor, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .frame(width: 80, height: 80)
+            VStack(spacing: 1) {
+                // Numeral counts up in lockstep with the arc (both driven by
+                // the same `shownFraction`), so the digits and ring agree.
+                Text("\(Int((shownFraction * 100).rounded()))")
+                    .font(.system(size: 18, weight: .heavy)).monospacedDigit()
+                    .foregroundStyle(statusColor)
+                    .contentTransition(.numericText(value: shownFraction * 100))
+                Text("INDEX")
+                    .font(.system(size: 7.5, weight: .heavy)).kerning(0.5)
+                    .foregroundStyle(palette.textTertiary)
+            }
+        }
+        // Sweep from 0 → real fraction on first paint; re-sweep when the live
+        // index changes. Reduce-motion snaps straight to the final value.
+        .onAppear { animateScore(to: scoreFraction) }
+        .onChange(of: scoreFraction) { _, newValue in animateScore(to: newValue) }
+        .accessibilityElement()
+        .accessibilityLabel("FRA safety index \(scoreLabel) of 100, \(statusLabel)")
+    }
+
+    /// Drives the index arc + numeral toward the real fraction with a natural
+    /// decelerating settle. Gated by Reduce Motion (snaps to the final state).
+    private func animateScore(to target: Double) {
+        if reduceMotion {
+            shownFraction = target
+        } else {
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
+                shownFraction = target
+            }
+        }
     }
 
     // MARK: KPI strip

@@ -94,6 +94,18 @@
       50%      { opacity: 1; }
     }
 
+    /* ========== COUNTRY-SWITCHABLE STENCIL ==========
+       Auto racks carry finished automobiles — NON-HAZMAT, so NO hazard
+       placards (DOT/PHMSA · SCT/NOM · TDG) apply (n/a). Only the capacity
+       stencil UNIT differs by country of interchange. Renderer sets the
+       root <svg> data-country attr (default US). Groups: .country-US /
+       .country-CA / .country-MX. */
+    .country-CA, .country-MX { display: none; }
+    svg[data-country="CA"] .country-US, svg[data-country="CA"] .country-MX { display: none; }
+    svg[data-country="CA"] .country-CA { display: inline; }
+    svg[data-country="MX"] .country-US, svg[data-country="MX"] .country-CA { display: none; }
+    svg[data-country="MX"] .country-MX { display: inline; }
+
     @media (prefers-reduced-motion: reduce) {
       .rail-clack, .rail-yaw, .container-settle, .spray,
       .sheen, .wordmark, .twist-lock, .reporting, .iso-code,
@@ -219,8 +231,11 @@
     <rect x="1056" y="170" width="20" height="285" fill="#1F1240" opacity="0.85"/>
     <line x1="1056" y1="170" x2="1056" y2="455" stroke="#FFFFFF" stroke-width="0.5" opacity="0.4"/>
 
-    <!-- Reporting marks -->
+    <!-- Reporting marks + country-switchable capacity stencil (default US) -->
     <text x="180" y="158" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="14" fill="#5B3FBF" opacity="0.85" letter-spacing="2">EUSO ARC 7777 · TRI-LEVEL</text>
+    <text class="country-US" x="640" y="158" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="9" fill="#5B3FBF" opacity="0.7" letter-spacing="1.4">CAPY 70 TON · 89' AAR PLATE F</text>
+    <text class="country-CA" x="640" y="158" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="9" fill="#5B3FBF" opacity="0.7" letter-spacing="1.4">CAP 63,5 t · 27,1 m · GABARIT AAR F</text>
+    <text class="country-MX" x="640" y="158" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="9" fill="#5B3FBF" opacity="0.7" letter-spacing="1.4">CAP 63,5 t · 27,1 m · GALIBO AAR F</text>
   </g>
 
   <!-- Couplers + bogies -->

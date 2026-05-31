@@ -46,25 +46,81 @@
          90 – 100%: returns over ship
        =================================================================== */
 
-    /* Trolley slides along boom */
-    .trolley-slide { transform-box: fill-box; transform-origin: 600px 110px;
-                     animation: trolley-slide 7s ease-in-out infinite; }
-    @keyframes trolley-slide {
-      0%, 5%    { transform: translateX(380px) translateY(0); }
-      15%       { transform: translateX(380px) translateY(140px); }
-      30%       { transform: translateX(380px) translateY(0); }
-      55%       { transform: translateX(-300px) translateY(0); }
-      72%       { transform: translateX(-300px) translateY(140px); }
-      85%       { transform: translateX(-300px) translateY(0); }
-      100%      { transform: translateX(380px) translateY(0); }
+    /* ---- STS kinematics (real crane: trolley rides the boom; only the
+            hoist/spreader pays out down a cable. They are SEPARATE motions.) ----
+       UNLOADING: pick a box OFF the ship cell, traverse to the dock yard, set down.
+       Decel-into-landing on the hoist (cubic-bezier 0.4,0,0.2,1). */
+
+    /* (1) TROLLEY housing — rides the boom rail, horizontal travel ONLY. */
+    .trolley-x { transform-box: fill-box;
+                 animation: trolley-x 7s cubic-bezier(0.4,0,0.2,1) infinite; }
+    @keyframes trolley-x {
+      0%, 30%   { transform: translateX(380px);  }  /* over ship, picking */
+      55%, 85%  { transform: translateX(-300px); }  /* over yard, releasing */
+      100%      { transform: translateX(380px);  }  /* dead-head back to ship */
     }
+
+    /* (2) HOIST — nested wrappers so each element animates ONE transform:
+             .hoist-x → translateX (tracks trolley)
+               .hoist-y → translateY (hoist)
+                 .load-sway → rotate (pendulum) */
+    .hoist-x { transform-box: fill-box;
+               animation: hoist-x 7s cubic-bezier(0.4,0,0.2,1) infinite; }
+    @keyframes hoist-x {
+      0%, 30%   { transform: translateX(380px);  }
+      55%, 85%  { transform: translateX(-300px); }
+      100%      { transform: translateX(380px);  }
+    }
+    .hoist-y { transform-box: fill-box;
+               animation: hoist-y 7s cubic-bezier(0.4,0,0.2,1) infinite; }
+    @keyframes hoist-y {
+      0%, 8%    { transform: translateY(0);     } /* high, clear of stacks */
+      18%       { transform: translateY(126px); } /* lowered onto ship cell */
+      24%       { transform: translateY(126px); } /* dwell — twistlocks set */
+      40%       { transform: translateY(0);     } /* hoisted off the ship */
+      55%, 70%  { transform: translateY(0);     } /* travelling to the yard */
+      80%       { transform: translateY(126px); } /* lowered onto yard pile */
+      86%       { transform: translateY(126px); } /* dwell — set down, unlock */
+      96%, 100% { transform: translateY(0);     } /* spreader rises empty */
+    }
+
+    /* (3) HOIST CABLES — anchored at the boom; stretch as the load pays out.
+           Lives INSIDE .hoist-x; scaleY only; transform-origin top. */
+    .hoist-cables { transform-box: fill-box; transform-origin: top;
+                    animation: cable-pay 7s cubic-bezier(0.4,0,0.2,1) infinite; }
+    @keyframes cable-pay {
+      0%, 8%    { transform: scaleY(1);    }
+      18%, 24%  { transform: scaleY(2.15); }
+      40%       { transform: scaleY(1);    }
+      55%, 70%  { transform: scaleY(1);    }
+      80%, 86%  { transform: scaleY(2.15); }
+      96%, 100% { transform: scaleY(1);    }
+    }
+
+    /* (4) LOAD SWAY — suspended container pendulums when travelling, settles
+           when stopped. Pivots about the spreader (its suspension point). */
+    .load-sway { transform-box: fill-box; transform-origin: top center;
+                 animation: load-sway 7s ease-in-out infinite; }
+    @keyframes load-sway {
+      0%, 8%    { transform: rotate(0deg);     }
+      14%       { transform: rotate(1.1deg);   } /* lift snatch (off ship) */
+      22%       { transform: rotate(-0.5deg);  }
+      30%       { transform: rotate(0deg);     }
+      46%       { transform: rotate(-1.4deg);  } /* swing into travel (toward yard) */
+      62%       { transform: rotate(1deg);     }
+      74%       { transform: rotate(-0.4deg);  } /* settle over pile */
+      82%, 100% { transform: rotate(0deg);     }
+    }
+
+    /* Back-compat: legacy single-group class is now a no-op holder. */
+    .trolley-slide { transform-box: fill-box; }
 
     /* Twist-lock indicator (green = engaged, while carrying) */
     .lock-engaged { animation: lock-engaged 7s ease-in-out infinite; }
     @keyframes lock-engaged {
-      0%, 25%   { opacity: 0; }
-      30%, 80%  { opacity: 1; }
-      85%, 100% { opacity: 0; }
+      0%, 18%   { opacity: 0; }                 /* spreader still descending */
+      24%, 84%  { opacity: 1; }                 /* locked from set-down to release */
+      90%, 100% { opacity: 0; }                 /* unlocked, spreader empty */
     }
 
     /* Container deck stack — SHRINKS as containers are removed (unloading) */
@@ -118,10 +174,15 @@
       .ship-bob,
       .sky-shimmer,
       .strobe-amber,
-      .trolley-slide,
+      .trolley-slide, .trolley-x, .hoist-x, .hoist-y, .hoist-cables, .load-sway,
       .water-ripple {
         animation: none !important;
       }
+      /* Still the hoist mid-cycle (load set down in the yard, locks engaged). */
+      .hoist-y     { transform: translateY(0); }
+      .hoist-cables{ transform: scaleY(1); }
+      .trolley-x, .hoist-x { transform: translateX(-300px); }
+      .lock-engaged{ opacity: 1; }
     }
 
   ]]></style>
@@ -320,52 +381,101 @@
        TROLLEY + SPREADER + CONTAINER (animated along the boom)
        Trolley at base position (600, 110). Animation translates.
        ============================================================ -->
-  <g class="trolley-slide">
-    <!-- Trolley (machinery housing on top of boom rail) -->
+  <!-- TROLLEY housing: rides the boom rail (horizontal travel only). -->
+  <g class="trolley-x">
     <rect x="586" y="92" width="28" height="18" rx="2" fill="#3A3F4A" stroke="#1A1F2E" stroke-width="0.5"/>
     <rect x="586" y="92" width="28" height="3" fill="#5A606D"/>
+    <!-- Hoist sheave guards on the trolley underside (cable exit points) -->
+    <circle cx="589" cy="110" r="2" fill="#1A1F2E"/>
+    <circle cx="611" cy="110" r="2" fill="#1A1F2E"/>
     <text x="600" y="103" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
           font-weight="900" font-size="4" fill="#FFD23A" letter-spacing="0.4">TROLLEY</text>
+  </g>
 
-    <!-- Cables (4 cables from trolley to spreader) -->
-    <line x1="588" y1="110" x2="572" y2="220" stroke="#1A1F2E" stroke-width="1.4"/>
-    <line x1="596" y1="110" x2="588" y2="220" stroke="#1A1F2E" stroke-width="1.4"/>
-    <line x1="604" y1="110" x2="612" y2="220" stroke="#1A1F2E" stroke-width="1.4"/>
-    <line x1="612" y1="110" x2="628" y2="220" stroke="#1A1F2E" stroke-width="1.4"/>
-
-    <!-- Spreader bar (twist-lock spreader) -->
-    <rect x="568" y="220" width="64" height="10" rx="1" fill="#3A3F4A" stroke="#1A1F2E" stroke-width="0.5"/>
-    <rect x="568" y="220" width="64" height="2" fill="#5A606D"/>
-    <!-- Twist-lock corner indicators -->
-    <g>
-      <rect x="568" y="222" width="6" height="6" fill="#1A1F2E"/>
-      <rect x="626" y="222" width="6" height="6" fill="#1A1F2E"/>
-      <!-- Lock engaged green LEDs -->
-      <circle class="lock-engaged" cx="571" cy="225" r="1.6" fill="#43E26A"/>
-      <circle class="lock-engaged" cx="629" cy="225" r="1.6" fill="#43E26A"/>
+  <!-- HOIST assembly: tracks the trolley in X (.hoist-x), then the cables pay
+       out (.hoist-cables scaleY) while the spreader+container lift/lower
+       (.hoist-y), with a slight pendulum (.load-sway). Real STS: trolley fixed. -->
+  <g class="hoist-x">
+    <!-- Cables anchored at the boom (y=110); stretch downward as load pays out. -->
+    <g class="hoist-cables">
+      <line x1="588" y1="110" x2="572" y2="220" stroke="#1A1F2E" stroke-width="1.4"/>
+      <line x1="596" y1="110" x2="588" y2="220" stroke="#1A1F2E" stroke-width="1.4"/>
+      <line x1="604" y1="110" x2="612" y2="220" stroke="#1A1F2E" stroke-width="1.4"/>
+      <line x1="612" y1="110" x2="628" y2="220" stroke="#1A1F2E" stroke-width="1.4"/>
     </g>
 
-    <!-- Container hanging from spreader -->
-    <g>
-      <rect x="568" y="230" width="64" height="42" fill="url(#containerBlue)" stroke="#1F4A70" stroke-width="0.6"/>
-      <rect x="568" y="230" width="64" height="3" fill="#7DBEEC" opacity="0.7"/>
-      <!-- Door pattern (right end) -->
-      <line x1="624" y1="230" x2="624" y2="272" stroke="#1A1F2E" stroke-width="0.4" opacity="0.6"/>
-      <!-- Corrugation -->
-      <g stroke="#1F4A70" stroke-width="0.4" opacity="0.55">
-        <line x1="572" y1="234" x2="572" y2="270"/>
-        <line x1="580" y1="234" x2="580" y2="270"/>
-        <line x1="588" y1="234" x2="588" y2="270"/>
-        <line x1="596" y1="234" x2="596" y2="270"/>
-        <line x1="604" y1="234" x2="604" y2="270"/>
-        <line x1="612" y1="234" x2="612" y2="270"/>
-        <line x1="620" y1="234" x2="620" y2="270"/>
+    <!-- Spreader + container lift/lower together (Y) with a pendulum sway. -->
+    <g class="hoist-y">
+      <g class="load-sway">
+        <!-- Spreader bar (twist-lock spreader) -->
+        <rect x="568" y="220" width="64" height="10" rx="1" fill="#3A3F4A" stroke="#1A1F2E" stroke-width="0.5"/>
+        <rect x="568" y="220" width="64" height="2" fill="#5A606D"/>
+        <!-- Twist-lock corner indicators -->
+        <g>
+          <rect x="568" y="222" width="6" height="6" fill="#1A1F2E"/>
+          <rect x="626" y="222" width="6" height="6" fill="#1A1F2E"/>
+          <!-- Lock engaged green LEDs -->
+          <circle class="lock-engaged" cx="571" cy="225" r="1.6" fill="#43E26A"/>
+          <circle class="lock-engaged" cx="629" cy="225" r="1.6" fill="#43E26A"/>
+        </g>
+
+        <!-- Container hanging from spreader -->
+        <g>
+          <rect x="568" y="230" width="64" height="42" fill="url(#containerBlue)" stroke="#1F4A70" stroke-width="0.6"/>
+          <rect x="568" y="230" width="64" height="3" fill="#7DBEEC" opacity="0.7"/>
+          <!-- Door pattern (right end) -->
+          <line x1="624" y1="230" x2="624" y2="272" stroke="#1A1F2E" stroke-width="0.4" opacity="0.6"/>
+          <!-- Corrugation -->
+          <g stroke="#1F4A70" stroke-width="0.4" opacity="0.55">
+            <line x1="572" y1="234" x2="572" y2="270"/>
+            <line x1="580" y1="234" x2="580" y2="270"/>
+            <line x1="588" y1="234" x2="588" y2="270"/>
+            <line x1="596" y1="234" x2="596" y2="270"/>
+            <line x1="604" y1="234" x2="604" y2="270"/>
+            <line x1="612" y1="234" x2="612" y2="270"/>
+            <line x1="620" y1="234" x2="620" y2="270"/>
+          </g>
+          <!-- "EUSOTRIP" container marking -->
+          <text x="600" y="250" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+                font-weight="900" font-size="6" fill="#FFFFFF" letter-spacing="0.8">EUSOTRIP</text>
+          <text x="600" y="258" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+                font-weight="700" font-size="4" fill="#FFFFFF" opacity="0.85" letter-spacing="0.6">EUSO 9181</text>
+
+          <!-- ============================================================
+               IMDG / DANGEROUS-GOODS PLACARDING (country-switchable)
+               IMDG Code ch.5.3: a CTU carrying dangerous goods shows the class
+               placard + an orange UN-number panel on all faces — identical at
+               sea worldwide, so the placard art is shared; only the LANDSIDE
+               legend/units differ by jurisdiction (US 49 CFR / DOT, MX SCT
+               NOM-003-SCT, CA TDG). Renderer shows exactly one .country-* group
+               — default US visible; toggle display on the others. -->
+          <g transform="translate(602 234) scale(0.62)">
+            <!-- Class 3 flammable-liquid placard (red, flame) — IMDG shared -->
+            <g transform="rotate(45 9 9)">
+              <rect x="0" y="0" width="18" height="18" rx="1" fill="#D6312B" stroke="#FFFFFF" stroke-width="0.6"/>
+              <path d="M9 4 C11 7 12 8 11 11 C13 10 13 8 12.5 7 C14 9 14 12 11.5 14 C13 13.5 13 12 13 12 C13.4 13.6 12 15 9 15 C6.2 15 5 13.4 5.6 11.6 C6 12.6 6.8 12.8 7 12.8 C6 11 6.6 8.6 9 4 Z" fill="#FFD23A"/>
+              <text x="9" y="16" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="3.2" fill="#FFFFFF">3</text>
+            </g>
+            <!-- Orange UN-number panel adjacent to the placard (IMDG 5.3.2) -->
+            <g transform="translate(20 6)">
+              <rect x="0" y="0" width="22" height="9" rx="0.6" fill="#E8881A" stroke="#1A1F2E" stroke-width="0.8"/>
+              <line x1="0" y1="4.5" x2="22" y2="4.5" stroke="#1A1F2E" stroke-width="0.5"/>
+              <text x="11" y="3.6" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="3.2" fill="#1A1F2E">33</text>
+              <text x="11" y="8.2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="3.2" fill="#1A1F2E">1203</text>
+            </g>
+            <!-- Jurisdiction legend (only landside wording/units differ) -->
+            <g class="country-US">
+              <text x="0" y="26" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="3.4" fill="#FFFFFF" opacity="0.9">US DOT 49 CFR</text>
+            </g>
+            <g class="country-MX" style="display:none">
+              <text x="0" y="26" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="3.4" fill="#FFFFFF" opacity="0.9">MX NOM-003-SCT</text>
+            </g>
+            <g class="country-CA" style="display:none">
+              <text x="0" y="26" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="3.4" fill="#FFFFFF" opacity="0.9">CA TDG</text>
+            </g>
+          </g>
+        </g>
       </g>
-      <!-- "EUSOTRIP" container marking -->
-      <text x="600" y="252" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
-            font-weight="900" font-size="6" fill="#FFFFFF" letter-spacing="0.8">EUSOTRIP</text>
-      <text x="600" y="262" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
-            font-weight="700" font-size="4" fill="#FFFFFF" opacity="0.85" letter-spacing="0.6">EUSO 9181</text>
     </g>
   </g>
 
@@ -794,425 +904,224 @@
 <path d="M0 0 C1 4 1 4 1 4 Z " fill="#5F4DE5" transform="translate(487,538)"/>
 <path d="M0 0 C1 4 1 4 1 4 Z " fill="#357FEB" transform="translate(256,488)"/>
 <path d="M0 0 C3 1 3 1 3 1 Z " fill="#A73FB6" transform="translate(473,757)"/>
-<path d="" fill="#3D6CE4" transform="translate(0,0)"/>
-<path d="" fill="#3669F1" transform="translate(0,0)"/>
-<path d="" fill="#3867EF" transform="translate(0,0)"/>
-<path d="" fill="#6A45E1" transform="translate(0,0)"/>
-<path d="" fill="#366CF0" transform="translate(0,0)"/>
-<path d="" fill="#3373F4" transform="translate(0,0)"/>
-<path d="" fill="#3878E7" transform="translate(0,0)"/>
-<path d="" fill="#913ABF" transform="translate(0,0)"/>
+
+
+
+
 <path d="M0 0 C0.66 0 1.32 0 2 0 C1.67 0.66 1.34 1.32 1 2 C0.67 1.34 0.34 0.68 0 0 Z " fill="#6444E1" transform="translate(603,473)"/>
-<path d="" fill="#3177F7" transform="translate(0,0)"/>
+
 <path d="M0 0 C0.66 0.66 1.32 1.32 2 2 C1.34 2 0.68 2 0 2 C0 1.34 0 0.68 0 0 Z " fill="#5F43DE" transform="translate(644,422)"/>
-<path d="" fill="#4C4EE9" transform="translate(0,0)"/>
-<path d="" fill="#3487F3" transform="translate(0,0)"/>
+
 <path d="M0 0 C2 1 2 1 2 1 Z " fill="#B03EC2" transform="translate(528,723)"/>
 <path d="M0 0 C2 1 2 1 2 1 Z " fill="#4E55D7" transform="translate(291,650)"/>
-<path d="" fill="#7048D3" transform="translate(0,0)"/>
+
 <path d="M0 0 C2 1 2 1 2 1 Z " fill="#8A38CD" transform="translate(558,636)"/>
 <path d="M0 0 C2 1 2 1 2 1 Z " fill="#7941D8" transform="translate(498,629)"/>
-<path d="" fill="#455FDD" transform="translate(0,0)"/>
+
 <path d="M0 0 C2 1 2 1 2 1 Z " fill="#584CE2" transform="translate(403,621)"/>
-<path d="" fill="#4362DD" transform="translate(0,0)"/>
-<path d="" fill="#4D52E7" transform="translate(0,0)"/>
-<path d="" fill="#3C64ED" transform="translate(0,0)"/>
-<path d="" fill="#5C4CE5" transform="translate(0,0)"/>
-<path d="" fill="#3775E5" transform="translate(0,0)"/>
-<path d="" fill="#3869F1" transform="translate(0,0)"/>
-<path d="" fill="#3368F1" transform="translate(0,0)"/>
-<path d="" fill="#3674E6" transform="translate(0,0)"/>
-<path d="" fill="#3878E6" transform="translate(0,0)"/>
-<path d="" fill="#7B3DDA" transform="translate(0,0)"/>
-<path d="" fill="#347FEB" transform="translate(0,0)"/>
-<path d="" fill="#3E5EED" transform="translate(0,0)"/>
-<path d="" fill="#3480EA" transform="translate(0,0)"/>
-<path d="" fill="#6E41DB" transform="translate(0,0)"/>
-<path d="" fill="#3077F6" transform="translate(0,0)"/>
-<path d="" fill="#5B49E3" transform="translate(0,0)"/>
+
+
+
+
+
+
+
+
 <path d="M0 0 C2 1 2 1 2 1 Z " fill="#4254EB" transform="translate(524,406)"/>
 <path d="M0 0 C2 1 2 1 2 1 Z " fill="#4A4EE8" transform="translate(602,372)"/>
-<path d="" fill="#3463F1" transform="translate(0,0)"/>
-<path d="" fill="#338AF5" transform="translate(0,0)"/>
+
 <path d="M0 0 C2 1 2 1 2 1 Z " fill="#346CF3" transform="translate(517,327)"/>
-<path d="" fill="#3B8DEC" transform="translate(0,0)"/>
-<path d="" fill="#3688F0" transform="translate(0,0)"/>
+
 <path d="M0 0 C2 1 2 1 2 1 Z " fill="#2A7FFA" transform="translate(484,239)"/>
 <path d="M0 0 C2 1 2 1 2 1 Z " fill="#4080DE" transform="translate(548,84)"/>
-<path d="" fill="#3F3C3C" transform="translate(0,0)"/>
-<path d="" fill="#3E3E3F" transform="translate(0,0)"/>
-<path d="" fill="#3B3A38" transform="translate(0,0)"/>
-<path d="" fill="#3C3A39" transform="translate(0,0)"/>
-<path d="" fill="#463840" transform="translate(0,0)"/>
-<path d="" fill="#AD4AA9" transform="translate(0,0)"/>
-<path d="" fill="#B33FB3" transform="translate(0,0)"/>
-<path d="" fill="#A340B4" transform="translate(0,0)"/>
-<path d="" fill="#A33EB7" transform="translate(0,0)"/>
-<path d="" fill="#B33EB2" transform="translate(0,0)"/>
-<path d="" fill="#B13FB4" transform="translate(0,0)"/>
-<path d="" fill="#9A40BD" transform="translate(0,0)"/>
-<path d="" fill="#B53AB5" transform="translate(0,0)"/>
-<path d="" fill="#983EBE" transform="translate(0,0)"/>
-<path d="" fill="#B63DB2" transform="translate(0,0)"/>
-<path d="" fill="#943FBC" transform="translate(0,0)"/>
-<path d="" fill="#B13FB8" transform="translate(0,0)"/>
-<path d="" fill="#8F42BD" transform="translate(0,0)"/>
-<path d="" fill="#8C40C6" transform="translate(0,0)"/>
-<path d="" fill="#8644BB" transform="translate(0,0)"/>
-<path d="" fill="#B33FBA" transform="translate(0,0)"/>
-<path d="" fill="#AE42C1" transform="translate(0,0)"/>
-<path d="" fill="#8441C3" transform="translate(0,0)"/>
-<path d="" fill="#8440C4" transform="translate(0,0)"/>
-<path d="" fill="#7F42C2" transform="translate(0,0)"/>
-<path d="" fill="#7D44C2" transform="translate(0,0)"/>
-<path d="" fill="#7B44C4" transform="translate(0,0)"/>
-<path d="" fill="#7C42C2" transform="translate(0,0)"/>
-<path d="" fill="#7A42C4" transform="translate(0,0)"/>
-<path d="" fill="#A43FC3" transform="translate(0,0)"/>
-<path d="" fill="#7442C8" transform="translate(0,0)"/>
-<path d="" fill="#A13DC5" transform="translate(0,0)"/>
-<path d="" fill="#B734B1" transform="translate(0,0)"/>
-<path d="" fill="#B537AF" transform="translate(0,0)"/>
-<path d="" fill="#AD3EC2" transform="translate(0,0)"/>
-<path d="" fill="#6B47CA" transform="translate(0,0)"/>
-<path d="" fill="#6845CA" transform="translate(0,0)"/>
-<path d="" fill="#6844CF" transform="translate(0,0)"/>
-<path d="" fill="#A83DC5" transform="translate(0,0)"/>
-<path d="" fill="#A93EC2" transform="translate(0,0)"/>
-<path d="" fill="#6746CD" transform="translate(0,0)"/>
-<path d="" fill="#5E48D0" transform="translate(0,0)"/>
-<path d="" fill="#5E4ACE" transform="translate(0,0)"/>
-<path d="" fill="#5F48D0" transform="translate(0,0)"/>
-<path d="" fill="#614DD2" transform="translate(0,0)"/>
-<path d="" fill="#A438CA" transform="translate(0,0)"/>
-<path d="" fill="#5A49D0" transform="translate(0,0)"/>
-<path d="" fill="#A439C9" transform="translate(0,0)"/>
-<path d="" fill="#A539C9" transform="translate(0,0)"/>
-<path d="" fill="#A339C8" transform="translate(0,0)"/>
-<path d="" fill="#574CD3" transform="translate(0,0)"/>
-<path d="" fill="#514CD4" transform="translate(0,0)"/>
-<path d="" fill="#5850D3" transform="translate(0,0)"/>
-<path d="" fill="#564BD3" transform="translate(0,0)"/>
-<path d="" fill="#5350D3" transform="translate(0,0)"/>
-<path d="" fill="#6042DB" transform="translate(0,0)"/>
-<path d="" fill="#5151D5" transform="translate(0,0)"/>
-<path d="" fill="#5D43DA" transform="translate(0,0)"/>
-<path d="" fill="#A038C9" transform="translate(0,0)"/>
-<path d="" fill="#6C47D9" transform="translate(0,0)"/>
-<path d="" fill="#4857DA" transform="translate(0,0)"/>
-<path d="" fill="#B23AB7" transform="translate(0,0)"/>
-<path d="" fill="#883ED5" transform="translate(0,0)"/>
-<path d="" fill="#4857DB" transform="translate(0,0)"/>
-<path d="" fill="#8C3DD2" transform="translate(0,0)"/>
-<path d="" fill="#8542D4" transform="translate(0,0)"/>
-<path d="" fill="#6A4ADD" transform="translate(0,0)"/>
-<path d="" fill="#6A49D9" transform="translate(0,0)"/>
-<path d="" fill="#4757DD" transform="translate(0,0)"/>
-<path d="" fill="#8E3FCD" transform="translate(0,0)"/>
-<path d="" fill="#9E39CB" transform="translate(0,0)"/>
-<path d="" fill="#445BDB" transform="translate(0,0)"/>
-<path d="" fill="#8E3BD2" transform="translate(0,0)"/>
-<path d="" fill="#8E39D4" transform="translate(0,0)"/>
-<path d="" fill="#4861DE" transform="translate(0,0)"/>
-<path d="" fill="#7244D8" transform="translate(0,0)"/>
-<path d="" fill="#574EE6" transform="translate(0,0)"/>
-<path d="" fill="#9F36C8" transform="translate(0,0)"/>
-<path d="" fill="#8E37CF" transform="translate(0,0)"/>
-<path d="" fill="#435DDD" transform="translate(0,0)"/>
-<path d="" fill="#7243D9" transform="translate(0,0)"/>
-<path d="" fill="#4661E0" transform="translate(0,0)"/>
-<path d="" fill="#6D42D7" transform="translate(0,0)"/>
-<path d="" fill="#9E34CC" transform="translate(0,0)"/>
-<path d="" fill="#6B45DE" transform="translate(0,0)"/>
-<path d="" fill="#6043DC" transform="translate(0,0)"/>
-<path d="" fill="#6A48DE" transform="translate(0,0)"/>
-<path d="" fill="#9B3ACC" transform="translate(0,0)"/>
-<path d="" fill="#4265E1" transform="translate(0,0)"/>
-<path d="" fill="#8B3BCF" transform="translate(0,0)"/>
-<path d="" fill="#4064DF" transform="translate(0,0)"/>
-<path d="" fill="#3F64E4" transform="translate(0,0)"/>
-<path d="" fill="#4164DF" transform="translate(0,0)"/>
-<path d="" fill="#3E67E2" transform="translate(0,0)"/>
-<path d="" fill="#5C4ADF" transform="translate(0,0)"/>
-<path d="" fill="#4266E5" transform="translate(0,0)"/>
-<path d="" fill="#8838D0" transform="translate(0,0)"/>
-<path d="" fill="#3D68E2" transform="translate(0,0)"/>
-<path d="" fill="#8A39D1" transform="translate(0,0)"/>
-<path d="" fill="#7E40D8" transform="translate(0,0)"/>
-<path d="" fill="#7D3CD9" transform="translate(0,0)"/>
-<path d="" fill="#4456E7" transform="translate(0,0)"/>
-<path d="" fill="#7A3ED5" transform="translate(0,0)"/>
-<path d="" fill="#7F3FD7" transform="translate(0,0)"/>
-<path d="" fill="#6149DF" transform="translate(0,0)"/>
-<path d="" fill="#3E6CE3" transform="translate(0,0)"/>
-<path d="" fill="#3F69DF" transform="translate(0,0)"/>
-<path d="" fill="#3D6BE1" transform="translate(0,0)"/>
-<path d="" fill="#863ACF" transform="translate(0,0)"/>
-<path d="" fill="#3D6BE3" transform="translate(0,0)"/>
-<path d="" fill="#A73CBB" transform="translate(0,0)"/>
-<path d="" fill="#415EED" transform="translate(0,0)"/>
-<path d="" fill="#435EEE" transform="translate(0,0)"/>
-<path d="" fill="#893BD2" transform="translate(0,0)"/>
-<path d="" fill="#415BEE" transform="translate(0,0)"/>
-<path d="" fill="#445EEE" transform="translate(0,0)"/>
-<path d="" fill="#3D6FE5" transform="translate(0,0)"/>
-<path d="" fill="#7F3CD9" transform="translate(0,0)"/>
-<path d="" fill="#425EEC" transform="translate(0,0)"/>
-<path d="" fill="#415FEC" transform="translate(0,0)"/>
-<path d="" fill="#3B6DE5" transform="translate(0,0)"/>
-<path d="" fill="#5949E4" transform="translate(0,0)"/>
-<path d="" fill="#A33ABB" transform="translate(0,0)"/>
-<path d="" fill="#574CE2" transform="translate(0,0)"/>
-<path d="" fill="#9F3EBB" transform="translate(0,0)"/>
-<path d="" fill="#7046E0" transform="translate(0,0)"/>
-<path d="" fill="#6D40DC" transform="translate(0,0)"/>
-<path d="" fill="#6E49DF" transform="translate(0,0)"/>
-<path d="" fill="#3668EE" transform="translate(0,0)"/>
-<path d="" fill="#4D51E5" transform="translate(0,0)"/>
-<path d="" fill="#6C46DC" transform="translate(0,0)"/>
-<path d="" fill="#4955EA" transform="translate(0,0)"/>
-<path d="" fill="#3B76E6" transform="translate(0,0)"/>
-<path d="" fill="#3867F4" transform="translate(0,0)"/>
-<path d="" fill="#3674E6" transform="translate(0,0)"/>
-<path d="" fill="#753FDB" transform="translate(0,0)"/>
-<path d="" fill="#346DF0" transform="translate(0,0)"/>
-<path d="" fill="#883ED2" transform="translate(0,0)"/>
-<path d="" fill="#7941DA" transform="translate(0,0)"/>
-<path d="" fill="#356CF3" transform="translate(0,0)"/>
-<path d="" fill="#6742E1" transform="translate(0,0)"/>
-<path d="" fill="#3968F1" transform="translate(0,0)"/>
-<path d="" fill="#3976E6" transform="translate(0,0)"/>
-<path d="" fill="#6644DE" transform="translate(0,0)"/>
-<path d="" fill="#3675E6" transform="translate(0,0)"/>
-<path d="" fill="#346FF3" transform="translate(0,0)"/>
-<path d="" fill="#5A4DE7" transform="translate(0,0)"/>
-<path d="" fill="#4558E8" transform="translate(0,0)"/>
-<path d="" fill="#733FDF" transform="translate(0,0)"/>
-<path d="" fill="#3470F3" transform="translate(0,0)"/>
-<path d="" fill="#7241DF" transform="translate(0,0)"/>
-<path d="" fill="#7045E0" transform="translate(0,0)"/>
-<path d="" fill="#6D40DF" transform="translate(0,0)"/>
-<path d="" fill="#3471F7" transform="translate(0,0)"/>
-<path d="" fill="#7A3DD7" transform="translate(0,0)"/>
-<path d="" fill="#6F40DE" transform="translate(0,0)"/>
-<path d="" fill="#6E43E0" transform="translate(0,0)"/>
-<path d="" fill="#445EED" transform="translate(0,0)"/>
-<path d="" fill="#4059ED" transform="translate(0,0)"/>
-<path d="" fill="#7D3DD8" transform="translate(0,0)"/>
-<path d="" fill="#405CEF" transform="translate(0,0)"/>
-<path d="" fill="#405FEA" transform="translate(0,0)"/>
-<path d="" fill="#6D44E1" transform="translate(0,0)"/>
-<path d="" fill="#7A3DD5" transform="translate(0,0)"/>
-<path d="" fill="#6448DD" transform="translate(0,0)"/>
-<path d="" fill="#326FF5" transform="translate(0,0)"/>
-<path d="" fill="#793AD6" transform="translate(0,0)"/>
-<path d="" fill="#793ADA" transform="translate(0,0)"/>
-<path d="" fill="#6B44DF" transform="translate(0,0)"/>
-<path d="" fill="#6346DE" transform="translate(0,0)"/>
-<path d="" fill="#3276F8" transform="translate(0,0)"/>
-<path d="" fill="#7A40DC" transform="translate(0,0)"/>
-<path d="" fill="#6644D8" transform="translate(0,0)"/>
-<path d="" fill="#6E3EDC" transform="translate(0,0)"/>
-<path d="" fill="#3173F6" transform="translate(0,0)"/>
-<path d="" fill="#7142DA" transform="translate(0,0)"/>
-<path d="" fill="#6144DF" transform="translate(0,0)"/>
-<path d="" fill="#4061EE" transform="translate(0,0)"/>
-<path d="" fill="#6745E1" transform="translate(0,0)"/>
-<path d="" fill="#3174F6" transform="translate(0,0)"/>
-<path d="" fill="#923BBF" transform="translate(0,0)"/>
-<path d="" fill="#445BEC" transform="translate(0,0)"/>
-<path d="" fill="#6345E1" transform="translate(0,0)"/>
-<path d="" fill="#465AEA" transform="translate(0,0)"/>
-<path d="" fill="#6544E1" transform="translate(0,0)"/>
-<path d="" fill="#337BF8" transform="translate(0,0)"/>
-<path d="" fill="#703FDD" transform="translate(0,0)"/>
-<path d="" fill="#6643E1" transform="translate(0,0)"/>
-<path d="" fill="#3882EA" transform="translate(0,0)"/>
-<path d="" fill="#3781E6" transform="translate(0,0)"/>
-<path d="" fill="#6344DE" transform="translate(0,0)"/>
-<path d="" fill="#3883EA" transform="translate(0,0)"/>
-<path d="" fill="#3484EA" transform="translate(0,0)"/>
-<path d="" fill="#3076F7" transform="translate(0,0)"/>
-<path d="" fill="#7241DE" transform="translate(0,0)"/>
-<path d="" fill="#3178F8" transform="translate(0,0)"/>
-<path d="" fill="#6A41DF" transform="translate(0,0)"/>
-<path d="" fill="#564FE6" transform="translate(0,0)"/>
-<path d="" fill="#584EE6" transform="translate(0,0)"/>
-<path d="" fill="#4A5AEE" transform="translate(0,0)"/>
-<path d="" fill="#495BEC" transform="translate(0,0)"/>
-<path d="" fill="#327AFA" transform="translate(0,0)"/>
-<path d="" fill="#5F42E0" transform="translate(0,0)"/>
-<path d="" fill="#5F47E4" transform="translate(0,0)"/>
-<path d="" fill="#5251E9" transform="translate(0,0)"/>
-<path d="" fill="#5451E9" transform="translate(0,0)"/>
-<path d="" fill="#5056EB" transform="translate(0,0)"/>
-<path d="" fill="#6642E0" transform="translate(0,0)"/>
-<path d="" fill="#3D66F1" transform="translate(0,0)"/>
-<path d="" fill="#6A3FE0" transform="translate(0,0)"/>
-<path d="" fill="#6343DF" transform="translate(0,0)"/>
-<path d="" fill="#5C49E6" transform="translate(0,0)"/>
-<path d="" fill="#5B49E5" transform="translate(0,0)"/>
-<path d="" fill="#6A41E0" transform="translate(0,0)"/>
-<path d="" fill="#3985E5" transform="translate(0,0)"/>
-<path d="" fill="#6246DF" transform="translate(0,0)"/>
-<path d="" fill="#833EC5" transform="translate(0,0)"/>
-<path d="" fill="#564AE8" transform="translate(0,0)"/>
-<path d="" fill="#6543E3" transform="translate(0,0)"/>
-<path d="" fill="#3685ED" transform="translate(0,0)"/>
-<path d="" fill="#6344DF" transform="translate(0,0)"/>
-<path d="" fill="#3888EE" transform="translate(0,0)"/>
-<path d="" fill="#6544E1" transform="translate(0,0)"/>
-<path d="" fill="#524CE5" transform="translate(0,0)"/>
-<path d="" fill="#534CEA" transform="translate(0,0)"/>
-<path d="" fill="#3887EE" transform="translate(0,0)"/>
-<path d="" fill="#3A85EA" transform="translate(0,0)"/>
-<path d="" fill="#504DE5" transform="translate(0,0)"/>
-<path d="" fill="#524EE3" transform="translate(0,0)"/>
-<path d="" fill="#3887EC" transform="translate(0,0)"/>
-<path d="" fill="#5151E7" transform="translate(0,0)"/>
-<path d="" fill="#3C67EB" transform="translate(0,0)"/>
-<path d="" fill="#6045E3" transform="translate(0,0)"/>
-<path d="" fill="#504CE8" transform="translate(0,0)"/>
-<path d="" fill="#504EEA" transform="translate(0,0)"/>
-<path d="" fill="#5049E7" transform="translate(0,0)"/>
-<path d="" fill="#5E46E2" transform="translate(0,0)"/>
-<path d="" fill="#5846E2" transform="translate(0,0)"/>
-<path d="" fill="#7B41C7" transform="translate(0,0)"/>
-<path d="" fill="#4A53ED" transform="translate(0,0)"/>
-<path d="" fill="#4B50E8" transform="translate(0,0)"/>
-<path d="" fill="#3687EE" transform="translate(0,0)"/>
-<path d="" fill="#4E54E9" transform="translate(0,0)"/>
-<path d="" fill="#5A43E0" transform="translate(0,0)"/>
-<path d="" fill="#5D47E3" transform="translate(0,0)"/>
-<path d="" fill="#7640C5" transform="translate(0,0)"/>
-<path d="" fill="#5944E1" transform="translate(0,0)"/>
-<path d="" fill="#3F61EE" transform="translate(0,0)"/>
-<path d="" fill="#5946E3" transform="translate(0,0)"/>
-<path d="" fill="#5A47E3" transform="translate(0,0)"/>
-<path d="" fill="#793FC7" transform="translate(0,0)"/>
-<path d="" fill="#5947E2" transform="translate(0,0)"/>
-<path d="" fill="#4659EA" transform="translate(0,0)"/>
-<path d="" fill="#3A5DEF" transform="translate(0,0)"/>
-<path d="" fill="#3286ED" transform="translate(0,0)"/>
-<path d="" fill="#4055EC" transform="translate(0,0)"/>
-<path d="" fill="#4358EF" transform="translate(0,0)"/>
-<path d="" fill="#3F5AF0" transform="translate(0,0)"/>
-<path d="" fill="#753CC5" transform="translate(0,0)"/>
-<path d="" fill="#514DE5" transform="translate(0,0)"/>
-<path d="" fill="#3988ED" transform="translate(0,0)"/>
-<path d="" fill="#504BE4" transform="translate(0,0)"/>
-<path d="" fill="#753FC6" transform="translate(0,0)"/>
-<path d="" fill="#504DE5" transform="translate(0,0)"/>
-<path d="" fill="#4C4CE6" transform="translate(0,0)"/>
-<path d="" fill="#504BE4" transform="translate(0,0)"/>
-<path d="" fill="#4850E5" transform="translate(0,0)"/>
-<path d="" fill="#2C80F5" transform="translate(0,0)"/>
-<path d="" fill="#6C3FCC" transform="translate(0,0)"/>
-<path d="" fill="#4C4DE5" transform="translate(0,0)"/>
-<path d="" fill="#3788EE" transform="translate(0,0)"/>
-<path d="" fill="#4D4CE9" transform="translate(0,0)"/>
-<path d="" fill="#4F4DE9" transform="translate(0,0)"/>
-<path d="" fill="#3789EC" transform="translate(0,0)"/>
-<path d="" fill="#6A3FC9" transform="translate(0,0)"/>
-<path d="" fill="#4D4DE4" transform="translate(0,0)"/>
-<path d="" fill="#4B4BE5" transform="translate(0,0)"/>
-<path d="" fill="#3689EE" transform="translate(0,0)"/>
-<path d="" fill="#673DCD" transform="translate(0,0)"/>
-<path d="" fill="#4850E6" transform="translate(0,0)"/>
-<path d="" fill="#3185F8" transform="translate(0,0)"/>
-<path d="" fill="#4A51EA" transform="translate(0,0)"/>
-<path d="" fill="#693FCE" transform="translate(0,0)"/>
-<path d="" fill="#3085F8" transform="translate(0,0)"/>
-<path d="" fill="#378BEE" transform="translate(0,0)"/>
-<path d="" fill="#4853E9" transform="translate(0,0)"/>
-<path d="" fill="#3372F4" transform="translate(0,0)"/>
-<path d="" fill="#4454EB" transform="translate(0,0)"/>
-<path d="" fill="#4852EB" transform="translate(0,0)"/>
-<path d="" fill="#4751EA" transform="translate(0,0)"/>
-<path d="" fill="#4651EA" transform="translate(0,0)"/>
-<path d="" fill="#4657EF" transform="translate(0,0)"/>
-<path d="" fill="#4554EA" transform="translate(0,0)"/>
-<path d="" fill="#3085F7" transform="translate(0,0)"/>
-<path d="" fill="#3B5FF0" transform="translate(0,0)"/>
-<path d="" fill="#348BF0" transform="translate(0,0)"/>
-<path d="" fill="#3473F7" transform="translate(0,0)"/>
-<path d="" fill="#3889EC" transform="translate(0,0)"/>
-<path d="" fill="#2C73F6" transform="translate(0,0)"/>
-<path d="" fill="#3C5BEE" transform="translate(0,0)"/>
-<path d="" fill="#3173F4" transform="translate(0,0)"/>
-<path d="" fill="#3073F6" transform="translate(0,0)"/>
-<path d="" fill="#3175F2" transform="translate(0,0)"/>
-<path d="" fill="#3A88EB" transform="translate(0,0)"/>
-<path d="" fill="#3288F5" transform="translate(0,0)"/>
-<path d="" fill="#5945D3" transform="translate(0,0)"/>
-<path d="" fill="#5846D1" transform="translate(0,0)"/>
-<path d="" fill="#2F78F7" transform="translate(0,0)"/>
-<path d="" fill="#3C8EEC" transform="translate(0,0)"/>
-<path d="" fill="#2F77F9" transform="translate(0,0)"/>
-<path d="" fill="#3761ED" transform="translate(0,0)"/>
-<path d="" fill="#388EEC" transform="translate(0,0)"/>
-<path d="" fill="#348DF0" transform="translate(0,0)"/>
-<path d="" fill="#355FED" transform="translate(0,0)"/>
-<path d="" fill="#345EEE" transform="translate(0,0)"/>
-<path d="" fill="#3460F0" transform="translate(0,0)"/>
-<path d="" fill="#3A8DE9" transform="translate(0,0)"/>
-<path d="" fill="#3879F4" transform="translate(0,0)"/>
-<path d="" fill="#5045D7" transform="translate(0,0)"/>
-<path d="" fill="#524AD7" transform="translate(0,0)"/>
-<path d="" fill="#3466F0" transform="translate(0,0)"/>
-<path d="" fill="#3568F2" transform="translate(0,0)"/>
-<path d="" fill="#3569F2" transform="translate(0,0)"/>
-<path d="" fill="#3169F0" transform="translate(0,0)"/>
-<path d="" fill="#316AF0" transform="translate(0,0)"/>
-<path d="" fill="#336BF5" transform="translate(0,0)"/>
-<path d="" fill="#2C79F6" transform="translate(0,0)"/>
-<path d="" fill="#2B7CF7" transform="translate(0,0)"/>
-<path d="" fill="#2D71F2" transform="translate(0,0)"/>
-<path d="" fill="#3487F1" transform="translate(0,0)"/>
-<path d="" fill="#2C74F5" transform="translate(0,0)"/>
-<path d="" fill="#3486F0" transform="translate(0,0)"/>
-<path d="" fill="#2C74F4" transform="translate(0,0)"/>
-<path d="" fill="#2C74F7" transform="translate(0,0)"/>
-<path d="" fill="#2F74F5" transform="translate(0,0)"/>
-<path d="" fill="#3389F0" transform="translate(0,0)"/>
-<path d="" fill="#2973F5" transform="translate(0,0)"/>
-<path d="" fill="#2C75F8" transform="translate(0,0)"/>
-<path d="" fill="#2976F5" transform="translate(0,0)"/>
-<path d="" fill="#3D5EE3" transform="translate(0,0)"/>
-<path d="" fill="#2978F6" transform="translate(0,0)"/>
-<path d="" fill="#348AEE" transform="translate(0,0)"/>
-<path d="" fill="#3686EF" transform="translate(0,0)"/>
-<path d="" fill="#2781F9" transform="translate(0,0)"/>
-<path d="" fill="#2A7BF8" transform="translate(0,0)"/>
-<path d="" fill="#297BF7" transform="translate(0,0)"/>
-<path d="" fill="#2C80F7" transform="translate(0,0)"/>
-<path d="" fill="#2980F5" transform="translate(0,0)"/>
-<path d="" fill="#346AEC" transform="translate(0,0)"/>
-<path d="" fill="#2B81F9" transform="translate(0,0)"/>
-<path d="" fill="#383939" transform="translate(0,0)"/>
-<path d="" fill="#3688EB" transform="translate(0,0)"/>
-<path d="" fill="#348AF0" transform="translate(0,0)"/>
-<path d="" fill="#317BF1" transform="translate(0,0)"/>
-<path d="" fill="#348BF2" transform="translate(0,0)"/>
-<path d="" fill="#2E7EF5" transform="translate(0,0)"/>
-<path d="" fill="#348AF1" transform="translate(0,0)"/>
-<path d="" fill="#3589F0" transform="translate(0,0)"/>
-<path d="" fill="#398BEF" transform="translate(0,0)"/>
-<path d="" fill="#2B7CEC" transform="translate(0,0)"/>
-<path d="" fill="#388AEE" transform="translate(0,0)"/>
-<path d="" fill="#3689EB" transform="translate(0,0)"/>
-<path d="" fill="#3B87EC" transform="translate(0,0)"/>
-<path d="" fill="#3989E9" transform="translate(0,0)"/>
-<path d="" fill="#3986E7" transform="translate(0,0)"/>
-<path d="" fill="#3B85E5" transform="translate(0,0)"/>
-<path d="" fill="#3D85E2" transform="translate(0,0)"/>
-<path d="" fill="#3D82D9" transform="translate(0,0)"/>
-<path d="" fill="#4083DC" transform="translate(0,0)"/>
-<path d="" fill="#3D7AD1" transform="translate(0,0)"/>
-<path d="" fill="#427DD3" transform="translate(0,0)"/>
-<path d="" fill="#3F7DD1" transform="translate(0,0)"/>
-<path d="" fill="#404D65" transform="translate(0,0)"/>
-<path d="" fill="#404346" transform="translate(0,0)"/></svg>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</svg>
     </g>
     <text class="brand-word" x="48" y="22" font-family="Inter, system-ui, sans-serif"
           font-weight="800" font-size="18" letter-spacing="2.5" fill="#5B3FBF">EUSOTRIP</text>

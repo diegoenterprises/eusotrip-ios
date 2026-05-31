@@ -1,0 +1,616 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 50 1200 480" preserveAspectRatio="xMidYMid slice">
+  <!--
+    EusoTrip Animation Design System
+    34 · Livestock (Possum-Belly Cattle Hauler) · ANIMATED v2 (vehicle in motion)
+    EquipmentKind: livestock · Mode: TRUCK · Unit: HD (head) · Cargo: live animals
+
+    REAL RIG — "cattle pot" / possum-belly livestock semi-trailer:
+      • 53' x 102" all-aluminum body with PUNCHED ventilation sides (3" round
+        holes create an air vortex that draws air through the load at speed).
+      • Dropped lower "possum belly" deck slung between the tandem axle sets —
+        the signature low bulge in the silhouette.
+      • Multi-deck: nose deck, center deck, and a rear compartment under the
+        movable upper "jail house" deck. Loading gates at rear + center.
+      • LIVE ANIMALS welfare placard + upright arrows; bedding/litter on floor.
+
+    PHYSICS (shared canonical truck vocab) + livestock-specific ambient motion:
+      • chassis-bob / cab-sway / mudflap / streaks / bow-air / tire-dust
+      • wheel spin (SMIL), sheen sweep, badge pulse, headlight pulse, airlines,
+        chevron, sky shimmer, ground-dash scroll
+      • NEW: cattle heads sway gently behind the slats (live load shifting),
+        vent airflow lines streaming through the punch holes, bedding dust
+        drifting up from the deck floor.
+  -->
+  <style><![CDATA[
+    /* ========== CHASSIS BOB — the body floats on suspension ========== */
+    .chassis-bob   { animation: chassis-bob 0.5s ease-in-out infinite; }
+    @keyframes chassis-bob {
+      0%, 100% { transform: translateY(0); }
+      50%      { transform: translateY(-1.5px); }
+    }
+    .cab-sway      { animation: cab-sway 0.5s ease-in-out infinite -0.12s; }
+    @keyframes cab-sway {
+      0%, 100% { transform: translateY(0)    rotate(0deg); }
+      50%      { transform: translateY(-0.8px) rotate(-0.15deg); }
+    }
+    .mudflap       { transform-origin: 1075px 440px;
+                      animation: mudflap-flutter 0.42s ease-in-out infinite; }
+    @keyframes mudflap-flutter {
+      0%, 100% { transform: rotate(0deg)   translateX(0); }
+      50%      { transform: rotate(-4deg)  translateX(0.4px); }
+    }
+    .streak        { animation: streak-drift 1.2s linear infinite; opacity: 0; }
+    .streak.s2     { animation-delay: -0.4s; }
+    .streak.s3     { animation-delay: -0.8s; }
+    @keyframes streak-drift {
+      0%   { transform: translateX(0);    opacity: 0; }
+      15%  { opacity: 0.45; }
+      85%  { opacity: 0.45; }
+      100% { transform: translateX(180px); opacity: 0; }
+    }
+    .bow-air       { animation: bow-air-pulse 1.4s ease-in-out infinite;
+                      transform-origin: 180px 410px; }
+    @keyframes bow-air-pulse {
+      0%, 100% { transform: scale(1)   translateX(0);   opacity: 0.18; }
+      50%      { transform: scale(1.1) translateX(-3px); opacity: 0.32; }
+    }
+    .tire-dust     { animation: tire-dust 1.6s ease-out infinite; }
+    @keyframes tire-dust {
+      0%, 80%, 100% { opacity: 0; transform: translateX(0) scale(0.4); }
+      8%, 18%       { opacity: 0.45; transform: translateX(0) scale(0.4); }
+      35%           { opacity: 0;    transform: translateX(14px) scale(1); }
+    }
+
+    /* ========== ORIGINAL MOTION VOCAB ========== */
+    .sheen        { animation: sheen-sweep 5s ease-in-out infinite;
+                      transform-box: fill-box; }
+    @keyframes sheen-sweep {
+      0%   { transform: translateX(-220px); opacity: 0; }
+      30%  { opacity: 0.5; }
+      70%  { opacity: 0.5; }
+      100% { transform: translateX(220px); opacity: 0; }
+    }
+    .wordmark     { animation: wordmark-breath 6s ease-in-out infinite; }
+    @keyframes wordmark-breath {
+      0%, 100% { opacity: 0.14; }
+      50%      { opacity: 0.24; }
+    }
+    .badge-e      { transform-box: fill-box; transform-origin: center;
+                      animation: badge-pulse 3.2s ease-in-out infinite; }
+    @keyframes badge-pulse {
+      0%, 100% { transform: scale(1);    opacity: 0.85; }
+      50%      { transform: scale(1.06); opacity: 1; }
+    }
+    .headlight-glow { animation: headlight-pulse 4s ease-in-out infinite; }
+    @keyframes headlight-pulse {
+      0%, 100% { opacity: 0.85; }
+      50%      { opacity: 1; }
+    }
+    .airlines     { animation: airlines-vibrate 0.55s ease-in-out infinite;
+                      transform-box: fill-box; }
+    @keyframes airlines-vibrate {
+      0%, 100% { transform: translateY(0); }
+      50%      { transform: translateY(0.6px); }
+    }
+    .chevron      { animation: chevron-pulse 2.2s ease-in-out infinite; }
+    @keyframes chevron-pulse {
+      0%, 100% { opacity: 0.3; }
+      50%      { opacity: 0.65; }
+    }
+    .sky-shimmer  { animation: sky-drift 14s linear infinite;
+                      transform-box: fill-box; }
+    @keyframes sky-drift {
+      from { transform: translateX(-40px); opacity: 0.12; }
+      50%  { opacity: 0.22; }
+      to   { transform: translateX(40px); opacity: 0.12; }
+    }
+    .ground-line  { stroke-dasharray: 14 9;
+                      animation: ground-dash 1.6s linear infinite; }
+    @keyframes ground-dash {
+      from { stroke-dashoffset: 0; }
+      to   { stroke-dashoffset: -46; }
+    }
+    /* ========== BRAND LOCKUP ========== */
+    .brand-mark {
+      transform-box: fill-box; transform-origin: center;
+      animation: brand-pulse 3.6s ease-in-out infinite;
+    }
+    @keyframes brand-pulse {
+      0%, 100% { transform: scale(1);    opacity: 0.92; }
+      50%      { transform: scale(1.05); opacity: 1; }
+    }
+    .brand-word { animation: brand-word-breath 6s ease-in-out infinite; }
+    @keyframes brand-word-breath {
+      0%, 100% { opacity: 0.78; }
+      50%      { opacity: 1; }
+    }
+
+    /* ========== LIVESTOCK-SPECIFIC AMBIENT MOTION ========== */
+    /* Cattle heads sway gently behind the slats — the live load shifting with
+       the road. Each head is offset so the herd never moves in lockstep. */
+    .cattle-head  { transform-box: fill-box; transform-origin: bottom center;
+                    animation: cattle-sway 2.8s ease-in-out infinite; }
+    .cattle-head.h2 { animation-delay: -0.7s;  animation-duration: 3.2s; }
+    .cattle-head.h3 { animation-delay: -1.5s;  animation-duration: 2.5s; }
+    .cattle-head.h4 { animation-delay: -2.1s;  animation-duration: 3.5s; }
+    .cattle-head.h5 { animation-delay: -0.4s;  animation-duration: 2.9s; }
+    @keyframes cattle-sway {
+      0%, 100% { transform: translateY(0)    rotate(0deg); }
+      50%      { transform: translateY(0.8px) rotate(1.6deg); }
+    }
+    /* Vent airflow — thin lines streaming back through the punch-hole sides
+       (the air vortex the round holes generate at highway speed). */
+    .vent-air     { animation: vent-air 1.1s linear infinite; opacity: 0; }
+    .vent-air.v2  { animation-delay: -0.37s; }
+    .vent-air.v3  { animation-delay: -0.74s; }
+    @keyframes vent-air {
+      0%   { transform: translateX(0);   opacity: 0; }
+      20%  { opacity: 0.5; }
+      80%  { opacity: 0.5; }
+      100% { transform: translateX(34px); opacity: 0; }
+    }
+    /* Bedding dust drifting up off the deck floor */
+    .bed-dust     { transform-box: fill-box; transform-origin: center;
+                    animation: bed-dust 3.4s ease-out infinite; }
+    .bed-dust.b2  { animation-delay: -1.2s; animation-duration: 4.0s; }
+    .bed-dust.b3  { animation-delay: -2.4s; animation-duration: 3.0s; }
+    @keyframes bed-dust {
+      0%   { transform: translate(0,0) scale(0.4); opacity: 0; }
+      25%  { opacity: 0.4; }
+      100% { transform: translate(10px,-22px) scale(1.1); opacity: 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      /* CSS-class motion is fully stilled. NOTE: wheel rotation uses SMIL
+         <animateTransform>, which a CSS media query cannot halt; it is a slow
+         continuous ambient loop (no popping) and remains. */
+      .chassis-bob, .cab-sway, .mudflap, .streak, .bow-air, .tire-dust,
+      .sheen, .wordmark, .badge-e, .headlight-glow, .airlines, .chevron,
+      .sky-shimmer, .ground-line, .brand-mark, .brand-word,
+      .cattle-head, .vent-air, .bed-dust { animation: none !important; }
+    }
+
+    /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
+    @media (prefers-color-scheme: dark) {
+      .sky-bg          { fill: url(#skyDark) !important; }
+      .ground-line     { stroke: #5E4FC6 !important; opacity: 0.55 !important; }
+      .ground-shadow   { fill: #060912 !important; opacity: 0.55 !important; }
+      .brand-word      { fill: #C9B6FF !important; }
+      .brand-tagline   { fill: #8B7FE3 !important; }
+      .equipment-label { fill: #C9B6FF !important; }
+      .equipment-sub   { fill: #8B7FE3 !important; }
+      .equipment-rule  { stroke: #6E4DFF !important; }
+    }
+  ]]></style>
+
+  <defs>
+    <linearGradient id="skyDark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#0A0F1F"/>
+      <stop offset="55%" stop-color="#141A2E"/>
+      <stop offset="100%" stop-color="#0B0F1B"/>
+    </linearGradient>
+    <linearGradient id="brandIridescent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1473FF"/>
+      <stop offset="50%" stop-color="#6E4DFF"/>
+      <stop offset="100%" stop-color="#BE01FF"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#EEF1FA"/>
+      <stop offset="55%" stop-color="#F5EEFC"/>
+      <stop offset="100%" stop-color="#EFF8FA"/>
+    </linearGradient>
+    <linearGradient id="cab" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2B85FF"/>
+      <stop offset="55%" stop-color="#6E4DFF"/>
+      <stop offset="100%" stop-color="#A726E8"/>
+    </linearGradient>
+    <linearGradient id="cabRoof" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <!-- Brushed-aluminum livestock body: cooler, more metallic than a dry van -->
+    <linearGradient id="aluBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#EDEFF3"/>
+      <stop offset="50%" stop-color="#D3D8E1"/>
+      <stop offset="100%" stop-color="#AEB5C2"/>
+    </linearGradient>
+    <linearGradient id="aluBelly" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#C2C8D2"/>
+      <stop offset="100%" stop-color="#959DAC"/>
+    </linearGradient>
+    <linearGradient id="trailerSheen" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="40%" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="60%" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="windowGlass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#BFD3FF"/>
+      <stop offset="100%" stop-color="#7E9DDB"/>
+    </linearGradient>
+    <radialGradient id="rim" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#5A606D"/>
+      <stop offset="80%" stop-color="#3A3F4A"/>
+      <stop offset="100%" stop-color="#1F2330"/>
+    </radialGradient>
+    <radialGradient id="bowHaze" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.75"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="dustCloud" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#C8B89A" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#C8B89A" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="strawDust" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#D8C48A" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#D8C48A" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Punch-hole vent pattern (3" round holes) tiled across the sides -->
+    <pattern id="punchVent" x="0" y="0" width="26" height="26" patternUnits="userSpaceOnUse">
+      <circle cx="13" cy="7"  r="4.4" fill="#3A3F4A" opacity="0.62"/>
+      <circle cx="13" cy="7"  r="4.4" fill="none" stroke="#7A8294" stroke-width="0.7" opacity="0.6"/>
+      <circle cx="0"  cy="20" r="4.4" fill="#3A3F4A" opacity="0.62"/>
+      <circle cx="0"  cy="20" r="4.4" fill="none" stroke="#7A8294" stroke-width="0.7" opacity="0.6"/>
+      <circle cx="26" cy="20" r="4.4" fill="#3A3F4A" opacity="0.62"/>
+      <circle cx="26" cy="20" r="4.4" fill="none" stroke="#7A8294" stroke-width="0.7" opacity="0.6"/>
+    </pattern>
+    <filter id="rigShadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
+      <feOffset dx="0" dy="4" result="offsetBlur"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.18"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softBlur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+  </defs>
+
+  <!-- ========== BACKGROUND ========== -->
+  <rect class="sky-bg" width="1200" height="600" fill="url(#sky)"/>
+  <rect class="sky-shimmer" x="0" y="380" width="1200" height="70" fill="#FFFFFF" opacity="0.18"/>
+
+  <!-- ========== GROUND LINE ========== -->
+  <line class="ground-line" x1="60" y1="475" x2="1140" y2="475"
+        stroke="#9B7FD9" stroke-width="4" stroke-linecap="round" opacity="0.55"/>
+
+  <!-- Drop shadow under rig -->
+  <ellipse class="ground-shadow" cx="640" cy="486" rx="430" ry="7" fill="#1A1F2E" opacity="0.13"/>
+
+  <!-- ========== SPEED STREAKS ========== -->
+  <g stroke="#9B7FD9" stroke-width="2.5" stroke-linecap="round" opacity="0.5">
+    <line class="streak"    x1="1090" y1="445" x2="1145" y2="445"/>
+    <line class="streak s2" x1="1085" y1="455" x2="1150" y2="455"/>
+    <line class="streak s3" x1="1095" y1="468" x2="1145" y2="468"/>
+  </g>
+
+  <!-- ========== BOW AIR DISPLACEMENT ========== -->
+  <ellipse class="bow-air" cx="180" cy="410" rx="38" ry="55" fill="url(#bowHaze)"/>
+
+  <!-- ========== EXHAUST PUFFS — rising from cab roof exhaust stack ========== -->
+  <g filter="url(#softBlur)" opacity="0.5">
+    <circle cx="292" cy="200" r="6" fill="#C8CDD8">
+      <animate attributeName="cy" from="200" to="120" dur="2.6s" repeatCount="indefinite"/>
+      <animate attributeName="r"  from="6" to="14" dur="2.6s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;0.55;0.55;0" keyTimes="0;0.15;0.7;1"
+               dur="2.6s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="294" cy="200" r="5" fill="#C8CDD8">
+      <animate attributeName="cy" from="200" to="120" dur="2.6s" begin="-0.9s" repeatCount="indefinite"/>
+      <animate attributeName="r"  from="5" to="12" dur="2.6s" begin="-0.9s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;0.55;0.55;0" keyTimes="0;0.15;0.7;1"
+               dur="2.6s" begin="-0.9s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="290" cy="200" r="4" fill="#C8CDD8">
+      <animate attributeName="cy" from="200" to="120" dur="2.6s" begin="-1.7s" repeatCount="indefinite"/>
+      <animate attributeName="r"  from="4" to="10" dur="2.6s" begin="-1.7s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;0.55;0.55;0" keyTimes="0;0.15;0.7;1"
+               dur="2.6s" begin="-1.7s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+
+  <!-- ========== TIRE CONTACT DUST ========== -->
+  <g filter="url(#softBlur)">
+    <ellipse class="tire-dust" cx="420" cy="492" rx="14" ry="5" fill="url(#dustCloud)"/>
+    <ellipse class="tire-dust" cx="280" cy="492" rx="14" ry="5" fill="url(#dustCloud)" style="animation-delay:-0.4s"/>
+    <ellipse class="tire-dust" cx="930" cy="492" rx="14" ry="5" fill="url(#dustCloud)" style="animation-delay:-0.7s"/>
+    <ellipse class="tire-dust" cx="1010" cy="492" rx="14" ry="5" fill="url(#dustCloud)" style="animation-delay:-1.1s"/>
+  </g>
+
+  <!-- ========== TRACTOR (CAB) — chassis-bob + cab-sway ========== -->
+  <g class="chassis-bob">
+    <g class="cab-sway">
+      <g filter="url(#rigShadow)">
+        <path d="M 460 250 L 460 460 L 295 460 L 295 240 Q 295 230 305 230 L 450 230 Q 460 230 460 240 Z"
+              fill="url(#cab)"/>
+        <path d="M 295 240 L 295 460 L 195 460 L 195 320 Q 195 300 205 290 L 245 245 Q 255 235 265 235 L 290 235 Q 295 235 295 240 Z"
+              fill="url(#cab)"/>
+        <rect x="295" y="232" width="160" height="6" rx="3" fill="url(#cabRoof)"/>
+        <path d="M 283 252 Q 267 248 253 252 L 213 295 Q 213 312 230 312 L 283 312 Z"
+              fill="url(#windowGlass)" opacity="0.95"/>
+        <rect x="205" y="320" width="74" height="58" rx="6" fill="url(#windowGlass)" opacity="0.85"/>
+        <line x1="279" y1="320" x2="279" y2="378" stroke="#0A1F3F" stroke-width="1.5" opacity="0.4"/>
+        <rect x="315" y="262" width="120" height="22" rx="4" fill="url(#windowGlass)" opacity="0.7"/>
+        <rect x="211" y="345" width="6" height="22" rx="2" fill="#1A1F2E" opacity="0.7"/>
+
+        <g class="headlight-glow">
+          <ellipse cx="200" cy="345" rx="8" ry="6" fill="#FFE680"/>
+          <ellipse cx="200" cy="345" rx="4" ry="3" fill="#FFFFFF"/>
+        </g>
+
+        <rect x="195" y="365" width="14" height="55" rx="3" fill="#0A1F3F" opacity="0.85"/>
+        <g stroke="#3A3F4A" stroke-width="1.5">
+          <line x1="197" y1="372" x2="207" y2="372"/>
+          <line x1="197" y1="380" x2="207" y2="380"/>
+          <line x1="197" y1="388" x2="207" y2="388"/>
+          <line x1="197" y1="396" x2="207" y2="396"/>
+          <line x1="197" y1="404" x2="207" y2="404"/>
+          <line x1="197" y1="412" x2="207" y2="412"/>
+        </g>
+
+        <rect x="191" y="435" width="26" height="22" rx="4" fill="#1A1F2E"/>
+        <rect x="271" y="438" width="22" height="20" rx="2" fill="#1A1F2E" opacity="0.85"/>
+
+        <line x1="205" y1="328" x2="225" y2="326" stroke="#1A1F2E" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="205" y1="378" x2="225" y2="376" stroke="#1A1F2E" stroke-width="2.5" stroke-linecap="round"/>
+        <rect x="222" y="320" width="14" height="64" rx="3" fill="#1A1F2E"/>
+        <rect x="225" y="324" width="8" height="42" rx="1.5" fill="url(#windowGlass)" opacity="0.9"/>
+        <rect x="225" y="370" width="8" height="10" rx="1.5" fill="url(#windowGlass)" opacity="0.75"/>
+
+        <rect x="288" y="200" width="8" height="60" rx="3" fill="#7A7F88"/>
+        <rect x="288" y="200" width="8" height="6" rx="3" fill="#3A3F4A"/>
+
+        <g class="badge-e">
+          <circle cx="377" cy="395" r="9" fill="#FFFFFF" opacity="0.85"/>
+          <text x="377" y="399" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+                font-weight="800" font-size="9" fill="#5B3FBF">E</text>
+        </g>
+      </g>
+    </g>
+
+    <!-- ========== POSSUM-BELLY LIVESTOCK TRAILER ========== -->
+    <g filter="url(#rigShadow)">
+      <!-- Dropped lower 'possum belly' deck — slung between the tandem sets,
+           the signature low bulge below the main body line. -->
+      <path d="M 600 420 L 600 458 Q 600 470 612 470 L 880 470 Q 892 470 892 458 L 892 420 Z"
+            fill="url(#aluBelly)" stroke="#8A92A0" stroke-width="1"/>
+      <!-- Belly punch-vents (lower deck breathes too) -->
+      <rect x="612" y="426" width="268" height="34" fill="url(#punchVent)" opacity="0.9"/>
+
+      <!-- Main upper body (nose deck + center deck) -->
+      <rect x="475" y="170" width="600" height="252" rx="10" fill="url(#aluBody)"
+            stroke="#9098A8" stroke-width="1"/>
+      <rect x="475" y="170" width="600" height="6" rx="3" fill="#FFFFFF" opacity="0.6"/>
+
+      <!-- Aluminum side ribs / top + bottom rails (structural framing) -->
+      <rect x="475" y="170" width="600" height="14" fill="#C7CDD8" opacity="0.7"/>
+      <rect x="475" y="408" width="600" height="14" fill="#B6BDCB" opacity="0.7"/>
+      <!-- Mid-deck divider rail (separates nose/center upper deck visually) -->
+      <rect x="475" y="292" width="600" height="9" fill="#B6BDCB" opacity="0.8"/>
+      <line x1="475" y1="292" x2="1075" y2="292" stroke="#8A92A0" stroke-width="1" opacity="0.7"/>
+
+      <!-- PUNCHED VENTILATION SIDES — upper deck band + lower deck band -->
+      <rect x="486" y="190" width="582" height="96"  fill="url(#punchVent)" opacity="0.92"/>
+      <rect x="486" y="306" width="582" height="98" fill="url(#punchVent)" opacity="0.92"/>
+
+      <!-- Vertical aluminum posts (every ~80px, structural) -->
+      <g stroke="#8A92A0" stroke-width="1.4" opacity="0.65">
+        <line x1="555" y1="184" x2="555" y2="416"/>
+        <line x1="635" y1="184" x2="635" y2="416"/>
+        <line x1="715" y1="184" x2="715" y2="416"/>
+        <line x1="795" y1="184" x2="795" y2="416"/>
+        <line x1="875" y1="184" x2="875" y2="416"/>
+        <line x1="955" y1="184" x2="955" y2="416"/>
+        <line x1="1035" y1="184" x2="1035" y2="416"/>
+      </g>
+
+      <!-- CATTLE behind the slats — heads sway with the live load.
+           Drawn dark so they read as silhouettes through the vents. -->
+      <g opacity="0.9">
+        <!-- Upper-deck herd -->
+        <g class="cattle-head"    transform="translate(540 256)">
+          <ellipse cx="0" cy="0" rx="16" ry="11" fill="#5A4636"/>
+          <ellipse cx="0" cy="-2" rx="7" ry="8" fill="#6B5443"/>
+          <circle cx="-3" cy="-3" r="1.3" fill="#1A1A1A"/>
+          <path d="M -7 -8 Q -10 -12 -7 -13" stroke="#3A2E22" stroke-width="2" fill="none" stroke-linecap="round"/>
+          <path d="M 7 -8 Q 10 -12 7 -13" stroke="#3A2E22" stroke-width="2" fill="none" stroke-linecap="round"/>
+        </g>
+        <g class="cattle-head h2" transform="translate(650 258)">
+          <ellipse cx="0" cy="0" rx="15" ry="10" fill="#4A3A2C"/>
+          <ellipse cx="0" cy="-2" rx="6" ry="7" fill="#5C4838"/>
+          <circle cx="-3" cy="-3" r="1.2" fill="#1A1A1A"/>
+        </g>
+        <g class="cattle-head h3" transform="translate(760 256)">
+          <ellipse cx="0" cy="0" rx="16" ry="11" fill="#6B5443"/>
+          <ellipse cx="0" cy="-2" rx="7" ry="8" fill="#7A6250"/>
+          <circle cx="-3" cy="-3" r="1.3" fill="#1A1A1A"/>
+          <path d="M -7 -8 Q -10 -12 -7 -13" stroke="#4A3A2C" stroke-width="2" fill="none" stroke-linecap="round"/>
+          <path d="M 7 -8 Q 10 -12 7 -13" stroke="#4A3A2C" stroke-width="2" fill="none" stroke-linecap="round"/>
+        </g>
+        <g class="cattle-head h4" transform="translate(870 258)">
+          <ellipse cx="0" cy="0" rx="15" ry="10" fill="#5A4636"/>
+          <ellipse cx="0" cy="-2" rx="6" ry="7" fill="#6B5443"/>
+          <circle cx="-3" cy="-3" r="1.2" fill="#1A1A1A"/>
+        </g>
+        <g class="cattle-head h5" transform="translate(980 256)">
+          <ellipse cx="0" cy="0" rx="16" ry="11" fill="#4A3A2C"/>
+          <ellipse cx="0" cy="-2" rx="7" ry="8" fill="#5C4838"/>
+          <circle cx="-3" cy="-3" r="1.3" fill="#1A1A1A"/>
+        </g>
+        <!-- Lower-deck herd (center compartment / belly) -->
+        <g class="cattle-head h3" transform="translate(560 372)">
+          <ellipse cx="0" cy="0" rx="14" ry="10" fill="#5A4636"/>
+          <ellipse cx="0" cy="-2" rx="6" ry="7" fill="#6B5443"/>
+          <circle cx="-3" cy="-3" r="1.2" fill="#1A1A1A"/>
+        </g>
+        <g class="cattle-head h5" transform="translate(700 374)">
+          <ellipse cx="0" cy="0" rx="15" ry="10" fill="#4A3A2C"/>
+          <ellipse cx="0" cy="-2" rx="6" ry="7" fill="#5C4838"/>
+          <circle cx="-3" cy="-3" r="1.2" fill="#1A1A1A"/>
+        </g>
+        <g class="cattle-head h2" transform="translate(850 372)">
+          <ellipse cx="0" cy="0" rx="14" ry="10" fill="#6B5443"/>
+          <ellipse cx="0" cy="-2" rx="6" ry="7" fill="#7A6250"/>
+          <circle cx="-3" cy="-3" r="1.2" fill="#1A1A1A"/>
+        </g>
+        <g class="cattle-head h4" transform="translate(980 374)">
+          <ellipse cx="0" cy="0" rx="15" ry="10" fill="#5A4636"/>
+          <ellipse cx="0" cy="-2" rx="6" ry="7" fill="#6B5443"/>
+          <circle cx="-3" cy="-3" r="1.2" fill="#1A1A1A"/>
+        </g>
+      </g>
+
+      <!-- Sheen sweep across the brushed aluminum -->
+      <g clip-path="inset(170px 125px 110px 475px)">
+        <rect class="sheen" x="475" y="172" width="220" height="248" rx="9"
+              fill="url(#trailerSheen)" opacity="0.45"/>
+      </g>
+
+      <!-- Floor channel under main body -->
+      <rect x="475" y="416" width="600" height="9" rx="3" fill="#3A3F4A"/>
+
+      <!-- REAR LOADING GATE (vertical-bar swing gate at the rear) -->
+      <rect x="1058" y="176" width="16" height="240" fill="#C2C8D2" stroke="#8A92A0" stroke-width="1"/>
+      <g stroke="#7A8294" stroke-width="2" opacity="0.85">
+        <line x1="1062" y1="186" x2="1062" y2="408"/>
+        <line x1="1067" y1="186" x2="1067" y2="408"/>
+        <line x1="1072" y1="186" x2="1072" y2="408"/>
+      </g>
+      <!-- Gate latch + hinge hardware -->
+      <rect x="1056" y="226" width="6" height="14" rx="1" fill="#3A3F4A"/>
+      <rect x="1056" y="346" width="6" height="14" rx="1" fill="#3A3F4A"/>
+      <circle cx="1066" cy="296" r="4" fill="#1A1F2E"/>
+
+      <!-- CENTER loading gate marker (movable internal deck gate) -->
+      <rect x="755" y="176" width="6" height="240" fill="#8A92A0" opacity="0.8"/>
+      <rect x="752" y="288" width="12" height="10" rx="1" fill="#3A3F4A"/>
+
+      <!-- LIVE ANIMALS welfare placard + upright arrows (regulatory) -->
+      <g transform="translate(500 196)">
+        <rect x="0" y="0" width="78" height="30" rx="4" fill="#FFFFFF" opacity="0.95"
+              stroke="#E5350D" stroke-width="1.6"/>
+        <text x="39" y="13" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+              font-weight="900" font-size="8" fill="#1A1F2E" letter-spacing="0.6">LIVE ANIMALS</text>
+        <!-- Upright arrows (THIS WAY UP) -->
+        <g stroke="#1A1F2E" stroke-width="1.4" fill="none" stroke-linecap="round">
+          <line x1="14" y1="26" x2="14" y2="18"/><path d="M 11 21 L 14 18 L 17 21"/>
+          <line x1="64" y1="26" x2="64" y2="18"/><path d="M 61 21 L 64 18 L 67 21"/>
+        </g>
+        <text x="39" y="25" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+              font-weight="600" font-size="5.5" fill="#5B3FBF" letter-spacing="1">HANDLE WITH CARE</text>
+      </g>
+
+      <!-- COUNTRY-AWARE welfare authority strip (livestock = welfare-regulated).
+           Renderer shows ONE of .country-US / .country-MX / .country-CA by route
+           country (set the others to display:none):
+             US → USDA APHIS humane-transport (28-Hour Law)
+             MX → SADER / SENASICA transporte de ganado (NOM-051-ZOO)
+             CA → CFIA humane transport + NFACC code (bedding / fitness-to-travel)
+           data-bind feeds the live permit/certificate number. -->
+      <g transform="translate(990 196)">
+        <rect x="0" y="0" width="62" height="22" rx="4" fill="#0AC2C2" opacity="0.92"/>
+        <g class="country-US" data-country="US">
+          <text x="31" y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+                font-weight="800" font-size="8" fill="#FFFFFF" letter-spacing="0.6"
+                data-bind="welfare_auth">USDA APHIS</text>
+        </g>
+        <g class="country-MX" data-country="MX" style="display:none">
+          <text x="31" y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+                font-weight="800" font-size="7" fill="#FFFFFF" letter-spacing="0.4"
+                data-bind="welfare_auth">SENASICA</text>
+        </g>
+        <g class="country-CA" data-country="CA" style="display:none">
+          <text x="31" y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+                font-weight="800" font-size="8" fill="#FFFFFF" letter-spacing="0.6"
+                data-bind="welfare_auth">CFIA</text>
+        </g>
+      </g>
+
+      <!-- DOT reflective conspicuity strips along lower rail -->
+      <g>
+        <rect x="478" y="411" width="20" height="6" fill="#E5350D"/>
+        <rect x="498" y="411" width="20" height="6" fill="#FFFFFF"/>
+        <rect x="518" y="411" width="20" height="6" fill="#E5350D"/>
+        <rect x="538" y="411" width="20" height="6" fill="#FFFFFF"/>
+      </g>
+      <g>
+        <rect x="990" y="411" width="20" height="6" fill="#FFFFFF"/>
+        <rect x="1010" y="411" width="20" height="6" fill="#E5350D"/>
+        <rect x="1030" y="411" width="20" height="6" fill="#FFFFFF"/>
+        <rect x="1050" y="411" width="20" height="6" fill="#E5350D"/>
+      </g>
+
+      <!-- Mudflap -->
+      <rect class="mudflap" x="1072" y="440" width="6" height="32" rx="1" fill="#1A1A1A"/>
+    </g>
+
+    <!-- KING PIN coupling -->
+    <rect x="455" y="445" width="25" height="15" fill="#3A3F4A"/>
+    <circle cx="467" cy="453" r="5" fill="#1A1F2E"/>
+
+    <!-- ========== AIR LINES (engine running) ========== -->
+    <g class="airlines">
+      <path d="M 458 380 Q 470 370 482 358" stroke="#FF8C00" stroke-width="3"
+            fill="none" stroke-linecap="round" opacity="0.85"/>
+      <path d="M 458 388 Q 470 380 482 370" stroke="#1473FF" stroke-width="3"
+            fill="none" stroke-linecap="round" opacity="0.85"/>
+    </g>
+  </g>
+
+  <!-- ========== VENT AIRFLOW — streaming back through the punch holes ========== -->
+  <g stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" opacity="0.5">
+    <line class="vent-air"    x1="700" y1="232" x2="722" y2="232"/>
+    <line class="vent-air v2" x1="780" y1="248" x2="802" y2="248"/>
+    <line class="vent-air v3" x1="860" y1="236" x2="882" y2="236"/>
+    <line class="vent-air v2" x1="640" y1="346" x2="662" y2="346"/>
+    <line class="vent-air"    x1="820" y1="356" x2="842" y2="356"/>
+    <line class="vent-air v3" x1="920" y1="342" x2="942" y2="342"/>
+  </g>
+
+  <!-- ========== BEDDING / STRAW DUST drifting up off the deck ========== -->
+  <g filter="url(#softBlur)">
+    <circle class="bed-dust"    cx="640" cy="418" r="5" fill="url(#strawDust)"/>
+    <circle class="bed-dust b2" cx="800" cy="464" r="5" fill="url(#strawDust)"/>
+    <circle class="bed-dust b3" cx="900" cy="418" r="4" fill="url(#strawDust)"/>
+  </g>
+
+  <!-- ========== WHEELS — STAY ON ROAD (spin only) ========== -->
+  <symbol id="wheelArt" overflow="visible">
+    <circle cx="0" cy="0" r="32" fill="#1A1A1A"/>
+    <circle cx="0" cy="0" r="22" fill="url(#rim)"/>
+    <circle cx="0" cy="0" r="7" fill="#7A7F88"/>
+    <g stroke="#3A3F4A" stroke-width="2.5" stroke-linecap="round">
+      <line x1="0" y1="-19" x2="0" y2="-9"/>
+      <line x1="18" y1="-6" x2="9" y2="-3"/>
+      <line x1="11" y1="16" x2="6" y2="8"/>
+      <line x1="-11" y1="16" x2="-6" y2="8"/>
+      <line x1="-18" y1="-6" x2="-9" y2="-3"/>
+    </g>
+    <ellipse cx="-6" cy="-12" rx="6" ry="3" fill="#FFFFFF" opacity="0.35"/>
+  </symbol>
+
+  <!-- Tractor drive tandem -->
+  <g transform="translate(420 460)">
+    <g><use href="#wheelArt"/>
+      <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.6s" repeatCount="indefinite"/></g>
+  </g>
+  <g transform="translate(280 460)">
+    <g><use href="#wheelArt"/>
+      <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.6s" repeatCount="indefinite"/></g>
+  </g>
+  <!-- Trailer tandem — straddling the possum belly -->
+  <g transform="translate(930 460)">
+    <g><use href="#wheelArt"/>
+      <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.6s" repeatCount="indefinite"/></g>
+  </g>
+  <g transform="translate(1010 460)">
+    <g><use href="#wheelArt"/>
+      <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.6s" repeatCount="indefinite"/></g>
+  </g>
+
+  <g class="chevron">
+    <path d="M 70 540 L 55 525 L 55 555 Z" fill="#9B7FD9"/>
+  </g>
+
+  <!-- EUSOTRIP-LIVESTOCK-2026-05-29 -->
+</svg>

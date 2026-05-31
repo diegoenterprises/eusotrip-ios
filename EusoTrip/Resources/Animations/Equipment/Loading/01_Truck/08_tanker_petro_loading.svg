@@ -39,10 +39,11 @@
                     — required for combustible liquid per 49 CFR 177.837
          15 – 30% : (no vapor recovery cycle — diesel low vapor pressure;
                     optional return hose hangs idle)
-         30 – 50% : top-loading swing arm articulates from parked-up
-                    position into the front manhole
+         30 – 50% : fixed-rack top-loading arm articulates from its parked-up
+                    angle straight down into the CMPT 3 manhole spotted
+                    beneath it (the active compartment)
          50 – 95% : amber diesel fluid rises in X-ray sight gauge,
-                    Toptech preset meter ticks up gallons net
+                    Toptech preset meter bar fills toward the net preset
          95 – 100%: hold full, then loop.
        NA1993 · COMBUSTIBLE 1993 placards · DIESEL FUEL ULSD stencil.
        ====================================================== */
@@ -74,44 +75,58 @@
       30%, 100%{ transform: scale(1);     opacity: 0.92; }
     }
 
-    /* Loading arm articulation: rotate down from parked vertical
-       into the front manhole between 30%-50% of cycle */
-    .arm-articulate { transform-box: fill-box;
-                      transform-origin: 760px 188px;
-                      animation: arm-articulate 6.5s ease-in-out infinite; }
+    /* Loading arm articulation: the rigid upper arm swings DOWN from its
+       parked-up angle into the targeted manhole between 30%-48% of cycle,
+       then holds engaged for the fill. The pivot is the bracket fixed to the
+       catwalk underside at SVG coords (760,148); we use transform-box:
+       view-box so transform-origin is in the SVG user-space, NOT the
+       element's own bbox (the old fill-box origin made the arm pivot about
+       the wrong point). Decel cubic-bezier so it settles like real hydraulics
+       rather than snapping. */
+    .arm-articulate { transform-box: view-box;
+                      transform-origin: 696px 148px;
+                      animation: arm-articulate 6.5s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes arm-articulate {
-      0%, 30%   { transform: rotate(-58deg); }
+      0%, 30%   { transform: rotate(-52deg); }
       48%, 100% { transform: rotate(0deg); }
     }
-    .arm-elbow { transform-box: fill-box;
-                 transform-origin: 660px 220px;
-                 animation: arm-elbow 6.5s ease-in-out infinite; }
+    .arm-elbow { transform-box: view-box;
+                 transform-origin: 696px 220px;
+                 animation: arm-elbow 6.5s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes arm-elbow {
-      0%, 30%   { transform: rotate(36deg); }
+      0%, 30%   { transform: rotate(32deg); }
       48%, 100% { transform: rotate(0deg); }
     }
 
-    /* Fluid level rise in the X-ray sight glass on the tank side */
+    /* Fluid level rise in the X-ray sight glass on the tank side.
+       Bottom-anchored scaleY so it fills upward from the floor of the
+       glass; decel curve so the column eases into its topped-off level
+       like a metered fill ramping down to the preset cutoff. */
     .level-rise { transform-box: fill-box; transform-origin: bottom;
-                  animation: level-rise 6.5s ease-in-out infinite; }
+                  animation: level-rise 6.5s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes level-rise {
       0%, 50%   { transform: scaleY(0.16); }
       90%, 100% { transform: scaleY(0.94); }
     }
-    .level-meniscus { animation: level-meniscus 6.5s ease-in-out infinite; }
+    .level-meniscus { animation: level-meniscus 6.5s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes level-meniscus {
       0%, 50%   { transform: translateY(126px); opacity: 0.85; }
       90%, 100% { transform: translateY(8px);   opacity: 0.95; }
     }
 
-    /* Set-Stop preset meter digits — ticks up during fill phase */
-    .meter-digits { animation: meter-digits 6.5s steps(8) infinite; }
+    /* Set-Stop preset meter readout — the digit text itself can't be
+       re-typed from CSS (the old `content:` keyframes were inert on a
+       <tspan>; `content` only applies to ::before/::after). Instead we give
+       the readout a subtle live "refresh" flicker so it reads as actively
+       counting, and the real net-gallons progress is carried by .meter-bar
+       below (and the X-ray sight glass), which are honest visual signals. */
+    .meter-digits { animation: meter-digits 1.3s steps(2, jump-none) infinite; }
     @keyframes meter-digits {
-      0%, 50%   { content: "0123"; }
-      100%      { content: "8412"; }
+      0%, 60%, 100% { opacity: 1; }
+      80%           { opacity: 0.72; }
     }
     .meter-bar { transform-box: fill-box; transform-origin: left center;
-                 animation: meter-bar 6.5s ease-in-out infinite; }
+                 animation: meter-bar 6.5s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes meter-bar {
       0%, 50%   { transform: scaleX(0.05); }
       90%, 100% { transform: scaleX(0.95); }
@@ -341,6 +356,30 @@
       <text y="6" text-anchor="middle"
             font-family="Inter, system-ui, sans-serif"
             font-weight="900" font-size="6.4" fill="#1A1F2E" letter-spacing="0.4">1993</text>
+    </symbol>
+
+    <!-- Class 3 FLAMMABLE diamond for CA/MX diesel (UN 1202 = diesel fuel /
+         gas oil). Canada (TDG) and Mexico (NOM) do NOT use the US "NA1993
+         COMBUSTIBLE" convention; diesel placards as Class 3 with UN 1202.
+         Canada placards are NON-worded; Mexico carries the Spanish risk word.
+         The {wordSlot} text is filled per country by the caller's overlay. -->
+    <symbol id="class3Placard1202" overflow="visible">
+      <g transform="rotate(45)">
+        <rect x="-26" y="-26" width="52" height="52" fill="#C32815" stroke="#1A1F2E" stroke-width="1.6"/>
+        <rect x="-23" y="-23" width="46" height="46" fill="none" stroke="#FFFFFF" stroke-width="0.7" opacity="0.6"/>
+      </g>
+      <!-- White flame (upper half) -->
+      <g transform="translate(0 -14)" fill="#FFFFFF">
+        <path d="M 0 -7 C -3 -2 -6 1 -5 5 C -7 4 -8 1 -7 -1 C -9 1 -10 5 -7 8 C -9 7 -9 4 -9 7 C -7 10 -4 11 0 11 C 4 11 7 10 9 7 C 9 4 9 7 7 8 C 10 5 9 1 7 -1 C 8 1 7 4 5 5 C 6 1 3 -2 0 -7 Z"/>
+      </g>
+      <!-- UN 1202 inside the lower point -->
+      <rect x="-15" y="6" width="30" height="11" fill="#FFFFFF"/>
+      <text y="14.5" text-anchor="middle"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="9" fill="#1A1F2E" letter-spacing="0.6">1202</text>
+      <text y="25" text-anchor="middle"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="9" fill="#FFFFFF">3</text>
     </symbol>
 
   </defs>
@@ -950,7 +989,8 @@
   </g>
 
   <!-- ===== 4 manhole domes on top (one per compartment) =====
-       Front (CMPT 1) is the active one — receiving the loading arm. -->
+       CMPT 3 (x=696) is the active one — spotted directly beneath the
+       fixed rack arm, receiving the top-loading drop tube. -->
   <g filter="url(#rigShadow)">
     <!-- CMPT 1 -->
     <g transform="translate(316 296)">
@@ -1038,22 +1078,49 @@
           letter-spacing="1">MC 4-2287-EU</text>
   </g>
 
-  <!-- COMBUSTIBLE 1993 placard on tank side — front
-       (visually quieter than gasoline's Class 3 — red top, white bottom) -->
-  <g transform="translate(478 386) scale(0.86)">
-    <use href="#combustible1993Placard"/>
-  </g>
-  <!-- NA1993 orange ID panel below the placard (per 49 CFR 172.332) -->
-  <g transform="translate(478 432) scale(0.86)">
-    <use href="#na1993Panel"/>
-  </g>
-
-  <!-- COMBUSTIBLE 1993 placard (rear) -->
-  <g transform="translate(820 386) scale(0.86)">
-    <use href="#combustible1993Placard"/>
-  </g>
-  <g transform="translate(820 432) scale(0.86)">
-    <use href="#na1993Panel"/>
+  <!-- ============================================================
+       COUNTRY-SWITCHABLE TANK PLACARDS  (front + rear)
+       Cargo: diesel fuel (ULSD, #2). The renderer shows ONE country
+       group by toggling display on .country-US / .country-MX / .country-CA
+       (default US visible). Regs:
+         US — 49 CFR 172.544 / 172.332: cargo-tank diesel may use the
+              NA1993 COMBUSTIBLE placard + orange NA1993 ID panel.
+         CA — TDG SOR/2001-286: no "NA" numbers, no COMBUSTIBLE word;
+              diesel placards as a NON-worded Class 3 diamond, UN 1202.
+         MX — NOM-002/NOM-004-SCT: NA numbers not authorized; UN 1202 with
+              the Spanish risk word "LÍQUIDO COMBUSTIBLE".
+       All variants keep the same anchor points (478,* front / 820,* rear)
+       and scale 0.86 so the swap is pixel-stable. -->
+  <g class="placard-group">
+    <!-- ===== US (default) ===== -->
+    <g class="country-US">
+      <g transform="translate(478 386) scale(0.86)"><use href="#combustible1993Placard"/></g>
+      <g transform="translate(478 432) scale(0.86)"><use href="#na1993Panel"/></g>
+      <g transform="translate(820 386) scale(0.86)"><use href="#combustible1993Placard"/></g>
+      <g transform="translate(820 432) scale(0.86)"><use href="#na1993Panel"/></g>
+    </g>
+    <!-- ===== CA (non-worded Class 3, UN 1202) ===== -->
+    <g class="country-CA" style="display:none">
+      <g transform="translate(478 386) scale(0.86)"><use href="#class3Placard1202"/></g>
+      <g transform="translate(820 386) scale(0.86)"><use href="#class3Placard1202"/></g>
+    </g>
+    <!-- ===== MX (Class 3, UN 1202, Spanish risk word) ===== -->
+    <g class="country-MX" style="display:none">
+      <g transform="translate(478 386) scale(0.86)">
+        <use href="#class3Placard1202"/>
+        <text y="-2" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+              font-weight="700" font-size="3" fill="#FFFFFF" letter-spacing="0.2">LÍQUIDO</text>
+        <text y="2" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+              font-weight="700" font-size="3" fill="#FFFFFF" letter-spacing="0.2">COMBUSTIBLE</text>
+      </g>
+      <g transform="translate(820 386) scale(0.86)">
+        <use href="#class3Placard1202"/>
+        <text y="-2" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+              font-weight="700" font-size="3" fill="#FFFFFF" letter-spacing="0.2">LÍQUIDO</text>
+        <text y="2" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+              font-weight="700" font-size="3" fill="#FFFFFF" letter-spacing="0.2">COMBUSTIBLE</text>
+      </g>
+    </g>
   </g>
 
   <!-- ===== X-ray fluid level sight gauge (vertical strip, side) =====
@@ -1127,132 +1194,78 @@
 
 
   <!-- ============================================================
-       TOP-LOADING SWING ARM
-       Articulated 3-segment arm extending from rack catwalk down
-       into the front (CMPT 1) manhole. Vapor recovery shroud at
-       manhole interface.
+       TOP-LOADING SWING ARM  (Emco-Wheaton / OPW style)
+       The rack arm is FIXED to the catwalk; the truck is spotted so a
+       manhole sits directly beneath it. Here that is CMPT 3 (manhole at
+       x=696). The rigid arm swings down on its catwalk pivot (696,148)
+       and the lower drop tube articulates straight into the manhole, so
+       the MOVING part lands on the ACTIVE compartment — no fake diagonal
+       boom reaching an off-axis manhole.
        ============================================================ -->
-  <!-- Arm pivot housing on the catwalk underside -->
+  <!-- Arm pivot housing on the catwalk underside (over CMPT 3) -->
   <g filter="url(#rigShadow)">
-    <rect x="752" y="128" width="20" height="14" fill="#3A3F4A"/>
-    <rect x="752" y="128" width="20" height="3"  fill="#5A606D"/>
-    <rect x="754" y="142" width="16" height="6"  fill="#1A1F2E"/>
+    <rect x="688" y="128" width="20" height="14" fill="#3A3F4A"/>
+    <rect x="688" y="128" width="20" height="3"  fill="#5A606D"/>
+    <rect x="690" y="142" width="16" height="6"  fill="#1A1F2E"/>
+    <!-- Counterweight on the fixed pivot bracket (does not move with the arm) -->
+    <rect x="680" y="132" width="32" height="12" rx="2" fill="#3A3F4A"/>
+    <rect x="680" y="132" width="32" height="3" fill="#5A606D"/>
   </g>
 
   <!-- The articulated arm itself.
-       Pivot at (760, 188). Arm rotates -58° (parked-up) → 0° (engaged).
-       Inside, a second elbow rotates 36° → 0° as the hose drops in. -->
+       Pivot at (696,148). Upper arm rotates -52° (parked-up) → 0° (engaged
+       vertical). The lower drop tube counter-rotates 32° → 0° so the hose
+       end drops vertically into the CMPT 3 manhole at engagement. -->
   <g class="arm-articulate">
     <!-- Upper rigid arm segment -->
-    <rect x="754" y="148" width="12" height="80" rx="2" fill="#7A7F88" stroke="#3A3F4A" stroke-width="0.6"/>
-    <rect x="754" y="148" width="3" height="80" fill="#FFFFFF" opacity="0.45"/>
+    <rect x="690" y="148" width="12" height="80" rx="2" fill="#7A7F88" stroke="#3A3F4A" stroke-width="0.6"/>
+    <rect x="690" y="148" width="3" height="80" fill="#FFFFFF" opacity="0.45"/>
     <!-- Pivot joint at top of arm -->
-    <circle cx="760" cy="148" r="6" fill="#3A3F4A" stroke="#1A1F2E" stroke-width="0.6"/>
-    <circle cx="760" cy="148" r="2.4" fill="#1A1F2E"/>
+    <circle cx="696" cy="148" r="6" fill="#3A3F4A" stroke="#1A1F2E" stroke-width="0.6"/>
+    <circle cx="696" cy="148" r="2.4" fill="#1A1F2E"/>
 
-    <!-- Mid joint (elbow at 760, 220) -->
-    <circle cx="760" cy="220" r="7" fill="#3A3F4A" stroke="#1A1F2E" stroke-width="0.6"/>
-    <circle cx="760" cy="220" r="2.6" fill="#1A1F2E"/>
+    <!-- Mid joint (elbow at 696,220) -->
+    <circle cx="696" cy="220" r="7" fill="#3A3F4A" stroke="#1A1F2E" stroke-width="0.6"/>
+    <circle cx="696" cy="220" r="2.6" fill="#1A1F2E"/>
 
     <!-- Hose drop assembly (sub-rotates around elbow) -->
     <g class="arm-elbow">
       <!-- Lower rigid drop segment -->
-      <rect x="754" y="220" width="12" height="48" rx="2" fill="#7A7F88" stroke="#3A3F4A" stroke-width="0.6"/>
-      <rect x="754" y="220" width="3" height="48" fill="#FFFFFF" opacity="0.4"/>
+      <rect x="690" y="220" width="12" height="48" rx="2" fill="#7A7F88" stroke="#3A3F4A" stroke-width="0.6"/>
+      <rect x="690" y="220" width="3" height="48" fill="#FFFFFF" opacity="0.4"/>
       <!-- Lower pivot (where flex hose begins, at y=268) -->
-      <circle cx="760" cy="268" r="6" fill="#3A3F4A" stroke="#1A1F2E" stroke-width="0.6"/>
-      <circle cx="760" cy="268" r="2.4" fill="#1A1F2E"/>
+      <circle cx="696" cy="268" r="6" fill="#3A3F4A" stroke="#1A1F2E" stroke-width="0.6"/>
+      <circle cx="696" cy="268" r="2.4" fill="#1A1F2E"/>
       <!-- Flexible drop hose (corrugated steel) — straight column down to manhole -->
-      <rect x="752" y="268" width="16" height="22" rx="2" fill="#5A606D"/>
-      <rect x="752" y="268" width="16" height="1.6" fill="#FFFFFF" opacity="0.45"/>
+      <rect x="688" y="268" width="16" height="26" rx="2" fill="#5A606D"/>
+      <rect x="688" y="268" width="16" height="1.6" fill="#FFFFFF" opacity="0.45"/>
       <!-- Hose ribs -->
       <g stroke="#1A1F2E" stroke-width="0.6" opacity="0.7">
-        <line x1="752" y1="272" x2="768" y2="272"/>
-        <line x1="752" y1="276" x2="768" y2="276"/>
-        <line x1="752" y1="280" x2="768" y2="280"/>
-        <line x1="752" y1="284" x2="768" y2="284"/>
-        <line x1="752" y1="288" x2="768" y2="288"/>
+        <line x1="688" y1="272" x2="704" y2="272"/>
+        <line x1="688" y1="276" x2="704" y2="276"/>
+        <line x1="688" y1="280" x2="704" y2="280"/>
+        <line x1="688" y1="284" x2="704" y2="284"/>
+        <line x1="688" y1="288" x2="704" y2="288"/>
+        <line x1="688" y1="292" x2="704" y2="292"/>
       </g>
     </g>
   </g>
 
-  <!-- Continuous straight section from end of arm down to actual manhole at CMPT 1.
-       This is the visual that connects the final pivot point to the manhole
-       when the arm is in its engaged (0°) position. We render it under the
-       arm so it appears below the lower hose. -->
-  <g>
-    <rect x="752" y="284" width="16" height="14" rx="2" fill="#5A606D" opacity="0.95"/>
-  </g>
-
-  <!-- Vapor recovery shroud collar — sits on top of CMPT 1 manhole,
-       seals around the loading hose during fill -->
-  <g>
-    <ellipse cx="316" cy="296" rx="34" ry="6" fill="#5A606D" opacity="0.0"/>
-  </g>
-
-  <!-- The hose visually descends from the rack into front manhole.
-       We draw a flexible-hose body from the bottom-of-arm position to the
-       actual front manhole at (316, 296). -->
-  <g>
-    <!-- Diagonal black underlay (shadow of hose) -->
-    <path d="M 760 298 Q 700 320 360 296 Q 332 296 316 298"
-          stroke="#1A1F2E" stroke-width="11" stroke-linecap="round" fill="none" opacity="0.0"/>
-    <!-- We avoid drawing a fake diagonal since the rack is positioned over
-         the rear, and the actual swing-arm-engaged layout calls for the arm
-         to be aligned with the front manhole. Instead we depict the arm
-         in a position directly above the front manhole below: -->
-  </g>
-
-
-  <!-- The arm is positioned at x=760 (pivot) — but the front manhole we want
-       to fill is at x=316. To keep the visual coherent (operator on catwalk
-       at x=820, arm pivot near operator, dropping into the FRONT compartment),
-       we draw a SHROUDED HOSE that connects arm-end (760,298) horizontally
-       toward the manhole. In real top-load racks the arm is articulated
-       to swing across toward the targeted manhole. -->
-
-  <!-- Articulated horizontal extension from arm to manhole shroud.
-       We render this only in engaged phase via opacity that ramps with the
-       same timing as the arm (50%-95%). Implemented as steady visual since
-       motion is conveyed by the arm rotation; real-life racks have a long
-       articulated arm that telescopes/swings. We depict it as a swung-down
-       articulated member with a hose collar on the manhole. -->
-
-  <!-- Vapor-recovery shroud + arm-end collar over CMPT 1 manhole -->
+  <!-- Vapor-recovery shroud + arm-end collar sealing over the CMPT 3 manhole
+       (x=696). Drawn after the arm so it reads as the coupling at the manhole
+       interface during the engaged fill phase. -->
   <g filter="url(#rigShadow)">
-    <ellipse cx="316" cy="294" rx="36" ry="8" fill="#3A3F4A"/>
-    <ellipse cx="316" cy="292" rx="32" ry="6" fill="#5A606D"/>
-    <rect x="304" y="270" width="24" height="22" fill="#5A606D" stroke="#1A1F2E" stroke-width="0.5"/>
-    <rect x="304" y="270" width="24" height="3"  fill="#FFFFFF" opacity="0.4"/>
-    <!-- Vapor recovery sub-hose tap on the side of the shroud -->
-    <rect x="328" y="276" width="10" height="6" fill="#F08222" stroke="#1A1F2E" stroke-width="0.5"/>
+    <ellipse cx="696" cy="294" rx="36" ry="8" fill="#3A3F4A"/>
+    <ellipse cx="696" cy="292" rx="32" ry="6" fill="#5A606D"/>
+    <rect x="684" y="276" width="24" height="18" fill="#5A606D" stroke="#1A1F2E" stroke-width="0.5"/>
+    <rect x="684" y="276" width="24" height="3"  fill="#FFFFFF" opacity="0.4"/>
+    <!-- Vapor recovery sub-hose tap on the side of the shroud (orange = vapor) -->
+    <rect x="708" y="280" width="10" height="6" fill="#F08222" stroke="#1A1F2E" stroke-width="0.5"/>
   </g>
 
-  <!-- Arm reach: a curved articulated boom from rack pivot (760,148) over to
-       the manhole shroud (316,278). Drawn behind so it reads as the arm in
-       its engaged broadside position. -->
-  <g>
-    <!-- Outer arm shadow -->
-    <path d="M 768 156 Q 620 90 460 178 Q 380 220 316 270"
-          stroke="#1A1F2E" stroke-width="13" stroke-linecap="round" fill="none" opacity="0.45"/>
-    <!-- Arm body (silver) -->
-    <path d="M 768 156 Q 620 90 460 178 Q 380 220 316 270"
-          stroke="#9098A8" stroke-width="9" stroke-linecap="round" fill="none"/>
-    <!-- Top highlight on the arm -->
-    <path d="M 768 156 Q 620 90 460 178 Q 380 220 316 270"
-          stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.55"/>
-    <!-- Knuckle joints along the arm -->
-    <circle cx="620"  cy="106" r="6" fill="#3A3F4A"/>
-    <circle cx="460"  cy="178" r="6" fill="#3A3F4A"/>
-    <circle cx="380"  cy="220" r="6" fill="#3A3F4A"/>
-    <!-- Counterweight at base of arm -->
-    <rect x="744" y="138" width="32" height="14" rx="2" fill="#3A3F4A"/>
-    <rect x="744" y="138" width="32" height="3" fill="#5A606D"/>
-  </g>
-
-  <!-- Faint heat-shimmer at the manhole interface — diesel produces
-       far less vapor than gasoline so this wisp is small and subtle. -->
-  <g transform="translate(316 270)">
+  <!-- Faint heat-shimmer at the CMPT 3 manhole interface (x=696) — diesel
+       produces far less vapor than gasoline so this wisp is small and subtle. -->
+  <g transform="translate(696 272)">
     <g class="vapor-wisp" opacity="0.55">
     <ellipse cx="0"  cy="0" rx="4" ry="2" fill="url(#vaporPuff)"/>
     <ellipse cx="4"  cy="-5" rx="2.6" ry="1.4" fill="url(#vaporPuff)"/>

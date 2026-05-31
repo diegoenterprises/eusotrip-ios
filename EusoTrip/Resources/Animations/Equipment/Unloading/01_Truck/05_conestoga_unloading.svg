@@ -1777,13 +1777,34 @@
           font-weight="800" font-size="14" letter-spacing="1.8" fill="#FFFFFF">TRUCK</text>
   </g>
 
-  <!-- LBS unit badge (below TRUCK) -->
-  <g>
+  <!-- Weight-unit badge (below TRUCK) — COUNTRY-SWITCHABLE.
+       Conestoga hauls general dry freight (lumber/drywall), NOT hazmat, so
+       there are no DOT/PHMSA, SCT/NOM-002 or TDG placards to show; the only
+       country-relevant marking is the billing unit of weight.
+       Renderer: show exactly ONE of these groups by route country —
+         class="country-US" / "country-CA" -> LBS (default visible)
+         class="country-MX"               -> KG
+       e.g. set display:none on the two non-active groups at mount. -->
+  <g class="unit-badge country-US">
     <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
           fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
     <text x="1102" y="112" text-anchor="middle"
           font-family="Inter, system-ui, sans-serif"
           font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">LBS</text>
+  </g>
+  <g class="unit-badge country-CA" style="display:none">
+    <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
+          fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+    <text x="1102" y="112" text-anchor="middle"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">LBS</text>
+  </g>
+  <g class="unit-badge country-MX" style="display:none">
+    <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
+          fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+    <text x="1102" y="112" text-anchor="middle"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">KG</text>
   </g>
 
   <!-- UNLOADING pill (amber) -->

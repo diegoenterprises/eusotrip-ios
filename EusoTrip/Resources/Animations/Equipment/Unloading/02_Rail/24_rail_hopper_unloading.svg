@@ -43,14 +43,16 @@
          90 – 100%: hold empty + reset
        =================================================================== */
 
-    /* Bottom outlet gate flaps swing OPEN (drop-bottom gate doors) */
-    .gate-2-open { transform-box: fill-box; transform-origin: 510px 486px;
-                   animation: gate-open 7s ease-in-out infinite; }
-    .gate-3-open { transform-box: fill-box; transform-origin: 670px 486px;
-                   animation: gate-open 7s ease-in-out infinite; animation-delay: -0.15s; }
+    /* Bottom outlet gate flaps swing OPEN (drop-bottom gate doors).
+       Each flap hinges at its OWN left edge — fill-box origin = left center.
+       Slight overshoot bezier so the door drops and settles on its stop. */
+    .gate-2-open { transform-box: fill-box; transform-origin: left center;
+                   animation: gate-open 7s cubic-bezier(0.34,1.1,0.64,1) infinite; }
+    .gate-3-open { transform-box: fill-box; transform-origin: left center;
+                   animation: gate-open 7s cubic-bezier(0.34,1.1,0.64,1) infinite; animation-delay: -0.15s; }
     @keyframes gate-open {
       0%, 3%    { transform: rotate(0deg); }
-      10%, 100% { transform: rotate(-30deg); }
+      10%, 100% { transform: rotate(-34deg); }
     }
 
     /* Spout REPURPOSED — keeps existing class so reduced-motion list matches.
@@ -70,11 +72,14 @@
       90%, 100% { transform: scaleY(0.06); }
     }
 
-    /* Grain stream falling from each open gate INTO the pit */
-    .grain-stream-2 { transform-box: fill-box; transform-origin: 542px 490px;
-                      animation: grain-pour 7s ease-in-out infinite; }
-    .grain-stream-3 { transform-box: fill-box; transform-origin: 702px 490px;
-                      animation: grain-pour 7s ease-in-out infinite; animation-delay: -0.15s; }
+    /* Grain stream falling from each open gate INTO the pit. The stream grows
+       DOWNWARD out of the gate mouth — fill-box origin at TOP (50% 0%). Linear
+       core so the falling column reads as a steady gravity discharge (no ease
+       on a continuous pour), gated by the opacity envelope for start/stop. */
+    .grain-stream-2 { transform-box: fill-box; transform-origin: center top;
+                      animation: grain-pour 7s linear infinite; }
+    .grain-stream-3 { transform-box: fill-box; transform-origin: center top;
+                      animation: grain-pour 7s linear infinite; animation-delay: -0.15s; }
     @keyframes grain-pour {
       0%, 8%    { opacity: 0; transform: scaleY(0.1); }
       14%, 88%  { opacity: 0.95; transform: scaleY(1); }
@@ -1259,6 +1264,36 @@
 
   <g class="chevron">
     <path d="M 70 540 L 55 525 L 55 555 Z" fill="#9B7FD9"/>
+  </g>
+
+  <!-- ============================================================
+       COUNTRY-AWARE INTERCHANGE BADGE  (grain = NON-hazmat: no
+       UN/DOT placard required in any of US/MX/CA). Covered-hopper
+       AAR body stencils (CAPY / LD LMT in lb + CU FT) are an AAR
+       INTERCHANGE standard and stay identical across US/MX/CA, so
+       they are NOT switched. Only the commercial WEIGHT readout
+       unit + the interchange origin code differ by jurisdiction.
+
+       RENDERER SELECTION: the host shows exactly ONE of these three
+       groups by class. Default = country-US visible; hide the other
+       two (display:none). e.g. in SwiftUI/WebView set
+         .country-MX, .country-CA { display:none }
+       and flip per the shipment's destination country.
+       ============================================================ -->
+  <g font-family="Inter, system-ui, sans-serif" font-weight="800"
+     font-size="9" letter-spacing="1.2" fill="#5B3FBF" opacity="0.8">
+    <g class="country-US">
+      <rect x="430" y="540" width="150" height="16" rx="8" fill="#FFFFFF" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+      <text x="444" y="551">US · NET TONS · AAR</text>
+    </g>
+    <g class="country-MX" style="display:none">
+      <rect x="430" y="540" width="150" height="16" rx="8" fill="#FFFFFF" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+      <text x="444" y="551">MX · TONELADAS · AAR</text>
+    </g>
+    <g class="country-CA" style="display:none">
+      <rect x="430" y="540" width="150" height="16" rx="8" fill="#FFFFFF" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+      <text x="444" y="551">CA · TONNES · AAR</text>
+    </g>
   </g>
 
   <rect class="card-border" x="20" y="20" width="1160" height="560" rx="22"

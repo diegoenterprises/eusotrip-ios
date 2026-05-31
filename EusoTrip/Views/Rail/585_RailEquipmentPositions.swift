@@ -27,6 +27,11 @@
 //  that returns a BARE ARRAY of railcars; every detail DTO uses a tolerant custom
 //  `init(from:)` so a missing/renamed key never throws a decode crash.
 //
+//  ANIMATION POLISH (oath/anim-equipment-polish #3): the hero route arc sweeps
+//  origin→current on appear (and on any data refresh) via a single decel spring
+//  toward the REAL `routeProgress`, settling exactly on the true fraction.
+//  Reduce-motion snaps to the final state.
+//
 
 import SwiftUI
 
@@ -204,6 +209,7 @@ private struct ContainerNumberIn585: Encodable { let containerNumber: String }
 
 private struct RailEquipmentPositionsBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let railId: String
 
     @State private var railcars: [Railcar585] = []
@@ -213,6 +219,11 @@ private struct RailEquipmentPositionsBody: View {
     @State private var loadError: String? = nil
     @State private var hydrated = false
 
+    /// Fraction the hero route arc animates toward. Starts at 0 so the arc sweeps
+    /// origin→current on appear (and on any data refresh), always settling on the
+    /// REAL `routeProgress`. Reduce-motion snaps to it. (oath/anim-equipment-polish #3)
+    @State private var shownProgress: Double = 0
+
     // MARK: Seed — house 0%-mock representative of live return shapes (overwritten on hydrate)
 
     private static let seedRailcars: [Railcar585] = {
@@ -220,7 +231,7 @@ private struct RailEquipmentPositionsBody: View {
             try! JSONDecoder().decode(Railcar585.self, from: Data(json.utf8))
         }
         return [
-            make(#"{"carNumber":"DTTX 748213","carType":"well_car","status":"in_transit","currentLocation":"near Amarillo TX","containerNumber":"TCNU 7693120","speedMph":38}"#),
+            make(#"{"carNumber":"DTTX 748213","carType":"well_car","status":"in_transit","currentLocation":"near Amarillo TX","containerNumber":"TCNU 7693120","speedMph":38,"progressFraction":0.62}"#),
             make(#"{"carNumber":"TTAX 553902","carType":"well_car","status":"at_ramp","currentLocation":"Logistics Park CHI · awaiting dray","dwellHours":2}"#),
             make(#"{"carNumber":"DTTX 690114","carType":"well_car","status":"at_yard","currentLocation":"Barstow BNSF · demurrage approaching","dwellHours":14}"#)
         ]
@@ -254,6 +265,15 @@ private struct RailEquipmentPositionsBody: View {
     }
 
     private var routeLabel: String { "BNSF transcon" }
+
+    /// Real route fraction (origin→current) from the lead in-motion railcar's
+    /// `progressFraction`. Falls back to 0 — never a decorative constant — so a
+    /// loading/empty route shows no completed arc until the true fraction lands.
+    private var routeProgress: Double {
+        let lead = rows.first(where: { bucket($0.status) == "in_motion" })
+            ?? rows.first(where: { $0.progressFraction != nil })
+        return max(0, min(1, lead?.progressFraction ?? 0.0))
+    }
 
     // MARK: Container strip values
 
@@ -304,6 +324,23 @@ private struct RailEquipmentPositionsBody: View {
         }
         .task { await loadAll() }
         .refreshable { await loadAll() }
+        // Arc-sweep on appear + on any data refresh; settles on the REAL fraction.
+        .onAppear { settleSweep(to: routeProgress) }
+        .onChange(of: routeProgress) { _, new in settleSweep(to: new) }
+    }
+
+    /// Animate the hero route arc sweep toward the real route fraction.
+    /// Reduce-motion snaps to the final state; otherwise a natural decel settle.
+    private func settleSweep(to target: Double) {
+        let clamped = max(0, min(1, target))
+        if reduceMotion {
+            shownProgress = clamped
+        } else {
+            // Natural decel settle (no easeInOut on meaningful motion).
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.88)) {
+                shownProgress = clamped
+            }
+        }
     }
 
     // MARK: Eyebrow + headline
@@ -367,6 +404,11 @@ private struct RailEquipmentPositionsBody: View {
                         }
                     }
                     Spacer()
+                    // Route-progress arc — sweeps origin→current via the animated
+                    // `shownProgress`, settling on the real `routeProgress`.
+                    RouteProgressArc585(fraction: shownProgress)
+                        .frame(width: 56, height: 56)
+                    Spacer().frame(width: Space.s3)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("AVG SPD")
                             .font(.system(size: 10, weight: .black)).kerning(0.6)
@@ -570,6 +612,33 @@ private struct RailEquipmentPositionsBody: View {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
+        // Re-settle the sweep onto the freshly-hydrated real fraction.
+        settleSweep(to: routeProgress)
+    }
+}
+
+// MARK: - Route-progress arc (hero) — animated origin→current sweep
+
+/// A small gradient ring whose lit arc tracks `fraction` (the animated
+/// `shownProgress`, settling on the real route fraction). (oath/anim-equipment-polish #3)
+private struct RouteProgressArc585: View {
+    let fraction: Double
+
+    var body: some View {
+        ZStack {
+            // Full track (muted)
+            Circle()
+                .stroke(Color.white.opacity(0.10), lineWidth: 4)
+            // Completed portion — trims to the ANIMATED fraction.
+            Circle()
+                .trim(from: 0, to: CGFloat(max(0, min(1, fraction))))
+                .stroke(LinearGradient.diagonal,
+                        style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Text("\(Int((max(0, min(1, fraction)) * 100).rounded()))%")
+                .font(.system(size: 12, weight: .bold).monospacedDigit())
+                .foregroundStyle(LinearGradient.primary)
+        }
     }
 }
 

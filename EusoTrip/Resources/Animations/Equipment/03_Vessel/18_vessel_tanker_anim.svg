@@ -296,10 +296,46 @@
     <line x1="220" y1="380" x2="220" y2="240" stroke="#1A1F2E" stroke-width="3" stroke-linecap="round"/>
     <line x1="220" y1="280" x2="270" y2="290" stroke="#3A4258" stroke-width="2" stroke-linecap="round"/>
 
-    <!-- Hazmat warning placard on deck (Class 3 flammable for petroleum) -->
-    <g transform="translate(380 320) rotate(45)">
-      <rect x="-22" y="-22" width="44" height="44" fill="#E5350D" stroke="#FFFFFF" stroke-width="2"/>
-      <g transform="rotate(-45)"><text y="2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="16" fill="#FFFFFF">3</text></g>
+    <!-- ============================================================
+         DANGEROUS-GOODS PLACARD — COUNTRY-SWITCHABLE
+         Marine bulk crude/product tankers are dangerous-goods regulated.
+         Renderer shows exactly ONE of the three groups by setting the others to
+         display:none (default: country-US visible). Class 3 (flammable liquid)
+         red diamond is the common shape across all regimes.
+           • country-US  : 49 CFR / DOT + USCG 33 CFR — "FLAMMABLE" word + UN1267 (crude)
+           • country-MX  : SCT NOM-002/004-SCT — "LÍQUIDO INFLAMABLE" (Spanish) + UN1267
+           • country-CA  : Transport Canada TDG — flame pictogram, no word text (bilingual rule)
+         International marine voyages additionally carry the IMDG flame; the
+         shared flame glyph below sits under each language layer.
+         ============================================================ -->
+    <g class="dg-placard" transform="translate(380 320)">
+      <!-- US (default visible) -->
+      <g class="country-US">
+        <g transform="rotate(45)">
+          <rect x="-22" y="-22" width="44" height="44" rx="3" fill="#E5350D" stroke="#FFFFFF" stroke-width="2"/>
+        </g>
+        <path d="M -5 -10 Q 2 -4 -1 1 Q 5 -1 4 5 Q 7 1 9 6 Q 9 13 0 14 Q -9 13 -9 6 Q -9 0 -5 -10 Z" fill="#FFFFFF" opacity="0.9"/>
+        <text y="-2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="4.6" fill="#FFFFFF" letter-spacing="0.3">FLAMMABLE</text>
+        <text y="17" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="9" fill="#FFFFFF">3</text>
+      </g>
+      <!-- Mexico (hidden by default) -->
+      <g class="country-MX" style="display:none">
+        <g transform="rotate(45)">
+          <rect x="-22" y="-22" width="44" height="44" rx="3" fill="#E5350D" stroke="#FFFFFF" stroke-width="2"/>
+        </g>
+        <path d="M -5 -10 Q 2 -4 -1 1 Q 5 -1 4 5 Q 7 1 9 6 Q 9 13 0 14 Q -9 13 -9 6 Q -9 0 -5 -10 Z" fill="#FFFFFF" opacity="0.9"/>
+        <text y="-3" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="3.4" fill="#FFFFFF" letter-spacing="0.2">LÍQUIDO</text>
+        <text y="1" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="3.4" fill="#FFFFFF" letter-spacing="0.2">INFLAMABLE</text>
+        <text y="17" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="9" fill="#FFFFFF">3</text>
+      </g>
+      <!-- Canada (hidden by default) — TDG uses pictogram only, no word text -->
+      <g class="country-CA" style="display:none">
+        <g transform="rotate(45)">
+          <rect x="-22" y="-22" width="44" height="44" rx="3" fill="#E5350D" stroke="#FFFFFF" stroke-width="2"/>
+        </g>
+        <path d="M -6 -12 Q 3 -5 -1 1 Q 6 -2 5 6 Q 9 1 11 7 Q 11 15 0 16 Q -11 15 -11 7 Q -11 -1 -6 -12 Z" fill="#FFFFFF" opacity="0.92"/>
+        <text y="17" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="9" fill="#FFFFFF">3</text>
+      </g>
     </g>
   </g>
 

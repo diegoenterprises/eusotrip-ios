@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg"  width="1200" height="600" viewBox="0 50 1200 480" preserveAspectRatio="xMidYMid slice">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600" preserveAspectRatio="xMidYMid meet">
   <style><![CDATA[
     /* ========== CHASSIS BOB — the body floats on suspension ========== */
     .chassis-bob   { animation: chassis-bob 0.5s ease-in-out infinite; }
@@ -160,12 +160,14 @@
       <feGaussianBlur stdDeviation="3"/>
     </filter>
   </defs>
-  <g class="chassis-bob">
-
+  <!-- STATIC BACKDROP — stays still; only the rig bobs on its suspension -->
   <rect class="sky-bg" width="1200" height="600" fill="url(#sky)"/>
   <rect x="0" y="380" width="1200" height="70" fill="#FFFFFF" opacity="0.18"/>
   <line x1="60" y1="475" x2="1140" y2="475" stroke="#9B7FD9" stroke-width="4" stroke-dasharray="14 9" stroke-linecap="round" opacity="0.55"/>
   <ellipse cx="640" cy="486" rx="450" ry="7" fill="#1A1F2E" opacity="0.13"/>
+
+  <!-- ROLLING RIG (cab + empty lowboy) — suspension bob only -->
+  <g class="chassis-bob">
 
   <!-- CAB -->
   <g filter="url(#rigShadow)">

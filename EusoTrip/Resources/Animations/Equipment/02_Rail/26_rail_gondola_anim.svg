@@ -2,11 +2,15 @@
 <svg xmlns="http://www.w3.org/2000/svg"  width="1200" height="600" viewBox="0 50 1200 480" preserveAspectRatio="xMidYMid slice">
   <style><![CDATA[
     /* ========== RAIL JOINT CLACK-CLACK ========== */
-    .rail-clack    { animation: rail-clack 0.6s ease-in-out infinite; }
+    /* Percussive: a fast bump up on the joint strike, slow settle back down
+       (rail-joint impact is sharp on the way up, damped on the way down). */
+    .rail-clack    { animation: rail-clack 0.6s cubic-bezier(0.3,0,0.2,1) infinite; }
     @keyframes rail-clack {
-      0%,  50%, 100% { transform: translateY(0); }
-      25%            { transform: translateY(-1px); }
-      75%            { transform: translateY(-0.6px); }
+      0%             { transform: translateY(0); }
+      18%            { transform: translateY(-1px); }
+      50%            { transform: translateY(0); }
+      68%            { transform: translateY(-0.6px); }
+      100%           { transform: translateY(0); }
     }
     .rail-yaw      { transform-origin: 600px 470px;
                       animation: rail-yaw 2.8s ease-in-out infinite; }
@@ -182,8 +186,32 @@
     </g>
     <!-- Reporting marks -->
     <text x="240" y="395" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="22" fill="#FFFFFF" opacity="0.95" letter-spacing="2">EUSO 5532</text>
-    <!-- Capacity stencil -->
-    <text x="240" y="425" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="11" fill="#FFFFFF" opacity="0.65" letter-spacing="2">CAPY 100T · LD LMT 198400</text>
+    <!-- ============================================================
+         COUNTRY-SWITCHABLE CAPACITY STENCIL + INTERCHANGE BADGE
+         Gondola for ferrous scrap is NOT hazmat → no DOT/SCT/TDG
+         placards. The AAR/UMLER reporting-mark system is unified across
+         US (STB) / Canada (Transport Canada) / Mexico (SCT) interchange,
+         so the only true country differences are (a) the interchange
+         origin badge and (b) the capacity-stencil UNITS:
+           US  → CAPY in short tons / LD LMT in lb     (default visible)
+           CA  → CAPY in tonnes      / LD LMT in kg     (Transport Canada)
+           MX  → CAPY in toneladas   / CARGA in kg      (SCT / ARTF)
+         Renderer: show exactly one of .country-US / .country-MX /
+         .country-CA based on the shipment's origin/jurisdiction; the
+         host toggles `display:none` on the two it is not using
+         (default = US visible). -->
+    <g class="country-US">
+      <text x="240" y="425" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="11" fill="#FFFFFF" opacity="0.65" letter-spacing="2">CAPY 100T · LD LMT 198400 LB</text>
+      <g transform="translate(960 392)"><rect x="-26" y="-12" width="52" height="20" rx="3" fill="#1A2A4A" opacity="0.85"/><text x="0" y="2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="9" fill="#FFFFFF" letter-spacing="1.4">US · AAR</text></g>
+    </g>
+    <g class="country-CA" style="display:none">
+      <text x="240" y="425" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="11" fill="#FFFFFF" opacity="0.65" letter-spacing="2">CAPY 90 t · LD LMT 90 000 kg</text>
+      <g transform="translate(960 392)"><rect x="-26" y="-12" width="52" height="20" rx="3" fill="#7A1320" opacity="0.85"/><text x="0" y="2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="9" fill="#FFFFFF" letter-spacing="1.4">CA · TC</text></g>
+    </g>
+    <g class="country-MX" style="display:none">
+      <text x="240" y="425" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="11" fill="#FFFFFF" opacity="0.65" letter-spacing="2">CAP 90 t · CARGA 90 000 kg</text>
+      <g transform="translate(960 392)"><rect x="-26" y="-12" width="52" height="20" rx="3" fill="#106B3F" opacity="0.85"/><text x="0" y="2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="9" fill="#FFFFFF" letter-spacing="1.4">MX · SCT</text></g>
+    </g>
     <!-- Vague cargo suggestion (subtle aggregate texture peeking over the top) -->
     <g fill="#5A606D" opacity="0.35">
       <ellipse cx="300" cy="290" rx="50" ry="6"/>

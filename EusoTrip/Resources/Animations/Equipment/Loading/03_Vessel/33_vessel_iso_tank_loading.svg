@@ -34,11 +34,15 @@
     }
     /* ============ CARGO HANDLING MOTION ============ */
 
-    .crane-descend { animation: crane-descend 6s ease-in-out infinite; }
+    /* STS hoist lowers the laden spreader to the deck slot.
+       Decelerating cubic-bezier on the way down (controlled set-down),
+       gentle ease back up for the empty return reeve. Loop joins at the
+       fully-raised pose (0%/100% both -180px) so there is no pop. */
+    .crane-descend { animation: crane-descend 6s infinite; }
     @keyframes crane-descend {
-      0%   { transform: translateY(-180px); }
+      0%   { transform: translateY(-180px); animation-timing-function: cubic-bezier(0.33,0,0.2,1); }
       35%  { transform: translateY(0); }
-      55%  { transform: translateY(0); }
+      58%  { transform: translateY(0);      animation-timing-function: cubic-bezier(0.4,0,0.4,1); }
       85%, 100% { transform: translateY(-180px); }
     }
 
@@ -50,12 +54,49 @@
       100% { transform: translateX(0); }
     }
 
+    /* Twistlocks: engaged (yellow) while laden + lowering, then UNLOCK
+       (grey) at set-down so the spreader can lift away empty. */
     .twist-lock-pulse { animation: twist-lock-pulse 6s ease-in-out infinite; }
     @keyframes twist-lock-pulse {
-      0%, 50% { fill: #6A6F78; }
-      55%, 75% { fill: #FFE680; }
-      80%, 100% { fill: #FFE680; }
+      0%, 50% { fill: #FFE680; }
+      58%, 60% { fill: #6A6F78; }
+      100% { fill: #6A6F78; }
     }
+
+    /* Laden tank: released onto the deck at set-down, so the spreader
+       returns EMPTY. Fades the suspended tank out across the up-reeve,
+       fades a fresh one back in at the raised start of the next cycle. */
+    .cargo-release { animation: cargo-release 6s ease-in-out infinite; }
+    @keyframes cargo-release {
+      0%, 56% { opacity: 1; }
+      62%, 92% { opacity: 0; }
+      100% { opacity: 1; }
+    }
+    /* Deck slot 3 fills in as the tank is set down (placed cargo appears). */
+    .slot-place { animation: slot-place 6s ease-in-out infinite; }
+    @keyframes slot-place {
+      0%, 56% { opacity: 0; }
+      62%, 100% { opacity: 1; }
+    }
+    /* The "EMPTY SLOT" label retires as the placed tank appears. */
+    .slot-label { animation: slot-label 6s ease-in-out infinite; }
+    @keyframes slot-label {
+      0%, 56% { opacity: 0.85; }
+      62%, 100% { opacity: 0; }
+    }
+
+    /* ===== COUNTRY-SWITCHABLE UN-ID MARKING (2026-05-29) =====
+       ISO tanks are regulated dangerous-goods packagings. The harmonised hazard
+       diamond is shared (IMDG/49 CFR/SCT/TDG); the UN-ID panel is the per-regime
+       variant the renderer toggles:
+         country-US — 49 CFR 172.332 orange ID panel
+         country-MX — SCT NOM-002/004 (UN labels adopted) + dual-designation tick
+         country-CA — TDG white square-on-point ID display
+       Renderer sets ONE root class: svg.classList = 'ctx-' + shipment.regulatoryRegion.
+       Default (no ctx-* set) = US. */
+    .country-US, .country-MX, .country-CA { opacity: 0; }
+    .ctx-US .country-US, .ctx-MX .country-MX, .ctx-CA .country-CA { opacity: 1; }
+    svg:not(.ctx-US):not(.ctx-MX):not(.ctx-CA) .country-US { opacity: 1; }
 
     @media (prefers-reduced-motion: reduce) {
       .brand-lockup,
@@ -63,6 +104,9 @@
       .brand-word,
       .chevron,
       .crane-descend,
+      .cargo-release,
+      .slot-place,
+      .slot-label,
       .load-pill,
       .progress-fill,
       .sky-shimmer,
@@ -70,6 +114,13 @@
       .twist-lock-pulse {
         animation: none !important;
       }
+      /* Reduced motion: hold the crane laden at the deck (set-down pose),
+         keep the laden tank visible and the placed slot shown — a calm still. */
+      .crane-descend  { transform: translateY(0) !important; }
+      .cargo-release  { opacity: 1 !important; }
+      .slot-place     { opacity: 1 !important; }
+      .slot-label     { opacity: 0 !important; }
+      .twist-lock-pulse { fill: #FFE680 !important; }
     }
 
   ]]></style>
@@ -234,10 +285,26 @@
       </g>
     </g>
 
-    <!-- Slot 3 — EMPTY slot awaiting load (slightly darker — open frame outline only) -->
+    <!-- Slot 3 — open slot awaiting load (dashed outline) ; the crane sets the tank here -->
     <rect x="840" y="466" width="200" height="24" fill="#5A606D" opacity="0.3" stroke="#5A606D" stroke-width="1" stroke-dasharray="6 3"/>
-    <text x="940" y="482" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
-          font-weight="900" font-size="7" fill="#FFD23A" letter-spacing="0.6" opacity="0.85">EMPTY SLOT</text>
+    <text class="slot-label" x="940" y="482" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="900" font-size="7" fill="#FFD23A" letter-spacing="0.6" opacity="0.85">OPEN SLOT</text>
+    <!-- Placed ISO tank — fades in as the suspended cargo is set down (slot-place) -->
+    <g class="slot-place">
+      <rect x="840" y="466" width="200" height="24" fill="none" stroke="#5A606D" stroke-width="2"/>
+      <rect x="840" y="466" width="200" height="3" fill="#5A606D"/>
+      <rect x="840" y="487" width="200" height="3" fill="#5A606D"/>
+      <ellipse cx="852" cy="478" rx="6" ry="10" fill="url(#tankSilver)"/>
+      <rect x="852" y="468" width="176" height="20" fill="url(#tankSilver)"/>
+      <ellipse cx="1028" cy="478" rx="6" ry="10" fill="url(#tankSilver)"/>
+      <g transform="translate(940 478)">
+        <g transform="rotate(45)">
+          <rect x="-7" y="-7" width="14" height="14" fill="#E5350D" stroke="#000000" stroke-width="0.6"/>
+        </g>
+        <text y="2" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+              font-weight="900" font-size="6" fill="#FFFFFF">3</text>
+      </g>
+    </g>
 
     <!-- Hull side branding -->
     <text x="780" y="510" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
@@ -282,25 +349,42 @@
       <rect x="32" y="200" width="116" height="14" rx="2" fill="#3A3F4A"/>
       <rect class="twist-lock-pulse" x="36" y="212" width="6" height="6"/>
       <rect class="twist-lock-pulse" x="138" y="212" width="6" height="6"/>
-      <!-- Rectangular frame -->
-      <rect x="32" y="216" width="116" height="100" fill="none" stroke="#5A606D" stroke-width="6"/>
-      <rect x="32" y="216" width="116" height="6" fill="#5A606D"/>
-      <rect x="32" y="310" width="116" height="6" fill="#5A606D"/>
-      <!-- Cylindrical tank inside the frame -->
-      <ellipse cx="48" cy="266" rx="14" ry="44" fill="url(#tankSilver)"/>
-      <rect x="48" y="222" width="84" height="88" fill="url(#tankSilver)"/>
-      <ellipse cx="132" cy="266" rx="14" ry="44" fill="url(#tankSilver)"/>
-      <rect x="48" y="222" width="84" height="6" fill="#FFFFFF" opacity="0.4"/>
-      <!-- Hazmat placard -->
-      <g transform="translate(90 266)">
-        <g transform="rotate(45)">
-          <rect x="-10" y="-10" width="20" height="20" fill="#E5350D" stroke="#000000" stroke-width="1"/>
+      <!-- Laden ISO tank — released onto the deck at set-down; spreader returns empty -->
+      <g class="cargo-release">
+        <!-- Rectangular frame -->
+        <rect x="32" y="216" width="116" height="100" fill="none" stroke="#5A606D" stroke-width="6"/>
+        <rect x="32" y="216" width="116" height="6" fill="#5A606D"/>
+        <rect x="32" y="310" width="116" height="6" fill="#5A606D"/>
+        <!-- Cylindrical tank inside the frame -->
+        <ellipse cx="48" cy="266" rx="14" ry="44" fill="url(#tankSilver)"/>
+        <rect x="48" y="222" width="84" height="88" fill="url(#tankSilver)"/>
+        <ellipse cx="132" cy="266" rx="14" ry="44" fill="url(#tankSilver)"/>
+        <rect x="48" y="222" width="84" height="6" fill="#FFFFFF" opacity="0.4"/>
+        <!-- Hazmat placard (harmonised diamond, shared across regimes) -->
+        <g transform="translate(90 266)">
+          <g transform="rotate(45)">
+            <rect x="-10" y="-10" width="20" height="20" fill="#E5350D" stroke="#000000" stroke-width="1"/>
+          </g>
+          <text y="3" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+                font-weight="900" font-size="10" fill="#FFFFFF" data-bind="hazmat_class">3</text>
         </g>
-        <text y="3" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
-              font-weight="900" font-size="10" fill="#FFFFFF" data-bind="hazmat_class">8</text>
+        <!-- UN-ID panel — jurisdiction variant (renderer reveals one via ctx-* root class) -->
+        <g class="country-US" transform="translate(70 282)">
+          <rect x="0" y="0" width="40" height="11" fill="#F08000" stroke="#000000" stroke-width="0.6"/>
+          <text x="20" y="8.6" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="7" fill="#000000" data-bind="un_number">1993</text>
+        </g>
+        <g class="country-MX" transform="translate(70 282)">
+          <rect x="0" y="0" width="40" height="11" fill="#F08000" stroke="#000000" stroke-width="0.6"/>
+          <text x="20" y="8.6" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="7" fill="#000000" data-bind="un_number">1993</text>
+          <rect x="0" y="-2" width="40" height="1.6" fill="#006847"/>
+        </g>
+        <g class="country-CA" transform="translate(70 282)">
+          <g transform="translate(20 5.5) rotate(45)"><rect x="-7.5" y="-7.5" width="15" height="15" fill="#FFFFFF" stroke="#000000" stroke-width="0.6"/></g>
+          <text x="20" y="8.2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6" fill="#000000" data-bind="un_number">1993</text>
+        </g>
+        <text x="90" y="234" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+              font-weight="700" font-size="8" fill="#5B3FBF" letter-spacing="1.4">ISO TANK</text>
       </g>
-      <text x="90" y="234" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
-            font-weight="700" font-size="8" fill="#5B3FBF" letter-spacing="1.4">ISO TANK</text>
     </g>
   </g>
   </g>

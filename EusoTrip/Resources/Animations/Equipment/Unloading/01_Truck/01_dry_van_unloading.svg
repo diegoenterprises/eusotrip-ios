@@ -33,19 +33,26 @@
       50%      { opacity: 0.65; }
     }
     /* ============ CARGO HANDLING MOTION ============ */
-    /* Unload cycle: forklift starts INSIDE the trailer at the rear (translateX -340),
-       drives rightward out onto the dock (translateX +280), exits and resets.
-       Real forklifts back out of trailers — fork tips still point left toward the
-       trailer interior because the operator drives in reverse to exit. */
-    .forklift-cycle-rev { animation: forklift-cycle-rev 6s ease-in-out infinite; }
+    /* TRUE dry-van dock UNloading cycle (6s loop):
+       Forklift is deep INSIDE the trailer at the rear (translateX -340) where it
+       has just speared a pallet off the remaining stack. It REVERSES out (drives
+       rightward) onto the dock carrying the load, then sets it on the staging
+       stack and resets off-frame to grab the next one. Fork tips stay pointing
+       left into the trailer because a real lift truck backs out rather than
+       turning around in the cramped trailer.
+       Easing: a short pickup dwell, then cubic-bezier so it eases out of the
+       trailer and accelerates across the dock. 0%/100% endpoints match (−340px,
+       opacity 0) for a seamless loop. */
+    .forklift-cycle-rev { animation: forklift-cycle-rev 6s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes forklift-cycle-rev {
-      0%   { transform: translateX(-340px); opacity: 0; }
-      6%   { opacity: 1; }
-      30%  { transform: translateX(-90px);  opacity: 1; }
-      55%  { transform: translateX(120px);  opacity: 1; }
-      70%  { transform: translateX(280px);  opacity: 1; }
-      76%  { transform: translateX(280px);  opacity: 0; }
-      100% { transform: translateX(-340px); opacity: 0; }
+      0%   { transform: translateX(-340px); opacity: 0; }   /* deep at rear wall, off-frame */
+      8%   { transform: translateX(-320px); opacity: 1; }   /* fade in, lift mast off stack */
+      18%  { transform: translateX(-320px); opacity: 1; }   /* dwell: tilt back, raise pallet */
+      40%  { transform: translateX(-90px);  opacity: 1; }   /* reversing out of trailer */
+      62%  { transform: translateX(120px);  opacity: 1; }   /* onto the dock leveler */
+      74%  { transform: translateX(280px);  opacity: 1; }   /* approaching staging zone */
+      82%  { transform: translateX(300px);  opacity: 0; }   /* fade out past staging */
+      100% { transform: translateX(-340px); opacity: 0; }   /* reset deep in trailer */
     }
 
     .wheel-spin   { animation: wheel-spin 1.4s linear infinite;
@@ -55,25 +62,28 @@
        right (out of trailer onto dock). Loading uses -360deg for leftward motion. */
     @keyframes wheel-spin   { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-    /* Inside-trailer stack SHRINKS as cargo is removed pallet by pallet */
-    .pallet-stack-shrink { animation: pallet-stack-shrink 6s linear infinite;
+    /* Inside-trailer stack SHRINKS pallet-by-pallet as the lift removes freight.
+       Steps down on the pickup dwell (≈18%) so each removal reads as discrete,
+       gentle decel instead of a constant linear drain. */
+    .pallet-stack-shrink { animation: pallet-stack-shrink 6s cubic-bezier(0.4,0,0.2,1) infinite;
                            transform-box: fill-box; transform-origin: bottom; }
     @keyframes pallet-stack-shrink {
-      0%, 12%   { transform: scaleY(1);    opacity: 1; }
-      30%       { transform: scaleY(0.75); opacity: 0.95; }
-      55%       { transform: scaleY(0.45); opacity: 0.85; }
-      80%, 100% { transform: scaleY(0);    opacity: 0.2; }
+      0%, 18%   { transform: scaleY(1);    opacity: 1; }
+      40%       { transform: scaleY(0.66); opacity: 0.92; }
+      62%       { transform: scaleY(0.33); opacity: 0.82; }
+      82%, 100% { transform: scaleY(0);    opacity: 0.2; }
     }
 
-    /* Dock-side stack GROWS as the unloaded freight accumulates outside the trailer.
-       Mirror of the inside-trailer shrink. */
-    .pallet-stack-grow-dock { animation: pallet-stack-grow-dock 6s linear infinite;
+    /* Dock staging stack GROWS as unloaded freight accumulates outside the trailer.
+       Mirror of the inside-trailer shrink — reaches full just as the lift fades
+       out past the staging zone (≈82%). */
+    .pallet-stack-grow-dock { animation: pallet-stack-grow-dock 6s cubic-bezier(0.4,0,0.2,1) infinite;
                               transform-box: fill-box; transform-origin: bottom; }
     @keyframes pallet-stack-grow-dock {
-      0%, 12%   { transform: scaleY(0);    opacity: 0.2; }
-      30%       { transform: scaleY(0.25); opacity: 0.85; }
-      55%       { transform: scaleY(0.55); opacity: 0.95; }
-      80%, 100% { transform: scaleY(1);    opacity: 1; }
+      0%, 18%   { transform: scaleY(0);    opacity: 0.2; }
+      40%       { transform: scaleY(0.34); opacity: 0.85; }
+      62%       { transform: scaleY(0.67); opacity: 0.95; }
+      82%, 100% { transform: scaleY(1);    opacity: 1; }
     }
 
     .beacon-flash { animation: beacon-flash 1.2s ease-in-out infinite;
@@ -424,9 +434,31 @@
   <text x="69" y="290" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
         font-weight="900" font-size="3.6" fill="#1A1F2E" letter-spacing="0.3"
         transform="rotate(-90 69 290)" opacity="0.85" data-bind="trailer_id">EUSU 12345</text>
-  <text x="331" y="290" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
-        font-weight="900" font-size="3.6" fill="#1A1F2E" letter-spacing="0.3"
-        transform="rotate(-90 331 290)" opacity="0.85" data-bind="carrier_dot">USDOT 1234567</text>
+  <!-- Carrier registration stencil on inner RIGHT door panel.
+       COUNTRY-SWITCHABLE: a general-freight dry van carries no hazmat placard, but
+       the door registration number is jurisdiction-specific. The renderer shows ONE
+       of these groups by route country and hides the others (display:none):
+         • country-US  → USDOT number (FMCSA, 49 CFR 390.21)        [default visible]
+         • country-MX  → SCT / SICT federal permit (NOM-068-SCT-2)
+         • country-CA  → NSC / CVOR safety number (National Safety Code)
+       Selection: set the unwanted groups to display:none (or toggle a `.country-XX`
+       visibility rule) keyed off shipment.routeCountry; data-bind="carrier_dot"
+       feeds the live number into whichever group is shown. -->
+  <g class="country-US" data-country="US">
+    <text x="331" y="290" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="900" font-size="3.6" fill="#1A1F2E" letter-spacing="0.3"
+          transform="rotate(-90 331 290)" opacity="0.85" data-bind="carrier_dot">USDOT 1234567</text>
+  </g>
+  <g class="country-MX" data-country="MX" style="display:none">
+    <text x="331" y="290" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="900" font-size="3.6" fill="#1A1F2E" letter-spacing="0.3"
+          transform="rotate(-90 331 290)" opacity="0.85" data-bind="carrier_sct">SCT 123-4567</text>
+  </g>
+  <g class="country-CA" data-country="CA" style="display:none">
+    <text x="331" y="290" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="900" font-size="3.6" fill="#1A1F2E" letter-spacing="0.3"
+          transform="rotate(-90 331 290)" opacity="0.85" data-bind="carrier_nsc">NSC 1234567</text>
+  </g>
   <text x="331" y="380" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
         font-weight="900" font-size="3.6" fill="#1A1F2E" letter-spacing="0.3"
         transform="rotate(-90 331 380)" opacity="0.85">EUSOTRIP LOGISTICS</text>

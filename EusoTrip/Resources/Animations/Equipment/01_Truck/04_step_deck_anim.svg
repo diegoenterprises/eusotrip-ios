@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg"  width="1200" height="600" viewBox="0 50 1200 480" preserveAspectRatio="xMidYMid slice">
+<svg xmlns="http://www.w3.org/2000/svg"  width="1200" height="600" viewBox="0 0 1200 600" preserveAspectRatio="xMidYMid meet">
   <style><![CDATA[
     /* ========== CHASSIS BOB — the body floats on suspension ========== */
     .chassis-bob   { animation: chassis-bob 0.5s ease-in-out infinite; }
@@ -191,9 +191,10 @@
     <!-- Upper front deck (abuts cab, same height as flatbed) -->
     <rect x="475" y="395" width="180" height="50" rx="3" fill="url(#deckTop)"/>
     <rect x="475" y="395" width="180" height="3" fill="#FFFFFF" opacity="0.4"/>
-    <!-- Step down (vertical drop ~25-30px) -->
-    <path d="M 655 395 L 655 425 L 685 425 L 685 458 L 655 458 L 655 445 Z" fill="url(#deckTop)"/>
-    <rect x="655" y="425" width="30" height="3" fill="#FFFFFF" opacity="0.4"/>
+    <!-- Step-down riser: vertical drop face connecting the high front deck to the low rear deck -->
+    <path d="M 655 395 L 685 425 L 685 458 L 655 445 Z" fill="url(#deckTop)"/>
+    <path d="M 655 395 L 685 425" stroke="#1A1F2E" stroke-width="1" opacity="0.45"/>
+    <rect x="655" y="423" width="30" height="3" fill="#FFFFFF" opacity="0.4"/>
     <!-- Lower rear deck (longer, sits ~30px lower for taller cargo clearance) -->
     <rect x="685" y="425" width="390" height="33" rx="3" fill="url(#deckTop)"/>
     <rect x="685" y="425" width="390" height="3" fill="#FFFFFF" opacity="0.4"/>

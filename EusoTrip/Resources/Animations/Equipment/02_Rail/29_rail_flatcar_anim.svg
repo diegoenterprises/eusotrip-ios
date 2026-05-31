@@ -1,12 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg"  width="1200" height="600" viewBox="0 50 1200 480" preserveAspectRatio="xMidYMid slice">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 200 1200 340" preserveAspectRatio="xMidYMid meet">
   <style><![CDATA[
-    /* ========== RAIL JOINT CLACK-CLACK ========== */
-    .rail-clack    { animation: rail-clack 0.6s ease-in-out infinite; }
+    /* ========== RAIL JOINT CLACK-CLACK ==========
+       Real bogie over a 39' rail joint: a sharp steel-on-steel jolt
+       (quick rise, fast settle) repeated as each truck hits the gap —
+       a snappy double-tap, NOT a soft sinusoid. */
+    .rail-clack    { animation: rail-clack 0.62s cubic-bezier(0.3,0,0.2,1) infinite; }
     @keyframes rail-clack {
-      0%,  50%, 100% { transform: translateY(0); }
-      25%            { transform: translateY(-1px); }
-      75%            { transform: translateY(-0.6px); }
+      0%             { transform: translateY(0); }
+      8%             { transform: translateY(-1.1px); }   /* lead truck impact */
+      24%            { transform: translateY(0); }
+      50%            { transform: translateY(0); }
+      58%            { transform: translateY(-0.7px); }   /* trailing truck impact */
+      74%, 100%      { transform: translateY(0); }
     }
     .rail-yaw      { transform-origin: 600px 470px;
                       animation: rail-yaw 2.8s ease-in-out infinite; }
@@ -14,12 +20,7 @@
       0%, 100% { transform: rotate(0deg); }
       50%      { transform: rotate(-0.35deg); }
     }
-    .container-settle { animation: container-settle 0.6s ease-in-out infinite -0.08s; }
-    @keyframes container-settle {
-      0%, 50%, 100% { transform: translateY(0); }
-      25%           { transform: translateY(-0.6px); }
-      75%           { transform: translateY(-0.3px); }
-    }
+    /* Ballast spray kicked up behind the trailing bogie (dust loop). */
     .spray         { animation: spray-kick 0.7s ease-out infinite; }
     .spray.b       { animation-delay: -0.3s; }
     .spray.c       { animation-delay: -0.5s; }
@@ -29,75 +30,17 @@
       100% { opacity: 0;    transform: translate(28px,-6px) scale(1.1); }
     }
 
-    /* ========== ORIGINAL VOCAB ========== */
-    .sheen { animation: sheen-sweep 5s ease-in-out infinite; transform-box: fill-box; }
-    @keyframes sheen-sweep {
-      0%   { transform: translateX(-300px); opacity: 0; }
-      30%  { opacity: 0.5; }
-      70%  { opacity: 0.5; }
-      100% { transform: translateX(300px); opacity: 0; }
-    }
-    .wordmark { animation: wordmark-breath 6s ease-in-out infinite; }
-    @keyframes wordmark-breath {
-      0%, 100% { opacity: 0.85; }
-      50%      { opacity: 1; }
-    }
-    .twist-lock { animation: twist-pulse 2.4s ease-in-out infinite; }
-    @keyframes twist-pulse {
-      0%, 100% { opacity: 0.85; }
-      50%      { opacity: 1; }
-    }
-    .reporting { animation: reporting-fade 7s ease-in-out infinite; }
-    @keyframes reporting-fade {
-      0%, 100% { opacity: 0.78; }
-      50%      { opacity: 0.95; }
-    }
-    .iso-code { animation: iso-fade 5s ease-in-out infinite; }
-    @keyframes iso-fade {
-      0%, 100% { opacity: 0.7; }
-      50%      { opacity: 0.9; }
-    }
-    .chevron { animation: chevron-pulse 2.2s ease-in-out infinite; }
-    @keyframes chevron-pulse {
-      0%, 100% { opacity: 0.3; }
-      50%      { opacity: 0.65; }
-    }
-    .sky-shimmer { animation: sky-drift 14s linear infinite; transform-box: fill-box; }
-    @keyframes sky-drift {
-      from { transform: translateX(-40px); opacity: 0.12; }
-      50%  { opacity: 0.22; }
-      to   { transform: translateX(40px); opacity: 0.12; }
-    }
-    .rail-line { stroke-dasharray: 40 0;
-                  animation: rail-scroll 1.2s linear infinite; }
-    @keyframes rail-scroll {
-      from { stroke-dashoffset: 0; }
-      to   { stroke-dashoffset: -100; }
-    }
-    .ballast { animation: ballast-drift 3s ease-in-out infinite; transform-box: fill-box; }
-    @keyframes ballast-drift {
-      0%, 100% { transform: translateX(0); opacity: 0.25; }
-      50%      { transform: translateX(-8px); opacity: 0.32; }
-    }
-    /* ========== BRAND LOCKUP ========== */
-    .brand-mark {
-      transform-box: fill-box; transform-origin: center;
-      animation: brand-pulse 3.6s ease-in-out infinite;
-    }
-    @keyframes brand-pulse {
-      0%, 100% { transform: scale(1);    opacity: 0.92; }
-      50%      { transform: scale(1.05); opacity: 1; }
-    }
-    .brand-word { animation: brand-word-breath 6s ease-in-out infinite; }
-    @keyframes brand-word-breath {
-      0%, 100% { opacity: 0.78; }
-      50%      { opacity: 1; }
-    }
+    /* Country stencil switch: renderer toggles visibility of one group.
+       Default = US (AAR plate / LBS). Set the others to display:inline
+       and this to none for CA (Transport Canada / kg) or MX (SCT / kg). */
+    .country-CA, .country-MX { display: none; }
+    .country-US { display: inline; }
 
     @media (prefers-reduced-motion: reduce) {
-      .rail-clack, .rail-yaw, .container-settle, .spray,
-      .sheen, .wordmark, .twist-lock, .reporting, .iso-code,
-      .chevron, .sky-shimmer, .rail-line, .ballast, .brand-mark, .brand-word { animation: none !important; }
+      /* Still the train: freeze the joint clack, yaw and dust spray.
+         (Wheel rotation is SMIL <animateTransform>; renderers that honor
+          reduced-motion pause SMIL declaratively — see wheels below.) */
+      .rail-clack, .rail-yaw, .spray { animation: none !important; }
     }
   
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
@@ -186,10 +129,22 @@
       <circle cx="520" cy="431" r="3"/><circle cx="620" cy="431" r="3"/><circle cx="720" cy="431" r="3"/>
       <circle cx="820" cy="431" r="3"/><circle cx="920" cy="431" r="3"/><circle cx="1020" cy="431" r="3"/>
     </g>
-    <!-- Reporting marks -->
+    <!-- Reporting marks (railcar initials + number are owner-assigned,
+         identical across borders under the AAR/UMLER interchange scheme). -->
     <text x="200" y="442" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="11" fill="#9B7FD9" opacity="0.85">EUSO 4429 · 89' FLATCAR</text>
-    <!-- Center stencil -->
-    <text x="600" y="442" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="11" fill="#FFFFFF" opacity="0.7" letter-spacing="3">CAPY 286,000 LBS</text>
+    <!-- ===== COUNTRY-SWITCHABLE CAPACITY STENCIL =====
+         Flatcars carry no hazmat placard when hauling machinery/outsize,
+         but the load-limit stencil unit differs by jurisdiction. The app
+         shows exactly one group (toggle class country-US / -CA / -MX). -->
+    <g class="country-US">
+      <text x="600" y="442" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="11" fill="#FFFFFF" opacity="0.7" letter-spacing="3">CAPY 286,000 LBS · AAR</text>
+    </g>
+    <g class="country-CA">
+      <text x="600" y="442" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="11" fill="#FFFFFF" opacity="0.7" letter-spacing="3">CAPY 129 700 kg · TC</text>
+    </g>
+    <g class="country-MX">
+      <text x="600" y="442" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="11" fill="#FFFFFF" opacity="0.7" letter-spacing="3">CAP 129 700 kg · SCT</text>
+    </g>
   </g>
 
   <!-- "Empty / available" placeholder above deck (subtle dashed outline showing where cargo would go) -->

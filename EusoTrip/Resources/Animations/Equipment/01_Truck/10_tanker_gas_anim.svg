@@ -109,6 +109,22 @@
       .sheen, .wordmark, .badge-e, .headlight-glow, .airlines, .chevron,
       .sky-shimmer, .ground-line, .brand-mark, .brand-word { animation: none !important; }
     }
+
+    /* ============ COUNTRY-SWITCHABLE PLACARD WORDING ============
+       Division 2.1 (flammable gas / UN1075) is UN-model-harmonised, so
+       the red diamond + flame + UN number are identical for US (49 CFR),
+       Canada (TDG) and Mexico (NOM-004-SCT). Only the worded text and
+       the side stencil units differ. The host renderer sets
+       data-country="US" | "MX" | "CA" on the root <svg>; default is US.
+       Selectors below show exactly one localisation group. */
+    .country-MX, .country-CA { display: none; }
+    .country-US { display: inline; }
+    svg[data-country="MX"] .country-US,
+    svg[data-country="MX"] .country-CA { display: none; }
+    svg[data-country="MX"] .country-MX { display: inline; }
+    svg[data-country="CA"] .country-US,
+    svg[data-country="CA"] .country-MX { display: none; }
+    svg[data-country="CA"] .country-CA { display: inline; }
   
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
     @media (prefers-color-scheme: dark) {
@@ -123,8 +139,11 @@
     }
   ]]></style>
 
-  <!-- 10 · Tanker · Compressed Gas · EquipmentKind: tankerGas · TRUCK / SCF
-       Pressurized cylindrical tank with bright orange color, gas cylinder banding. -->
+  <!-- 10 · Tanker · Flammable Gas (LPG / Propane) · EquipmentKind: tankerGas · TRUCK
+       MC 331 / TC 331 single-shell pressure vessel, WHITE-painted with
+       hemispherical heads. Division 2.1 FLAMMABLE GAS · UN1075 · 250 psig
+       MAWP. Placards UN-model-harmonised across US (49 CFR) / CA (TDG) /
+       MX (NOM-004-SCT); country-switchable wording via data-country. -->
   <defs>
         <linearGradient id="skyDark" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%"  stop-color="#0A0F1F"/>
@@ -140,17 +159,24 @@
     <linearGradient id="cab" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#2B85FF"/><stop offset="55%" stop-color="#6E4DFF"/><stop offset="100%" stop-color="#A726E8"/></linearGradient>
     <linearGradient id="cabRoof" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.55"/><stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient>
     <linearGradient id="windowGlass" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#BFD3FF"/><stop offset="100%" stop-color="#7E9DDB"/></linearGradient>
+    <!-- MC 331 LPG pressure vessel: WHITE painted exterior — industry
+         standard for heat reflection / solar-gain mitigation (CGA /
+         NFPA 58; solar gain on dark steel drives pressure rise inside a
+         ~250 PSI vessel). Matches the loading / unloading scenes. -->
     <linearGradient id="gasTank" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#FF9E6E"/>
-      <stop offset="50%" stop-color="#FF6B35"/>
-      <stop offset="100%" stop-color="#B83E0F"/>
+      <stop offset="0%"  stop-color="#FFFFFF"/>
+      <stop offset="22%" stop-color="#F4F6FA"/>
+      <stop offset="55%" stop-color="#DCE2EC"/>
+      <stop offset="85%" stop-color="#9FA8B8"/>
+      <stop offset="100%" stop-color="#6E7888"/>
     </linearGradient>
     <linearGradient id="gasSheen" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.5"/>
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.65"/>
       <stop offset="35%" stop-color="#FFFFFF" stop-opacity="0"/>
     </linearGradient>
-    <radialGradient id="gasCap" cx="0.3" cy="0.4" r="0.7">
-      <stop offset="0%" stop-color="#FFC9B0"/><stop offset="50%" stop-color="#FF6B35"/><stop offset="100%" stop-color="#9E2E0A"/>
+    <!-- Hemispherical front end cap (3D depth) — defining MC 331 feature -->
+    <radialGradient id="gasCap" cx="0.35" cy="0.45" r="0.72">
+      <stop offset="0%" stop-color="#FFFFFF"/><stop offset="55%" stop-color="#E1E5EC"/><stop offset="100%" stop-color="#7A8392"/>
     </radialGradient>
     <radialGradient id="rim" cx="0.5" cy="0.5" r="0.5"><stop offset="0%" stop-color="#5A606D"/><stop offset="80%" stop-color="#3A3F4A"/><stop offset="100%" stop-color="#1F2330"/></radialGradient>
     <filter id="rigShadow" x="-10%" y="-10%" width="120%" height="130%"><feGaussianBlur in="SourceAlpha" stdDeviation="6"/><feOffset dx="0" dy="4" result="offsetBlur"/><feComponentTransfer><feFuncA type="linear" slope="0.18"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
@@ -170,13 +196,14 @@
       <feGaussianBlur stdDeviation="3"/>
     </filter>
   </defs>
-  <g class="chassis-bob">
-
+  <!-- Static world: sky + ground stay put; only the rig bobs on its
+       suspension (the chassis-bob group below). -->
   <rect class="sky-bg" width="1200" height="600" fill="url(#sky)"/>
   <rect x="0" y="380" width="1200" height="70" fill="#FFFFFF" opacity="0.18"/>
   <line x1="60" y1="475" x2="1140" y2="475" stroke="#9B7FD9" stroke-width="4" stroke-dasharray="14 9" stroke-linecap="round" opacity="0.55"/>
-  <ellipse cx="640" cy="486" rx="430" ry="7" fill="#1A1F2E" opacity="0.13"/>
+  <ellipse class="ground-shadow" cx="640" cy="486" rx="430" ry="7" fill="#1A1F2E" opacity="0.13"/>
 
+  <g class="chassis-bob">
   <g filter="url(#rigShadow)">
     <path d="M 460 250 L 460 460 L 295 460 L 295 240 Q 295 230 305 230 L 450 230 Q 460 230 460 240 Z" fill="url(#cab)"/>
     <path d="M 295 240 L 295 460 L 195 460 L 195 320 Q 195 300 205 290 L 245 245 Q 255 235 265 235 L 290 235 Q 295 235 295 240 Z" fill="url(#cab)"/>
@@ -196,49 +223,99 @@
     <circle cx="377" cy="395" r="9" fill="#FFFFFF" opacity="0.85"/><text x="377" y="399" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="9" fill="#5B3FBF">E</text>
   </g>
 
-  <!-- ========== COMPRESSED GAS CYLINDER TANK ========== -->
+  <!-- ========== MC 331 LPG / PROPANE PRESSURE VESSEL ==========
+       A gas tanker in freight is an MC 331 / TC 331 single-shell
+       pressure vessel hauling FLAMMABLE GAS (Division 2.1, UN1075 LPG).
+       Defining real-world features: HEMISPHERICAL end caps, NO external
+       stiffener rings (single-shell — distinct from a petroleum MC 306),
+       WHITE-painted shell (NFPA 58 solar-gain mitigation), ~250 psig
+       MAWP, and a manway + relief cluster near the rear cap top. -->
   <g filter="url(#rigShadow)">
-    <!-- Tank body — pressure-rated cylinder -->
+    <!-- Tank barrel — white pressure-rated cylinder, hemispherical rear cap -->
     <path d="M 540 240 Q 540 225 560 225 L 1015 225 Q 1075 225 1075 320 Q 1075 415 1015 415 L 560 415 Q 540 415 540 400 Z"
           fill="url(#gasTank)"/>
-    <!-- Front cap -->
+    <!-- Hemispherical FRONT end cap (welded head) -->
     <path d="M 540 240 Q 480 245 480 320 Q 480 395 540 400 L 540 240 Z" fill="url(#gasCap)"/>
-    <!-- Top sheen -->
+    <!-- Top sheen highlight -->
     <path d="M 540 240 Q 540 225 560 225 L 1015 225 Q 1075 225 1075 320"
           fill="url(#gasSheen)" opacity="0.7"/>
-    <!-- Reinforcing rings -->
-    <g stroke="#9E2E0A" stroke-width="2.5" opacity="0.55">
-      <ellipse cx="610" cy="320" rx="3" ry="95"/>
-      <ellipse cx="700" cy="320" rx="3" ry="95"/>
-      <ellipse cx="790" cy="320" rx="3" ry="95"/>
-      <ellipse cx="880" cy="320" rx="3" ry="95"/>
-      <ellipse cx="970" cy="320" rx="3" ry="95"/>
+    <!-- Barrel-to-head weld seams (the ONLY circumferential lines on a
+         single-shell vessel — front cap joint + one mid-barrel girth weld) -->
+    <g stroke="#9FA8B8" stroke-width="1.4" opacity="0.5">
+      <path d="M 540 240 Q 540 320 540 400" fill="none"/>
+      <path d="M 800 226 Q 808 320 800 414" fill="none"/>
     </g>
-    <!-- Walkway -->
+    <!-- Rear walkway grating along the top of the barrel -->
     <rect x="555" y="223" width="475" height="6" rx="1" fill="#3A3F4A"/>
-    <!-- Multiple PRVs (pressure relief valves) — gas tankers have several -->
+    <!-- Manway + safety-relief valve cluster near the REAR cap top
+         (MC 331 carries its relief + product valves at the rear, not
+         spread evenly along the barrel) -->
     <g>
-      <rect x="650" y="205" width="10" height="20" fill="#1A1F2E"/><circle cx="655" cy="203" r="6" fill="#7A7F88"/>
-      <rect x="800" y="205" width="10" height="20" fill="#1A1F2E"/><circle cx="805" cy="203" r="6" fill="#7A7F88"/>
-      <rect x="950" y="205" width="10" height="20" fill="#1A1F2E"/><circle cx="955" cy="203" r="6" fill="#7A7F88"/>
+      <!-- Manway dome -->
+      <ellipse cx="960" cy="224" rx="16" ry="5" fill="#5A606D"/>
+      <rect x="950" y="214" width="20" height="11" rx="2" fill="#5A606D"/>
+      <!-- Internal-spring relief valves -->
+      <rect x="905" y="206" width="9" height="19" fill="#1A1F2E"/><circle cx="909.5" cy="204" r="5.5" fill="#7A7F88"/>
+      <rect x="930" y="208" width="9" height="17" fill="#1A1F2E"/><circle cx="934.5" cy="206" r="5"   fill="#7A7F88"/>
     </g>
-    <!-- Discharge / vapor recovery manifold -->
+    <!-- Rear product / vapor valve cabinet + discharge manifold -->
     <g><rect x="1075" y="350" width="22" height="10" fill="#3A3F4A"/><rect x="1075" y="375" width="22" height="10" fill="#3A3F4A"/><rect x="1075" y="395" width="22" height="10" fill="#3A3F4A"/></g>
-    <!-- Class 2 nonflammable gas placard (green diamond) — typical for compressed inert gas -->
-    <g transform="translate(680 320) rotate(45)">
-      <rect x="-25" y="-25" width="50" height="50" fill="#5BD89F" stroke="#000000" stroke-width="2"/>
-      <g transform="rotate(-45)">
-        <text y="-3" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="16" fill="#FFFFFF">2</text>
-        <text y="11" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="7" fill="#FFFFFF">NON-FLAM</text>
+
+    <!-- Large red PROPANE commodity stencil (industry convention for the
+         Class 2.1 hazard colour on a white tank) -->
+    <text x="700" y="312" text-anchor="middle"
+          font-family="Inter, system-ui, sans-serif" font-weight="900"
+          font-size="40" fill="#A6261A" letter-spacing="4">PROPANE</text>
+    <!-- DOT spec + capacity stencils (country-switchable units) -->
+    <text x="700" y="338" text-anchor="middle"
+          font-family="Inter, system-ui, sans-serif" font-weight="700"
+          font-size="11" fill="#3A3F4A" opacity="0.85" letter-spacing="1.6">DOT MC 331 · 250 PSIG MAWP</text>
+    <g class="country-US">
+      <text x="700" y="362" text-anchor="middle"
+            font-family="Inter, system-ui, sans-serif" font-weight="900"
+            font-size="13" fill="#1A1F2E" opacity="0.85" letter-spacing="1.6">WATER CAPACITY 11,500 GAL</text>
+    </g>
+    <g class="country-MX">
+      <text x="700" y="362" text-anchor="middle"
+            font-family="Inter, system-ui, sans-serif" font-weight="900"
+            font-size="13" fill="#1A1F2E" opacity="0.85" letter-spacing="1.6">CAPACIDAD AGUA 43,500 L</text>
+    </g>
+    <g class="country-CA">
+      <text x="700" y="362" text-anchor="middle"
+            font-family="Inter, system-ui, sans-serif" font-weight="900"
+            font-size="13" fill="#1A1F2E" opacity="0.85" letter-spacing="1.6">WATER CAPACITY 43,500 L</text>
+    </g>
+
+    <!-- ===== Class 2.1 FLAMMABLE GAS placard (RED diamond) =====
+         Per 49 CFR 172.532 / 172.504: red top half, white flame, the
+         word panel, UN1075 on the white lower half, class digit "2" at
+         the bottom point. UN-model-harmonised with CA TDG + MX NOM-004;
+         only the WORD differs by country (switchable groups). -->
+    <g transform="translate(520 388)">
+      <g transform="rotate(45)">
+        <rect x="-28" y="-28" width="56" height="56" fill="#FFFFFF" stroke="#1A1F2E" stroke-width="1.8"/>
+        <rect x="-25" y="-25" width="50" height="50" fill="none" stroke="#FFFFFF" stroke-width="0.8" opacity="0.85"/>
       </g>
+      <polygon points="0,-39.6 39.6,0 -39.6,0" fill="#D62F1A"/>
+      <line x1="-39.6" y1="0" x2="39.6" y2="0" stroke="#1A1F2E" stroke-width="0.9" opacity="0.6"/>
+      <!-- White flame symbol -->
+      <g transform="translate(0 -20) scale(1.1)" fill="#FFFFFF">
+        <path d="M 0 -8 C -3 -3 -6 0 -5 4 C -7 3 -8 0 -7 -2 C -9 0 -10 5 -7 8 C -9 7 -9 4 -9 7 C -7 10 -4 11 0 11 C 4 11 7 10 9 7 C 9 4 9 7 7 8 C 10 5 9 0 7 -2 C 8 0 7 3 5 4 C 6 0 3 -3 0 -8 Z"/>
+      </g>
+      <!-- Country-switchable worded text -->
+      <g class="country-US">
+        <text y="-3" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="5" fill="#FFFFFF" letter-spacing="0.3">FLAMMABLE GAS</text>
+      </g>
+      <g class="country-CA">
+        <text y="-5.5" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="4.4" fill="#FFFFFF" letter-spacing="0.2">FLAMMABLE GAS</text>
+        <text y="-0.8" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="3.7" fill="#FFFFFF" letter-spacing="0.2">GAZ INFLAMMABLE</text>
+      </g>
+      <g class="country-MX">
+        <text y="-3" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="5" fill="#FFFFFF" letter-spacing="0.3">GAS INFLAMABLE</text>
+      </g>
+      <text y="15" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="13" fill="#1A1F2E" letter-spacing="0.6">1075</text>
+      <text y="29" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="10" fill="#1A1F2E">2</text>
     </g>
-    <!-- UN number for compressed nitrogen -->
-    <g>
-      <rect x="850" y="320" width="80" height="22" rx="2" fill="#FFFFFF" stroke="#000000" stroke-width="1.5"/>
-      <text x="890" y="335" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="13" fill="#000000" letter-spacing="1">UN 1066</text>
-    </g>
-    <!-- Working pressure label -->
-    <text x="800" y="395" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="10" fill="#FFFFFF" opacity="0.85" letter-spacing="2">WP 3000 PSI · TC-DOT</text>
   </g>
 
   <g filter="url(#rigShadow)"><rect x="475" y="445" width="600" height="13" rx="2" fill="#1A1F2E"/></g>

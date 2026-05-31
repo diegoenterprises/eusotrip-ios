@@ -54,7 +54,24 @@ import SwiftUI
 
 struct MeCarrierScorecard: View {
     @Environment(\.palette) var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var store = CarrierScorecardStore()
+
+    // MARK: - BASIC timeline scrubber reveal
+    //
+    // A single normalized reveal (0 → 1) drives every BASIC percentile
+    // track in lockstep: the gradient fill and the scrubber-indicator
+    // knob both ride it. Each row multiplies its OWN real fraction
+    // (`percentile / 100`) by `reveal`, so the motion is a pure reveal
+    // of the live FMCSA percentile — the resting position of every
+    // scrubber is always the real data, never a decorative target.
+    // Reduce-motion pins `reveal` at 1 so the final/static state shows
+    // with no animation.
+    @State private var reveal: CGFloat = 0
+    /// The percentile signature the reveal was last armed for. A refresh
+    /// that changes any real percentile replays the scrub; an identical
+    /// refresh is a no-op (no re-snap).
+    @State private var armedSignature: String = ""
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -287,6 +304,38 @@ struct MeCarrierScorecard: View {
                 }
             }
         }
+        // Arm / replay the shared scrubber reveal keyed to the REAL
+        // percentiles. New data replays the scrub to the live positions;
+        // identical data is a no-op.
+        .onAppear { armReveal(for: o.basics) }
+        .onChange(of: percentileSignature(o.basics)) { _, _ in armReveal(for: o.basics) }
+    }
+
+    /// Stable signature of the live percentiles. Changes only when a
+    /// real value moves, so the reveal replays exactly when the data
+    /// it visualizes does.
+    private func percentileSignature(_ basics: [CsaScoresAPI.BasicCategory]) -> String {
+        basics.map { "\($0.category):\(Int($0.percentile.rounded()))" }.joined(separator: "|")
+    }
+
+    /// Drive the shared BASIC-timeline reveal 0 → 1 on the material
+    /// decelerate curve `cubic-bezier(0.4, 0, 0.2, 1)`. Every row's
+    /// fill + scrubber knob multiplies its own real `percentile / 100`
+    /// fraction by this reveal, so one eased scrub animates them all in
+    /// lockstep to their live positions. Reduce-motion settles to the
+    /// final state with no motion.
+    private func armReveal(for basics: [CsaScoresAPI.BasicCategory]) {
+        let sig = percentileSignature(basics)
+        guard armedSignature != sig else { return }
+        armedSignature = sig
+        guard !reduceMotion else {
+            reveal = 1
+            return
+        }
+        reveal = 0
+        withAnimation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.7)) {
+            reveal = 1
+        }
     }
 
     private func basicRow(_ basic: CsaScoresAPI.BasicCategory) -> some View {
@@ -316,21 +365,41 @@ struct MeCarrierScorecard: View {
                         .foregroundStyle(palette.textTertiary)
                 }
                 GeometryReader { geo in
+                    // The scrubber rides its own REAL fraction
+                    // (`percentile / 100`) scaled by the shared reveal,
+                    // so the resting position is always the live FMCSA
+                    // percentile. Reduce-motion pins reveal at 1.
+                    let scrubbed = fraction * (reduceMotion ? 1 : reveal)
+                    let headX = geo.size.width * scrubbed
+                    let fillStyle: AnyShapeStyle = basic.alert
+                        ? AnyShapeStyle(Brand.warning)
+                        : AnyShapeStyle(LinearGradient.diagonal)
                     ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 2)
                             .fill(palette.tintNeutral.opacity(0.4))
                         RoundedRectangle(cornerRadius: 2)
-                            .fill(basic.alert ? AnyShapeStyle(Brand.warning) : AnyShapeStyle(LinearGradient.diagonal))
-                            .frame(width: geo.size.width * fraction)
-                        // Threshold marker
+                            .fill(fillStyle)
+                            .frame(width: headX)
+                        // Threshold marker — pinned to the REAL FMCSA
+                        // cutoff (65 / 80), independent of the reveal.
                         let tFrac = Double(basic.threshold) / 100.0
                         Rectangle()
                             .fill(palette.textTertiary.opacity(0.7))
                             .frame(width: 1, height: 8)
                             .offset(x: geo.size.width * tFrac)
+                        // Scrubber indicator — the knob at the head of
+                        // the fill marking the carrier's position on the
+                        // 0–100 percentile timeline.
+                        Circle()
+                            .fill(fillStyle)
+                            .frame(width: 8, height: 8)
+                            .overlay(
+                                Circle().strokeBorder(palette.bgCard, lineWidth: 1.5)
+                            )
+                            .offset(x: max(0, headX - 4))
                     }
                 }
-                .frame(height: 4)
+                .frame(height: 8)
                 HStack(spacing: Space.s2) {
                     if basic.alert {
                         Text("FLAGGED")

@@ -49,9 +49,10 @@
        Tri-clamp ISO 2852 / ASME-BPE sanitary fittings throughout.
        ============================================================ */
 
-    /* Tri-clamp band tightens during connect phase */
+    /* Tri-clamp band tightens during connect phase
+       (decel curve cubic-bezier(0.4,0,0.2,1) — swings closed then settles). */
     .clamp-tighten { transform-box: fill-box; transform-origin: center;
-                     animation: clamp-tighten 6.5s ease-in-out infinite; }
+                     animation: clamp-tighten 6.5s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes clamp-tighten {
       0%, 4%   { transform: rotate(0deg);   opacity: 0.7; }
       14%      { transform: rotate(48deg);  opacity: 1; }
@@ -69,36 +70,38 @@
 
     /* Sanitary hose seat-in: gentle scale on connect, then steady */
     .hose-seat { transform-box: fill-box; transform-origin: 442px 406px;
-                 animation: hose-seat 6.5s ease-in-out infinite; }
+                 animation: hose-seat 6.5s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes hose-seat {
       0%, 14%  { transform: scale(0.96); opacity: 0.7; }
       24%      { transform: scale(1.02); opacity: 1; }
       32%, 100%{ transform: scale(1);    opacity: 0.95; }
     }
 
-    /* TRAILER side sight gauge: milk level FALLS as truck empties */
+    /* TRAILER side sight gauge: milk level FALLS as truck empties.
+       Transfer starts at 32% — AFTER hose-seat settles — so the truck
+       level and silo level move in lock-step, both gated on the made path. */
     .truck-level-fall { transform-box: fill-box; transform-origin: bottom;
                         animation: truck-level-fall 6.5s ease-in-out infinite; }
     @keyframes truck-level-fall {
-      0%, 30%   { transform: scaleY(0.92); }
+      0%, 32%   { transform: scaleY(0.92); }
       88%, 100% { transform: scaleY(0.10); }
     }
     .truck-meniscus { animation: truck-meniscus 6.5s ease-in-out infinite; }
     @keyframes truck-meniscus {
-      0%, 30%   { transform: translateY(10px);  opacity: 0.95; }
+      0%, 32%   { transform: translateY(10px);  opacity: 0.95; }
       88%, 100% { transform: translateY(126px); opacity: 0.9; }
     }
 
-    /* SILO sight gauge: milk level RISES as silo fills */
+    /* SILO sight gauge: milk level RISES as silo fills (lock-step with truck) */
     .silo-level-rise { transform-box: fill-box; transform-origin: bottom;
                        animation: silo-level-rise 6.5s ease-in-out infinite; }
     @keyframes silo-level-rise {
-      0%, 30%   { transform: scaleY(0.18); }
+      0%, 32%   { transform: scaleY(0.18); }
       88%, 100% { transform: scaleY(0.86); }
     }
     .silo-meniscus { animation: silo-meniscus 6.5s ease-in-out infinite; }
     @keyframes silo-meniscus {
-      0%, 30%   { transform: translateY(118px); opacity: 0.85; }
+      0%, 32%   { transform: translateY(118px); opacity: 0.85; }
       88%, 100% { transform: translateY(20px);  opacity: 0.95; }
     }
 
@@ -111,8 +114,8 @@
     }
     .pump-fade { animation: pump-fade 6.5s ease-in-out infinite; }
     @keyframes pump-fade {
-      0%, 28%   { opacity: 0.35; }
-      32%, 92%  { opacity: 1; }
+      0%, 30%   { opacity: 0.35; }
+      34%, 92%  { opacity: 1; }
       100%      { opacity: 0.4; }
     }
 
@@ -131,9 +134,10 @@
       from { stroke-dashoffset: 0; }
       to   { stroke-dashoffset: -32; }
     }
+    /* Flow dashes only appear once the path is made (≥32%). */
     .product-flow-fade { animation: product-flow-fade 6.5s ease-in-out infinite; }
     @keyframes product-flow-fade {
-      0%, 30%   { opacity: 0; }
+      0%, 32%   { opacity: 0; }
       45%, 90%  { opacity: 0.85; }
       100%      { opacity: 0; }
     }
@@ -142,7 +146,7 @@
     .vol-bar { transform-box: fill-box; transform-origin: left center;
                animation: vol-bar 6.5s ease-in-out infinite; }
     @keyframes vol-bar {
-      0%, 30%   { transform: scaleX(0.05); }
+      0%, 32%   { transform: scaleX(0.05); }
       88%, 100% { transform: scaleX(0.92); }
     }
 
@@ -970,11 +974,28 @@
           font-weight="900" font-size="22" fill="#1B7A48"
           letter-spacing="2.8">&#183; MILK &#183;</text>
   </g>
+  <!-- Volume-unit stencil is the only country-relevant marking (food-grade
+       milk is not hazmat). Renderer shows ONE .country-XX sibling (default
+       US gallons); MX/CA switch to litres (6,200 US gal ≈ 23,470 L). -->
   <g>
-    <text x="610" y="416"
-          font-family="Inter, system-ui, sans-serif"
-          font-weight="700" font-size="8" fill="#3A3F4A" opacity="0.85"
-          letter-spacing="1.2">FOOD GRADE LIQUID &#183; 6,200 GAL</text>
+    <g class="country-US">
+      <text x="610" y="416"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="8" fill="#3A3F4A" opacity="0.85"
+            letter-spacing="1.2">FOOD GRADE LIQUID &#183; 6,200 GAL</text>
+    </g>
+    <g class="country-MX" style="display:none">
+      <text x="610" y="416"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="8" fill="#3A3F4A" opacity="0.85"
+            letter-spacing="1.2">L&#205;QUIDO GRADO ALIMENTICIO &#183; 23,470 L</text>
+    </g>
+    <g class="country-CA" style="display:none">
+      <text x="610" y="416"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="8" fill="#3A3F4A" opacity="0.85"
+            letter-spacing="1.2">FOOD GRADE LIQUID &#183; 23,470 L</text>
+    </g>
   </g>
 
   <!-- 3A SANITARY stamp (left) -->

@@ -33,15 +33,30 @@
       50%      { opacity: 0.65; }
     }
     /* ============ CARGO HANDLING MOTION ============ */
-    .forklift-cycle { animation: forklift-cycle 6s ease-in-out infinite; }
+    /* TRUE dry-van dock loading cycle (6s loop):
+       1. Forklift drives forks-first INTO the trailer carrying a pallet
+          (enters from the dock at right, decelerates as it reaches the rear wall).
+       2. Brief dwell while the mast lowers and the pallet is set down — this is
+          when the .fork-load fades out (transferred to the growing trailer stack).
+       3. Forklift REVERSES back out EMPTY onto the dock and resets off-frame.
+       The cubic-bezier decel on entry + accel on exit reads like a real lift truck.
+       0%/100% endpoints match (translateX 280px, opacity 0) for a seamless loop. */
+    .forklift-cycle { animation: forklift-cycle 6s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes forklift-cycle {
       0%   { transform: translateX(280px); opacity: 0; }
-      6%   { opacity: 1; }
-      30%  { transform: translateX(0);     opacity: 1; }
-      36%  { opacity: 0; }
-      60%  { transform: translateX(0);     opacity: 0; }
-      66%  { transform: translateX(280px); opacity: 0; }
-      100% { transform: translateX(280px); opacity: 0; }
+      8%   { transform: translateX(250px); opacity: 1; }   /* fade-in just inside the dock lip */
+      34%  { transform: translateX(0);     opacity: 1; }   /* arrived forks-deep at rear wall */
+      46%  { transform: translateX(0);     opacity: 1; }   /* dwell: mast lowers, pallet set down */
+      72%  { transform: translateX(250px); opacity: 1; }   /* reversing back out empty */
+      80%  { transform: translateX(280px); opacity: 0; }   /* fade-out at dock lip */
+      100% { transform: translateX(280px); opacity: 0; }   /* park off-frame, seamless reset */
+    }
+    /* The on-fork pallet rides in, then fades during the deposit dwell so the
+       forklift backs out empty — the freight "becomes" the growing trailer stack. */
+    .fork-load { animation: fork-load 6s linear infinite; }
+    @keyframes fork-load {
+      0%, 40%   { opacity: 1; }
+      46%, 100% { opacity: 0; }
     }
 
     .wheel-spin   { animation: wheel-spin 1.4s linear infinite;
@@ -49,13 +64,15 @@
 
     @keyframes wheel-spin   { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
 
-    .pallet-stack-grow { animation: pallet-stack-grow 6s linear infinite;
+    /* Trailer stack grows pallet-by-pallet, settling at full just before the
+       forklift backs out — gentle decel (no linear pop) per the motion rubric. */
+    .pallet-stack-grow { animation: pallet-stack-grow 6s cubic-bezier(0.4,0,0.2,1) infinite;
                          transform-box: fill-box; transform-origin: bottom; }
     @keyframes pallet-stack-grow {
       0%, 12%   { transform: scaleY(0);    opacity: 0.2; }
-      30%       { transform: scaleY(0.25); opacity: 0.85; }
-      55%       { transform: scaleY(0.55); opacity: 0.95; }
-      80%, 100% { transform: scaleY(1);    opacity: 1; }
+      34%       { transform: scaleY(0.5);  opacity: 0.9; }
+      48%       { transform: scaleY(1);    opacity: 1; }   /* full right after deposit dwell */
+      100%      { transform: scaleY(1);    opacity: 1; }
     }
 
     .beacon-flash { animation: beacon-flash 1.2s ease-in-out infinite;
@@ -77,6 +94,7 @@
       .brand-word,
       .chevron,
       .forklift-cycle,
+      .fork-load,
       .load-pill,
       .pallet-stack-grow,
       .progress-fill,
@@ -409,10 +427,31 @@
   <text x="69" y="290" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
         font-weight="900" font-size="3.6" fill="#1A1F2E" letter-spacing="0.3"
         transform="rotate(-90 69 290)" opacity="0.85" data-bind="trailer_id">EUSU 12345</text>
-  <!-- USDOT + carrier on inner RIGHT door panel -->
-  <text x="331" y="290" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
-        font-weight="900" font-size="3.6" fill="#1A1F2E" letter-spacing="0.3"
-        transform="rotate(-90 331 290)" opacity="0.85" data-bind="carrier_dot">USDOT 1234567</text>
+  <!-- Carrier registration stencil on inner RIGHT door panel.
+       COUNTRY-SWITCHABLE: a general-freight dry van carries no hazmat placard, but
+       the door registration number is jurisdiction-specific. The renderer shows ONE
+       of these groups by route country and hides the others (display:none):
+         • country-US  → USDOT number (FMCSA, 49 CFR 390.21)        [default visible]
+         • country-MX  → SCT / SICT federal permit (NOM-068-SCT-2)
+         • country-CA  → NSC / CVOR safety number (National Safety Code)
+       Selection: set the unwanted groups to display:none (or toggle a `.country-XX`
+       visibility rule) keyed off shipment.routeCountry; data-bind="carrier_dot"
+       feeds the live number into whichever group is shown. -->
+  <g class="country-US" data-country="US">
+    <text x="331" y="290" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="900" font-size="3.6" fill="#1A1F2E" letter-spacing="0.3"
+          transform="rotate(-90 331 290)" opacity="0.85" data-bind="carrier_dot">USDOT 1234567</text>
+  </g>
+  <g class="country-MX" data-country="MX" style="display:none">
+    <text x="331" y="290" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="900" font-size="3.6" fill="#1A1F2E" letter-spacing="0.3"
+          transform="rotate(-90 331 290)" opacity="0.85" data-bind="carrier_sct">SCT 123-4567</text>
+  </g>
+  <g class="country-CA" data-country="CA" style="display:none">
+    <text x="331" y="290" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="900" font-size="3.6" fill="#1A1F2E" letter-spacing="0.3"
+          transform="rotate(-90 331 290)" opacity="0.85" data-bind="carrier_nsc">NSC 1234567</text>
+  </g>
   <text x="331" y="380" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
         font-weight="900" font-size="3.6" fill="#1A1F2E" letter-spacing="0.3"
         transform="rotate(-90 331 380)" opacity="0.85">EUSOTRIP LOGISTICS</text>
@@ -600,7 +639,8 @@
       <!-- Fork tip taper -->
       <polygon points="-58,-8 -62,-7 -62,-5 -58,-5" fill="#3A3F4A"/>
 
-      <!-- ===== Pallet on forks (shrink-wrapped GMA) ===== -->
+      <!-- ===== Pallet on forks (shrink-wrapped GMA) — fades on deposit ===== -->
+      <g class="fork-load">
       <!-- Pallet wood base -->
       <rect x="-56" y="-13" width="44" height="5" fill="url(#palletWood)" stroke="#7A5A40" stroke-width="0.4"/>
       <line x1="-50" y1="-13" x2="-50" y2="-8" stroke="#5A4028" stroke-width="0.3"/>
@@ -612,6 +652,7 @@
       <rect x="-54" y="-28" width="40" height="0.8" fill="#FFFFFF" opacity="0.35"/>
       <line x1="-54" y1="-40" x2="-54" y2="-13" stroke="#FFFFFF" stroke-width="0.4" opacity="0.4"/>
       <line x1="-14" y1="-40" x2="-14" y2="-13" stroke="#FFFFFF" stroke-width="0.4" opacity="0.4"/>
+      </g>
 
       <!-- ===== Wheels: large drive wheels at front (under mast), smaller steer at rear ===== -->
       <g transform="translate(-3 0)"><g class="wheel-spin"><circle cx="0" cy="0" r="11" fill="#1A1A1A"/><circle cx="0" cy="0" r="6" fill="url(#rim)"/><line x1="0" y1="-7" x2="0" y2="-3" stroke="#3A3F4A" stroke-width="1.4"/><line x1="6" y1="-2" x2="3" y2="-1" stroke="#3A3F4A" stroke-width="1.4"/><line x1="0" y1="7" x2="0" y2="3" stroke="#3A3F4A" stroke-width="1.4"/><line x1="-6" y1="-2" x2="-3" y2="-1" stroke="#3A3F4A" stroke-width="1.4"/></g></g>
@@ -1293,6 +1334,8 @@
     <rect class="progress-fill" x="60" y="555" width="540" height="6" rx="3"
           fill="#0AC2C2"
           style="--load-progress: 0.5;"/>
+    <!-- weight_label is country-localized by the renderer: US "45,000 LBS",
+         MX/CA "20,412 kg" — the bind supplies the unit, no per-country group needed. -->
     <text x="1140" y="548" text-anchor="end"
           font-family="Inter, system-ui, sans-serif"
           font-weight="700" font-size="10" letter-spacing="1.4"

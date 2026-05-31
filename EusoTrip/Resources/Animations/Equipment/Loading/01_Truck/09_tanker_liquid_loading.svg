@@ -46,9 +46,11 @@
        NO vapor recovery (non-flammable, non-volatile).
        ============================================================ */
 
-    /* Tri-clamp band tightens during connect phase */
+    /* Tri-clamp band tightens during connect phase
+       (decel curve cubic-bezier(0.4,0,0.2,1) — the band swings closed
+        fast then settles, like a real hand torquing the wing-nut). */
     .clamp-tighten { transform-box: fill-box; transform-origin: center;
-                     animation: clamp-tighten 6.5s ease-in-out infinite; }
+                     animation: clamp-tighten 6.5s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes clamp-tighten {
       0%, 4%   { transform: rotate(0deg);   opacity: 0.7; }
       14%      { transform: rotate(48deg);  opacity: 1; }
@@ -66,23 +68,25 @@
 
     /* Sanitary hose seat-in: gentle scale on connect, then steady */
     .hose-seat { transform-box: fill-box; transform-origin: 442px 406px;
-                 animation: hose-seat 6.5s ease-in-out infinite; }
+                 animation: hose-seat 6.5s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes hose-seat {
       0%, 14%  { transform: scale(0.96); opacity: 0.7; }
       24%      { transform: scale(1.02); opacity: 1; }
       32%, 100%{ transform: scale(1);    opacity: 0.95; }
     }
 
-    /* Milk fluid level rise in side sight gauge */
+    /* Milk fluid level rise in side sight gauge.
+       Fill begins at 32% — AFTER the hose has fully seated (hose-seat
+       settles at 32%) so product never appears before the path is made. */
     .level-rise { transform-box: fill-box; transform-origin: bottom;
                   animation: level-rise 6.5s ease-in-out infinite; }
     @keyframes level-rise {
-      0%, 30%   { transform: scaleY(0.10); }
+      0%, 32%   { transform: scaleY(0.10); }
       88%, 100% { transform: scaleY(0.92); }
     }
     .level-meniscus { animation: level-meniscus 6.5s ease-in-out infinite; }
     @keyframes level-meniscus {
-      0%, 30%   { transform: translateY(126px); opacity: 0.9; }
+      0%, 32%   { transform: translateY(126px); opacity: 0.9; }
       88%, 100% { transform: translateY(10px);  opacity: 0.95; }
     }
 
@@ -98,7 +102,7 @@
     .vol-bar { transform-box: fill-box; transform-origin: left center;
                animation: vol-bar 6.5s ease-in-out infinite; }
     @keyframes vol-bar {
-      0%, 30%   { transform: scaleX(0.05); }
+      0%, 32%   { transform: scaleX(0.05); }
       88%, 100% { transform: scaleX(0.92); }
     }
 
@@ -709,12 +713,30 @@
           letter-spacing="2.8">&#183; MILK &#183;</text>
   </g>
 
-  <!-- Sub-stencils (small, on cladding below large stencil) -->
+  <!-- Sub-stencils (small, on cladding below large stencil).
+       Food-grade milk is NOT hazmat-regulated, so there are no DOT/SCT/TDG
+       placards here. The only country-relevant marking is the VOLUME UNIT.
+       The renderer shows ONE of the sibling .country-XX groups (default US,
+       gallons); MX/CA switch to litres (6,200 US gal ≈ 23,470 L). -->
   <g>
-    <text x="610" y="416"
-          font-family="Inter, system-ui, sans-serif"
-          font-weight="700" font-size="8" fill="#3A3F4A" opacity="0.85"
-          letter-spacing="1.2">FOOD GRADE LIQUID &#183; 6,200 GAL</text>
+    <g class="country-US">
+      <text x="610" y="416"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="8" fill="#3A3F4A" opacity="0.85"
+            letter-spacing="1.2">FOOD GRADE LIQUID &#183; 6,200 GAL</text>
+    </g>
+    <g class="country-MX" style="display:none">
+      <text x="610" y="416"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="8" fill="#3A3F4A" opacity="0.85"
+            letter-spacing="1.2">L&#205;QUIDO GRADO ALIMENTICIO &#183; 23,470 L</text>
+    </g>
+    <g class="country-CA" style="display:none">
+      <text x="610" y="416"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="8" fill="#3A3F4A" opacity="0.85"
+            letter-spacing="1.2">FOOD GRADE LIQUID &#183; 23,470 L</text>
+    </g>
   </g>
 
   <!-- 3A SANITARY STANDARDS stamp (left side, near front cap) -->

@@ -93,11 +93,17 @@
       0%, 100% { opacity: 0.78; }
       50%      { opacity: 1; }
     }
+    /* Wheel spin driven by CSS (not SMIL) so prefers-reduced-motion can still it.
+       Linear + continuous = correct for a rolling wheel; origin at each wheel hub. */
+    .wheel-spin { transform-box: fill-box; transform-origin: center;
+                  animation: wheel-spin 1.4s linear infinite; }
+    @keyframes wheel-spin { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
 
     @media (prefers-reduced-motion: reduce) {
       .rail-clack, .rail-yaw, .container-settle, .spray,
       .sheen, .wordmark, .twist-lock, .reporting, .iso-code,
-      .chevron, .sky-shimmer, .rail-line, .ballast, .brand-mark, .brand-word { animation: none !important; }
+      .chevron, .sky-shimmer, .rail-line, .ballast, .brand-mark, .brand-word,
+      .wheel-spin { animation: none !important; }
     }
   
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
@@ -223,45 +229,39 @@
   </g>
   <g filter="url(#rigShadow)"><rect x="160" y="468" width="100" height="22" rx="3" fill="#3A3F4A"/><rect x="160" y="468" width="100" height="3" fill="#FFFFFF" opacity="0.35"/></g>
   <g transform="translate(180 498)">
-    <g>
+    <g class="wheel-spin">
       <circle cx="0" cy="0" r="22" fill="#1A1A1A"/>
       <circle cx="0" cy="0" r="14" fill="url(#rim)"/>
       <circle cx="0" cy="0" r="5" fill="#7A7F88"/>
       <ellipse cx="-4" cy="-7" rx="4" ry="2" fill="#FFFFFF" opacity="0.35"/>
-      <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.4s" repeatCount="indefinite"/>
     </g>
   </g>
   <g transform="translate(240 498)">
-    <g>
+    <g class="wheel-spin">
       <circle cx="0" cy="0" r="22" fill="#1A1A1A"/>
       <circle cx="0" cy="0" r="14" fill="url(#rim)"/>
       <circle cx="0" cy="0" r="5" fill="#7A7F88"/>
       <ellipse cx="-4" cy="-7" rx="4" ry="2" fill="#FFFFFF" opacity="0.35"/>
-      <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.4s" repeatCount="indefinite"/>
     </g>
   </g>
   <g filter="url(#rigShadow)"><rect x="940" y="468" width="100" height="22" rx="3" fill="#3A3F4A"/><rect x="940" y="468" width="100" height="3" fill="#FFFFFF" opacity="0.35"/></g>
   <g transform="translate(960 498)">
-    <g>
+    <g class="wheel-spin">
       <circle cx="0" cy="0" r="22" fill="#1A1A1A"/>
       <circle cx="0" cy="0" r="14" fill="url(#rim)"/>
       <circle cx="0" cy="0" r="5" fill="#7A7F88"/>
       <ellipse cx="-4" cy="-7" rx="4" ry="2" fill="#FFFFFF" opacity="0.35"/>
-      <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.4s" repeatCount="indefinite"/>
     </g>
   </g>
   <g transform="translate(1020 498)">
-    <g>
+    <g class="wheel-spin">
       <circle cx="0" cy="0" r="22" fill="#1A1A1A"/>
       <circle cx="0" cy="0" r="14" fill="url(#rim)"/>
       <circle cx="0" cy="0" r="5" fill="#7A7F88"/>
       <ellipse cx="-4" cy="-7" rx="4" ry="2" fill="#FFFFFF" opacity="0.35"/>
-      <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="1.4s" repeatCount="indefinite"/>
     </g>
   </g>
-  
-  <g opacity="0.75">
-  </g>
+
   <!-- ========== BALLAST SPRAY behind trailing bogie ========== -->
   <g filter="url(#softBlur)">
     <ellipse class="spray"   cx="1030" cy="500" rx="6" ry="3" fill="url(#dustCloud)"/>

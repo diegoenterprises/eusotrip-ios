@@ -75,6 +75,7 @@ private struct RouteSegment578: Decodable, Identifiable {
 
 private struct RailRouteWeatherBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let railId: String
 
     @State private var alerts: [WeatherAlert578] = []
@@ -91,6 +92,29 @@ private struct RailRouteWeatherBody: View {
         if alerts.contains(where: { ($0.severity ?? "").lowercased() == "severe"  }) { return "SEVERE"  }
         if alerts.contains(where: { ($0.severity ?? "").lowercased() == "moderate" }) { return "MODERATE" }
         return "CLEAR"
+    }
+
+    /// Real lifecycle fraction (0…1) of the corridor that has been *traveled* by the
+    /// shipments routed on it, averaged over `getImpactedLoads`. Each load's status maps
+    /// to its position along the transcon arc (en_route_pickup → at_delivery). This is the
+    /// completed segment of the route — bound to live load lifecycle, never decorative.
+    /// With no impacted loads, the corridor reads "departed" (small head) so the dash flow
+    /// still communicates an active, monitored route.
+    private var routeProgress: Double {
+        guard !impacted.isEmpty else { return 0.06 }
+        let frac = impacted.map { lifecycleFraction($0.status) }.reduce(0, +) / Double(impacted.count)
+        return min(0.97, max(0.04, frac))
+    }
+
+    private func lifecycleFraction(_ status: String?) -> Double {
+        switch (status ?? "").lowercased() {
+        case "en_route_pickup": return 0.08
+        case "at_pickup":       return 0.18
+        case "in_transit":      return 0.58
+        case "at_delivery":     return 0.95
+        case "delivered":       return 1.0
+        default:                return 0.40
+        }
     }
 
     // MARK: Body
@@ -152,15 +176,24 @@ private struct RailRouteWeatherBody: View {
     private var mapHero: some View {
         let riskColor: Color = overallRisk == "SEVERE" || overallRisk == "EXTREME" ? Brand.danger
             : overallRisk == "MODERATE" ? Brand.warning : Brand.success
+        let progress = routeProgress
         return ZStack(alignment: .topLeading) {
-            Canvas { ctx, size in
+            // Continuous 60fps clock for the route dash flow. LINEAR is correct here:
+            // the marching-ants dash on the *remaining* corridor is a perpetual loop, not
+            // a one-shot UI beat. `paused: reduceMotion` freezes the phase to a static state.
+            TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: reduceMotion)) { timeline in
+              Canvas { ctx, size in
                 let w = size.width; let h = size.height
+                // Seconds since reference; one full dash cycle (period = dash+gap = 8pt) every ~1.1s.
+                let t = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate
+                let dashPeriod = 8.0
+                let phase = CGFloat((t / 1.1 * dashPeriod).truncatingRemainder(dividingBy: dashPeriod))
 
                 // Background
                 ctx.fill(Path(CGRect(origin: .zero, size: size)),
                          with: .linearGradient(
-                            Gradient(colors: [Color(hex: 0xF4F5F7),
-                                              Color(hex: 0xE9ECF0)]),
+                            Gradient(colors: [Color(red: 0.957, green: 0.961, blue: 0.969),
+                                              Color(red: 0.914, green: 0.925, blue: 0.941)]),
                             startPoint: .zero, endPoint: CGPoint(x: 0, y: h)))
 
                 // Subtle grid
@@ -174,20 +207,46 @@ private struct RailRouteWeatherBody: View {
                 // Route bezier (Long Beach → Chicago, W→E transcon arc)
                 let ox = w * 0.095; let oy = h * 0.85
                 let dx = w * 0.940; let dy = h * 0.24
-                var route = Path()
-                route.move(to: CGPoint(x: ox, y: oy))
-                route.addCurve(to: CGPoint(x: w * 0.45, y: h * 0.44),
-                               control1: CGPoint(x: w * 0.30, y: h * 0.72),
-                               control2: CGPoint(x: w * 0.38, y: h * 0.56))
-                route.addCurve(to: CGPoint(x: dx, y: dy),
-                               control1: CGPoint(x: w * 0.72, y: h * 0.34),
-                               control2: CGPoint(x: w * 0.83, y: h * 0.34))
-                ctx.stroke(route,
-                           with: .linearGradient(
-                            Gradient(colors: [Brand.blue,
-                                              Brand.magenta]),
-                            startPoint: CGPoint(x: ox, y: oy), endPoint: CGPoint(x: dx, y: dy)),
-                           style: StrokeStyle(lineWidth: 3.5, lineCap: .round, dash: [1, 7]))
+                let route = Self.routePath(in: size)
+                let routeGrad: GraphicsContext.Shading = .linearGradient(
+                    Gradient(colors: [Color(red: 0.082, green: 0.451, blue: 1.0),
+                                      Color(red: 0.745, green: 0.004, blue: 1.0)]),
+                    startPoint: CGPoint(x: ox, y: oy), endPoint: CGPoint(x: dx, y: dy))
+
+                // Remaining (not-yet-traveled) corridor: flowing dashes toward the destination.
+                // dashPhase decreases with time so the ants march origin→dest (travel direction).
+                if progress < 0.999 {
+                    let remaining = route.trimmedPath(from: progress, to: 1)
+                    ctx.stroke(remaining,
+                               with: .color(Color(red: 0.082, green: 0.451, blue: 1.0).opacity(0.30)),
+                               style: StrokeStyle(lineWidth: 3.5, lineCap: .round,
+                                                  dash: [1, 7], dashPhase: -phase))
+                }
+                // Traveled segment = REAL load-lifecycle progress along the corridor (solid).
+                let traveled = route.trimmedPath(from: 0, to: progress)
+                if progress > 0.001 {
+                    ctx.stroke(traveled, with: routeGrad,
+                               style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
+                }
+
+                // Live position marker — current fleet position at the real progress fraction.
+                // Anchored to the traveled-trim endpoint (length-parameterized) so it lands
+                // exactly on the solid/dashed boundary. Soft pulse ring breathes only when
+                // motion is allowed; static dot otherwise.
+                let pos = traveled.currentPoint ?? Self.pointOnRoute(progress, in: size)
+                if !reduceMotion {
+                    let pulse = 0.5 + 0.5 * sin(t * 2.2)              // 0…1, ~2.85s breath
+                    let ringR = 7.0 + pulse * 5.0
+                    ctx.stroke(Circle().path(in: CGRect(x: pos.x - ringR, y: pos.y - ringR,
+                                                        width: ringR * 2, height: ringR * 2)),
+                               with: .color(Color(red: 0.745, green: 0.004, blue: 1.0)
+                                                .opacity(0.45 * (1 - pulse))),
+                               lineWidth: 1.6)
+                }
+                ctx.fill(Circle().path(in: CGRect(x: pos.x - 6, y: pos.y - 6, width: 12, height: 12)),
+                         with: .color(.white))
+                ctx.fill(Circle().path(in: CGRect(x: pos.x - 4, y: pos.y - 4, width: 8, height: 8)),
+                         with: routeGrad)
 
                 // Origin circle (gradient filled)
                 let origPt = CGPoint(x: ox, y: oy)
@@ -195,8 +254,8 @@ private struct RailRouteWeatherBody: View {
                          with: .color(.white))
                 ctx.fill(Circle().path(in: CGRect(x: origPt.x-5, y: origPt.y-5, width: 10, height: 10)),
                          with: .linearGradient(
-                            Gradient(colors: [Brand.blue,
-                                              Brand.magenta]),
+                            Gradient(colors: [Color(red: 0.082, green: 0.451, blue: 1.0),
+                                              Color(red: 0.745, green: 0.004, blue: 1.0)]),
                             startPoint: CGPoint(x: origPt.x-5, y: origPt.y),
                             endPoint: CGPoint(x: origPt.x+5, y: origPt.y)))
 
@@ -205,15 +264,15 @@ private struct RailRouteWeatherBody: View {
                 ctx.fill(Circle().path(in: CGRect(x: destPt.x-8, y: destPt.y-8, width: 16, height: 16)),
                          with: .color(.white))
                 ctx.fill(Circle().path(in: CGRect(x: destPt.x-5, y: destPt.y-5, width: 10, height: 10)),
-                         with: .color(Brand.magenta))
+                         with: .color(Color(red: 0.745, green: 0.004, blue: 1.0)))
 
                 // Snow marker (Rockies)
                 let snowPt = CGPoint(x: w * 0.52, y: h * 0.44)
                 ctx.fill(Circle().path(in: CGRect(x: snowPt.x-13, y: snowPt.y-13, width: 26, height: 26)),
                          with: .color(.white))
                 ctx.stroke(Circle().path(in: CGRect(x: snowPt.x-13, y: snowPt.y-13, width: 26, height: 26)),
-                           with: .color(Brand.info.opacity(0.4)), lineWidth: 1)
-                let sBlue = Color(hex: 0x1276B0)
+                           with: .color(Color(red: 0.129, green: 0.588, blue: 0.953, opacity: 0.4)), lineWidth: 1)
+                let sBlue = Color(red: 0.071, green: 0.463, blue: 0.690)
                 for deg in stride(from: 0.0, to: 360.0, by: 45.0) {
                     let r = deg * Double.pi / 180
                     var seg = Path()
@@ -227,8 +286,8 @@ private struct RailRouteWeatherBody: View {
                 ctx.fill(Circle().path(in: CGRect(x: windPt.x-12, y: windPt.y-12, width: 24, height: 24)),
                          with: .color(.white))
                 ctx.stroke(Circle().path(in: CGRect(x: windPt.x-12, y: windPt.y-12, width: 24, height: 24)),
-                           with: .color(Brand.warning.opacity(0.5)), lineWidth: 1)
-                let wAmber = Color(hex: 0xB27300)
+                           with: .color(Color(red: 1.0, green: 0.655, blue: 0.149, opacity: 0.5)), lineWidth: 1)
+                let wAmber = Color(red: 0.698, green: 0.451, blue: 0.000)
                 for (dy2, len) in [(-3.0, 8.0), (1.0, 10.0)] {
                     var wl = Path()
                     wl.move(to: CGPoint(x: windPt.x - len/2, y: windPt.y + dy2))
@@ -251,12 +310,13 @@ private struct RailRouteWeatherBody: View {
                 // Origin / destination labels
                 ctx.draw(Text("LONG BEACH")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.4)
-                    .foregroundColor(Color(hex: 0x0D1117)),
+                    .foregroundColor(Color(red: 0.051, green: 0.067, blue: 0.090)),
                          at: CGPoint(x: ox + 2, y: oy + 16), anchor: .center)
                 ctx.draw(Text("CHICAGO")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.4)
-                    .foregroundColor(Color(hex: 0x0D1117)),
+                    .foregroundColor(Color(red: 0.051, green: 0.067, blue: 0.090)),
                          at: CGPoint(x: dx - 24, y: dy - 14), anchor: .center)
+              }
             }
             .frame(height: 130)
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
@@ -283,7 +343,7 @@ private struct RailRouteWeatherBody: View {
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
                 Text("getRouteConditions")
-                    .font(EType.mono(.caption))
+                    .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.textTertiary)
             }
             if alerts.isEmpty {
@@ -383,7 +443,7 @@ private struct RailRouteWeatherBody: View {
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                 Text("getImpactedLoads · \(rerouteCount) reroute candidate\(rerouteCount == 1 ? "" : "s")")
-                    .font(EType.mono(.caption))
+                    .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.textSecondary)
             }
             Spacer()
@@ -430,6 +490,47 @@ private struct RailRouteWeatherBody: View {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
+    }
+
+    // MARK: - Route geometry (single source of truth for line + position dot)
+
+    /// The transcon arc (Long Beach → Chicago) as two cubic Béziers. Built once per draw so
+    /// the traveled/remaining trims and the live-position dot all share identical control points.
+    private static func routePath(in size: CGSize) -> Path {
+        let w = size.width; let h = size.height
+        var p = Path()
+        p.move(to: CGPoint(x: w * 0.095, y: h * 0.85))
+        p.addCurve(to: CGPoint(x: w * 0.45, y: h * 0.44),
+                   control1: CGPoint(x: w * 0.30, y: h * 0.72),
+                   control2: CGPoint(x: w * 0.38, y: h * 0.56))
+        p.addCurve(to: CGPoint(x: w * 0.940, y: h * 0.24),
+                   control1: CGPoint(x: w * 0.72, y: h * 0.34),
+                   control2: CGPoint(x: w * 0.83, y: h * 0.34))
+        return p
+    }
+
+    /// Point on the composite route at fraction `f` (0…1), split evenly across the two
+    /// cubic segments. Mirrors `routePath` exactly so the position marker sits on the line.
+    private static func pointOnRoute(_ f: Double, in size: CGSize) -> CGPoint {
+        let w = size.width; let h = size.height
+        let p0 = CGPoint(x: w * 0.095, y: h * 0.85)
+        let p1 = CGPoint(x: w * 0.45,  y: h * 0.44)
+        let p2 = CGPoint(x: w * 0.940, y: h * 0.24)
+        let c1a = CGPoint(x: w * 0.30, y: h * 0.72), c1b = CGPoint(x: w * 0.38, y: h * 0.56)
+        let c2a = CGPoint(x: w * 0.72, y: h * 0.34), c2b = CGPoint(x: w * 0.83, y: h * 0.34)
+        let clamped = min(1, max(0, f))
+        if clamped <= 0.5 {
+            return cubic(p0, c1a, c1b, p1, clamped / 0.5)
+        } else {
+            return cubic(p1, c2a, c2b, p2, (clamped - 0.5) / 0.5)
+        }
+    }
+
+    private static func cubic(_ a: CGPoint, _ b: CGPoint, _ c: CGPoint, _ d: CGPoint, _ t: Double) -> CGPoint {
+        let mt = 1 - t
+        let w0 = mt * mt * mt, w1 = 3 * mt * mt * t, w2 = 3 * mt * t * t, w3 = t * t * t
+        return CGPoint(x: w0 * a.x + w1 * b.x + w2 * c.x + w3 * d.x,
+                       y: w0 * a.y + w1 * b.y + w2 * c.y + w3 * d.y)
     }
 }
 

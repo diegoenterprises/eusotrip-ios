@@ -52,6 +52,20 @@
                   transform-origin: center; transform-box: fill-box; }
     @keyframes wheel-spin { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
 
+    /* Carried pallet drop: the forklift reaches the spot (~36%), the tines
+       set the bundle on the deck and the carried pallet hands off — it fades
+       out at the dwell window so the forklift visibly DELIVERS its load, then
+       backs out empty. Timed just before pallet-stack-grow settles a new deck
+       pallet, preserving cause -> effect. */
+    .fork-pallet-drop { animation: fork-pallet-drop 7s ease-in-out infinite;
+                        transform-box: fill-box; transform-origin: center bottom; }
+    @keyframes fork-pallet-drop {
+      0%, 40%  { opacity: 1; transform: translateY(0); }
+      48%      { opacity: 1; transform: translateY(2px); }
+      56%      { opacity: 0; transform: translateY(4px); }
+      100%     { opacity: 0; transform: translateY(4px); }
+    }
+
     /* Tarp bow accordion: subtle breathing of the bunched bow stack
        at the front of the deck — suggests the tarp gathered to one end
        under light wind. */
@@ -82,11 +96,13 @@
        synced loosely with the forklift drop cycle so each pallet "settles in"
        once during the loop. transform-origin bottom so they grow from the deck. */
     .pallet-stack-grow { transform-box: fill-box; transform-origin: center bottom;
-                         animation: pallet-stack-grow 7s ease-out infinite; }
+                         animation: pallet-stack-grow 7s cubic-bezier(0.34,1.56,0.64,1) infinite; }
     @keyframes pallet-stack-grow {
-      0%, 8%   { transform: scaleY(0.0); opacity: 0; }
-      18%      { transform: scaleY(1.06); opacity: 1; }
-      24%, 100% { transform: scaleY(1);   opacity: 1; }
+      /* Freshly delivered pallet: stays hidden until the lift sets it down
+         (~56%), then springs up off the deck. Synced to .fork-pallet-drop. */
+      0%, 54%   { transform: scaleY(0); opacity: 0; }
+      62%       { transform: scaleY(1.06); opacity: 1; }
+      68%, 100% { transform: scaleY(1);    opacity: 1; }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -95,6 +111,7 @@
       .brand-word,
       .chevron,
       .forklift-cycle,
+      .fork-pallet-drop,
       .load-pill,
       .pallet-stack-grow,
       .progress-fill,
@@ -926,21 +943,17 @@
        leaving rear span open for incoming forklift drop.
        ============================================================ -->
   <g filter="url(#rigShadow)">
+    <!-- Pallets 1-3 are ALREADY loaded (static) — the load in progress. -->
     <!-- Lumber pallet 1 -->
-    <g transform="translate(360 430)">
-      <g class="pallet-stack-grow" style="animation-delay: 0s;"><use href="#lumberPallet"/></g>
-    </g>
+    <g transform="translate(360 430)"><use href="#lumberPallet"/></g>
     <!-- Lumber pallet 2 -->
-    <g transform="translate(470 430)">
-      <g class="pallet-stack-grow" style="animation-delay: 0.4s;"><use href="#lumberPallet"/></g>
-    </g>
+    <g transform="translate(470 430)"><use href="#lumberPallet"/></g>
     <!-- Drywall pallet -->
-    <g transform="translate(580 430)">
-      <g class="pallet-stack-grow" style="animation-delay: 0.8s;"><use href="#drywallPallet"/></g>
-    </g>
-    <!-- Lumber pallet 3 -->
+    <g transform="translate(580 430)"><use href="#drywallPallet"/></g>
+    <!-- Lumber pallet 3 — the FRESHLY DELIVERED pallet at the rear of the
+         loaded run; springs up the instant the forklift sets its load down. -->
     <g transform="translate(690 430)">
-      <g class="pallet-stack-grow" style="animation-delay: 1.2s;"><use href="#lumberPallet"/></g>
+      <g class="pallet-stack-grow"><use href="#lumberPallet"/></g>
     </g>
   </g>
 
@@ -1021,8 +1034,10 @@
       <rect x="-14" y="-108" width="3" height="14" fill="#3A3F4A"/>
 
       <!-- ===== PALLET ON THE FORKS ===== -->
-      <!-- Pallet base (sits ON the forks, so its bottom y=-104) -->
-      <g transform="translate(-44 -104)">
+      <!-- Pallet base (sits ON the forks, so its bottom y=-104).
+           .fork-pallet-drop fades it out at the dwell so the lift delivers,
+           then retreats empty (true counterbalance loading cycle). -->
+      <g class="fork-pallet-drop" transform="translate(-44 -104)">
         <!-- Pallet -->
         <rect x="-30" y="-6" width="60" height="6" fill="url(#palletWood)" stroke="#7A5A40" stroke-width="0.4"/>
         <line x1="-22" y1="-6" x2="-22" y2="0" stroke="#7A5A40" stroke-width="0.3"/>
@@ -1712,13 +1727,34 @@
           font-weight="800" font-size="14" letter-spacing="1.8" fill="#FFFFFF">TRUCK</text>
   </g>
 
-  <!-- LBS unit badge (below TRUCK) -->
-  <g>
+  <!-- Weight-unit badge (below TRUCK) — COUNTRY-SWITCHABLE.
+       Conestoga hauls general dry freight (lumber/drywall), NOT hazmat, so
+       there are no DOT/PHMSA, SCT/NOM-002 or TDG placards to show; the only
+       country-relevant marking is the billing unit of weight.
+       Renderer: show exactly ONE of these groups by route country —
+         class="country-US" / "country-CA" -> LBS (default visible)
+         class="country-MX"               -> KG
+       e.g. set display:none on the two non-active groups at mount. -->
+  <g class="unit-badge country-US">
     <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
           fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
     <text x="1102" y="112" text-anchor="middle"
           font-family="Inter, system-ui, sans-serif"
           font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">LBS</text>
+  </g>
+  <g class="unit-badge country-CA" style="display:none">
+    <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
+          fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+    <text x="1102" y="112" text-anchor="middle"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">LBS</text>
+  </g>
+  <g class="unit-badge country-MX" style="display:none">
+    <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
+          fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
+    <text x="1102" y="112" text-anchor="middle"
+          font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">KG</text>
   </g>
 
   <!-- LOADING pill -->

@@ -63,6 +63,55 @@ private struct VesselContainerPositionsBody: View {
     private var atPort: Int   { containers.filter { ($0.status ?? "") == "at_port" }.count }
     private var hazmat: Int   { containers.filter { $0.imdgClass != nil }.count }
 
+    // MARK: Bay-plan elevation model (derived from the REAL loaded roster)
+    //
+    // The container roster has no bay-number field of its own, so we bucket the
+    // loaded containers fore→aft into a fixed set of bays (deterministic, by
+    // index) and split each container into the ON DECK / IN HOLD band by status:
+    //   • on_board / on_water  → stowed ON DECK
+    //   • everything else (at_port / discharged / gate_out / unknown) → IN HOLD
+    // Each container's slot kind derives from the same real fields the roster
+    // chips already read — restow/relocation status → .restow, imdgClass present
+    // → .hazmat, isReefer → .reefer, else .dry. Open cells pad with .empty so
+    // bands stay rectangular. Lift count / conflict bay derive inside the
+    // component from the .restow slots; nothing is passed twice.
+    private func slotKind(for c: OceanContainerPos) -> BayPlanSlot.Kind {
+        let status = (c.status ?? "").lowercased()
+        if status.contains("restow") || status.contains("relocat") { return .restow }
+        if c.imdgClass != nil { return .hazmat }
+        if c.isReefer == true { return .reefer }
+        return .dry
+    }
+
+    private var bayColumns: [BayColumn] {
+        guard !containers.isEmpty else { return [] }
+        // Fore→aft bay headers, descending like a real bay plan (34 30 … 06).
+        // Spread the roster across up to 8 bays so the elevation stays legible.
+        let bayCount = min(max(containers.count, 1), 8)
+        let headers = (0..<bayCount).map { 34 - $0 * 4 }   // 34,30,26,22,18,14,10,06
+        var buckets: [[OceanContainerPos]] = Array(repeating: [], count: bayCount)
+        for (i, c) in containers.enumerated() { buckets[i % bayCount].append(c) }
+
+        return zip(headers, buckets).map { header, group in
+            var onDeck: [BayPlanSlot] = []
+            var inHold: [BayPlanSlot] = []
+            for c in group {
+                let kind = slotKind(for: c)
+                let status = (c.status ?? "").lowercased()
+                if status == "on_board" || status == "on_water" {
+                    onDeck.append(BayPlanSlot(kind))
+                } else {
+                    inHold.append(BayPlanSlot(kind))
+                }
+            }
+            // Pad to at least one tier per band with open (.empty) cells so the
+            // hull/hatch geometry reads cleanly even for sparse bays.
+            if onDeck.isEmpty { onDeck = [BayPlanSlot(.empty)] }
+            if inHold.isEmpty { inHold = [BayPlanSlot(.empty)] }
+            return BayColumn(bayNumber: header, onDeck: onDeck, inHold: inHold)
+        }
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -76,6 +125,7 @@ private struct VesselContainerPositionsBody: View {
                                    subtitle: "Tracked containers will appear here.")
                 } else {
                     summaryTiles
+                    BayPlanStowElevation(columns: bayColumns)
                     Text("CONTAINERS · getContainerPositions")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     VStack(spacing: Space.s2) { ForEach(containers) { containerRow($0) } }

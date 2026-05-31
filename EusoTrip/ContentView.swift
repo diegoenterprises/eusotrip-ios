@@ -2104,7 +2104,7 @@ enum ScreenRegistry {
             .init(id: "Rail630", title: "Rail Engineer · Cross-Dock Ops",       role: .railEngineer) { p in AnyView(RailCrossDockOperationsScreen(theme: p)) },
         ])
 
-        // Vessel Operator surface (Vesl650–652).
+        // Vessel Operator surface (Vesl650–652 tab roots; Vesl659 drill-in leaf).
         list.append(contentsOf: [
             .init(id: "Vesl650", title: "Vessel Operator · Home",       role: .vesselOperator) { p in AnyView(VesselOperatorHomeScreen(theme: p)) },
             .init(id: "Vesl651", title: "Vessel Operator · Shipments",  role: .vesselOperator) { p in AnyView(VesselShipmentsScreen(theme: p)) },
@@ -2150,6 +2150,7 @@ enum ScreenRegistry {
             .init(id: "Vesl710", title: "Vessel Operator · Marine Casualty",  role: .vesselOperator) { p in AnyView(VesselMarineCasualtyScreen(theme: p)) },
             .init(id: "Vesl711", title: "Vessel Operator · Crew Rest Hours",  role: .vesselOperator) { p in AnyView(VesselCrewRestHoursScreen(theme: p)) },
             .init(id: "Vesl712", title: "Vessel Operator · Financial Summary",role: .vesselOperator) { p in AnyView(VesselFinancialSummaryScreen(theme: p)) },
+            .init(id: "Vesl659", title: "Vessel Operator · Bunker FSC", role: .vesselOperator) { p in AnyView(VesselBunkerFSCScreen(theme: p)) },
         ])
 
         return list

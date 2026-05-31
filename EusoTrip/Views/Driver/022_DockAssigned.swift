@@ -637,7 +637,14 @@ struct DockYardmapSheet: View {
     let caps: CapabilitiesAPI.TerminalCapabilities?
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var uwb = EusoNISession()
+
+    /// Continuous (un-wrapped) compass heading in degrees driving the
+    /// needle's `rotationEffect`. We accumulate it from the raw NI
+    /// bearing so successive fixes either side of the ±180° north seam
+    /// animate the short way round instead of unwinding a full turn.
+    @State private var unwrappedHeading: Double = 0
 
     var body: some View {
         NavigationStack {
@@ -807,8 +814,20 @@ struct DockYardmapSheet: View {
                         uwb.lostLineOfSight ? AnyShapeStyle(palette.textTertiary)
                                             : AnyShapeStyle(LinearGradient.diagonal)
                     )
-                    .rotationEffect(uwbHeadingRadians)
-                    .animation(.easeOut(duration: 0.18), value: uwb.direction)
+                    // Real bearing → needle rotation. `unwrappedHeading`
+                    // accumulates a continuous angle so the needle always
+                    // takes the shortest path across the ±180° north seam
+                    // instead of spinning the long way around. A critically-
+                    // damped spring lets the needle settle onto each new
+                    // UWB bearing fix the way a physical compass does (no
+                    // overshoot wobble); reduce-motion snaps straight to
+                    // the final bearing with no animated rotation.
+                    .rotationEffect(.degrees(unwrappedHeading))
+                    .animation(
+                        reduceMotion ? nil
+                                     : .interpolatingSpring(stiffness: 170, damping: 26),
+                        value: unwrappedHeading
+                    )
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(uwbDistanceText)
@@ -828,15 +847,34 @@ struct DockYardmapSheet: View {
                 .strokeBorder(palette.borderFaint)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        // Drive the needle from the live NI bearing. Each fix folds into
+        // the continuous accumulator (seam-aware); the spring on
+        // `unwrappedHeading` then animates the short-path settle.
+        .onChange(of: uwb.direction) { _, _ in syncHeading() }
+        .onAppear { syncHeading() }
     }
 
-    /// Phone-frame heading vector → 2D rotation angle for the chevron
-    /// glyph. NI returns a `simd_float3`; we use the X/Z plane
-    /// (azimuth) for the on-screen rotation.
-    private var uwbHeadingRadians: Angle {
-        guard let dir = uwb.direction else { return .zero }
-        let azimuth = atan2(dir.x, -dir.z)
-        return .radians(Double(azimuth))
+    /// Raw phone-frame heading from the NI bearing vector, in degrees
+    /// (−180…180). NI returns a `simd_float3`; we use the X/Z plane
+    /// (azimuth) for the on-screen rotation. `nil` when no direction
+    /// fix is resolved yet (too close / LOS lost).
+    private var rawHeadingDegrees: Double? {
+        guard let dir = uwb.direction else { return nil }
+        let azimuth = atan2(dir.x, -dir.z)        // radians, −π…π
+        return Double(azimuth) * 180.0 / .pi
+    }
+
+    /// Fold a fresh (−180…180) bearing into the continuous accumulator,
+    /// picking the ≤180° delta so the needle rotates the short way
+    /// across the north seam. No-op when no fix is available so the
+    /// needle holds its last bearing rather than snapping to north.
+    private func syncHeading() {
+        guard let target = rawHeadingDegrees else { return }
+        var delta = (target - unwrappedHeading)
+            .truncatingRemainder(dividingBy: 360)
+        if delta > 180 { delta -= 360 }
+        if delta < -180 { delta += 360 }
+        unwrappedHeading += delta
     }
 
     private var uwbDistanceText: String {

@@ -21,7 +21,7 @@
       50%      { transform: translateY(-1px) skewX(0.3deg); }
     }
     .stack-settle {
-      animation: stack-settle 7s ease-in-out infinite -0.4s;
+      animation: stack-settle 7s cubic-bezier(0.4,0,0.2,1) infinite -0.4s;
     }
     @keyframes stack-settle {
       0%, 100% { transform: translateY(0); }
@@ -155,8 +155,22 @@
   ]]></style>
 
   <!-- 17 · Vessel · Bulk Carrier · EquipmentKind: vesselBulk · VESSEL / MT
-       Bulk carrier with hatch covers visible across deck. Bow on LEFT.
-       Used for: grain, ore, coal, cement. -->
+       Bulk carrier under way at sea: long flush-deck hull, bulbous bow (LEFT),
+       5 hatch covers across the weather deck (gear-equipped, with two deck
+       cranes/derricks), aft superstructure + funnel (RIGHT). Used for dry bulk:
+       grain, ore, coal, cement. Hull pitches/rolls on the swell; bow wave,
+       spray and aft wake sell the forward motion.
+
+       COUNTRY / REGULATORY NOTE (US · CA · MX):
+       Dry agricultural grain in bulk is NOT a DOT/PHMSA, Transport Canada TDG,
+       or SCT/NOM dangerous good, so this rig carries NO national hazmat placards.
+       Its only mandatory side marking is the INTERNATIONAL load line (Plimsoll
+       mark) under IMO Load Line Convention — flag-state neutral. Cargo unit is
+       metric tonnes (MT / DWT), universal across all three countries. There is
+       therefore intentionally no country-switchable placard group on this hero. -->
+  <!-- Draft marks (M/S/W) + bow accent rendered below mid-hull; load line implied
+       by the waterline. -->
+
   <defs>
         <linearGradient id="skyDark" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%"  stop-color="#0A0F1F"/>

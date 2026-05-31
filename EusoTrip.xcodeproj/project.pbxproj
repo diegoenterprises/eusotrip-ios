@@ -683,6 +683,9 @@
 		5CB050000000000000000000 /* SVGAnimation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CR050000000000000000000 /* SVGAnimation.swift */; };
 		5CB060000000000000000000 /* SVGRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CR060000000000000000000 /* SVGRenderer.swift */; };
 		5CB070000000000000000000 /* NativeSVGView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CR070000000000000000000 /* NativeSVGView.swift */; };
+		BAYPLANSTOWELEV000000001 /* BayPlanStowElevation.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAYPLANSTOWELEV000000002 /* BayPlanStowElevation.swift */; };
+		REEFERTEMPLOGCH000000001 /* ReeferTempLogChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = REEFERTEMPLOGCH000000002 /* ReeferTempLogChart.swift */; };
+		BUNKERFSCLADDER000000001 /* BunkerFSCStepLadder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BUNKERFSCLADDER000000002 /* BunkerFSCStepLadder.swift */; };
 		EQPR20260521000001 /* EquipmentRecommenderWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = EQPR20260521000002 /* EquipmentRecommenderWidget.swift */; };
 		EWAP2026051700000011A1 /* EusoWalletApplePayProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = EWAP2026051700000012A1 /* EusoWalletApplePayProvider.swift */; };
 		EWST2026051700000011A1 /* EusoWalletStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EWST2026051700000012A1 /* EusoWalletStore.swift */; };
@@ -787,6 +790,7 @@
 		FCB010000000000000000000 /* 710_VesselMarineCasualty.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCA010000000000000000000 /* 710_VesselMarineCasualty.swift */; };
 		FCB020000000000000000000 /* 711_VesselCrewRestHours.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCA020000000000000000000 /* 711_VesselCrewRestHours.swift */; };
 		FCB030000000000000000000 /* 712_VesselFinancialSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCA030000000000000000000 /* 712_VesselFinancialSummary.swift */; };
+		BUNKERFSC659000000000002 /* 659_VesselBunkerFSC.swift in Sources */ = {isa = PBXBuildFile; fileRef = BUNKERFSC659000000000001 /* 659_VesselBunkerFSC.swift */; };
 		FD97CECD2FC1D7C70016DF5F /* 551_RailShipments.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */; };
 		FDA10000000000000000553B /* 553_RailShipmentDetailCarrier.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000553F /* 553_RailShipmentDetailCarrier.swift */; };
 		FDA10000000000000000554B /* 554_RailCrewHOSRoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA10000000000000000554F /* 554_RailCrewHOSRoster.swift */; };
@@ -1566,6 +1570,9 @@
 		5CR050000000000000000000 /* SVGAnimation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SVGAnimation.swift; path = EusoTrip/Views/Components/SVGNative/SVGAnimation.swift; sourceTree = SOURCE_ROOT; };
 		5CR060000000000000000000 /* SVGRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SVGRenderer.swift; path = EusoTrip/Views/Components/SVGNative/SVGRenderer.swift; sourceTree = SOURCE_ROOT; };
 		5CR070000000000000000000 /* NativeSVGView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NativeSVGView.swift; path = EusoTrip/Views/Components/SVGNative/NativeSVGView.swift; sourceTree = SOURCE_ROOT; };
+		BAYPLANSTOWELEV000000002 /* BayPlanStowElevation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BayPlanStowElevation.swift; path = EusoTrip/Views/Components/BayPlanStowElevation.swift; sourceTree = SOURCE_ROOT; };
+		REEFERTEMPLOGCH000000002 /* ReeferTempLogChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ReeferTempLogChart.swift; path = EusoTrip/Views/Components/ReeferTempLogChart.swift; sourceTree = SOURCE_ROOT; };
+		BUNKERFSCLADDER000000002 /* BunkerFSCStepLadder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BunkerFSCStepLadder.swift; path = EusoTrip/Views/Components/BunkerFSCStepLadder.swift; sourceTree = SOURCE_ROOT; };
 		EQPR20260521000002 /* EquipmentRecommenderWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EquipmentRecommenderWidget.swift; path = EusoTrip/Views/Components/EquipmentRecommenderWidget.swift; sourceTree = SOURCE_ROOT; };
 		EWAP2026051700000012A1 /* EusoWalletApplePayProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EusoWalletApplePayProvider.swift; path = EusoTrip/Services/EusoWalletApplePayProvider.swift; sourceTree = SOURCE_ROOT; };
 		EWST2026051700000012A1 /* EusoWalletStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EusoWalletStore.swift; path = EusoTrip/ViewModels/EusoWalletStore.swift; sourceTree = SOURCE_ROOT; };
@@ -1710,6 +1717,7 @@
 		FCA010000000000000000000 /* 710_VesselMarineCasualty.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 710_VesselMarineCasualty.swift; sourceTree = "<group>"; };
 		FCA020000000000000000000 /* 711_VesselCrewRestHours.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 711_VesselCrewRestHours.swift; sourceTree = "<group>"; };
 		FCA030000000000000000000 /* 712_VesselFinancialSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 712_VesselFinancialSummary.swift; sourceTree = "<group>"; };
+		BUNKERFSC659000000000001 /* 659_VesselBunkerFSC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 659_VesselBunkerFSC.swift; sourceTree = "<group>"; };
 		FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 551_RailShipments.swift; sourceTree = "<group>"; };
 		FDA10000000000000000553F /* 553_RailShipmentDetailCarrier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 553_RailShipmentDetailCarrier.swift; sourceTree = "<group>"; };
 		FDA10000000000000000554F /* 554_RailCrewHOSRoster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 554_RailCrewHOSRoster.swift; sourceTree = "<group>"; };
@@ -2724,6 +2732,9 @@
 				5CR050000000000000000000 /* SVGAnimation.swift */,
 				5CR060000000000000000000 /* SVGRenderer.swift */,
 				5CR070000000000000000000 /* NativeSVGView.swift */,
+				BAYPLANSTOWELEV000000002 /* BayPlanStowElevation.swift */,
+				REEFERTEMPLOGCH000000002 /* ReeferTempLogChart.swift */,
+				BUNKERFSCLADDER000000002 /* BunkerFSCStepLadder.swift */,
 				PDFV0002VIEWERFILE002AAA /* EusoPDFViewer.swift */,
 				B1A61111111111111111AA02 /* 106B_DriverEusoTicketRenderer.swift */,
 				A1F1100000000000000011AA /* WeatherKit.framework */,
@@ -2871,6 +2882,7 @@
 				FCA010000000000000000000 /* 710_VesselMarineCasualty.swift */,
 				FCA020000000000000000000 /* 711_VesselCrewRestHours.swift */,
 				FCA030000000000000000000 /* 712_VesselFinancialSummary.swift */,
+				BUNKERFSC659000000000001 /* 659_VesselBunkerFSC.swift */,
 				FD97CED02FC1D8040016DF5F /* 651_VesselShipments.swift */,
 				FD97CED22FC1D8050016DF5F /* 652_VesselCompliance.swift */,
 				FEB10000000000000000001B /* 653_VesselBookingDetailCarrier.swift */,
@@ -3381,6 +3393,7 @@
 				FCB010000000000000000000 /* 710_VesselMarineCasualty.swift in Sources */,
 				FCB020000000000000000000 /* 711_VesselCrewRestHours.swift in Sources */,
 				FCB030000000000000000000 /* 712_VesselFinancialSummary.swift in Sources */,
+				BUNKERFSC659000000000002 /* 659_VesselBunkerFSC.swift in Sources */,
 				DIBS2026051800000011A1 /* DriverInviteBulkStep.swift in Sources */,
 				FBRS2026051800000011A1 /* FleetBulkRegisterStep.swift in Sources */,
 				VINS2026051800000011A1 /* VINScannerSheet.swift in Sources */,
@@ -3423,6 +3436,9 @@
 				5CB050000000000000000000 /* SVGAnimation.swift in Sources */,
 				5CB060000000000000000000 /* SVGRenderer.swift in Sources */,
 				5CB070000000000000000000 /* NativeSVGView.swift in Sources */,
+				BAYPLANSTOWELEV000000001 /* BayPlanStowElevation.swift in Sources */,
+				REEFERTEMPLOGCH000000001 /* ReeferTempLogChart.swift in Sources */,
+				BUNKERFSCLADDER000000001 /* BunkerFSCStepLadder.swift in Sources */,
 				BINDANIM0010CE0FF1ABCD03 /* BindableEquipmentAnimation.swift in Sources */,
 				LANIMCTX0010CE0FF1ABCD01 /* LoadAnimationContext.swift in Sources */,
 				SHIPMENT0010CE0FF1AAAA01 /* Shipment.swift in Sources */,

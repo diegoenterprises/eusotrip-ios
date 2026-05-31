@@ -32,15 +32,21 @@
       0%, 100% { opacity: 0.3; }
       50%      { opacity: 0.65; }
     }
-    /* ============ CARGO HANDLING MOTION ============ */
-
-    .auto-drive { animation: auto-drive 5s linear infinite; opacity: 0; }
+    /* ============ CARGO HANDLING MOTION ============
+       RO-RO DISCHARGE: a port driver brought aboard picks a vehicle and drives
+       it OFF under its own power. It emerges from the deck-5 opening (LEFT,
+       high on the ramp), rolls DOWN the inclined stern ramp (descending = +Y,
+       ramp slope ~0.35) to the dock, then drives away RIGHT toward the
+       marshalling yard. Linear creep models the steady controlled descent;
+       the car fades in as it clears the opening and fades out leaving frame. */
+    .auto-drive { animation: auto-drive 5.4s linear infinite; opacity: 0; }
     @keyframes auto-drive {
-      0%   { transform: translateX(280px); opacity: 0; }
-      8%   { opacity: 1; }
-      75%  { transform: translateX(-260px); opacity: 1; }
-      85%  { opacity: 0; }
-      100% { transform: translateX(-260px); opacity: 0; }
+      0%   { transform: translate(-178px, -96px); opacity: 0; }  /* still inside the car deck */
+      8%   { transform: translate(-160px, -90px); opacity: 1; }  /* clears ship opening (x=540) */
+      60%  { transform: translate(100px, 0px);   opacity: 1; }  /* down the ramp to its foot (x=800) */
+      82%  { transform: translate(260px, 0px);   opacity: 1; }  /* rolling out across the dock */
+      92%  { transform: translate(300px, 0px);   opacity: 0; }  /* away to the yard, off-screen right */
+      100% { transform: translate(300px, 0px);   opacity: 0; }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -54,6 +60,13 @@
       .sky-shimmer {
         animation: none !important;
       }
+      /* Park one vehicle, fully visible, partway down the ramp so the discharge
+         story still reads as a calm still frame instead of vanishing. */
+      .auto-drive {
+        opacity: 1 !important;
+        transform: translate(-30px, -42px) !important;
+      }
+      .auto-drive ~ .auto-drive { opacity: 0 !important; }
     }
 
   ]]></style>
@@ -237,9 +250,20 @@
     </g>
     <line x1="540" y1="470" x2="800" y2="478" stroke="#FFD200" stroke-width="3" opacity="0.9"/>
     <line x1="540" y1="380" x2="800" y2="470" stroke="#1A1F2E" stroke-width="2" opacity="0.85"/>
-    <text x="690" y="442" font-family="Inter, system-ui, sans-serif"
-          font-weight="900" font-size="6" fill="#FFD23A" letter-spacing="0.6"
-          transform="rotate(14 690 442)" opacity="0.85">MAX 70 TON · 1 LANE</text>
+    <!-- Ramp Safe-Working-Load stencil — COUNTRY-SWITCHABLE.
+         RO-RO carries wheeled vehicles, NOT dangerous goods, so no hazmat
+         placards apply (no DOT/PHMSA, SCT/NOM, or TDG diamonds). The one
+         genuinely country-variable marking is the ramp SWL unit: the US
+         stencils short tons (TON), Mexico & Canada stencil metric tonnes (t).
+         RENDERER: show exactly one of .country-US / .country-MX / .country-CA
+         (default = US visible); set the other two to display:none for the
+         shipment's origin/regime. ~70 short ton ≈ 63 metric tonne. -->
+    <g transform="rotate(14 690 442)" opacity="0.85" font-family="Inter, system-ui, sans-serif"
+       font-weight="900" font-size="6" fill="#FFD23A" letter-spacing="0.6">
+      <text class="country-US" x="690" y="442">MAX 70 TON · 1 LANE</text>
+      <text class="country-MX" x="690" y="442" style="display:none">MÁX 63 t · 1 CARRIL</text>
+      <text class="country-CA" x="690" y="442" style="display:none">MAX 63 t · 1 LANE</text>
+    </g>
     <line x1="540" y1="380" x2="380" y2="184" stroke="#1A1F2E" stroke-width="1.4" opacity="0.7"/>
     <line x1="540" y1="380" x2="450" y2="184" stroke="#1A1F2E" stroke-width="1.4" opacity="0.5"/>
   </g>
@@ -270,7 +294,7 @@
       <g transform="translate(440 320)"><rect x="-26" y="-12" width="52" height="20" rx="3" fill="#3DA86F"/><rect x="-18" y="-20" width="36" height="10" rx="2" fill="#7E9DDB" opacity="0.85"/><circle cx="-16" cy="10" r="5"/><circle cx="16" cy="10" r="5"/></g>
     </g>
   </g>
-  <!-- Cars driving up ramp single-file -->
+  <!-- Vehicles driven OFF the ship single-file, down the stern ramp to the dock -->
   <g class="auto-drive">
     <g transform="translate(700 460)">
       <rect x="-50" y="-22" width="100" height="32" rx="6" fill="#1473FF"/>

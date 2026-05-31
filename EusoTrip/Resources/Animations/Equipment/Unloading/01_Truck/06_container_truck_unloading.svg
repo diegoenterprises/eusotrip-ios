@@ -42,20 +42,32 @@
        90-100%: hold + reset
     ================================================================================= */
 
-    .container-lift { animation: container-lift 7s ease-in-out infinite;
+    /* Reach-stacker de-van: break the load free, hoist clear of the chassis,
+       traverse to the staging pad, then a decelerated touchdown (feathered set-
+       down). Per-segment easing: lift accelerates then eases, traverse eases
+       in/out, set-down decelerates so the box "kisses" the pad. */
+    /* The spreader assembly hangs from the boom tip at rest (baseline 0 keeps
+       the hoist cable connected to the boom). The container is rigged ~46px
+       BELOW the spreader (see its translate on the inner <g>) so that at rest it
+       seats on the chassis twist-lock pads, and at the end it seats on the pad. */
+    .container-lift { animation: container-lift 7s infinite;
                       transform-box: fill-box; transform-origin: center top; }
     @keyframes container-lift {
-      0%, 15%   { transform: translate(0, 0); opacity: 1; }
-      30%       { transform: translate(0, -10px); opacity: 1; }
-      50%       { transform: translate(0, -150px); opacity: 1; }
-      70%       { transform: translate(96px, -150px); opacity: 1; }
-      90%, 100% { transform: translate(96px, 6px); opacity: 1; }
+      0%, 15%   { transform: translate(0, 0);          animation-timing-function: cubic-bezier(0.4,0,0.6,1); }
+      30%       { transform: translate(0, -12px);      animation-timing-function: cubic-bezier(0.4,0,0.2,1); }
+      50%       { transform: translate(0, -150px);     animation-timing-function: cubic-bezier(0.45,0,0.55,1); }
+      70%       { transform: translate(96px, -150px);  animation-timing-function: cubic-bezier(0.33,0,0.2,1); }
+      88%       { transform: translate(96px, 4px); }   /* feathered over-travel onto pad */
+      92%, 100% { transform: translate(96px, 0); }     /* settled on staging pad */
     }
 
-    .twist-lock-release { animation: twist-lock-release 7s ease-in-out infinite;
+    /* Cam snaps from LOCKED (90°) to RELEASED (0°) with a spring overshoot,
+       just before the box breaks free of the chassis. */
+    .twist-lock-release { animation: twist-lock-release 7s infinite;
                           transform-box: fill-box; transform-origin: center; }
     @keyframes twist-lock-release {
-      0%, 15%   { transform: rotate(90deg); fill: #FFD200; }
+      0%, 15%   { transform: rotate(90deg); fill: #FFD200; animation-timing-function: cubic-bezier(0.34,1.56,0.64,1); }
+      24%       { transform: rotate(-6deg); fill: #6A6F78; }
       28%, 100% { transform: rotate(0deg);  fill: #6A6F78; }
     }
 
@@ -67,13 +79,14 @@
       35%, 100% { opacity: 0;    transform: scale(0.6); }
     }
 
-    .boom-extend { animation: boom-extend 7s ease-in-out infinite;
+    /* Boom takes the load weight as the box lifts, holds through the traverse,
+       then lowers back as the spreader sets the container on the pad. */
+    .boom-extend { animation: boom-extend 7s infinite;
                    transform-box: fill-box; transform-origin: bottom right; }
     @keyframes boom-extend {
-      0%, 15%   { transform: translate(0, 0)      scale(1); }
-      35%       { transform: translate(0, -10px)  scale(1.005); }
-      50%       { transform: translate(0, -16px)  scale(1.01); }
-      70%       { transform: translate(0, -16px)  scale(1.01); }
+      0%, 15%   { transform: translate(0, 0)      scale(1);     animation-timing-function: cubic-bezier(0.4,0,0.2,1); }
+      35%       { transform: translate(0, -10px)  scale(1.005); animation-timing-function: cubic-bezier(0.4,0,0.2,1); }
+      50%, 70%  { transform: translate(0, -16px)  scale(1.01);  animation-timing-function: cubic-bezier(0.4,0,0.2,1); }
       90%, 100% { transform: translate(0, 0)      scale(1); }
     }
 
@@ -132,6 +145,17 @@
       0%, 100% { transform: rotate(0deg); }
       50%      { transform: rotate(6deg); }
     }
+
+    /* ============ COUNTRY-SWITCHABLE DG PLACARD SELECTION ============
+       Renderer sets data-country (US|MX|CA) on the root <svg>; CSS shows the
+       one matching variant. Default markup = US visible, MX/CA display:none.
+       Hosts unable to style by attribute may toggle `display` on the groups. */
+    svg[data-country="US"] .placard-country:not(.country-US) { display: none; }
+    svg[data-country="US"] .placard-country.country-US       { display: inline; }
+    svg[data-country="MX"] .placard-country:not(.country-MX) { display: none; }
+    svg[data-country="MX"] .placard-country.country-MX       { display: inline; }
+    svg[data-country="CA"] .placard-country:not(.country-CA) { display: none; }
+    svg[data-country="CA"] .placard-country.country-CA       { display: inline; }
 
     @media (prefers-reduced-motion: reduce) {
       .beacon-flash,
@@ -912,6 +936,49 @@
           <text x="700" y="358" text-anchor="middle"
                 font-family="Inter, system-ui, sans-serif"
                 font-weight="600" font-size="8" letter-spacing="2.4" fill="#FFFFFF" opacity="0.78">INTERMODAL</text>
+        </g>
+
+        <!-- ============================================================
+             COUNTRY-SWITCHABLE DANGEROUS-GOODS PLACARD (parity w/ loading)
+             Class 3 Flammable Liquid, UN 1203 (gasoline).
+             RENDERER: data-country (US|MX|CA) on root <svg> picks one variant.
+               US — 49 CFR 172.500 diamond, UN id in placard centre.
+               CA — TDG diamond + separate orange UN panel (no UN prefix).
+               MX — NOM-004-SCT2 rombo + Spanish proper shipping name.
+             Default below = US visible.
+             ============================================================ -->
+        <g class="dg-placard" transform="translate(300 396)">
+          <g class="placard-country country-US">
+            <g transform="rotate(45 18 18)">
+              <rect x="0" y="0" width="36" height="36" rx="2" fill="#E5350D" stroke="#FFFFFF" stroke-width="1.4"/>
+              <rect x="2.4" y="2.4" width="31.2" height="31.2" rx="1.4" fill="none" stroke="#FFFFFF" stroke-width="0.8" opacity="0.7"/>
+            </g>
+            <path d="M18 6 C20 11 24 12 23 17 C26 15 26 12 26 12 C28 16 27 22 18 24 C11 23 9 17 13 12 C13 15 15 15 15 15 C14 11 17 9 18 6 Z" fill="#FFFFFF"/>
+            <text x="18" y="29" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6.6" fill="#FFFFFF">3</text>
+            <rect x="6" y="17" width="24" height="8" fill="#FFFFFF"/>
+            <text x="18" y="23.4" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6" letter-spacing="0.4" fill="#000000">1203</text>
+          </g>
+          <g class="placard-country country-MX" display="none">
+            <g transform="rotate(45 18 18)">
+              <rect x="0" y="0" width="36" height="36" rx="2" fill="#E5350D" stroke="#FFFFFF" stroke-width="1.4"/>
+              <rect x="2.4" y="2.4" width="31.2" height="31.2" rx="1.4" fill="none" stroke="#FFFFFF" stroke-width="0.8" opacity="0.7"/>
+            </g>
+            <path d="M18 6 C20 11 24 12 23 17 C26 15 26 12 26 12 C28 16 27 22 18 24 C11 23 9 17 13 12 C13 15 15 15 15 15 C14 11 17 9 18 6 Z" fill="#FFFFFF"/>
+            <text x="18" y="29" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6.6" fill="#FFFFFF">3</text>
+            <rect x="6" y="17" width="24" height="8" fill="#FFFFFF"/>
+            <text x="18" y="23.4" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6" letter-spacing="0.4" fill="#000000">1203</text>
+            <text x="18" y="46" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="4.4" letter-spacing="0.6" fill="#FFFFFF" opacity="0.9">GASOLINA</text>
+          </g>
+          <g class="placard-country country-CA" display="none">
+            <g transform="rotate(45 18 18)">
+              <rect x="0" y="0" width="36" height="36" rx="2" fill="#E5350D" stroke="#FFFFFF" stroke-width="1.4"/>
+              <rect x="2.4" y="2.4" width="31.2" height="31.2" rx="1.4" fill="none" stroke="#FFFFFF" stroke-width="0.8" opacity="0.7"/>
+            </g>
+            <path d="M18 6 C20 11 24 12 23 17 C26 15 26 12 26 12 C28 16 27 22 18 24 C11 23 9 17 13 12 C13 15 15 15 15 15 C14 11 17 9 18 6 Z" fill="#FFFFFF"/>
+            <text x="18" y="31" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="7" fill="#FFFFFF">3</text>
+            <rect x="42" y="13" width="30" height="12" fill="#E08A3A" stroke="#1A1F2E" stroke-width="0.6"/>
+            <text x="57" y="22" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="7" letter-spacing="0.6" fill="#000000">1203</text>
+          </g>
         </g>
 
         <!-- CSC plate -->

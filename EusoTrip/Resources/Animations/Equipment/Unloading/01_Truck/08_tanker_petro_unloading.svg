@@ -93,25 +93,31 @@
       45%, 100% { transform: rotate(90deg); }
     }
 
+    /* Truck sight glass FALLS as product gravity-drains out the bottom
+       manifold. Real gravity discharge slows as the head drops, so a decel
+       curve (fast at first, easing out) is truer than symmetric ease-in-out.
+       The truck-fall and tank-rise share the SAME timing + curve so the
+       conservation reads literally: what leaves the trailer arrives in the
+       bulk tank in lockstep. */
     .truck-level-fall { transform-box: fill-box; transform-origin: bottom;
-                        animation: truck-level-fall 6.5s ease-in-out infinite; }
+                        animation: truck-level-fall 6.5s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes truck-level-fall {
       0%, 45%   { transform: scaleY(0.94); }
       90%, 100% { transform: scaleY(0.20); }
     }
-    .truck-meniscus { animation: truck-meniscus 6.5s ease-in-out infinite; }
+    .truck-meniscus { animation: truck-meniscus 6.5s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes truck-meniscus {
       0%, 45%   { transform: translateY(8px);   opacity: 0.95; }
       90%, 100% { transform: translateY(110px); opacity: 0.85; }
     }
 
     .tank-level-rise { transform-box: fill-box; transform-origin: bottom;
-                       animation: tank-level-rise 6.5s ease-in-out infinite; }
+                       animation: tank-level-rise 6.5s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes tank-level-rise {
       0%, 45%   { transform: scaleY(0.18); }
       90%, 100% { transform: scaleY(0.86); }
     }
-    .tank-meniscus { animation: tank-meniscus 6.5s ease-in-out infinite; }
+    .tank-meniscus { animation: tank-meniscus 6.5s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes tank-meniscus {
       0%, 45%   { transform: translateY(76px); opacity: 0.85; }
       90%, 100% { transform: translateY(14px); opacity: 0.95; }
@@ -133,7 +139,7 @@
     }
 
     .level-bar { transform-box: fill-box; transform-origin: left center;
-                 animation: level-bar 6.5s ease-in-out infinite; }
+                 animation: level-bar 6.5s cubic-bezier(0.4,0,0.2,1) infinite; }
     @keyframes level-bar {
       0%, 45%   { transform: scaleX(0.18); }
       90%, 100% { transform: scaleX(0.86); }
@@ -308,6 +314,26 @@
       <text y="6" text-anchor="middle"
             font-family="Inter, system-ui, sans-serif"
             font-weight="900" font-size="6.4" fill="#1A1F2E" letter-spacing="0.4">1993</text>
+    </symbol>
+
+    <!-- Class 3 FLAMMABLE diamond for CA/MX diesel (UN 1202). Canada (TDG) and
+         Mexico (NOM) do not use the US NA1993 COMBUSTIBLE convention; diesel
+         placards as Class 3, UN 1202. CA = non-worded; MX adds Spanish word. -->
+    <symbol id="class3Placard1202" overflow="visible">
+      <g transform="rotate(45)">
+        <rect x="-26" y="-26" width="52" height="52" fill="#C32815" stroke="#1A1F2E" stroke-width="1.6"/>
+        <rect x="-23" y="-23" width="46" height="46" fill="none" stroke="#FFFFFF" stroke-width="0.7" opacity="0.6"/>
+      </g>
+      <g transform="translate(0 -14)" fill="#FFFFFF">
+        <path d="M 0 -7 C -3 -2 -6 1 -5 5 C -7 4 -8 1 -7 -1 C -9 1 -10 5 -7 8 C -9 7 -9 4 -9 7 C -7 10 -4 11 0 11 C 4 11 7 10 9 7 C 9 4 9 7 7 8 C 10 5 9 1 7 -1 C 8 1 7 4 5 5 C 6 1 3 -2 0 -7 Z"/>
+      </g>
+      <rect x="-15" y="6" width="30" height="11" fill="#FFFFFF"/>
+      <text y="14.5" text-anchor="middle"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="9" fill="#1A1F2E" letter-spacing="0.6">1202</text>
+      <text y="25" text-anchor="middle"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="9" fill="#FFFFFF">3</text>
     </symbol>
 
   </defs>
@@ -749,18 +775,42 @@
           letter-spacing="0.8">MC 4-2287-EU</text>
   </g>
 
-  <g transform="translate(394 388) scale(0.7)">
-    <use href="#combustible1993Placard"/>
-  </g>
-  <g transform="translate(394 426) scale(0.7)">
-    <use href="#na1993Panel"/>
-  </g>
-
-  <g transform="translate(620 388) scale(0.7)">
-    <use href="#combustible1993Placard"/>
-  </g>
-  <g transform="translate(620 426) scale(0.7)">
-    <use href="#na1993Panel"/>
+  <!-- ============================================================
+       COUNTRY-SWITCHABLE TANK PLACARDS (front 394 / rear 620). Renderer
+       shows ONE country group (default US). US = NA1993 COMBUSTIBLE +
+       orange panel (49 CFR 172.544/.332). CA = non-worded Class 3 / UN 1202
+       (TDG). MX = Class 3 / UN 1202 + Spanish word (NOM-002/004). Anchors
+       and scale 0.7 are identical across variants for a pixel-stable swap. -->
+  <g class="placard-group">
+    <!-- ===== US (default) ===== -->
+    <g class="country-US">
+      <g transform="translate(394 388) scale(0.7)"><use href="#combustible1993Placard"/></g>
+      <g transform="translate(394 426) scale(0.7)"><use href="#na1993Panel"/></g>
+      <g transform="translate(620 388) scale(0.7)"><use href="#combustible1993Placard"/></g>
+      <g transform="translate(620 426) scale(0.7)"><use href="#na1993Panel"/></g>
+    </g>
+    <!-- ===== CA (non-worded Class 3, UN 1202) ===== -->
+    <g class="country-CA" style="display:none">
+      <g transform="translate(394 388) scale(0.7)"><use href="#class3Placard1202"/></g>
+      <g transform="translate(620 388) scale(0.7)"><use href="#class3Placard1202"/></g>
+    </g>
+    <!-- ===== MX (Class 3, UN 1202, Spanish risk word) ===== -->
+    <g class="country-MX" style="display:none">
+      <g transform="translate(394 388) scale(0.7)">
+        <use href="#class3Placard1202"/>
+        <text y="-2" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+              font-weight="700" font-size="3" fill="#FFFFFF" letter-spacing="0.2">LÍQUIDO</text>
+        <text y="2" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+              font-weight="700" font-size="3" fill="#FFFFFF" letter-spacing="0.2">COMBUSTIBLE</text>
+      </g>
+      <g transform="translate(620 388) scale(0.7)">
+        <use href="#class3Placard1202"/>
+        <text y="-2" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+              font-weight="700" font-size="3" fill="#FFFFFF" letter-spacing="0.2">LÍQUIDO</text>
+        <text y="2" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+              font-weight="700" font-size="3" fill="#FFFFFF" letter-spacing="0.2">COMBUSTIBLE</text>
+      </g>
+    </g>
   </g>
 
   <!-- X-ray fluid level sight gauge on TRUCK (FALLS) -->

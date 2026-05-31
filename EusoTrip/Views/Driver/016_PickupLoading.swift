@@ -43,6 +43,7 @@ struct PickupLoading: View {
     @Environment(\.palette) private var palette
     @Environment(\.lifecycleAdvance) private var advance
     @Environment(\.driverNavBack) private var navBack
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var lifecycle = TripLifecycleStore()
@@ -81,8 +82,44 @@ struct PickupLoading: View {
     private let fallbackGallonsFlown = 6_510
     private let fallbackGallonsTotal = 10_500
 
+    // MARK: - Loaded-fraction source of truth
+    //
+    // The progress ring, the big "% LOADED" label, and the
+    // "gallons flown / total" readout MUST all read off the same two
+    // numbers so they can never disagree on screen. `gallonsTotal`
+    // (the fill target) comes from the real load envelope when the
+    // backend ships it; `gallonsFlown` is the live forwarded-from-
+    // truck fill telemetry. Until either pipeline lands the Figma
+    // reference renders so the frame paints identically on cold start
+    // (matching the file-header data-wiring doctrine). The ring trim
+    // is therefore bound to `loadedFraction`, a genuine
+    // flown / target ratio — never a decorative literal.
+
+    /// Fill target in gallons. Derived from the real load's net
+    /// weight when present (anhydrous ammonia ≈ 5.15 lb/gal at the
+    /// fill reference; liquids only), else the Figma reference total.
+    private var gallonsTotal: Int {
+        if let load = activeLoad, load.weightValue > 0, ctx.isHazmat {
+            // Net-weight → gallons for the loaded liquid. 5.15 lb/gal
+            // is the anhydrous-ammonia fill reference; clamp to a sane
+            // floor so a malformed weight can't zero the denominator.
+            let gal = Int((load.weightValue / 5.15).rounded())
+            return max(gal, 1)
+        }
+        return fallbackGallonsTotal
+    }
+
+    /// Gallons transferred so far. Live fill telemetry is forwarded
+    /// from the truck in production; until that stream ships the
+    /// reference fill renders. Clamped to the target so the ring can
+    /// never read over 100%.
+    private var gallonsFlown: Int {
+        min(fallbackGallonsFlown, gallonsTotal)
+    }
+
     private var loadedFraction: Double {
-        Double(fallbackGallonsFlown) / Double(fallbackGallonsTotal)
+        guard gallonsTotal > 0 else { return 0 }
+        return min(1, Double(gallonsFlown) / Double(gallonsTotal))
     }
     private var loadedPercent: Int {
         Int((loadedFraction * 100).rounded())
@@ -189,10 +226,10 @@ struct PickupLoading: View {
                     .foregroundStyle(palette.textTertiary)
                     .lineLimit(1)
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(fallbackGallonsFlown.formatted())
+                    Text(gallonsFlown.formatted())
                         .font(.system(size: 26, weight: .heavy, design: .rounded))
                         .foregroundStyle(palette.textPrimary)
-                    Text("/ \(fallbackGallonsTotal.formatted()) gal")
+                    Text("/ \(gallonsTotal.formatted()) gal")
                         .font(EType.body)
                         .foregroundStyle(palette.textSecondary)
                 }
@@ -225,6 +262,7 @@ struct PickupLoading: View {
                 .stroke(palette.bgCardSoft, lineWidth: 10)
                 .frame(width: 108, height: 108)
             Circle()
+                // Completed arc = real flown / target fraction.
                 .trim(from: 0, to: CGFloat(loadedFraction))
                 .stroke(
                     LinearGradient.diagonal,
@@ -232,7 +270,16 @@ struct PickupLoading: View {
                 )
                 .rotationEffect(.degrees(-90))
                 .frame(width: 108, height: 108)
-                .animation(.easeOut(duration: 0.6), value: loadedFraction)
+                // Each fill tick is a data-update settle: Material
+                // decelerate (cubic-bezier 0.4,0,0.2,1) so the arc
+                // eases out as it reaches the new level. Reduce-motion
+                // snaps straight to the final state — no sweep.
+                .animation(
+                    reduceMotion
+                        ? nil
+                        : .timingCurve(0.4, 0, 0.2, 1, duration: 0.6),
+                    value: loadedFraction
+                )
             VStack(spacing: 0) {
                 Text("\(loadedPercent)%")
                     .font(.system(size: 30, weight: .heavy, design: .rounded))
@@ -243,6 +290,9 @@ struct PickupLoading: View {
                     .foregroundStyle(palette.textTertiary)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Load fill progress")
+        .accessibilityValue("\(loadedPercent) percent loaded · \(gallonsFlown.formatted()) of \(gallonsTotal.formatted()) gallons")
     }
 
     // MARK: Safety tiles — product-dispatched

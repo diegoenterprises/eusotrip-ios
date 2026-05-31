@@ -525,11 +525,48 @@ struct DispatcherLatePickupScreen: View {
 private struct LatePickupBody: View {
     let loadId: String
     @Environment(\.palette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var load: ExceptionLoadCtx?
     @State private var loading: Bool = true
     @State private var actionInFlight: String? = nil
     @State private var actionAck: String?
     @State private var actionError: String?
+
+    /// Length of the shipper auto-release recovery window after the
+    /// scheduled pickup time lapses. The countdown ring and timer below
+    /// are bound to the REAL fraction of this window still remaining,
+    /// recomputed against the wall clock every tick — never a decorative
+    /// constant.
+    private let autoReleaseWindow: TimeInterval = 60 * 60   // 60 min
+
+    /// Wall-clock instant at which the shipper auto-releases the load to
+    /// the marketplace = scheduled pickup + recovery window. Derived from
+    /// the load's real `pickupDate`; nil until context loads.
+    private var autoReleaseDeadline: Date? {
+        guard let iso = load?.pickupDate else { return nil }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let scheduled = f.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
+        guard let scheduled else { return nil }
+        return scheduled.addingTimeInterval(autoReleaseWindow)
+    }
+
+    /// Real seconds the driver has been past the scheduled pickup time
+    /// (clamped ≥ 0), measured against `now`.
+    private func minutesLate(_ now: Date) -> Int {
+        guard let iso = load?.pickupDate else { return 0 }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let scheduled = f.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
+        guard let scheduled else { return 0 }
+        return max(0, Int(now.timeIntervalSince(scheduled) / 60))
+    }
+
+    /// Real seconds left before auto-release, clamped to [0, window].
+    private func remaining(_ now: Date) -> TimeInterval {
+        guard let deadline = autoReleaseDeadline else { return autoReleaseWindow }
+        return min(autoReleaseWindow, max(0, deadline.timeIntervalSince(now)))
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -565,14 +602,26 @@ private struct LatePickupBody: View {
     }
 
     private var priorityBanner: some View {
-        LifecycleCard(accentDanger: true) {
-            HStack {
-                Text("P1 · LATE PU").font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Capsule().fill(Color.orange.opacity(0.18)))
-                    .foregroundStyle(.orange)
-                Spacer()
-                Text("38 min late · 22 min to auto-release").font(.caption.monospaced().weight(.semibold)).foregroundStyle(.orange)
+        // The "min late / min to auto-release" readout is bound to the
+        // load's real pickup time vs. the wall clock and re-derived each
+        // 1s tick (no hardcoded "38 / 22"). Frozen on the current snapshot
+        // under reduce-motion.
+        TimelineView(.periodic(from: .now, by: reduceMotion ? .infinity : 1.0)) { tl in
+            let now = tl.date
+            let late = minutesLate(now)
+            let toRelease = Int((remaining(now) / 60).rounded())
+            LifecycleCard(accentDanger: true) {
+                HStack {
+                    Text("P1 · LATE PU").font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(Color.orange.opacity(0.18)))
+                        .foregroundStyle(.orange)
+                    Spacer()
+                    Text("\(late) min late · \(toRelease) min to auto-release")
+                        .font(.caption.monospaced().weight(.semibold))
+                        .foregroundStyle(.orange)
+                        .contentTransition(.numericText(value: Double(toRelease)))
+                }
             }
         }
     }
@@ -597,15 +646,78 @@ private struct LatePickupBody: View {
     }
 
     private var releaseCountdown: some View {
-        LifecycleCard(accentDanger: true) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("AUTO-RELEASE TIMER")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text("22:00").font(.system(size: 36, weight: .heavy).monospacedDigit()).foregroundStyle(.orange)
-                Text("until shipper auto-releases load to marketplace")
-                    .font(.caption).foregroundStyle(palette.textSecondary)
+        // AAA countdown: the ring's trimmed arc and the mm:ss readout are
+        // bound to the REAL remaining time (pickupDate + recovery window −
+        // now), recomputed every 1s tick — not a decorative "22:00". The
+        // ring fraction = remaining / window. Colour shifts warning→danger
+        // as the window closes; a subtle opacity breath flags criticality.
+        // Under reduce-motion the clock is frozen (interval = ∞) and the
+        // breath is pinned, so it renders the static current snapshot.
+        TimelineView(.periodic(from: .now, by: reduceMotion ? .infinity : 1.0)) { tl in
+            let now = tl.date
+            let secs = remaining(now)
+            // Real fraction of the auto-release window still left, [0,1].
+            let frac = max(0, min(1, secs / autoReleaseWindow))
+            let critical = secs <= 300
+            let ringColor: Color = secs <= 300 ? Brand.danger
+                                 : secs <= 900 ? .orange
+                                 : Brand.warning
+            // Seamless 0→1→0 breath, continuous loop; LINEAR is fine since
+            // it feeds a sine so the eased shape comes from the sin curve.
+            let breath = reduceMotion
+                ? 1.0
+                : 0.55 + 0.45 * (0.5 - 0.5 * cos(now.timeIntervalSinceReferenceDate * .pi / 0.9))
+
+            LifecycleCard(accentDanger: true) {
+                HStack(spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .stroke(palette.bgCardSoft, lineWidth: 7)
+                        Circle()
+                            .trim(from: 0, to: CGFloat(frac))
+                            .stroke(
+                                AngularGradient(
+                                    colors: [ringColor.opacity(0.55), ringColor],
+                                    center: .center
+                                ),
+                                style: StrokeStyle(lineWidth: 7, lineCap: .round)
+                            )
+                            .rotationEffect(.degrees(-90))
+                            // Decelerate ease so each per-second step settles
+                            // smoothly instead of snapping (no default easeInOut).
+                            .animation(reduceMotion ? nil : .timingCurve(0.4, 0, 0.2, 1, duration: 0.45), value: frac)
+                            .opacity(critical ? breath : 1.0)
+                        VStack(spacing: 0) {
+                            Text(mmss(secs))
+                                .font(.system(size: 26, weight: .heavy).monospacedDigit())
+                                .foregroundStyle(ringColor)
+                                .contentTransition(.numericText(value: secs))
+                            Text("\(Int((frac * 100).rounded()))% left")
+                                .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                                .foregroundStyle(palette.textTertiary)
+                        }
+                    }
+                    .frame(width: 92, height: 92)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("AUTO-RELEASE TIMER")
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
+                        Text(secs <= 0
+                             ? "Window expired — shipper has released this load to the marketplace."
+                             : "until shipper auto-releases load to marketplace")
+                            .font(.caption).foregroundStyle(palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
             }
         }
+    }
+
+    /// Format remaining seconds as mm:ss (clamped at 00:00).
+    private func mmss(_ secs: TimeInterval) -> String {
+        let s = max(0, Int(secs.rounded()))
+        return String(format: "%02d:%02d", s / 60, s % 60)
     }
 
     private var actionRow: some View {

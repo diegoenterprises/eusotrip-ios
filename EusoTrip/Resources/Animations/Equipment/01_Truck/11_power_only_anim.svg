@@ -7,7 +7,8 @@
       0%, 100% { transform: translateY(0); }
       50%      { transform: translateY(-1.5px); }
     }
-    .cab-sway      { animation: cab-sway 0.5s ease-in-out infinite -0.12s; }
+    .cab-sway      { transform-origin: 330px 455px;
+                      animation: cab-sway 0.5s ease-in-out infinite -0.12s; }
     @keyframes cab-sway {
       0%, 100% { transform: translateY(0)    rotate(0deg); }
       50%      { transform: translateY(-0.8px) rotate(-0.15deg); }
@@ -159,15 +160,16 @@
       <feGaussianBlur stdDeviation="3"/>
     </filter>
   </defs>
-  <g class="chassis-bob">
-
+  <!-- STATIC WORLD — sky + ground stay put; only the sprung tractor mass bobs. -->
   <rect class="sky-bg" width="1200" height="600" fill="url(#sky)"/>
   <rect x="0" y="380" width="1200" height="70" fill="#FFFFFF" opacity="0.18"/>
-  <line x1="60" y1="475" x2="1140" y2="475" stroke="#9B7FD9" stroke-width="4" stroke-dasharray="14 9" stroke-linecap="round" opacity="0.55"/>
-  <ellipse cx="350" cy="486" rx="200" ry="6" fill="#1A1F2E" opacity="0.12"/>
+  <line class="ground-line" x1="60" y1="475" x2="1140" y2="475" stroke="#9B7FD9" stroke-width="4" stroke-linecap="round" opacity="0.55"/>
+  <ellipse class="ground-shadow" cx="350" cy="486" rx="200" ry="6" fill="#1A1F2E" opacity="0.12"/>
 
+  <!-- SPRUNG MASS — cab + fifth wheel ride the suspension (bob); wheels below stay grounded. -->
+  <g class="chassis-bob">
   <!-- CAB (positioned more centrally since no trailer) -->
-  <g filter="url(#rigShadow)">
+  <g class="cab-sway" filter="url(#rigShadow)">
     <path d="M 460 250 L 460 460 L 295 460 L 295 240 Q 295 230 305 230 L 450 230 Q 460 230 460 240 Z" fill="url(#cab)"/>
     <path d="M 295 240 L 295 460 L 195 460 L 195 320 Q 195 300 205 290 L 245 245 Q 255 235 265 235 L 290 235 Q 295 235 295 240 Z" fill="url(#cab)"/>
     <rect x="295" y="232" width="160" height="6" rx="3" fill="url(#cabRoof)"/>
@@ -176,7 +178,7 @@
     <line x1="279" y1="320" x2="279" y2="378" stroke="#0A1F3F" stroke-width="1.5" opacity="0.4"/>
     <rect x="315" y="262" width="120" height="22" rx="4" fill="url(#windowGlass)" opacity="0.7"/>
     <rect x="211" y="345" width="6" height="22" rx="2" fill="#1A1F2E" opacity="0.7"/>
-    <ellipse cx="200" cy="345" rx="8" ry="6" fill="#FFE680"/><ellipse cx="200" cy="345" rx="4" ry="3" fill="#FFFFFF"/>
+    <g class="headlight-glow"><ellipse cx="200" cy="345" rx="8" ry="6" fill="#FFE680"/><ellipse cx="200" cy="345" rx="4" ry="3" fill="#FFFFFF"/></g>
     <rect x="195" y="365" width="14" height="55" rx="3" fill="#0A1F3F" opacity="0.85"/>
     <g stroke="#3A3F4A" stroke-width="1.5"><line x1="197" y1="372" x2="207" y2="372"/><line x1="197" y1="380" x2="207" y2="380"/><line x1="197" y1="388" x2="207" y2="388"/><line x1="197" y1="396" x2="207" y2="396"/><line x1="197" y1="404" x2="207" y2="404"/><line x1="197" y1="412" x2="207" y2="412"/></g>
     <rect x="191" y="435" width="26" height="22" rx="4" fill="#1A1F2E"/><rect x="271" y="438" width="22" height="20" rx="2" fill="#1A1F2E" opacity="0.85"/>
@@ -197,6 +199,7 @@
     <rect x="395" y="448" width="8" height="14" rx="1" fill="#1A1F2E"/>
     <rect x="457" y="448" width="8" height="14" rx="1" fill="#1A1F2E"/>
   </g>
+  </g><!-- /chassis-bob : sprung mass ends here -->
 
   <!-- ========== "BRING OWN TRAILER" PLACEHOLDER (dashed outline where trailer would be) ========== -->
   <g opacity="0.45">
@@ -221,9 +224,7 @@
     <path d="M 510 410 L 506 414 L 510 410 L 506 406" stroke="#9B7FD9" stroke-width="2" fill="none"/>
   </g>
 
-  <!-- Wheels — only the tractor's 4 wheels, no trailer wheels -->
-  
-  </g>
+  <!-- Wheels — only the tractor's 4 wheels, no trailer wheels (grounded, do not bob) -->
   <g id="wheelGroup">
     <circle cx="0" cy="0" r="32" fill="#1A1A1A"/><circle cx="0" cy="0" r="22" fill="url(#rim)"/><circle cx="0" cy="0" r="7" fill="#7A7F88"/>
     <g stroke="#3A3F4A" stroke-width="2.5" stroke-linecap="round"><line x1="0" y1="-19" x2="0" y2="-9"/><line x1="18" y1="-6" x2="9" y2="-3"/><line x1="11" y1="16" x2="6" y2="8"/><line x1="-11" y1="16" x2="-6" y2="8"/><line x1="-18" y1="-6" x2="-9" y2="-3"/></g>

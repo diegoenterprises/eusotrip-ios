@@ -43,13 +43,16 @@
        90-100% hold/reset
     */
 
-    .chain-release { animation: chain-release 6.5s ease-in-out infinite;
+    /* Binder released → chain goes slack and is hauled off the lug.
+       A chain CANNOT stretch, so scaleY never exceeds 1; the slack reads as a
+       brief skew/sway, then the chain collapses up toward the lug (origin top). */
+    .chain-release { animation: chain-release 6.5s cubic-bezier(0.4,0,0.6,1) infinite;
                      transform-box: fill-box; transform-origin: top; }
     @keyframes chain-release {
-      0%        { transform: scaleY(1)    skewX(0deg); opacity: 0.95; }
-      10%       { transform: scaleY(1.05) skewX(-3deg); opacity: 0.85; }
-      18%       { transform: scaleY(1.1)  skewX(3deg);  opacity: 0.55; }
-      28%       { transform: scaleY(0.6)  skewX(0deg);  opacity: 0.20; }
+      0%        { transform: scaleY(1)    skewX(0deg);  opacity: 0.95; }
+      10%       { transform: scaleY(1)    skewX(-4deg); opacity: 0.9; }  /* tension released, sways */
+      18%       { transform: scaleY(0.96) skewX(4deg);  opacity: 0.6; }  /* slack */
+      28%       { transform: scaleY(0.55) skewX(-2deg); opacity: 0.22; } /* hauled up */
       32%, 100% { transform: scaleY(0)    skewX(0deg);  opacity: 0; }
     }
 
@@ -63,18 +66,23 @@
       35%, 100% { transform: rotate(38deg); opacity: 0; }
     }
 
-    .forklift-approach { animation: forklift-approach 6.5s ease-in-out infinite;
+    /* Empty forklift rolls in faster than a laden one and brakes to the deck,
+       forks aligned under the skid. Decel curve, tiny brake creep, no overshoot. */
+    .forklift-approach { animation: forklift-approach 6.5s cubic-bezier(0.33,0,0.2,1) infinite;
                          transform-box: fill-box; transform-origin: center; }
     @keyframes forklift-approach {
       0%, 30%   { transform: translateX(160px); }
+      47%       { transform: translateX(5px); }   /* creep / brake */
       50%, 100% { transform: translateX(0); }
     }
 
-    .pump-lift { animation: pump-lift 6.5s ease-in-out infinite;
+    /* Hydraulic mast lift: the skid breaks free of the deck (slow start as
+       slack is taken up), accelerates, then eases as it clears. */
+    .pump-lift { animation: pump-lift 6.5s linear infinite;
                  transform-box: fill-box; transform-origin: center; }
     @keyframes pump-lift {
-      0%, 70%   { transform: translateY(0); }
-      85%       { transform: translateY(-44px); }
+      0%, 70%   { transform: translateY(0);     animation-timing-function: cubic-bezier(0.5,0,0.75,0); }
+      78%       { transform: translateY(-12px); animation-timing-function: cubic-bezier(0.4,0,0.2,1); } /* breaks free */
       90%, 100% { transform: translateY(-64px); }
     }
 
@@ -128,6 +136,15 @@
       to   { stroke-dashoffset: -24; }
     }
 
+    /* The loose chain tails that fall to the deck only exist AFTER the binders
+       release — they must not contradict the still-taut chains at cycle start. */
+    .residual-chain { animation: residual-chain 6.5s ease-out infinite; }
+    @keyframes residual-chain {
+      0%, 22%   { opacity: 0; }
+      32%       { opacity: 0.85; }
+      100%      { opacity: 0.85; }
+    }
+
     @media (prefers-reduced-motion: reduce) {
       .agitator-spin,
       .brand-lockup,
@@ -144,12 +161,16 @@
       .pump-lift,
       .pumpjack-rock,
       .ratchet-release,
+      .residual-chain,
       .rig-beacon,
       .sky-shimmer,
       .wheel-spin,
       .worker-release {
         animation: none !important;
       }
+      /* keep released chains visible in the calm/stilled state */
+      .chain-release { opacity: 0 !important; }
+      .residual-chain { opacity: 0.85 !important; }
     }
 
   ]]></style>
@@ -1035,8 +1056,8 @@
     <circle cx="880" cy="424" r="2" fill="none" stroke="#1A1F2E" stroke-width="1"/>
   </g>
 
-  <!-- Residual loose chain bits (PERMANENT) -->
-  <g opacity="0.85">
+  <!-- Residual loose chain bits — fade in only after the binders release -->
+  <g class="residual-chain" opacity="0.85">
     <path d="M 640 424 Q 638 432 642 438 Q 646 444 642 450" stroke="#3A3F4A" stroke-width="2.4" fill="none" stroke-linecap="round"/>
     <path d="M 640 424 Q 638 432 642 438 Q 646 444 642 450" stroke="#9098A8" stroke-width="0.8" fill="none" stroke-linecap="round" opacity="0.6"/>
     <path d="M 880 424 Q 884 432 882 440 Q 878 448 884 454" stroke="#3A3F4A" stroke-width="2.4" fill="none" stroke-linecap="round"/>
@@ -1837,12 +1858,28 @@
           font-weight="800" font-size="14" letter-spacing="1.8" fill="#FFFFFF">TRUCK</text>
   </g>
 
-  <!-- LBS unit badge (below TRUCK) -->
-  <g>
+  <!-- ===== COUNTRY-SWITCHABLE UNIT BADGE (below TRUCK) =====
+       Bare oilfield equipment on a flatbed is NON-hazmat → no UN/DOT placards.
+       Only the rated-weight UNIT changes by jurisdiction. Renderer toggles
+       display:none on the inactive groups (default country-US).
+       region == 'US' | 'CA' | 'MX'. -->
+  <g class="country-US">
     <rect x="1078" y="86" width="74" height="22" rx="11" ry="11"
           fill="#FFFFFF" stroke="url(#brandIridescent)" stroke-width="1.6" stroke-opacity="0.7"/>
     <text x="1115" y="101" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
           font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">LBS</text>
+  </g>
+  <g class="country-CA" style="display:none">
+    <rect x="1078" y="86" width="74" height="22" rx="11" ry="11"
+          fill="#FFFFFF" stroke="url(#brandIridescent)" stroke-width="1.6" stroke-opacity="0.7"/>
+    <text x="1115" y="101" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">KG</text>
+  </g>
+  <g class="country-MX" style="display:none">
+    <rect x="1078" y="86" width="74" height="22" rx="11" ry="11"
+          fill="#FFFFFF" stroke="url(#brandIridescent)" stroke-width="1.6" stroke-opacity="0.7"/>
+    <text x="1115" y="101" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+          font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">KG</text>
   </g>
 
 

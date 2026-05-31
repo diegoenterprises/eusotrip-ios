@@ -108,6 +108,11 @@
       .chassis-bob, .cab-sway, .mudflap, .streak, .bow-air, .tire-dust,
       .sheen, .wordmark, .badge-e, .headlight-glow, .airlines, .chevron,
       .sky-shimmer, .ground-line, .brand-mark, .brand-word { animation: none !important; }
+      /* CSS cannot stop SMIL <animate>; hide the purely-decorative
+         SMIL-driven ambient layers (exhaust plume + tire dust) so the
+         rig reads as a calm still. Wheels are left as-is (a slow
+         continuous spin, no flashing) since the rig's identity needs them. */
+      .smil-ambient { visibility: hidden !important; }
     }
   
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
@@ -165,12 +170,15 @@
       <feGaussianBlur stdDeviation="3"/>
     </filter>
   </defs>
-  <g class="chassis-bob">
-
+  <!-- STATIC backdrop — sky + ground must NOT bob with the rig.
+       (Kept OUTSIDE .chassis-bob so only the truck body moves on its
+       suspension; previously the whole world bobbed, which read as jank.) -->
   <rect class="sky-bg" width="1200" height="600" fill="url(#sky)"/>
   <rect x="0" y="380" width="1200" height="70" fill="#FFFFFF" opacity="0.18"/>
   <line x1="60" y1="475" x2="1140" y2="475" stroke="#9B7FD9" stroke-width="4" stroke-dasharray="14 9" stroke-linecap="round" opacity="0.55"/>
   <ellipse cx="640" cy="486" rx="430" ry="7" fill="#1A1F2E" opacity="0.13"/>
+
+  <g class="chassis-bob">
 
   <g filter="url(#rigShadow)">
     <path d="M 460 250 L 460 460 L 295 460 L 295 240 Q 295 230 305 230 L 450 230 Q 460 230 460 240 Z" fill="url(#cab)"/>
@@ -219,18 +227,95 @@
     <!-- Discharge piping -->
     <rect x="1075" y="370" width="22" height="10" fill="#3A3F4A"/>
     <rect x="1097" y="372" width="6" height="6" fill="#1A1F2E"/>
-    <!-- Class 8 corrosive placard (typical for chemicals) -->
-    <g transform="translate(620 320) rotate(45)">
-      <rect x="-25" y="-25" width="50" height="50" fill="#FFFFFF" stroke="#000000" stroke-width="2"/>
-      <rect x="-25" y="-25" width="50" height="25" fill="#000000"/>
-      <g transform="rotate(-45)">
-        <text y="2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="16" fill="#FFFFFF">8</text>
+    <!-- ============================================================
+         HAZMAT MARKING — Class 8 Corrosive · UN 1789 (Hydrochloric Acid)
+         COUNTRY-SWITCHABLE. The renderer shows exactly ONE of these
+         three sibling groups by class: it sets `display:none` (or
+         removes) the two it does not want and leaves the matching
+         `.country-XX` group visible. Default = .country-US visible.
+           • .country-US — US 49 CFR 172: Class 8 diamond (white over
+                            black) + corrosive pictogram + word
+                            CORROSIVE + UN1789 in an orange ID panel.
+           • .country-MX — MX SCT NOM-004-SCT/2000: same UN-harmonized
+                            Class 8 diamond + Spanish word CORROSIVO +
+                            "No. ONU 1789" panel (Spanish shipping name
+                            required alongside English in Mexico).
+           • .country-CA — CA TDG (SOR/2001-286): UN-harmonized Class 8
+                            diamond (class name word NOT required) with
+                            the UN number displayed on the placard.
+         All three reuse identical diamond geometry so swapping is a
+         pure text/visibility change — no layout shift.
+         ============================================================ -->
+    <!-- Reusable Class-8 corrosive pictogram (test-tubes etching a hand + metal). -->
+    <defs>
+      <g id="class8Symbol">
+        <!-- metal bar being corroded (right) -->
+        <rect x="2" y="6" width="11" height="3.4" fill="#000000"/>
+        <path d="M 2 9.4 L 13 9.4 L 11 12 L 4 12 Z" fill="#000000"/>
+        <!-- hand being corroded (left) -->
+        <path d="M -13 7 q 2 -2 5 -1 l 4 1 q 1 1 0 2 l -7 1 q -3 0 -2 -3 Z" fill="#000000"/>
+        <!-- two test tubes pouring -->
+        <g fill="#000000">
+          <rect x="-9" y="-9" width="2.2" height="9" transform="rotate(28 -8 -4.5)"/>
+          <rect x="2" y="-9" width="2.2" height="9" transform="rotate(-28 3 -4.5)"/>
+        </g>
+        <!-- drip streams -->
+        <g stroke="#000000" stroke-width="1.1" stroke-linecap="round">
+          <line x1="-6.5" y1="1.5" x2="-7.5" y2="5.5"/>
+          <line x1="6.5"  y1="1.5" x2="7.5"  y2="5"/>
+        </g>
+      </g>
+    </defs>
+
+    <!-- ===== US (default visible) ===== -->
+    <g class="country-US">
+      <g transform="translate(620 320) rotate(45)">
+        <rect x="-25" y="-25" width="50" height="50" fill="#FFFFFF" stroke="#000000" stroke-width="2"/>
+        <!-- bottom half black (correct Class 8 layout: white over black) -->
+        <rect x="-25" y="0" width="50" height="25" fill="#000000"/>
+        <g transform="rotate(-45)">
+          <!-- corrosive pictogram in the white upper field -->
+          <g transform="translate(0 -9) scale(0.7)"><use href="#class8Symbol"/></g>
+          <text y="15" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="6.5" fill="#FFFFFF" letter-spacing="0.5">CORROSIVE</text>
+          <text y="22" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="11" fill="#FFFFFF">8</text>
+        </g>
+      </g>
+      <!-- UN1789 orange ID-number panel (US 49 CFR 172.332) -->
+      <g>
+        <rect x="900" y="320" width="80" height="22" rx="2" fill="#F08200" stroke="#000000" stroke-width="1.5"/>
+        <text x="940" y="335" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="13" fill="#000000" letter-spacing="1">1789</text>
       </g>
     </g>
-    <!-- UN number plate -->
-    <g>
-      <rect x="900" y="320" width="80" height="22" rx="2" fill="#FFFFFF" stroke="#000000" stroke-width="1.5"/>
-      <text x="940" y="335" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="13" fill="#000000" letter-spacing="1">UN 1789</text>
+
+    <!-- ===== MX (SCT / NOM-004-SCT) — hidden by default ===== -->
+    <g class="country-MX" style="display:none">
+      <g transform="translate(620 320) rotate(45)">
+        <rect x="-25" y="-25" width="50" height="50" fill="#FFFFFF" stroke="#000000" stroke-width="2"/>
+        <rect x="-25" y="0" width="50" height="25" fill="#000000"/>
+        <g transform="rotate(-45)">
+          <g transform="translate(0 -9) scale(0.7)"><use href="#class8Symbol"/></g>
+          <text y="15" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="6.5" fill="#FFFFFF" letter-spacing="0.3">CORROSIVO</text>
+          <text y="22" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="11" fill="#FFFFFF">8</text>
+        </g>
+      </g>
+      <g>
+        <rect x="900" y="320" width="80" height="22" rx="2" fill="#F08200" stroke="#000000" stroke-width="1.5"/>
+        <text x="940" y="335" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="12" fill="#000000" letter-spacing="0.6">ONU 1789</text>
+      </g>
+    </g>
+
+    <!-- ===== CA (TDG) — hidden by default ===== -->
+    <g class="country-CA" style="display:none">
+      <g transform="translate(620 320) rotate(45)">
+        <rect x="-25" y="-25" width="50" height="50" fill="#FFFFFF" stroke="#000000" stroke-width="2"/>
+        <rect x="-25" y="0" width="50" height="25" fill="#000000"/>
+        <g transform="rotate(-45)">
+          <!-- TDG: corrosive symbol + UN number on the placard; class word not required -->
+          <g transform="translate(0 -9) scale(0.7)"><use href="#class8Symbol"/></g>
+          <text y="16" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="9" fill="#FFFFFF" letter-spacing="0.5">1789</text>
+          <text y="23" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="8" fill="#FFFFFF">8</text>
+        </g>
+      </g>
     </g>
     <!-- "STAINLESS" stamp (subtle, on side) -->
     <text x="800" y="395" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="10" fill="#5B3FBF" opacity="0.7" letter-spacing="3">316L STAINLESS · MC-307</text>
@@ -271,7 +356,7 @@
   <!-- ========== BOW AIR DISPLACEMENT ========== -->
   <ellipse class="bow-air" cx="180" cy="410" rx="38" ry="55" fill="url(#bowHaze)"/>
   <!-- ========== EXHAUST PUFFS ========== -->
-  <g filter="url(#softBlur)" opacity="0.5">
+  <g class="smil-ambient" filter="url(#softBlur)" opacity="0.5">
     <circle cx="292" cy="200" r="6" fill="#C8CDD8">
       <animate attributeName="cy" from="200" to="120" dur="2.6s" repeatCount="indefinite"/>
       <animate attributeName="r"  from="6" to="14" dur="2.6s" repeatCount="indefinite"/>
@@ -289,7 +374,7 @@
     </circle>
   </g>
   <!-- ========== TIRE CONTACT DUST ========== -->
-  <g filter="url(#softBlur)">
+  <g class="smil-ambient" filter="url(#softBlur)">
     <ellipse class="tire-dust" cx="420.0" cy="492.0" rx="14" ry="5" fill="url(#dustCloud)"/>
     <ellipse class="tire-dust" cx="280.0" cy="492.0" rx="14" ry="5" fill="url(#dustCloud)" style="animation-delay:-0.4s"/>
     <ellipse class="tire-dust" cx="950.0" cy="492.0" rx="14" ry="5" fill="url(#dustCloud)" style="animation-delay:-0.7s"/>

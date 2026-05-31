@@ -19,6 +19,7 @@ import SwiftUI
 struct CreateAccountView: View {
     @Environment(\.palette) var palette
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject var session: EusoTripSession
     @StateObject private var vm = RegistrationViewModel()
     @Namespace private var stepNS
@@ -50,6 +51,13 @@ struct CreateAccountView: View {
     // Solo roles don't see the row so these stay false for them.
     @State private var showFleetSetup = false
     @State private var showInviteTeam = false
+
+    // Drives the verify-email card's envelope-badge bounce. Flips on
+    // the real success transition (registration done → link sent) so
+    // the SF Symbol bounce fires exactly once on the genuine lifecycle
+    // beat — never on a constant. Reset to false whenever we leave the
+    // card so re-entry (e.g. resend flow) replays the celebration.
+    @State private var verifyBounceTrigger = false
 
     // MARK: Body
 
@@ -1673,8 +1681,20 @@ struct CreateAccountView: View {
                     Image(systemName: "envelope.badge.fill")
                         .font(.system(size: 40, weight: .medium))
                         .foregroundStyle(LinearGradient.diagonal)
-                        .symbolEffect(.bounce, value: true)
+                        // checkmark-bounce — celebrates the real lifecycle
+                        // beat: account created → verification link sent.
+                        // `verifyBounceTrigger` flips in .onAppear below, so
+                        // the SF Symbol's built-in spring-like bounce fires
+                        // exactly once on the genuine success transition
+                        // (not a constant). Reduce-motion shows the final
+                        // static icon — no bounce.
+                        .symbolEffect(.bounce, value: reduceMotion ? false : verifyBounceTrigger)
                 }
+                .onAppear {
+                    guard !reduceMotion else { return }
+                    verifyBounceTrigger = true
+                }
+                .onDisappear { verifyBounceTrigger = false }
                 Text("Check your email")
                     .font(EType.h2)
                     .foregroundStyle(palette.textPrimary)
