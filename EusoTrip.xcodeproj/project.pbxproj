@@ -749,6 +749,14 @@
 		FDE050000000000000000000 /* 603_RailDockSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDF050000000000000000000 /* 603_RailDockSchedule.swift */; };
 		FDE060000000000000000000 /* 604_RailYardAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDF060000000000000000000 /* 604_RailYardAnalytics.swift */; };
 		FDE070000000000000000000 /* 605_RailCargoClaim.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDF070000000000000000000 /* 605_RailCargoClaim.swift */; };
+		FFG000000000000000000000 /* 623_RailDropYardOperations.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFH000000000000000000000 /* 623_RailDropYardOperations.swift */; };
+		FFG010000000000000000000 /* 624_RailDwellReasonAnalysis.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFH010000000000000000000 /* 624_RailDwellReasonAnalysis.swift */; };
+		FFG020000000000000000000 /* 625_RailAppointmentCompliance.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFH020000000000000000000 /* 625_RailAppointmentCompliance.swift */; };
+		FFG030000000000000000000 /* 626_RailWarehouseReceipt.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFH030000000000000000000 /* 626_RailWarehouseReceipt.swift */; };
+		FFG040000000000000000000 /* 627_RailBidBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFH040000000000000000000 /* 627_RailBidBoard.swift */; };
+		FFG050000000000000000000 /* 628_RailYardMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFH050000000000000000000 /* 628_RailYardMap.swift */; };
+		FFG060000000000000000000 /* 629_RailTrailerPoolDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFH060000000000000000000 /* 629_RailTrailerPoolDetail.swift */; };
+		FFG070000000000000000000 /* 630_RailCrossDockOperations.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFH070000000000000000000 /* 630_RailCrossDockOperations.swift */; };
 		FD97CECB2FC1D5120016DF5F /* 650_VesselOperatorHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */; };
 		VOTMBUILD1 /* VesselOceanTrackMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = VOTMFREF1 /* VesselOceanTrackMap.swift */; };
 		FEB000000000000000000000 /* 659_VesselPortDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA000000000000000000000 /* 659_VesselPortDirectory.swift */; };
@@ -1664,6 +1672,14 @@
 		FDF050000000000000000000 /* 603_RailDockSchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 603_RailDockSchedule.swift; sourceTree = "<group>"; };
 		FDF060000000000000000000 /* 604_RailYardAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 604_RailYardAnalytics.swift; sourceTree = "<group>"; };
 		FDF070000000000000000000 /* 605_RailCargoClaim.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 605_RailCargoClaim.swift; sourceTree = "<group>"; };
+		FFH000000000000000000000 /* 623_RailDropYardOperations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 623_RailDropYardOperations.swift; sourceTree = "<group>"; };
+		FFH010000000000000000000 /* 624_RailDwellReasonAnalysis.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 624_RailDwellReasonAnalysis.swift; sourceTree = "<group>"; };
+		FFH020000000000000000000 /* 625_RailAppointmentCompliance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 625_RailAppointmentCompliance.swift; sourceTree = "<group>"; };
+		FFH030000000000000000000 /* 626_RailWarehouseReceipt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 626_RailWarehouseReceipt.swift; sourceTree = "<group>"; };
+		FFH040000000000000000000 /* 627_RailBidBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 627_RailBidBoard.swift; sourceTree = "<group>"; };
+		FFH050000000000000000000 /* 628_RailYardMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 628_RailYardMap.swift; sourceTree = "<group>"; };
+		FFH060000000000000000000 /* 629_RailTrailerPoolDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 629_RailTrailerPoolDetail.swift; sourceTree = "<group>"; };
+		FFH070000000000000000000 /* 630_RailCrossDockOperations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 630_RailCrossDockOperations.swift; sourceTree = "<group>"; };
 		FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 650_VesselOperatorHome.swift; sourceTree = "<group>"; };
 		VOTMFREF1 /* VesselOceanTrackMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VesselOceanTrackMap.swift; path = EusoTrip/Views/Vessel/VesselOceanTrackMap.swift; sourceTree = SOURCE_ROOT; };
 		FEA000000000000000000000 /* 659_VesselPortDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 659_VesselPortDirectory.swift; sourceTree = "<group>"; };
@@ -2768,6 +2784,14 @@
 				FDF050000000000000000000 /* 603_RailDockSchedule.swift */,
 				FDF060000000000000000000 /* 604_RailYardAnalytics.swift */,
 				FDF070000000000000000000 /* 605_RailCargoClaim.swift */,
+				FFH000000000000000000000 /* 623_RailDropYardOperations.swift */,
+				FFH010000000000000000000 /* 624_RailDwellReasonAnalysis.swift */,
+				FFH020000000000000000000 /* 625_RailAppointmentCompliance.swift */,
+				FFH030000000000000000000 /* 626_RailWarehouseReceipt.swift */,
+				FFH040000000000000000000 /* 627_RailBidBoard.swift */,
+				FFH050000000000000000000 /* 628_RailYardMap.swift */,
+				FFH060000000000000000000 /* 629_RailTrailerPoolDetail.swift */,
+				FFH070000000000000000000 /* 630_RailCrossDockOperations.swift */,
 				FD97CECC2FC1D7C70016DF5F /* 551_RailShipments.swift */,
 				FD97CECE2FC1D7C80016DF5F /* 552_RailCompliance.swift */,
 				FDA10000000000000000553F /* 553_RailShipmentDetailCarrier.swift */,
@@ -3652,6 +3676,14 @@
 				FDE050000000000000000000 /* 603_RailDockSchedule.swift in Sources */,
 				FDE060000000000000000000 /* 604_RailYardAnalytics.swift in Sources */,
 				FDE070000000000000000000 /* 605_RailCargoClaim.swift in Sources */,
+				FFG000000000000000000000 /* 623_RailDropYardOperations.swift in Sources */,
+				FFG010000000000000000000 /* 624_RailDwellReasonAnalysis.swift in Sources */,
+				FFG020000000000000000000 /* 625_RailAppointmentCompliance.swift in Sources */,
+				FFG030000000000000000000 /* 626_RailWarehouseReceipt.swift in Sources */,
+				FFG040000000000000000000 /* 627_RailBidBoard.swift in Sources */,
+				FFG050000000000000000000 /* 628_RailYardMap.swift in Sources */,
+				FFG060000000000000000000 /* 629_RailTrailerPoolDetail.swift in Sources */,
+				FFG070000000000000000000 /* 630_RailCrossDockOperations.swift in Sources */,
 				D2R0100000000000000ABF3 /* 411_LoadsSortSheet.swift in Sources */,
 				D2R0200000000000000ABF3 /* 412_DraftsList.swift in Sources */,
 				D2R0300000000000000ABF3 /* 413_ArchivedLoads.swift in Sources */,

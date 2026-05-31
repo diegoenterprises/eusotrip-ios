@@ -2093,6 +2093,15 @@ enum ScreenRegistry {
             .init(id: "Rail603", title: "Rail Engineer · Dock Schedule",        role: .railEngineer) { p in AnyView(RailDockScheduleScreen(theme: p)) },
             .init(id: "Rail604", title: "Rail Engineer · Yard Analytics",       role: .railEngineer) { p in AnyView(RailYardAnalyticsScreen(theme: p)) },
             .init(id: "Rail605", title: "Rail Engineer · Cargo Claim",          role: .railEngineer) { p in AnyView(RailCargoClaimScreen(theme: p)) },
+            // Phase B wave 8 — Rail NEW screens (verbatim ports, theme-only inits).
+            .init(id: "Rail623", title: "Rail Engineer · Drop Yard Ops",        role: .railEngineer) { p in AnyView(RailDropYardOperationsScreen(theme: p)) },
+            .init(id: "Rail624", title: "Rail Engineer · Dwell Reason Analysis",role: .railEngineer) { p in AnyView(RailDwellReasonAnalysisScreen(theme: p)) },
+            .init(id: "Rail625", title: "Rail Engineer · Appointment Compliance",role: .railEngineer) { p in AnyView(RailAppointmentComplianceScreen(theme: p)) },
+            .init(id: "Rail626", title: "Rail Engineer · Warehouse Receipt",    role: .railEngineer) { p in AnyView(RailWarehouseReceiptScreen(theme: p)) },
+            .init(id: "Rail627", title: "Rail Engineer · Bid Board",            role: .railEngineer) { p in AnyView(RailBidBoardScreen(theme: p)) },
+            .init(id: "Rail628", title: "Rail Engineer · Yard Map",             role: .railEngineer) { p in AnyView(RailYardMapScreen(theme: p)) },
+            .init(id: "Rail629", title: "Rail Engineer · Trailer Pool Detail",  role: .railEngineer) { p in AnyView(RailTrailerPoolDetailScreen(theme: p)) },
+            .init(id: "Rail630", title: "Rail Engineer · Cross-Dock Ops",       role: .railEngineer) { p in AnyView(RailCrossDockOperationsScreen(theme: p)) },
         ])
 
         // Vessel Operator surface (Vesl650–652).
