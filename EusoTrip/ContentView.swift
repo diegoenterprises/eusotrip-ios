@@ -252,6 +252,8 @@ enum ScreenRegistry {
             .init(id: "110", title: "Me · Auto-Accept",             role: .driver) { p in AnyView(MeAutoAcceptRulesScreen(theme: p)) },
             // 2026-05-21 — Bonus Tracker port (web BonusTracker.tsx → iOS).
             .init(id: "111", title: "Me · Bonus Tracker",           role: .driver) { p in AnyView(DriverBonusTrackerScreen(theme: p)) },
+            // 2026-05-31 — Rescue land: bespoke Driver Paperwork (full port). SVG 111 axis; iOS 111 already maps to Me·Bonus, so id 111p.
+            .init(id: "111p", title: "Driver · Paperwork",            role: .driver) { p in AnyView(DriverPaperworkScreen(theme: p)) },
             // Driver Me hub — parent + 7 children mirroring the
             // Shipper 320/320a-g design. Founder feedback 2026-05-04:
             // wanted the same parent-child IA on driver. The catalog
@@ -1505,6 +1507,9 @@ enum ScreenRegistry {
         list.append(.init(id: "243", title: "Shipper · At Gate",        role: .shipper) { p in AnyView(ShipperAtGateScreen(theme: p, loadId: "0")) })
         list.append(.init(id: "244", title: "Shipper · At Dock",        role: .shipper) { p in AnyView(ShipperAtDockScreen(theme: p, loadId: "0")) })
         list.append(.init(id: "245", title: "Shipper · Departing",      role: .shipper) { p in AnyView(ShipperDepartingScreen(theme: p, loadId: "0")) })
+        // 2026-05-31 — Rescue land: bespoke pixel-faithful 244/245 At-Dock + Departing (full ports; structs take loadId, not theme).
+        list.append(.init(id: "244b", title: "Shipper · At Dock (Bespoke)",   role: .shipper) { _ in AnyView(ShipperAtDock()) })
+        list.append(.init(id: "245b", title: "Shipper · Departing (Bespoke)", role: .shipper) { _ in AnyView(ShipperDeparting()) })
         list.append(.init(id: "246", title: "Shipper · Pre-Delivery",   role: .shipper) { p in AnyView(ShipperPreDeliveryScreen(theme: p, loadId: "0")) })
         list.append(.init(id: "247", title: "Shipper · At Delivery",    role: .shipper) { p in AnyView(ShipperAtDeliveryScreen(theme: p, loadId: "0")) })
         list.append(.init(id: "249", title: "Shipper · Load Closed",    role: .shipper) { p in AnyView(ShipperLoadClosedScreen(theme: p, loadId: "0")) })
@@ -1776,6 +1781,9 @@ enum ScreenRegistry {
             .init(id: "Dpch706", title: "Dispatch · Driver Chat",      role: .dispatch) { p in AnyView(DispatchDriverChatScreen(theme: p)) },
             .init(id: "Dpch707", title: "Dispatch · Daily KPI",        role: .dispatch) { p in AnyView(DispatchDailyKPIScreen(theme: p)) },
             .init(id: "Dpch708", title: "Dispatch · Kanban Board",     role: .dispatch) { p in AnyView(DispatchKanbanBoardScreen(theme: p)) },
+            // 2026-05-31 — Rescue land: bespoke Dispatcher greenfield home + kanban (full ports).
+            .init(id: "Disp400", title: "Dispatch · Home",            role: .dispatch) { p in AnyView(DispatcherHomeScreen(theme: p)) },
+            .init(id: "Disp401", title: "Dispatch · Kanban",          role: .dispatch) { p in AnyView(DispatcherKanbanScreen(theme: p)) },
             .init(id: "Dpch709", title: "Dispatch · Bulk Upload Kanban", role: .dispatch) { p in AnyView(DispatchBulkUploadKanbanScreen(theme: p)) },
             .init(id: "Dpch710", title: "Dispatch · Run Ticket Capture", role: .dispatch) { p in AnyView(DispatchRunTicketCaptureScreen(theme: p)) },
             .init(id: "Dpch711", title: "Dispatch · Price Book",       role: .dispatch) { p in AnyView(DispatchPriceBookScreen(theme: p)) },
@@ -1889,6 +1897,8 @@ enum ScreenRegistry {
             .init(id: "539",     title: "Dispatch · Carrier Scorecard",     role: .dispatch) { p in AnyView(DispatcherCarrierScorecardScreen(theme: p)) },
             // 2026-05-21 — Catalyst Vehicle B-variant deep-drill octet (SVG 330B-337B).
             .init(id: "CV330B", title: "Catalyst · Vehicle Score Axis",   role: .catalyst) { p in AnyView(CatalystVehicleScoreAxisScreen(theme: p)) },
+            // 2026-05-31 — Rescue land: bespoke pixel-faithful 330B scorecard axis detail (full port).
+            .init(id: "330B", title: "Catalyst · Vehicle Scorecard Axis (Bespoke)", role: .catalyst) { p in AnyView(CatalystVehicleScorecardAxisDetailScreen(theme: p)) },
             .init(id: "CV331B", title: "Catalyst · Vehicle Tier",         role: .catalyst) { p in AnyView(CatalystVehicleProfileTierScreen(theme: p)) },
             .init(id: "CV332B", title: "Catalyst · Vehicle Document",     role: .catalyst) { p in AnyView(CatalystVehicleDocumentDetailScreen(theme: p)) },
             .init(id: "CV333B", title: "Catalyst · Vehicle Analytic",     role: .catalyst) { p in AnyView(CatalystVehicleAnalyticDetailScreen(theme: p)) },
@@ -1905,6 +1915,8 @@ enum ScreenRegistry {
             .init(id: "CV325B", title: "Catalyst · Driver Step",          role: .catalyst) { p in AnyView(CatalystDriverStepDetailScreen(theme: p)) },
             .init(id: "CV326B", title: "Catalyst · Driver Comp Row",      role: .catalyst) { p in AnyView(CatalystDriverComplianceRowScreen(theme: p)) },
             .init(id: "CV327B", title: "Catalyst · Driver Quarter",       role: .catalyst) { p in AnyView(CatalystDriverQuarterDetailScreen(theme: p)) },
+            // 2026-05-31 — Rescue land: bespoke pixel-faithful 327B driver quarter detail (full port).
+            .init(id: "327B", title: "Catalyst · Driver Quarter Detail (Bespoke)", role: .catalyst) { p in AnyView(CatalystDriverQuarterDetailBespokeScreen(theme: p)) },
             // 2026-05-21 — Catalyst Shipper B-variant deep-drill octet (SVG 340B-347B).
             .init(id: "CV340B", title: "Catalyst · Customer Score Axis",  role: .catalyst) { p in AnyView(CatalystShipperScoreAxisScreen(theme: p)) },
             .init(id: "CV341B", title: "Catalyst · Customer Tier",        role: .catalyst) { p in AnyView(CatalystShipperProfileTierScreen(theme: p)) },
@@ -1994,6 +2006,10 @@ enum ScreenRegistry {
         // Rail Engineer surface (Rail550–552).
         list.append(contentsOf: [
             .init(id: "Rail550", title: "Rail Engineer · Home",       role: .railEngineer) { p in AnyView(RailEngineerHomeScreen(theme: p)) },
+            // 2026-05-31 — Rescue land: bespoke Rail shipper greenfield home + shipment detail + demurrage dispute (full ports).
+            .init(id: "Rail001", title: "Rail Shipper · Home",            role: .shipper) { p in AnyView(RailShipperHomeScreen(theme: p)) },
+            .init(id: "Rail002", title: "Rail Shipper · Shipment Detail",  role: .shipper) { p in AnyView(RailShipmentDetailScreen(theme: p, shipmentId: 48217)) },
+            .init(id: "Rail570", title: "Rail Engineer · Demurrage Dispute", role: .railEngineer) { p in AnyView(RailDemurrageDisputeScreen(theme: p, railId: "RAIL-260523-7C3A0B12D4")) },
             .init(id: "Rail551", title: "Rail Engineer · Shipments",  role: .railEngineer) { p in AnyView(RailShipmentsScreen(theme: p)) },
             .init(id: "Rail552", title: "Rail Engineer · Compliance", role: .railEngineer) { p in AnyView(RailComplianceScreen(theme: p)) },
             // 2026-05-30 — Rail Engineer deep surface (Rail553–590): 36 orphaned screens
@@ -2107,6 +2123,10 @@ enum ScreenRegistry {
         // Vessel Operator surface (Vesl650–652 tab roots; Vesl659 drill-in leaf).
         list.append(contentsOf: [
             .init(id: "Vesl650", title: "Vessel Operator · Home",       role: .vesselOperator) { p in AnyView(VesselOperatorHomeScreen(theme: p)) },
+            // 2026-05-31 — Rescue land: bespoke Vessel shipper greenfield home + booking detail + live tracking (full ports).
+            .init(id: "Vesl001", title: "Vessel Shipper · Home",          role: .shipper) { p in AnyView(VesselShipperHomeScreen(theme: p)) },
+            .init(id: "Vesl002", title: "Vessel Shipper · Booking Detail", role: .shipper) { p in AnyView(VesselBookingDetailScreen(theme: p, shipmentId: 48217)) },
+            .init(id: "Vesl003", title: "Vessel Shipper · Live Tracking",  role: .shipper) { p in AnyView(VesselLiveTrackingScreen(theme: p, bookingNumber: "VS-48217")) },
             .init(id: "Vesl651", title: "Vessel Operator · Shipments",  role: .vesselOperator) { p in AnyView(VesselShipmentsScreen(theme: p)) },
             .init(id: "Vesl652", title: "Vessel Operator · Compliance", role: .vesselOperator) { p in AnyView(VesselComplianceScreen(theme: p)) },
             .init(id: "Vesl653", title: "Vessel Operator · Booking Detail",      role: .vesselOperator) { p in AnyView(VesselBookingDetailCarrierScreen(theme: p, shipmentId: 0)) },
