@@ -2750,6 +2750,18 @@ struct ContentView: View {
     private func handleeSangAction(_ action: eSangAction) {
         switch action {
         case .navigate(let route):
+            // Founder fix 2026-05-30: ESANG-triggered navigation on the
+            // Driver surface used to flip the BottomNav tab while the
+            // ESANG coach sheet stayed up — so the driver "navigated"
+            // but landed BEHIND the overlay and never saw the screen.
+            // DISSOLVE the coach sheet first (the same `showeSang = false`
+            // path the close button / tap-out uses), THEN drive the
+            // EXISTING tab swap + Me deep-link so the user lands ON the
+            // destination as the sheet slides away. The `.sheet` dismissal
+            // is animated by SwiftUI; the tab swap is the live push/route
+            // mechanism a BottomNav / Me-row tap already uses — no new
+            // navigation system, no nav sheet.
+            nav.showeSang = false
             switch route {
             case .home:
                 nav.currentTab = .home
@@ -2765,9 +2777,12 @@ struct ContentView: View {
                 // present, the user should see it layered over the right
                 // surface. Then fire the notification carrying the
                 // `MeDetailRoute.rawValue` so `DriverMePane` can flip its
-                // `@State route` and open the sub-sheet.
+                // `@State route` and open the sub-sheet. Defer the Me
+                // sub-sheet until the coach sheet has finished dismissing
+                // so the two presentations don't fight (a `.sheet` can
+                // only present one item at a time per presenter).
                 nav.currentTab = .me
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
                     NotificationCenter.default.post(
                         name: .esangOpenMeDetail,
                         object: raw
@@ -2781,9 +2796,11 @@ struct ContentView: View {
         case .selectLoad:
             // The iOS shell doesn't yet expose a generic "open load by
             // id" pathway from the root (the per-surface sheet state is
-            // local). Surface the driver's current active-load detail by
-            // flipping to Home — ESANG's reply text already tells them
-            // what they're looking at.
+            // local). Founder fix 2026-05-30: dissolve the coach sheet so
+            // the driver lands ON the load surface, then surface the
+            // current active-load detail by flipping to Home — ESANG's
+            // reply text already tells them what they're looking at.
+            nav.showeSang = false
             nav.currentTab = .home
             trip.jump(to: .idle)
         case .refresh:
