@@ -364,6 +364,15 @@ struct AuthUser: Codable, Hashable, Identifiable {
     let name: String?
     let companyId: String?
 
+    /// RIOS Axis O — the integration profile-adaptation envelope folded by the
+    /// server's `auth.me` round-trip. Mirrors the web client exactly: the same
+    /// `profileAdaptation` the web consumes is decoded here so iOS re-composes
+    /// menus / capability gates / role surfaces from one source of truth.
+    /// Optional so the app decodes cleanly against servers that predate the fold.
+    /// Defaulted to nil so the synthesized memberwise initializer stays
+    /// backward-compatible (e.g. the demo-user construction in EusoTripSession).
+    var profileAdaptation: ProfileAdaptation? = nil
+
     /// Parsed role, defaulting to .shipper if backend returns something unexpected.
     var roleEnum: EusoRole {
         EusoRole(rawValue: role) ?? .shipper
@@ -372,6 +381,76 @@ struct AuthUser: Codable, Hashable, Identifiable {
     /// "Marcus"
     var firstName: String {
         (name ?? "").split(separator: " ").first.map(String.init) ?? (name ?? "")
+    }
+
+    // MARK: RIOS Axis O — capability / surface gates (mirror the web feature gates)
+
+    /// True when a connected integration grants this capability flag.
+    func hasCapability(_ capability: String) -> Bool {
+        profileAdaptation?.capabilities.contains(capability) ?? false
+    }
+
+    /// True when a connected integration grants scoped access to a role surface
+    /// (e.g. "FUEL_BUYER", "BULK_LIQUID_OPERATOR").
+    func hasSurface(_ surface: String) -> Bool {
+        profileAdaptation?.roleSurfaces.contains(surface) ?? false
+    }
+
+    /// True when a connected integration unlocked this dashboard widget.
+    func hasDashboardWidget(_ id: String) -> Bool {
+        profileAdaptation?.dashboardWidgets.contains(id) ?? false
+    }
+
+    /// Extra menu items injected by connected integrations (empty when none).
+    var integrationMenuItems: [ProfileAdaptation.MenuItem] {
+        profileAdaptation?.menuItems ?? []
+    }
+}
+
+// MARK: - ProfileAdaptation (RIOS Axis O)
+
+/// What the user's product becomes once integrations are connected. Decoded
+/// verbatim from `auth.me`'s `profileAdaptation` field — identical shape to the
+/// web client's consumer so both platforms gate features the same way.
+struct ProfileAdaptation: Codable, Hashable {
+    struct MenuItem: Codable, Hashable, Identifiable {
+        /// Stable identity for SwiftUI ForEach — path is unique per injected item.
+        var id: String { path }
+        let label: String
+        let path: String
+        let icon: String
+    }
+
+    let menuItems: [MenuItem]
+    let dashboardWidgets: [String]
+    let capabilities: [String]
+    let profileFields: [String]
+    let roleSurfaces: [String]
+
+    private enum CodingKeys: String, CodingKey {
+        case menuItems, dashboardWidgets, capabilities, profileFields, roleSurfaces
+    }
+
+    /// Tolerant decode: any field the server omits decodes to an empty array,
+    /// so a partial envelope never fails the whole `auth.me` decode.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        menuItems = (try? c.decode([MenuItem].self, forKey: .menuItems)) ?? []
+        dashboardWidgets = (try? c.decode([String].self, forKey: .dashboardWidgets)) ?? []
+        capabilities = (try? c.decode([String].self, forKey: .capabilities)) ?? []
+        profileFields = (try? c.decode([String].self, forKey: .profileFields)) ?? []
+        roleSurfaces = (try? c.decode([String].self, forKey: .roleSurfaces)) ?? []
+    }
+
+    /// Memberwise init retained for previews / tests / synthesized encoding.
+    init(menuItems: [MenuItem] = [], dashboardWidgets: [String] = [],
+         capabilities: [String] = [], profileFields: [String] = [],
+         roleSurfaces: [String] = []) {
+        self.menuItems = menuItems
+        self.dashboardWidgets = dashboardWidgets
+        self.capabilities = capabilities
+        self.profileFields = profileFields
+        self.roleSurfaces = roleSurfaces
     }
 }
 

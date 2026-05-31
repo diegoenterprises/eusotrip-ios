@@ -22,6 +22,7 @@ private struct ConnectedApp: Decodable, Identifiable, Hashable {
 
 private struct ConnectedAppsBody: View {
     @Environment(\.palette) private var palette
+    @EnvironmentObject private var session: EusoTripSession
     @State private var apps: [ConnectedApp] = []
     @State private var tokens: [ConnectedApp] = []
     @State private var loading = true
@@ -41,7 +42,7 @@ private struct ConnectedAppsBody: View {
                 }
                 if loading { LifecycleCard { Text("Loading connections…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
                 else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
-                else { connectedSection; tokensSection }
+                else { connectedSection; adaptationSection; tokensSection }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 56)
@@ -70,6 +71,45 @@ private struct ConnectedAppsBody: View {
             LifecycleCard {
                 LifecycleSection(label: "CONNECTED APPS", icon: "rectangle.connected.to.line.below")
                 ForEach(apps) { row(app: $0, kind: "app") }
+            }
+        }
+    }
+
+    // RIOS Axis O — render the integration profileAdaptation envelope the server
+    // folds into auth.me. Identical data the web's useIntegrationProfileAdaptation
+    // hook consumes, so connecting a provider unlocks the same menu items /
+    // capabilities / role surfaces on iOS as on web. Hidden when nothing unlocked.
+    @ViewBuilder
+    private var adaptationSection: some View {
+        let items = session.user?.integrationMenuItems ?? []
+        let caps = session.user?.profileAdaptation?.capabilities ?? []
+        let surfaces = session.user?.profileAdaptation?.roleSurfaces ?? []
+        if !items.isEmpty || !caps.isEmpty || !surfaces.isEmpty {
+            LifecycleCard {
+                LifecycleSection(label: "INTEGRATION UNLOCKS", icon: "puzzlepiece.extension")
+                ForEach(items) { item in
+                    HStack(spacing: 8) {
+                        Image(systemName: item.icon.isEmpty ? "arrow.right.circle" : item.icon)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(LinearGradient.diagonal)
+                        Text(item.label).font(EType.caption).foregroundStyle(palette.textPrimary)
+                        Spacer(minLength: 8)
+                        Text(item.path)
+                            .font(.system(size: 9, weight: .medium, design: .monospaced))
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                    .padding(.vertical, 2)
+                }
+                if !caps.isEmpty {
+                    Text("Capabilities: \(caps.joined(separator: ", "))")
+                        .font(EType.caption).foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if !surfaces.isEmpty {
+                    Text("Role surfaces: \(surfaces.joined(separator: ", "))")
+                        .font(EType.caption).foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
     }
