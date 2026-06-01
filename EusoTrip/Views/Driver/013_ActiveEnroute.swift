@@ -417,7 +417,15 @@ struct ActiveEnroute: View {
     private var mapLayer: some View {
         if let load = activeLoad,
            let pickup = load.pickupLocation,
-           let delivery = load.deliveryLocation {
+           let delivery = load.deliveryLocation,
+           // Coord gate (D-maps-basemap 2026-06-01): the server's geocode
+           // self-heal can return a load whose pickup/delivery JSON is present
+           // but whose lat/lng are still 0 (HERE geocode not yet run). Drawing
+           // those frames the map on null island (0,0). Require a real fix on
+           // BOTH endpoints; otherwise fall to the honest placeholder until the
+           // next read lands coords.
+           !(pickup.lat == 0 && pickup.lng == 0),
+           !(delivery.lat == 0 && delivery.lng == 0) {
             // Canonical OMV vector map + live HERE add-ons surfaced as pins:
             // fuel / EV / weather / traffic / sponsored ad-zones. The route +
             // pickup/delivery are the base layers; HereLiveMapView fetches the

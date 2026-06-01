@@ -264,7 +264,13 @@ struct ShipperControlTower: View {
             // raster HereMapView (Maps Tile v3 — empty grid, plan doesn't
             // serve raster) for the OMV vector renderer the web platform
             // uses + the plan DOES serve. Light tiles in light mode, dark
-            // in dark. CONUS framing until a per-load coords endpoint ships.
+            // in dark.
+            // 2026-06-01 (D-maps-basemap): the bespoke canvas now paints an
+            // abstract land basemap UNDER any data, so this CONUS situational
+            // view reads as a real map instead of a blank panel. The
+            // `controlTower.overview` proc carries only per-mode COUNTS (no
+            // per-load lat/lng), so we honestly frame CONUS and add no
+            // fabricated pins; live pucks land when a coords endpoint ships.
             HereLiveMapView(center: .init(39.5, -98.35), zoom: 4, addOns: .shipperTracking)
                 .frame(height: 380)
                 .clipped()

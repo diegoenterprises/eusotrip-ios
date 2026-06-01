@@ -2868,49 +2868,44 @@ struct ContentView: View {
     private func handleeSangAction(_ action: eSangAction) {
         switch action {
         case .navigate(let route):
-            // Founder fix 2026-05-30: ESANG-triggered navigation on the
-            // Driver surface used to flip the BottomNav tab while the
-            // ESANG coach sheet stayed up — so the driver "navigated"
-            // but landed BEHIND the overlay and never saw the screen.
-            // DISSOLVE the coach sheet first (the same `showeSang = false`
-            // path the close button / tap-out uses), THEN drive the
-            // EXISTING tab swap + Me deep-link so the user lands ON the
-            // destination as the sheet slides away. The `.sheet` dismissal
-            // is animated by SwiftUI; the tab swap is the live push/route
-            // mechanism a BottomNav / Me-row tap already uses — no new
-            // navigation system, no nav sheet.
-            nav.showeSang = false
-            switch route {
-            case .home:
-                nav.currentTab = .home
-                trip.jump(to: .idle)
-            case .trips:
-                nav.currentTab = .trips
-            case .myLoads:
-                nav.currentTab = .wallet
-            case .me:
-                nav.currentTab = .me
-            case .meDetail(let raw):
-                // Switch to the Me tab first — if a sheet is about to
-                // present, the user should see it layered over the right
-                // surface. Then fire the notification carrying the
-                // `MeDetailRoute.rawValue` so `DriverMePane` can flip its
-                // `@State route` and open the sub-sheet. Defer the Me
-                // sub-sheet until the coach sheet has finished dismissing
-                // so the two presentations don't fight (a `.sheet` can
-                // only present one item at a time per presenter).
-                nav.currentTab = .me
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                    NotificationCenter.default.post(
-                        name: .esangOpenMeDetail,
-                        object: raw
-                    )
-                }
+            driverNavigate(to: route)
+        case .navigatePath(let path):
+            // The parser now emits the raw server SPA path for every
+            // `navigate` verb so non-Driver roles can resolve it against
+            // THEIR push-nav registry (E1/E2 fix). On the DRIVER surface
+            // we keep the exact prior behavior: collapse the path onto a
+            // Driver tab via `eSangAutopilot.route(for:)`. An unknown path
+            // is a silent no-op (the reply text already rendered).
+            if let route = eSangAutopilot.route(for: path) {
+                driverNavigate(to: route)
             }
         case .openChat:
             nav.showeSang = true
         case .closeChat:
             nav.showeSang = false
+        case .back:
+            // Driver back: there's no push-nav stack on the Driver
+            // surface (it's a 4-tab + lifecycle state machine), so a
+            // spoken "go back" lands the driver on Home — the universal
+            // safe return target — and dissolves the coach sheet.
+            nav.showeSang = false
+            nav.currentTab = .home
+            trip.jump(to: .idle)
+        case .execute(let key, _):
+            // Broadcast the named action so any Driver surface owning a
+            // matching CTA fires the same code path the button does
+            // (e.g. "accept this load"). Also routes through the
+            // existing Driver MeAction dispatcher for keys it knows.
+            nav.showeSang = false
+            NotificationCenter.default.post(
+                name: .esangExecuteAction, object: key)
+            handleDriverMeAction(key: key, userInfo: [:])
+        case .autopilot:
+            // Enter hands-free autopilot. The orb / surface state machine
+            // owns continuous-listening; broadcast the enter signal.
+            NotificationCenter.default.post(name: .esangEnterAutopilot, object: nil)
+        case .undoAll:
+            NotificationCenter.default.post(name: .esangUndoAll, object: nil)
         case .selectLoad:
             // The iOS shell doesn't yet expose a generic "open load by
             // id" pathway from the root (the per-surface sheet state is
@@ -2926,6 +2921,50 @@ struct ContentView: View {
             // wants to listen can observe the notification and re-run
             // its loader.
             NotificationCenter.default.post(name: .esangRefreshSurface, object: nil)
+        }
+    }
+
+    /// Drive a typed Driver `eSangRoute` — extracted from
+    /// `handleeSangAction` so both `.navigate` (legacy typed) and
+    /// `.navigatePath` (raw server path, collapsed via `route(for:)`)
+    /// share one path. Behavior is byte-for-byte the prior `.navigate`
+    /// handler.
+    private func driverNavigate(to route: eSangRoute) {
+        // Founder fix 2026-05-30: ESANG-triggered navigation on the
+        // Driver surface used to flip the BottomNav tab while the
+        // ESANG coach sheet stayed up — so the driver "navigated"
+        // but landed BEHIND the overlay and never saw the screen.
+        // DISSOLVE the coach sheet first (the same `showeSang = false`
+        // path the close button / tap-out uses), THEN drive the
+        // EXISTING tab swap + Me deep-link so the user lands ON the
+        // destination as the sheet slides away.
+        nav.showeSang = false
+        switch route {
+        case .home:
+            nav.currentTab = .home
+            trip.jump(to: .idle)
+        case .trips:
+            nav.currentTab = .trips
+        case .myLoads:
+            nav.currentTab = .wallet
+        case .me:
+            nav.currentTab = .me
+        case .meDetail(let raw):
+            // Switch to the Me tab first — if a sheet is about to
+            // present, the user should see it layered over the right
+            // surface. Then fire the notification carrying the
+            // `MeDetailRoute.rawValue` so `DriverMePane` can flip its
+            // `@State route` and open the sub-sheet. Defer the Me
+            // sub-sheet until the coach sheet has finished dismissing
+            // so the two presentations don't fight (a `.sheet` can
+            // only present one item at a time per presenter).
+            nav.currentTab = .me
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                NotificationCenter.default.post(
+                    name: .esangOpenMeDetail,
+                    object: raw
+                )
+            }
         }
     }
 

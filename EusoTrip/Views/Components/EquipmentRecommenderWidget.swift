@@ -43,7 +43,18 @@ struct EquipmentRecommendInput: Encodable {
     let vertical: String          // "TRUCK" | "RAIL" | "VESSEL"
     let originState: String?
     let destState: String?
+    /// Canonical cargo category (rawValue of `ShipperAPI.CargoType`:
+    /// "hazmat", "petroleum", "refrigerated", "general", …). Lets the
+    /// server gate hazmat-safe equipment even when no UN number was
+    /// captured (e.g. petroleum/diesel posts).
+    let cargoTypeRaw: String?
+    /// Real UN identification number the user entered (e.g. "UN1267").
+    /// Sent verbatim — nil/empty when the load isn't hazmat.
     let hazmatUnNumber: String?
+    /// 49 CFR hazard class/division the user entered (e.g. "3").
+    let hazmatClass: String?
+    /// Packing group the user entered ("I" | "II" | "III").
+    let hazmatPackingGroup: String?
     let isOverdimensional: Bool
     let companyId: Int
 }
@@ -65,7 +76,9 @@ final class EquipmentRecommenderStore: ObservableObject {
         let fingerprint = [
             input.commodity, "\(input.weightLbs ?? 0)", input.vertical,
             input.originState ?? "", input.destState ?? "",
-            input.hazmatUnNumber ?? "", "\(input.isOverdimensional)",
+            input.cargoTypeRaw ?? "",
+            input.hazmatUnNumber ?? "", input.hazmatClass ?? "",
+            input.hazmatPackingGroup ?? "", "\(input.isOverdimensional)",
         ].joined(separator: "|")
         if fingerprint == lastFingerprint, response != nil { return }
         lastFingerprint = fingerprint
@@ -82,6 +95,20 @@ final class EquipmentRecommenderStore: ObservableObject {
             self.response = resp
             self.error = nil
         } catch {
+            // Swallow URLSession / structured-concurrency cancellation.
+            // The widget uses `.task(id: fingerprint)` — typing into the
+            // weight field (or any other input that feeds the fingerprint)
+            // flips the id and SwiftUI cancels the in-flight URLSession
+            // dataTask, which surfaces as NSURLErrorCancelled (-999) or
+            // a Swift CancellationError. Both are NORMAL during user
+            // interaction and a fresh recommendation is already on its
+            // way — surfacing the cancellation as an "ESANG Equipment
+            // Recommendation" error scares the user and obscures the
+            // real recommendation that's about to arrive.
+            let ns = error as NSError
+            let isCancel = ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled
+                || error is CancellationError
+            if isCancel { return }
             self.error = (error as? LocalizedError)?.errorDescription ?? "\(error)"
         }
     }
@@ -101,6 +128,21 @@ struct EquipmentRecommenderWidget: View {
     let originState: String?
     let destState: String?
     let isOverdimensional: Bool
+
+    /// Cargo-category hint used for client-side compatibility filtering
+    /// (founder bug 2026-05-31: ESANG was suggesting `dry_van` for
+    /// diesel-fuel posts and for vessel-mode posts, both nonsensical).
+    /// Pass the rawValue of `ShipperAPI.CargoType` ("hazmat",
+    /// "petroleum", "refrigerated", "general", etc.); empty/nil = "general".
+    var cargoTypeRaw: String = "general"
+
+    /// Real hazmat fields the user entered on the post-load wizard.
+    /// Wired into the rec request so ESANG returns mode + hazmat-aware
+    /// equipment (C2: previously hardcoded nil, so a UN1267/Class-3
+    /// diesel post still got a Dry Van top pick). Empty when not hazmat.
+    var hazmatUnNumber: String = ""
+    var hazmatClass: String = ""
+    var hazmatPackingGroup: String = ""
 
     /// Called when the user taps a recommended trailer.
     /// Passes the `trailerKey` (matches `EquipmentChoice.rawValue`).
@@ -134,24 +176,40 @@ struct EquipmentRecommenderWidget: View {
             .foregroundStyle(.secondary)
 
             if let resp = store.response {
-                // Top pick row
-                Text(resp.synthesis)
-                    .font(.footnote)
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.leading)
-                    .padding(.bottom, 2)
+                // Apply client-side compatibility filter before rendering.
+                // Server may return Dry Van for vessel-mode or for diesel
+                // (hazmat) cargo; both are nonsensical. The filter drops
+                // those rows and promotes the first valid alternative to
+                // the top slot so the user always sees a mode-coherent +
+                // cargo-coherent recommendation.
+                let filtered = filteredPicks(top: resp.topPick, alts: resp.alternatives)
+                if let top = filtered.topPick {
+                    Text(resp.synthesis)
+                        .font(.footnote)
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                        .padding(.bottom, 2)
 
-                pickRow(resp.topPick, isTop: true)
+                    pickRow(top, isTop: true)
 
-                if !resp.alternatives.isEmpty {
-                    Text("ALTERNATIVES")
-                        .font(.caption2.weight(.bold))
-                        .tracking(0.8)
-                        .foregroundStyle(.tertiary)
-                        .padding(.top, 4)
-                    ForEach(resp.alternatives.prefix(2)) { opt in
-                        pickRow(opt, isTop: false)
+                    if !filtered.alternatives.isEmpty {
+                        Text("ALTERNATIVES")
+                            .font(.caption2.weight(.bold))
+                            .tracking(0.8)
+                            .foregroundStyle(.tertiary)
+                            .padding(.top, 4)
+                        ForEach(filtered.alternatives.prefix(2)) { opt in
+                            pickRow(opt, isTop: false)
+                        }
                     }
+                } else {
+                    // ESANG returned ONLY incompatible options for this
+                    // mode + cargo combo. Surface a clear nudge instead
+                    // of silently swallowing the response.
+                    Text("No mode-compatible recommendations for this \(prettyVertical) + \(prettyCargo) combination yet. Picking equipment manually below is the safest path.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
                 }
             } else if let err = store.error {
                 Text(err)
@@ -186,6 +244,7 @@ struct EquipmentRecommenderWidget: View {
 
     private var fingerprint: String {
         [commodity, "\(weightLbs ?? 0)", vertical, originState ?? "", destState ?? "",
+         cargoTypeRaw, hazmatUnNumber, hazmatClass, hazmatPackingGroup,
          "\(isOverdimensional)", "\(companyId ?? 0)"]
             .joined(separator: "|")
     }
@@ -197,13 +256,29 @@ struct EquipmentRecommenderWidget: View {
     }
 
     private func buildInput() -> EquipmentRecommendInput {
-        EquipmentRecommendInput(
+        // Normalize: a UN number arrives as "UN1267" or "1267"; the
+        // server hazmat tables key on the raw 4-digit id, so strip a
+        // leading "UN" prefix and trim. Empty hazmat fields go up as
+        // nil (not "") so the server treats the load as non-hazmat
+        // rather than matching an empty key.
+        func nilIfBlank(_ s: String) -> String? {
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? nil : t
+        }
+        let unRaw = hazmatUnNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        let unNormalized = unRaw.uppercased().hasPrefix("UN")
+            ? String(unRaw.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+            : unRaw
+        return EquipmentRecommendInput(
             commodity: commodity,
             weightLbs: weightLbs,
             vertical: vertical,
             originState: originState,
             destState: destState,
-            hazmatUnNumber: nil,
+            cargoTypeRaw: nilIfBlank(cargoTypeRaw),
+            hazmatUnNumber: nilIfBlank(unNormalized),
+            hazmatClass: nilIfBlank(hazmatClass),
+            hazmatPackingGroup: nilIfBlank(hazmatPackingGroup),
             isOverdimensional: isOverdimensional,
             companyId: companyId ?? 1
         )
@@ -276,6 +351,94 @@ struct EquipmentRecommenderWidget: View {
 
     private func prettyTrailerKey(_ raw: String) -> String {
         raw.split(separator: "_").map { $0.capitalized }.joined(separator: " ")
+    }
+
+    private var prettyVertical: String {
+        switch vertical {
+        case "VESSEL": return "vessel"
+        case "RAIL":   return "rail"
+        default:       return "truck"
+        }
+    }
+    private var prettyCargo: String {
+        let raw = cargoTypeRaw.lowercased()
+        if raw.isEmpty { return "general" }
+        return raw.replacingOccurrences(of: "_", with: " ")
+    }
+
+    // MARK: - Client-side compatibility filter
+    //
+    // Founder bug 2026-05-31: ESANG was returning Dry Van as the top
+    // pick for VESSEL mode AND for hazmat (diesel-fuel) posts. Both
+    // are operationally + regulatorily wrong. We can't unilaterally
+    // fix the server here, but we CAN refuse to surface a row whose
+    // trailerKey is incompatible with the user's mode/cargo intent.
+    //
+    // The filter is conservative: when in doubt, an option is kept.
+    // Truly bad rows (wrong mode, hazmat in dry van) are dropped, and
+    // the first surviving alternative is promoted to the top slot.
+
+    private static let truckTrailerKeys: Set<String> = [
+        "dry_van", "reefer", "flatbed", "step_deck", "conestoga", "container",
+        "power_only", "lowboy", "hot_shot", "tanker_petro", "tanker_hazmat",
+        "tanker_liquid", "tanker_gas", "oversized"
+    ]
+    private static let railTrailerKeys: Set<String> = [
+        "rail_tofc", "rail_cofc", "rail_intermodal", "rail_boxcar",
+        "rail_reefer_boxcar", "rail_tank_gas", "rail_tank_liquid",
+        "rail_hopper", "rail_centerbeam", "rail_gondola",
+        "rail_auto_rack", "rail_flatcar"
+    ]
+    private static let vesselTrailerKeys: Set<String> = [
+        "vessel_container", "vessel_bulk", "vessel_tanker",
+        "vessel_iso_tank", "vessel_lng", "vessel_reefer_container",
+        "vessel_ro_ro"
+    ]
+
+    /// Equipment that's legally + operationally able to carry
+    /// hazmat / petroleum / diesel-class cargo. Drums in a dry van
+    /// for *placarded* hazmat is a §177.834 violation; the recommender
+    /// must never surface that. Tankers / ISO tanks / rail tank cars
+    /// are the only valid carriers.
+    private static let hazmatSafeKeys: Set<String> = [
+        "tanker_hazmat", "tanker_petro", "tanker_liquid", "tanker_gas",
+        "rail_tank_gas", "rail_tank_liquid",
+        "vessel_tanker", "vessel_iso_tank", "vessel_lng"
+    ]
+
+    private func isCargoHazmatLike(_ raw: String) -> Bool {
+        let r = raw.lowercased()
+        return r.contains("hazmat") || r.contains("chemical")
+            || r.contains("petroleum") || r.contains("gas")
+            || r.contains("liquid") || r.contains("diesel")
+            || r.contains("fuel")
+    }
+
+    private func isOptionCompatible(_ opt: EquipmentOption) -> Bool {
+        let allowedForMode: Set<String>
+        switch vertical {
+        case "TRUCK":  allowedForMode = Self.truckTrailerKeys
+        case "RAIL":   allowedForMode = Self.railTrailerKeys
+        case "VESSEL": allowedForMode = Self.vesselTrailerKeys
+        default:       allowedForMode = Self.truckTrailerKeys
+            .union(Self.railTrailerKeys).union(Self.vesselTrailerKeys)
+        }
+        guard allowedForMode.contains(opt.trailerKey) else { return false }
+        if isCargoHazmatLike(cargoTypeRaw),
+           !Self.hazmatSafeKeys.contains(opt.trailerKey) {
+            return false
+        }
+        return true
+    }
+
+    private func filteredPicks(top: EquipmentOption,
+                               alts: [EquipmentOption])
+        -> (topPick: EquipmentOption?, alternatives: [EquipmentOption])
+    {
+        var ordered = [top] + alts
+        ordered = ordered.filter { isOptionCompatible($0) }
+        guard let first = ordered.first else { return (nil, []) }
+        return (first, Array(ordered.dropFirst()))
     }
 }
 

@@ -403,7 +403,16 @@ struct HomeWidgetGrid: View {
                 Spacer(minLength: 0)
                 if editing {
                     Button {
-                        withAnimation(.easeOut(duration: 0.18)) { order = canonicalOrder; sizes = [:] }
+                        withAnimation(.easeOut(duration: 0.18)) {
+                            order = canonicalOrder
+                            sizes = [:]
+                            // RESET means "give me back the default
+                            // layout" — that includes clearing every
+                            // record of widgets the user previously
+                            // removed so they don't get filtered out
+                            // on the next hydrate.
+                            Self.saveRemovedSet([], storageKey: storageKey)
+                        }
                     } label: {
                         Text("RESET")
                             .font(.system(size: 9, weight: .heavy)).tracking(0.6)
@@ -470,6 +479,10 @@ struct HomeWidgetGrid: View {
                         withAnimation(.easeOut(duration: 0.18)) {
                             order.removeAll { $0 == id }
                             sizes[id] = nil
+                            // Record the removal so reconcile() won't
+                            // auto-restore this widget after the user
+                            // navigates away and back.
+                            markRemoved(id)
                         }
                     } label: {
                         Image(systemName: "minus.circle.fill")
@@ -585,6 +598,11 @@ struct HomeWidgetGrid: View {
                                     Button {
                                         withAnimation(.easeOut(duration: 0.18)) {
                                             order.append(id)
+                                            // User explicitly re-added —
+                                            // clear the removed flag so
+                                            // reconcile() treats this as
+                                            // a normal restore.
+                                            clearRemoved(id)
                                         }
                                         if addableWidgets.count <= 1 { showAddSheet = false }
                                     } label: {
@@ -719,10 +737,55 @@ struct HomeWidgetGrid: View {
         for s in saved where !seen.contains(s) && canonicalOrder.contains(s) {
             out.append(s); seen.insert(s)
         }
-        for s in canonicalOrder where !seen.contains(s) {
+        // Append newly-shipped widgets that the user has NEVER seen — but
+        // skip anything in `removedWidgetIds` so a widget the user
+        // explicitly tapped "−" on doesn't reappear after they navigate
+        // to another tab and return (founder bug 2026-05-31).
+        let removed = Self.loadRemovedSet(storageKey: storageKey)
+        for s in canonicalOrder where !seen.contains(s) && !removed.contains(s) {
             out.append(s)
         }
         return out
+    }
+
+    // MARK: - Removed-widgets persistence
+    //
+    // The "auto-append newly-shipped widget" behaviour above couldn't tell
+    // a widget that was newly added to `canonicalOrder` after a save from
+    // a widget the user explicitly removed. The set below disambiguates:
+    // tapping "−" on a tile adds the id here, tapping "+" in the add
+    // sheet removes it. Persisted under a sibling key so the existing
+    // layout cache format is untouched and old installs migrate cleanly.
+
+    private static func removedKey(_ storageKey: String) -> String {
+        "\(storageKey).removed"
+    }
+
+    fileprivate static func loadRemovedSet(storageKey: String) -> Set<String> {
+        guard let data = UserDefaults.standard.data(forKey: removedKey(storageKey)),
+              let arr = try? JSONDecoder().decode([String].self, from: data)
+        else { return [] }
+        return Set(arr)
+    }
+
+    fileprivate static func saveRemovedSet(_ set: Set<String>, storageKey: String) {
+        if let data = try? JSONEncoder().encode(Array(set)) {
+            UserDefaults.standard.set(data, forKey: removedKey(storageKey))
+        }
+    }
+
+    /// Mark a widget as user-removed so reconcile() won't re-add it.
+    fileprivate func markRemoved(_ id: String) {
+        var s = Self.loadRemovedSet(storageKey: storageKey)
+        s.insert(id)
+        Self.saveRemovedSet(s, storageKey: storageKey)
+    }
+
+    /// Clear a widget's removed flag when the user re-adds it via "+".
+    fileprivate func clearRemoved(_ id: String) {
+        var s = Self.loadRemovedSet(storageKey: storageKey)
+        s.remove(id)
+        Self.saveRemovedSet(s, storageKey: storageKey)
     }
 }
 

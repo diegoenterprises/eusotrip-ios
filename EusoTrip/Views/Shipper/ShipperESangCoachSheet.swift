@@ -33,6 +33,14 @@ struct ShippereSangCoachSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var session: EusoTripSession
     @FocusState private var composerFocused: Bool
+    /// Autopilot dispatcher injected by `ShipperSurface`. When ESANG's
+    /// reply carries `<<<ACTION:…>>>` tokens we parse them out and fire
+    /// each through this closure so a spoken/typed command actually
+    /// drives the Shipper push-nav surface. Was previously MISSING —
+    /// the Shipper sheet appended the raw reply and never parsed the
+    /// tag, so every autopilot command was a no-op (E1/E2). Nil in
+    /// previews — the parser still cleans the visible text.
+    @Environment(\.esangActionHandler) private var autopilot
 
     /// Push-to-talk voice pipeline — Speech + AVAudioEngine. Shared
     /// controller with the driver sheet so the shipper's voice path
@@ -281,6 +289,9 @@ struct ShippereSangCoachSheet: View {
         messages.append(userMsg)
         sending = true
         sendError = nil
+        // Snapshot the env dispatcher at call time so the async
+        // follow-up isn't reading a stale @Environment value.
+        let dispatcher = autopilot
         Task {
             do {
                 let resp = try await EusoTripAPI.shared.esang.chat(
@@ -288,9 +299,25 @@ struct ShippereSangCoachSheet: View {
                     currentPage: "shipper.coach",
                     loadId: nil
                 )
+                // Split ESANG's reply into shipper-visible text + machine
+                // actions. The parser strips every `<<<ACTION:verb:arg>>>`
+                // token so the bubble shows clean prose, and hands back the
+                // typed intents the autopilot dispatcher executes (navigate
+                // to a screen, open a load, refresh, execute a CTA, …).
+                let (cleaned, actions) = eSangAutopilot.parse(resp.message)
                 await MainActor.run {
-                    messages.append(Msg(role: .esang, text: resp.message))
+                    if !cleaned.isEmpty {
+                        messages.append(Msg(role: .esang, text: cleaned))
+                    }
                     sending = false
+                    // Stagger so a navigate-then-execute sequence animates
+                    // naturally instead of stepping on itself.
+                    for (idx, action) in actions.enumerated() {
+                        let delay = Double(idx) * 0.20
+                        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                            dispatcher?(action)
+                        }
+                    }
                 }
             } catch {
                 await MainActor.run {
