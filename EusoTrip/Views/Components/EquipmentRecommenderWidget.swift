@@ -55,6 +55,26 @@ struct EquipmentRecommendInput: Encodable {
     let hazmatClass: String?
     /// Packing group the user entered ("I" | "II" | "III").
     let hazmatPackingGroup: String?
+    /// Proper shipping name (49 CFR 172.101 column 2 / ERG name), e.g.
+    /// "DIESEL FUEL". Lets the agent reason about the actual substance,
+    /// not just the UN id.
+    let hazmatProperShippingName: String?
+    /// ERG response guide number resolved for this UN (e.g. "128").
+    /// Drives the emergency-response doc + placard expectations.
+    let hazmatErgGuide: String?
+    /// Toxic/poison-inhalation-hazard flag (TIH/PIH) from the ERG match.
+    /// Forces inhalation-hazard equipment + routing constraints.
+    let hazmatInhalationHazard: Bool?
+    /// Reefer setpoint the user entered (free text incl. unit, e.g.
+    /// "-10" / "34°F"). Sent verbatim so the agent can match a reefer/
+    /// multi-temp trailer to the commodity. nil for non-reefer loads.
+    let reeferTempLow: String?
+    let reeferTempHigh: String?
+    /// Oversized dimensions in feet (nil unless the user entered them).
+    /// Drive flatbed/step-deck/RGN/lowboy selection + permit red flags.
+    let oversizeLengthFt: Double?
+    let oversizeWidthFt: Double?
+    let oversizeHeightFt: Double?
     let isOverdimensional: Bool
     let companyId: Int
 }
@@ -78,7 +98,11 @@ final class EquipmentRecommenderStore: ObservableObject {
             input.originState ?? "", input.destState ?? "",
             input.cargoTypeRaw ?? "",
             input.hazmatUnNumber ?? "", input.hazmatClass ?? "",
-            input.hazmatPackingGroup ?? "", "\(input.isOverdimensional)",
+            input.hazmatPackingGroup ?? "", input.hazmatProperShippingName ?? "",
+            input.hazmatErgGuide ?? "", "\(input.hazmatInhalationHazard ?? false)",
+            input.reeferTempLow ?? "", input.reeferTempHigh ?? "",
+            "\(input.oversizeLengthFt ?? 0)", "\(input.oversizeWidthFt ?? 0)",
+            "\(input.oversizeHeightFt ?? 0)", "\(input.isOverdimensional)",
         ].joined(separator: "|")
         if fingerprint == lastFingerprint, response != nil { return }
         lastFingerprint = fingerprint
@@ -143,6 +167,19 @@ struct EquipmentRecommenderWidget: View {
     var hazmatUnNumber: String = ""
     var hazmatClass: String = ""
     var hazmatPackingGroup: String = ""
+    /// Rest of the hazmat profile (proper shipping name, ERG guide,
+    /// inhalation-hazard flag) so the agent reasons on the substance,
+    /// not just the UN id. Empty/false when the load isn't hazmat.
+    var hazmatProperShippingName: String = ""
+    var hazmatErgGuide: String = ""
+    var hazmatInhalationHazard: Bool = false
+    /// Reefer setpoint text (verbatim incl. unit). Empty unless reefer.
+    var reeferTempLow: String = ""
+    var reeferTempHigh: String = ""
+    /// Oversized dimensions (ft). nil unless the user entered them.
+    var oversizeLengthFt: Double? = nil
+    var oversizeWidthFt: Double? = nil
+    var oversizeHeightFt: Double? = nil
 
     /// Called when the user taps a recommended trailer.
     /// Passes the `trailerKey` (matches `EquipmentChoice.rawValue`).
@@ -279,6 +316,16 @@ struct EquipmentRecommenderWidget: View {
             hazmatUnNumber: nilIfBlank(unNormalized),
             hazmatClass: nilIfBlank(hazmatClass),
             hazmatPackingGroup: nilIfBlank(hazmatPackingGroup),
+            hazmatProperShippingName: nilIfBlank(hazmatProperShippingName),
+            hazmatErgGuide: nilIfBlank(hazmatErgGuide),
+            // Only send the TIH flag when this is actually a hazmat load
+            // — a non-hazmat post should never carry an inhalation flag.
+            hazmatInhalationHazard: nilIfBlank(unNormalized) == nil ? nil : hazmatInhalationHazard,
+            reeferTempLow: nilIfBlank(reeferTempLow),
+            reeferTempHigh: nilIfBlank(reeferTempHigh),
+            oversizeLengthFt: oversizeLengthFt,
+            oversizeWidthFt: oversizeWidthFt,
+            oversizeHeightFt: oversizeHeightFt,
             isOverdimensional: isOverdimensional,
             companyId: companyId ?? 1
         )

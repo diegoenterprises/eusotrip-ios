@@ -2906,6 +2906,22 @@ struct ShipperPostLoad: View {
                 hazmatUnNumber: unNumber,
                 hazmatClass: hazmatClass,
                 hazmatPackingGroup: packingGroup,
+                // Rest of the hazmat profile — proper shipping name +
+                // the ERG-resolved guide number and inhalation-hazard
+                // flag — so ESANG reasons on the actual substance for
+                // ANY material, not just whatever UN id was typed.
+                hazmatProperShippingName: properShippingName,
+                hazmatErgGuide: ergMatch?.guideNumber.map(String.init) ?? "",
+                hazmatInhalationHazard: ergMatch?.isTIH ?? false,
+                // Per-vertical profile: reefer setpoint + oversized dims
+                // the user entered, so recs are vertical-aware (reefer
+                // trailer for refrigerated, RGN/lowboy for oversized),
+                // not just cargo-category-aware.
+                reeferTempLow: reeferTempLowText,
+                reeferTempHigh: reeferTempHighText,
+                oversizeLengthFt: Double(oversizeLengthText.trimmingCharacters(in: .whitespaces)),
+                oversizeWidthFt: Double(oversizeWidthText.trimmingCharacters(in: .whitespaces)),
+                oversizeHeightFt: Double(oversizeHeightText.trimmingCharacters(in: .whitespaces)),
                 onApply: { applyRecommendedTrailerKey($0) },
                 currentSelection: equipmentType.rawValue
             )
