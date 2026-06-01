@@ -2149,6 +2149,15 @@ enum ScreenRegistry {
             .init(id: "Vesl681", title: "Vessel Operator · Emissions CII",         role: .vesselOperator) { p in AnyView(VesselEmissionsCIIScreen(theme: p)) },
             .init(id: "Vesl682", title: "Vessel Operator · Carrier Scorecard",     role: .vesselOperator) { p in AnyView(VesselCarrierScorecardScreen(theme: p)) },
             .init(id: "Vesl683", title: "Vessel Operator · Fleet Health",          role: .vesselOperator) { p in AnyView(VesselFleetHealthScreen(theme: p)) },
+            // Phase B wave newvector-1 — Vessel operator NEW screens (verbatim bespoke ports).
+            .init(id: "Vesl661", title: "Vessel Operator · Port Calls",            role: .vesselOperator) { p in AnyView(VesselPortCallsScreen(theme: p)) },
+            .init(id: "Vesl670", title: "Vessel Operator · Bunker Prices",         role: .vesselOperator) { p in AnyView(VesselBunkerPricesScreen(theme: p)) },
+            .init(id: "Vesl697", title: "Vessel Operator · Port Operations",       role: .vesselOperator) { p in AnyView(VesselPortOperationsScreen(theme: p)) },
+            .init(id: "Vesl730", title: "Vessel Operator · Blank Sailing Watch",   role: .vesselOperator) { p in AnyView(VesselBlankSailingWatchScreen(theme: p)) },
+            .init(id: "Vesl731", title: "Vessel Operator · Accessorial Charges",   role: .vesselOperator) { p in AnyView(VesselAccessorialChargesScreen(theme: p)) },
+            .init(id: "Vesl735", title: "Vessel Operator · Demurrage Alerts",      role: .vesselOperator) { p in AnyView(VesselDemurrageAlertsScreen(theme: p)) },
+            .init(id: "Vesl738", title: "Vessel Operator · VGM Declaration",       role: .vesselOperator) { p in AnyView(VesselVGMDeclarationScreen(theme: p)) },
+            .init(id: "Vesl784", title: "Vessel Operator · Detention Tracking",    role: .vesselOperator) { p in AnyView(VesselDetentionTrackingScreen(theme: p)) },
             // Phase B wave 2 — Vessel operator NEW screens (verbatim ports). Required ids defaulted for registry construction.
             .init(id: "Vesl662", title: "Vessel Operator · Exceptions & Holds",     role: .vesselOperator) { p in AnyView(VesselExceptionsHoldsScreen(theme: p)) },
             .init(id: "Vesl663", title: "Vessel Operator · CBP Entry Detail",       role: .vesselOperator) { p in AnyView(VesselCBPEntryDetailScreen(theme: p, entryNumber: "", importerId: "")) },
