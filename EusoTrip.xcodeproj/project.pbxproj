@@ -7,6 +7,19 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D2RIOSBLD110000000000000 /* 1100_IDVLivenessSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110000000000000 /* 1100_IDVLivenessSheet.swift */; };
+		D2RIOSBLD110100000000000 /* 1101_TaxIDValidationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110100000000000 /* 1101_TaxIDValidationSheet.swift */; };
+		D2RIOSBLD110200000000000 /* 1102_OperatingAuthoritySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110200000000000 /* 1102_OperatingAuthoritySheet.swift */; };
+		D2RIOSBLD110300000000000 /* 1103_InsuranceCOIViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110300000000000 /* 1103_InsuranceCOIViewer.swift */; };
+		D2RIOSBLD110400000000000 /* 1104_ClearinghouseQuerySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110400000000000 /* 1104_ClearinghouseQuerySheet.swift */; };
+		D2RIOSBLD110500000000000 /* 1105_MaritimeCertSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110500000000000 /* 1105_MaritimeCertSheet.swift */; };
+		D2RIOSBLD110600000000000 /* 1106_RailCertSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110600000000000 /* 1106_RailCertSheet.swift */; };
+		D2RIOSBLD110700000000000 /* 1107_UIIAStatusSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110700000000000 /* 1107_UIIAStatusSheet.swift */; };
+		D2RIOSBLD110800000000000 /* 1108_TrustedTraderSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110800000000000 /* 1108_TrustedTraderSheet.swift */; };
+		D2RIOSBLD110900000000000 /* 1109_VerticalEndorsementSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110900000000000 /* 1109_VerticalEndorsementSheet.swift */; };
+		D2RIOSBLD111000000000000 /* 1110_StepUpAuthSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF111000000000000 /* 1110_StepUpAuthSheet.swift */; };
+		D2RIOSBLD111100000000000 /* 1111_OnboardingWizard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF111100000000000 /* 1111_OnboardingWizard.swift */; };
+		D2RIOSBLD111200000000000 /* 1112_ComplianceGatesStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF111200000000000 /* 1112_ComplianceGatesStrip.swift */; };
 		A1000000000000000000AABA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000AAB9 /* Assets.xcassets */; };
 		A1000000000000000000AABD /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000AABC /* Preview Assets.xcassets */; };
 		A104A92790FBBAD8E412C5F3 /* AppRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F5325921E558CD8ED37DBF /* AppRoot.swift */; };
@@ -945,6 +958,19 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		D2RIOSREF110000000000000 /* 1100_IDVLivenessSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1100_IDVLivenessSheet.swift; path = EusoTrip/Views/Compliance/1100_IDVLivenessSheet.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF110100000000000 /* 1101_TaxIDValidationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1101_TaxIDValidationSheet.swift; path = EusoTrip/Views/Compliance/1101_TaxIDValidationSheet.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF110200000000000 /* 1102_OperatingAuthoritySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1102_OperatingAuthoritySheet.swift; path = EusoTrip/Views/Compliance/1102_OperatingAuthoritySheet.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF110300000000000 /* 1103_InsuranceCOIViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1103_InsuranceCOIViewer.swift; path = EusoTrip/Views/Compliance/1103_InsuranceCOIViewer.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF110400000000000 /* 1104_ClearinghouseQuerySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1104_ClearinghouseQuerySheet.swift; path = EusoTrip/Views/Compliance/1104_ClearinghouseQuerySheet.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF110500000000000 /* 1105_MaritimeCertSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1105_MaritimeCertSheet.swift; path = EusoTrip/Views/Compliance/1105_MaritimeCertSheet.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF110600000000000 /* 1106_RailCertSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1106_RailCertSheet.swift; path = EusoTrip/Views/Compliance/1106_RailCertSheet.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF110700000000000 /* 1107_UIIAStatusSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1107_UIIAStatusSheet.swift; path = EusoTrip/Views/Compliance/1107_UIIAStatusSheet.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF110800000000000 /* 1108_TrustedTraderSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1108_TrustedTraderSheet.swift; path = EusoTrip/Views/Compliance/1108_TrustedTraderSheet.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF110900000000000 /* 1109_VerticalEndorsementSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1109_VerticalEndorsementSheet.swift; path = EusoTrip/Views/Compliance/1109_VerticalEndorsementSheet.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF111000000000000 /* 1110_StepUpAuthSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1110_StepUpAuthSheet.swift; path = EusoTrip/Views/Compliance/1110_StepUpAuthSheet.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF111100000000000 /* 1111_OnboardingWizard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1111_OnboardingWizard.swift; path = EusoTrip/Views/Compliance/1111_OnboardingWizard.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF111200000000000 /* 1112_ComplianceGatesStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1112_ComplianceGatesStrip.swift; path = EusoTrip/Views/Compliance/1112_ComplianceGatesStrip.swift; sourceTree = SOURCE_ROOT; };
 		A1000000000000000000AAB1 /* EusoTrip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = EusoTrip.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1000000000000000000AAB9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A1000000000000000000AABC /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
@@ -2285,6 +2311,19 @@
 				D2DSP1200000000000ACDS /* 712_DispatchReportsHub.swift */,
 				D2DSP1300000000000ACDS /* Dpch713_DispatchMe.swift */,
 				D2CMP0000000000000ACDS /* 900_ComplianceOfficerHome.swift */,
+				D2RIOSREF110000000000000 /* 1100_IDVLivenessSheet.swift */,
+				D2RIOSREF110100000000000 /* 1101_TaxIDValidationSheet.swift */,
+				D2RIOSREF110200000000000 /* 1102_OperatingAuthoritySheet.swift */,
+				D2RIOSREF110300000000000 /* 1103_InsuranceCOIViewer.swift */,
+				D2RIOSREF110400000000000 /* 1104_ClearinghouseQuerySheet.swift */,
+				D2RIOSREF110500000000000 /* 1105_MaritimeCertSheet.swift */,
+				D2RIOSREF110600000000000 /* 1106_RailCertSheet.swift */,
+				D2RIOSREF110700000000000 /* 1107_UIIAStatusSheet.swift */,
+				D2RIOSREF110800000000000 /* 1108_TrustedTraderSheet.swift */,
+				D2RIOSREF110900000000000 /* 1109_VerticalEndorsementSheet.swift */,
+				D2RIOSREF111000000000000 /* 1110_StepUpAuthSheet.swift */,
+				D2RIOSREF111100000000000 /* 1111_OnboardingWizard.swift */,
+				D2RIOSREF111200000000000 /* 1112_ComplianceGatesStrip.swift */,
 				D2CMP0100000000000ACDS /* 901_ComplianceExpiringDocs.swift */,
 				D2CMP0200000000000ACDS /* 902_ComplianceViolations.swift */,
 				D2CMPNAV0000000000ACDS /* ComplianceNavController.swift */,
@@ -3828,6 +3867,19 @@
 				D2DSP1200000000000ABDS /* 712_DispatchReportsHub.swift in Sources */,
 				D2DSP1300000000000ABDS /* Dpch713_DispatchMe.swift in Sources */,
 				D2CMP0000000000000ABDS /* 900_ComplianceOfficerHome.swift in Sources */,
+				D2RIOSBLD110000000000000 /* 1100_IDVLivenessSheet.swift in Sources */,
+				D2RIOSBLD110100000000000 /* 1101_TaxIDValidationSheet.swift in Sources */,
+				D2RIOSBLD110200000000000 /* 1102_OperatingAuthoritySheet.swift in Sources */,
+				D2RIOSBLD110300000000000 /* 1103_InsuranceCOIViewer.swift in Sources */,
+				D2RIOSBLD110400000000000 /* 1104_ClearinghouseQuerySheet.swift in Sources */,
+				D2RIOSBLD110500000000000 /* 1105_MaritimeCertSheet.swift in Sources */,
+				D2RIOSBLD110600000000000 /* 1106_RailCertSheet.swift in Sources */,
+				D2RIOSBLD110700000000000 /* 1107_UIIAStatusSheet.swift in Sources */,
+				D2RIOSBLD110800000000000 /* 1108_TrustedTraderSheet.swift in Sources */,
+				D2RIOSBLD110900000000000 /* 1109_VerticalEndorsementSheet.swift in Sources */,
+				D2RIOSBLD111000000000000 /* 1110_StepUpAuthSheet.swift in Sources */,
+				D2RIOSBLD111100000000000 /* 1111_OnboardingWizard.swift in Sources */,
+				D2RIOSBLD111200000000000 /* 1112_ComplianceGatesStrip.swift in Sources */,
 				D2CMP0100000000000ABDS /* 901_ComplianceExpiringDocs.swift in Sources */,
 				D2CMP0200000000000ABDS /* 902_ComplianceViolations.swift in Sources */,
 				D2CMPNAV0000000000ABDS /* ComplianceNavController.swift in Sources */,

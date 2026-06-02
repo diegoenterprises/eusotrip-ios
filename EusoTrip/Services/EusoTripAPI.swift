@@ -297,6 +297,11 @@ final class EusoTripAPI: ObservableObject {
     lazy var auth: AuthAPI = AuthAPI(api: self)
     lazy var availability: AvailabilityAPI = AvailabilityAPI(api: self)
     lazy var registration: RegistrationAPI = RegistrationAPI(api: self)
+    // RIOS Registration & Onboarding (spec §11) — KYC/sanctions/monitoring/step-up
+    lazy var kyc: KycAPI = KycAPI(api: self)
+    lazy var sanctions: SanctionsAPI = SanctionsAPI(api: self)
+    lazy var monitoring: MonitoringAPI = MonitoringAPI(api: self)
+    lazy var stepUpAuth: StepUpAuthAPI = StepUpAuthAPI(api: self)
     lazy var inspections: InspectionsAPI = InspectionsAPI(api: self)
     lazy var esang: eSangAPI = eSangAPI(api: self)
     lazy var wallet: WalletAPI = WalletAPI(api: self)
@@ -8593,6 +8598,296 @@ struct ComplianceAPI {
 
     func getCatalystCompliance() async throws -> CatalystComplianceOverview {
         try await api.queryNoInput("compliance.getCatalystCompliance")
+    }
+}
+
+// MARK: - RIOS Registration & Onboarding (spec §11)
+//
+// Surfaces the RIOS server layer (kyc / sanctions / monitoring / stepUpAuth
+// routers + registration tier/attach procs) to iOS. Inputs match the server
+// zod schemas exactly; response structs decode LENIENTLY (fields optional)
+// so server additions don't require a mobile release. Honest states
+// ("pending" / "provider_unavailable" / null) are rendered verbatim —
+// never coerced into a fake "verified".
+
+/// RIOS capability tier (spec §2). 0 Browse · 1 Test-post/Bid · 2 Transact
+/// · 3 Cross-border/Hazmat/High-value.
+enum RiosTier: Int, Decodable, CaseIterable, Hashable {
+    case tier0 = 0, tier1 = 1, tier2 = 2, tier3 = 3
+    var label: String { "Tier \(rawValue)" }
+    var name: String {
+        switch self {
+        case .tier0: return "Browse"
+        case .tier1: return "Test-post / Bid"
+        case .tier2: return "Transact"
+        case .tier3: return "Cross-border / Hazmat"
+        }
+    }
+}
+
+/// One compliance gate row (spec §12 gate matrix). `status` decoded as a
+/// string so server additions don't break the client.
+struct RiosComplianceGate: Decodable, Identifiable, Hashable {
+    let gateId: String?
+    let label: String?
+    let status: String?      // "pass" | "pending" | "blocked"
+    let detail: String?
+    let expiryDate: String?
+    var id: String { gateId ?? label ?? status ?? "" }
+    var isBlocking: Bool { (status ?? "").lowercased() == "blocked" }
+}
+
+/// One sanctions list match.
+struct RiosSanctionMatch: Decodable, Identifiable, Hashable {
+    let name: String?
+    let list: String?
+    let program: String?
+    let score: Double?
+    var id: String { (name ?? "") + "|" + (list ?? program ?? "") }
+}
+
+// MARK: kyc.* (spec §6)
+
+struct KycAPI {
+    unowned let api: EusoTripAPI
+
+    struct IdvResult: Decodable, Hashable {
+        let status: String?            // "verified" | "pending" | "failed" | "provider_unavailable"
+        let vendor: String?
+        let score: Int?
+        let livenessPassed: Bool?
+        let recommendation: String?
+        let warnings: [String]?
+    }
+    struct TaxIdResult: Decodable, Hashable {
+        let valid: Bool?               // null when the registry validator is unconfigured
+        let normalized: String?
+        let source: String?
+        let message: String?
+    }
+    struct AddressResult: Decodable, Hashable {
+        let verified: Bool?
+        let source: String?
+    }
+    struct SimSwapResult: Decodable, Hashable {
+        let simSwapClean: Bool?        // null = no provider attested → force step-up
+        let portedWithinDays: Int?
+        let source: String?
+    }
+
+    private struct IdvInput: Encodable { let userId: Int?; let docImageRef: String?; let selfieRef: String?; let country: String?; let docType: String? }
+    func runIDV(userId: Int? = nil, docImageRef: String? = nil, selfieRef: String? = nil, country: String = "US", docType: String? = nil) async throws -> IdvResult {
+        try await api.mutation("kyc.runIDV", input: IdvInput(userId: userId, docImageRef: docImageRef, selfieRef: selfieRef, country: country, docType: docType))
+    }
+
+    private struct LivenessInput: Encodable { let userId: Int? }
+    func runLiveness(userId: Int? = nil) async throws -> IdvResult {
+        try await api.mutation("kyc.runLiveness", input: LivenessInput(userId: userId))
+    }
+
+    private struct TaxIdInput: Encodable { let taxId: String; let country: String; let legalName: String?; let userId: Int? }
+    func matchTaxId(taxId: String, country: String, legalName: String? = nil, userId: Int? = nil) async throws -> TaxIdResult {
+        try await api.mutation("kyc.matchTaxId", input: TaxIdInput(taxId: taxId, country: country, legalName: legalName, userId: userId))
+    }
+
+    private struct AddressInput: Encodable { let line1: String; let city: String; let state: String; let postalCode: String; let country: String; let userId: Int? }
+    func runAddressValidation(line1: String, city: String = "", state: String = "", postalCode: String = "", country: String, userId: Int? = nil) async throws -> AddressResult {
+        try await api.mutation("kyc.runAddressValidation", input: AddressInput(line1: line1, city: city, state: state, postalCode: postalCode, country: country, userId: userId))
+    }
+
+    private struct SimSwapInput: Encodable { let phone: String?; let userId: Int? }
+    func runPhoneSimSwap(phone: String? = nil, userId: Int? = nil) async throws -> SimSwapResult {
+        try await api.mutation("kyc.runPhoneSimSwap", input: SimSwapInput(phone: phone, userId: userId))
+    }
+}
+
+// MARK: sanctions.* (spec §5/§7)
+
+struct SanctionsAPI {
+    unowned let api: EusoTripAPI
+
+    struct ScreenResult: Decodable, Hashable {
+        let entityId: Int?
+        let name: String?
+        let status: String?            // "clear" | "match" | "review" | "blocked" | "provider_unavailable"
+        let overallRisk: String?
+        let matchCount: Int?
+        let matches: [RiosSanctionMatch]?
+        let cleared: Bool?
+        let blocked: Bool?
+    }
+    struct LoadPartyResult: Decodable, Identifiable, Hashable {
+        let role: String?
+        let entityId: Int?
+        let name: String?
+        let status: String?
+        let overallRisk: String?
+        var id: String { (role ?? "") + "|" + String(entityId ?? 0) }
+    }
+    struct LoadScreenResult: Decodable, Hashable {
+        let loadId: Int?
+        let parties: [LoadPartyResult]?
+        let overallStatus: String?
+        let clearedToTransact: Bool?
+    }
+
+    private struct ScreenEntityInput: Encodable { let entityId: Int; let entityType: String; let name: String? }
+    func screenEntity(entityId: Int, entityType: String = "user", name: String? = nil) async throws -> ScreenResult {
+        try await api.mutation("sanctions.screenEntity", input: ScreenEntityInput(entityId: entityId, entityType: entityType, name: name))
+    }
+
+    private struct ScreenLoadInput: Encodable { let loadId: Int }
+    func screenLoadParties(loadId: Int) async throws -> LoadScreenResult {
+        try await api.mutation("sanctions.screenLoadParties", input: ScreenLoadInput(loadId: loadId))
+    }
+}
+
+// MARK: monitoring.* (spec §8)
+
+struct MonitoringAPI {
+    unowned let api: EusoTripAPI
+
+    struct Subscription: Decodable, Hashable { let id: Int?; let entityId: Int?; let signal: String?; let active: Bool?; let nextCheckDue: String? }
+    struct ExpiringItem: Decodable, Identifiable, Hashable {
+        let entityId: Int?
+        let entityType: String?
+        let signal: String?
+        let window: String?            // "60" | "30" | "7"
+        let expiresAt: String?
+        var id: String { "\(entityId ?? 0)|\(signal ?? "")|\(window ?? "")" }
+    }
+    struct ExpirationsResult: Decodable, Hashable { let scanned: Int?; let flagged: [ExpiringItem]? }
+
+    private struct SubscribeInput: Encodable { let entityId: Int; let entityType: String; let signal: String; let intervalDays: Int }
+    func subscribeEntity(entityId: Int, entityType: String = "company", signal: String, intervalDays: Int = 1) async throws -> Subscription {
+        try await api.mutation("monitoring.subscribeEntity", input: SubscribeInput(entityId: entityId, entityType: entityType, signal: signal, intervalDays: intervalDays))
+    }
+}
+
+// MARK: stepUpAuth.* (spec §2/§12)
+
+struct StepUpAuthAPI {
+    unowned let api: EusoTripAPI
+
+    /// A pending step-up request (24h cooldown + OOB callback + SIM-swap).
+    struct Challenge: Decodable, Hashable {
+        let requestId: Int?
+        let status: String?            // "PENDING" | "VERIFIED" | "APPLIED" | "EXPIRED" | "CANCELLED"
+        let requestType: String?
+        let cooldownExpiresAt: String?
+        let oobDelivered: Bool?
+        let simSwapClean: Bool?
+        let recommendation: String?
+    }
+    struct ConfirmResult: Decodable, Hashable {
+        let requestId: Int?
+        let status: String?
+        let verified: Bool?
+        let applied: Bool?
+        let reason: String?
+        let recommendation: String?
+    }
+
+    private struct BankInput: Encodable { let accountHolderName: String?; let routingNumber: String?; let accountNumberLast4: String?; let bankName: String?; let reason: String? }
+    func requestBankChange(accountHolderName: String? = nil, routingNumber: String? = nil, accountNumberLast4: String? = nil, bankName: String? = nil, reason: String? = nil) async throws -> Challenge {
+        try await api.mutation("stepUpAuth.requestBankChange", input: BankInput(accountHolderName: accountHolderName, routingNumber: routingNumber, accountNumberLast4: accountNumberLast4, bankName: bankName, reason: reason))
+    }
+
+    private struct PayoutInput: Encodable { let payoutMethod: String?; let destinationRef: String?; let destinationLast4: String?; let reason: String? }
+    func requestPayoutChange(payoutMethod: String? = nil, destinationRef: String? = nil, destinationLast4: String? = nil, reason: String? = nil) async throws -> Challenge {
+        try await api.mutation("stepUpAuth.requestPayoutChange", input: PayoutInput(payoutMethod: payoutMethod, destinationRef: destinationRef, destinationLast4: destinationLast4, reason: reason))
+    }
+
+    private struct OfficerInput: Encodable { let companyId: Int?; let officerName: String?; let officerTitle: String?; let officerUserId: Int?; let action: String?; let reason: String? }
+    func requestOfficerChange(companyId: Int? = nil, officerName: String? = nil, officerTitle: String? = nil, officerUserId: Int? = nil, action: String? = nil, reason: String? = nil) async throws -> Challenge {
+        try await api.mutation("stepUpAuth.requestOfficerChange", input: OfficerInput(companyId: companyId, officerName: officerName, officerTitle: officerTitle, officerUserId: officerUserId, action: action, reason: reason))
+    }
+
+    private struct ConfirmInput: Encodable { let requestId: Int; let code: String }
+    func confirmStepUp(requestId: Int, code: String) async throws -> ConfirmResult {
+        try await api.mutation("stepUpAuth.confirmStepUp", input: ConfirmInput(requestId: requestId, code: code))
+    }
+
+    private struct CancelInput: Encodable { let requestId: Int }
+    func cancelStepUp(requestId: Int) async throws -> ConfirmResult {
+        try await api.mutation("stepUpAuth.cancelStepUp", input: CancelInput(requestId: requestId))
+    }
+}
+
+// MARK: registration.* RIOS tier + attach extension (spec §3/§10)
+
+extension RegistrationAPI {
+    /// Tier progression result — current tier + the gates blocking the next.
+    struct TierProgress: Decodable, Hashable {
+        let tier: Int?
+        let kybTier: Int?
+        let status: String?
+        let gates: [RiosComplianceGate]?
+        let message: String?
+    }
+    /// Generic attach result for the §3 credential captures.
+    struct AttachResult: Decodable, Hashable {
+        let status: String?
+        let id: Int?
+        let expiresAt: String?
+        let warnings: [String]?
+    }
+
+    private struct Tier1Input: Encodable { let companyName: String; let taxId: String; let country: String; let companyId: Int? }
+    func startTier1(companyName: String, taxId: String, country: String, companyId: Int? = nil) async throws -> TierProgress {
+        try await api.mutation("registration.startTier1", input: Tier1Input(companyName: companyName, taxId: taxId, country: country, companyId: companyId))
+    }
+
+    struct UBO: Encodable { let fullName: String; let ownershipPercent: Double?; let dob: String?; let residenceCountry: String?; let isOfficer: Bool?; let isControlPerson: Bool? }
+    struct Signer: Encodable { let fullName: String; let title: String?; let userId: Int?; let docImageRef: String?; let selfieRef: String?; let country: String? }
+    private struct Tier2Input: Encodable { let companyId: Int; let ubos: [UBO]; let signers: [Signer]; let bankToken: String? }
+    func startTier2(companyId: Int, ubos: [UBO], signers: [Signer], bankToken: String? = nil) async throws -> TierProgress {
+        try await api.mutation("registration.startTier2", input: Tier2Input(companyId: companyId, ubos: ubos, signers: signers, bankToken: bankToken))
+    }
+
+    private struct Tier3Input: Encodable { let reason: String; let companyId: Int?; let notes: String? }
+    func requestTier3(reason: String, companyId: Int? = nil, notes: String? = nil) async throws -> TierProgress {
+        try await api.mutation("registration.requestTier3", input: Tier3Input(reason: reason, companyId: companyId, notes: notes))
+    }
+
+    private struct OperatingAuthorityInput: Encodable { let companyId: Int; let mode: String; let country: String; let authorityType: String; let authorityNumber: String? }
+    func attachOperatingAuthority(companyId: Int, mode: String, country: String, authorityType: String, authorityNumber: String? = nil) async throws -> AttachResult {
+        try await api.mutation("registration.attachOperatingAuthority", input: OperatingAuthorityInput(companyId: companyId, mode: mode, country: country, authorityType: authorityType, authorityNumber: authorityNumber))
+    }
+
+    private struct InsuranceCOIInput: Encodable { let companyId: Int; let country: String; let carrier: String; let policyNumber: String; let coverageAmount: Double?; let expiresAt: String? }
+    func attachInsuranceCOI(companyId: Int, country: String = "US", carrier: String, policyNumber: String, coverageAmount: Double? = nil, expiresAt: String? = nil) async throws -> AttachResult {
+        try await api.mutation("registration.attachInsuranceCOI", input: InsuranceCOIInput(companyId: companyId, country: country, carrier: carrier, policyNumber: policyNumber, coverageAmount: coverageAmount, expiresAt: expiresAt))
+    }
+
+    private struct ClearinghouseConsentInput: Encodable { let driverId: Int; let queryType: String; let consentGiven: Bool }
+    func attachClearinghouseConsent(driverId: Int, queryType: String = "pre_employment", consentGiven: Bool) async throws -> AttachResult {
+        try await api.mutation("registration.attachClearinghouseConsent", input: ClearinghouseConsentInput(driverId: driverId, queryType: queryType, consentGiven: consentGiven))
+    }
+
+    private struct MaritimeCertInput: Encodable { let ownerEntityId: Int; let ownerEntityType: String; let certType: String; let certNumber: String?; let issuer: String?; let vesselImoNumber: String?; let issuedAt: String?; let expiresAt: String? }
+    func attachMaritimeCert(ownerEntityId: Int, ownerEntityType: String, certType: String, certNumber: String? = nil, issuer: String? = nil, vesselImoNumber: String? = nil, issuedAt: String? = nil, expiresAt: String? = nil) async throws -> AttachResult {
+        try await api.mutation("registration.attachMaritimeCert", input: MaritimeCertInput(ownerEntityId: ownerEntityId, ownerEntityType: ownerEntityType, certType: certType, certNumber: certNumber, issuer: issuer, vesselImoNumber: vesselImoNumber, issuedAt: issuedAt, expiresAt: expiresAt))
+    }
+
+    private struct RailCertInput: Encodable { let ownerEntityId: Int; let ownerEntityType: String; let certType: String; let certNumber: String?; let issuedAt: String?; let expiresAt: String? }
+    func attachRailCert(ownerEntityId: Int, ownerEntityType: String, certType: String, certNumber: String? = nil, issuedAt: String? = nil, expiresAt: String? = nil) async throws -> AttachResult {
+        try await api.mutation("registration.attachRailCert", input: RailCertInput(ownerEntityId: ownerEntityId, ownerEntityType: ownerEntityType, certType: certType, certNumber: certNumber, issuedAt: issuedAt, expiresAt: expiresAt))
+    }
+
+    private struct IntermodalUIIAInput: Encodable { let companyId: Int; let insurer: String?; let equipmentProviderIds: [String]?; let validUntil: String? }
+    func attachIntermodalUIIA(companyId: Int, insurer: String? = nil, equipmentProviderIds: [String]? = nil, validUntil: String? = nil) async throws -> AttachResult {
+        try await api.mutation("registration.attachIntermodalUIIA", input: IntermodalUIIAInput(companyId: companyId, insurer: insurer, equipmentProviderIds: equipmentProviderIds, validUntil: validUntil))
+    }
+
+    private struct TrustedTraderInput: Encodable { let companyId: Int; let program: String; let validUntil: String?; let lastAudit: String? }
+    func attachTrustedTrader(companyId: Int, program: String, validUntil: String? = nil, lastAudit: String? = nil) async throws -> AttachResult {
+        try await api.mutation("registration.attachTrustedTrader", input: TrustedTraderInput(companyId: companyId, program: program, validUntil: validUntil, lastAudit: lastAudit))
+    }
+
+    private struct VerticalEndorsementInput: Encodable { let entityId: Int; let entityType: String; let vertical: String; let endorsementType: String?; let value: String?; let expiresAt: String? }
+    func attachVerticalEndorsement(entityId: Int, entityType: String = "company", vertical: String, endorsementType: String? = nil, value: String? = nil, expiresAt: String? = nil) async throws -> AttachResult {
+        try await api.mutation("registration.attachVerticalEndorsement", input: VerticalEndorsementInput(entityId: entityId, entityType: entityType, vertical: vertical, endorsementType: endorsementType, value: value, expiresAt: expiresAt))
     }
 }
 
