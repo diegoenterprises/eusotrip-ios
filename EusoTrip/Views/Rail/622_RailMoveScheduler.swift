@@ -463,8 +463,8 @@ private struct RailMoveSchedulerBody: View {
                 }
                 .frame(width: 148, height: 48)
                 .background(palette.bgCard)
-                .overlay(Capsule().strokeBorder(palette.borderSoft))
-                .clipShape(Capsule())
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(isAssigning || nextUp == nil)

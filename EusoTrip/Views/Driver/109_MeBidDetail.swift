@@ -332,7 +332,7 @@ struct MeBidDetailView: View {
                 Text(store.working ? "Working…" : label).font(.system(size: 14, weight: .heavy))
             }
             .frame(maxWidth: .infinity).padding(.vertical, 13)
-            .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(Capsule())
+            .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(store.working)
@@ -352,8 +352,8 @@ struct MeBidDetailView: View {
             }
             .frame(maxWidth: .infinity).padding(.vertical, 13)
             .foregroundStyle(Brand.danger).background(palette.bgCard)
-            .overlay(Capsule().strokeBorder(Brand.danger.opacity(0.6)))
-            .clipShape(Capsule())
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Brand.danger.opacity(0.6)))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(store.working)
@@ -369,8 +369,8 @@ struct MeBidDetailView: View {
             }
             .frame(maxWidth: .infinity).padding(.vertical, 11)
             .foregroundStyle(palette.textPrimary).background(palette.bgCard)
-            .overlay(Capsule().strokeBorder(palette.borderFaint))
-            .clipShape(Capsule())
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(store.working)
@@ -418,7 +418,7 @@ struct MeBidDetailView: View {
                         Text(store.working ? "Sending…" : "Send counter").font(.system(size: 14, weight: .heavy))
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 13)
-                    .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(Capsule())
+                    .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(store.working || (Double(store.counterAmount) ?? 0) <= 0)

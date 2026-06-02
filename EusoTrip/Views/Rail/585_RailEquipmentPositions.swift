@@ -558,8 +558,8 @@ private struct RailEquipmentPositionsBody: View {
                 .font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.textPrimary)
                 .frame(maxWidth: .infinity).frame(height: 48)
                 .background(
-                    Capsule().fill(palette.bgCard)
-                        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard)
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).stroke(Color.white.opacity(0.10), lineWidth: 1))
                 )
         }
     }

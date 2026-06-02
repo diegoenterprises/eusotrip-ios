@@ -29,6 +29,7 @@ struct eSangDispatchChat: View {
     @State private var counterInflight: Bool = false
     @State private var sendInflight: Bool = false
     @State private var actionToast: String? = nil
+    @State private var showDocClassifier: Bool = false
     @FocusState private var draftFieldFocused: Bool
 
     enum Register { case night, afternoon }
@@ -111,6 +112,15 @@ struct eSangDispatchChat: View {
             counterComposerSheet
                 .environment(\.palette, palette)
                 .presentationDetents([.medium])
+        }
+        .sheet(isPresented: $showDocClassifier) {
+            DocumentClassifierSheet(
+                mode: .prefillWizard,
+                callerContext: "esang dispatch chat",
+                onApplySingle: { doc in attachClassifiedDoc(doc) },
+                onDispatchBatch: { _ in }
+            )
+            .environment(\.palette, palette)
         }
         .overlay(alignment: .bottom) {
             if let msg = actionToast {
@@ -377,6 +387,18 @@ struct eSangDispatchChat: View {
             )
             .clipShape(Capsule())
 
+            Button { showDocClassifier = true } label: {
+                Image(systemName: "paperclip")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(width: 40, height: 40)
+                    .background(palette.bgCard)
+                    .overlay(Circle().strokeBorder(palette.borderFaint, lineWidth: 1))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Attach document")
+
             Button { sendDraft() } label: {
                 ZStack {
                     Circle()
@@ -477,6 +499,83 @@ struct eSangDispatchChat: View {
         }
         try? await Task.sleep(nanoseconds: 1_400_000_000)
         actionToast = nil
+    }
+
+    /// A document was classified by the vision spine. Insert an
+    /// honest, concise reference line into the chat input so the
+    /// driver (and ESANG, once the message lands) knows exactly what
+    /// the document is — never a type the classifier didn't return.
+    private func attachClassifiedDoc(_ doc: ClassifiedDocument) {
+        let confidencePct = Int((doc.confidence * 100).rounded())
+        // Low confidence or no real type → don't assert a label.
+        let unconfident = doc.classifiedType.isEmpty
+            || doc.classifiedType.lowercased() == "unknown"
+            || doc.confidence < 0.6
+
+        let line: String
+        if unconfident {
+            line = "📎 Document attached — couldn't confidently identify it, please confirm what it is."
+        } else {
+            let label = humanDocType(doc.classifiedType)
+            var s = "📎 \(label) (\(confidencePct)%)"
+            // Append a couple of key extracted fields when present so
+            // ESANG gets the salient details, not just a type name.
+            let keyFields = doc.fields
+                .filter { !$0.value.trimmingCharacters(in: .whitespaces).isEmpty }
+                .sorted { $0.key < $1.key }
+                .prefix(3)
+                .map { "\(humanFieldKey($0.key)): \($0.value)" }
+            if !keyFields.isEmpty {
+                s += " — " + keyFields.joined(separator: ", ")
+            } else if !doc.summary.isEmpty {
+                s += " — " + doc.summary
+            }
+            line = s
+        }
+
+        // Surface any classifier warnings honestly on their own line.
+        let warningLine = doc.warnings.isEmpty
+            ? ""
+            : "\n⚠ " + doc.warnings.prefix(2).joined(separator: "; ")
+
+        let insertion = line + warningLine
+        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft = trimmed.isEmpty ? insertion : "\(draft)\n\(insertion)"
+
+        MeAction.fire("053.doc-classified",
+                      userInfo: ["loadId": lifecycle.loadId,
+                                 "type": doc.classifiedType,
+                                 "confidence": doc.confidence])
+        draftFieldFocused = true
+    }
+
+    /// Local human-readable mapping for the doc types most likely to
+    /// surface in dispatch chat (BOL / POD / rate con / credentials).
+    /// Falls back to a de-snaked title for anything else.
+    private func humanDocType(_ raw: String) -> String {
+        switch raw {
+        case "bill_of_lading": return "Bill of Lading"
+        case "rate_confirmation": return "Rate Confirmation"
+        case "proof_of_delivery": return "Proof of Delivery"
+        case "load_tender": return "Load Tender"
+        case "run_ticket": return "Run Ticket"
+        case "weight_ticket", "scale_ticket": return "Weight Ticket"
+        case "us_cdl": return "CDL"
+        case "us_medical_card": return "Medical Card"
+        case "us_coi", "ca_coi": return "Insurance Certificate"
+        case "lumper_receipt": return "Lumper Receipt"
+        case "fuel_receipt": return "Fuel Receipt"
+        default:
+            return raw.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
+    private func humanFieldKey(_ raw: String) -> String {
+        raw
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "([a-z])([A-Z])", with: "$1 $2",
+                                  options: .regularExpression)
+            .capitalized
     }
 
     private func tapMic() {

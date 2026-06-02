@@ -455,7 +455,7 @@ private struct CreateRuleSheet: View {
                 Text(creating ? "Creating…" : "Create rule").font(.system(size: 14, weight: .heavy))
             }
             .frame(maxWidth: .infinity).padding(.vertical, 13)
-            .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(Capsule())
+            .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(creating || name.trimmingCharacters(in: .whitespaces).isEmpty)

@@ -151,7 +151,7 @@ struct FleetBulkRegisterStep: View {
                 .frame(maxWidth: .infinity).padding(.vertical, 13)
                 .foregroundStyle(.white)
                 .background(LinearGradient.diagonal)
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
 
@@ -172,8 +172,8 @@ struct FleetBulkRegisterStep: View {
                 .padding(.vertical, 12).padding(.horizontal, 14)
                 .foregroundStyle(palette.textPrimary)
                 .background(palette.bgCardSoft)
-                .overlay(Capsule().strokeBorder(palette.borderSoft))
-                .clipShape(Capsule())
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }
@@ -338,7 +338,7 @@ struct FleetBulkRegisterStep: View {
                 .frame(maxWidth: .infinity).padding(.vertical, 13)
                 .foregroundStyle(.white)
                 .background(canCommit ? AnyView(LinearGradient.diagonal) : AnyView(Color.gray.opacity(0.4)))
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(!canCommit)
@@ -352,8 +352,8 @@ struct FleetBulkRegisterStep: View {
                             .frame(maxWidth: .infinity).padding(.vertical, 11)
                             .foregroundStyle(palette.textPrimary)
                             .background(palette.bgCardSoft)
-                            .overlay(Capsule().strokeBorder(palette.borderSoft))
-                            .clipShape(Capsule())
+                            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                     }
                     .buttonStyle(.plain)
                 }
@@ -364,7 +364,7 @@ struct FleetBulkRegisterStep: View {
                             .frame(maxWidth: .infinity).padding(.vertical, 11)
                             .foregroundStyle(.white)
                             .background(LinearGradient.diagonal)
-                            .clipShape(Capsule())
+                            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                     }
                     .buttonStyle(.plain)
                 }

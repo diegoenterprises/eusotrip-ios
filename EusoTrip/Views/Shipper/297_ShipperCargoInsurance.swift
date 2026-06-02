@@ -471,14 +471,14 @@ struct ShipperCargoInsurance: View {
             Button { coiSheet = true } label: {
                 Text("Request COI").font(EType.bodyStrong).foregroundStyle(.white)
                     .frame(maxWidth: .infinity).padding(.vertical, Space.s3)
-                    .background(Capsule().fill(LinearGradient.diagonal))
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.diagonal))
             }.buttonStyle(.plain)
 
             Button { quoteSheet = true } label: {
                 Text("New quote").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
                     .frame(width: 124).padding(.vertical, Space.s3)
-                    .background(Capsule().fill(palette.bgCard))
-                    .overlay(Capsule().strokeBorder(palette.borderFaint, lineWidth: 1))
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
             }.buttonStyle(.plain)
         }
     }
@@ -781,7 +781,7 @@ private struct PerLoadQuoteSheet: View {
                         Text(loading ? "Pricing…" : "Get quote").font(EType.bodyStrong).foregroundStyle(.white)
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, Space.s3)
-                    .background(Capsule().fill(canQuote ? AnyShapeStyle(LinearGradient.diagonal)
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(canQuote ? AnyShapeStyle(LinearGradient.diagonal)
                                                         : AnyShapeStyle(palette.textTertiary.opacity(0.4))))
                 }.buttonStyle(.plain).disabled(!canQuote || loading)
 
@@ -795,8 +795,8 @@ private struct PerLoadQuoteSheet: View {
                     } label: {
                         Text("Use this quote").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
                             .frame(maxWidth: .infinity).padding(.vertical, Space.s3)
-                            .background(Capsule().fill(palette.bgCard))
-                            .overlay(Capsule().strokeBorder(palette.borderFaint, lineWidth: 1))
+                            .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
+                            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
                     }.buttonStyle(.plain)
                 }
             }
@@ -921,7 +921,7 @@ private struct RequestCOISheet: View {
                         Text(loading ? "Requesting…" : "Request COI").font(EType.bodyStrong).foregroundStyle(.white)
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, Space.s3)
-                    .background(Capsule().fill(canSubmit ? AnyShapeStyle(LinearGradient.diagonal)
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(canSubmit ? AnyShapeStyle(LinearGradient.diagonal)
                                                          : AnyShapeStyle(palette.textTertiary.opacity(0.4))))
                 }.buttonStyle(.plain).disabled(!canSubmit || loading)
             }

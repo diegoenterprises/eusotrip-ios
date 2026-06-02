@@ -1931,7 +1931,7 @@ struct CreateAccountView: View {
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity, minHeight: 50)
             .background(LinearGradient.diagonal)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .shadow(color: Brand.blue.opacity(enabled ? 0.32 : 0),
                     radius: 18, x: -4, y: 10)
             .shadow(color: Brand.magenta.opacity(enabled ? 0.28 : 0),
@@ -1954,8 +1954,8 @@ struct CreateAccountView: View {
             .padding(.horizontal, Space.s4)
             .frame(height: 50)
             .background(palette.bgCardSoft.opacity(0.75))
-            .overlay(Capsule().strokeBorder(palette.borderSoft))
-            .clipShape(Capsule())
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
     }

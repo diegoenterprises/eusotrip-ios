@@ -322,7 +322,7 @@ public struct GradientSignaturePad: View {
                     colors: [Self.stop1, Self.stop2, Self.stop3],
                     startPoint: .leading, endPoint: .trailing
                 ))
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(!canSign)

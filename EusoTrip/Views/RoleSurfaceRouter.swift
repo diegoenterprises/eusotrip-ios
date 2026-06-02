@@ -345,6 +345,19 @@ struct ShipperSurface: View {
                 ShippereSangCoachSheet()
                     .environment(\.palette, palette)
                     .environmentObject(session)
+                    // Wire ESANG autopilot actions into the Shipper push-
+                    // nav surface. Without this the Shipper coach sheet
+                    // parsed nothing and every spoken/typed command was a
+                    // no-op (E1/E2). The resolver maps server SPA paths
+                    // (`/shipper/loads`, `/shipper/settlements`, …) onto
+                    // the shipper screen registry and posts the matching
+                    // `.eusoShipperNavSwap` so navigation actually lands.
+                    .environment(\.esangActionHandler) { action in
+                        eSangRoleDispatcher.dispatch(
+                            action,
+                            role: session.user?.roleEnum ?? .shipper,
+                            dismissSheet: { showeSang = false })
+                    }
             }
     }
 
@@ -1038,7 +1051,14 @@ struct CarrierSurface: View {
                 showeSang = true
             }
             .sheet(isPresented: $showeSang) {
-                DrivereSangCoachSheet().environment(\.palette, palette)
+                DrivereSangCoachSheet()
+                    .environment(\.palette, palette)
+                    .environment(\.esangActionHandler) { action in
+                        eSangRoleDispatcher.dispatch(
+                            action,
+                            role: session.user?.roleEnum ?? .catalyst,
+                            dismissSheet: { showeSang = false })
+                    }
             }
     }
 }
@@ -1140,7 +1160,14 @@ struct BrokerSurface: View {
                 showeSang = true
             }
             .sheet(isPresented: $showeSang) {
-                DrivereSangCoachSheet().environment(\.palette, palette)
+                DrivereSangCoachSheet()
+                    .environment(\.palette, palette)
+                    .environment(\.esangActionHandler) { action in
+                        eSangRoleDispatcher.dispatch(
+                            action,
+                            role: session.user?.roleEnum ?? .broker,
+                            dismissSheet: { showeSang = false })
+                    }
             }
     }
 }
@@ -1228,7 +1255,14 @@ struct EscortSurface: View {
                 showeSang = true
             }
             .sheet(isPresented: $showeSang) {
-                DrivereSangCoachSheet().environment(\.palette, palette)
+                DrivereSangCoachSheet()
+                    .environment(\.palette, palette)
+                    .environment(\.esangActionHandler) { action in
+                        eSangRoleDispatcher.dispatch(
+                            action,
+                            role: session.user?.roleEnum ?? .escort,
+                            dismissSheet: { showeSang = false })
+                    }
             }
     }
 }
@@ -1316,7 +1350,14 @@ struct TerminalSurface: View {
                 showeSang = true
             }
             .sheet(isPresented: $showeSang) {
-                DrivereSangCoachSheet().environment(\.palette, palette)
+                DrivereSangCoachSheet()
+                    .environment(\.palette, palette)
+                    .environment(\.esangActionHandler) { action in
+                        eSangRoleDispatcher.dispatch(
+                            action,
+                            role: session.user?.roleEnum ?? .terminal,
+                            dismissSheet: { showeSang = false })
+                    }
             }
     }
 }
@@ -1407,7 +1448,14 @@ struct AdminSurface: View {
                 showeSang = true
             }
             .sheet(isPresented: $showeSang) {
-                DrivereSangCoachSheet().environment(\.palette, palette)
+                DrivereSangCoachSheet()
+                    .environment(\.palette, palette)
+                    .environment(\.esangActionHandler) { action in
+                        eSangRoleDispatcher.dispatch(
+                            action,
+                            role: session.user?.roleEnum ?? .admin,
+                            dismissSheet: { showeSang = false })
+                    }
             }
     }
 }
@@ -1497,7 +1545,14 @@ struct DispatchSurface: View {
                 showeSang = true
             }
             .sheet(isPresented: $showeSang) {
-                DrivereSangCoachSheet().environment(\.palette, palette)
+                DrivereSangCoachSheet()
+                    .environment(\.palette, palette)
+                    .environment(\.esangActionHandler) { action in
+                        eSangRoleDispatcher.dispatch(
+                            action,
+                            role: session.user?.roleEnum ?? .dispatch,
+                            dismissSheet: { showeSang = false })
+                    }
             }
     }
 }
@@ -1586,7 +1641,14 @@ struct ComplianceSurface: View {
                 showeSang = true
             }
             .sheet(isPresented: $showeSang) {
-                DrivereSangCoachSheet().environment(\.palette, palette)
+                DrivereSangCoachSheet()
+                    .environment(\.palette, palette)
+                    .environment(\.esangActionHandler) { action in
+                        eSangRoleDispatcher.dispatch(
+                            action,
+                            role: session.user?.roleEnum ?? .compliance,
+                            dismissSheet: { showeSang = false })
+                    }
             }
     }
 }
@@ -1676,7 +1738,14 @@ struct RailEngineerSurface: View {
                 showeSang = true
             }
             .sheet(isPresented: $showeSang) {
-                DrivereSangCoachSheet().environment(\.palette, palette)
+                DrivereSangCoachSheet()
+                    .environment(\.palette, palette)
+                    .environment(\.esangActionHandler) { action in
+                        eSangRoleDispatcher.dispatch(
+                            action,
+                            role: session.user?.roleEnum ?? .railEngineer,
+                            dismissSheet: { showeSang = false })
+                    }
             }
     }
 }
@@ -1772,7 +1841,14 @@ struct VesselOperatorSurface: View {
                 showeSang = true
             }
             .sheet(isPresented: $showeSang) {
-                DrivereSangCoachSheet().environment(\.palette, palette)
+                DrivereSangCoachSheet()
+                    .environment(\.palette, palette)
+                    .environment(\.esangActionHandler) { action in
+                        eSangRoleDispatcher.dispatch(
+                            action,
+                            role: session.user?.roleEnum ?? .vesselOperator,
+                            dismissSheet: { showeSang = false })
+                    }
             }
     }
 }

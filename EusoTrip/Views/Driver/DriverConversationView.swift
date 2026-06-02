@@ -51,6 +51,57 @@ struct DriverConversationView: View {
     @State private var showAttachMenu: Bool = false
     @State private var showTransferSheet: Bool = false
 
+    // ──────────── Attachment document-intelligence state ────────────
+    //
+    // Before the picked photo ships via `uploadAttachment`, we run it
+    // through the homegrown document-intelligence vision spine
+    // (`documentRouter.classifyAndRoute`) so the capture point KNOWS
+    // what the attachment is (BOL / POD / manifest / damage photo / …)
+    // instead of pushing a raw image. The detected type is surfaced on
+    // the pending-attachment chip so the driver — and the recipient,
+    // since the type rides along as the caption — sees an honest label.
+    //
+    // `attachmentScan` holds the classifier verdict for the photo the
+    // driver is about to send. `attachmentScanning` flips while the
+    // round-trip is in flight so the chip can show a spinner rather than
+    // a stale/empty label. Both reset when the photo is cleared or sent.
+    @State private var attachmentScan: AttachmentClassification? = nil
+    @State private var attachmentScanning: Bool = false
+
+    /// Normalized classifier verdict for a pending photo attachment.
+    /// Mirrors the load-bearing fields of `DocumentRouterAPI.ClassifyResponse`
+    /// the chip renders — kept local so the view owns its own display state.
+    private struct AttachmentClassification: Equatable {
+        let type: String          // raw `classifiedType` (e.g. "bill_of_lading", "unknown")
+        let confidence: Double    // 0…1
+        let summary: String
+        let warnings: [String]
+
+        /// Low-confidence / unrecognized docs must read honestly — never
+        /// claim a type the classifier isn't sure of.
+        var isConfident: Bool { type != "unknown" && !type.isEmpty && confidence >= 0.6 }
+
+        /// Human-facing label for the chip. Covers the common driver
+        /// message attachments (BOL / POD / manifest / damage) and falls
+        /// back to a title-cased version of any other classifier type.
+        var humanType: String {
+            switch type {
+            case "bill_of_lading":            return "Bill of Lading"
+            case "proof_of_delivery":         return "Proof of Delivery"
+            case "manifest", "cargo_manifest": return "Manifest"
+            case "damage_report", "damage_photo", "cargo_damage": return "Damage Photo"
+            case "rate_confirmation":         return "Rate Confirmation"
+            case "load_tender":               return "Load Tender"
+            case "weight_ticket", "scale_ticket": return "Weight Ticket"
+            case "run_ticket":                return "Run Ticket"
+            case "lumper_receipt":            return "Lumper Receipt"
+            case "dvir", "inspection_report": return "Inspection Report"
+            default:
+                return type.replacingOccurrences(of: "_", with: " ").capitalized
+            }
+        }
+    }
+
     // ──────────── Backend + realtime state ────────────
 
     /// Flipped to true once `messages.getMessages` lands the first page.
@@ -135,12 +186,19 @@ struct DriverConversationView: View {
             UnreadMessageStore.shared.didCloseConversation(thread.id)
         }
         // Incoming PhotosPicker selection → load the raw image data so we
-        // can both preview it inline + ship it on send.
+        // can both preview it inline + ship it on send. Alongside, run the
+        // photo through the document-intelligence vision spine so we KNOW
+        // what the attachment is (BOL / POD / manifest / damage) before it
+        // uploads — the verdict surfaces on the pending chip.
         .onChange(of: pickedPhoto) { _, newValue in
             Task {
                 if let item = newValue,
                    let data = try? await item.loadTransferable(type: Data.self) {
-                    await MainActor.run { pendingImage = data }
+                    await MainActor.run {
+                        pendingImage = data
+                        attachmentScan = nil
+                    }
+                    await classifyPendingAttachment(data)
                 }
             }
         }
@@ -589,18 +647,28 @@ struct DriverConversationView: View {
                     .scaledToFill()
                     .frame(width: 56, height: 56)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Attached photo")
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textPrimary)
+                VStack(alignment: .leading, spacing: 3) {
+                    // Detected-document chip — the document-intelligence
+                    // verdict for the photo about to be sent.
+                    attachmentTypeChip
                     Text("Tap send to share with \(thread.title.components(separatedBy: " ").first ?? "them").")
                         .font(EType.micro)
                         .foregroundStyle(palette.textSecondary)
+                    // Surface the classifier's first warning honestly so
+                    // the driver can fix a bad capture before sending.
+                    if let warning = attachmentScan?.warnings.first, !warning.isEmpty {
+                        Text("⚠ \(warning)")
+                            .font(EType.micro)
+                            .foregroundStyle(Brand.warning)
+                            .lineLimit(2)
+                    }
                 }
                 Spacer()
                 Button {
                     pendingImage = nil
                     pickedPhoto = nil
+                    attachmentScan = nil
+                    attachmentScanning = false
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 18))
@@ -613,6 +681,56 @@ struct DriverConversationView: View {
             .padding(.vertical, Space.s2)
             .background(palette.bgCardSoft)
             .overlay(alignment: .top) { Divider().overlay(palette.borderFaint) }
+        }
+    }
+
+    /// The detected-document chip on the pending-attachment strip. Renders
+    /// one of three honest states:
+    ///   • scanning      → spinner + "Identifying document…"
+    ///   • confident hit → the gradient type pill + confidence %
+    ///   • low/unknown   → neutral "Couldn't confidently identify" so we
+    ///                     never claim a type the classifier isn't sure of.
+    @ViewBuilder
+    private var attachmentTypeChip: some View {
+        if attachmentScanning {
+            HStack(spacing: Space.s2) {
+                ProgressView().controlSize(.mini).tint(palette.textSecondary)
+                Text("Identifying document…")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+        } else if let scan = attachmentScan, scan.isConfident {
+            HStack(spacing: Space.s2) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text(scan.humanType.uppercased())
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textPrimary)
+                Text("\(Int((scan.confidence * 100).rounded()))%")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(scan.confidence >= 0.85 ? Brand.success : Brand.warning)
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(
+                        Capsule().fill((scan.confidence >= 0.85 ? Brand.success : Brand.warning).opacity(0.14))
+                    )
+            }
+        } else if attachmentScan != nil {
+            // Ran, but low confidence or "unknown" — stay neutral and honest.
+            HStack(spacing: Space.s2) {
+                Image(systemName: "questionmark.circle")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
+                Text("Couldn't confidently identify — please confirm")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(2)
+            }
+        } else {
+            // Classification didn't run (e.g. errored or not yet started).
+            Text("Attached photo")
+                .font(EType.caption)
+                .foregroundStyle(palette.textPrimary)
         }
     }
 
@@ -767,6 +885,48 @@ struct DriverConversationView: View {
         }
     }
 
+    /// Run the picked photo through the document-intelligence vision spine
+    /// so the capture point KNOWS what's attached (BOL / POD / manifest /
+    /// damage) before it uploads. Best-effort + non-blocking: if the
+    /// classifier errors or times out we silently fall back to a plain
+    /// "Attached photo" chip and the existing `uploadAttachment` path is
+    /// completely unaffected — we never gate the send on the verdict.
+    @MainActor
+    private func classifyPendingAttachment(_ data: Data) async {
+        attachmentScanning = true
+        defer { attachmentScanning = false }
+
+        // Compress + detect mime so the vision payload stays small and we
+        // hand the classifier the right content type (PNG vs JPEG).
+        let mime: DocumentRouterAPI.MimeType = isPNG(data) ? .png : .jpeg
+        let payload = compressedAttachment(data, mime: mime)
+        let base64 = payload.base64EncodedString()
+
+        do {
+            let resp = try await EusoTripAPI.shared.documentRouter.classifyAndRoute(
+                documentBase64: base64,
+                mimeType: mime,
+                callerContext: "driver message attachment"
+            )
+            // Only keep the verdict if it's still the photo on deck — the
+            // driver may have swapped or cleared it mid-flight.
+            guard pendingImage != nil else { return }
+            attachmentScan = AttachmentClassification(
+                type: resp.classifiedType,
+                confidence: resp.confidence,
+                summary: resp.summary,
+                warnings: resp.warnings
+            )
+        } catch {
+            // Honest fallback: surface nothing fabricated. The chip shows a
+            // plain "Attached photo" and the upload proceeds untouched. We
+            // log the real error so it isn't swallowed silently.
+            let detail = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            print("[DriverConversationView] attachment classify failed: \(detail)")
+            attachmentScan = nil
+        }
+    }
+
     /// Send the current composer draft (+ optional image attachment).
     /// Optimistically appends a local bubble, then reconciles with the
     /// server ACK by stamping the real `serverId` onto the ghost.
@@ -775,6 +935,13 @@ struct DriverConversationView: View {
         let image = pendingImage
         guard !text.isEmpty || image != nil else { return }
         if isSending { return }
+
+        // Snapshot the document-intelligence verdict for this attachment so
+        // the send path can carry an honest "Detected: <type>" caption to
+        // the recipient when the driver didn't type one. Only the confident
+        // verdict rides along — low-confidence/unknown is never labelled.
+        let scan = (image != nil) ? attachmentScan : nil
+        let detectedLabel: String? = (scan?.isConfident == true) ? scan?.humanType : nil
 
         let localId = UUID()
         let optimistic = ChatMessage(
@@ -790,6 +957,8 @@ struct DriverConversationView: View {
         draft = ""
         pendingImage = nil
         pickedPhoto = nil
+        attachmentScan = nil
+        attachmentScanning = false
         composerFocused = false
 
         isSending = true
@@ -810,12 +979,21 @@ struct DriverConversationView: View {
                     )
                     stampServerId(result.messageId, onLocalId: anchor)
 
-                    // If the driver also typed a caption, send it as a
-                    // follow-up text row so the transcript has both.
-                    if !text.isEmpty {
+                    // Caption follow-up. Priority: the driver's typed
+                    // caption wins; otherwise, if the vision spine
+                    // confidently identified the document, ship that honest
+                    // label so the recipient knows it's a BOL/POD/manifest/
+                    // damage photo rather than an anonymous image. We never
+                    // synthesize a label the classifier wasn't sure of.
+                    let caption: String? = {
+                        if !text.isEmpty { return text }
+                        if let label = detectedLabel { return "Detected: \(label)" }
+                        return nil
+                    }()
+                    if let caption {
                         _ = try await EusoTripAPI.shared.messaging.sendMessage(
                             conversationId: thread.id,
-                            content: text,
+                            content: caption,
                             type: "text"
                         )
                     }
@@ -833,9 +1011,13 @@ struct DriverConversationView: View {
                 // Roll the optimistic bubble back and surface the error.
                 messages.removeAll { $0.id == anchor }
                 lastErrorMessage = "Send failed — \(error.localizedDescription)"
-                // Put the draft back so the driver can retry.
+                // Put the draft + attachment (and its detected verdict) back
+                // so the driver can retry without re-picking or re-scanning.
                 if !text.isEmpty { draft = text }
-                if let img = image { pendingImage = img }
+                if let img = image {
+                    pendingImage = img
+                    attachmentScan = scan
+                }
             }
         }
     }
@@ -1029,6 +1211,28 @@ struct DriverConversationView: View {
         return UIImage(data: data)
         #else
         return nil
+        #endif
+    }
+
+    /// PNG magic-number sniff so we hand the classifier the right mime.
+    /// Everything else (JPEG, HEIC, …) is normalized to JPEG on the way out.
+    private func isPNG(_ data: Data) -> Bool {
+        data.count > 4 && data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47
+    }
+
+    /// Keep the vision payload small (~<900KB). PNGs pass through; anything
+    /// else is JPEG-recompressed down the quality ladder. Mirrors the
+    /// compression used by the canonical classifier surfaces.
+    private func compressedAttachment(_ data: Data, mime: DocumentRouterAPI.MimeType) -> Data {
+        if mime == .png || data.count <= 900_000 { return data }
+        #if canImport(UIKit)
+        guard let img = UIImage(data: data) else { return data }
+        for q in [CGFloat(0.85), 0.75, 0.65, 0.55, 0.45] {
+            if let d = img.jpegData(compressionQuality: q), d.count <= 900_000 { return d }
+        }
+        return img.jpegData(compressionQuality: 0.45) ?? data
+        #else
+        return data
         #endif
     }
 }

@@ -503,7 +503,7 @@ struct ShipperRateBoard: View {
                     Text("Pull rates").font(.system(size: 14, weight: .heavy))
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 12)
-                .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(Capsule())
+                .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

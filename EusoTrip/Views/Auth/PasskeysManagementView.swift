@@ -256,7 +256,7 @@ struct PasskeysManagementView: View {
             .frame(maxWidth: .infinity).padding(.vertical, 13)
             .foregroundStyle(.white)
             .background(LinearGradient.diagonal)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(registering)

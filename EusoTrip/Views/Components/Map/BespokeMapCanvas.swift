@@ -35,6 +35,9 @@
 //
 
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Style hint
 
@@ -312,9 +315,22 @@ extension BespokeMapCanvas {
         // 1 — background
         paintBackground(&context, rect: rect, bg: style.background)
 
+        // 1b — abstract land basemap (projected continental coastlines). This
+        //     is the parity fix for the "blank map" P0: without it, a surface
+        //     that hands no route/markers (CONUS-framed Control Tower / Live
+        //     Tracking) painted only the backdrop gradient + a ~6% grid and
+        //     read as empty. The land tracks pan/zoom via the SAME viewport,
+        //     so it behaves like a real basemap (the web platform always has
+        //     an OMV tile basemap under its data — this matches that). Drawn
+        //     UNDER the grid so the graticule reads as an overlay on the land.
+        //     The ocean register intentionally has no land (open-water track).
+        let isOcean = style.originMarker.ringStroke != nil   // unique to the .ocean port pin
+        if !isOcean {
+            paintBasemap(&context, rect: rect, style: style, viewport: viewport)
+        }
+
         // 2 — faint grid (straight authored lines at fixed spacing — no warp).
         //     Ocean (003) = 3 horizontal latitude lines only (no longitude columns).
-        let isOcean = style.originMarker.ringStroke != nil   // unique to the .ocean port pin
         paintGrid(&context, rect: rect, grid: style.grid, isDriver: style.ping != nil, isOcean: isOcean)
 
         // 3 — abstract silhouettes. Ocean = two vertical edge coast hints.
@@ -402,6 +418,76 @@ extension BespokeMapCanvas {
                 )
             )
         }
+    }
+
+    // MARK: 1b — Abstract land basemap (projected continental coastlines)
+
+    /// Paint the abstract continental landmasses (`BespokeMapBasemap`)
+    /// projected through the live `viewport`, so the canvas always reads as a
+    /// real map even when a caller hands no route/markers. Land is filled in a
+    /// register-appropriate hue (a touch lighter than the backdrop on dark
+    /// registers, a touch darker on light ones) and outlined with a faint
+    /// coast stroke. Rings fully outside the visible canvas are culled.
+    ///
+    /// The land color is DERIVED from the register (no new style token): the
+    /// grid color carries the register's polarity — a white-tinted grid is a
+    /// dark register, a black-tinted grid is a light one — so we lift/lower a
+    /// neutral fill accordingly. This keeps the basemap on-brand without
+    /// touching the `BespokeMapStyle` contract every register already builds.
+    static func paintBasemap(
+        _ context: inout GraphicsContext,
+        rect: CGRect,
+        style: BespokeMapStyle,
+        viewport: BespokeMapViewport
+    ) {
+        let isDarkRegister = Self.gridIsLight(style.grid.color)
+        // Land = a soft neutral that sits a step away from the backdrop; coast
+        // = a slightly stronger edge. Driver registers (ping != nil) read on a
+        // near-black cosmos, so the land stays very subtle there.
+        let landColor: Color
+        let coastColor: Color
+        if isDarkRegister {
+            let a = style.ping != nil ? 0.10 : 0.16
+            landColor = Color.white.opacity(a)
+            coastColor = Color.white.opacity(a + 0.14)
+        } else {
+            landColor = Color.black.opacity(0.05)
+            coastColor = Color.black.opacity(0.12)
+        }
+
+        let cullRect = rect.insetBy(dx: -160, dy: -160)
+        for ring in BespokeMapBasemap.continents {
+            guard ring.count > 2 else { continue }
+            let pts = ring.map { viewport.screenPoint(HereLatLng($0.lat, $0.lng)) }
+            // Cull continents wholly off-screen (cheap bbox test).
+            let bb = Self.boundingBox(pts)
+            guard bb.intersects(cullRect) else { continue }
+
+            var path = Path()
+            path.move(to: pts[0])
+            for p in pts.dropFirst() { path.addLine(to: p) }
+            path.closeSubpath()
+            context.fill(path, with: .color(landColor))
+            context.stroke(
+                path,
+                with: .color(coastColor),
+                style: StrokeStyle(lineWidth: 0.9, lineCap: .round, lineJoin: .round)
+            )
+        }
+    }
+
+    /// Whether a register's grid color is white-tinted (⇒ a dark-backdrop
+    /// register). Resolved via the platform color components; falls back to
+    /// `false` (light register) when components are unavailable.
+    static func gridIsLight(_ color: Color) -> Bool {
+        #if canImport(UIKit)
+        var white: CGFloat = 0
+        var alpha: CGFloat = 0
+        if UIColor(color).getWhite(&white, alpha: &alpha) {
+            return white > 0.5
+        }
+        #endif
+        return false
     }
 
     // MARK: 2 — Grid (straight authored lines at fixed spacing)

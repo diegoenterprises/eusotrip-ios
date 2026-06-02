@@ -59,6 +59,9 @@ struct ShipperLoadDetail: View {
     /// the user sees a real action sheet instead of a button that
     /// silently posts a notification no one consumed.
     @State private var showActionMenu: Bool = false
+    /// RIOS §12 — set true when any load party fails a HARD sanctions gate
+    /// (surfaced by ComplianceGatesStrip). Informational on the shipper side.
+    @State private var gateLocked: Bool = false
 
     /// In-app cancel-load sheet (no web fallback). Opened when the
     /// user picks "Cancel load" in the kebab menu. The sheet collects
@@ -145,6 +148,11 @@ struct ShipperLoadDetail: View {
                     nrcCardIfHazmat7
                     documentsRow
                     contentExtras
+                    // RIOS §11/§12 — sanctions screening of every load party
+                    // (shipper/carrier/driver) before transact.
+                    if let lid = Int(loadId) {
+                        ComplianceGatesStrip(loadId: lid, role: "shipper", gateLocked: $gateLocked)
+                    }
                     ctaRow
                     Color.clear.frame(height: 96)
                 }
@@ -1840,7 +1848,7 @@ struct ShipperLoadDetail: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(Capsule().fill(LinearGradient.primary))
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Open live map view")
@@ -1854,8 +1862,8 @@ struct ShipperLoadDetail: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(palette.bgCard)
-                    .overlay(Capsule().strokeBorder(palette.borderSoft))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Ask eSang about this load")

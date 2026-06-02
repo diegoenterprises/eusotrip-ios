@@ -485,7 +485,7 @@ private struct RailDropYardOperationsBody: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
                 .background(LinearGradient.primary)
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 .opacity(assigning ? 0.6 : 1.0)
             }
             .buttonStyle(.plain)
@@ -501,8 +501,8 @@ private struct RailDropYardOperationsBody: View {
                     .padding(.horizontal, Space.s5)
                     .frame(height: 48)
                     .background(Color(hex: 0x232932))
-                    .clipShape(Capsule())
-                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
             }
             .buttonStyle(.plain)
         }

@@ -164,9 +164,9 @@ struct CredentialScanCard: View {
         .foregroundStyle(filled ? .white : palette.textPrimary)
         .background(filled ? AnyView(LinearGradient.diagonal) : AnyView(palette.bgCardSoft))
         .overlay(filled ? AnyView(EmptyView()) : AnyView(
-            Capsule().strokeBorder(palette.borderSoft)
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft)
         ))
-        .clipShape(Capsule())
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
     @ViewBuilder

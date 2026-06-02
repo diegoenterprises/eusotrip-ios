@@ -566,7 +566,7 @@ private struct VesselSettlementBody: View {
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 48)
                 .background(LinearGradient.primary)
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .opacity(releasing ? 0.6 : 1.0)
@@ -578,8 +578,8 @@ private struct VesselSettlementBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 132, height: 48)
                     .background(Color(hex: 0x232932))
-                    .overlay(Capsule().strokeBorder(palette.borderSoft, lineWidth: 1))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

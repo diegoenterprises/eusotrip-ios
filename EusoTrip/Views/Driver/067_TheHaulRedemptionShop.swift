@@ -196,7 +196,7 @@ public struct TheHaulRedemptionShopView: View {
                                             colors: [.cyan, .green],
                                             startPoint: .leading, endPoint: .trailing)))
                 .foregroundStyle(isInCart ? Color.green : Color.white)
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(!item.inStock)

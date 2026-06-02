@@ -337,7 +337,7 @@ private struct CrewWellnessBody_401: View {
             } label: {
                 Text("Schedule rest").font(EType.bodyStrong).foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(Capsule().fill(LinearGradient.primary))
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
                     .opacity(scheduling ? 0.6 : 1.0)
             }.buttonStyle(.plain).disabled(scheduling)
             Button {
@@ -347,8 +347,8 @@ private struct CrewWellnessBody_401: View {
             } label: {
                 Text("Wellness log").font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.textPrimary)
                     .frame(width: 144, height: 48)
-                    .background(Capsule().fill(palette.bgCard))
-                    .overlay(Capsule().strokeBorder(palette.borderFaint))
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
             }.buttonStyle(.plain)
         }
     }

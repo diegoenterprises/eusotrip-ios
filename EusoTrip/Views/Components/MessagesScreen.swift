@@ -348,7 +348,7 @@ struct MessagesScreen: View {
                 .padding(.horizontal, Space.s4)
                 .padding(.vertical, 10)
                 .background(LinearGradient.diagonal)
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .padding(.top, Space.s2)

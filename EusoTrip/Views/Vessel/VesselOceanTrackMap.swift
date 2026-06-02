@@ -121,9 +121,21 @@ struct VesselOceanTrackMap: View {
         return out
     }
 
+    /// Camera center: the live AIS fix when present, else the midpoint of the
+    /// authored great-circle arc. Index-safe (D-maps-basemap 2026-06-01): the
+    /// polyline is `greatCircle(count:64)` which guarantees ≥2 points, but we
+    /// guard the subscript rather than trust the producer — falls back to the
+    /// origin if the arc is ever degenerate so the canvas never crashes.
+    private var cameraCenter: HereLatLng {
+        if let ais = aisCoord { return ais }
+        let poly = routePolyline
+        guard !poly.isEmpty else { return origin }
+        return poly[poly.count / 2]
+    }
+
     var body: some View {
         BespokeMapCanvas(
-            center: aisCoord ?? routePolyline[routePolyline.count / 2],
+            center: cameraCenter,
             zoom: 4,
             interactive: true,
             tilt: 0,
@@ -131,6 +143,11 @@ struct VesselOceanTrackMap: View {
             layers: layers,
             style: .ocean
         )
+        // Frame guard (D-maps-basemap 2026-06-01): give the canvas a real
+        // minimum height so a parent that lays it out with 0 height (the
+        // historical frame.zero blank-bug trap) can't collapse it to nothing.
+        // Callers that want a specific height still override with `.frame`.
+        .frame(minHeight: 220)
         .task(id: imoNumber) { await store.load(imoNumber: imoNumber) }
     }
 

@@ -455,8 +455,8 @@ private struct RailWarehouseReceiptBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 52)
                     .background(Color(hex: 0x232932))
-                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.10)))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Color.white.opacity(0.10)))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

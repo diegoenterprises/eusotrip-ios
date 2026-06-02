@@ -155,7 +155,7 @@ struct FMCSALookupCard: View {
             .padding(.horizontal, 14).padding(.vertical, 10)
             .foregroundStyle(.white)
             .background(canVerify ? AnyView(LinearGradient.diagonal) : AnyView(Color.gray.opacity(0.4)))
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(!canVerify || phase == .loading)

@@ -483,7 +483,7 @@ struct RailNewShipment_007: View {
                         .foregroundStyle(.white)
                 }
                 .frame(maxWidth: .infinity).frame(height: 48)
-                .background(Capsule().fill(LinearGradient.primary))
+                .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
                 .opacity(canRequest ? 1 : 0.5)
             }
             .disabled(!canRequest || requesting || createdRef != nil)
@@ -497,9 +497,9 @@ struct RailNewShipment_007: View {
                 }
                 .frame(width: 132, height: 48)
                 .background(
-                    Capsule()
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                         .fill(Color(hex: 0x232932))   // verbatim SVG secondary fill
-                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
                 )
                 .opacity(canCompare ? 1 : 0.5)
             }

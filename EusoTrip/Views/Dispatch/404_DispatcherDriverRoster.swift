@@ -238,8 +238,8 @@ private struct DispatcherDriverRosterBody: View {
                 .font(EType.caption.weight(.heavy)).tracking(0.4)
                 .foregroundStyle(palette.textPrimary)
                 .frame(maxWidth: .infinity).frame(height: 36)
-                .background(Capsule().fill(palette.bgCardSoft))
-                .overlay(Capsule().strokeBorder(palette.borderSoft, lineWidth: 1))
+                .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCardSoft))
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft, lineWidth: 1))
         }
         .buttonStyle(.plain)
         .padding(.top, Space.s4)

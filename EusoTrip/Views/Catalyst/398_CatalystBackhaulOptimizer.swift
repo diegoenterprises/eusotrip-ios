@@ -467,7 +467,7 @@ private struct BackhaulBody_398: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 40)
-                    .background(Capsule().fill(LinearGradient.primary))
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Tender the best return load")
@@ -483,8 +483,8 @@ private struct BackhaulBody_398: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(maxWidth: .infinity, minHeight: 40)
                     .background(palette.bgCard)
-                    .overlay(Capsule().strokeBorder(palette.borderSoft))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Adjust search radius")

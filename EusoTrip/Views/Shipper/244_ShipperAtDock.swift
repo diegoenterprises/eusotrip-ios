@@ -628,7 +628,7 @@ struct ShipperAtDock: View {
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .background(LinearGradient.primary)
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(store.trackingInFlight)
@@ -640,8 +640,8 @@ struct ShipperAtDock: View {
                     .foregroundStyle(LinearGradient.primary)
                     .frame(width: 144, height: 44)
                     .background(palette.bgCard)
-                    .overlay(Capsule().strokeBorder(LinearGradient.diagonal.opacity(0.55), lineWidth: 1))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(LinearGradient.diagonal.opacity(0.55), lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

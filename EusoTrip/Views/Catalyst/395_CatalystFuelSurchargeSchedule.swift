@@ -416,8 +416,8 @@ private struct FuelSurchargeBody_395: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 132)
                     .frame(minHeight: 48)
-                    .background(Capsule().fill(palette.bgCardSoft))
-                    .overlay(Capsule().strokeBorder(palette.borderFaint))
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCardSoft))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Edit surcharge table")

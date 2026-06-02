@@ -528,7 +528,7 @@ private struct VesselOceanRateLookupBody: View {
                     }
                     .frame(maxWidth: .infinity).frame(height: 48)
                     .background(LinearGradient.primary)
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(saving || cheapest == nil)
@@ -543,8 +543,8 @@ private struct VesselOceanRateLookupBody: View {
                         .foregroundStyle(palette.textPrimary)
                         .frame(width: 136, height: 48)
                         .background(palette.bgCardSoft)
-                        .overlay(Capsule().strokeBorder(palette.borderFaint))
-                        .clipShape(Capsule())
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }

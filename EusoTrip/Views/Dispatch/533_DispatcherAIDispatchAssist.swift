@@ -364,7 +364,7 @@ private struct DispatcherAIDispatchAssistBody: View {
                         .foregroundStyle(palette.textOnGradient)
                 }
                 .frame(maxWidth: .infinity).frame(height: 48)
-                .background(Capsule().fill(LinearGradient.primary))
+                .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
             }
             .buttonStyle(.plain)
             .disabled(applying || bulk.autoCount == 0)
@@ -375,7 +375,7 @@ private struct DispatcherAIDispatchAssistBody: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 132).frame(height: 48)
-                    .background(Capsule().fill(Color(hex: 0x232932)))
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(Color(hex: 0x232932)))
             }
             .buttonStyle(.plain)
             .disabled(applying)

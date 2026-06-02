@@ -484,7 +484,7 @@ private struct RailCrossDockOperationsBody: View {
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 48)
                 .background(LinearGradient.primary)
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(creatingPlan)
@@ -497,8 +497,8 @@ private struct RailCrossDockOperationsBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 132, height: 48)
                     .background(palette.bgCardSoft)
-                    .overlay(Capsule().strokeBorder(palette.borderSoft, lineWidth: 1))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

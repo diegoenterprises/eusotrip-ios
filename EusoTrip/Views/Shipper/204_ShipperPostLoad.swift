@@ -114,6 +114,23 @@ struct ShipperPostLoad: View {
     @State private var catalystMinSafetyScore: Double = 80
     @State private var catalystEndorsements: Set<String> = []
     @State private var showCatalystRequirements: Bool = false
+    // ─── Per-mode carrier-eligibility requirements (2026-06-01) ───
+    // Founder bug: the catalyst card rendered TRUCK reqs (FMCSA CSA
+    // score + CDL endorsements) in EVERY mode. A shipper posting a
+    // vessel / rail / barge load was asked for a "CDL endorsement",
+    // which is nonsense on water or rail. These sets capture the
+    // RIGHT regulatory eligibility gates the shipper demands of any
+    // carrier bidding the load, per mode. They serialize into
+    // composeSubmissionNotes() the same way the truck reqs do until
+    // shippers.create gains structured per-mode requirement columns.
+    //   • vessel  → SOLAS / IMO-IMDG / ISM / ISPS / STCW / SIRE vetting
+    //   • rail    → AAR interchange rule compliance / FRA / PTC
+    //   • barge   → USCG COI / Subchapter M / Tankerman-PIC / inland TWIC
+    // No fabricated numbers — these are documented, selectable
+    // regulatory regimes the carrier must attest to.
+    @State private var catalystVesselRequirements: Set<String> = []
+    @State private var catalystRailRequirements: Set<String> = []
+    @State private var catalystBargeRequirements: Set<String> = []
 
     // ERG (Emergency Response Guidebook) lookup state. When the user
     // types a UN number, debounce → fire `erg.searchByUN` → if a
@@ -1249,7 +1266,7 @@ struct ShipperPostLoad: View {
                 .padding(.vertical, 12)
                 .foregroundStyle(.white)
                 .background(LinearGradient.diagonal)
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(savingTemplate || templateNameDraft.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -2114,8 +2131,26 @@ struct ShipperPostLoad: View {
                 let totalDuration = resp.routes.first?.sections.reduce(0) { $0 + ($1.summary?.duration ?? 0) } ?? 0
                 let totalLength   = resp.routes.first?.sections.reduce(0) { $0 + ($1.summary?.length ?? 0) }   ?? 0
                 await MainActor.run {
-                    self.routeDurationSeconds = totalDuration
-                    self.routeDistanceMeters  = totalLength
+                    // Founder report 2026-06-01: every mode rendered
+                    // "0 mi · 0.0 hr" for a Houston Port → LA Port
+                    // lane because HERE truck routing returns an empty
+                    // route (no sections / no summary) for two
+                    // seaport waypoints — the dock-side coords land
+                    // off any truck road. Old code stored 0/0 in
+                    // routeDistanceMeters and the UI happily formatted
+                    // it. Treat a zero result as a routing failure
+                    // and surface a real message so the user knows to
+                    // refine the address (e.g. "Houston, TX" instead
+                    // of "Port of Houston").
+                    if totalLength == 0 || totalDuration == 0 {
+                        self.routeDistanceMeters  = nil
+                        self.routeDurationSeconds = nil
+                        self.routingError = "No truck route between the resolved coordinates. Try a city-level address (e.g. 'Houston, TX') or a different mode."
+                    } else {
+                        self.routeDurationSeconds = totalDuration
+                        self.routeDistanceMeters  = totalLength
+                        self.routingError = nil
+                    }
                     self.isRouting = false
                     // Now that we have lane states + distance, fire
                     // the rate compare if the user has already typed
@@ -2458,7 +2493,15 @@ struct ShipperPostLoad: View {
         let oOver = !oState.isEmpty && weightLbs > Double(oLimit)
         let dOver = !dState.isEmpty && weightLbs > Double(dLimit)
         let anyOver = oOver || dOver
-        if weightLbs > 0 && (oOver || dOver) {
+        // State weight limits are HIGHWAY truck limits (federal 80k lb
+        // + per-state exceptions). They do not apply to rail (FRA /
+        // car-specific) or vessel/barge (vessel class deadweight).
+        // Founder bug 2026-05-31: a 35,000 MT vessel load was tripping
+        // the overweight warning because the card never checked the
+        // transport mode — vessel-DWT-scale weights ALWAYS exceed
+        // truck-axle-scale state limits.
+        let modeAppliesToStateLimits = (transportMode == .truck)
+        if modeAppliesToStateLimits, weightLbs > 0 && (oOver || dOver) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
                     Image(systemName: "scalemass.fill")
@@ -2506,7 +2549,7 @@ struct ShipperPostLoad: View {
                 RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                     .strokeBorder(Brand.warning.opacity(0.35), lineWidth: 1)
             )
-        } else if weightLbs > 0 && !anyOver && !oState.isEmpty && !dState.isEmpty {
+        } else if modeAppliesToStateLimits, weightLbs > 0 && !anyOver && !oState.isEmpty && !dState.isEmpty {
             // Subtle green confirmation so the wizard tells the user
             // the lane passes the gate — silence is ambiguous.
             HStack(spacing: 6) {
@@ -2859,6 +2902,26 @@ struct ShipperPostLoad: View {
                 destState: destStateCode,
                 isOverdimensional: equipmentType == .oversized
                     || equipmentType == .lowboy,
+                cargoTypeRaw: cargoType.rawValue,
+                hazmatUnNumber: unNumber,
+                hazmatClass: hazmatClass,
+                hazmatPackingGroup: packingGroup,
+                // Rest of the hazmat profile — proper shipping name +
+                // the ERG-resolved guide number and inhalation-hazard
+                // flag — so ESANG reasons on the actual substance for
+                // ANY material, not just whatever UN id was typed.
+                hazmatProperShippingName: properShippingName,
+                hazmatErgGuide: ergMatch?.guideNumber.map(String.init) ?? "",
+                hazmatInhalationHazard: ergMatch?.isTIH ?? false,
+                // Per-vertical profile: reefer setpoint + oversized dims
+                // the user entered, so recs are vertical-aware (reefer
+                // trailer for refrigerated, RGN/lowboy for oversized),
+                // not just cargo-category-aware.
+                reeferTempLow: reeferTempLowText,
+                reeferTempHigh: reeferTempHighText,
+                oversizeLengthFt: Double(oversizeLengthText.trimmingCharacters(in: .whitespaces)),
+                oversizeWidthFt: Double(oversizeWidthText.trimmingCharacters(in: .whitespaces)),
+                oversizeHeightFt: Double(oversizeHeightText.trimmingCharacters(in: .whitespaces)),
                 onApply: { applyRecommendedTrailerKey($0) },
                 currentSelection: equipmentType.rawValue
             )
@@ -2966,6 +3029,12 @@ struct ShipperPostLoad: View {
         .frame(height: 180)
     }
 
+    // Founder bug 2026-06-01: every vessel-side liquid/gas carrier
+    // (LNG, ISO tank, tanker) used to fall to `default: EmptyView()`,
+    // so for a Vessel · LNG · Gas selection the subform vanished
+    // and Step 3 of 4 had no hazmat fields to fill in (blocked
+    // Continue). Equivalent fall-throughs existed for rail tank
+    // cars and rail reefer / centerbeam / gondola / flatcar.
     @ViewBuilder
     private var equipmentSubform: some View {
         // Animation always renders — silhouette adapts to every
@@ -2973,11 +3042,14 @@ struct ShipperPostLoad: View {
         // beneath the animation.
         equipmentAnimation
         switch equipmentType {
-        case .tankerHazmat, .tankerPetro, .tankerLiquid, .tankerGas, .vesselTanker:
+        case .tankerHazmat, .tankerPetro, .tankerLiquid, .tankerGas,
+             .vesselTanker, .vesselLNG, .vesselISOTank,
+             .railTankLiquid, .railTankGas:
             tankerSubform
-        case .reefer:
+        case .reefer, .railReeferBoxcar, .vesselReeferContainer:
             reeferSubform
-        case .flatbed, .stepDeck, .conestoga, .oversized:
+        case .flatbed, .stepDeck, .conestoga, .oversized,
+             .railFlatcar, .railCenterbeam, .railGondola:
             flatbedSubform
         default:
             EmptyView()
@@ -3669,19 +3741,35 @@ struct ShipperPostLoad: View {
     /// when ESANG suggests one (e.g. 1,870 trucks → switch to rail).
     @ViewBuilder
     private func multiVehicleAdvisory(_ est: LoadCapacityEstimate) -> some View {
-        let tint: Color = est.sensible ? Brand.success : Brand.warning
+        // Distinguish "we need more input from you" (e.g. vessel class
+        // not yet picked) from "this mode is genuinely a bad fit for
+        // this quantity". Founder bug 2026-05-31: the same warning
+        // tint + "MODE MISMATCH" label was firing for both, scaring
+        // shippers into thinking a coherent Vessel + Vessel-Tanker +
+        // Hazmat combo was rejected when really the estimator was
+        // waiting on the user to choose the vessel class.
+        let needsMoreInput = !est.sensible && est.vehicleCount == 0
+            && est.advisory.lowercased().contains("vessel class")
+        let tint: Color = est.sensible ? Brand.success
+                                       : (needsMoreInput ? Brand.info : Brand.warning)
+        let iconName: String = est.sensible ? "checkmark.seal.fill"
+                                            : (needsMoreInput ? "info.circle.fill" : "exclamationmark.triangle.fill")
+        let label: String = est.sensible ? "VEHICLES NEEDED"
+                                         : (needsMoreInput ? "PICK A VESSEL CLASS" : "MODE MISMATCH")
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: est.sensible ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                Image(systemName: iconName)
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(tint)
-                Text(est.sensible ? "VEHICLES NEEDED" : "MODE MISMATCH")
+                Text(label)
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(tint)
                 Spacer(minLength: 0)
-                Text("\(est.vehicleCount) × \(transportMode.displayName.lowercased())")
-                    .font(.system(size: 10, weight: .heavy, design: .monospaced)).tracking(0.4)
-                    .foregroundStyle(palette.textPrimary)
+                if est.vehicleCount > 0 {
+                    Text("\(est.vehicleCount) × \(transportMode.displayName.lowercased())")
+                        .font(.system(size: 10, weight: .heavy, design: .monospaced)).tracking(0.4)
+                        .foregroundStyle(palette.textPrimary)
+                }
             }
             Text(est.advisory)
                 .font(.system(size: 11, weight: .semibold))
@@ -4017,12 +4105,20 @@ struct ShipperPostLoad: View {
         }
     }
 
-    /// Catalyst requirements — collapsible card with a min safety score
-    /// slider + multi-select endorsement chips. Web parity (LoadCreationWizard
-    /// Step 7). Endorsements: H = Hazmat, N = Tank, T = Doubles/Triples,
-    /// X = H+N combo, P = Passenger, S = School Bus. Stuffed into the
-    /// submission notes line so the catalyst's dispatcher sees them at
-    /// dispatch time — see composeSubmissionNotes() for serialization.
+    /// Catalyst requirements — collapsible card. The shipper sets the
+    /// regulatory eligibility gate a carrier must clear to bid this
+    /// load. Founder bug 2026-06-01: this card rendered TRUCK reqs
+    /// (FMCSA CSA score + CDL endorsements) in EVERY mode — asking a
+    /// vessel / rail / barge shipper for a "CDL endorsement," which is
+    /// meaningless on water or rail. The card now switches on
+    /// `transportMode` and renders the RIGHT requirement set:
+    ///   • truck  → FMCSA CSA / safety score + CDL endorsements (H/N/X/T/P/S)
+    ///   • vessel → SOLAS / IMO-IMDG / ISM / ISPS / STCW crew certs / SIRE vetting
+    ///   • rail   → AAR interchange rule compliance / FRA / PTC
+    ///   • barge  → USCG COI / Subchapter M / Tankerman-PIC / inland TWIC
+    /// All sets serialize into composeSubmissionNotes() so the catalyst's
+    /// dispatcher sees the right gate at dispatch time (web parity —
+    /// LoadCreationWizard Step 7).
     @ViewBuilder
     private var catalystRequirementsCard: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
@@ -4039,8 +4135,8 @@ struct ShipperPostLoad: View {
                         .font(EType.micro).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
                     Spacer(minLength: 0)
-                    if !catalystEndorsements.isEmpty || catalystMinSafetyScore != 80 {
-                        Text("\(catalystEndorsements.count) endorsement\(catalystEndorsements.count == 1 ? "" : "s") · ≥\(Int(catalystMinSafetyScore))")
+                    if let summary = catalystRequirementsSummary {
+                        Text(summary)
                             .font(.system(size: 9, weight: .heavy)).tracking(0.4)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 6).padding(.vertical, 2)
@@ -4056,82 +4152,14 @@ struct ShipperPostLoad: View {
 
             if showCatalystRequirements {
                 VStack(alignment: .leading, spacing: Space.s4) {
-                    // Min safety score slider
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("Min FMCSA safety score")
-                                .font(EType.caption)
-                                .foregroundStyle(palette.textSecondary)
-                            Spacer(minLength: 0)
-                            Text("\(Int(catalystMinSafetyScore))")
-                                .font(.system(size: 14, weight: .heavy, design: .monospaced))
-                                .foregroundStyle(LinearGradient.diagonal)
-                        }
-                        Slider(value: $catalystMinSafetyScore, in: 50...100, step: 5) {
-                            Text("Safety score")
-                        }
-                        .tint(Brand.magenta)
-                        Text("Carriers below this CSA / safety score are filtered out of bid eligibility.")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(palette.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    // Endorsement chips
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Required CDL endorsements")
-                            .font(EType.caption)
-                            .foregroundStyle(palette.textSecondary)
-                        let endorsementCodes: [(code: String, label: String)] = [
-                            ("H", "Hazmat"),
-                            ("N", "Tank"),
-                            ("X", "H+N"),
-                            ("T", "Doubles/Triples"),
-                            ("P", "Passenger"),
-                            ("S", "School Bus"),
-                        ]
-                        // Two-column grid of toggle chips
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
-                            ForEach(endorsementCodes, id: \.code) { e in
-                                let selected = catalystEndorsements.contains(e.code)
-                                Button {
-                                    if selected { catalystEndorsements.remove(e.code) }
-                                    else        { catalystEndorsements.insert(e.code) }
-                                } label: {
-                                    VStack(spacing: 1) {
-                                        Text(e.code)
-                                            .font(.system(size: 13, weight: .heavy))
-                                            .foregroundStyle(selected ? .white : palette.textPrimary)
-                                        Text(e.label)
-                                            .font(.system(size: 8, weight: .semibold)).tracking(0.3)
-                                            .foregroundStyle(selected ? .white.opacity(0.85) : palette.textTertiary)
-                                            .lineLimit(1).minimumScaleFactor(0.7)
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 6).padding(.horizontal, 4)
-                                    .background(
-                                        Group {
-                                            if selected {
-                                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                                    .fill(LinearGradient.diagonal)
-                                            } else {
-                                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                                    .fill(palette.bgCardSoft)
-                                            }
-                                        }
-                                    )
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                            .strokeBorder(selected ? Color.clear : palette.borderFaint)
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        Text("Drivers must hold every selected endorsement on their CDL to bid this load.")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(palette.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                    // Mode-gated requirement set. Founder bug fix: the
+                    // truck-only CSA/CDL block no longer leaks into
+                    // vessel / rail / barge posts.
+                    switch transportMode {
+                    case .truck:  truckCatalystRequirements
+                    case .vessel: vesselCatalystRequirements
+                    case .rail:   railCatalystRequirements
+                    case .barge:  bargeCatalystRequirements
                     }
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -4143,6 +4171,217 @@ struct ShipperPostLoad: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                     .strokeBorder(palette.borderFaint))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    /// Header summary pill text — mode-aware. Only shows when the
+    /// shipper has set a non-default gate so an untouched card reads
+    /// clean.
+    private var catalystRequirementsSummary: String? {
+        switch transportMode {
+        case .truck:
+            if catalystEndorsements.isEmpty && catalystMinSafetyScore == 80 { return nil }
+            return "\(catalystEndorsements.count) endorsement\(catalystEndorsements.count == 1 ? "" : "s") · ≥\(Int(catalystMinSafetyScore))"
+        case .vessel:
+            if catalystVesselRequirements.isEmpty { return nil }
+            return "\(catalystVesselRequirements.count) cert\(catalystVesselRequirements.count == 1 ? "" : "s")"
+        case .rail:
+            if catalystRailRequirements.isEmpty { return nil }
+            return "\(catalystRailRequirements.count) req\(catalystRailRequirements.count == 1 ? "" : "s")"
+        case .barge:
+            if catalystBargeRequirements.isEmpty { return nil }
+            return "\(catalystBargeRequirements.count) req\(catalystBargeRequirements.count == 1 ? "" : "s")"
+        }
+    }
+
+    // MARK: - Per-mode catalyst requirement bodies
+
+    /// TRUCK — FMCSA CSA safety score + CDL endorsements (the original
+    /// content, preserved verbatim). H = Hazmat, N = Tank, X = H+N,
+    /// T = Doubles/Triples, P = Passenger, S = School Bus.
+    @ViewBuilder
+    private var truckCatalystRequirements: some View {
+        // Min safety score slider
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Min FMCSA safety score")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                Spacer(minLength: 0)
+                Text("\(Int(catalystMinSafetyScore))")
+                    .font(.system(size: 14, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(LinearGradient.diagonal)
+            }
+            Slider(value: $catalystMinSafetyScore, in: 50...100, step: 5) {
+                Text("Safety score")
+            }
+            .tint(Brand.magenta)
+            Text("Carriers below this CSA / safety score are filtered out of bid eligibility.")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+
+        // Endorsement chips
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Required CDL endorsements")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+            let endorsementCodes: [(code: String, label: String)] = [
+                ("H", "Hazmat"),
+                ("N", "Tank"),
+                ("X", "H+N"),
+                ("T", "Doubles/Triples"),
+                ("P", "Passenger"),
+                ("S", "School Bus"),
+            ]
+            // Two-column grid of toggle chips
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+                ForEach(endorsementCodes, id: \.code) { e in
+                    let selected = catalystEndorsements.contains(e.code)
+                    Button {
+                        if selected { catalystEndorsements.remove(e.code) }
+                        else        { catalystEndorsements.insert(e.code) }
+                    } label: {
+                        catalystRequirementChip(code: e.code, label: e.label, selected: selected)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Text("Drivers must hold every selected endorsement on their CDL to bid this load.")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// VESSEL — maritime carrier-vetting certs. SOLAS hull/equipment,
+    /// IMO IMDG (hazmat at sea), ISM safety-management, ISPS port-facility
+    /// security, STCW crew certification, SIRE 2.0 tanker vetting
+    /// (OCIMF). These are the real eligibility gates a shipper sets for
+    /// an ocean carrier — there is no CDL or FMCSA CSA score at sea.
+    @ViewBuilder
+    private var vesselCatalystRequirements: some View {
+        let codes: [(code: String, label: String)] = [
+            ("SOLAS", "Hull/equip"),
+            ("IMO",   "IMDG hazmat"),
+            ("ISM",   "Safety mgmt"),
+            ("ISPS",  "Port security"),
+            ("STCW",  "Crew certs"),
+            ("SIRE",  "Tanker vet"),
+        ]
+        catalystChipSet(
+            heading: "Required vessel certifications",
+            note: "Carriers must hold every selected maritime certification to bid this load. SIRE 2.0 (OCIMF) vetting applies to tanker tonnage.",
+            codes: codes,
+            selection: $catalystVesselRequirements
+        )
+    }
+
+    /// RAIL — interchange + federal-rail compliance. AAR Interchange
+    /// Rules (railcar interchange / mechanical), FRA (Federal Railroad
+    /// Administration safety), PTC (Positive Train Control). No CDL /
+    /// FMCSA on the rail network.
+    @ViewBuilder
+    private var railCatalystRequirements: some View {
+        let codes: [(code: String, label: String)] = [
+            ("AAR", "Interchange"),
+            ("FRA", "Fed. rail"),
+            ("PTC", "Train control"),
+        ]
+        catalystChipSet(
+            heading: "Required rail compliance",
+            note: "Carriers must attest to every selected rail-network requirement to bid this load. AAR Interchange Rules govern railcar mechanical interchange.",
+            codes: codes,
+            selection: $catalystRailRequirements
+        )
+    }
+
+    /// BARGE — inland-waterway USCG regime. Certificate of Inspection
+    /// (COI), Subchapter M towing-vessel compliance (46 CFR 136-144),
+    /// Tankerman-PIC for liquid-bulk transfer, TWIC credential. No CDL /
+    /// FMCSA on inland waterways.
+    @ViewBuilder
+    private var bargeCatalystRequirements: some View {
+        let codes: [(code: String, label: String)] = [
+            ("COI",     "USCG insp."),
+            ("SUBM",    "Subchapter M"),
+            ("TANKPIC", "Tankerman"),
+            ("TWIC",    "TWIC cred."),
+        ]
+        catalystChipSet(
+            heading: "Required barge / USCG compliance",
+            note: "Carriers must attest to every selected USCG requirement to bid this load. Tankerman-PIC applies to liquid-bulk transfer operations.",
+            codes: codes,
+            selection: $catalystBargeRequirements
+        )
+    }
+
+    /// Shared chip-set builder for the non-truck modes — a heading, a
+    /// 3-up toggle grid, and an explainer. Reuses the exact bespoke chip
+    /// visual the truck endorsement grid uses so every mode reads
+    /// identically.
+    @ViewBuilder
+    private func catalystChipSet(
+        heading: String,
+        note: String,
+        codes: [(code: String, label: String)],
+        selection: Binding<Set<String>>
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(heading)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+                ForEach(codes, id: \.code) { e in
+                    let selected = selection.wrappedValue.contains(e.code)
+                    Button {
+                        if selected { selection.wrappedValue.remove(e.code) }
+                        else        { selection.wrappedValue.insert(e.code) }
+                    } label: {
+                        catalystRequirementChip(code: e.code, label: e.label, selected: selected)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Text(note)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// One toggle chip — bespoke gradient-fill-when-selected pill,
+    /// faint-bordered card otherwise. Shared by every mode so the look
+    /// is identical across truck / vessel / rail / barge.
+    @ViewBuilder
+    private func catalystRequirementChip(code: String, label: String, selected: Bool) -> some View {
+        VStack(spacing: 1) {
+            Text(code)
+                .font(.system(size: 13, weight: .heavy))
+                .foregroundStyle(selected ? .white : palette.textPrimary)
+                .lineLimit(1).minimumScaleFactor(0.6)
+            Text(label)
+                .font(.system(size: 8, weight: .semibold)).tracking(0.3)
+                .foregroundStyle(selected ? .white.opacity(0.85) : palette.textTertiary)
+                .lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6).padding(.horizontal, 4)
+        .background(
+            Group {
+                if selected {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(LinearGradient.diagonal)
+                } else {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(palette.bgCardSoft)
+                }
+            }
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(selected ? Color.clear : palette.borderFaint)
+        )
     }
 
     private var rateField: some View {
@@ -4540,7 +4779,7 @@ struct ShipperPostLoad: View {
             .foregroundStyle(LinearGradient.diagonal)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
-            .overlay(Capsule().strokeBorder(LinearGradient.diagonal.opacity(0.55), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(LinearGradient.diagonal.opacity(0.55), lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
@@ -4974,11 +5213,11 @@ struct ShipperPostLoad: View {
             }
             .frame(maxWidth: .infinity, minHeight: 50)
             .background(
-                Capsule().fill(canAdvance
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(canAdvance
                                ? AnyShapeStyle(LinearGradient.primary)
                                : AnyShapeStyle(palette.tintNeutral.opacity(0.4)))
             )
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(!canAdvance)
@@ -5016,16 +5255,29 @@ struct ShipperPostLoad: View {
             // overweight scenario via an overweight or superload
             // permit; block when the weight exceeds the binding
             // state limit and no permit is set.
-            let wLbs = parseWeightLbs(weightText, unit: weightUnit)
-            if wLbs > 0 {
-                let oState = originStateCode ?? Self.stateFromLane(origin)
-                let dState = destStateCode ?? Self.stateFromLane(destination)
-                let oLimit = Self.stateWeightLimit(oState)
-                let dLimit = Self.stateWeightLimit(dState)
-                let oOver  = !oState.isEmpty && wLbs > Double(oLimit)
-                let dOver  = !dState.isEmpty && wLbs > Double(dLimit)
-                let permitsOK = oversizePermits && (permitType == .overweightOnly || permitType == .superload || permitType == .annualOversize || permitType == .tripPermit)
-                if (oOver || dOver) && !permitsOK { return false }
+            //
+            // 2026-06-01 — Gate ONLY when transportMode == .truck.
+            // State weight limits are federal-highway truck rules
+            // (49 CFR 658). They don't apply to rail (FRA per-car),
+            // vessel (deadweight tonnage), or barge (USACE waterway
+            // class). Founder report: a 35,000 MT vessel-tanker
+            // hazmat load with every field filled green still showed
+            // a dim Continue because 77M lb >> any state's 80k-lb
+            // truck limit. Mirror the same `transportMode == .truck`
+            // gate already on overweightComplianceCard so the
+            // visible UI + the gating logic agree.
+            if transportMode == .truck {
+                let wLbs = parseWeightLbs(weightText, unit: weightUnit)
+                if wLbs > 0 {
+                    let oState = originStateCode ?? Self.stateFromLane(origin)
+                    let dState = destStateCode ?? Self.stateFromLane(destination)
+                    let oLimit = Self.stateWeightLimit(oState)
+                    let dLimit = Self.stateWeightLimit(dState)
+                    let oOver  = !oState.isEmpty && wLbs > Double(oLimit)
+                    let dOver  = !dState.isEmpty && wLbs > Double(dLimit)
+                    let permitsOK = oversizePermits && (permitType == .overweightOnly || permitType == .superload || permitType == .annualOversize || permitType == .tripPermit)
+                    if (oOver || dOver) && !permitsOK { return false }
+                }
             }
             // 2026-05-17 — Gate on the reefer temp-range validation.
             // When the user typed any temp value, an issue string is
@@ -5138,16 +5390,36 @@ struct ShipperPostLoad: View {
     private func composeSubmissionNotes() -> String {
         var lines: [String] = []
         if !notes.isEmpty { lines.append(notes) }
-        // Catalyst Requirements — web parity. Min safety score is always
-        // serialized so the catalyst knows the gate; endorsements only
-        // when the shipper actually selected some. Format matches the
-        // server's loads.ts:242-243 expected pattern ("Required Endorsements:"
-        // and "Min Safety Score:") so the catalyst load-detail view shows
-        // them in the same line block.
-        lines.append("Min Safety Score: \(Int(catalystMinSafetyScore))")
-        if !catalystEndorsements.isEmpty {
-            let sorted = catalystEndorsements.sorted()
-            lines.append("Required Endorsements: \(sorted.joined(separator: ", "))")
+        // Catalyst Requirements — mode-aware (2026-06-01 founder fix).
+        // TRUCK keeps the FMCSA CSA score + CDL-endorsement lines verbatim
+        // (server loads.ts:242-243 parses "Min Safety Score:" and
+        // "Required Endorsements:"). Non-truck modes serialize the RIGHT
+        // regulatory gate so the catalyst dispatcher never sees a "CDL
+        // endorsement" on a vessel / rail / barge post.
+        switch transportMode {
+        case .truck:
+            // Min safety score is always serialized so the catalyst knows
+            // the gate; endorsements only when the shipper selected some.
+            lines.append("Min Safety Score: \(Int(catalystMinSafetyScore))")
+            if !catalystEndorsements.isEmpty {
+                let sorted = catalystEndorsements.sorted()
+                lines.append("Required Endorsements: \(sorted.joined(separator: ", "))")
+            }
+        case .vessel:
+            if !catalystVesselRequirements.isEmpty {
+                let sorted = catalystVesselRequirements.sorted()
+                lines.append("Required Vessel Certs: \(sorted.joined(separator: ", "))")
+            }
+        case .rail:
+            if !catalystRailRequirements.isEmpty {
+                let sorted = catalystRailRequirements.sorted()
+                lines.append("Required Rail Compliance: \(sorted.joined(separator: ", "))")
+            }
+        case .barge:
+            if !catalystBargeRequirements.isEmpty {
+                let sorted = catalystBargeRequirements.sorted()
+                lines.append("Required Barge/USCG Compliance: \(sorted.joined(separator: ", "))")
+            }
         }
         // 2026-05-17 — Mode line is the first machine-readable token in
         // the notes block. Catalyst + dispatch parse this until the
@@ -5227,6 +5499,13 @@ struct ShipperPostLoad: View {
         rateComparison = nil
         routeDistanceMeters = nil
         routeDurationSeconds = nil
+        // Catalyst requirements — reset every mode's gate to default so
+        // the next post doesn't carry a prior load's eligibility set.
+        catalystMinSafetyScore = 80
+        catalystEndorsements = []
+        catalystVesselRequirements = []
+        catalystRailRequirements = []
+        catalystBargeRequirements = []
         // Wipe autosave so the next user doesn't see stale draft.
         clearDraft()
     }
@@ -5682,7 +5961,7 @@ private struct PostLoadDraftsEntryBody: View {
                 }
                 .frame(maxWidth: .infinity, minHeight: 52)
                 .foregroundStyle(.white)
-                .background(LinearGradient.diagonal, in: Capsule())
+                .background(LinearGradient.diagonal, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .padding(.horizontal, Space.s4)
@@ -5739,7 +6018,7 @@ private struct PostLoadDraftsEntryBody: View {
                 }
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .foregroundStyle(.white)
-                .background(LinearGradient.diagonal, in: Capsule())
+                .background(LinearGradient.diagonal, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

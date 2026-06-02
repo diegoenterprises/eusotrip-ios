@@ -33,6 +33,14 @@ struct ShippereSangCoachSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var session: EusoTripSession
     @FocusState private var composerFocused: Bool
+    /// Autopilot dispatcher injected by `ShipperSurface`. When ESANG's
+    /// reply carries `<<<ACTION:…>>>` tokens we parse them out and fire
+    /// each through this closure so a spoken/typed command actually
+    /// drives the Shipper push-nav surface. Was previously MISSING —
+    /// the Shipper sheet appended the raw reply and never parsed the
+    /// tag, so every autopilot command was a no-op (E1/E2). Nil in
+    /// previews — the parser still cleans the visible text.
+    @Environment(\.esangActionHandler) private var autopilot
 
     /// Push-to-talk voice pipeline — Speech + AVAudioEngine. Shared
     /// controller with the driver sheet so the shipper's voice path
@@ -59,6 +67,13 @@ struct ShippereSangCoachSheet: View {
     @State private var draft: String = ""
     @State private var sending: Bool = false
     @State private var sendError: String? = nil
+    /// Drives the document-router sheet. The composer's paperclip
+    /// opens it; on `onApplySingle` we surface the REAL classifier
+    /// result (type + summary + key fields + any warnings) into the
+    /// transcript and seed the input so the shipper sends ESANG a
+    /// document it already understands — not a blind upload. Same
+    /// affordance the ESANG dispatch chat carries (053).
+    @State private var showDocClassifier: Bool = false
 
     /// Quick-action chips — every label / prompt pair is shipper-
     /// context. The visible label is what the user sees on the chip;
@@ -102,6 +117,20 @@ struct ShippereSangCoachSheet: View {
         // and audio session release without a leak.
         .onDisappear {
             voice.cancel()
+        }
+        // Document-intelligence spine. The shipper drops a doc (camera /
+        // photos / files), the router classifies + extracts it via
+        // `documentRouter.classifyAndRoute`, and `onApplySingle` hands
+        // back a `ClassifiedDocument` we render HONESTLY into the chat —
+        // never a raw image, never a fabricated type.
+        .sheet(isPresented: $showDocClassifier) {
+            DocumentClassifierSheet(
+                mode: .prefillWizard,
+                callerContext: "shipper esang coach",
+                onApplySingle: { doc in attachClassifiedDoc(doc) },
+                onDispatchBatch: { _ in }
+            )
+            .environment(\.palette, palette)
         }
     }
 
@@ -252,6 +281,21 @@ struct ShippereSangCoachSheet: View {
             // in `.onAppear` above.
             eSangVoiceInputButton(controller: voice)
 
+            // Document upload — the real affordance, not just mic+send.
+            // Opens the document router; the classifier tells us EXACTLY
+            // what the doc is before it ever reaches ESANG.
+            Button { showDocClassifier = true } label: {
+                Image(systemName: "paperclip")
+                    .font(.system(size: 16, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                    .frame(width: 44, height: 44)
+                    .background(palette.bgCardSoft)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(voice.isRecording || sending)
+            .accessibilityLabel("Attach document")
+
             Button(action: sendDraft) {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 16, weight: .heavy))
@@ -281,6 +325,9 @@ struct ShippereSangCoachSheet: View {
         messages.append(userMsg)
         sending = true
         sendError = nil
+        // Snapshot the env dispatcher at call time so the async
+        // follow-up isn't reading a stale @Environment value.
+        let dispatcher = autopilot
         Task {
             do {
                 let resp = try await EusoTripAPI.shared.esang.chat(
@@ -288,9 +335,25 @@ struct ShippereSangCoachSheet: View {
                     currentPage: "shipper.coach",
                     loadId: nil
                 )
+                // Split ESANG's reply into shipper-visible text + machine
+                // actions. The parser strips every `<<<ACTION:verb:arg>>>`
+                // token so the bubble shows clean prose, and hands back the
+                // typed intents the autopilot dispatcher executes (navigate
+                // to a screen, open a load, refresh, execute a CTA, …).
+                let (cleaned, actions) = eSangAutopilot.parse(resp.message)
                 await MainActor.run {
-                    messages.append(Msg(role: .esang, text: resp.message))
+                    if !cleaned.isEmpty {
+                        messages.append(Msg(role: .esang, text: cleaned))
+                    }
                     sending = false
+                    // Stagger so a navigate-then-execute sequence animates
+                    // naturally instead of stepping on itself.
+                    for (idx, action) in actions.enumerated() {
+                        let delay = Double(idx) * 0.20
+                        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                            dispatcher?(action)
+                        }
+                    }
                 }
             } catch {
                 await MainActor.run {
@@ -299,6 +362,102 @@ struct ShippereSangCoachSheet: View {
                 }
             }
         }
+    }
+
+    // MARK: Document classification
+
+    /// Surface a classified document into the chat. We render the REAL
+    /// router result — detected type, confidence, summary, the key
+    /// extracted fields, and any warnings — as an ESANG bubble, then
+    /// seed the composer with a ready-to-send line so the shipper can
+    /// ask ESANG about the doc it just understood. HONEST: low
+    /// confidence or an `unknown` type reads as "couldn't confidently
+    /// identify — please confirm", never a fabricated label.
+    private func attachClassifiedDoc(_ doc: ClassifiedDocument) {
+        let conf = Int((doc.confidence * 100).rounded())
+        let lowConfidence = doc.confidence < 0.6
+        let isUnknown = doc.classifiedType == "unknown"
+            || doc.classifiedType.trimmingCharacters(in: .whitespaces).isEmpty
+
+        // Honest header line.
+        let headline: String
+        if isUnknown || lowConfidence {
+            headline = "I couldn't confidently identify this document (\(conf)% confidence) — please confirm what it is."
+        } else {
+            headline = "Got it — that's a \(humanDocType(doc.classifiedType)) (\(conf)% confidence)."
+        }
+
+        var lines: [String] = [headline]
+        if !doc.summary.isEmpty {
+            lines.append(doc.summary)
+        }
+
+        // A handful of the most useful extracted fields, verbatim from
+        // the router. We never invent values — only show what came back.
+        let fieldLines = doc.fields
+            .sorted { $0.key < $1.key }
+            .prefix(5)
+            .map { "• \(prettyFieldKey($0.key)): \($0.value)" }
+        if !fieldLines.isEmpty {
+            lines.append("Detected:\n" + fieldLines.joined(separator: "\n"))
+        }
+
+        for w in doc.warnings.prefix(3) {
+            lines.append("⚠ \(w)")
+        }
+
+        messages.append(Msg(role: .esang, text: lines.joined(separator: "\n\n")))
+
+        // Seed the composer so the shipper has a one-tap follow-up that
+        // references the document ESANG now knows about.
+        if isUnknown || lowConfidence {
+            draft = "About the document I just shared — "
+        } else {
+            draft = "About this \(humanDocType(doc.classifiedType).lowercased()) — "
+        }
+        composerFocused = true
+    }
+
+    /// Human label for a router doc-type slug. Mirrors the mapping the
+    /// classifier sheet renders so the chat copy reads the same way;
+    /// the default path title-cases any slug we haven't named.
+    private func humanDocType(_ raw: String) -> String {
+        switch raw {
+        case "bill_of_lading":                  return "Bill of Lading"
+        case "rate_confirmation":               return "Rate Confirmation"
+        case "run_ticket":                      return "Run Ticket"
+        case "proof_of_delivery":               return "Proof of Delivery"
+        case "load_csv":                        return "Load CSV"
+        case "load_tender":                     return "Load Tender"
+        case "weight_ticket", "scale_ticket":   return "Weight Ticket"
+        case "us_coi", "ca_coi":                return "Insurance Certificate"
+        case "us_cdl":                          return "CDL"
+        case "us_medical_card":                 return "Medical Card"
+        case "us_dot_authority", "us_mc_authority": return "FMCSA Authority"
+        case "w9":                              return "W-9"
+        case "form_1099":                       return "1099"
+        case "us_ein_letter":                   return "EIN Letter"
+        case "shipper_agreement", "broker_agreement", "carrier_packet",
+             "factoring_agreement", "nda":
+            return "Agreement"
+        default:
+            return raw.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
+    /// Title-case an extracted-field key (e.g. `consigneeName` →
+    /// "Consignee Name", `bol_number` → "Bol Number") for display.
+    private func prettyFieldKey(_ key: String) -> String {
+        let spaced = key
+            .replacingOccurrences(of: "_", with: " ")
+            .reduce(into: "") { acc, ch in
+                if ch.isUppercase { acc.append(" ") }
+                acc.append(ch)
+            }
+        return spaced
+            .split(separator: " ")
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
     }
 }
 

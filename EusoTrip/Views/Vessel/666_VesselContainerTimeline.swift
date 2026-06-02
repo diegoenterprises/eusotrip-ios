@@ -377,7 +377,7 @@ private struct VesselContainerTimelineBody: View {
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(LinearGradient.primary)
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                     .opacity(addingEvent ? 0.6 : 1)
                 }
                 .buttonStyle(.plain)
@@ -389,8 +389,8 @@ private struct VesselContainerTimelineBody: View {
                         .foregroundStyle(palette.textPrimary)
                         .frame(width: 132, height: 48)
                         .background(Color(hex: 0x232932))
-                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
-                        .clipShape(Capsule())
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }

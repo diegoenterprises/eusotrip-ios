@@ -432,8 +432,8 @@ private struct RailDetentionByCustomerBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(palette.bgSecondary)
-                    .overlay(Capsule().strokeBorder(palette.borderSoft))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .frame(width: 148)

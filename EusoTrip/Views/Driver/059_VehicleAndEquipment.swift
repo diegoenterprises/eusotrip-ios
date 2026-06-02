@@ -672,10 +672,10 @@ struct VehicleAndEquipment: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 48)
                     .background(
-                        Capsule().fill(LinearGradient.primary.opacity(0.45))
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary.opacity(0.45))
                     )
                     .overlay(
-                        Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
                     )
                 }
                 .buttonStyle(.plain)

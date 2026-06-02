@@ -203,6 +203,15 @@ struct ShipperDocumentCenter: View {
     /// the prior openURL("…/documents/{id}") + openURL("…/download")
     /// stubs.
     @State private var pendingShareDocs: [URL]? = nil
+    /// Result of the homegrown document-intelligence pass on the
+    /// just-picked file. Runs `documentRouter.classifyAndRoute` on the
+    /// real file bytes (not just the filename) so the capture point
+    /// KNOWS what the document is before it lands in the library. The
+    /// review sheet surfaces the detected type + key extracted fields +
+    /// any warnings honestly; low-confidence / `unknown` says so.
+    @State private var pendingClassification: DocCenterClassification? = nil
+    /// Latch so the review sheet only auto-presents once per scan.
+    @State private var showClassificationReview: Bool = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -250,6 +259,12 @@ struct ShipperDocumentCenter: View {
                     .ignoresSafeArea()
             }
         }
+        .sheet(isPresented: $showClassificationReview) {
+            if let c = pendingClassification {
+                DocCenterClassificationReview(result: c)
+                    .environment(\.palette, palette)
+            }
+        }
         .overlay(alignment: .top) {
             if let t = uploadToast {
                 Text(t).font(.system(size: 12, weight: .semibold))
@@ -267,12 +282,15 @@ struct ShipperDocumentCenter: View {
         }
     }
 
-    /// Real upload pipeline — reads the picked file's bytes, base64
-    /// encodes, classifies the document via Gemini
-    /// (`aiDocProcessor.classifyDocument`) using the filename + mime
-    /// as the hint, and POSTs to `documents.upload` with the
-    /// AI-classified category. Replaces the prior hardcoded
-    /// `category: "operations"` per founder Gemini parity audit.
+    /// Real upload pipeline — reads the picked file's bytes, detects
+    /// the true mime from the magic bytes / UTType (not just the
+    /// extension), runs the file through our homegrown document-
+    /// intelligence spine (`documentRouter.classifyAndRoute`) against
+    /// the actual bytes so the capture point KNOWS what the document
+    /// is (classify + extract) before it lands, surfaces the detected
+    /// type + key extracted fields + warnings honestly, then POSTs to
+    /// `documents.upload` with the vision-derived category. Replaces
+    /// the prior filename-only `aiDocProcessor.classifyDocument` hint.
     private func handlePickedDocument(_ result: Result<[URL], Error>) async {
         switch result {
         case .failure(let err):
@@ -283,14 +301,21 @@ struct ShipperDocumentCenter: View {
             defer { if started { url.stopAccessingSecurityScopedResource() } }
             do {
                 let data = try Data(contentsOf: url)
+                let mime = detectMime(url: url, data: data)
                 let base64 = data.base64EncodedString()
-                let mime = url.pathExtension.lowercased() == "pdf" ? "application/pdf" : "application/octet-stream"
                 let dataURL = "data:\(mime);base64,\(base64)"
 
-                // Step 1: AI-classify the document so the category
-                // dropdown lands correctly. Best-effort — falls
-                // through to "operations" if Gemini fails.
-                let category = await classifyCategory(filename: url.lastPathComponent, mime: mime)
+                // Step 1 — Document intelligence. Classify + extract on
+                // the real file bytes via the vision spine so we KNOW
+                // the document type instead of uploading a raw blob.
+                // Best-effort: a thrown classifier error never blocks the
+                // upload — we fall through to "operations" and say so.
+                let classification = await classifyWithVisionSpine(
+                    base64: base64,
+                    mime: mime,
+                    filename: url.lastPathComponent
+                )
+                let category = classification?.category ?? "operations"
 
                 struct In: Encodable {
                     let name: String
@@ -306,7 +331,14 @@ struct ShipperDocumentCenter: View {
                         fileData: dataURL
                     )
                 )
-                await MainActor.run { uploadToast = "Uploaded \(url.lastPathComponent) → \(category)" }
+                await MainActor.run {
+                    uploadToast = "Uploaded \(url.lastPathComponent) → \(category)"
+                    // Surface the honest detection result for review.
+                    if let c = classification {
+                        pendingClassification = c
+                        showClassificationReview = true
+                    }
+                }
                 await store.load()
             } catch {
                 await MainActor.run {
@@ -316,53 +348,132 @@ struct ShipperDocumentCenter: View {
         }
     }
 
-    /// Calls `aiDocProcessor.classifyDocument` with the filename +
-    /// mime as the classifier hint. Server's prompt picks one of
-    /// 16 freight document categories; iOS maps unknowns back to
-    /// "operations" as a safe default.
-    private func classifyCategory(filename: String, mime: String) async -> String {
-        struct In: Encodable {
-            let content: String
-            let fileName: String
+    /// Detect the true mime type from the file's magic bytes and
+    /// UTType — the extension alone lies (e.g. a `.jpg` that's really a
+    /// HEIC, or a no-extension picked file). The vision router only
+    /// accepts jpeg/png/webp/heic/pdf, so anything we can't positively
+    /// identify as PDF/PNG/HEIC/WebP is treated as JPEG (the router's
+    /// safe image default).
+    private func detectMime(url: URL, data: Data) -> String {
+        // Magic bytes first — most reliable.
+        if data.count > 4, data[0] == 0x25, data[1] == 0x50, data[2] == 0x44, data[3] == 0x46 {
+            return "application/pdf"            // %PDF
         }
-        struct Out: Decodable {
-            let classification: String?
-            let confidence: Double?
+        if data.count > 8, data[0] == 0x89, data[1] == 0x50, data[2] == 0x4E, data[3] == 0x47 {
+            return "image/png"                  // ‰PNG
         }
+        if data.count > 12,
+           data[0] == 0x52, data[1] == 0x49, data[2] == 0x46, data[3] == 0x46,
+           data[8] == 0x57, data[9] == 0x45, data[10] == 0x42, data[11] == 0x50 {
+            return "image/webp"                 // RIFF…WEBP
+        }
+        // UTType fallback for HEIC and friends the bytes didn't catch.
+        if let t = UTType(filenameExtension: url.pathExtension.lowercased()) {
+            if t.conforms(to: .pdf)  { return "application/pdf" }
+            if t.conforms(to: .png)  { return "image/png" }
+            if t.conforms(to: .heic) { return "image/heic" }
+            if t.conforms(to: .webP) { return "image/webp" }
+        }
+        return "image/jpeg"
+    }
+
+    /// Runs the picked file through the homegrown document-intelligence
+    /// spine (`documentRouter.classifyAndRoute`). Returns a structured
+    /// classification (detected type + confidence + key extracted
+    /// fields + warnings) and the mapped upload category, or `nil` if
+    /// the file can't be sent to the vision router (unsupported mime)
+    /// or the classifier throws — callers fall back to "operations".
+    private func classifyWithVisionSpine(
+        base64: String,
+        mime: String,
+        filename: String
+    ) async -> DocCenterClassification? {
+        guard let mt = DocumentRouterAPI.MimeType(rawValue: mime) else { return nil }
         do {
-            let resp: Out = try await EusoTripAPI.shared.mutation(
-                "aiDocProcessor.classifyDocument",
-                input: In(
-                    content: "Filename: \(filename)\nMIME: \(mime)\n",
-                    fileName: filename
-                )
+            let resp = try await EusoTripAPI.shared.documentRouter.classifyAndRoute(
+                documentBase64: base64,
+                mimeType: mt,
+                callerContext: "shipper document center"
             )
-            // Map Gemini classification → existing documents.upload
-            // category enum (compliance, insurance, permits, contracts,
-            // invoices, bols, receipts, run_tickets, agreements,
-            // freight, operations, financial, company, vehicle, other).
-            switch resp.classification?.lowercased() ?? "" {
-            case "rate_confirmation":   return "freight"
-            case "bill_of_lading":      return "bols"
-            case "proof_of_delivery":   return "bols"
-            case "invoice":             return "invoices"
-            case "customs_entry":       return "freight"
-            case "packing_list":        return "freight"
-            case "weight_ticket":       return "run_tickets"
-            case "lumper_receipt":      return "receipts"
-            case "fuel_receipt":        return "receipts"
-            case "inspection_report":   return "compliance"
-            case "insurance_certificate": return "insurance"
-            case "carrier_packet":      return "agreements"
-            case "w9":                  return "company"
-            case "comcheck":            return "financial"
-            case "detention_receipt":   return "receipts"
-            case "other":               return "operations"
-            default:                    return "operations"
-            }
+            // Honest fields — collapse heterogeneous values to display
+            // strings, drop nulls, cap to the ones worth showing.
+            let fields: [(String, String)] = resp.extractedFields
+                .compactMap { key, value in
+                    guard let s = value.asString, !s.isEmpty else { return nil }
+                    return (prettyFieldKey(key), s)
+                }
+                .sorted { $0.0 < $1.0 }
+            return DocCenterClassification(
+                filename: filename,
+                classifiedType: resp.classifiedType,
+                confidence: resp.confidence,
+                summary: resp.summary,
+                fields: fields,
+                warnings: resp.warnings,
+                dispatchTarget: resp.dispatchTarget,
+                category: mapTypeToCategory(resp.classifiedType, confidence: resp.confidence)
+            )
         } catch {
+            // Honest: surface the failure as a toast, store as
+            // "operations", never fabricate a type.
+            await MainActor.run {
+                uploadToast = "Couldn't classify — stored as Operations · \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)"
+            }
+            return nil
+        }
+    }
+
+    /// Map the vision spine's `classifiedType` (60+ taxonomy) onto the
+    /// existing `documents.upload` category enum (compliance,
+    /// insurance, permits, contracts, invoices, bols, receipts,
+    /// run_tickets, agreements, freight, operations, financial,
+    /// company, vehicle, other). Low confidence or `unknown` → the
+    /// neutral "operations" bucket; we never force a type we're unsure
+    /// of into a specific category.
+    private func mapTypeToCategory(_ raw: String, confidence: Double) -> String {
+        guard confidence >= 0.55, raw != "unknown", !raw.isEmpty else { return "operations" }
+        switch raw {
+        case "bill_of_lading", "proof_of_delivery":
+            return "bols"
+        case "rate_confirmation", "load_tender", "load_csv", "customs_entry", "packing_list":
+            return "freight"
+        case "invoice", "freight_invoice":
+            return "invoices"
+        case "weight_ticket", "scale_ticket", "run_ticket":
+            return "run_tickets"
+        case "lumper_receipt", "fuel_receipt", "detention_receipt", "receipt":
+            return "receipts"
+        case "inspection_report", "dvir":
+            return "compliance"
+        case "us_coi", "ca_coi", "insurance_certificate":
+            return "insurance"
+        case "shipper_agreement", "broker_agreement", "carrier_packet",
+             "factoring_agreement", "nda", "agreement":
+            return "agreements"
+        case "w9", "form_1099", "us_ein_letter":
+            return "company"
+        case "comcheck":
+            return "financial"
+        case let t where t.hasSuffix("_permit") || t.hasPrefix("permit"):
+            return "permits"
+        case let t where t.hasPrefix("us_") || t.hasPrefix("ca_") || t.hasPrefix("mx_"):
+            // Driver / authority credentials → compliance bucket.
+            return "compliance"
+        default:
             return "operations"
         }
+    }
+
+    /// `bolNumber` → "Bol Number", `shipperName` → "Shipper Name".
+    private func prettyFieldKey(_ key: String) -> String {
+        var out = ""
+        for ch in key {
+            if ch.isUppercase, !out.isEmpty { out.append(" ") }
+            out.append(ch)
+        }
+        return out
+            .replacingOccurrences(of: "_", with: " ")
+            .capitalized
     }
 
     // MARK: TopBar
@@ -1156,4 +1267,301 @@ private struct DocsCenterShareSheet: UIViewControllerRepresentable {
         UIActivityViewController(activityItems: items, applicationActivities: nil)
     }
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+}
+
+// MARK: - Document-intelligence result + review sheet
+
+/// Structured outcome of the homegrown vision spine on a picked file:
+/// the detected type, confidence, summary, key extracted fields, any
+/// warnings, the downstream dispatch target, and the upload category
+/// it was filed under. Surfaced honestly in `DocCenterClassification
+/// Review` — never claims a type the classifier didn't return.
+private struct DocCenterClassification: Identifiable, Hashable {
+    let id = UUID()
+    let filename: String
+    let classifiedType: String
+    let confidence: Double
+    let summary: String
+    /// (pretty key, value) pairs — already nulls-dropped + sorted.
+    let fields: [(String, String)]
+    let warnings: [String]
+    let dispatchTarget: String?
+    /// The `documents.upload` category bucket it was filed under.
+    let category: String
+
+    static func == (lhs: DocCenterClassification, rhs: DocCenterClassification) -> Bool {
+        lhs.id == rhs.id
+    }
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+
+    var confidencePct: Int { Int((confidence * 100).rounded()) }
+    var isUnknown: Bool { classifiedType == "unknown" || classifiedType.isEmpty }
+    var isLowConfidence: Bool { confidence < 0.6 }
+
+    /// Human label for the 60+-value taxonomy (mirrors 204's mapping).
+    var humanType: String {
+        switch classifiedType {
+        case "bill_of_lading":            return "Bill of Lading"
+        case "rate_confirmation":         return "Rate Confirmation"
+        case "run_ticket":                return "Run Ticket"
+        case "proof_of_delivery":         return "Proof of Delivery"
+        case "load_csv":                  return "Load CSV"
+        case "load_tender":               return "Load Tender"
+        case "weight_ticket", "scale_ticket": return "Weight Ticket"
+        case "invoice", "freight_invoice": return "Freight Invoice"
+        case "packing_list":              return "Packing List"
+        case "customs_entry":             return "Customs Entry"
+        case "lumper_receipt":            return "Lumper Receipt"
+        case "fuel_receipt":              return "Fuel Receipt"
+        case "detention_receipt":         return "Detention Receipt"
+        case "us_coi", "ca_coi", "insurance_certificate": return "Insurance Certificate"
+        case "us_cdl":                    return "CDL"
+        case "us_medical_card":           return "Medical Card"
+        case "us_dot_authority", "us_mc_authority": return "FMCSA Authority"
+        case "inspection_report", "dvir": return "Inspection Report"
+        case "w9":                        return "W-9"
+        case "form_1099":                 return "1099"
+        case "us_ein_letter":             return "EIN Letter"
+        case "comcheck":                  return "Comcheck"
+        case "shipper_agreement", "broker_agreement", "carrier_packet",
+             "factoring_agreement", "nda", "agreement":
+            return "Agreement"
+        case "unknown", "":               return "Unidentified"
+        default:
+            return classifiedType.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
+    var glyph: String {
+        switch classifiedType {
+        case "bill_of_lading", "load_tender", "load_csv", "rate_confirmation":
+            return "shippingbox.fill"
+        case "run_ticket", "weight_ticket", "scale_ticket", "fuel_receipt":
+            return "fuelpump.fill"
+        case "proof_of_delivery":
+            return "checkmark.seal.fill"
+        case "us_coi", "ca_coi", "insurance_certificate":
+            return "checkmark.shield.fill"
+        case let t where t.hasPrefix("us_") || t.hasPrefix("ca_") || t.hasPrefix("mx_"):
+            return "creditcard.fill"
+        case "w9", "form_1099", "us_ein_letter":
+            return "doc.text.fill"
+        case "shipper_agreement", "broker_agreement", "carrier_packet",
+             "factoring_agreement", "nda", "agreement":
+            return "signature"
+        case "unknown", "":
+            return "questionmark.folder.fill"
+        default:
+            return "doc.fill"
+        }
+    }
+
+    /// Pretty category bucket label for the "filed under" line.
+    var categoryLabel: String {
+        category.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+}
+
+/// Read-only review sheet shown after a picked file is classified +
+/// uploaded. Renders the real classifier output: the detected type,
+/// confidence, summary, extracted fields, warnings, and where it was
+/// filed. Honest by construction — `unknown` / low confidence get a
+/// neutral "couldn't confidently identify" banner, never a fake type.
+private struct DocCenterClassificationReview: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+    let result: DocCenterClassification
+
+    private var confColor: Color {
+        if result.confidencePct >= 85 { return Brand.success }
+        if result.confidencePct >= 60 { return Brand.warning }
+        return Brand.danger
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    header
+                    if result.isUnknown || result.isLowConfidence { uncertaintyBanner }
+                    if !result.summary.isEmpty { summaryBlock }
+                    if !result.fields.isEmpty { fieldsBlock }
+                    if !result.warnings.isEmpty { warningsBlock }
+                    filedUnderBlock
+                    Spacer(minLength: 40)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+            }
+            .background(palette.bgPage)
+            .navigationTitle("Document detected")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .foregroundStyle(LinearGradient.diagonal)
+                }
+            }
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: Space.s3) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(LinearGradient.diagonal.opacity(0.15))
+                Image(systemName: result.glyph)
+                    .font(.system(size: 20, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+            }
+            .frame(width: 48, height: 48)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles.tv.fill")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text("ESANG AI · DOCUMENT ROUTER")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                        .foregroundStyle(LinearGradient.diagonal)
+                }
+                Text(result.humanType)
+                    .font(.system(size: 20, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(2)
+                HStack(spacing: 6) {
+                    Text("\(result.confidencePct)% confidence")
+                        .font(.system(size: 10, weight: .heavy)).tracking(0.5)
+                        .foregroundStyle(confColor)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(confColor.opacity(0.12)))
+                    Text(result.filename)
+                        .font(.system(size: 11))
+                        .foregroundStyle(palette.textTertiary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var uncertaintyBanner: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "questionmark.circle.fill")
+                .font(.system(size: 11, weight: .heavy))
+                .foregroundStyle(Brand.warning)
+            Text(result.isUnknown
+                 ? "Couldn't confidently identify this document — please confirm the type and re-file if needed. It was stored under \(result.categoryLabel)."
+                 : "Low confidence on this read — please confirm before relying on the detected type.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(Brand.warning.opacity(0.08))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Brand.warning.opacity(0.45))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private var summaryBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("SUMMARY")
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            Text(result.summary)
+                .font(EType.body)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var fieldsBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("EXTRACTED · \(result.fields.count) FIELD\(result.fields.count == 1 ? "" : "S")")
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            VStack(spacing: 0) {
+                ForEach(Array(result.fields.enumerated()), id: \.offset) { idx, pair in
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+                        Text(pair.0)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(palette.textSecondary)
+                            .frame(width: 130, alignment: .leading)
+                        Text(pair.1)
+                            .font(.system(size: 13, weight: .heavy))
+                            .foregroundStyle(palette.textPrimary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 11)
+                    if idx < result.fields.count - 1 {
+                        Rectangle().fill(palette.borderFaint).frame(height: 1)
+                            .padding(.horizontal, 14)
+                    }
+                }
+            }
+            .background(palette.bgCard)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        }
+    }
+
+    private var warningsBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("WARNINGS · \(result.warnings.count)")
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(Brand.warning)
+            ForEach(Array(result.warnings.enumerated()), id: \.offset) { _, w in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(Brand.warning)
+                    Text(w)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Brand.warning.opacity(0.06))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(Brand.warning.opacity(0.4))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    private var filedUnderBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("FILED UNDER")
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            HStack(spacing: 6) {
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text(result.categoryLabel)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+            }
+            if let target = result.dispatchTarget, !target.isEmpty {
+                Text("Route: \(target)")
+                    .font(EType.mono(.caption))
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 }

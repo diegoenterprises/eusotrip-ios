@@ -375,8 +375,8 @@ private struct RailTenderWorkflowBody: View {
                 }
                 .frame(width: 148, height: 48)
                 .background(palette.bgCard)
-                .overlay(Capsule().strokeBorder(Brand.danger.opacity(0.40)))
-                .clipShape(Capsule())
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Brand.danger.opacity(0.40)))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

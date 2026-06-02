@@ -467,7 +467,7 @@ private struct RailAppointmentComplianceBody: View {
                     .frame(maxWidth: .infinity, minHeight: 48)
             }
             .background(LinearGradient.primary)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .buttonStyle(.plain)
 
             Button {
@@ -479,8 +479,8 @@ private struct RailAppointmentComplianceBody: View {
                     .frame(width: 148, height: 48)
             }
             .background(Color(hex: 0x232932))
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.10)))
-            .clipShape(Capsule())
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Color.white.opacity(0.10)))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .buttonStyle(.plain)
         }
     }
