@@ -279,6 +279,7 @@ enum ScreenRegistry {
             // 2026-05-30 — the-oath §42/§48 driver ports.
             .init(id: "112",    title: "Driver · Load Closed (Settlement)", role: .driver) { p in AnyView(DriverClosedScreen(theme: p)) },
             .init(id: "161",    title: "Driver · Gate Pass",         role: .driver) { p in AnyView(DriverGatePass_161(appointmentId: 0).environment(\.palette, p)) },
+            .init(id: "162",    title: "Driver · Wellness & Fatigue", role: .driver) { p in AnyView(DriverWellnessFatigue_162().environment(\.palette, p)) },
         ]
 
         // MARK: Non-driver role placeholders (DEBUG only)

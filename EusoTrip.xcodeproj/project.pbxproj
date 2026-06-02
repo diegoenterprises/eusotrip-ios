@@ -714,6 +714,7 @@
 		FE410000000000000000009B /* 009_VesselTenderWorkflow.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000009F /* 009_VesselTenderWorkflow.swift */; };
 		FE410000000000000000112B /* 112_DriverClosed.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000112F /* 112_DriverClosed.swift */; };
 		FE410000000000000000161B /* 161_DriverGatePass.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000161F /* 161_DriverGatePass.swift */; };
+		FE410000000000000000162B /* 162_DriverWellnessFatigue.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000162F /* 162_DriverWellnessFatigue.swift */; };
 		FE410000000000000000297B /* 297_ShipperCargoInsurance.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000297F /* 297_ShipperCargoInsurance.swift */; };
 		FE410000000000000000298B /* 298_ShipperDetentionExposure.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000298F /* 298_ShipperDetentionExposure.swift */; };
 		FE410000000000000000533B /* 533_DispatcherAIDispatchAssist.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000533F /* 533_DispatcherAIDispatchAssist.swift */; };
@@ -1668,6 +1669,7 @@
 		FE410000000000000000009F /* 009_VesselTenderWorkflow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 009_VesselTenderWorkflow.swift; path = EusoTrip/Views/Vessel/009_VesselTenderWorkflow.swift; sourceTree = SOURCE_ROOT; };
 		FE410000000000000000112F /* 112_DriverClosed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 112_DriverClosed.swift; path = EusoTrip/Views/Driver/112_DriverClosed.swift; sourceTree = SOURCE_ROOT; };
 		FE410000000000000000161F /* 161_DriverGatePass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 161_DriverGatePass.swift; path = EusoTrip/Views/Driver/161_DriverGatePass.swift; sourceTree = SOURCE_ROOT; };
+		FE410000000000000000162F /* 162_DriverWellnessFatigue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 162_DriverWellnessFatigue.swift; path = EusoTrip/Views/Driver/162_DriverWellnessFatigue.swift; sourceTree = SOURCE_ROOT; };
 		FE410000000000000000297F /* 297_ShipperCargoInsurance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 297_ShipperCargoInsurance.swift; path = EusoTrip/Views/Shipper/297_ShipperCargoInsurance.swift; sourceTree = SOURCE_ROOT; };
 		FE410000000000000000298F /* 298_ShipperDetentionExposure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 298_ShipperDetentionExposure.swift; path = EusoTrip/Views/Shipper/298_ShipperDetentionExposure.swift; sourceTree = SOURCE_ROOT; };
 		FE410000000000000000533F /* 533_DispatcherAIDispatchAssist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 533_DispatcherAIDispatchAssist.swift; path = EusoTrip/Views/Dispatch/533_DispatcherAIDispatchAssist.swift; sourceTree = SOURCE_ROOT; };
@@ -2514,6 +2516,7 @@
 				E1D1ED0411111111111111AA /* ELDIntegrationView.swift */,
 				FE410000000000000000112F /* 112_DriverClosed.swift */,
 				FE410000000000000000161F /* 161_DriverGatePass.swift */,
+				FE410000000000000000162F /* 162_DriverWellnessFatigue.swift */,
 				FE410000000000000000297F /* 297_ShipperCargoInsurance.swift */,
 				FE410000000000000000298F /* 298_ShipperDetentionExposure.swift */,
 				FE410000000000000000533F /* 533_DispatcherAIDispatchAssist.swift */,
@@ -3225,6 +3228,7 @@
 				FE410000000000000000009B /* 009_VesselTenderWorkflow.swift in Sources */,
 				FE410000000000000000112B /* 112_DriverClosed.swift in Sources */,
 				FE410000000000000000161B /* 161_DriverGatePass.swift in Sources */,
+				FE410000000000000000162B /* 162_DriverWellnessFatigue.swift in Sources */,
 				FE410000000000000000297B /* 297_ShipperCargoInsurance.swift in Sources */,
 				FE410000000000000000298B /* 298_ShipperDetentionExposure.swift in Sources */,
 				FE410000000000000000533B /* 533_DispatcherAIDispatchAssist.swift in Sources */,
