@@ -134,6 +134,9 @@ private struct CatalystLoadDetail: View {
     @State private var driverPickerLoading: Bool = false
     @State private var availableDrivers: [CatalystAPI.FleetDriver] = []
     @State private var driverAssignError: String? = nil
+    /// RIOS §12 — set true when a load party fails a HARD sanctions gate.
+    /// Blocks the carrier's lifecycle-advance CTA until resolved.
+    @State private var gateLocked: Bool = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -153,6 +156,11 @@ private struct CatalystLoadDetail: View {
                     assignmentCard(l)
                     shipperOfRecordCard(l)
                     documentsRow(l)
+                    // RIOS §11/§12 — screen every load party before the carrier
+                    // advances/dispatches; gateLocked disables the CTA below.
+                    if let lid = Int(loadId) {
+                        ComplianceGatesStrip(loadId: lid, role: "carrier", gateLocked: $gateLocked)
+                    }
                     bottomCTAs(l)
                 } else {
                     emptyLoadState
@@ -909,16 +917,16 @@ private struct CatalystLoadDetail: View {
             Button {
                 showStatusPicker = true
             } label: {
-                Text(statusUpdating ? "Updating…" : "Update status")
+                Text(gateLocked ? "Resolve compliance gate" : (statusUpdating ? "Updating…" : "Update status"))
                     .font(.system(size: 14, weight: .heavy))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 40)
-                    .background(LinearGradient.diagonal)
+                    .background(gateLocked ? AnyShapeStyle(Color.secondary.opacity(0.5)) : AnyShapeStyle(LinearGradient.diagonal))
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
-            .disabled(statusUpdating)
+            .disabled(statusUpdating || gateLocked)
 
             Button {
                 // Route to the existing ESANG dispatch chat surface for

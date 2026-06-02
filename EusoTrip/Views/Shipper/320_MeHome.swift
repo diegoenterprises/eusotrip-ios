@@ -223,11 +223,15 @@ private struct MeHomeBody: View {
     /// Inline load-error surface. Was a `/* tolerate */` no-op that
     /// left the profile screen blank on network failure with no hint.
     @State private var loadError: String? = nil
+    // RIOS §11 — compliance Tier (0-3) badge + onboarding wizard entry.
+    @State private var riosTier: RegistrationAPI.TierStatus? = nil
+    @State private var showTierWizard = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 if let p = profile { hero(p) }
+                riosTierPill
                 if let s = stats { tierCard(s) }
                 if let err = loadError {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -428,6 +432,33 @@ private struct MeHomeBody: View {
 
     private func initials(_ s: String) -> String {
         s.split(separator: " ").prefix(2).map { String($0.prefix(1)) }.joined().uppercased()
+    }
+
+    /// RIOS §11 — compliance Tier pill. Loads registration.getTierStatus,
+    /// shows Tier 0-3 + the count of gates blocking the next tier, and taps
+    /// through to the onboarding wizard (1111) as a full-screen flow.
+    @ViewBuilder private var riosTierPill: some View {
+        Button { showTierWizard = true } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "rosette").font(.system(size: 11, weight: .heavy))
+                Text((riosTier?.resolvedTier.label ?? "Tier —").uppercased())
+                    .font(EType.micro).tracking(0.6)
+                if let n = riosTier?.blocking?.count, n > 0 {
+                    Text("· \(n) to next tier").font(EType.micro).opacity(0.8)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold)).opacity(0.5)
+            }
+            .foregroundStyle(LinearGradient.diagonal)
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().stroke(LinearGradient.diagonal, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .task { if riosTier == nil { riosTier = try? await EusoTripAPI.shared.registration.getTierStatus() } }
+        .fullScreenCover(isPresented: $showTierWizard) {
+            OnboardingWizard(theme: palette, onClose: { showTierWizard = false })
+        }
     }
 
     private func load() async {

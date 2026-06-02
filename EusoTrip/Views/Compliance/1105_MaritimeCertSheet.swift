@@ -63,6 +63,12 @@ struct MaritimeCertSheet: View {
         case cdi    = "CDI"    // Chemical Distribution Institute
         case toe    = "TOE"    // Terminal Operations Endorsement
         case imdg   = "IMDG"   // Dangerous-goods carriage endorsement
+        // IMO MASS Code — autonomous / remotely-operated vessels.
+        case massCode   = "MASS_CODE"   // overall MASS Code compliance
+        case rocCert    = "ROC_CERT"    // Remote Operations Centre cert
+        case massCyber  = "MASS_CYBER"  // cybersecurity attestation
+        case massRisk   = "MASS_RISK"   // per-vessel risk assessment
+        case massMaster = "MASS_MASTER" // remote-master oversight assignment
 
         var id: String { rawValue }
 
@@ -77,6 +83,11 @@ struct MaritimeCertSheet: View {
             case .cdi:  return "CDI · Chemical Distribution"
             case .toe:  return "TOE · Terminal Ops Endorsement"
             case .imdg: return "IMDG · Dangerous Goods"
+            case .massCode:   return "MASS Code · Autonomous-ship compliance"
+            case .rocCert:    return "ROC · Remote Operations Centre"
+            case .massCyber:  return "MASS · Cybersecurity attestation"
+            case .massRisk:   return "MASS · Vessel risk assessment"
+            case .massMaster: return "MASS · Remote-master oversight"
             }
         }
 

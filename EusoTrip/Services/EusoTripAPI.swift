@@ -8850,6 +8850,22 @@ extension RegistrationAPI {
         try await api.mutation("registration.requestTier3", input: Tier3Input(reason: reason, companyId: companyId, notes: notes))
     }
 
+    /// RIOS §2/§11 — read-only Tier status (current tier + blocking gates).
+    /// Powers the Me Tier badge + "what's blocking next tier" surface.
+    struct TierStatus: Decodable, Hashable {
+        let tier: Int?
+        let userTier: Int?
+        let kybTier: Int?
+        let gates: [RiosComplianceGate]?
+        let blocking: [String]?
+        let nextTierReady: Bool?
+        var resolvedTier: RiosTier { RiosTier(rawValue: tier ?? 0) ?? .tier0 }
+    }
+    private struct TierStatusInput: Encodable { let companyId: Int? }
+    func getTierStatus(companyId: Int? = nil) async throws -> TierStatus {
+        try await api.query("registration.getTierStatus", input: TierStatusInput(companyId: companyId))
+    }
+
     private struct OperatingAuthorityInput: Encodable { let companyId: Int; let mode: String; let country: String; let authorityType: String; let authorityNumber: String? }
     func attachOperatingAuthority(companyId: Int, mode: String, country: String, authorityType: String, authorityNumber: String? = nil) async throws -> AttachResult {
         try await api.mutation("registration.attachOperatingAuthority", input: OperatingAuthorityInput(companyId: companyId, mode: mode, country: country, authorityType: authorityType, authorityNumber: authorityNumber))
