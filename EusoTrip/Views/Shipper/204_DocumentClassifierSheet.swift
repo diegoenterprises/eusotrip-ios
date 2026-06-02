@@ -198,8 +198,8 @@ struct DocumentClassifierSheet: View {
         .padding(.horizontal, 10)
         .foregroundStyle(filled ? .white : palette.textPrimary)
         .background(filled ? AnyView(LinearGradient.diagonal) : AnyView(palette.bgCardSoft))
-        .overlay(filled ? AnyView(EmptyView()) : AnyView(Capsule().strokeBorder(palette.borderSoft)))
-        .clipShape(Capsule())
+        .overlay(filled ? AnyView(EmptyView()) : AnyView(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft)))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
     // MARK: — Progress + results
@@ -232,7 +232,7 @@ struct DocumentClassifierSheet: View {
                     .frame(maxWidth: .infinity).padding(.vertical, 13)
                     .foregroundStyle(.white)
                     .background(LinearGradient.diagonal)
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .padding(.top, 6)

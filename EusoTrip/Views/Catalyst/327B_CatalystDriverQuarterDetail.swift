@@ -764,7 +764,7 @@ private struct CatalystDriverQuarterDetailBody: View {
             .frame(maxWidth: .infinity)
             .frame(height: 48)
             .background(LinearGradient.primary)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .opacity(actionInFlight ? 0.6 : 1.0)
         }
         .buttonStyle(.plain)

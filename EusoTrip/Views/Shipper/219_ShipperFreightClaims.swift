@@ -545,7 +545,7 @@ struct ShipperFreightClaims: View {
             .frame(maxWidth: .infinity)
             .frame(height: 48)
             .background(LinearGradient.primary)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("File a claim")

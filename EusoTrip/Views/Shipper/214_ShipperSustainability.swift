@@ -701,7 +701,7 @@ struct ShipperSustainability: View {
                         .foregroundStyle(.white)
                 }
                 .frame(maxWidth: .infinity, minHeight: 48)
-                .background(Capsule().fill(LinearGradient.primary))
+                .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
             }
             .buttonStyle(.plain)
             .accessibilityLabel(buyOffsetsLabel)
@@ -711,8 +711,8 @@ struct ShipperSustainability: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 48)
-                    .background(Capsule().fill(palette.bgCard))
-                    .overlay(Capsule().strokeBorder(palette.borderSoft))
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Export report")

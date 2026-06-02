@@ -400,7 +400,7 @@ private struct VesselLiveTrackingBody: View {
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity, minHeight: 48)
             .background(LinearGradient.primary)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
     }

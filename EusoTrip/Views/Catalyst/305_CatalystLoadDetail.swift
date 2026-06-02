@@ -923,7 +923,7 @@ private struct CatalystLoadDetail: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 40)
                     .background(gateLocked ? AnyShapeStyle(Color.secondary.opacity(0.5)) : AnyShapeStyle(LinearGradient.diagonal))
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(statusUpdating || gateLocked)
@@ -944,9 +944,9 @@ private struct CatalystLoadDetail: View {
                     .frame(width: 148, height: 40)
                     .background(palette.bgCard)
                     .overlay(
-                        Capsule().strokeBorder(palette.borderFaint, lineWidth: 1)
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1)
                     )
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

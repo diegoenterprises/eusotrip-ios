@@ -553,8 +553,8 @@ private struct ShipperBOLGeneratePicker: View {
                 .padding(.vertical, 13)
                 .foregroundStyle(palette.textPrimary)
                 .background(palette.bgCard)
-                .overlay(Capsule().strokeBorder(LinearGradient.diagonal, lineWidth: 1))
-                .clipShape(Capsule())
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(LinearGradient.diagonal, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 14)

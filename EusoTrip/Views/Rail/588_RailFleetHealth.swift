@@ -456,9 +456,9 @@ private struct RailFleetHealthBody: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
                 .background(
-                    Capsule()
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                         .fill(palette.bgCard)
-                        .overlay(Capsule().stroke(Color.black.opacity(0.10), lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).stroke(Color.black.opacity(0.10), lineWidth: 1))
                 )
         }
     }

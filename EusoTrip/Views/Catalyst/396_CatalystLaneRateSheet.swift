@@ -434,7 +434,7 @@ private struct LaneRateSheetBody_396: View {
             } label: {
                 Text("Recalculate rates").font(EType.bodyStrong).foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 40)
-                    .background(Capsule().fill(LinearGradient.primary))
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Recalculate all lane rates")
@@ -449,8 +449,8 @@ private struct LaneRateSheetBody_396: View {
                 Text("Edit sheet").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
                     .frame(maxWidth: .infinity, minHeight: 40)
                     .background(palette.bgCard)
-                    .overlay(Capsule().strokeBorder(palette.borderSoft))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Edit rate sheet")

@@ -966,9 +966,9 @@ private struct DriverCredentialScanSheet: View {
         .foregroundStyle(filled ? AnyShapeStyle(.white) : AnyShapeStyle(palette.textPrimary))
         .background(filled ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCard))
         .overlay(
-            Capsule().strokeBorder(filled ? Color.clear : palette.borderSoft, lineWidth: 1)
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(filled ? Color.clear : palette.borderSoft, lineWidth: 1)
         )
-        .clipShape(Capsule())
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
     private var progressBlock: some View {

@@ -341,7 +341,7 @@ struct MeAgreements: View {
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, Space.s2)
-                    .background(Capsule().fill(LinearGradient.diagonal))
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.diagonal))
                 }
                 .buttonStyle(.plain)
                 .disabled(store.signingId == a.id)

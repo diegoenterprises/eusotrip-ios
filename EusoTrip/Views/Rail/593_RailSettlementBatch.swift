@@ -523,7 +523,7 @@ private struct RailSettlementBatchBody: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 48)
                     .background(LinearGradient.primary)
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(creating || createdBatch != nil || railShipmentIds.isEmpty)
@@ -537,7 +537,7 @@ private struct RailSettlementBatchBody: View {
                         .foregroundStyle(palette.textPrimary)
                         .frame(width: 124, height: 48)
                         .background(palette.bgCardSoft)
-                        .clipShape(Capsule())
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }

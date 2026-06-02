@@ -656,8 +656,8 @@ struct ShipperSettlements: View {
             .frame(maxWidth: .infinity, minHeight: 48)
         }
         .buttonStyle(.plain)
-        .background(Capsule().fill(LinearGradient.primary))
-        .clipShape(Capsule())
+        .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         .accessibilityLabel("Approve \(approvableCount) payables totaling \(currency(approvableSum))")
     }
 

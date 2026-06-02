@@ -578,7 +578,7 @@ private struct VesselFleetHealthBody: View {
                     }
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(LinearGradient.primary)
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(scheduling || asset == nil)
@@ -590,8 +590,8 @@ private struct VesselFleetHealthBody: View {
                         .foregroundStyle(palette.textPrimary)
                         .frame(maxWidth: .infinity, minHeight: 48)
                         .background(palette.bgCard)
-                        .overlay(Capsule().strokeBorder(palette.borderFaint))
-                        .clipShape(Capsule())
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }

@@ -497,7 +497,7 @@ private struct RailDrayageOrdersBody: View {
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 48)
                 .background(LinearGradient.primary)
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
 
@@ -509,8 +509,8 @@ private struct RailDrayageOrdersBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 48)
                     .background(Color(hex: 0x232932))
-                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

@@ -380,8 +380,8 @@ private struct RailSettlementSummaryBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 48)
                     .background(palette.bgCard)
-                    .overlay(Capsule().strokeBorder(palette.borderFaint))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

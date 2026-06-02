@@ -1369,7 +1369,7 @@ private struct CatalystInviteDriverSheet: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 44)
                     .background(LinearGradient.diagonal)
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .padding(.horizontal, 20)
             }

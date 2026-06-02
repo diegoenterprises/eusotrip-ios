@@ -217,7 +217,7 @@ private struct CatalystDriverScorecard: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 44)
                         .background(LinearGradient.diagonal)
-                        .clipShape(Capsule())
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                         .padding(.horizontal, 20)
                     }
 
@@ -245,13 +245,13 @@ private struct CatalystDriverScorecard: View {
                         .frame(height: 44)
                         .background(palette.bgCard)
                         .overlay(
-                            Capsule().strokeBorder(
+                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(
                                 LinearGradient(colors: [Brand.blue.opacity(0.5), Brand.magenta.opacity(0.5)],
                                                startPoint: .leading, endPoint: .trailing),
                                 lineWidth: 1
                             )
                         )
-                        .clipShape(Capsule())
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                         .padding(.horizontal, 20)
                     }
                     .buttonStyle(.plain)

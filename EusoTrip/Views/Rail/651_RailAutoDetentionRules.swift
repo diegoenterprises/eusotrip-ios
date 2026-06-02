@@ -455,7 +455,7 @@ private struct RailAutoDetentionRulesBody: View {
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(LinearGradient.primary)
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
 
@@ -465,8 +465,8 @@ private struct RailAutoDetentionRulesBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 48)
                     .background(palette.bgSecondary)
-                    .overlay(Capsule().strokeBorder(palette.borderSoft))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

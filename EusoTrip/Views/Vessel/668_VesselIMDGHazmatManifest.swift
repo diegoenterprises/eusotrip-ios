@@ -446,7 +446,7 @@ private struct VesselIMDGHazmatManifestBody: View {
                 isManifested
                     ? AnyShapeStyle(Brand.success)
                     : AnyShapeStyle(LinearGradient.primary))
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .opacity(marking ? 0.6 : 1.0)
             .disabled(marking || isManifested)
 
@@ -459,8 +459,8 @@ private struct VesselIMDGHazmatManifestBody: View {
                     .frame(width: 124, height: 48)
             }
             .background(palette.bgCardSoft)
-            .overlay(Capsule().strokeBorder(palette.borderFaint))
-            .clipShape(Capsule())
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
     }
 

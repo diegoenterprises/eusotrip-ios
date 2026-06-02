@@ -451,7 +451,7 @@ private struct DispatcherKanbanBody: View {
                     }
                     .frame(maxWidth: .infinity, minHeight: 36)
                     .background(LinearGradient.primary)
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(shifting != nil || lane.nextStatus == nil)
@@ -462,8 +462,8 @@ private struct DispatcherKanbanBody: View {
                         .font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textPrimary)
                         .frame(width: 110, height: 36)
                         .background(palette.bgCard)
-                        .clipShape(Capsule())
-                        .overlay(Capsule().strokeBorder(palette.borderSoft))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
                 }
                 .buttonStyle(.plain)
             }

@@ -459,7 +459,7 @@ private struct TfaEnrollSheet: View {
                 .frame(maxWidth: .infinity).padding(.vertical, 12)
                 .foregroundStyle(.white)
                 .background(LinearGradient.diagonal)
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(verifying || verifyCode.count != 6)

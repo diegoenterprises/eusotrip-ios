@@ -692,7 +692,7 @@ private struct AgreementWizardBody: View {
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity).padding(.vertical, 12)
                     .background(LinearGradient.diagonal)
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }
@@ -739,7 +739,7 @@ private struct AgreementWizardBody: View {
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity).padding(.vertical, 12)
                     .background(LinearGradient.diagonal)
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }
@@ -977,8 +977,8 @@ private struct AgreementWizardBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(maxWidth: .infinity).padding(.vertical, 12)
                     .background(palette.bgCard)
-                    .overlay(Capsule().strokeBorder(palette.borderFaint))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }
@@ -991,7 +991,7 @@ private struct AgreementWizardBody: View {
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity).padding(.vertical, 12)
                     .background(LinearGradient.diagonal)
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(nextDisabled)

@@ -202,7 +202,7 @@ struct DispatchMeScreen: View {
             .padding(.vertical, 12)
             .foregroundStyle(.white)
             .background(LinearGradient.diagonal)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .padding(.top, Space.s3)

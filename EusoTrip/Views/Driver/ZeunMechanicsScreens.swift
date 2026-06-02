@@ -1611,7 +1611,7 @@ struct ZeunPartDiagnosisScreen: View {
             .padding(.vertical, 11)
             .foregroundStyle(.white)
             .background(LinearGradient.diagonal)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(store.isDiagnosing)

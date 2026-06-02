@@ -395,7 +395,7 @@ struct TerminalYardMap: View {
                     .padding(.horizontal, 10).padding(.vertical, 5)
                     .frame(maxWidth: .infinity)
                     .background(LinearGradient.diagonal.opacity(inFlight ? 0.55 : 1.0))
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(inFlight)

@@ -702,7 +702,7 @@ struct ShipperWeeklyAllocations: View {
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 48)
-                .background(Capsule().fill(LinearGradient.primary))
+                .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Allocate new lane")

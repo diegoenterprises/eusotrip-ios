@@ -186,8 +186,8 @@ struct VINScannerSheet: View {
                         .frame(maxWidth: .infinity).padding(.vertical, 11)
                         .foregroundStyle(palette.textPrimary)
                         .background(palette.bgCardSoft)
-                        .overlay(Capsule().strokeBorder(palette.borderSoft))
-                        .clipShape(Capsule())
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
 
@@ -204,7 +204,7 @@ struct VINScannerSheet: View {
                     .frame(maxWidth: .infinity).padding(.vertical, 11)
                     .foregroundStyle(.white)
                     .background(LinearGradient.diagonal)
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }

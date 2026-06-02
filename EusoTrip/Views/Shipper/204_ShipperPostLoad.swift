@@ -1266,7 +1266,7 @@ struct ShipperPostLoad: View {
                 .padding(.vertical, 12)
                 .foregroundStyle(.white)
                 .background(LinearGradient.diagonal)
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(savingTemplate || templateNameDraft.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -4779,7 +4779,7 @@ struct ShipperPostLoad: View {
             .foregroundStyle(LinearGradient.diagonal)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
-            .overlay(Capsule().strokeBorder(LinearGradient.diagonal.opacity(0.55), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(LinearGradient.diagonal.opacity(0.55), lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
@@ -5213,11 +5213,11 @@ struct ShipperPostLoad: View {
             }
             .frame(maxWidth: .infinity, minHeight: 50)
             .background(
-                Capsule().fill(canAdvance
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(canAdvance
                                ? AnyShapeStyle(LinearGradient.primary)
                                : AnyShapeStyle(palette.tintNeutral.opacity(0.4)))
             )
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(!canAdvance)
@@ -5961,7 +5961,7 @@ private struct PostLoadDraftsEntryBody: View {
                 }
                 .frame(maxWidth: .infinity, minHeight: 52)
                 .foregroundStyle(.white)
-                .background(LinearGradient.diagonal, in: Capsule())
+                .background(LinearGradient.diagonal, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .padding(.horizontal, Space.s4)
@@ -6018,7 +6018,7 @@ private struct PostLoadDraftsEntryBody: View {
                 }
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .foregroundStyle(.white)
-                .background(LinearGradient.diagonal, in: Capsule())
+                .background(LinearGradient.diagonal, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

@@ -929,7 +929,7 @@ struct ShipperAgreements: View {
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 48)
-                .background(Capsule().fill(LinearGradient.primary))
+                .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Create a new agreement")
@@ -1396,7 +1396,7 @@ struct ShipperAgreementDetailSheet: View {
                         .frame(maxWidth: .infinity).padding(.vertical, 11)
                         .foregroundStyle(.white)
                         .background(LinearGradient.diagonal)
-                        .clipShape(Capsule())
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .disabled(respondingAmendmentId != nil)
@@ -1414,8 +1414,8 @@ struct ShipperAgreementDetailSheet: View {
                             .frame(maxWidth: .infinity).padding(.vertical, 11)
                             .foregroundStyle(palette.textPrimary)
                             .background(palette.bgCardSoft)
-                            .overlay(Capsule().strokeBorder(palette.borderFaint))
-                            .clipShape(Capsule())
+                            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .disabled(respondingAmendmentId != nil)
@@ -1476,9 +1476,9 @@ struct ShipperAgreementDetailSheet: View {
             .foregroundStyle(variant == .filled ? .white : palette.textPrimary)
             .background(variant == .filled ? AnyView(LinearGradient.diagonal) : AnyView(palette.bgCardSoft))
             .overlay(variant == .outline
-                     ? AnyView(Capsule().strokeBorder(palette.borderFaint))
+                     ? AnyView(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
                      : AnyView(EmptyView()))
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(disabled)
@@ -1550,7 +1550,7 @@ struct ShipperAgreementDetailSheet: View {
                         .font(.system(size: 14, weight: .heavy))
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 13)
-                .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(Capsule())
+                .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(signing || signerName.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -1590,7 +1590,7 @@ struct ShipperAgreementDetailSheet: View {
             .padding(.horizontal, 14)
             .foregroundStyle(.white)
             .background(LinearGradient.diagonal)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .sheet(isPresented: $presentingPDFViewer) {

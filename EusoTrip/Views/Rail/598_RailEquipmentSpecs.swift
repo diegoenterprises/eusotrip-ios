@@ -497,7 +497,7 @@ private struct RailEquipmentSpecsBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 48)
                     .background(Color(hex: 0x232932))
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

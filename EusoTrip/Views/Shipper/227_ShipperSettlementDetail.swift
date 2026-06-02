@@ -820,7 +820,7 @@ struct ShipperSettlementDetail: View {
                             .minimumScaleFactor(0.78)
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 13)
-                    .foregroundStyle(.white).background(LinearGradient.primary).clipShape(Capsule())
+                    .foregroundStyle(.white).background(LinearGradient.primary).clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(store.working)
@@ -845,8 +845,8 @@ struct ShipperSettlementDetail: View {
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 11)
                     .foregroundStyle(Brand.danger).background(palette.bgCard)
-                    .overlay(Capsule().strokeBorder(Brand.danger.opacity(0.6)))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Brand.danger.opacity(0.6)))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }.buttonStyle(.plain)
             }
             // Phase 18 closure: shipper rates the driver after the
@@ -866,8 +866,8 @@ struct ShipperSettlementDetail: View {
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 11)
                     .background(palette.bgCard)
-                    .overlay(Capsule().strokeBorder(LinearGradient.diagonal.opacity(0.5)))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(LinearGradient.diagonal.opacity(0.5)))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }.buttonStyle(.plain)
             }
             if let e = store.lastError {
@@ -930,7 +930,7 @@ struct ShipperSettlementDetail: View {
                         Text("Submit dispute").font(.system(size: 14, weight: .heavy))
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 13)
-                    .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(Capsule())
+                    .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(disputeReason.trimmingCharacters(in: .whitespaces).count < 5)

@@ -326,8 +326,8 @@ private struct VesselCarrierTenderWorkflowBody: View {
             }
             .buttonStyle(.plain)
             .background(palette.bgCard)
-            .overlay(Capsule().strokeBorder(Brand.danger.opacity(0.5), lineWidth: 1))
-            .clipShape(Capsule())
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Brand.danger.opacity(0.5), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .opacity(declining ? 0.6 : 1.0)
             .disabled(declining || submitting)
 
@@ -339,7 +339,7 @@ private struct VesselCarrierTenderWorkflowBody: View {
             }
             .buttonStyle(.plain)
             .background(LinearGradient.primary)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .opacity(submitting ? 0.6 : 1.0)
             .disabled(submitting || declining)
         }

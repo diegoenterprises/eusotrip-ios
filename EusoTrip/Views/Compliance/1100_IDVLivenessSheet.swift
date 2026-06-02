@@ -228,7 +228,7 @@ struct IDVLivenessSheet: View {
                     .padding(.vertical, 10)
                     .foregroundStyle(.white)
                     .background(LinearGradient.diagonal)
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(encodingSelfie || running)
