@@ -124,7 +124,6 @@ private struct VesselDetentionLettersBody: View {
                 Text("3 TIERS").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold)).foregroundStyle(palette.textPrimary)
                 Text("Notice letters").font(.system(size: 28, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Spacer()
                 Image(systemName: "ellipsis").font(.system(size: 15, weight: .bold)).foregroundStyle(palette.textPrimary)

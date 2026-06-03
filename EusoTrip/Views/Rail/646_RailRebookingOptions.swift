@@ -164,9 +164,6 @@ private struct RailRebookingOptionsBody: View {
     private var titleBlock: some View {
         HStack(alignment: .top) {
             HStack(spacing: 10) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Rebooking options")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)

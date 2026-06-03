@@ -147,9 +147,6 @@ private struct RailMoveSchedulerBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .center, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Move scheduler")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)

@@ -173,10 +173,6 @@ private struct RailBorderCrossingETABody: View {
                     .font(EType.mono(.micro)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
             }
-            Image(systemName: "chevron.left")
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(palette.textPrimary)
-                .padding(.top, Space.s3)
             HStack(alignment: .top) {
                 Text("Border crossing ETA")
                     .font(.system(size: 28, weight: .bold))

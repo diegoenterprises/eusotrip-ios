@@ -151,10 +151,6 @@ private struct RailETAPredictionBody: View {
 
     private var titleBlock: some View {
         HStack(alignment: .top, spacing: Space.s3) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(palette.textPrimary)
-                .padding(.top, 6)
             Text("ETA prediction")
                 .font(.system(size: 28, weight: .bold))
                 .tracking(-0.4)

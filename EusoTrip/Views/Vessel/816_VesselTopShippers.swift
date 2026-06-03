@@ -139,7 +139,6 @@ private struct VesselTopShippersBody: View {
                 Text("90D · BY VOLUME").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold)).foregroundStyle(palette.textPrimary)
                 Text("Top Shippers").font(.system(size: 28, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Spacer()
                 Image(systemName: "ellipsis").font(.system(size: 15, weight: .bold)).foregroundStyle(palette.textPrimary)

@@ -167,9 +167,6 @@ private struct RailForwarderPortalBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Forwarder portal")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)

@@ -260,9 +260,6 @@ private struct RailWaybill: View {
                     .foregroundStyle(issued ? Brand.success : Brand.warning)
             }
             HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Waybill")
                     .font(.system(size: 28, weight: .bold)).kerning(-0.4)
                     .foregroundStyle(palette.textPrimary)

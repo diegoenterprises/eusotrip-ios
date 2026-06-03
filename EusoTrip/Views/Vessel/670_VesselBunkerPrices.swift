@@ -139,7 +139,6 @@ private struct VesselBunkerPricesBody: View {
                 Text(unitLabel).font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold)).foregroundStyle(palette.textPrimary)
                 Text("Bunker prices").font(.system(size: 28, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Spacer()
                 StatusPill(text: "FUEL · INDEX", kind: .info)

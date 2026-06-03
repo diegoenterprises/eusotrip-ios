@@ -127,7 +127,6 @@ private struct VesselClaimsAnalyticsBody: View {
                 Text("2026 YTD · OCEAN").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textSecondary)
             }
             HStack(spacing: 6) {
-                Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textPrimary)
                 Text("Claims").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textSecondary)
             }
         }

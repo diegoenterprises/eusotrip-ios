@@ -157,9 +157,6 @@ private struct VesselSailingScheduleBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .center, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Sailing schedule")
                         .font(.system(size: 28, weight: .bold)).tracking(-0.4)

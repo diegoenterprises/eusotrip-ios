@@ -193,9 +193,6 @@ private struct VesselMarineCasualtyBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .center, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Marine casualty")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)

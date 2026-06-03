@@ -123,9 +123,6 @@ private struct RailCrossBorderCrewCertsBody: View {
                 Circle().fill(Color(hex: 0x1C2128))
                     .overlay(Circle().strokeBorder(palette.borderFaint))
                     .frame(width: 40, height: 40)
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text("Crew cert matrix")

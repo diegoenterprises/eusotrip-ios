@@ -167,9 +167,6 @@ struct RailCrossBorderCustoms_006: View {
                     .foregroundStyle(statusColor)
             }
             HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Border clearance")
                     .font(.system(size: 28, weight: .bold)).kerning(-0.4)
                     .foregroundStyle(palette.textPrimary)

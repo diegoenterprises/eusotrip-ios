@@ -148,7 +148,6 @@ private struct RailFreeTimeBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.primary)
                 Text("RAIL ENGINEER · FREE TIME")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)

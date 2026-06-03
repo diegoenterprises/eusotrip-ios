@@ -127,7 +127,6 @@ private struct VesselCustomsStatusUpdateBody: View {
                 Text("CBP ACE · 19 CFR").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textTertiary)
             }
             HStack(spacing: 6) {
-                Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textPrimary)
                 Text("Shipments").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textSecondary)
             }
         }

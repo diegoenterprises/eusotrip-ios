@@ -124,10 +124,6 @@ private struct RailCrossBorderDGRegsBody: View {
             // Back chevron + title block, with right-aligned carrier meta.
             HStack(alignment: .top, spacing: Space.s3) {
                 HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(palette.textPrimary)
-                        .padding(.top, 6)
                     Text("DG regulations")
                         .font(.system(size: 28, weight: .bold))
                         .tracking(-0.4)

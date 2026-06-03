@@ -163,10 +163,6 @@ private struct RailAppointmentComplianceBody: View {
     private var titleBlock: some View {
         HStack(alignment: .top, spacing: Space.s3) {
             // Back chevron polyline.
-            Image(systemName: "chevron.left")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(palette.textPrimary)
-                .padding(.top, 6)
 
             Text("Appt compliance")
                 .font(.system(size: 28, weight: .bold)).tracking(-0.4)

@@ -173,9 +173,6 @@ private struct VesselIntermodalSegmentBoardBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
                 Spacer()
             }
             HStack(spacing: 5) {

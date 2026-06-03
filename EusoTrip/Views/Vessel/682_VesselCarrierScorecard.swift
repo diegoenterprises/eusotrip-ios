@@ -164,9 +164,6 @@ private struct VesselCarrierScorecardBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Scorecard")
                     .font(.system(size: 28, weight: .bold))
                     .foregroundStyle(palette.textPrimary)

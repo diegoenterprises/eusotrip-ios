@@ -155,9 +155,6 @@ private struct VesselCBPEntryDetailBody: View {
         VStack(alignment: .leading, spacing: 6) {
             // Eyebrow row: sparkle eyebrow + mono caption ("19 CFR · ACE").
             HStack(spacing: 6) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("✦ VESSEL OPERATOR · CBP ENTRY")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)

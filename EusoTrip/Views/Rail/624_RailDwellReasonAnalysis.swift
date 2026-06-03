@@ -151,10 +151,6 @@ private struct RailDwellReasonAnalysisBody: View {
             }
             // Back chevron + title (28/-0.4) + carrier caption on the right.
             HStack(alignment: .top, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .padding(.top, 6)
                 Text("Dwell reasons")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)

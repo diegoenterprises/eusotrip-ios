@@ -124,7 +124,6 @@ private struct VesselDisputeResolutionBody: View {
                 Text("NEGOTIATING · R2/4").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(Brand.warning)
             }
             HStack(spacing: 6) {
-                Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textPrimary)
                 Text("Disputes").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textSecondary)
             }
         }

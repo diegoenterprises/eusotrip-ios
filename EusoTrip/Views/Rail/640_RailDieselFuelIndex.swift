@@ -155,9 +155,6 @@ private struct RailDieselFuelIndexBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(spacing: 8) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Pricing")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)

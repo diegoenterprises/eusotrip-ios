@@ -198,9 +198,6 @@ private struct RailSettlementBatchBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .center, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Settlement batch")
                     .font(.system(size: 28, weight: .bold))
                     .tracking(-0.4)

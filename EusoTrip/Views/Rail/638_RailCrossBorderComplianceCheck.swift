@@ -201,9 +201,6 @@ private struct RailCrossBorderComplianceCheckBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(spacing: 8) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Compliance check")
                     .font(.system(size: 28, weight: .bold))
                     .kerning(-0.4)

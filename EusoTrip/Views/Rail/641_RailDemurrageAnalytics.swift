@@ -175,9 +175,6 @@ private struct RailDemurrageAnalyticsBody: View {
 
     private var headline: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(palette.textPrimary)
             Text("Demurrage analytics")
                 .font(.system(size: 28, weight: .bold)).kerning(-0.4)
                 .foregroundStyle(palette.textPrimary)

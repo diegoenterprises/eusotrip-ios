@@ -146,8 +146,6 @@ private struct RailBorderClearanceBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Image(systemName: "flag.2.crossed")
                     .font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("RAIL ENGINEER · BORDER CLEARANCE")

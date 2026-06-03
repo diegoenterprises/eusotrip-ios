@@ -195,10 +195,6 @@ private struct RailDetentionByCustomerBody: View {
 
     private var titleRow: some View {
         HStack(alignment: .top, spacing: Space.s2) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(palette.textPrimary)
-                .padding(.top, 6)
             Text("Detention by customer")
                 .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)

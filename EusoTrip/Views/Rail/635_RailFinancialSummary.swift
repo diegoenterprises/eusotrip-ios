@@ -149,9 +149,6 @@ private struct RailFinancialSummaryBody: View {
             }
             // Back-chevron + title + carrier/sync caption
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Financial summary")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)

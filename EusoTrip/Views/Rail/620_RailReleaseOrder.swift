@@ -243,10 +243,6 @@ private struct RailReleaseOrderBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .top) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .padding(.top, 10)
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Release order")
                         .font(.system(size: 28, weight: .bold)).tracking(-0.4)

@@ -131,10 +131,6 @@ private struct RailClaimsListBody: View {
 
     private var titleRow: some View {
         HStack(alignment: .top, spacing: Space.s2) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(palette.textPrimary)
-                .padding(.top, 6)
             Text("Claims list")
                 .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)

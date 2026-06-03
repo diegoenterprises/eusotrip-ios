@@ -209,9 +209,6 @@ private struct RailYardMapBody: View {
             }
             // Title row: back chevron · "Yard map" · three-dot menu.
             HStack(alignment: .center, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Yard map")
                     .font(.system(size: 28, weight: .bold))
                     .tracking(-0.4)

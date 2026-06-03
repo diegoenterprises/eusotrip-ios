@@ -127,7 +127,6 @@ private struct RailShipmentDetailCarrierBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Image(systemName: "tram.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("RAIL ENGINEER · SHIPMENT DETAIL")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)

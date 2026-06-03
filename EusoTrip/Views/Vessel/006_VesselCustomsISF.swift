@@ -171,7 +171,6 @@ private struct VesselCustomsISFBody006: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Image(systemName: "chevron.left").font(.system(size: 16, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Text("\u{2726} VESSEL SHIPPER · CUSTOMS · ISF 10+2")
                     .font(.system(size: 9, weight: .heavy)).kerning(1.0).foregroundStyle(LinearGradient.primary)
                 Spacer()

@@ -156,7 +156,6 @@ private struct VesselDwellAnalysisBody: View {
                 Text("30-DAY ROOT CAUSE").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold)).foregroundStyle(palette.textPrimary)
                 Text("Dwell reasons").font(.system(size: 28, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Spacer()
                 VStack(alignment: .trailing, spacing: 1) {

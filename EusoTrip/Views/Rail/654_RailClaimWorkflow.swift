@@ -194,10 +194,6 @@ private struct RailClaimWorkflowBody: View {
 
     private var backChevronAndTitle: some View {
         HStack(alignment: .top, spacing: Space.s3) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(palette.textPrimary)
-                .padding(.top, 8)
             Text("Claim workflow")
                 .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)

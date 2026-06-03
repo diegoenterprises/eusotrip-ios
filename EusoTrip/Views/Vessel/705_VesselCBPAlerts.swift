@@ -155,10 +155,6 @@ private struct VesselCBPAlertsBody: View {
 
             // Back-chevron + title block + US IMPORT / Eusorone right-rail.
             HStack(alignment: .top, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .padding(.top, 6)
 
                 Text("CBP Alerts")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)

@@ -181,9 +181,6 @@ private struct VesselContainerLeaseBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Per-diem ledger")
                     .font(EType.display)
                     .foregroundStyle(palette.textPrimary)

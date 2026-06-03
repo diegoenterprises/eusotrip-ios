@@ -273,10 +273,6 @@ private struct RailRailcarInventoryBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .top, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .padding(.top, 8)
                 Text("Railcar inventory")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)

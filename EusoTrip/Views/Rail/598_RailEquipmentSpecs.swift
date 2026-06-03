@@ -203,9 +203,6 @@ private struct RailEquipmentSpecsBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Equipment")
                     .font(.system(size: 28, weight: .bold)).kerning(-0.4)
                     .foregroundStyle(palette.textPrimary)

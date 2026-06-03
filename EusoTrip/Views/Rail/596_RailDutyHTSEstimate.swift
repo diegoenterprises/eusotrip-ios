@@ -211,9 +211,6 @@ private struct RailDutyHTSEstimateBody: View {
 
     private var titleRow: some View {
         HStack(alignment: .center, spacing: Space.s3) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(palette.textPrimary)
             Text("Duty estimate")
                 .font(.system(size: 28, weight: .bold))
                 .tracking(-0.4)

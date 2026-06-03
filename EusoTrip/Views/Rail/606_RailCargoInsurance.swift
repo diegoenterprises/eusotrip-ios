@@ -253,7 +253,6 @@ struct RailCargoInsurance_606: View {
                 Text("INS · BNSF").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundColor(ink.faint)
             }
             HStack(spacing: 10) {
-                Image(systemName: "chevron.left").font(.system(size: 17, weight: .bold))
                 Text("Cargo cover").font(.system(size: 28, weight: .bold)).kerning(-0.4)
                 Spacer()
             }

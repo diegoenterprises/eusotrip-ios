@@ -277,7 +277,6 @@ private struct VesselPortCallsBody: View {
                 Text(vm.loop).font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textTertiary)
             }
             HStack(spacing: 10) {
-                Image(systemName: "chevron.left").font(.system(size: 17, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Text("Port calls").font(.system(size: 28, weight: .bold)).kerning(-0.4).foregroundStyle(palette.textPrimary)
             }
         }

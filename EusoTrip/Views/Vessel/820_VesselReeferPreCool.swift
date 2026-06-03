@@ -156,7 +156,6 @@ private struct VesselReeferPreCoolBody820: View {
 
     private var titleRow: some View {
         HStack(alignment: .center) {
-            Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold)).foregroundStyle(palette.textPrimary)
             Text("Pre-cool verify").font(.system(size: 28, weight: .bold)).tracking(-0.4).foregroundStyle(palette.textPrimary)
             Spacer()
             Text("synced live").font(EType.mono(.caption)).foregroundStyle(palette.textSecondary)

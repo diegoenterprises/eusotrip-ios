@@ -252,9 +252,6 @@ private struct RailDocumentIngestBody: View {
                 Circle()
                     .fill(palette.bgCard)
                     .overlay(Circle().stroke(Color.black.opacity(0.10), lineWidth: 1))
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(palette.textPrimary)
             }
             .frame(width: 40, height: 40)
 

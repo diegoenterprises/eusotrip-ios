@@ -206,9 +206,6 @@ private struct RailFreightBillAuditBody: View {
 
     private var backRow: some View {
         HStack(spacing: Space.s2) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(palette.textPrimary)
             Text("Freight bills")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(palette.textPrimary)

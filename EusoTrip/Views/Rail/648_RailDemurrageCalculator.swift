@@ -153,9 +153,6 @@ private struct RailDemurrageCalculatorBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("✦  RAIL ENGINEER · DEMURRAGE")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)

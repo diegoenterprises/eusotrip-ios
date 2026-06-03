@@ -342,9 +342,6 @@ private struct RailDockScheduleBody: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 HStack(spacing: 10) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(palette.textPrimary)
                     Text("Dock schedule")
                         .font(.system(size: 28, weight: .bold))
                         .kerning(-0.4)

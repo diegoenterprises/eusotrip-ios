@@ -137,10 +137,6 @@ private struct RailCrewAvailabilityBody: View {
             }
             // Back chevron + title block, sync metadata trailing.
             HStack(alignment: .top, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .padding(.top, 6)
                 Text("Crew availability")
                     .font(.system(size: 28, weight: .bold))
                     .tracking(-0.4)

@@ -165,9 +165,6 @@ private struct VesselLiveTrackingBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("✦ VESSEL SHIPPER · LIVE TRACKING")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)

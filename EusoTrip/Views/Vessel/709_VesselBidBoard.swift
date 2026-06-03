@@ -154,7 +154,6 @@ private struct VesselBidBoardBody: View {
                     .foregroundColor(.secondary).monospaced()
             }
             HStack(spacing: 10) {
-                Image(systemName: "chevron.left").font(.system(size: 20, weight: .semibold)).foregroundColor(.primary)
                 Text("Bid board").font(.system(size: 28, weight: .bold)).tracking(-0.4).foregroundColor(.primary)
                 Spacer()
                 Image(systemName: "ellipsis").font(.system(size: 14, weight: .bold)).foregroundColor(.primary).rotationEffect(.degrees(90))

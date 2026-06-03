@@ -189,9 +189,6 @@ private struct RailDrayageOrdersBody: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline) {
                 HStack(spacing: 8) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(palette.textPrimary)
                     Text("Drayage orders")
                         .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                         .foregroundStyle(palette.textPrimary)

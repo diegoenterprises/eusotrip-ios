@@ -179,9 +179,6 @@ private struct RailCostBreakdownBody: View {
 
     private var backRow: some View {
         HStack(spacing: 8) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(palette.textPrimary)
             Text("Shipment")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(palette.textPrimary)

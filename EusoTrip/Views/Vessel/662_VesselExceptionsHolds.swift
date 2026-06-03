@@ -159,9 +159,6 @@ private struct VesselExceptionsHoldsBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Exceptions")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)

@@ -177,9 +177,6 @@ private struct VesselFleetHealthBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .center) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Asset condition")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)

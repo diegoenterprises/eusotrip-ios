@@ -131,9 +131,6 @@ private struct RailMultimodalAnalyticsBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Multimodal analytics")
                         .font(.system(size: 28, weight: .bold)).tracking(-0.4)
