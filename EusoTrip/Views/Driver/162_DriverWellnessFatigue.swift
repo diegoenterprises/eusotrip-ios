@@ -282,7 +282,13 @@ struct DriverWellnessFatigue_162: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                Button(action: { dismiss() }) {
+                Button(action: {
+                    // Driver Me push stack pops via this surface notification;
+                    // dismiss() is a harmless fallback if ever hosted in a
+                    // real NavigationStack context.
+                    NotificationCenter.default.post(name: .eusoDriverMeNavBack, object: nil)
+                    dismiss()
+                }) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(palette.textPrimary)

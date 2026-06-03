@@ -94,7 +94,6 @@ private struct FintechFeeAck684: Decodable {
 
 private struct VesselSettlementBody: View {
     @Environment(\.palette) private var palette
-    @Environment(\.dismiss) private var dismiss
     let shipmentId: Int
 
     @State private var settlement: VesselSettlement684? = nil
@@ -178,7 +177,7 @@ private struct VesselSettlementBody: View {
         .refreshable { await load() }
     }
 
-    // MARK: - Top bar (eyebrow + back chevron + detail title)
+    // MARK: - Top bar (eyebrow + detail title · back chevron drawn by surface RoleNavBackOverlay)
 
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -192,12 +191,6 @@ private struct VesselSettlementBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .center, spacing: Space.s3) {
-                Button { dismiss() } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(palette.textPrimary)
-                }
-                .buttonStyle(.plain)
                 Text("Booking settlement")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)

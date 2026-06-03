@@ -97,7 +97,6 @@ private struct AssignResult: Decodable {
 
 private struct RailDropYardOperationsBody: View {
     @Environment(\.palette) private var palette
-    @Environment(\.dismiss) private var dismiss
 
     @State private var trailers: [DropYardTrailer] = []
     @State private var summary: DropYardSummary? = nil
@@ -208,7 +207,7 @@ private struct RailDropYardOperationsBody: View {
         }
     }
 
-    // MARK: - Top bar (eyebrow + back + title + subtitle + filter chips)
+    // MARK: - Top bar (eyebrow + title + subtitle + filter chips)
 
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -223,14 +222,8 @@ private struct RailDropYardOperationsBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
 
-            // Back chevron + title + overflow
+            // Title + overflow (back chevron painted by the surface overlay)
             HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                Button { dismiss() } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(palette.textPrimary)
-                }
-                .buttonStyle(.plain)
                 Text("Drop yard")
                     .font(.system(size: 28, weight: .bold))
                     .tracking(-0.4)
@@ -248,7 +241,6 @@ private struct RailDropYardOperationsBody: View {
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .padding(.top, 2)
-                .padding(.leading, 24)
 
             // Filter chips
             filterChips

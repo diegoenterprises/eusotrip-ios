@@ -100,7 +100,6 @@ private struct CreateResult007: Decodable {
 
 struct RailNewShipment_007: View {
     @Environment(\.palette) private var palette
-    @Environment(\.dismiss) private var dismiss
 
     // Selections (seed defaults match the SVG example; pickers + endpoints mutate).
     @State private var origin: RailYard007? = nil
@@ -206,11 +205,6 @@ struct RailNewShipment_007: View {
                     .foregroundStyle(createdRef == nil ? palette.textTertiary : Brand.success)
             }
             HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                Button { dismiss() } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(palette.textPrimary)
-                }
                 Text("New rail shipment")
                     .font(.system(size: 28, weight: .bold)).kerning(-0.5)
                     .foregroundStyle(palette.textPrimary)

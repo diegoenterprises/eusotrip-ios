@@ -193,9 +193,20 @@ public struct RadialFillGauge: View {
 
     /// Animated fraction the fill arc has reached (0…1).
     @State private var animatedFraction: Double = 0
-    /// Live scrub fraction (nil = not scrubbing). When set, the arc shows
+    /// Live scrub fraction (nil = nothing scrubbed). When set, the arc shows
     /// the scrub head + readout instead of the static value.
+    ///
+    /// 2026-06-03 — chart-cursor fix (mirrors TrendSparkline). The cursor was
+    /// "stuck": the scrub snapped this back to `nil` on `.onEnded`, AND the
+    /// only band signal went through the `selection` @Binding which defaults
+    /// to `.constant(nil)` (no call site passes one), so band selection was a
+    /// silent no-op. This now HOLDS on release and drives the cursor +
+    /// medallion + band highlight self-contained; a real host binding still
+    /// wins when present.
     @State private var scrubFraction: Double? = nil
+    /// Internal scrub band selection — the band the held head lands in. Lets
+    /// the legend highlight + readout work without a host `selection` binding.
+    @State private var localSelectedBand: String? = nil
 
     public init(
         title: String = "",
@@ -255,6 +266,16 @@ public struct RadialFillGauge: View {
         RadialGaugeModel.band(for: headValue, in: model.bands)?.grade ?? ""
     }
 
+    /// The band id the cursor highlights: a real host binding wins; otherwise
+    /// the internal scrub-held band. Nil = nothing scrubbed (legend tracks the
+    /// model's natural active band only).
+    private var effectiveSelected: String? { selection ?? localSelectedBand }
+
+    /// `true` while the user is holding a scrubbed point on the arc. Used to
+    /// keep the head dot/readout pinned (no snap-back) and to suppress the
+    /// double marker on the static value.
+    private var isScrubbing: Bool { scrubFraction != nil }
+
     // MARK: Body
 
     public var body: some View {
@@ -278,7 +299,17 @@ public struct RadialFillGauge: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .eusoCard(radius: Radius.xl, intensity: .feature)
         .onAppear { animateIn() }
-        .onChange(of: model.value) { _, _ in animateIn() }
+        .onChange(of: model.value) { _, _ in
+            // An external data change (live poll, slider, equipment filter)
+            // supersedes a held scrub head — release the hold so the fresh
+            // value animates through, then the user can scrub again.
+            if scrubFraction != nil {
+                scrubFraction = nil
+                localSelectedBand = nil
+            }
+            animateIn()
+        }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: scrubFraction)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityText)
     }
@@ -300,8 +331,14 @@ public struct RadialFillGauge: View {
             arcCanvas
             centerReadout
         }
-        .contentShape(Circle())
+        // Whole plot is the hit target (Rectangle, not Circle) so a touch
+        // anywhere across the dial — including the medallion — scrubs the arc.
+        .contentShape(Rectangle())
         .gesture(scrubGesture)
+        // Haptic tick as the held band steps A→B→C… while scrubbing (iOS 17,
+        // SwiftUI-native — no UIKit). Keyed on the held band, not the raw
+        // fraction, so it fires once per band crossing, not every pixel.
+        .sensoryFeedback(.selection, trigger: effectiveSelected)
     }
 
     /// All arc drawing lives in this Canvas. No `func` is declared inside
@@ -451,14 +488,21 @@ public struct RadialFillGauge: View {
         VStack(alignment: .leading, spacing: Space.s2) {
             ForEach(model.bands) { band in
                 RFGBandChip(
+                    // While scrubbing, the active chip follows the held head;
+                    // otherwise it tracks the model's natural value band.
                     band: band,
-                    isActive: band.id == (model.activeBand?.id),
-                    isSelected: band.id == selection
+                    isActive: band.id == (isScrubbing
+                        ? RadialGaugeModel.band(for: headValue, in: model.bands)?.id
+                        : model.activeBand?.id),
+                    isSelected: band.id == effectiveSelected
                 )
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    let newSel = (selection == band.id) ? nil : band.id
-                    withAnimation(.easeOut(duration: 0.2)) { selection = newSel }
+                    let newSel = (effectiveSelected == band.id) ? nil : band.id
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        localSelectedBand = newSel
+                        selection = newSel   // mirror to host binding when present
+                    }
                     onSelectBand(band)
                 }
             }
@@ -487,25 +531,29 @@ public struct RadialFillGauge: View {
     // MARK: Scrub gesture (drag-to-scrub the arc)
 
     private var scrubGesture: some Gesture {
-        DragGesture(minimumDistance: 4)
+        // minimumDistance 0 so a plain tap on the arc registers a head, not
+        // just a drag — matches the TrendSparkline scrub contract.
+        DragGesture(minimumDistance: 0)
             .onChanged { g in
                 let f = fractionFromPoint(g.location)
                 scrubFraction = f
-                onScrub(value(forFraction: f))
-                // While scrubbing, surface the band under the head.
-                if let b = RadialGaugeModel.band(
-                    for: value(forFraction: f), in: model.bands) {
-                    selection = b.id
-                }
+                let v = value(forFraction: f)
+                onScrub(v)
+                // Surface the band under the held head — drive the internal
+                // selection (self-contained) and mirror to the host binding.
+                let bandID = RadialGaugeModel.band(for: v, in: model.bands)?.id
+                if localSelectedBand != bandID { localSelectedBand = bandID }
+                if selection != bandID { selection = bandID }
             }
             .onEnded { _ in
+                // 2026-06-03 — HOLD the head on the touched angle (NO snap-back
+                // to nil). The fill arc + medallion stay pinned to the scrubbed
+                // value until the user scrubs again. `scrubFraction` is left
+                // set; `headFraction`/`headValue` keep reading it.
                 if let s = scrubFraction,
                    let b = RadialGaugeModel.band(
                     for: value(forFraction: s), in: model.bands) {
                     onSelectBand(b)
-                }
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                    scrubFraction = nil
                 }
             }
     }

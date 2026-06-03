@@ -144,6 +144,12 @@ public struct FunnelBars: View {
     @State private var grow: CGFloat = 0
     /// Identity used to re-trigger the grow-in when the data set changes.
     @State private var renderedStageKey: String = ""
+    /// 2026-06-03 — internal scrub selection. The cursor was "stuck" because
+    /// `selection` defaults to `.constant(nil)` and EVERY call site (0 pass a
+    /// binding) used that default, so `selection = stage.id` was a silent no-op.
+    /// This local state drives the cursor self-contained; a real host binding
+    /// still wins when present (for call-sites that echo the picked stage out).
+    @State private var localSelection: String? = nil
 
     public init(model: FunnelBarsModel,
                 selection: Binding<String?> = .constant(nil),
@@ -153,6 +159,10 @@ public struct FunnelBars: View {
         self.onSelect = onSelect
     }
 
+    /// The stage id the cursor displays: a real host binding wins; otherwise the
+    /// internal scrub state. Nil = nothing selected yet (read-only funnel look).
+    private var effectiveSelection: String? { selection ?? localSelection }
+
     public var body: some View {
         VStack(spacing: Space.s4) {
             if let streak = model.streak {
@@ -160,6 +170,7 @@ public struct FunnelBars: View {
             }
             funnelCard
         }
+        .sensoryFeedback(.selection, trigger: effectiveSelection)   // haptic tick per stage step
         .onAppear { startGrow(for: stageKey) }
         .onChange(of: stageKey) { _, key in startGrow(for: key) }
     }
@@ -252,18 +263,23 @@ public struct FunnelBars: View {
         }
         // One scrub gesture spanning the whole stack so a vertical drag sweeps
         // the selection across stages (the SVG implies a touch-to-inspect
-        // funnel; we make it a live scrub).
+        // funnel; we make it a live scrub). minimumDistance 0 so a touch on a
+        // bar reads instantly, not only after a 6pt drag.
         .contentShape(Rectangle())
         .gesture(
-            DragGesture(minimumDistance: 6)
+            DragGesture(minimumDistance: 0)
                 .onChanged { value in scrub(to: value.location.y) }
+                .onEnded { _ in
+                    // 2026-06-03 — HOLD the cursor on the touched stage (no
+                    // snap-back). The focus ring stays until the next scrub/tap.
+                }
         )
     }
 
     @ViewBuilder
     private func stageRow(_ stage: FunnelStage, index: Int, totalWidth: CGFloat) -> some View {
         let w = barWidth(for: index, in: totalWidth) * grow
-        let isSelected = selection == stage.id
+        let isSelected = effectiveSelection == stage.id
         let isFirst = index == 0
 
         ZStack {
@@ -378,8 +394,8 @@ public struct FunnelBars: View {
     /// at low alpha (483 line 82 used the diagonal @0.12); deeper connectors
     /// use the lower stage's tint at low alpha (483 line 83, warning @0.18).
     private func connectorFill(for i: Int) -> AnyShapeStyle {
-        let highlighted = selection == model.stages[safe: i]?.id
-            || selection == model.stages[safe: i + 1]?.id
+        let highlighted = effectiveSelection == model.stages[safe: i]?.id
+            || effectiveSelection == model.stages[safe: i + 1]?.id
         let alpha = highlighted ? 0.34 : (i == 0 ? 0.14 : 0.18)
         if i == 0 && model.usesBrandGradientForFirstStage {
             return AnyShapeStyle(LinearGradient.diagonal.opacity(alpha))
@@ -422,26 +438,29 @@ public struct FunnelBars: View {
 
     private func toggle(_ stage: FunnelStage) {
         withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
-            if selection == stage.id {
-                selection = nil
+            if effectiveSelection == stage.id {
+                localSelection = nil                 // clears the self-contained cursor
+                if selection != nil { selection = nil }   // mirror to host binding when present
                 onSelect(nil)
             } else {
-                selection = stage.id
+                localSelection = stage.id            // drives the cursor self-contained
+                if selection != stage.id { selection = stage.id }   // mirror to host binding
                 onSelect(stage)
             }
         }
     }
 
-    /// Map a drag's vertical position to the nearest stage and select it.
+    /// Map a drag's vertical position to the nearest stage and snap-select it.
     private func scrub(to y: CGFloat) {
         guard totalRows > 0 else { return }
         let band = _Geom483.barTop + _Geom483.connector
         let raw = Int((y / max(band, 1)).rounded(.down))
-        let idx = min(max(raw, 0), totalRows - 1)
+        let idx = min(max(raw, 0), totalRows - 1)   // clamp to bounds
         let stage = model.stages[idx]
-        guard selection != stage.id else { return }
+        guard effectiveSelection != stage.id else { return }
         withAnimation(reduceMotion ? nil : .snappy(duration: 0.18)) {
-            selection = stage.id
+            localSelection = stage.id               // drives the cursor self-contained
+            if selection != stage.id { selection = stage.id }   // mirror to host binding when present
         }
         onSelect(stage)
     }

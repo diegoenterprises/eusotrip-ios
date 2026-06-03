@@ -845,16 +845,16 @@ struct DriverMeSurface: View {
     ///
     /// The eight `067*` hub screens render their own `.eusoDriverMeNavBack`
     /// chevron in `DriverMeHubBody.header` / `DriverMeSettingsHubBody.header`.
-    /// `019` (HOS) and `064` (The Haul Leaderboard) are leaf screens that
-    /// ALSO bake their own header chevron — both were double-rendering the
-    /// surface overlay on top of their own bar (and their own bar called a
-    /// dead `dismiss()` in this push context). Their chevrons now post
-    /// `.eusoDriverMeNavBack` (see their top bars), so they belong in this
-    /// set to suppress the surface overlay and leave exactly one working
-    /// back button.
+    /// `019` (HOS), `064` (The Haul Leaderboard) and `162` (Wellness &
+    /// Fatigue) are leaf screens that ALSO bake their own header chevron —
+    /// each was double-rendering the surface overlay on top of their own bar
+    /// (and their own bar called a dead `dismiss()` in this push context).
+    /// Their chevrons now post `.eusoDriverMeNavBack` (see their top bars),
+    /// so they belong in this set to suppress the surface overlay and leave
+    /// exactly one working back button.
     private static let driverScreensWithOwnBack: Set<String> = [
         "067hub", "067a", "067b", "067c", "067d", "067e", "067f", "067g",
-        "019", "064",
+        "019", "064", "162",
     ]
 
     var body: some View {
