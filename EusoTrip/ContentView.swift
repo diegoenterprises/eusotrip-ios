@@ -1829,6 +1829,11 @@ enum ScreenRegistry {
             // (T-023, fully built, was never registered). Reachable via
             // Dpch713 Me → TOOLS → "Convoy composer".
             .init(id: "Dpch710A", title: "Dispatch · Convoy Composer",  role: .dispatch) { p in AnyView(DispatchConvoyComposerScreen(theme: p)) },
+            // 2026-06-03 — landed 3 scheduled-lane ports from _PORT_STAGING.
+            // Dpch402 (NOT "402" — that id is Broker·Tender Detail).
+            .init(id: "Dpch402", title: "Dispatch · Profile",           role: .dispatch) { p in AnyView(DispatcherProfileScreen(theme: p)) },
+            .init(id: "Vesl004", title: "Vessel Shipper · Demurrage & Detention", role: .shipper) { p in AnyView(VesselDemurrageDetentionScreen(theme: p)) },
+            .init(id: "Rail008", title: "Rail Shipper · Tender Workflow", role: .shipper) { _ in AnyView(RailShipperTenderWorkflow_008()) },
             // 2026-05-21 — eusotrip-killers screen-porting sweep.
             // Three dispatch flagship screens land bundled in one
             // Swift file (Dpch714_DispatchTrio.swift): Command Center,

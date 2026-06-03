@@ -20,6 +20,12 @@ PBXPROJ = "/Users/diegousoro/Desktop/EusoTrip by Eusorone Technologies, Inc/Euso
 
 # (uuid_build, uuid_ref, basename, relative path from SOURCE_ROOT)
 ENTRIES = [
+    ("VD042026060300000011A1", "VD042026060300000012A1",
+     "004_VesselDemurrageDetention.swift", "EusoTrip/Views/Vessel/004_VesselDemurrageDetention.swift"),
+    ("RS082026060300000011A1", "RS082026060300000012A1",
+     "008_RailShipperTenderWorkflow.swift", "EusoTrip/Views/Rail/008_RailShipperTenderWorkflow.swift"),
+    ("DP022026060300000011A1", "DP022026060300000012A1",
+     "402_DispatcherProfile.swift", "EusoTrip/Views/Dispatch/402_DispatcherProfile.swift"),
     ("EQRC2026060300000011A1", "EQRC2026060300000012A1",
      "EquipmentRequirementsCatalog.swift", "EusoTrip/Models/EquipmentRequirementsCatalog.swift"),
     ("BR4B2026060200000011A1", "BR4B2026060200000012A1",
