@@ -47,7 +47,7 @@ enum BrokerNavRoute {
         "home":     "400",
         "loads":    "401",
         "carriers": "402b",
-        "me":       "404",
+        "me":       "404B",
     ]
 
     static let orbLabels: Set<String> = ["esang", "orb"]

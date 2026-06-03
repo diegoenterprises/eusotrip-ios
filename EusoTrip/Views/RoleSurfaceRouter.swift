@@ -566,11 +566,22 @@ private struct ShipperBackOverlay: ViewModifier {
         // safeAreaInset-banded surface back now renders for them
         // without overlapping content.
         "227",
-        // Founder back-button audit 2026-05-08 — both 203 (Bids)
-        // and 223 (Agreements) draw their own header chevron AND
-        // were getting the floating overlay on top. Added here so
-        // only the in-screen back renders.
-        "203", "223",
+        // Founder back-button audit 2026-05-08 — 203 (Bids) draws its
+        // own header chevron (backRow → posts .eusoShipperLoadOpen to
+        // return to the load) AND was getting the floating overlay on
+        // top. Listed here so only the in-screen back renders.
+        //
+        // Back-button reconciliation 2026-06-02: 223 (Agreements) was
+        // ALSO listed here on the same audit, but its `topBar`
+        // renders NO back affordance at all (verified — eyebrow +
+        // counter only; the arrow.left.arrow.right is a swap-endpoints
+        // glyph, chevron.right a row disclosure). It is reachable at
+        // depth > 1 via the Me-hub agreement actions and the
+        // `shipper/agreements` deep-link, so suppressing the surface
+        // chevron STRANDED it (same false-positive class as the
+        // 228/229/230 removal above). Removed so the safeAreaInset
+        // surface back renders.
+        "203",
     ]
 
     let currentScreenId: String
@@ -971,16 +982,33 @@ struct CarrierSurface: View {
     private static let tabRoots: Set<String> = ["300", "301", "304", "350"]
 
     /// Carrier-side suppress list — same purpose as ShipperBackOverlay's
-    /// `screensWithOwnBack`. Tab roots + leaves that draw their own
-    /// header back chevron. Founder back-button audit 2026-05-08:
-    /// 305 (Catalyst Load Detail) + 321 (Catalyst Driver Profile)
-    /// each ship their own < chevron next to the title; without
-    /// them in this set the surface overlay rendered a second back
-    /// circle on top.
+    /// `screensWithOwnBack`. Tab roots + leaves that draw their OWN
+    /// functional back affordance (a `Button` posting `.eusoRoleNavBack`),
+    /// so the surface overlay must NOT paint a second chevron.
+    ///
+    /// Back-button reconciliation 2026-06-02 — reconciled against the
+    /// screens this surface can actually render. The surface resolves an
+    /// id out of the concatenated `.carrier` + `.catalyst` pool, carrier
+    /// FIRST, so a colliding id renders the carrier screen:
+    ///   • 321 (Catalyst Driver Profile) DOES draw its own chevron that
+    ///     posts `.eusoRoleNavBack` — kept (prevents the double).
+    ///   • 305 collides: `.carrier` 305 = CarrierCounterResponse (NO own
+    ///     back) wins the pool lookup over `.catalyst` 305 (Load Detail,
+    ///     which has its own back). 305 is reachable at depth > 1 via
+    ///     308_CarrierMyBids' `eusoCarrierNavSwap{"305"}`, so suppressing
+    ///     the surface chevron STRANDED the rendered CounterResponse.
+    ///     Removed — surface chevron now renders (no double, no strand).
+    ///   • 302 (Carrier Load Detail) / 303 (Carrier Dispatch Board) are
+    ///     NOT bottom-nav slots and are NOT reached as surface-stack
+    ///     screens — 301 opens load detail through the in-stack
+    ///     `\.rolePushDetail` layer, never `navSwap{"302"}` — and neither
+    ///     draws its own back. The old comment mislabeled them "tab roots"
+    ///     (the real tab roots are 300/301/304/350). Removed as stale; if
+    ///     either is ever pushed it now correctly gets the surface chevron.
     private static let backSuppress: Set<String> = [
-        "300", "301", "302", "303",   // tab roots
-        "350",                          // CarrierMe (own dismiss)
-        "305", "321",                   // detail screens with own back
+        "300", "301", "304",   // tab roots (Home / Loads / Drivers)
+        "350",                  // CarrierMe tab root (own dismiss)
+        "321",                  // Catalyst Driver Profile — own .eusoRoleNavBack
     ]
 
     private var currentScreenId: String { screenStack.last ?? "300" }
@@ -1091,7 +1119,7 @@ struct BrokerSurface: View {
     // route map keys it as "loads"→401; "tenders" has no map entry, so that
     // slot is currently a no-op until the label/key are reconciled — that is
     // a BottomNav-destination bug, out of scope here. (IA recon 2026-05-30.)
-    private static let tabRoots: Set<String> = ["400", "401", "402b", "404"]
+    private static let tabRoots: Set<String> = ["400", "401", "402b", "404B"]
 
     private var currentScreenId: String { screenStack.last ?? "400" }
 
@@ -1192,7 +1220,7 @@ struct EscortSurface: View {
     // registered screen (verified). Me resolves to 600 (Home), already
     // present. Corrected to the 3 distinct, real slot destinations.
     // (IA recon 2026-05-30.)
-    private static let tabRoots: Set<String> = ["600", "601", "602"]
+    private static let tabRoots: Set<String> = ["600", "601", "602", "620"]
 
     private var currentScreenId: String { screenStack.last ?? "600" }
 
@@ -1287,7 +1315,7 @@ struct TerminalSurface: View {
     // registered screen (verified). Me resolves to 700 (Home), already
     // present. Corrected to the 3 distinct, real slot destinations.
     // (IA recon 2026-05-30.)
-    private static let tabRoots: Set<String> = ["700", "701", "702"]
+    private static let tabRoots: Set<String> = ["700", "701", "702", "703"]
 
     private var currentScreenId: String { screenStack.last ?? "700" }
 
@@ -1385,7 +1413,7 @@ struct AdminSurface: View {
     // but NOT a bottom-nav slot (it's a push-detail drill from 802). Me
     // resolves to 800 (Home), already present. Corrected to the 3 distinct
     // slot destinations. (IA recon 2026-05-30.)
-    private static let tabRoots: Set<String> = ["800", "801", "802"]
+    private static let tabRoots: Set<String> = ["800", "801", "802", "804"]
 
     private var currentScreenId: String { screenStack.last ?? "800" }
 
@@ -1578,7 +1606,7 @@ struct ComplianceSurface: View {
     // ScreenRegistry (verified) — making it a phantom tab-root. Me resolves
     // to 900 (Home), already present. Corrected to the 3 distinct, real,
     // registered slot destinations. (IA recon 2026-05-30.)
-    private static let tabRoots: Set<String> = ["900", "901", "902"]
+    private static let tabRoots: Set<String> = ["900", "901", "902", "903"]
 
     private var currentScreenId: String { screenStack.last ?? "900" }
 
@@ -1675,7 +1703,7 @@ struct RailEngineerSurface: View {
     // tab-root made the back chevron wrongly suppress when drilled into
     // 553 and corrupted tab-reset semantics. Corrected to the 3 distinct
     // slot destinations. (IA recon 2026-05-30.)
-    private static let tabRoots: Set<String> = ["Rail550", "Rail551", "Rail552"]
+    private static let tabRoots: Set<String> = ["Rail550", "Rail551", "Rail552", "Rail556"]
 
     private var currentScreenId: String { screenStack.last ?? "Rail550" }
 
@@ -1771,7 +1799,7 @@ struct VesselOperatorSurface: View {
     // already present. Corrected to the 3 distinct slot destinations.
     // Vesl653 remains in `screensWithOwnBack` below (explicit union), so its
     // back-chevron behavior is unchanged. (IA recon 2026-05-30.)
-    private static let tabRoots: Set<String> = ["Vesl650", "Vesl651", "Vesl652"]
+    private static let tabRoots: Set<String> = ["Vesl650", "Vesl651", "Vesl652", "Vesl656"]
     /// Screens that draw their OWN top back affordance (a `BespokeBackBar`
     /// via `.injectBespokeBackBar`) so the surface's `RoleNavBackOverlay`
     /// must NOT paint a second chevron (avoids the founder-hated double

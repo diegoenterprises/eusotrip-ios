@@ -35,9 +35,18 @@ struct DispatchMeScreen: View {
                 iridescentHairline
                 identityHero
                 operationsSection
+                commandSection
                 fleetSection
                 analyticsSection
+                driverPerfSection
+                shipperPerfSection
+                vehiclePerfSection
+                settlementSection
+                commsPerfSection
+                laneRfpSection
+                exceptionsSection
                 toolsSection
+                settingsSection
                 signOutButton
                 Color.clear.frame(height: 96)
             }
@@ -185,6 +194,123 @@ struct DispatchMeScreen: View {
         sectionCard(title: "TOOLS", icon: "wrench.and.screwdriver") {
             row(label: "Bulk upload",         icon: "square.and.arrow.up.on.square", to: "Dpch709")
             row(label: "Run ticket capture",  icon: "camera.viewfinder",      to: "Dpch710")
+            row(label: "Convoy composer",     icon: "car.2.fill",             to: "Dpch710A")
+        }
+    }
+
+    // 2026-06-02 — WAVE 5: surface stranded dispatch management + the
+    // analytics detail octets (740–795) into the Me hub (grouped roll-ups).
+    // Pure lifecycle/kanban cels (Dpch800–811 BH, 820–824 M-04, 531/532)
+    // stay event-reached; Disp400/Disp401 are dup home/kanban (dedup later).
+    private var commandSection: some View {
+        sectionCard(title: "COMMAND & FLEET", icon: "square.grid.2x2") {
+            row(label: "Command center",   icon: "square.grid.2x2",          to: "Dpch714")
+            row(label: "Fleet map",        icon: "map",                      to: "Dpch715")
+            row(label: "Performance",      icon: "chart.line.uptrend.xyaxis", to: "Dpch716")
+            row(label: "Driver roster",    icon: "person.3",                 to: "Dpch404")
+            row(label: "AI dispatch assist", icon: "sparkles",               to: "533")
+            row(label: "Carrier scorecard", icon: "star.circle",            to: "539")
+        }
+    }
+
+    private var driverPerfSection: some View {
+        sectionCard(title: "DRIVER PERFORMANCE", icon: "person.3.fill") {
+            row(label: "Review",       icon: "checkmark.circle",                to: "Dpch740")
+            row(label: "Lane",         icon: "road.lanes",                      to: "Dpch741")
+            row(label: "Incident log", icon: "exclamationmark.triangle",        to: "Dpch742")
+            row(label: "Performance",  icon: "gauge.with.dots.needle.67percent", to: "Dpch743")
+            row(label: "HOS",          icon: "clock.badge",                     to: "Dpch744")
+            row(label: "Onboarding",   icon: "person.badge.plus",               to: "Dpch745")
+            row(label: "Compliance",   icon: "checkmark.shield",                to: "Dpch746")
+            row(label: "Quarter",      icon: "calendar",                        to: "Dpch747")
+        }
+    }
+
+    private var shipperPerfSection: some View {
+        sectionCard(title: "SHIPPER PERFORMANCE", icon: "building.2") {
+            row(label: "Review",      icon: "checkmark.circle", to: "Dpch750")
+            row(label: "Pull volume", icon: "chart.bar",        to: "Dpch751")
+            row(label: "Tender win",  icon: "trophy",           to: "Dpch752")
+            row(label: "Payment",     icon: "creditcard",       to: "Dpch753")
+            row(label: "Lane win",    icon: "road.lanes",       to: "Dpch754")
+            row(label: "Health",      icon: "heart.text.square", to: "Dpch755")
+            row(label: "Onboarding",  icon: "person.badge.plus", to: "Dpch756")
+            row(label: "Quarter",     icon: "calendar",         to: "Dpch757")
+        }
+    }
+
+    private var vehiclePerfSection: some View {
+        sectionCard(title: "VEHICLE PERFORMANCE", icon: "truck.box") {
+            row(label: "Review",      icon: "checkmark.circle",                 to: "Dpch760")
+            row(label: "Utilization", icon: "gauge.with.dots.needle.67percent", to: "Dpch761")
+            row(label: "Maintenance", icon: "wrench.adjustable",                to: "Dpch762")
+            row(label: "On-time",     icon: "clock.badge.checkmark",            to: "Dpch763")
+            row(label: "Inspection",  icon: "checklist",                        to: "Dpch764")
+            row(label: "Deadhead",    icon: "arrow.uturn.backward",             to: "Dpch765")
+            row(label: "Onboarding",  icon: "plus.rectangle.on.folder",         to: "Dpch766")
+            row(label: "Quarter",     icon: "calendar",                         to: "Dpch767")
+        }
+    }
+
+    private var settlementSection: some View {
+        sectionCard(title: "SETTLEMENT", icon: "dollarsign.circle") {
+            row(label: "Review",     icon: "checkmark.circle",          to: "Dpch770")
+            row(label: "DSO",        icon: "calendar.badge.clock",      to: "Dpch771")
+            row(label: "QuickPay",   icon: "bolt",                      to: "Dpch772")
+            row(label: "Ledger",     icon: "list.bullet.rectangle.portrait", to: "Dpch773")
+            row(label: "Clean",      icon: "checkmark.seal",            to: "Dpch774")
+            row(label: "Onboarding", icon: "person.badge.plus",         to: "Dpch775")
+            row(label: "Audit",      icon: "doc.text.magnifyingglass",  to: "Dpch776")
+            row(label: "Quarter",    icon: "calendar",                  to: "Dpch777")
+        }
+    }
+
+    private var commsPerfSection: some View {
+        sectionCard(title: "COMMS PERFORMANCE", icon: "bubble.left.and.bubble.right") {
+            row(label: "Review",     icon: "checkmark.circle",        to: "Dpch780")
+            row(label: "Response",   icon: "arrowshape.turn.up.left", to: "Dpch781")
+            row(label: "SLA",        icon: "timer",                   to: "Dpch782")
+            row(label: "Escalation", icon: "exclamationmark.bubble",  to: "Dpch783")
+            row(label: "Closure",    icon: "checkmark.circle.fill",   to: "Dpch784")
+            row(label: "Volume",     icon: "chart.bar",               to: "Dpch785")
+            row(label: "First-time resolve", icon: "checkmark.seal",  to: "Dpch786")
+            row(label: "Quarter",    icon: "calendar",                to: "Dpch787")
+        }
+    }
+
+    private var laneRfpSection: some View {
+        sectionCard(title: "LANE & RFP", icon: "road.lanes") {
+            row(label: "Lane board",     icon: "rectangle.split.3x1",   to: "Dpch790")
+            row(label: "Lane drill",     icon: "magnifyingglass",       to: "Dpch791")
+            row(label: "Haul detail",    icon: "shippingbox",           to: "Dpch792")
+            row(label: "RFP inbox",      icon: "tray.full",             to: "Dpch793")
+            row(label: "Match-up",       icon: "arrow.triangle.merge",  to: "Dpch794")
+            row(label: "Contract write", icon: "pencil.and.outline",    to: "Dpch795")
+        }
+    }
+
+    private var exceptionsSection: some View {
+        sectionCard(title: "EXCEPTIONS & RESOLUTION", icon: "exclamationmark.triangle") {
+            row(label: "Tender queue",        icon: "tray.full",                to: "Dpch720")
+            row(label: "Comms hub",           icon: "bubble.left.and.bubble.right", to: "Dpch721")
+            row(label: "BOL mismatch",        icon: "doc.on.doc",               to: "Dpch722")
+            row(label: "HOS reassignment",    icon: "clock.arrow.2.circlepath", to: "Dpch724")
+            row(label: "Cancel load",         icon: "xmark.circle",             to: "Dpch725")
+            row(label: "Late pickup",         icon: "clock.badge.exclamationmark", to: "Dpch726")
+            row(label: "Dock mismatch",       icon: "rectangle.badge.xmark",    to: "Dpch727")
+            row(label: "Yard slots",          icon: "square.grid.3x3",          to: "Dpch730")
+            row(label: "Reassignment sheet",  icon: "arrow.triangle.swap",      to: "Dpch731")
+            row(label: "Quick-tender",        icon: "bolt",                     to: "Dpch732")
+            row(label: "Escort republish",    icon: "shield.lefthalf.filled",   to: "Dpch733")
+            row(label: "Weather reroute",     icon: "cloud.sun",                to: "Dpch735")
+            row(label: "Reload offer",        icon: "arrow.triangle.2.circlepath", to: "Dpch736")
+            row(label: "Fuel-policy override", icon: "fuelpump",                to: "Dpch737")
+        }
+    }
+
+    private var settingsSection: some View {
+        sectionCard(title: "SETTINGS", icon: "gearshape") {
+            row(label: "Dispatch settings", icon: "gearshape", to: "Dpch734")
         }
     }
 

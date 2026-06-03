@@ -40,7 +40,7 @@ enum AdminNavRoute {
         "home":    "800",
         "tickets": "801",
         "tenants": "802",
-        "me":      "800",
+        "me":      "804",
     ]
 
     static let orbLabels: Set<String> = ["esang", "orb"]

@@ -33,6 +33,7 @@ struct CarrierMeScreen: View {
                 fleetSection
                 financialsSection
                 complianceSection
+                settingsSection
                 signOutButton
                 Color.clear.frame(height: 96)
             }
@@ -156,7 +157,7 @@ struct CarrierMeScreen: View {
 
     private var accountSection: some View {
         sectionCard(title: "ACCOUNT", icon: "person.crop.square") {
-            row(label: "Profile",            icon: "person",                 to: "321")  // .catalyst
+            row(label: "Profile",            icon: "person",                 to: "302C") // .catalyst (own profile; de-shadowed from 302 collision)
             row(label: "Authority · MC/DOT", icon: "shield.lefthalf.filled", to: "317")  // .carrier wins
         }
     }
@@ -167,6 +168,13 @@ struct CarrierMeScreen: View {
             row(label: "Active matches",                icon: "bolt",            to: "501")  // .catalyst
             row(label: "Dispatch board",                icon: "list.bullet.rectangle", to: "303")  // .carrier
             row(label: "Loads",                          icon: "shippingbox",    to: "301")  // .carrier
+            row(label: "EDI messages",                   icon: "arrow.left.arrow.right", to: "Cat390")  // .catalyst
+            row(label: "Document ingest",                icon: "doc.badge.plus", to: "Cat393")  // .catalyst
+            row(label: "Backhaul optimizer",             icon: "arrow.triangle.2.circlepath", to: "Cat398")  // .catalyst
+            row(label: "Matched loads",                  icon: "checkmark.circle", to: "340")  // .catalyst
+            row(label: "Find loads",                     icon: "magnifyingglass", to: "341")  // .catalyst
+            row(label: "Assigned loads",                 icon: "arrow.right.circle", to: "342")  // .catalyst
+            row(label: "Reports",                        icon: "chart.bar.doc.horizontal", to: "307")  // .catalyst
         }
     }
 
@@ -178,6 +186,19 @@ struct CarrierMeScreen: View {
             row(label: "ELD · Hours of Service", icon: "clock.badge",         to: "318")  // .carrier
             row(label: "Maintenance",            icon: "wrench.adjustable",   to: "315")  // .carrier
             row(label: "Fuel card",              icon: "fuelpump",            to: "314")  // .carrier
+            row(label: "Fleet safety · CSA",     icon: "shield.lefthalf.filled", to: "Cat383")  // .catalyst
+            row(label: "Fleet IFTA",             icon: "map",                 to: "Cat384")  // .catalyst
+            row(label: "Roadside · DataQ",       icon: "doc.text.magnifyingglass", to: "Cat385")  // .catalyst
+            row(label: "Fuel card · fleet",      icon: "creditcard",          to: "Cat386")  // .catalyst
+            row(label: "Reefer fleet monitor",   icon: "thermometer.snowflake", to: "Cat387")  // .catalyst
+            row(label: "Tanker fleet monitor",   icon: "drop",                to: "Cat388")  // .catalyst
+            row(label: "Convoy · platooning",    icon: "car.2",               to: "Cat400")  // .catalyst
+            row(label: "Crew wellness",          icon: "heart.text.square",   to: "Cat401")  // .catalyst
+            row(label: "Capacity planner",       icon: "chart.bar",           to: "Cat402")  // .catalyst
+            row(label: "Driver performance",     icon: "gauge.with.dots.needle.67percent", to: "323")  // .catalyst
+            row(label: "Driver ledger",          icon: "list.bullet.rectangle.portrait", to: "324")  // .catalyst
+            row(label: "Driver onboarding",      icon: "person.badge.plus",   to: "325")  // .catalyst
+            row(label: "Driver profile",         icon: "person.text.rectangle", to: "321")  // .catalyst (was mislabeled "Profile" in Account)
         }
     }
 
@@ -188,6 +209,13 @@ struct CarrierMeScreen: View {
             row(label: "My bids",       icon: "hand.tap",                  to: "308")  // .carrier
             row(label: "Awarded loads", icon: "checkmark.seal",            to: "309")  // .carrier
             row(label: "Marketplace",   icon: "storefront",                to: "306")  // .carrier
+            row(label: "Commission engine", icon: "percent",               to: "331")  // .catalyst
+            row(label: "Driver pay setup",  icon: "creditcard.and.123",    to: "310")  // .catalyst
+            row(label: "Factoring",         icon: "banknote",              to: "Cat394")  // .catalyst
+            row(label: "Fuel surcharge schedule", icon: "fuelpump.circle", to: "Cat395")  // .catalyst
+            row(label: "Lane rate sheet",   icon: "tablecells",            to: "Cat396")  // .catalyst
+            row(label: "Carrier tier",      icon: "star.circle",           to: "Cat397")  // .catalyst
+            row(label: "Toll corridor cost", icon: "road.lanes",           to: "Cat399")  // .catalyst
         }
     }
 
@@ -196,6 +224,16 @@ struct CarrierMeScreen: View {
             row(label: "Compliance dash",   icon: "shield.checkered",                   to: "316")  // .carrier
             row(label: "Driver compliance", icon: "person.badge.shield.checkmark",      to: "326")  // .catalyst
             row(label: "Driver documents",  icon: "doc.on.doc",                         to: "322")  // .catalyst
+            row(label: "Cargo claim",       icon: "exclamationmark.bubble",             to: "Cat389")  // .catalyst
+            row(label: "Detention alerts",  icon: "bell.badge",                         to: "Cat391")  // .catalyst
+            row(label: "Cargo insurance",   icon: "checkmark.shield",                   to: "Cat392")  // .catalyst
+            row(label: "Fleet carbon",      icon: "leaf",                               to: "Cat403")  // .catalyst
+        }
+    }
+
+    private var settingsSection: some View {
+        sectionCard(title: "SETTINGS", icon: "gearshape") {
+            row(label: "App settings",  icon: "gearshape",  to: "311")  // .catalyst
         }
     }
 

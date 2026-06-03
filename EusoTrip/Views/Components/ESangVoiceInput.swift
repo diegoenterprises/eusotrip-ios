@@ -59,11 +59,22 @@ final class eSangVoiceInputController: ObservableObject {
     @Published var transcript: String = ""
     @Published var status: Status = .idle
 
+    /// When set (seconds), the controller auto-stops a live recording after
+    /// this much silence — i.e. no new transcript text for the interval.
+    /// Used by hands-free AUTOPILOT, where there's no manual "stop" tap: the
+    /// operator just speaks a command and the recognizer finalizes itself
+    /// after they pause. `nil` (the default) keeps the original tap-to-stop
+    /// behavior for the chat composers, so this is purely additive.
+    var silenceAutoStopInterval: TimeInterval? = nil
+
     // MARK: Private plumbing
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     private let audioEngine = AVAudioEngine()
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
+    /// Backs `silenceAutoStopInterval` — rearmed on every partial transcript
+    /// so it only fires after a genuine pause.
+    private var silenceTimer: Timer?
 
     /// Closure invoked with the final transcript once recording stops.
     /// Called exactly once per record cycle; empty strings are not
@@ -192,6 +203,9 @@ final class eSangVoiceInputController: ObservableObject {
                 guard let self else { return }
                 if let result {
                     self.transcript = result.bestTranscription.formattedString
+                    // Hands-free auto-stop: rearm the silence timer on every
+                    // partial so a pause after the command finalizes it.
+                    self.armSilenceTimer()
                     if result.isFinal {
                         self.finish()
                     }
@@ -199,6 +213,24 @@ final class eSangVoiceInputController: ObservableObject {
                     self.status = .error(message: error.localizedDescription)
                     self.cleanup()
                 }
+            }
+        }
+        // Arm immediately so a recording that captures NO speech still
+        // auto-stops after the silence window (autopilot only).
+        armSilenceTimer()
+    }
+
+    /// (Re)start the silence countdown when `silenceAutoStopInterval` is set.
+    /// Each call cancels the prior timer, so it only fires after a true gap
+    /// in speech. No-op when the feature is disabled (chat composers).
+    private func armSilenceTimer() {
+        silenceTimer?.invalidate()
+        guard let interval = silenceAutoStopInterval else { return }
+        silenceTimer = Timer.scheduledTimer(withTimeInterval: interval,
+                                            repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.status == .recording else { return }
+                self.stop()
             }
         }
     }
@@ -212,6 +244,8 @@ final class eSangVoiceInputController: ObservableObject {
     }
 
     private func cleanup() {
+        silenceTimer?.invalidate()
+        silenceTimer = nil
         if audioEngine.isRunning { audioEngine.stop() }
         audioEngine.inputNode.removeTap(onBus: 0)
         request = nil

@@ -145,6 +145,10 @@ enum MeHubCatalog {
             MeCell(icon: "rosette",           label: "Tier detail",    action: .screen("323")),
             MeCell(icon: "checkmark.shield",  label: "Verifications",  action: .screen("216")),
         ]),
+        MeSection(title: "PRIVACY & APPS", icon: "lock.shield", cells: [
+            MeCell(icon: "app.connected.to.app.below.fill", label: "Connected apps",   action: .screen("346")),
+            MeCell(icon: "square.and.arrow.down.on.square", label: "Account export / delete", action: .screen("349")),
+        ]),
     ]
 
     static let wallet: [MeSection] = [
@@ -161,6 +165,7 @@ enum MeHubCatalog {
             MeCell(icon: "chart.bar",            label: "Reports",          action: .screen("207")),
             MeCell(icon: "leaf",                 label: "Sustainability",   action: .screen("214")),
             MeCell(icon: "chart.line.uptrend.xyaxis", label: "Analytics deep-dive", action: .screen("210")),
+            MeCell(icon: "doc.text.magnifyingglass", label: "Finance reconciliation", action: .screen("387")),
         ]),
     ]
 
@@ -170,12 +175,36 @@ enum MeHubCatalog {
             MeCell(icon: "location.viewfinder",  label: "Live tracking",       action: .screen("222")),
             MeCell(icon: "flame",                label: "Hot zones",           action: .screen("225")),
             MeCell(icon: "chart.line.uptrend.xyaxis", label: "Market intelligence", action: .screen("233")),
+            MeCell(icon: "ferry",                label: "Port intelligence",   action: .screen("425")),
+            MeCell(icon: "binoculars",           label: "Competitive intel",   action: .screen("429")),
+            MeCell(icon: "magnifyingglass",      label: "Search everything",   action: .screen("392")),
+            MeCell(icon: "bell.badge",           label: "Notifications",       action: .screen("390")),
         ]),
         MeSection(title: "EXECUTION", icon: "arrow.triangle.branch", cells: [
             MeCell(icon: "arrow.clockwise",      label: "Recurring loads",     action: .screen("221")),
             MeCell(icon: "rectangle.split.3x1",  label: "Allocations",         action: .screen("229")),
             MeCell(icon: "calendar",             label: "Weekly allocations",  action: .screen("230b")),
             MeCell(icon: "list.bullet.rectangle", label: "Dispatch control",   action: .screen("218")),
+            MeCell(icon: "doc.badge.clock",      label: "Drafts",             action: .screen("412")),
+            MeCell(icon: "archivebox",           label: "Archived loads",     action: .screen("413")),
+            MeCell(icon: "square.and.arrow.up.on.square", label: "Bulk upload", action: .screen("400b")),
+            MeCell(icon: "rectangle.stack",      label: "Lane templates",     action: .screen("341")),
+        ]),
+        MeSection(title: "PLANNING & MATCH", icon: "scope", cells: [
+            MeCell(icon: "scope",                label: "Spectra-Match",      action: .screen("424")),
+            MeCell(icon: "square.stack.3d.up",   label: "Load consolidation", action: .screen("421")),
+            MeCell(icon: "arrow.clockwise.circle", label: "Recurring composer", action: .screen("433")),
+            MeCell(icon: "arrow.triangle.swap",  label: "Multi-modal",        action: .screen("431")),
+            MeCell(icon: "globe.americas",       label: "Cross-border",       action: .screen("427")),
+            MeCell(icon: "truck.box",            label: "Carrier capacity",   action: .screen("428")),
+            MeCell(icon: "square.grid.3x3",      label: "Industry verticals", action: .screen("430")),
+        ]),
+        MeSection(title: "TERMINALS & D&D", icon: "building.columns", cells: [
+            MeCell(icon: "building.columns",     label: "My terminals",       action: .screen("422")),
+            MeCell(icon: "magnifyingglass.circle", label: "Facility search",  action: .screen("423")),
+            MeCell(icon: "calendar.badge.clock", label: "Dock appointments",  action: .screen("ShipDock295")),
+            MeCell(icon: "hourglass",            label: "Demurrage charges",  action: .screen("426")),
+            MeCell(icon: "stopwatch",            label: "Detention exposure", action: .screen("Ship298Det")),
         ]),
         MeSection(title: "TERMINAL OPS", icon: "antenna.radiowaves.left.and.right", cells: [
             MeCell(icon: "dot.radiowaves.left.and.right", label: "Hardware capabilities", action: .hardwareCapabilities),
@@ -194,6 +223,13 @@ enum MeHubCatalog {
             MeCell(icon: "doc.append",        label: "Contracts",           action: .screen("217")),
             MeCell(icon: "signature",         label: "Agreements",          action: .screen("223")),
             MeCell(icon: "dollarsign.circle", label: "Rate board",          action: .screen("220")),
+            MeCell(icon: "hand.tap",          label: "My bids",             action: .screen("203")),
+            MeCell(icon: "tray.full",         label: "RFP inbox",           action: .screen("380")),
+            MeCell(icon: "doc.plaintext",     label: "Contract list",       action: .screen("382")),
+            MeCell(icon: "arrow.triangle.2.circlepath", label: "Bulk retender", action: .screen("384")),
+            MeCell(icon: "square.stack.3d.down.right", label: "Batch tender", action: .screen("385")),
+            MeCell(icon: "checklist",         label: "Bid review board",    action: .screen("420")),
+            MeCell(icon: "person.2.badge.gearshape", label: "Vendor management", action: .screen("432")),
         ]),
     ]
 
@@ -203,6 +239,7 @@ enum MeHubCatalog {
             MeCell(icon: "checkmark.shield",       label: "Insurance",           action: .screen("325")),
             MeCell(icon: "doc.text",               label: "FMCSA SAFER",         action: .screen("326")),
             MeCell(icon: "triangle.fill",          label: "Hazmat audit",        action: .screen("327")),
+            MeCell(icon: "shippingbox.and.arrow.backward", label: "Cargo insurance", action: .screen("Ship297Ins")),
         ]),
         MeSection(title: "DOCUMENTS", icon: "folder", cells: [
             MeCell(icon: "folder",                label: "Document center", action: .screen("226")),

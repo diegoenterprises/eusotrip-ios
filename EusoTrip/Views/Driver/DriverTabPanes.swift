@@ -4366,6 +4366,19 @@ struct DrivereSangCoachSheet: View {
             // release cleanly when the sheet dismisses.
             voice.cancel()
         }
+        // Hands-free autopilot entry (founder press-and-hold spec). When
+        // `.esangEnterAutopilot` fires while this coach sheet is up — ESANG
+        // replied `<<<ACTION:autopilot>>>`, or the driver long-pressed the
+        // orb — release THIS sheet's mic and dismiss so the root-level
+        // `EusoAutopilotMount` HUD (which owns the continuous voice loop for
+        // the DRIVER role and dispatches through `handleeSangAction`) takes
+        // over without two mics contending. The global engine is the single
+        // owner — we don't start a second loop here.
+        .onReceive(NotificationCenter.default.publisher(for: .esangEnterAutopilot)) { _ in
+            orbState = .idle
+            voice.cancel()
+            if let onClose { onClose() } else { dismiss() }
+        }
     }
 
     // MARK: Header

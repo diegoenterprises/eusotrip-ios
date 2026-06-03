@@ -663,9 +663,36 @@ struct BottomNav: View {
     let trailing: [NavSlot]  // exactly 2
     var orbState: OrbeSang.State = .idle
     var onTapOrb: () -> Void = {}
+    /// Press-and-hold handler — fires when the orb is held ~0.45s.
+    /// Defaults to the universal autopilot entry: a haptic + posting
+    /// `.esangEnterAutopilot` and latching `eSangAutopilot.pendingAutopilotActivation`
+    /// so the global engine (mounted at the ContentView root) activates
+    /// hands-free voice for WHATEVER role is signed in — driver, ship
+    /// captain, rail engineer, shipper, dispatch, …. A normal quick tap
+    /// still opens the ESANG chat sheet via `onTapOrb` / the nav handler.
+    var onLongPressOrb: () -> Void = BottomNav.defaultAutopilotActivation
+
+    /// Default long-press action: haptic + universal autopilot enter.
+    /// Static so the property default can reference it without `self`.
+    /// Not `@MainActor`-annotated so it's freely usable as a plain
+    /// `() -> Void` default; the main-actor flag write + notification post
+    /// are hopped onto the main actor explicitly. The gesture invokes this
+    /// on the main thread already, but the hop keeps it correct regardless.
+    static func defaultAutopilotActivation() {
+        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+        NotificationCenter.default.post(name: .esangEnterAutopilot, object: nil)
+        Task { @MainActor in
+            eSangAutopilot.pendingAutopilotActivation = true
+        }
+    }
 
     @Environment(\.palette) var palette
     @Environment(\.colorScheme) var scheme
+    /// Guards the orb's tap-vs-hold disambiguation. Set true the instant a
+    /// long-press fires so the trailing TapGesture (which SwiftUI still
+    /// delivers on release) is suppressed and a hold doesn't ALSO open the
+    /// chat sheet. Reset when a fresh press begins or after it's consumed.
+    @State private var longPressFired: Bool = false
     /// Driver-mode tap router — when injected (by ContentView at the
     /// Driver surface root), every slot and orb tap resolves through
     /// this handler instead of each NavSlot's local `onTap` closure.
@@ -779,23 +806,53 @@ struct BottomNav: View {
 
             // Elevated orb — floats ~40 % above the plate top, casts a
             // brand-colored glow onto the plate.
-            // If a driver-mode handler is in the environment, route the
-            // orb tap through it (opens ESANG coach sheet); otherwise
-            // fall back to the call-site-provided `onTapOrb` closure so
-            // isolated previews keep working.
-            Button(action: {
-                if let h = activeNavHandler {
-                    h("esang")
-                } else {
-                    onTapOrb()
-                }
-            }) {
-                OrbeSang(state: orbState,
-                         diameter: Device.navOrbDiameter)
-            }
-            .buttonStyle(.plain)
-            .offset(y: -Device.navOrbLift)
-            .frame(maxWidth: .infinity)
+            //
+            // Two gestures, deliberately NOT a Button:
+            //   • Quick TAP  → opens the ESANG chat sheet (via the
+            //     env-injected role nav handler, else `onTapOrb`).
+            //   • Press-and-HOLD (~0.45s) → fires `onLongPressOrb`, the
+            //     UNIVERSAL hands-free autopilot entry. Works for every
+            //     signed-in role (driver / ship captain / rail engineer /
+            //     shipper / dispatch / …) because the default handler just
+            //     latches `eSangAutopilot.pendingAutopilotActivation` and
+            //     posts `.esangEnterAutopilot`, which the global engine
+            //     mounted at the ContentView root picks up.
+            //
+            // `longPressFired` guards the tap so a hold does NOT also fire
+            // the tap on release (SwiftUI delivers both otherwise). The
+            // long-press uses `onPressingChanged` only to reset the guard
+            // when a fresh press begins.
+            OrbeSang(state: orbState,
+                     diameter: Device.navOrbDiameter)
+                .contentShape(Circle())
+                .onLongPressGesture(
+                    minimumDuration: 0.45,
+                    perform: {
+                        longPressFired = true
+                        onLongPressOrb()
+                    },
+                    onPressingChanged: { pressing in
+                        if pressing { longPressFired = false }
+                    }
+                )
+                .simultaneousGesture(
+                    TapGesture().onEnded {
+                        // A hold already handled it — don't also open chat.
+                        guard !longPressFired else {
+                            longPressFired = false
+                            return
+                        }
+                        if let h = activeNavHandler {
+                            h("esang")
+                        } else {
+                            onTapOrb()
+                        }
+                    }
+                )
+                .accessibilityLabel("ESANG")
+                .accessibilityHint("Double tap to open ESANG. Press and hold to start hands-free autopilot.")
+                .offset(y: -Device.navOrbLift)
+                .frame(maxWidth: .infinity)
         }
         .frame(height: Device.navHeight, alignment: .top)
         // Floating-dock inset: lift the pill off the screen edges and

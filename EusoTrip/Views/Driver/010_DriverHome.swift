@@ -1073,6 +1073,13 @@ struct DriverHome: View {
         .sheet(isPresented: $showHosSheet) {
             HosDutyStatus(register: .afternoon)
                 .environment(\.palette, palette)
+                // Presented as a SHEET here — the 019 top-bar chevron must
+                // resolve to the sheet's own `dismiss()`, not the Home
+                // lifecycle's `\.driverNavBack` (→ `trip.stepBack()`).
+                // Null that env on the sheet content so the chevron's
+                // `navBack?()` is a no-op and only `dismiss()` fires; the
+                // sheet closes cleanly with no hidden trip-phase rewind.
+                .environment(\.driverNavBack, nil)
                 .eusoSheetX()
         }
         // EusoWallet — full DriverWalletPane surface with settlements,

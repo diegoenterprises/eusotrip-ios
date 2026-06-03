@@ -70,6 +70,19 @@ final class EusoWalletPassService {
     static let shared = EusoWalletPassService()
     private init() {}
 
+    /// Coerce whatever id a caller hands us into the numeric form the
+    /// server's `createPickupCredential` expects (it `parseInt`s the
+    /// value). "LD-1039" → "1039", "load_1039" → "1039", "1039" →
+    /// "1039". If the string carries no digits we pass it through
+    /// untouched so the server can return its own validation error
+    /// rather than us silently swallowing it.
+    static func numericLoadId(from raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        if Int(trimmed) != nil { return trimmed }   // already clean numeric
+        let digits = trimmed.filter(\.isNumber)
+        return digits.isEmpty ? trimmed : digits
+    }
+
     /// Server-side credential payload, decoded from
     /// `eusoWallet.createPickupCredential`. Returned shape mirrors the
     /// web `customerPortal.createPortalAccess` envelope so the same
@@ -90,6 +103,16 @@ final class EusoWalletPassService {
     /// the caller. Returns a `EusoWalletPassResult` so the call site
     /// can render the right UX (toast, inline fallback, error banner).
     func addPass(forLoadId loadId: String) async -> EusoWalletPassResult {
+        // 0. Normalize the load id. The server keys on a NUMERIC load id
+        //    and does `parseInt(loadId)` — so a display id like
+        //    "LD-1039" or "load_1039" becomes NaN and the mint throws
+        //    "Invalid loadId". Every PassKit caller (wallet hero, pass
+        //    rows, EusoTicket renderers, PDF viewer) funnels through
+        //    here, so normalizing centrally hardens the whole system
+        //    against the display-vs-numeric id mismatch regardless of
+        //    which surface called us.
+        let resolvedLoadId = Self.numericLoadId(from: loadId)
+
         // 1. Mint the credential server-side. The server signs the QR
         //    payload, generates a 5-digit shortCode, and (when the
         //    signing pipeline is healthy) uploads a .pkpass bundle to
@@ -99,7 +122,7 @@ final class EusoWalletPassService {
         do {
             credential = try await EusoTripAPI.shared.mutation(
                 "eusoWallet.createPickupCredential",
-                input: Input(loadId: loadId)
+                input: Input(loadId: resolvedLoadId)
             )
         } catch {
             // The server explicitly returns

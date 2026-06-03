@@ -282,11 +282,27 @@ private struct VesselLiveTrackingBody: View {
     }
 
     private func vesselMarker(at p: CGPoint) -> some View {
+        // Live vessel-position marker — the canonical CONTAINER VESSEL model from
+        // the EusoTrip Animation Design System (Resources/Animations/Equipment/
+        // 03_Vessel/16_vessel_container_anim.svg), rendered through the in-house
+        // native SVG engine and pinned at the position fraction along the
+        // great-circle arc. Replaces the hand-drawn ferry-glyph orb with the
+        // founder-approved equipment lockup so the live vessel reads as a real
+        // container ship. Mirrors the 643 rail-boxcar marker pattern.
         ZStack {
+            // Soft magenta wake-glow under the hull (keeps the original orb's halo).
             Circle().fill(Brand.magenta.opacity(0.22)).frame(width: 40, height: 40).blur(radius: 6)
-            Circle().fill(LinearGradient.diagonal).frame(width: 22, height: 22)
-            Image(systemName: "ferry.fill")
-                .font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
+            if let vesselSVG = EquipmentAnimationCache.shared.svg(for: .vesselContainer) {
+                NativeSVGView(svgString: vesselSVG)
+                    .frame(width: 64, height: 26)   // ~2.5:1 vessel model
+            } else {
+                // Fallback to the gradient ferry orb if the model can't load.
+                Circle().fill(LinearGradient.diagonal).frame(width: 22, height: 22)
+                    .overlay(
+                        Image(systemName: "ferry.fill")
+                            .font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
+                    )
+            }
         }
         .position(x: p.x, y: p.y)
     }

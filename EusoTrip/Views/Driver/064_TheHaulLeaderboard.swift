@@ -104,6 +104,17 @@ struct TheHaulLeaderboard: View {
     private var header: some View {
         HStack(alignment: .center, spacing: Space.s3) {
             Button {
+                // Reached as a pushed leaf inside `DriverMeSurface`
+                // (Me → The Haul & Intel → Leaderboard). The host owns
+                // the stack and pops on `.eusoDriverMeNavBack`; an
+                // `@Environment(\.dismiss)` here is a dead no-op in that
+                // push context. Post the canonical Me-back so this one
+                // chevron actually returns to the Haul hub. `064` is
+                // listed in `DriverMeSurface.driverScreensWithOwnBack`
+                // so the surface does NOT also overlay its own chevron
+                // (no double-back). `dismiss()` stays as a harmless
+                // fallback for any sheet / preview presentation.
+                NotificationCenter.default.post(name: .eusoDriverMeNavBack, object: nil)
                 dismiss()
             } label: {
                 Image(systemName: "chevron.left")

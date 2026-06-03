@@ -89,6 +89,7 @@ private struct RailEngineerAccountBody: View {
                     LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
                 } else {
                     identityCard
+                    operationsCard
                     credentialsCard
                     dutyCard
                     preferencesCard
@@ -144,6 +145,196 @@ private struct RailEngineerAccountBody: View {
                 Spacer(minLength: 0)
             }
         }
+    }
+
+    // MARK: - Operations hub (journey entry points)
+    //
+    // Wires the rail-engineer's working surfaces into the real journey.
+    // Each row posts `.eusoRailNavSwap{screenId}`, which RailEngineerSurface
+    // resolves out of ScreenRegistry (RBAC-gated by RoleAccess.canRender)
+    // and pushes onto the role stack. Without this, these screens were
+    // registered but unreachable — islands in dev chrome. Grouped by the
+    // engineer's task domains (mirrors the Vessel + Driver Me-hub IA).
+    private var operationsCard: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            Text("OPERATIONS").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
+            opsGroup("PREDICTION & ROUTING", [
+                ("Rail643", "clock.arrow.circlepath", "ETA prediction", "Per-segment arrival forecast"),
+                ("Rail644", "arrow.left.arrow.right", "Transit comparison", "All-rail vs intermodal"),
+                ("Rail646", "arrow.triangle.2.circlepath", "Rebooking options", "Reroute on a disruption"),
+                ("Rail647", "chart.bar.xaxis", "Multimodal analytics", "Revenue + mode share by lane"),
+                ("Rail673", "square.grid.3x3.topleft.filled", "Intermodal dashboard", "Rail+truck+ocean legs"),
+                ("Rail639", "building.2", "Yard directory", "Yards by host railroad"),
+                ("Rail672", "hourglass", "Layover tracking", "Layover charges & faults"),
+            ])
+            opsGroup("BIDS & PERFORMANCE", [
+                ("Rail627", "list.bullet.rectangle", "Bid board", "Award open lanes by rate"),
+                ("Rail574", "star.circle", "Carrier scorecard", "Rank carriers by score"),
+                ("Rail569", "doc.text", "Tender workflow", "Respond to incoming tenders"),
+            ])
+            opsGroup("COMMERCIAL & CLAIMS", [
+                ("Rail606", "checkmark.shield", "Cargo insurance", "Bind per-load all-risk cover"),
+                ("Rail642", "chart.line.uptrend.xyaxis", "Accessorial analytics", "Demurrage + detention trend"),
+                ("Rail652", "exclamationmark.bubble", "Claims dashboard", "Freight loss & damage"),
+            ])
+            opsGroup("FREIGHT CLAIMS", [
+                ("Rail656", "creditcard", "Claim payments", "Reconcile & age payables"),
+                ("Rail669", "arrow.uturn.backward.circle", "Overcharge recovery", "Audit & recover overcharges"),
+                ("Rail670", "shippingbox.and.arrow.backward", "Shortage claims", "BOL vs received variance"),
+                ("Rail671", "doc.on.doc", "Claim templates", "Pre-built claim forms"),
+            ])
+            opsGroup("COMPLIANCE & RISK", [
+                ("Rail571", "exclamationmark.triangle", "IMDG hazmat manifest", "DG placards + segregation"),
+                ("Rail578", "cloud.sun", "Route weather", "On-arc severity + reroute"),
+                ("Rail563", "exclamationmark.octagon", "Exceptions & holds", "Active blocks on your cars"),
+            ])
+            opsGroup("SHIPMENTS & TRACKING", [
+                ("Rail007", "plus.rectangle.on.folder", "New shipment", "Book a rail shipment"),
+                ("Rail005", "doc.plaintext", "Waybill", "Rail waybill document"),
+                ("Rail553", "shippingbox", "Shipment detail", "Carrier shipment record"),
+                ("Rail557", "arrow.up.circle", "Status update", "Post a milestone update"),
+                ("Rail560", "dot.radiowaves.up.forward", "Live tracking", "Real-time car position"),
+                ("Rail565", "clock.arrow.circlepath", "Container timeline", "Event history per container"),
+                ("Rail566", "arrow.triangle.swap", "Intermodal transfer", "Rail↔truck↔ocean handoff"),
+                ("Rail576", "pencil.and.list.clipboard", "Shipment amendment", "Revise a booked shipment"),
+                ("Rail591", "person.crop.circle.badge.checkmark", "Consignee tracking", "Receiver-facing status"),
+                ("Rail633", "timer", "Border crossing ETA", "Cross-border arrival forecast"),
+            ])
+            opsGroup("YARD & RAMP OPS", [
+                ("Rail555", "rectangle.split.3x1", "Consist board", "Train consist makeup"),
+                ("Rail559", "square.grid.3x3", "Yard operations", "In-yard car moves"),
+                ("Rail561", "building.columns", "Facility status", "Ramp / terminal status"),
+                ("Rail562", "calendar.badge.clock", "Gate appointment", "Schedule a gate slot"),
+                ("Rail582", "calendar", "Ramp schedule", "Ramp cut times"),
+                ("Rail586", "list.bullet.clipboard", "Service lineup", "Scheduled service windows"),
+                ("Rail589", "arrow.triangle.merge", "Transload connection", "Bulk transload handoff"),
+                ("Rail600", "slider.horizontal.3", "Ramp ops console", "Live ramp operations"),
+                ("Rail603", "calendar.day.timeline.left", "Dock schedule", "Dock door scheduling"),
+                ("Rail604", "chart.bar", "Yard analytics", "Dwell + throughput metrics"),
+                ("Rail621", "tray.full", "Yard move queue", "Pending yard moves"),
+                ("Rail622", "calendar.badge.plus", "Move scheduler", "Schedule yard moves"),
+                ("Rail623", "square.stack.3d.down.right", "Drop yard ops", "Drop-lot management"),
+                ("Rail628", "map", "Yard map", "Live yard layout"),
+                ("Rail630", "arrow.left.arrow.right.square", "Cross-dock ops", "Cross-dock transfers"),
+            ])
+            opsGroup("DEMURRAGE & DETENTION", [
+                ("Rail558", "hourglass.tophalf.filled", "Demurrage watch", "Accruing demurrage alerts"),
+                ("Rail570", "exclamationmark.bubble", "Demurrage dispute", "Contest demurrage charges"),
+                ("Rail602", "stopwatch", "Detention tracking", "Equipment detention clock"),
+                ("Rail616", "clock.badge.checkmark", "Free time", "Free-time countdown"),
+                ("Rail619", "calendar.badge.exclamationmark", "Per diem tracking", "Per-diem accrual"),
+                ("Rail624", "magnifyingglass.circle", "Dwell reason analysis", "Root-cause of dwell"),
+                ("Rail641", "chart.line.uptrend.xyaxis", "Demurrage analytics", "Demurrage trend by lane"),
+                ("Rail645", "gauge.with.dots.needle.67percent", "Detention dashboard", "Detention exposure"),
+                ("Rail648", "function", "Demurrage calculator", "Estimate demurrage owed"),
+                ("Rail649", "person.2.badge.gearshape", "Detention by customer", "Detention by account"),
+                ("Rail650", "clock.arrow.2.circlepath", "Detention history", "Historical detention log"),
+                ("Rail651", "gearshape.2", "Auto-detention rules", "Automated detention rules"),
+            ])
+            opsGroup("EQUIPMENT & FLEET", [
+                ("Rail568", "doc.text.below.ecg", "Equipment lease", "Railcar / chassis leases"),
+                ("Rail575", "heart.text.square", "Equipment health", "Car condition telemetry"),
+                ("Rail585", "location.viewfinder", "Equipment positions", "Where your equipment is"),
+                ("Rail588", "waveform.path.ecg", "Fleet health", "Fleet-wide condition"),
+                ("Rail598", "ruler", "Equipment specs", "Car / chassis specifications"),
+                ("Rail601", "square.grid.2x2", "Chassis pool", "Chassis pool availability"),
+                ("Rail629", "rectangle.stack", "Trailer pool detail", "Pool member detail"),
+                ("Rail634", "list.bullet.rectangle.portrait", "Railcar inventory", "Owned / leased car roster"),
+            ])
+            opsGroup("CREW", [
+                ("Rail554", "person.3.sequence", "Crew HOS roster", "Crew hours-of-service"),
+                ("Rail584", "megaphone", "Crew call board", "Crew assignments"),
+                ("Rail595", "checkmark.seal", "Crew certifications", "Crew cert status"),
+                ("Rail632", "person.crop.circle.badge.clock", "Crew availability", "Available crew pool"),
+                ("Rail636", "globe.badge.chevron.backward", "X-border crew certs", "Cross-border crew docs"),
+            ])
+            opsGroup("CUSTOMS & CROSS-BORDER", [
+                ("Rail006", "globe.americas", "Cross-border customs", "Customs clearance"),
+                ("Rail564", "checkmark.shield", "Border clearance", "Border release status"),
+                ("Rail583", "arrow.left.arrow.right", "Cross-border interchange", "Interchange handoff"),
+                ("Rail596", "percent", "Duty HTS estimate", "Estimate duty by HTS"),
+                ("Rail597", "exclamationmark.triangle", "Hazmat DG rules", "DG segregation rules"),
+                ("Rail637", "globe.badge.chevron.backward", "X-border DG regs", "Cross-border DG regs"),
+                ("Rail638", "globe", "X-border compliance", "Cross-border compliance"),
+            ])
+            opsGroup("COMPLIANCE & SAFETY", [
+                ("Rail567", "link.circle", "Chain of custody", "Custody handoff log"),
+                ("Rail572", "leaf", "Emissions", "CO2 by movement"),
+                ("Rail587", "shield.checkered", "FRA safety", "FRA safety status"),
+                ("Rail625", "checkmark.circle.badge.questionmark", "Appointment compliance", "Appt adherence"),
+                ("Rail631", "doc.text.magnifyingglass", "FRA accident reports", "FRA incident filings"),
+            ])
+            opsGroup("COMMERCIAL & BILLING", [
+                ("Rail573", "tag", "Accessorial charges", "Accessorial catalog"),
+                ("Rail577", "fuelpump.circle", "Fuel surcharge", "FSC schedule"),
+                ("Rail580", "tablecells", "Tariff rate lookup", "Tariff rates"),
+                ("Rail581", "doc.text", "Settlement summary", "Settlement totals"),
+                ("Rail593", "doc.on.doc", "Settlement batch", "Batch settlements"),
+                ("Rail594", "list.number", "Cost breakdown", "Per-shipment costs"),
+                ("Rail599", "doc.text.magnifyingglass", "Freight bill audit", "Audit freight bills"),
+                ("Rail635", "dollarsign.circle", "Financial summary", "Financial overview"),
+                ("Rail640", "drop.circle", "Diesel fuel index", "Diesel index"),
+            ])
+            opsGroup("INTERMODAL & DRAYAGE", [
+                ("Rail617", "truck.box", "Drayage orders", "Drayage moves"),
+                ("Rail618", "arrow.triangle.branch", "Mode optimization", "Cheapest mode mix"),
+                ("Rail620", "lock.open", "Release order", "Equipment release"),
+                ("Rail626", "doc.richtext", "Warehouse receipt", "WHR document"),
+            ])
+            opsGroup("NETWORK, DOCS & CLAIMS", [
+                ("Rail579", "bolt.horizontal.circle", "Network disruption", "Active network issues"),
+                ("Rail605", "exclamationmark.bubble", "Cargo claim", "File a cargo claim"),
+                ("Rail653", "list.bullet.clipboard", "Claims list", "All claims"),
+                ("Rail654", "arrow.triangle.2.circlepath", "Claim workflow", "Claim processing"),
+                ("Rail655", "shield.lefthalf.filled", "Loss prevention", "Loss-prevention program"),
+                ("Rail590", "doc.badge.plus", "Document ingest", "Upload + OCR docs"),
+                ("Rail592", "person.badge.key", "Forwarder portal", "Forwarder access"),
+                ("Rail607", "arrow.left.arrow.right", "EDI messages", "EDI 404 / 322 / 990"),
+            ])
+        }
+    }
+
+    @ViewBuilder
+    private func opsGroup(_ title: String, _ rows: [(id: String, icon: String, title: String, sub: String)]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.system(size: 8, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary.opacity(0.8))
+            LifecycleCard {
+                VStack(spacing: 0) {
+                    ForEach(Array(rows.enumerated()), id: \.offset) { idx, r in
+                        Button { openOps(r.id) } label: { opsRow(icon: r.icon, title: r.title, subtitle: r.sub) }
+                            .buttonStyle(.plain)
+                        if idx < rows.count - 1 {
+                            Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.leading, 44)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func opsRow(icon: String, title: String, subtitle: String) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(LinearGradient.diagonal.opacity(0.16)).frame(width: 32, height: 32)
+                Image(systemName: icon).font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(LinearGradient.diagonal)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.system(size: 14, weight: .bold)).foregroundStyle(palette.textPrimary)
+                Text(subtitle).font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+                    .lineLimit(1).minimumScaleFactor(0.85)
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(palette.textTertiary)
+        }
+        .padding(.vertical, 8).contentShape(Rectangle())
+    }
+
+    private func openOps(_ screenId: String) {
+        NotificationCenter.default.post(name: .eusoRailNavSwap, object: nil, userInfo: ["screenId": screenId])
     }
 
     private var credentialsCard: some View {

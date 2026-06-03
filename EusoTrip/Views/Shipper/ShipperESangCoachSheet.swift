@@ -118,6 +118,17 @@ struct ShippereSangCoachSheet: View {
         .onDisappear {
             voice.cancel()
         }
+        // Hands-free autopilot entry (founder press-and-hold spec). When
+        // `.esangEnterAutopilot` fires while this sheet is up — e.g. ESANG
+        // replied with `<<<ACTION:autopilot>>>`, or the user long-pressed
+        // the orb — release THIS sheet's mic and dismiss so the root-level
+        // `EusoAutopilotMount` HUD (which owns the continuous voice loop
+        // for the SHIPPER role) takes over unobstructed. We do NOT start a
+        // second loop here; the global engine is the single owner.
+        .onReceive(NotificationCenter.default.publisher(for: .esangEnterAutopilot)) { _ in
+            voice.cancel()
+            if let onClose { onClose() } else { dismiss() }
+        }
         // Document-intelligence spine. The shipper drops a doc (camera /
         // photos / files), the router classifies + extracts it via
         // `documentRouter.classifyAndRoute`, and `onApplySingle` hands

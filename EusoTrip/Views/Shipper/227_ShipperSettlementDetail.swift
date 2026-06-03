@@ -299,8 +299,20 @@ struct ShipperSettlementDetail: View {
     }
 
     private func tapBack() {
+        // Back-button reconciliation 2026-06-02: this screen is only ever
+        // rendered as a ShipperSurface registry screen (pushed at depth > 1
+        // via the `shipper/settlements/:id` → "227" deep-link and the
+        // settlement-detail row tap), never inside a `.sheet`/NavigationStack.
+        // So `@Environment(\.dismiss)` had nothing to dismiss — `dismiss()`
+        // was a silent no-op and, with "227" in `screensWithOwnBack`
+        // suppressing the surface chevron, the user was fully stranded.
+        // Pop the actual surface stack so this `backChevronRow` returns the
+        // user to wherever they came from (Settlements / Me hub / deep-link
+        // origin). `dismiss()` is retained as a harmless no-op for any future
+        // modal caller.
+        NotificationCenter.default.post(name: .eusoShipperNavBack, object: nil)
         dismiss()
-        // observability post — telemetry only; real effect is `dismiss()` above
+        // observability post — telemetry only; nav effect is the navBack above
         NotificationCenter.default.post(
             name: .eusoShipperSettlementBack,
             object: nil,

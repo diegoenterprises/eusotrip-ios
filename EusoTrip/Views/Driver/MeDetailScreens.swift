@@ -3186,6 +3186,10 @@ private struct HaulRewardsTab: View {
     @State private var isLoading: Bool = false
     @State private var lastError: String?
     @State private var redeemingId: String?
+    // 2026-06-02 — WAVE-0 orphan recovery: the bespoke 067 Redemption
+    // Shop (TheHaulRedemptionShopView) was built but never reachable.
+    // Surfaced here behind the points header's "Shop" button.
+    @State private var showShop: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
@@ -3214,6 +3218,9 @@ private struct HaulRewardsTab: View {
             }
         }
         .task { await refresh() }
+        .sheet(isPresented: $showShop) {
+            NavigationStack { TheHaulRedemptionShopView() }
+        }
     }
 
     private var pointsHeader: some View {
@@ -3229,9 +3236,18 @@ private struct HaulRewardsTab: View {
                     .monospacedDigit()
             }
             Spacer()
-            Image(systemName: "sparkles")
-                .font(.system(size: 22, weight: .semibold))
+            Button { showShop = true } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "bag")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Shop")
+                        .font(EType.caption)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .bold))
+                }
                 .foregroundStyle(LinearGradient.diagonal)
+            }
+            .buttonStyle(.plain)
         }
         .padding(Space.s3)
         .background(

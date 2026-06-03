@@ -20397,3 +20397,55 @@ struct VesselTrackAPI {
                             input: ContainerPositionsInput(status: status, limit: limit))
     }
 }
+
+// ════════════════════════════════════════════════════════════════════════
+// MARK: - HotZones · dedicated heatmap accessor (additive, isolated)
+// ════════════════════════════════════════════════════════════════════════
+//
+// Wraps the real `hotZones.getHeatmapData` tRPC procedure (MCP-verified at
+// frontend/server/routers/hotZones.ts:1163). The web `/hot-zones` page uses
+// the same proc to power its density heatmap. The procedure projects every
+// hot + cold zone onto a weighted point cloud:
+//
+//   getHeatmapData({ metric: "demand" | "rate" | "surge" | "hazmat" })
+//     → { points: [{ lat, lng, weight, name, id, state }],
+//         roleContext, gradient, totalPoints, timestamp }
+//
+//   • HOT zones  → weight = loadToTruckRatio   (demand intensity)
+//   • COLD zones → weight = surgeMultiplier × 0.5
+//
+// `getRateFeed` (above) already carries the per-zone `liveRatio` the
+// HeatCellMatrix renders, so the screens don't need a second round-trip for
+// the grid. This accessor exists for callers that want the canonical
+// weighted point cloud (e.g. a native density-map layer) straight from the
+// same source the web heatmap reads — no invented endpoint, no fake data.
+
+/// A single weighted sample from `hotZones.getHeatmapData`. Decoded loosely
+/// so the app stays nimble if the backend adds fields. `name` / `state` are
+/// empty for cold zones (server emits `""`), `id` is always present.
+struct HotZonesHeatmapSample: Decodable, Identifiable, Equatable {
+    let id: String
+    let lat: Double
+    let lng: Double
+    let weight: Double
+    let name: String?
+    let state: String?
+}
+
+/// Envelope for `hotZones.getHeatmapData`. `totalPoints` mirrors
+/// `points.count`; `timestamp` is the server-side feed time (ISO-8601).
+struct HotZonesHeatmapEnvelope: Decodable, Equatable {
+    let points: [HotZonesHeatmapSample]
+    let totalPoints: Int?
+    let timestamp: String?
+}
+
+extension HotZonesAPI {
+    /// GET /api/trpc/hotZones.getHeatmapData — the canonical weighted point
+    /// cloud the web heatmap renders. `metric` selects what the per-point
+    /// `weight` encodes ("demand" = load-to-truck, the default).
+    func getHeatmapData(metric: String = "demand") async throws -> HotZonesHeatmapEnvelope {
+        struct Input: Encodable { let metric: String }
+        return try await api.query("hotZones.getHeatmapData", input: Input(metric: metric))
+    }
+}

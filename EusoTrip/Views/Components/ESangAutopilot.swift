@@ -131,6 +131,24 @@ enum eSangRoute: Equatable {
 /// chat bubble never shows plumbing tokens.
 enum eSangAutopilot {
 
+    /// Press-and-hold latch. The orb long-press fires `.esangEnterAutopilot`
+    /// AND sets this flag, because the global autopilot engine (mounted at
+    /// the ContentView root) may not yet be subscribed at long-press time —
+    /// the role surface / overlay presents a frame later. The engine reads
+    /// and clears this flag in its own `.onAppear` so a hold that lands
+    /// before the observer is live still activates. The live
+    /// `.onReceive(.esangEnterAutopilot)` path covers in-session triggers
+    /// (e.g. a chat reply that carries `<<<ACTION:autopilot>>>`).
+    @MainActor static var pendingAutopilotActivation: Bool = false
+
+    /// Read-and-clear helper so callers don't have to remember to reset
+    /// the latch. Returns `true` exactly once per pending activation.
+    @MainActor static func consumePendingAutopilotActivation() -> Bool {
+        guard pendingAutopilotActivation else { return false }
+        pendingAutopilotActivation = false
+        return true
+    }
+
     /// Regex that matches the full `<<<ACTION:verb:arg>>>` grammar.
     /// Arg is optional for verbs like `refresh` — the parser falls
     /// back to an empty string when no `:arg` is present.
@@ -389,6 +407,10 @@ extension Notification.Name {
     /// Enter hands-free autopilot mode. Role-agnostic — the orb /
     /// surface state machine listens. Parameterless.
     static let esangEnterAutopilot = Notification.Name("esangEnterAutopilot")
+    /// Leave hands-free autopilot mode (stop continuous listening, drop
+    /// the HUD). Posted by the global engine on tear-down and by any
+    /// surface that wants to cancel autopilot. Parameterless.
+    static let esangExitAutopilot = Notification.Name("esangExitAutopilot")
     /// Reverse the last autopilot-applied mutation(s). Role-agnostic.
     static let esangUndoAll = Notification.Name("esangUndoAll")
     /// Execute a server-named action on the active surface. `object` is

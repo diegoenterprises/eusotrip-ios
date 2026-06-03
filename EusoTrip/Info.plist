@@ -18,6 +18,15 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!-- Export-compliance declaration. The app uses only exempt
+	     encryption (HTTPS/TLS via the system frameworks — no custom or
+	     non-standard crypto). Declaring NO here auto-answers App Store
+	     Connect's export-compliance question at upload time, so every
+	     build goes straight to "Ready to Test" in TestFlight instead of
+	     stalling on "Missing Compliance" — which is what was keeping
+	     approved builds from ever appearing for testers. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<!-- Custom URL scheme for password reset deep links + vendor OAuth callbacks
 	     (eusotrip://reset?token=… , eusotrip://oauth/callback/<vendor>?code=…&state=…). -->
 	<key>CFBundleURLTypes</key>

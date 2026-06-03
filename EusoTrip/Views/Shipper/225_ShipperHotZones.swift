@@ -250,6 +250,14 @@ struct ShipperHotZones: View {
                     .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s3)
 
+                // Demand heatmap — load-to-truck intensity per metro, the
+                // exact same visual the web `/hot-zones` page renders.
+                // Built off the live feed's `liveRatio` so it never shows
+                // a placeholder when zones exist (honest empty otherwise).
+                heatmapSection(f)
+                    .padding(.horizontal, Space.s3)
+                    .padding(.top, Space.s4)
+
                 equipmentChipRow
                     .padding(.top, Space.s4)
 
@@ -340,6 +348,59 @@ struct ShipperHotZones: View {
                 .strokeBorder(palette.borderFaint)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    // MARK: Demand heatmap (HeatCellMatrix · load-to-truck by metro)
+
+    /// Renders the canonical demand heatmap from the live rate feed. Each
+    /// hot metro becomes a cell whose intensity is its load-to-truck
+    /// ratio (`liveRatio`) — ≥3.0 reads HOT, ≥1.4 WARM, else SOFT, the
+    /// same cut-points the 544 dispatcher demand map uses. Equipment-
+    /// filtered zones drive the cells so the heatmap re-densifies when
+    /// the shipper narrows to Tanker/Reefer/etc. No fake fill: when the
+    /// filtered set is empty we surface an honest empty state.
+    @ViewBuilder
+    private func heatmapSection(_ f: HotZonesFeedResult) -> some View {
+        let cells = heatCells(f)
+        if cells.isEmpty {
+            EmptyView()
+        } else {
+            HeatCellMatrix(
+                title: "Demand heatmap",
+                eyebrow: "Load-to-truck intensity · live by metro",
+                cells: cells,
+                columns: 4,
+                thresholds: HeatCellThresholds(
+                    warmAt: 1.4, hotAt: 3.0,
+                    minIntensity: 0.0, maxIntensity: 4.0
+                ),
+                onSelect: { cell in
+                    // Tapping a heat cell drills into the same in-app
+                    // city detail the tiles use. `detail` carries the
+                    // "City, ST" label the detail sheet accepts.
+                    if let label = cell.detail {
+                        pendingDetailCity = HotZoneCityRef(city: label)
+                    }
+                }
+            )
+        }
+    }
+
+    /// Maps the (equipment-filtered) live zones onto `HeatCell`s. Intensity
+    /// is the live load-to-truck ratio; the value text shows it as "N.N×"
+    /// and the unit caption notes the live load count so a hot cell still
+    /// reads at a glance.
+    private func heatCells(_ f: HotZonesFeedResult) -> [HeatCell] {
+        filteredZones(f).prefix(12).map { z in
+            HeatCell(
+                id: z.zoneId,
+                label: z.state,
+                valueText: String(format: "%.1f×", z.liveRatio),
+                unitText: "\(z.liveLoads) loads",
+                intensity: z.liveRatio,
+                detail: "\(z.zoneName), \(z.state)"
+            )
+        }
     }
 
     private enum ValueStyle { case gradient, danger, success, neutral }

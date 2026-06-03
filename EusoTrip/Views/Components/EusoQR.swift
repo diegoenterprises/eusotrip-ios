@@ -47,10 +47,22 @@ enum EusoQRGenerator {
         filter.correctionLevel = "H"
         guard var ci = filter.outputImage else { return nil }
         if invertForMask {
+            // CIQRCodeGenerator emits black-on-white and is FULLY
+            // OPAQUE — every pixel has alpha = 1. SwiftUI's `.mask()`
+            // reads the mask's ALPHA channel, so masking the gradient
+            // by this opaque image leaves the gradient visible
+            // EVERYWHERE → the "solid gradient box" bug (no QR pattern).
+            // Fix: invert (data modules → white), then `maskToAlpha`
+            // maps white → opaque (alpha 1) and black → clear (alpha 0).
+            // The mask now carries real transparency and the gradient
+            // paints ONLY the data modules — a real, scannable QR.
             let inv = CIFilter.colorInvert()
             inv.inputImage = ci
             guard let invOut = inv.outputImage else { return nil }
-            ci = invOut
+            let m2a = CIFilter.maskToAlpha()
+            m2a.inputImage = invOut
+            guard let maskOut = m2a.outputImage else { return nil }
+            ci = maskOut
         }
         let up = ci.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         let ctx = CIContext()

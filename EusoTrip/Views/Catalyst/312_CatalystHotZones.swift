@@ -18,24 +18,71 @@
 
 import SwiftUI
 
+// Decodes the REAL `hotZones.getActiveZones` shape (MCP-verified at
+// frontend/server/routers/hotZones.ts:939). The server maps HOT_ZONES →
+// { id, name, center, radius, state, demandLevel, loadToTruckRatio,
+//   surgeMultiplier, avgRate, topEquipment, hazmatClasses,
+//   oversizedFrequency }. The previous struct decoded fields that don't
+// exist on the wire (metro/kind/direction/summary), so every card read
+// "—" and the KPIs read 0 — the "no data" bug. We decode the real
+// fields and derive the risk/clear lens + direction client-side.
+private struct HotZoneCenter312: Decodable, Hashable {
+    let lat: Double
+    let lng: Double
+}
+
 private struct HotZone: Decodable, Hashable, Identifiable {
     let id: String
-    let metro: String?
+    let name: String?
     let state: String?
-    let kind: String?            // weather / scales / crash / escort / clear
-    let direction: String?       // "+18.4%" or "-9.2%"
-    let summary: String?
-    let detail: String?
-    let lat: Double?
-    let lng: Double?
+    let center: HotZoneCenter312?
+    let demandLevel: String?            // CRITICAL / HIGH / ELEVATED
+    let loadToTruckRatio: Double?
+    let surgeMultiplier: Double?
+    let avgRate: Double?
+    let topEquipment: [String]?
+    let hazmatClasses: [String]?
+    let oversizedFrequency: String?     // LOW / MODERATE / HIGH / VERY_HIGH
+
+    /// Display metro name (server field is `name`).
+    var metro: String? { name }
+
+    /// Risk lens derived from real signals: hazmat load + oversized
+    /// frequency + demand pressure. A zone reads "clear" only when it
+    /// carries no hazmat classes, isn't oversized-heavy, and demand is
+    /// merely ELEVATED — i.e. a corridor a catalyst can route through.
+    var kind: String {
+        let oversizedHot = (oversizedFrequency == "HIGH" || oversizedFrequency == "VERY_HIGH")
+        let hazmatHeavy = (hazmatClasses?.count ?? 0) >= 3
+        let critical = (demandLevel ?? "").uppercased() == "CRITICAL"
+        if oversizedHot { return "escort" }       // needs oversize/escort handling
+        if critical { return "scales" }           // demand spike → expect scale activity
+        if hazmatHeavy { return "weather" }        // hazmat-heavy corridor (risk lens)
+        return "clear"                             // route-through corridor
+    }
+
+    /// Surge expressed as a signed delta vs baseline (1.0×) — the headline
+    /// the card shows on the right. +18.4% reads as a corridor heating up.
+    var direction: String? {
+        guard let s = surgeMultiplier else { return nil }
+        return String(format: "%+.1f%%", (s - 1.0) * 100.0)
+    }
+
+    var summary: String? {
+        guard let r = loadToTruckRatio else { return nil }
+        let rate = avgRate.map { String(format: "$%.2f/mi", $0) } ?? "—"
+        return String(format: "L:T %.2f · %@", r, rate)
+    }
+
+    var detail: String? {
+        let eq = (topEquipment ?? []).prefix(3).joined(separator: " · ")
+        return eq.isEmpty ? nil : eq
+    }
 }
 
 private struct ZonesEnvelope: Decodable {
     let zones: [HotZone]?
     let items: [HotZone]?
-    let avgRiskDelta: Double?
-    let riskCount: Int?
-    let clearCount: Int?
 }
 
 struct CatalystHotZonesScreen: View {
@@ -65,11 +112,20 @@ private struct HotZonesBody: View {
     }
 
     private var zones: [HotZone] { envelope?.zones ?? envelope?.items ?? [] }
-    private var riskZones: [HotZone] { zones.filter { ($0.kind ?? "") != "clear" } }
-    private var clearZones: [HotZone] { zones.filter { ($0.kind ?? "") == "clear" } }
+    private var riskZones: [HotZone] { zones.filter { $0.kind != "clear" } }
+    private var clearZones: [HotZone] { zones.filter { $0.kind == "clear" } }
     private var filtered: [HotZone] {
         guard filter != .all else { return zones }
-        return zones.filter { ($0.kind ?? "").lowercased() == filter.rawValue.lowercased() }
+        return zones.filter { $0.kind.lowercased() == filter.rawValue.lowercased() }
+    }
+
+    /// Average surge delta across all zones (drives the AVG RISK KPI). The
+    /// old envelope shipped `avgRiskDelta` which doesn't exist on the wire;
+    /// we compute it from the real `surgeMultiplier` field instead.
+    private var avgRiskDelta: Double {
+        let deltas = zones.compactMap { $0.surgeMultiplier }.map { ($0 - 1.0) * 100.0 }
+        guard !deltas.isEmpty else { return 0 }
+        return deltas.reduce(0, +) / Double(deltas.count)
     }
 
     var body: some View {
@@ -77,6 +133,7 @@ private struct HotZonesBody: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
                 kpiStrip
+                heatmapCard
                 filterTabs
                 if loading && envelope == nil {
                     LifecycleCard { Text("Loading hot zones…").font(EType.caption).foregroundStyle(palette.textSecondary) }
@@ -111,7 +168,7 @@ private struct HotZonesBody: View {
     }
 
     private var kpiStrip: some View {
-        let avg = envelope?.avgRiskDelta ?? 0
+        let avg = avgRiskDelta
         let pct = String(format: "%+.1f%%", avg)
         return HStack(spacing: Space.s2) {
             kpi("AVG RISK", pct, "vs 30d", avg > 0 ? .red : .green)
@@ -132,10 +189,47 @@ private struct HotZonesBody: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(color.opacity(0.3)))
     }
 
+    // Demand heatmap — load-to-truck intensity per metro, the same
+    // visual the web `/hot-zones` page renders. Built off the live
+    // `loadToTruckRatio` so it paints real data the moment zones load
+    // (honest empty otherwise). Tapping a cell jumps the filter lens.
+    @ViewBuilder
+    private var heatmapCard: some View {
+        let cells: [HeatCell] = zones.prefix(12).map { z in
+            HeatCell(
+                id: z.id,
+                label: z.state ?? "—",
+                valueText: String(format: "%.1f×", z.loadToTruckRatio ?? 0),
+                unitText: z.metro,
+                intensity: z.loadToTruckRatio ?? 0,
+                detail: z.kind
+            )
+        }
+        if !cells.isEmpty {
+            HeatCellMatrix(
+                title: "Demand heatmap",
+                eyebrow: "Load-to-truck intensity · live by metro",
+                cells: cells,
+                columns: 4,
+                thresholds: HeatCellThresholds(
+                    warmAt: 1.4, hotAt: 3.0,
+                    minIntensity: 0.0, maxIntensity: 4.0
+                ),
+                onSelect: { cell in
+                    // Tapping a cell snaps the lens to that zone's risk band
+                    // when it maps onto a filter; otherwise no-op (stays All).
+                    if let lens = ZoneFilter(rawValue: (cell.detail ?? "").capitalized) {
+                        filter = lens
+                    }
+                }
+            )
+        }
+    }
+
     private var filterTabs: some View {
         HStack(spacing: 6) {
             ForEach(ZoneFilter.allCases, id: \.self) { f in
-                let count = f == .all ? zones.count : zones.filter { ($0.kind ?? "").lowercased() == f.rawValue.lowercased() }.count
+                let count = f == .all ? zones.count : zones.filter { $0.kind.lowercased() == f.rawValue.lowercased() }.count
                 Button { filter = f } label: {
                     HStack(spacing: 4) {
                         Text(f.rawValue).font(.system(size: 9, weight: .heavy)).tracking(0.6)
@@ -168,12 +262,12 @@ private struct HotZonesBody: View {
     }
 
     private func zoneCard(_ z: HotZone) -> some View {
-        let isRisk = (z.kind ?? "") != "clear"
+        let isRisk = z.kind != "clear"
         let color: Color = isRisk ? .red : .green
         return LifecycleCard(accentDanger: isRisk) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text("\(isRisk ? "RISK" : "CLEAR") · \((z.kind ?? "—").uppercased())")
+                    Text("\(isRisk ? "RISK" : "CLEAR") · \(z.kind.uppercased())")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Capsule().fill(color.opacity(0.18)))

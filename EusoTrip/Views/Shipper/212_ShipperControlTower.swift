@@ -836,9 +836,22 @@ struct ShipperControlTower: View {
                 "shipperCompanyId": 1
             ]
         )
+        // Park the SMART-back hand-off BEFORE posting the swap. 201 mounts
+        // AFTER the surface consumes this post (the surface re-renders
+        // `screenStack` first), so 201 can't catch a live notification —
+        // it reads the parked origin on `.onAppear` instead and paints a
+        // BespokeBackBar aimed at Control Tower ("212"). Routing into My
+        // Loads from here is a PUSH from a Me-section surface, not a tab
+        // tap, so the user must be able to get back to where they came
+        // from. Without it, landing on My Loads stranded the driver
+        // (founder 2026-06-02: "will irritate a truck driver to the max").
+        // The bottom-nav "Loads" tab never sets this, so it stays
+        // correctly back-button-free. `backTo` is also passed in userInfo
+        // for the already-mounted case.
+        ShipperLoadsNavContext.setPush(origin: "212", query: "exception")
         NotificationCenter.default.post(
             name: .eusoShipperNavSwap, object: nil,
-            userInfo: ["screenId": "201", "query": "exception"]
+            userInfo: ["screenId": "201", "query": "exception", "backTo": "212"]
         )
     }
 

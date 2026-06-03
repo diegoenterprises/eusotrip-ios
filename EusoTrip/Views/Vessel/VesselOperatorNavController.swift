@@ -33,7 +33,7 @@ enum VesselOperatorNavRoute {
         "home":       "Vesl650",
         "shipments":  "Vesl651",
         "compliance": "Vesl652",
-        "me":         "Vesl650",
+        "me":         "Vesl656",
     ]
 
     static let orbLabels: Set<String> = ["esang", "orb"]
