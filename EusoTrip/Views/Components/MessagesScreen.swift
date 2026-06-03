@@ -370,7 +370,9 @@ struct MessagesScreen: View {
         VStack(spacing: 0) {
             ForEach(0..<4, id: \.self) { _ in
                 HStack(alignment: .top, spacing: Space.s3) {
-                    RoundedRectangle(cornerRadius: Radius.md)
+                    // Circular placeholder matching the round ChatAvatar that
+                    // resolves once the inbox loads.
+                    Circle()
                         .fill(palette.tintNeutral)
                         .frame(width: 40, height: 40)
                     VStack(alignment: .leading, spacing: 6) {
@@ -391,50 +393,103 @@ struct MessagesScreen: View {
 
     @ViewBuilder
     private func threadRow(_ t: InboxThread) -> some View {
+        let isUnread = t.unread > 0
         HStack(alignment: .top, spacing: Space.s3) {
-            ZStack {
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .fill(palette.tintNeutral)
-                Image(systemName: t.glyph)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-            }
-            .frame(width: 40, height: 40)
+            // Shared-kit avatar: ESANG orb for the AI dispatch/coach thread,
+            // tinted person initials for every peer / broker / shipper row.
+            // Replaces the old hand-drawn glyph tile so the inbox matches the
+            // 053 chat surface's identity language.
+            ChatAvatar(kind: avatarKind(for: t), size: 40, online: isOnline(t))
 
             VStack(alignment: .leading, spacing: 2) {
-                HStack {
+                HStack(spacing: Space.s2) {
                     Text(t.title)
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
-                    Spacer()
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
                     Text(t.time)
                         .font(EType.caption)
+                        .foregroundStyle(isUnread ? palette.textSecondary : palette.textTertiary)
+                }
+                if !t.subtitle.isEmpty {
+                    Text(t.subtitle.uppercased())
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
+                        .lineLimit(1)
                 }
                 Text(t.preview)
                     .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
+                    .foregroundStyle(isUnread ? palette.textPrimary : palette.textSecondary)
                     .lineLimit(2)
             }
 
-            if t.unread > 0 {
-                Text("\(t.unread)")
-                    .font(EType.micro)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(LinearGradient.diagonal)
-                    )
+            VStack(alignment: .trailing, spacing: Space.s2) {
+                if isUnread {
+                    Text("\(t.unread)")
+                        .font(EType.micro)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(
+                            Capsule().fill(LinearGradient.diagonal)
+                        )
+                        .accessibilityLabel("\(t.unread) unread")
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
             }
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(palette.textTertiary)
         }
         .padding(.horizontal, Space.s4)
         .padding(.vertical, Space.s3)
         .contentShape(Rectangle())
+    }
+
+    // MARK: - Row avatar derivation
+
+    /// True when a thread is the ESANG AI assistant rather than a human
+    /// counterpart — those rows get the gradient ESANG orb, mirroring 053.
+    private func isESang(_ t: InboxThread) -> Bool {
+        let hay = (t.title + " " + t.subtitle).lowercased()
+        return hay.contains("esang")
+            || hay.contains("ai assistant")
+            || hay.contains("ai coach")
+    }
+
+    /// Dispatch + the ESANG assistant render with a live presence dot — they
+    /// are always-on system endpoints, never an idle peer.
+    private func isOnline(_ t: InboxThread) -> Bool {
+        isESang(t) || t.subtitle.lowercased().contains("dispatch")
+    }
+
+    /// Choose the shared-kit avatar for a row: the ESANG orb for the AI
+    /// thread, otherwise tinted person initials. Tint is stable per thread
+    /// (hashed off the id) so the same contact keeps the same color.
+    private func avatarKind(for t: InboxThread) -> ChatAvatarKind {
+        if isESang(t) { return .esang }
+        return .person(initials: initials(from: t.title), tint: tint(for: t.id))
+    }
+
+    /// Up-to-two-letter initials from a display name; falls back to "•" so a
+    /// blank title still renders a stable disc instead of an empty circle.
+    private func initials(from title: String) -> String {
+        let words = title
+            .split(whereSeparator: { $0 == " " || $0 == "·" || $0 == "-" })
+            .filter { !$0.isEmpty }
+        let letters = words.prefix(2).compactMap { $0.first }
+        let result = String(letters).uppercased()
+        return result.isEmpty ? "•" : result
+    }
+
+    /// Deterministic tint from a small Brand palette, keyed off the thread id
+    /// so each conversation keeps a consistent identity color across refreshes.
+    private func tint(for id: String) -> Color {
+        let tints: [Color] = [
+            Brand.magenta, Brand.blue, Brand.success,
+            Brand.escort, Brand.vessel, Brand.warning, Brand.info
+        ]
+        let hash = abs(id.hashValue)
+        return tints[hash % tints.count]
     }
 }
 

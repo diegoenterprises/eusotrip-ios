@@ -85,11 +85,19 @@ private struct eSangThreadBody: View {
     /// the comment promised but the impl swallowed; founder bug
     /// 2026-05-24 (tapped send, nothing visible happened).
     @State private var sendError: String? = nil
+    /// Real Speech.framework voice-to-text — the same controller the
+    /// 053 dispatch chat drives. Bound live to the composer while
+    /// recording so the text you SEE is the text that gets sent.
+    @StateObject private var voice = eSangVoiceInputController()
 
     var body: some View {
         VStack(spacing: 0) {
-            header.padding(.horizontal, 14).padding(.top, 56)
-            ScrollView { VStack(alignment: .leading, spacing: 8) { messagesList }.padding(.horizontal, 14).padding(.top, Space.s2) }
+            header
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) { messagesList }
+                    .padding(.horizontal, 14)
+                    .padding(.top, Space.s2)
+            }
             composer
         }
         .task {
@@ -120,26 +128,73 @@ private struct eSangThreadBody: View {
                 draft = p
                 EsangComposerPrefill.shared.pending = nil
             }
+            // Hand the real transcript back into the composer. Append so
+            // a dictation extends a half-typed message rather than
+            // clobbering it (same contract as 053 dispatch chat).
+            voice.onFinalTranscript = { transcript in
+                let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                draft = trimmed.isEmpty ? transcript : "\(trimmed) \(transcript)"
+            }
         }
+        .onDisappear { voice.cancel() }
+    }
+
+    /// The counterpart on this thread — derived from the most recent
+    /// received (non-mine) message's senderName. Falls back to a
+    /// generic label so the header never reads blank before the first
+    /// inbound message lands.
+    private var counterpartName: String {
+        if let name = messages.last(where: { $0.isMine != true })?.senderName,
+           !name.trimmingCharacters(in: .whitespaces).isEmpty {
+            return name
+        }
+        if let name = messages.first(where: { $0.senderName?.isEmpty == false })?.senderName,
+           !name.trimmingCharacters(in: .whitespaces).isEmpty {
+            return name
+        }
+        return "Load conversation"
+    }
+
+    /// Header subtitle — the load reference when we have one, else a
+    /// neutral "MESSAGE THREAD" line (matches the 053 presence line look).
+    private var headerSubtitle: String {
+        if let label = loadNumberLabel,
+           !label.trimmingCharacters(in: .whitespaces).isEmpty {
+            return "LOAD \(label) · MESSAGE THREAD"
+        }
+        return "MESSAGE THREAD"
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: "bubble.left.and.bubble.right.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                // Rebranded 2026-05-24: founder mandate — Messages is
-                // for load conversations between shipper / catalyst /
-                // driver. ESANG AI is a separate surface (orb-accessed).
-                // The old "SHIPPER · ESANG · THREAD" header made users
-                // think they were chatting with the AI; this header
-                // makes it clear they're messaging the people on the
-                // load.
-                Text("SHIPPER · LOAD MESSAGE THREAD").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+        // Rebranded 2026-05-24: Messages is for load conversations
+        // between shipper / catalyst / driver. ESANG AI is a separate
+        // (orb-accessed) surface. The person header makes it clear the
+        // shipper is messaging the people on the load, not the AI.
+        ChatHeaderPerson(
+            name: counterpartName,
+            subtitle: headerSubtitle,
+            initials: initials(from: counterpartName),
+            tint: Brand.magenta,
+            online: false,
+            onBack: {
+                // Canonical shipper pop — RoleSurfaceRouter listens for
+                // `.eusoShipperNavBack` to unwind the pushed thread back
+                // to the messages list / dispatch board it came from.
+                NotificationCenter.default.post(name: .eusoShipperNavBack, object: nil)
             }
-            if let label = loadNumberLabel, !label.isEmpty {
-                Text("Load \(label)").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-            }
-        }
+        )
+    }
+
+    /// First-letter / first-two-initials derivation for the avatar disc.
+    private func initials(from name: String) -> String {
+        let parts = name
+            .trimmingCharacters(in: .whitespaces)
+            .split(separator: " ")
+            .prefix(2)
+            .compactMap { $0.first }
+            .map(String.init)
+        let joined = parts.joined().uppercased()
+        return joined.isEmpty ? "•" : joined
     }
 
     @ViewBuilder
@@ -167,23 +222,29 @@ private struct eSangThreadBody: View {
             }.padding(.top, Space.s4)
         }
         else {
+            // Day divider at the top of the thread — matches the 053
+            // AFTER frame's "TODAY" separator above the first bubble.
+            ChatDayDivider()
+                .padding(.bottom, Space.s2)
             ForEach(messages) { m in bubble(m) }
         }
     }
 
+    @ViewBuilder
     private func bubble(_ m: eSangChatMessage) -> some View {
-        HStack {
-            if m.isMine == true { Spacer(minLength: 40) }
-            VStack(alignment: m.isMine == true ? .trailing : .leading, spacing: 2) {
-                Text(dashIfEmpty(m.senderName)).font(.system(size: 9, weight: .heavy)).tracking(0.6).foregroundStyle(palette.textTertiary)
-                Text(m.body).font(EType.body).foregroundStyle(m.isMine == true ? .white : palette.textPrimary)
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(m.isMine == true ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCard))
-                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(m.isMine == true ? .clear : palette.borderFaint, lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                Text(humanISO(m.createdAt, format: "HH:mm")).font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
-            }
-            if m.isMine != true { Spacer(minLength: 40) }
+        if m.isMine == true {
+            ChatBubbleSent(
+                text: m.body,
+                time: humanISO(m.createdAt, format: "HH:mm")
+            )
+        } else {
+            ChatBubbleReceived(
+                avatar: .person(initials: initials(from: m.senderName ?? ""),
+                                tint: Brand.magenta),
+                senderName: m.senderName,
+                text: m.body,
+                time: humanISO(m.createdAt, format: "HH:mm")
+            )
         }
     }
 
@@ -200,21 +261,22 @@ private struct eSangThreadBody: View {
                 }
                 .padding(.horizontal, 14).padding(.vertical, 6)
             }
-            HStack(spacing: 8) {
-                TextField("Message", text: $draft, axis: .vertical).lineLimit(1...4).textFieldStyle(.plain)
-                    .padding(.horizontal, 10).padding(.vertical, 8)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                Button { Task { await send() } } label: {
-                    if sending { ProgressView().tint(.white).frame(width: 36, height: 36).background(LinearGradient.diagonal).clipShape(Circle()) }
-                    else {
-                        Image(systemName: "arrow.up").font(.system(size: 13, weight: .heavy)).foregroundStyle(.white)
-                            .frame(width: 36, height: 36).background(LinearGradient.diagonal).clipShape(Circle())
-                    }
-                }.buttonStyle(.plain).disabled(sending || draft.isEmpty || resolvedConversationId.isEmpty)
-            }
-            .padding(.horizontal, 14).padding(.vertical, 10)
+            // Shared composer: live voice-to-text dictation + gradient
+            // send. Upload is off — this is a peer message thread, not
+            // the document-intelligence ESANG surface. The send button's
+            // empty/inflight disable is handled inside ChatComposer; we
+            // still guard the empty conversation in `send()`.
+            ChatComposer(
+                draft: $draft,
+                voice: voice,
+                placeholder: "Message",
+                showUpload: false,
+                showVoice: true,
+                sending: sending,
+                onSend: { Task { await send() } }
+            )
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
         }
         .background(palette.bgCard.opacity(0.95))
     }

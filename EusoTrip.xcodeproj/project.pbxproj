@@ -876,6 +876,7 @@
 		LBTR20260521000001 /* 340_LoadBoardTrio.swift in Sources */ = {isa = PBXBuildFile; fileRef = LBTR20260521000002 /* 340_LoadBoardTrio.swift */; };
 		LCGCSTORE0010CE0FF1A1B2C3 /* LifecycleGeocodeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = LCGCSTORE0010CE0FF1A1B2C4 /* LifecycleGeocodeStore.swift */; };
 		LMBD2026051700000011A1 /* LoadModeBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = LMBD2026051700000012A1 /* LoadModeBadge.swift */; };
+		CHKT2026060300000011A1 /* ESangChatKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = CHKT2026060300000012A1 /* ESangChatKit.swift */; };
 		DP022026060300000011A1 /* 402_DispatcherProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = DP022026060300000012A1 /* 402_DispatcherProfile.swift */; };
 		RS082026060300000011A1 /* 008_RailShipperTenderWorkflow.swift in Sources */ = {isa = PBXBuildFile; fileRef = RS082026060300000012A1 /* 008_RailShipperTenderWorkflow.swift */; };
 		VD042026060300000011A1 /* 004_VesselDemurrageDetention.swift in Sources */ = {isa = PBXBuildFile; fileRef = VD042026060300000012A1 /* 004_VesselDemurrageDetention.swift */; };
@@ -1890,6 +1891,7 @@
 		LBTR20260521000002 /* 340_LoadBoardTrio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 340_LoadBoardTrio.swift; path = EusoTrip/Views/Catalyst/340_LoadBoardTrio.swift; sourceTree = SOURCE_ROOT; };
 		LCGCSTORE0010CE0FF1A1B2C4 /* LifecycleGeocodeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifecycleGeocodeStore.swift; sourceTree = "<group>"; };
 		LMBD2026051700000012A1 /* LoadModeBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadModeBadge.swift; sourceTree = "<group>"; };
+		CHKT2026060300000012A1 /* ESangChatKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ESangChatKit.swift; path = EusoTrip/Views/Components/Chat/ESangChatKit.swift; sourceTree = SOURCE_ROOT; };
 		DP022026060300000012A1 /* 402_DispatcherProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 402_DispatcherProfile.swift; path = EusoTrip/Views/Dispatch/402_DispatcherProfile.swift; sourceTree = SOURCE_ROOT; };
 		RS082026060300000012A1 /* 008_RailShipperTenderWorkflow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 008_RailShipperTenderWorkflow.swift; path = EusoTrip/Views/Rail/008_RailShipperTenderWorkflow.swift; sourceTree = SOURCE_ROOT; };
 		VD042026060300000012A1 /* 004_VesselDemurrageDetention.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 004_VesselDemurrageDetention.swift; path = EusoTrip/Views/Vessel/004_VesselDemurrageDetention.swift; sourceTree = SOURCE_ROOT; };
@@ -2803,6 +2805,7 @@
 				HAFD00010CE0FF10000012A1 /* HereAddressField.swift */,
 				LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */,
 				LMBD2026051700000012A1 /* LoadModeBadge.swift */,
+				CHKT2026060300000012A1 /* ESangChatKit.swift */,
 				DP022026060300000012A1 /* 402_DispatcherProfile.swift */,
 				RS082026060300000012A1 /* 008_RailShipperTenderWorkflow.swift */,
 				VD042026060300000012A1 /* 004_VesselDemurrageDetention.swift */,
@@ -3616,6 +3619,7 @@
 				HAFD00010CE0FF10000011A1 /* HereAddressField.swift in Sources */,
 				LTBD00010CE0FF10000011A1 /* ListingTrustBadge.swift in Sources */,
 				LMBD2026051700000011A1 /* LoadModeBadge.swift in Sources */,
+				CHKT2026060300000011A1 /* ESangChatKit.swift in Sources */,
 				DP022026060300000011A1 /* 402_DispatcherProfile.swift in Sources */,
 				RS082026060300000011A1 /* 008_RailShipperTenderWorkflow.swift in Sources */,
 				VD042026060300000011A1 /* 004_VesselDemurrageDetention.swift in Sources */,

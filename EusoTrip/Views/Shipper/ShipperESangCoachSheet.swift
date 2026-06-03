@@ -93,7 +93,6 @@ struct ShippereSangCoachSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            IridescentHairline()
             transcript
             chipRow
             composer
@@ -102,15 +101,15 @@ struct ShippereSangCoachSheet: View {
         .background(palette.bgPage)
         .contentShape(Rectangle())
         .onTapGesture { composerFocused = false }
-        // Wire the voice pipeline's final transcript through the same
-        // `send(_:)` used by the text composer. Voice + text converge
-        // on one backend call, so `esang.chat` doesn't care which path
-        // the user took to get there.
+        // Wire the voice pipeline's final transcript back into the
+        // composer draft (append so dictation extends a half-typed
+        // line rather than clobbering it). The shipper then taps send
+        // — voice + text converge on the same `send(_:)` backend call,
+        // so `esang.chat` doesn't care which path the user took.
         .onAppear {
             voice.onFinalTranscript = { transcript in
-                Task { @MainActor in
-                    send(transcript)
-                }
+                let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                draft = trimmed.isEmpty ? transcript : "\(trimmed) \(transcript)"
             }
         }
         // Cancel any in-flight recording cleanly on dismiss so the mic
@@ -147,34 +146,40 @@ struct ShippereSangCoachSheet: View {
 
     // MARK: Header
 
+    /// Shared ESANG chat header. This is a SHEET — there is no back
+    /// nav, so `onBack` is nil and the trailing `overflow` slot holds a
+    /// close "xmark" that calls `onClose()`/`dismiss()` exactly as the
+    /// old bespoke header did. The `accessory` carries a small online
+    /// status badge next to the title.
     private var header: some View {
-        HStack(alignment: .center, spacing: Space.s3) {
-            OrbeSang(state: sending ? .thinking : .idle, diameter: 56)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("ESANG")
-                    .font(.system(size: 22, weight: .heavy))
-                    .tracking(0.5)
-                    .foregroundStyle(LinearGradient.diagonal)
-                Text("Your AI copilot · online")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
+        ChatHeaderESang(
+            breadcrumb: "SHIPPER · ESANG COACH",
+            statusText: sending ? "THINKING…" : "ONLINE · COPILOT",
+            online: true,
+            onBack: nil,
+            accessory: {
+                Text("ONLINE")
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(Brand.success)
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(Brand.success.opacity(0.15))
+                    .clipShape(Capsule())
+            },
+            overflow: {
+                Button {
+                    if let onClose { onClose() } else { dismiss() }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                        .frame(width: 36, height: 36)
+                        .background(palette.bgCardSoft)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close ESANG")
             }
-            Spacer()
-            Button {
-                if let onClose { onClose() } else { dismiss() }
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 16, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 38, height: 38)
-                    .background(palette.bgCardSoft)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, Space.s4)
-        .padding(.top, Space.s4)
-        .padding(.bottom, Space.s3)
+        )
     }
 
     // MARK: Transcript
@@ -182,7 +187,8 @@ struct ShippereSangCoachSheet: View {
     private var transcript: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: Space.s2) {
+                LazyVStack(alignment: .leading, spacing: Space.s4) {
+                    ChatDayDivider()
                     ForEach(messages) { m in
                         bubble(for: m).id(m.id)
                     }
@@ -194,11 +200,11 @@ struct ShippereSangCoachSheet: View {
                                 .font(EType.caption)
                                 .foregroundStyle(palette.textSecondary)
                         }
-                        .padding(.horizontal, Space.s4)
                     }
+                    Color.clear.frame(height: 8)
                 }
-                .padding(.horizontal, Space.s4)
-                .padding(.vertical, Space.s3)
+                .padding(.horizontal, 14)
+                .padding(.top, 8)
             }
             .onChange(of: messages.count) { _, _ in
                 if let last = messages.last {
@@ -212,113 +218,57 @@ struct ShippereSangCoachSheet: View {
 
     @ViewBuilder
     private func bubble(for m: Msg) -> some View {
-        let isShipper = m.role == .shipper
-        HStack {
-            if isShipper { Spacer(minLength: 40) }
-            Text(m.text)
-                .font(EType.body)
-                .foregroundStyle(isShipper ? .white : palette.textPrimary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(
-                    isShipper
-                    ? AnyShapeStyle(LinearGradient.diagonal)
-                    : AnyShapeStyle(palette.bgCardSoft)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .frame(maxWidth: .infinity, alignment: isShipper ? .trailing : .leading)
-            if !isShipper { Spacer(minLength: 40) }
+        if m.role == .shipper {
+            ChatBubbleSent(text: m.text, time: clock(m.time))
+        } else {
+            ChatBubbleReceived(avatar: .esang, text: m.text, time: clock(m.time))
         }
+    }
+
+    /// `HH:mm` stamp for a bubble — rendered inside the card, matching
+    /// the 053 reference look.
+    private func clock(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f.string(from: date)
     }
 
     // MARK: Chip row
 
     private var chipRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: Space.s2) {
                 ForEach(chips, id: \.0) { chip in
-                    Button {
+                    ChatQuickChip(label: chip.0) {
                         send(chip.1)
-                    } label: {
-                        Text(chip.0)
-                            .font(EType.caption).bold()
-                            .foregroundStyle(palette.textPrimary)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(palette.bgCardSoft)
-                            .overlay(
-                                Capsule().strokeBorder(palette.borderFaint, lineWidth: 1)
-                            )
-                            .clipShape(Capsule())
                     }
-                    .buttonStyle(.plain)
                     .disabled(sending)
                 }
             }
-            .padding(.horizontal, Space.s4)
+            .padding(.horizontal, 14)
             .padding(.bottom, Space.s2)
         }
     }
 
     // MARK: Composer
 
+    /// Shared input bar — keeps every shipper affordance: the document
+    /// upload paperclip opens the classifier sheet (`onUpload`), the
+    /// SFSpeech voice button + live-transcript binding live inside the
+    /// kit, and `onSend` routes the draft through the same `esang.chat`
+    /// send path via `sendDraft()`.
     private var composer: some View {
-        HStack(spacing: Space.s2) {
-            HStack(spacing: 8) {
-                // While the mic is hot we bind the field to the live
-                // partial transcript so the shipper SEES what ESANG is
-                // about to receive. Driver parity (DriverTabPanes:4672).
-                TextField("Ask ESANG…", text: voice.isRecording ? $voice.transcript : $draft, axis: .vertical)
-                    .focused($composerFocused)
-                    .font(EType.body)
-                    .lineLimit(1...4)
-                    .submitLabel(.send)
-                    .onSubmit { sendDraft() }
-                    .disabled(voice.isRecording)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(palette.bgCardSoft)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(voice.isRecording ? Brand.magenta.opacity(0.55) : Color.clear,
-                                  lineWidth: voice.isRecording ? 1.2 : 0)
-            )
-
-            // Push-to-talk mic — shared component with the driver sheet.
-            // Tap to start; tap again to stop. Final transcript is shipped
-            // through `send(_:)` via the `onFinalTranscript` closure wired
-            // in `.onAppear` above.
-            eSangVoiceInputButton(controller: voice)
-
-            // Document upload — the real affordance, not just mic+send.
-            // Opens the document router; the classifier tells us EXACTLY
-            // what the doc is before it ever reaches ESANG.
-            Button { showDocClassifier = true } label: {
-                Image(systemName: "paperclip")
-                    .font(.system(size: 16, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 44, height: 44)
-                    .background(palette.bgCardSoft)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .disabled(voice.isRecording || sending)
-            .accessibilityLabel("Attach document")
-
-            Button(action: sendDraft) {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 16, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .background(LinearGradient.diagonal)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || sending)
-        }
-        .padding(.horizontal, Space.s4)
+        ChatComposer(
+            draft: $draft,
+            voice: voice,
+            placeholder: "Ask ESANG…",
+            showUpload: true,
+            showVoice: true,
+            sending: sending,
+            onUpload: { showDocClassifier = true },
+            onSend: { sendDraft() }
+        )
+        .padding(.horizontal, 14)
         .padding(.bottom, Space.s4)
     }
 

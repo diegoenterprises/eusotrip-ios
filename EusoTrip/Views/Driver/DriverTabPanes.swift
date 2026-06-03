@@ -4318,6 +4318,7 @@ struct DrivereSangCoachSheet: View {
             header
             IridescentHairline()
             transcript
+            watchingPill
             chipRow
             composer
         }
@@ -4383,18 +4384,40 @@ struct DrivereSangCoachSheet: View {
 
     // MARK: Header
 
+    /// ESANG coach header — the bespoke OrbeSang (state machine: idle /
+    /// listening / thinking) is preserved as the live avatar, and the title
+    /// block is dressed in the shared `ChatHeaderESang` look (breadcrumb +
+    /// AI pill + presence dot + status text) so the coach sheet reads
+    /// pixel-consistent with the 053 dispatch chat. The trailing control is
+    /// a close X (this surface is a modal sheet, not a pushed thread).
     private var header: some View {
-        HStack(alignment: .center, spacing: Space.s3) {
-            OrbeSang(state: orbState, diameter: 56)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("ESANG")
-                    .font(.system(size: 22, weight: .heavy))
+        HStack(alignment: .center, spacing: 10) {
+            // KEEP the bespoke orb — its state animation is the heartbeat of
+            // the coach surface. It stands in for the kit's static ChatAvatar.
+            OrbeSang(state: orbState, diameter: 44)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("DRIVER · ESANG COACH")
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("Your AI copilot · online")
-                    .font(EType.micro).tracking(0.6)
-                    .foregroundStyle(palette.textSecondary)
+                HStack(spacing: 5) {
+                    Text("ESANG")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text("AI")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(LinearGradient.diagonal)
+                        .clipShape(Capsule())
+                }
+                HStack(spacing: 4) {
+                    Circle().fill(Brand.success).frame(width: 5, height: 5)
+                    Text("ONLINE · YOUR AI COPILOT")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                }
             }
-            Spacer()
+            Spacer(minLength: 0)
             Button {
                 if let onClose { onClose() } else { dismiss() }
             } label: {
@@ -4412,7 +4435,7 @@ struct DrivereSangCoachSheet: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Close ESANG")
         }
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, 14)
         .padding(.top, Space.s4)
         .padding(.bottom, Space.s3)
     }
@@ -4423,11 +4446,12 @@ struct DrivereSangCoachSheet: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.s3) {
+                    ChatDayDivider()
                     ForEach(messages) { m in
                         bubble(m).id(m.id)
                     }
                 }
-                .padding(.horizontal, Space.s5)
+                .padding(.horizontal, 14)
                 .padding(.top, Space.s4)
                 .padding(.bottom, Space.s3)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -4442,74 +4466,91 @@ struct DrivereSangCoachSheet: View {
         }
     }
 
+    /// Short `HH:mm` stamp shown inside each bubble — matches the 053
+    /// reference, where the timestamp lives INSIDE the card.
+    private static let bubbleClock: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+    private func stamp(_ m: Msg) -> String { Self.bubbleClock.string(from: m.time) }
+
+    /// Routes each transcript row onto the shared chat kit. ESANG replies
+    /// become `ChatBubbleReceived(.esang)` (with any photo dropped into the
+    /// attachment slot); plain driver text becomes `ChatBubbleSent`; and the
+    /// driver-initiated photo + EusoWallet transfer cards keep their bespoke
+    /// gradient outbound shells (the kit's sent bubble has no attachment
+    /// slot) but now carry the same in-card timestamp as the rest.
     @ViewBuilder
     private func bubble(_ m: Msg) -> some View {
-        HStack {
-            if m.role == .driver { Spacer(minLength: 40) }
-            bubbleBody(m)
-                .frame(maxWidth: 280, alignment: m.role == .driver ? .trailing : .leading)
-            if m.role == .esang { Spacer(minLength: 40) }
+        if m.role == .esang {
+            ChatBubbleReceived(avatar: .esang, text: m.text, time: stamp(m)) {
+                esangAttachment(m)
+            }
+        } else if m.transfer != nil || m.imageData != nil {
+            // Driver-initiated rich payloads (transfer card / photo) — keep the
+            // outbound gradient shell the kit can't express, right-aligned.
+            HStack {
+                Spacer(minLength: 40)
+                outboundRichBubble(m)
+                    .frame(maxWidth: 280, alignment: .trailing)
+            }
+        } else {
+            ChatBubbleSent(text: m.text, time: stamp(m))
         }
     }
 
+    /// ESANG-side attachment slot. ESANG can echo a photo back; we render it
+    /// here so `ChatBubbleReceived` keeps the card chrome + timestamp.
     @ViewBuilder
-    private func bubbleBody(_ m: Msg) -> some View {
-        if let payload = m.transfer {
-            // EusoWallet transfer card. Always driver-initiated in this
-            // surface, so the outbound (gradient) variant is what we
-            // render here.
-            esangTransferCard(payload)
-        } else if let data = m.imageData,
-                  let ui = UIImage(data: data) {
-            VStack(alignment: .leading, spacing: Space.s2) {
-                Image(uiImage: ui)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(maxWidth: 240, maxHeight: 320)
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(palette.borderFaint)
-                    )
-                if !m.text.isEmpty {
-                    Text(m.text)
-                        .font(EType.body)
-                        .foregroundStyle(m.role == .driver ? .white : palette.textPrimary)
-                }
-            }
-            .padding(.horizontal, Space.s3)
-            .padding(.vertical, Space.s3)
-            .background(
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .fill(m.role == .driver
-                          ? AnyShapeStyle(LinearGradient.diagonal)
-                          : AnyShapeStyle(palette.bgCard))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .strokeBorder(m.role == .driver ? Color.clear : palette.borderFaint)
-            )
-        } else {
-            Text(m.text)
-                .font(EType.body)
-                .foregroundStyle(m.role == .driver ? Color.white : palette.textPrimary)
-                .padding(.horizontal, Space.s4)
-                .padding(.vertical, Space.s3)
-                .background(
-                    Group {
-                        if m.role == .driver {
-                            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                                .fill(LinearGradient.diagonal)
-                        } else {
-                            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                                .fill(palette.bgCard)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                                        .strokeBorder(palette.borderFaint)
-                                )
-                        }
-                    }
+    private func esangAttachment(_ m: Msg) -> some View {
+        if let data = m.imageData, let ui = UIImage(data: data) {
+            Image(uiImage: ui)
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: 240, maxHeight: 320)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint)
                 )
+        }
+    }
+
+    /// Driver-initiated outbound bubble for the two rich payload kinds the
+    /// kit's `ChatBubbleSent` can't carry: a EusoWallet transfer card and a
+    /// shared photo. Both ride the gradient (outbound) treatment with the
+    /// in-card timestamp under the content.
+    @ViewBuilder
+    private func outboundRichBubble(_ m: Msg) -> some View {
+        if let payload = m.transfer {
+            VStack(alignment: .trailing, spacing: 4) {
+                esangTransferCard(payload)
+                Text(stamp(m))
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(palette.textTertiary)
+            }
+        } else if let data = m.imageData, let ui = UIImage(data: data) {
+            VStack(alignment: .trailing, spacing: 4) {
+                VStack(alignment: .leading, spacing: Space.s2) {
+                    Image(uiImage: ui)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(maxWidth: 240, maxHeight: 320)
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    if !m.text.isEmpty {
+                        Text(m.text)
+                            .font(EType.body)
+                            .foregroundStyle(.white)
+                    }
+                }
+                .padding(Space.s3)
+                .background(LinearGradient.diagonal)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                Text(stamp(m))
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(palette.textTertiary)
+            }
         }
     }
 
@@ -4573,31 +4614,25 @@ struct DrivereSangCoachSheet: View {
 
     // MARK: Chip row
 
+    /// Live "ESANG watching" presence pill — centered, above the quick-reply
+    /// rail, matching the 053 AFTER frame.
+    private var watchingPill: some View {
+        ChatPresencePill(text: "ESANG monitoring your trip · live")
+            .padding(.bottom, Space.s2)
+    }
+
     private var chipRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: Space.s2) {
-                ForEach(chips, id: \.0) { chip in
-                    Button {
+                ForEach(Array(chips.enumerated()), id: \.element.0) { idx, chip in
+                    // First chip reads as the primary prompt (gradient outline),
+                    // mirroring the highlighted lead chip in 053.
+                    ChatQuickChip(label: chip.0, highlighted: idx == 0) {
                         send(chip.1)
-                    } label: {
-                        Text(chip.0)
-                            .font(EType.caption)
-                            .foregroundStyle(palette.textPrimary)
-                            .padding(.horizontal, Space.s3)
-                            .padding(.vertical, Space.s2)
-                            .background(
-                                RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                                    .fill(palette.bgCardSoft)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                                    .strokeBorder(palette.borderFaint)
-                            )
                     }
-                    .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, 14)
             .padding(.bottom, Space.s2)
         }
     }
@@ -4645,58 +4680,75 @@ struct DrivereSangCoachSheet: View {
         }
     }
 
+    /// Custom +menu composer, restyled to the shared `ChatComposer` look.
+    /// We do NOT swap in `ChatComposer` itself because that would drop the
+    /// PhotosPicker (the kit composer routes uploads through an `onUpload`
+    /// callback, not a native picker) — so this surface keeps its bespoke
+    /// photo affordance, but matches the kit chrome: a single rounded pill
+    /// holding [photo picker] [growing field bound live to the voice
+    /// transcript] [in-field mic], then the prominent SFSpeech voice button,
+    /// then the gradient send circle.
     private var composer: some View {
         VStack(spacing: 0) {
             pendingAttachmentStrip
-            HStack(alignment: .bottom, spacing: Space.s2) {
-                // PhotosPicker — single-tap shortcut to share a photo with
-                // ESANG (BOL snap, reefer gauge, dash warning, DVIR pic).
-                PhotosPicker(selection: $pickedPhoto,
-                             matching: .images,
-                             photoLibrary: .shared()) {
-                    Image(systemName: "photo")
-                        .font(.system(size: 16, weight: .semibold))
+            HStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    // PhotosPicker — single-tap shortcut to share a photo with
+                    // ESANG (BOL snap, reefer gauge, dash warning, DVIR pic).
+                    // Sits inside the pill where the kit composer's paperclip
+                    // lives, so the attach affordance reads identically.
+                    PhotosPicker(selection: $pickedPhoto,
+                                 matching: .images,
+                                 photoLibrary: .shared()) {
+                        Image(systemName: "photo")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                    .accessibilityLabel("Attach photo")
+
+                    // NOTE: EusoWallet P2P transfers live on the messaging surface
+                    // (DriverConversationView), not on the ESANG coach. The coach
+                    // has no conversationId to bind against `messages.sendPayment`,
+                    // so the dollar-sign entry point was removed in the 65th firing
+                    // (Phase C landmine sweep) to eliminate a DispatchQueue-timer
+                    // mock that faked a Stripe ACK. Drivers send money through
+                    // Messages → thread → composer, where the real tRPC call runs.
+
+                    // While the mic is hot we route live partial transcripts into
+                    // the `draft` binding so the driver can see what ESANG will
+                    // receive; on final (onFinalTranscript) we ship it straight
+                    // through `send(_:)`.
+                    TextField("Ask ESANG…", text: voice.isRecording ? $voice.transcript : $draft, axis: .vertical)
+                        .lineLimit(1...4)
+                        .focused($composerFocused)
+                        .font(EType.body)
                         .foregroundStyle(palette.textPrimary)
-                        .frame(width: 40, height: 40)
-                        .background(palette.bgCardSoft)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                                .strokeBorder(palette.borderFaint)
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                        .disabled(voice.isRecording)
+
+                    // In-field dictation toggle — mirrors the kit composer's
+                    // inline mic. The prominent SFSpeech button still sits
+                    // outside the pill (below) for the push-to-talk capture.
+                    Button {
+                        voice.toggle()
+                    } label: {
+                        Image(systemName: voice.isRecording ? "waveform" : "mic.fill")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(voice.isRecording ? Brand.magenta : palette.textSecondary)
+                            .symbolEffect(.variableColor.iterative.hideInactiveLayers,
+                                          options: .repeating, isActive: voice.isRecording)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(voice.isRecording ? "Stop dictation" : "Dictate")
                 }
-                .accessibilityLabel("Attach photo")
-
-                // NOTE: EusoWallet P2P transfers live on the messaging surface
-                // (DriverConversationView), not on the ESANG coach. The coach
-                // has no conversationId to bind against `messages.sendPayment`,
-                // so the dollar-sign entry point was removed in the 65th firing
-                // (Phase C landmine sweep) to eliminate a DispatchQueue-timer
-                // mock that faked a Stripe ACK. Drivers send money through
-                // Messages → thread → composer, where the real tRPC call runs.
-
-                // While the mic is hot we route live partial transcripts into
-                // the `draft` binding so the driver can see what ESANG will
-                // receive; on final (onFinalTranscript) we ship it straight
-                // through `send(_:)`.
-                TextField("Ask ESANG…", text: voice.isRecording ? $voice.transcript : $draft, axis: .vertical)
-                    .lineLimit(1...4)
-                    .focused($composerFocused)
-                    .font(EType.body)
-                    .foregroundStyle(palette.textPrimary)
-                    .padding(.horizontal, Space.s3)
-                    .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .fill(palette.bgCard)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(voice.isRecording
-                                          ? Brand.magenta.opacity(0.55)
-                                          : palette.borderFaint,
-                                          lineWidth: voice.isRecording ? 1.2 : 1)
-                    )
+                .padding(.horizontal, Space.s3)
+                .padding(.vertical, 10)
+                .background(palette.bgCard)
+                .overlay(
+                    Capsule().strokeBorder(
+                        voice.isRecording ? Brand.magenta.opacity(0.55) : palette.borderFaint,
+                        lineWidth: 1)
+                )
+                .clipShape(Capsule())
 
                 // Push-to-talk mic. Per user direction (2026-04-20):
                 //   > also add voice command to esang chat in the app. its missing
@@ -4714,21 +4766,21 @@ struct DrivereSangCoachSheet: View {
                     pendingImageData = nil
                     pickedPhoto = nil
                 } label: {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 40, height: 40)
-                        .background(
-                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                                .fill(LinearGradient.diagonal)
-                        )
+                    ZStack {
+                        Circle()
+                            .fill(LinearGradient.diagonal)
+                            .frame(width: 40, height: 40)
+                            .opacity(canSend ? 1 : 0.45)
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
                 }
                 .buttonStyle(.plain)
                 .disabled(!canSend)
-                .opacity(canSend ? 1 : 0.55)
                 .accessibilityLabel("Send to ESANG")
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, 14)
             // Lift the composer off the home indicator — the coach sheet is
             // presented as a custom overlay (not a system sheet), so we have to
             // respect the bottom safe area ourselves.

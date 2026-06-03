@@ -35,6 +35,13 @@ struct DriverConversationView: View {
 
     let thread: InboxThread
 
+    // ──────────── Voice-to-text ────────────
+    //
+    // Real Speech.framework dictation, same controller the ESANG coach +
+    // 053 dispatch chat drive. Bound live into the composer field while
+    // recording so the text the driver SEES is the text that ships.
+    @StateObject private var voice = eSangVoiceInputController()
+
     // ──────────── Transcript state ────────────
 
     @State private var messages: [ChatMessage] = []
@@ -142,8 +149,8 @@ struct DriverConversationView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // `header` (ChatHeaderPerson) draws its own bottom hairline.
             header
-            IridescentHairline()
             if let err = lastErrorMessage {
                 errorBanner(err)
             }
@@ -176,6 +183,14 @@ struct DriverConversationView: View {
                 }
             }
             realtimeObserver = token
+
+            // Hand the finalized dictation transcript back into the draft.
+            // Append so a dictation can extend a half-typed message rather
+            // than clobber it.
+            voice.onFinalTranscript = { transcript in
+                let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                draft = trimmed.isEmpty ? transcript : "\(trimmed) \(transcript)"
+            }
         }
         .onDisappear {
             if let realtimeObserver {
@@ -184,6 +199,7 @@ struct DriverConversationView: View {
             realtimeObserver = nil
             RealtimeService.shared.leaveConversation(thread.id)
             UnreadMessageStore.shared.didCloseConversation(thread.id)
+            voice.cancel()
         }
         // Incoming PhotosPicker selection → load the raw image data so we
         // can both preview it inline + ship it on send. Alongside, run the
@@ -268,48 +284,36 @@ struct DriverConversationView: View {
     // MARK: Header
 
     private var header: some View {
-        HStack(spacing: Space.s3) {
-            // Avatar
-            ZStack {
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .fill(palette.tintNeutral)
-                Text(initials)
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
+        // Shared person-thread header — counterpart identity + presence +
+        // a trailing close control (this surface is presented as a sheet
+        // and as a nav push; `dismiss()` resolves correctly for both, and
+        // the nav-push case also keeps its own toolbar back button).
+        ChatHeaderPerson(
+            name: thread.title,
+            subtitle: thread.subtitle.uppercased(),
+            initials: initials,
+            tint: Brand.magenta,
+            online: false,
+            onBack: { dismiss() },
+            overflow: {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                        .frame(width: 32, height: 32)
+                        .background(palette.bgCardSoft)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                                .strokeBorder(palette.borderFaint)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close conversation")
             }
-            .frame(width: 40, height: 40)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(thread.title)
-                    .font(.system(size: 18, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary)
-                Text(thread.subtitle)
-                    .font(EType.micro).tracking(0.5)
-                    .foregroundStyle(palette.textSecondary)
-            }
-
-            Spacer()
-
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 32, height: 32)
-                    .background(palette.bgCardSoft)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                            .strokeBorder(palette.borderFaint)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close conversation")
-        }
-        .padding(.horizontal, Space.s5)
-        .padding(.top, Space.s4)
-        .padding(.bottom, Space.s3)
+        )
     }
 
     // MARK: Transcript
@@ -328,6 +332,13 @@ struct DriverConversationView: View {
                 } else {
                     VStack(alignment: .leading, spacing: Space.s3) {
                         ForEach(messages) { m in
+                            // Day separator above the first message of each
+                            // calendar day so a thread that spans days reads
+                            // chronologically (matches the 053 TODAY divider).
+                            if shouldShowDayDivider(before: m) {
+                                ChatDayDivider(label: dayLabel(for: m.time))
+                                    .padding(.vertical, Space.s2)
+                            }
                             bubble(m).id(m.id)
                         }
                     }
@@ -397,28 +408,12 @@ struct DriverConversationView: View {
 
     @ViewBuilder
     private func bubble(_ m: ChatMessage) -> some View {
-        HStack(alignment: .bottom, spacing: Space.s2) {
-            if m.from == .me { Spacer(minLength: 40) }
-            VStack(alignment: m.from == .me ? .trailing : .leading, spacing: 4) {
-                bubbleBody(m)
-                    .frame(maxWidth: 280, alignment: m.from == .me ? .trailing : .leading)
-                HStack(spacing: 4) {
-                    Text(m.time, format: .dateTime.hour().minute())
-                        .font(EType.micro)
-                        .foregroundStyle(palette.textTertiary)
-                    if m.from == .me {
-                        Image(systemName: m.read ? "checkmark.circle.fill" : "checkmark")
-                            .font(.system(size: 10, weight: .semibold))
-                            // Doctrine §2.1: brand accent on "read" state must be the
-                            // gradient, not a flat Brand.info tint. §2.3: ternary shape-style
-                            // branches wrapped in AnyShapeStyle so SwiftUI compiles on iOS 17.
-                            .foregroundStyle(m.read
-                                             ? AnyShapeStyle(LinearGradient.diagonal)
-                                             : AnyShapeStyle(palette.textTertiary))
-                    }
-                }
+        Group {
+            if m.from == .me {
+                sentBubble(m)
+            } else {
+                receivedBubble(m)
             }
-            if m.from == .other { Spacer(minLength: 40) }
         }
         // Long-press menu on outbound bubbles → "Unsend" (destructive)
         // + "Copy" for both sides when the message is plain text. We
@@ -441,6 +436,170 @@ struct DriverConversationView: View {
                 }
             }
         }
+    }
+
+    /// Short clock label (e.g. "09:34") for the timestamp shown inside /
+    /// beneath each bubble.
+    private func clock(_ date: Date) -> String {
+        date.formatted(.dateTime.hour().minute())
+    }
+
+    // MARK: Day dividers
+
+    /// True when `m` is the first message of a new calendar day (or the very
+    /// first message in the transcript) — i.e. a `ChatDayDivider` should be
+    /// rendered above it.
+    private func shouldShowDayDivider(before m: ChatMessage) -> Bool {
+        guard let idx = messages.firstIndex(where: { $0.id == m.id }) else { return false }
+        if idx == 0 { return true }
+        let prev = messages[idx - 1]
+        return !Calendar.current.isDate(prev.time, inSameDayAs: m.time)
+    }
+
+    /// "TODAY" / "YESTERDAY" / a short date label for the divider sitting
+    /// above the first message of a day.
+    private func dayLabel(for date: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(date) { return "TODAY" }
+        if cal.isDateInYesterday(date) { return "YESTERDAY" }
+        return date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+            .uppercased()
+    }
+
+    // MARK: Received bubble (peer)
+    //
+    // Rendered through the shared `ChatBubbleReceived` so the look matches
+    // the 053 reference: a person-initials avatar, an optional sender name
+    // (group threads only), the message text, the timestamp INSIDE the
+    // card, and an attachment slot that carries the image / transfer card /
+    // unsent placeholder. No read receipt on inbound messages.
+    @ViewBuilder
+    private func receivedBubble(_ m: ChatMessage) -> some View {
+        ChatBubbleReceived(
+            avatar: .person(initials: initials, tint: Brand.magenta),
+            senderName: senderName(for: m),
+            text: bubbleText(m),
+            time: clock(m.time)
+        ) {
+            bubbleAttachment(m, outbound: false)
+        }
+    }
+
+    // MARK: Sent bubble (me)
+    //
+    // Plain text routes through the shared `ChatBubbleSent` gradient bubble;
+    // attachments / transfers / unsent keep their bespoke shells (re-skinned
+    // consistently). In every case we append the timestamp + read-receipt
+    // row beneath, preserving the double-check "read" glyph.
+    @ViewBuilder
+    private func sentBubble(_ m: ChatMessage) -> some View {
+        HStack(spacing: 0) {
+            Spacer(minLength: 36)
+            VStack(alignment: .trailing, spacing: 4) {
+                if m.unsent || m.transfer != nil || m.imageData != nil || m.imageURL != nil {
+                    // Non-text outbound content keeps its bespoke shell.
+                    bubbleBody(m)
+                        .frame(maxWidth: 280, alignment: .trailing)
+                } else {
+                    // Plain text → shared gradient sent bubble (no inner time;
+                    // we render the time + receipt together just below).
+                    ChatBubbleSent(text: m.text)
+                }
+                HStack(spacing: 4) {
+                    Text(clock(m.time))
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                        .foregroundStyle(palette.textTertiary)
+                    // Doctrine §2.1: brand accent on "read" state must be the
+                    // gradient, not a flat Brand.info tint. §2.3: ternary
+                    // shape-style branches wrapped in AnyShapeStyle so
+                    // SwiftUI compiles on iOS 17.
+                    Image(systemName: m.read ? "checkmark.circle.fill" : "checkmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(m.read
+                                         ? AnyShapeStyle(LinearGradient.diagonal)
+                                         : AnyShapeStyle(palette.textTertiary))
+                }
+            }
+        }
+    }
+
+    /// Group threads show the sender's name above an inbound bubble;
+    /// 1:1 threads don't. `InboxThread` carries no per-message sender, so
+    /// we suppress the name unless the subtitle marks this as a group.
+    private func senderName(for m: ChatMessage) -> String? {
+        guard m.from == .other else { return nil }
+        let isGroup = thread.subtitle.lowercased().contains("group")
+            || thread.title.lowercased().contains("group")
+        return isGroup ? thread.title : nil
+    }
+
+    /// Text the bubble body should render. Image / transfer rows carry an
+    /// empty caption string by design (see `toChat`), so the kit bubble's
+    /// own text line collapses and the attachment slot owns the content.
+    private func bubbleText(_ m: ChatMessage) -> String {
+        if m.unsent { return "" }
+        if m.transfer != nil { return "" }
+        if m.imageData != nil || m.imageURL != nil { return m.text }
+        return m.text
+    }
+
+    /// Attachment slot for the shared received bubble — carries the unsent
+    /// placeholder, the transfer card, or the image (local blob or remote
+    /// AsyncImage). Empty for plain text.
+    @ViewBuilder
+    private func bubbleAttachment(_ m: ChatMessage, outbound: Bool) -> some View {
+        if m.unsent {
+            Text("Message unsent")
+                .font(EType.body)
+                .italic()
+                .foregroundStyle(palette.textTertiary)
+        } else if let payload = m.transfer {
+            transferCard(payload, outbound: outbound)
+        } else if let data = m.imageData, let ui = uiImage(from: data) {
+            attachmentImage {
+                Image(uiImage: ui).resizable().scaledToFill()
+            }
+        } else if let urlStr = m.imageURL, let url = URL(string: urlStr) {
+            attachmentImage {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .empty:
+                        RoundedRectangle(cornerRadius: Radius.md)
+                            .fill(palette.tintNeutral)
+                            .overlay(ProgressView().controlSize(.small))
+                    case .success(let img):
+                        img.resizable().scaledToFill()
+                    case .failure:
+                        RoundedRectangle(cornerRadius: Radius.md)
+                            .fill(palette.tintNeutral)
+                            .overlay(
+                                Image(systemName: "photo")
+                                    .foregroundStyle(palette.textTertiary)
+                            )
+                    @unknown default:
+                        Color.clear
+                    }
+                }
+            }
+        } else {
+            EmptyView()
+        }
+    }
+
+    /// Bare clipped image used inside a bubble's attachment slot. Caption
+    /// (if any) is rendered by the bubble's own text line, so this shell is
+    /// just the framed, bordered image.
+    @ViewBuilder
+    private func attachmentImage<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        content()
+            .frame(maxWidth: 240, maxHeight: 320)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint)
+            )
     }
 
     @ViewBuilder
@@ -735,9 +894,18 @@ struct DriverConversationView: View {
     }
 
     // MARK: Composer
+    //
+    // Restyled to the shared chat kit's capsule language (matching the 053
+    // composer) while KEEPING this surface's richer affordances that the
+    // stock `ChatComposer` doesn't carry: the `+` attach menu, the one-tap
+    // PhotosPicker, and the optional EusoWallet P2P transfer button. Voice-
+    // to-text is added via the shared `eSangVoiceInputController`: an
+    // in-field mic toggle (the field binds live to `voice.transcript` while
+    // recording) plus the prominent SFSpeech voice button — none of the
+    // existing photo / transfer / send wiring is removed.
 
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: Space.s2) {
+        HStack(alignment: .bottom, spacing: 8) {
             // `+` attach menu. PhotosPicker wraps the photo option so the
             // picker owns its own presentation; the send-money option pops
             // a confirmation sheet.
@@ -759,16 +927,7 @@ struct DriverConversationView: View {
                     }
                 }
             } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 40, height: 40)
-                    .background(palette.bgCardSoft)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(palette.borderFaint)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                composerIconChrome("plus", tint: palette.textPrimary)
             }
             .accessibilityLabel("Attach")
 
@@ -778,16 +937,7 @@ struct DriverConversationView: View {
             PhotosPicker(selection: $pickedPhoto,
                          matching: .images,
                          photoLibrary: .shared()) {
-                Image(systemName: "photo")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 40, height: 40)
-                    .background(palette.bgCardSoft)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(palette.borderFaint)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                composerIconChrome("photo", tint: palette.textPrimary, size: 16)
             }
             .accessibilityLabel("Add photo")
 
@@ -795,58 +945,93 @@ struct DriverConversationView: View {
                 Button {
                     showTransferSheet = true
                 } label: {
-                    Image(systemName: "dollarsign")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(Brand.success)
-                        .frame(width: 40, height: 40)
-                        .background(palette.bgCardSoft)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                                .strokeBorder(Brand.success.opacity(0.35))
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    composerIconChrome("dollarsign", tint: Brand.success, size: 16,
+                                       border: Brand.success.opacity(0.35))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Send money via EusoWallet")
             }
 
-            TextField("Message \(thread.title.components(separatedBy: " ").first ?? "")…",
-                      text: $draft, axis: .vertical)
-                .lineLimit(1...4)
-                .focused($composerFocused)
-                .font(EType.body)
-                .foregroundStyle(palette.textPrimary)
-                .padding(.horizontal, Space.s3)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .fill(palette.bgCard)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(palette.borderFaint)
-                )
+            // Capsule text-field pill with an in-field dictation toggle. The
+            // field binds live to the voice transcript while recording so
+            // the text the driver SEES is what ships.
+            HStack(spacing: 8) {
+                TextField("Message \(thread.title.components(separatedBy: " ").first ?? "")…",
+                          text: voice.isRecording ? $voice.transcript : $draft,
+                          axis: .vertical)
+                    .lineLimit(1...4)
+                    .focused($composerFocused)
+                    .font(EType.body)
+                    .foregroundStyle(palette.textPrimary)
+                    .disabled(voice.isRecording)
+                    .submitLabel(.send)
+                    .onSubmit { sendComposed() }
+
+                Button {
+                    MeAction.fire("driver-conversation.voice-toggled",
+                                  userInfo: ["conversationId": thread.id,
+                                             "recording": !voice.isRecording])
+                    voice.toggle()
+                } label: {
+                    Image(systemName: voice.isRecording ? "waveform" : "mic.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(voice.isRecording ? Brand.magenta : palette.textSecondary)
+                        .symbolEffect(.variableColor.iterative.hideInactiveLayers,
+                                      options: .repeating, isActive: voice.isRecording)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(voice.isRecording ? "Stop dictation" : "Dictate")
+            }
+            .padding(.horizontal, Space.s3)
+            .padding(.vertical, 10)
+            .background(palette.bgCard)
+            .overlay(
+                Capsule().strokeBorder(
+                    voice.isRecording ? Brand.magenta.opacity(0.55) : palette.borderFaint,
+                    lineWidth: 1)
+            )
+            .clipShape(Capsule())
+
+            // Prominent SFSpeech voice button (shared component).
+            eSangVoiceInputButton(controller: voice)
 
             Button {
                 sendComposed()
             } label: {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
-                    .background(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .fill(LinearGradient.diagonal)
-                    )
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient.diagonal)
+                        .frame(width: 40, height: 40)
+                        .opacity(canSend ? 1 : 0.55)
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                }
             }
             .buttonStyle(.plain)
             .disabled(!canSend)
-            .opacity(canSend ? 1 : 0.55)
             .accessibilityLabel("Send")
         }
         .padding(.horizontal, Space.s5)
         .padding(.bottom, Space.s4 + Device.safeBottom)
         .padding(.top, Space.s2)
+    }
+
+    /// Shared rounded chrome for the composer's leading icon buttons (attach
+    /// `+`, photo, transfer `$`) so they stay visually consistent with the
+    /// kit's pill language.
+    @ViewBuilder
+    private func composerIconChrome(_ systemName: String,
+                                    tint: Color,
+                                    size: CGFloat = 18,
+                                    border: Color? = nil) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: size, weight: .bold))
+            .foregroundStyle(tint)
+            .frame(width: 40, height: 40)
+            .background(palette.bgCardSoft)
+            .overlay(Circle().strokeBorder(border ?? palette.borderFaint))
+            .clipShape(Circle())
     }
 
     private var canSend: Bool {

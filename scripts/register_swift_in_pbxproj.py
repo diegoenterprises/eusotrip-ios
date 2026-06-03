@@ -20,6 +20,8 @@ PBXPROJ = "/Users/diegousoro/Desktop/EusoTrip by Eusorone Technologies, Inc/Euso
 
 # (uuid_build, uuid_ref, basename, relative path from SOURCE_ROOT)
 ENTRIES = [
+    ("CHKT2026060300000011A1", "CHKT2026060300000012A1",
+     "ESangChatKit.swift", "EusoTrip/Views/Components/Chat/ESangChatKit.swift"),
     ("VD042026060300000011A1", "VD042026060300000012A1",
      "004_VesselDemurrageDetention.swift", "EusoTrip/Views/Vessel/004_VesselDemurrageDetention.swift"),
     ("RS082026060300000011A1", "RS082026060300000012A1",
