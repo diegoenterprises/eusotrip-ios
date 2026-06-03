@@ -395,7 +395,51 @@ struct ActiveEnrouteLoaded: View {
 
     // MARK: Map background
 
+    /// Canonical OMV vector map + live HERE add-ons (fuel / EV / weather /
+    /// traffic / parking / truck-stops / weigh-stations / safety-cameras /
+    /// ISA / sponsored ad-zones / missions), fed the load's real
+    /// pickup/delivery coords and the decoded lane. Mirrors 013's
+    /// `mapLayer`. Falls back to the honest decorative placeholder (no
+    /// fabricated route) until BOTH endpoints carry a real fix.
+    @ViewBuilder
     private var mapBackground: some View {
+        if let load = activeLoad,
+           let pickup = load.pickupLocation,
+           let delivery = load.deliveryLocation,
+           // Coord gate (D-maps-basemap 2026-06-01): the server's geocode
+           // self-heal can return a load whose pickup/delivery JSON is
+           // present but whose lat/lng are still 0 (HERE geocode not yet
+           // run). Drawing those frames the map on null island (0,0).
+           // Require a real fix on BOTH endpoints; otherwise fall to the
+           // honest placeholder until the next read lands coords.
+           !(pickup.lat == 0 && pickup.lng == 0),
+           !(delivery.lat == 0 && delivery.lng == 0) {
+            HereLiveMapView(
+                center: .init(pickup.lat, pickup.lng),
+                zoom: 7,
+                firstPerson: true,
+                route: [.init(pickup.lat, pickup.lng), .init(delivery.lat, delivery.lng)],
+                baseLayers: [
+                    .route(polyline: [.init(pickup.lat, pickup.lng),
+                                      .init(delivery.lat, delivery.lng)],
+                           colorHex: "#1473FF"),
+                    .markers([
+                        .init(at: .init(pickup.lat, pickup.lng), kind: .pickup, label: originName),
+                        .init(at: .init(delivery.lat, delivery.lng), kind: .delivery, label: destFlagText)
+                    ])
+                ],
+                addOns: .driverEnRoute
+            )
+        } else {
+            mapPlaceholder
+        }
+    }
+
+    /// Stylized ghost-grid backdrop shown only when no active load with
+    /// real coords is on file (previews + first-run + pre-geocode). It
+    /// carries NO business data — a neutral on-brand backdrop, not a
+    /// fabricated route.
+    private var mapPlaceholder: some View {
         ZStack {
             // Backdrop
             Rectangle()

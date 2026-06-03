@@ -74,6 +74,7 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 // MARK: - Screen
 
@@ -86,6 +87,13 @@ struct EnRouteDrive: View {
     @StateObject private var lifecycle = TripLifecycleStore()
     @StateObject private var hos = HOSLiveStore()
     @State private var activeLoad: Load?
+
+    /// Decoded HERE Routing v8 section polyline for the main-haul leg
+    /// (pickup → delivery, truck-aware). Drives the live route line on
+    /// the HERE basemap. Empty until the route resolves — when empty
+    /// the map falls back to the straight pickup→delivery base line so
+    /// the corridor still renders honestly, never a fabricated path.
+    @State private var routePolyline: [HereLatLng] = []
 
     enum Register { case dark, light }
     let register: Register
@@ -250,7 +258,43 @@ struct EnRouteDrive: View {
         if !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) {
             activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
         }
+        if let load = activeLoad { await refreshRoutePolyline(for: load) }
         _ = await hosBoot
+    }
+
+    /// Resolves the truck-aware main-haul corridor (pickup → delivery)
+    /// via HERE Routing v8 and decodes its section polyline into the
+    /// live route line painted on the basemap. Mirrors 013's live-leg
+    /// pattern. On any failure (missing coords, HERE error) the polyline
+    /// stays empty and the map renders the straight pickup→delivery base
+    /// line instead — never a fabricated path.
+    @MainActor
+    private func refreshRoutePolyline(for load: Load) async {
+        guard let pickup = load.pickupLocation,
+              let delivery = load.deliveryLocation,
+              !(pickup.lat == 0 && pickup.lng == 0),
+              !(delivery.lat == 0 && delivery.lng == 0) else {
+            routePolyline = []
+            return
+        }
+        let stops = HereStops(
+            origin: CLLocationCoordinate2D(latitude: pickup.lat, longitude: pickup.lng),
+            destination: CLLocationCoordinate2D(latitude: delivery.lat, longitude: delivery.lng)
+        )
+        let profile = TruckProfile.from(load: load)
+        do {
+            let resp = try await HereRoutingClient.shared.route(stops: stops, profile: profile)
+            guard let section = resp.routes.first?.sections.first else {
+                routePolyline = []
+                return
+            }
+            let coords = HereRoutingClient.polyline(for: section)
+            routePolyline = coords.count >= 2 ? coords.map { HereLatLng($0) } : []
+        } catch {
+            // Honest failure: leave the polyline empty so the map draws
+            // the straight pickup→delivery base line, not a stale path.
+            routePolyline = []
+        }
     }
 
     // MARK: Turn-by-turn banner
@@ -559,7 +603,52 @@ struct EnRouteDrive: View {
 
     // MARK: Map background
 
+    /// Live HERE basemap gate (D-maps mandate · mirrors 013). When a live
+    /// load carries real pickup + delivery coordinates, the map is the
+    /// canonical OMV vector `HereLiveMapView` fed the load endpoints and
+    /// the decoded HERE Routing v8 section polyline — the same live route
+    /// 013 paints, NOT a decorative canvas. The coord gate matches 013:
+    /// the server's geocode self-heal can return a load whose location
+    /// JSON is present but whose lat/lng are still 0; drawing those frames
+    /// the map on null island, so we require a real fix on BOTH endpoints
+    /// and otherwise fall back to the honest placeholder canvas below.
+    @ViewBuilder
     private var mapBackground: some View {
+        if let load = activeLoad,
+           let pickup = load.pickupLocation,
+           let delivery = load.deliveryLocation,
+           !(pickup.lat == 0 && pickup.lng == 0),
+           !(delivery.lat == 0 && delivery.lng == 0) {
+            // Prefer the decoded HERE section polyline (real road geometry);
+            // fall back to the straight pickup→delivery line until it lands.
+            let line: [HereLatLng] = routePolyline.count >= 2
+                ? routePolyline
+                : [HereLatLng(pickup.lat, pickup.lng), HereLatLng(delivery.lat, delivery.lng)]
+            HereLiveMapView(
+                center: .init(pickup.lat, pickup.lng),
+                zoom: 7,
+                firstPerson: true,
+                route: line,
+                baseLayers: [
+                    .route(polyline: line, colorHex: "#1473FF"),
+                    .markers([
+                        .init(at: .init(pickup.lat, pickup.lng), kind: .pickup,
+                              label: pickup.cityState.isEmpty ? nil : pickup.cityState),
+                        .init(at: .init(delivery.lat, delivery.lng), kind: .delivery,
+                              label: delivery.cityState.isEmpty ? nil : delivery.cityState)
+                    ])
+                ],
+                addOns: .driverEnRoute
+            )
+        } else {
+            mapPlaceholder
+        }
+    }
+
+    /// Decorative on-brand corridor shown only when no live load with
+    /// real coordinates is on file (previews + first-run). It carries NO
+    /// business data — a neutral backdrop, never a fabricated route.
+    private var mapPlaceholder: some View {
         ZStack {
             // Backdrop — register-specific ground color
             Rectangle()

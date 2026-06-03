@@ -52,6 +52,13 @@ private struct OceanTrackBoard: Decodable {
         let originUnlocode: String?
         let destinationName: String?
         let destinationUnlocode: String?
+        // Origin / destination port coordinates when the aggregator joins the
+        // `ports` row (decodeIfPresent — older payloads omit them and the map
+        // falls back to the PortDirectory catalog, then the live AIS fix).
+        let originLat: Double?
+        let originLng: Double?
+        let destinationLat: Double?
+        let destinationLng: Double?
     }
     struct Vessel: Decodable {
         let name: String?
@@ -219,7 +226,21 @@ private struct VesselLiveTrackingBody: View {
         return Self.hhmm.string(from: d)
     }
 
-    // MARK: Map card (SVG y=178, 400×300 great-circle schematic · EusoTrip Network)
+    // MARK: Map card (SVG y=178, 400×300 great-circle · live AIS ocean track)
+    //
+    // The static schematic (hand-drawn quad-curve + status-derived marker
+    // fraction) is replaced by `VesselOceanTrackMap` — the in-house native
+    // ocean register fed the booking's live AIS feed (keyed by the vessel
+    // imoNumber) over the great-circle origin→destination arc. The orb,
+    // solid/dashed route split, and the speed/heading/coords chip are now the
+    // REAL position, not a status guess. Same card chrome (ocean fill, faint
+    // border, 300pt height, .xl clip) so the design is unchanged.
+    //
+    // Origin / destination coordinates resolve in order: the aggregator's port
+    // join (originLat/Lng…) → the PortDirectory catalog (UN/LOCODE) → the live
+    // AIS fix (so the arc at least anchors on the real vessel). When no IMO and
+    // no coordinates can be resolved at all, the authored schematic is kept so
+    // the lane is never blank.
 
     private var mapCard: some View {
         ZStack {
@@ -228,39 +249,93 @@ private struct VesselLiveTrackingBody: View {
             RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
                 .fill(Brand.blue.opacity(0.06))
 
-            GeometryReader { geo in
-                let w = geo.size.width, h = geo.size.height
-                ZStack(alignment: .topLeading) {
-                    // latitude grid
-                    ForEach(1..<4) { i in
-                        Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
-                            .offset(y: h * CGFloat(i) / 4)
-                    }
-                    // gradient great-circle (origin → vessel) + dashed remaining
-                    VesselRoutePath().stroke(LinearGradient.primary,
-                        style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
-                    VesselRemainingPath().stroke(Color.white.opacity(0.14),
-                        style: StrokeStyle(lineWidth: 3.5, lineCap: .round, dash: [2, 7]))
-
-                    // origin node (gradient ring) — bottom-left of the arc
-                    routeNode(x: w * 0.13, y: h * 0.24,
-                              label: originLabel, gradient: true)
-                    // destination node (grey ring)
-                    routeNode(x: w * 0.93, y: h * 0.77,
-                              label: destinationLabel, gradient: false)
-
-                    // vessel marker w/ glow at progress fraction along the arc
-                    vesselMarker(at: markerPoint(w: w, h: h))
-                    // position chip
-                    positionChip
-                        .position(x: w * 0.72, y: h * 0.42)
-                }
+            if let imo = vesselImo, let o = originCoord, let d = destinationCoord {
+                VesselOceanTrackMap(
+                    imoNumber: imo,
+                    origin: o,
+                    destination: d,
+                    originLabel: originLabel,
+                    destinationLabel: destinationLabel
+                )
+            } else {
+                mapSchematicFallback
             }
         }
         .frame(height: 300)
         .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
             .strokeBorder(palette.borderFaint))
+    }
+
+    /// Authored great-circle schematic — kept ONLY as the no-coordinates / no-IMO
+    /// fallback so the lane is never blank when the AIS feed can't be located.
+    private var mapSchematicFallback: some View {
+        GeometryReader { geo in
+            let w = geo.size.width, h = geo.size.height
+            ZStack(alignment: .topLeading) {
+                // latitude grid
+                ForEach(1..<4) { i in
+                    Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+                        .offset(y: h * CGFloat(i) / 4)
+                }
+                // gradient great-circle (origin → vessel) + dashed remaining
+                VesselRoutePath().stroke(LinearGradient.primary,
+                    style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
+                VesselRemainingPath().stroke(Color.white.opacity(0.14),
+                    style: StrokeStyle(lineWidth: 3.5, lineCap: .round, dash: [2, 7]))
+
+                // origin node (gradient ring) — bottom-left of the arc
+                routeNode(x: w * 0.13, y: h * 0.24,
+                          label: originLabel, gradient: true)
+                // destination node (grey ring)
+                routeNode(x: w * 0.93, y: h * 0.77,
+                          label: destinationLabel, gradient: false)
+
+                // vessel marker w/ glow at progress fraction along the arc
+                vesselMarker(at: markerPoint(w: w, h: h))
+                // position chip
+                positionChip
+                    .position(x: w * 0.72, y: h * 0.42)
+            }
+        }
+    }
+
+    // MARK: Origin / destination / IMO resolution for the live ocean map
+
+    /// Vessel IMO that keys the live AIS feed inside `VesselOceanTrackMap`.
+    private var vesselImo: String? {
+        guard let imo = board?.vessel?.imoNumber, !imo.isEmpty else { return nil }
+        return imo
+    }
+
+    /// Origin coordinate: aggregator port join → PortDirectory catalog →
+    /// live AIS fix (so the arc anchors on the real vessel). nil ⇒ schematic.
+    private var originCoord: HereLatLng? {
+        if let lat = board?.booking?.originLat, let lng = board?.booking?.originLng {
+            return HereLatLng(lat, lng)
+        }
+        if let code = board?.booking?.originUnlocode, let p = PortDirectory.find(unlocode: code) {
+            return HereLatLng(p.lat, p.lng)
+        }
+        return livePositionCoord
+    }
+
+    /// Destination coordinate: aggregator port join → PortDirectory catalog.
+    /// (No AIS fallback here — that anchors origin; the dest must be authored.)
+    private var destinationCoord: HereLatLng? {
+        if let lat = board?.booking?.destinationLat, let lng = board?.booking?.destinationLng {
+            return HereLatLng(lat, lng)
+        }
+        if let code = board?.booking?.destinationUnlocode, let p = PortDirectory.find(unlocode: code) {
+            return HereLatLng(p.lat, p.lng)
+        }
+        return nil
+    }
+
+    /// The board's live position fix as a map coordinate, when present.
+    private var livePositionCoord: HereLatLng? {
+        guard let p = board?.position, let lat = p.lat, let lng = p.lng else { return nil }
+        return HereLatLng(lat, lng)
     }
 
     private func routeNode(x: CGFloat, y: CGFloat, label: String, gradient: Bool) -> some View {
