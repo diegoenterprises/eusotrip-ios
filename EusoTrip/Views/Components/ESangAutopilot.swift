@@ -441,7 +441,7 @@ enum eSangRoleDispatcher {
         case .admin, .superAdmin:
             return (.eusoAdminNavSwap, "800")
         case .dispatch:
-            return (.eusoDispatchNavSwap, "Dpch700")
+            return (.eusoDispatchNavSwap, "Disp400")
         case .compliance:
             return (.eusoComplianceNavSwap, "900")
         case .railEngineer:
@@ -628,7 +628,7 @@ enum eSangRoleDispatcher {
             .broker: "400", .railBroker: "400", .vesselBroker: "400", .customsBroker: "400",
             .escort: "600", .terminal: "700", .portMaster: "700",
             .admin: "800", .superAdmin: "800",
-            .dispatch: "Dpch700", .compliance: "900",
+            .dispatch: "Disp400", .compliance: "900",
             .railEngineer: "Rail550", .vesselOperator: "Vesl650"
         ]
         if surface == "home" || surface == "dashboard" {

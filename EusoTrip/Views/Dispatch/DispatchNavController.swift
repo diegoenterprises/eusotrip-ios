@@ -4,15 +4,18 @@
 //
 //  Mirror of Shipper / Carrier / Broker / Escort / Terminal / Admin /
 //  Compliance nav controllers for the DISPATCH role. Canonical bottom
-//  nav (sourced from 700_DispatchHome.swift) is:
+//  nav (sourced from the 400/401/405 Dispatcher SVGs — the 700-series
+//  Home/Drivers/Loads was a quarantined invention, see _quarantine_700)
+//  is:
 //
-//      Home (house) · Drivers (person.3.fill)
-//      | Loads (shippingbox.fill) · Me (person)
+//      Home (house) · Board (rectangle.split.3x1.fill)
+//      | Comms (bubble.left.and.bubble.right.fill) · Me (person)
 //
-//  Routing: `Drivers` → Dpch701 driver board; `Loads` → Dpch702 load
-//  assignment (the unassigned-loads queue, which is the closest
-//  surface to a "loads" hub for dispatchers); `Me` → Dpch700 home
-//  until a dedicated Me brick lands.
+//  Routing: `Home` → Disp400 live-desk (canonical 400 port: KPI hero +
+//  live-drivers strip + tender queue); `Board` → Disp401 lifecycle
+//  kanban (canonical 401 port); `Comms` → Dpch721 Comms Hub (canonical
+//  405 port); `Me` → Dpch713 dispatch Me hub. Driver roster (Dpch701)
+//  and load queue (Dpch702) remain reachable from the Me hub.
 //
 
 import SwiftUI
@@ -36,13 +39,13 @@ extension Notification.Name {
 
 enum DispatchNavRoute {
     static let map: [String: String] = [
-        "home":    "Dpch700",
-        "drivers": "Dpch701",
-        "loads":   "Dpch702",
+        "home":  "Disp400",
+        "board": "Disp401",
+        "comms": "Dpch721",
         // 2026-05-21 — dedicated Dispatch Me hub (Dpch713). Was "Dpch700"
         // (Home), which made the "Me" tab a silent dead-end that bounced
         // the dispatcher back to the screen they were already on.
-        "me":      "Dpch713",
+        "me":    "Dpch713",
     ]
 
     static let orbLabels: Set<String> = ["esang", "orb"]

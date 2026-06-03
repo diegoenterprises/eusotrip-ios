@@ -409,10 +409,10 @@ struct DispatcherCommsHubScreen: View {
     var body: some View {
         Shell(theme: theme) { CommsHubBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",    systemImage: "house",            isCurrent: false),
-                          NavSlot(label: "Drivers", systemImage: "person.3.fill",    isCurrent: false)],
-                trailing: [NavSlot(label: "Loads", systemImage: "shippingbox.fill",  isCurrent: false),
-                           NavSlot(label: "Me",    systemImage: "person",            isCurrent: true)],
+                leading: [NavSlot(label: "Home",  systemImage: "house",                      isCurrent: false),
+                          NavSlot(label: "Board", systemImage: "rectangle.split.3x1.fill",   isCurrent: false)],
+                trailing: [NavSlot(label: "Comms", systemImage: "bubble.left.and.bubble.right.fill", isCurrent: true),
+                           NavSlot(label: "Me",    systemImage: "person",                    isCurrent: false)],
                 orbState: .idle
             )
         }

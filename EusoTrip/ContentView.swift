@@ -1795,7 +1795,12 @@ enum ScreenRegistry {
             // within their own role bucket; the prefix makes the
             // disambiguation visible to anyone reading the registry
             // directly). Each takes `theme: Theme.Palette` only.
-            .init(id: "Dpch700", title: "Dispatch · Home",             role: .dispatch) { p in AnyView(DispatchHomeScreen(theme: p)) },
+            // 2026-06-02 — Dpch700 "Dispatch · Home" RETIRED: it was the
+            // quarantined 700-series invention (no SVG provenance, Drivers/
+            // Loads nav). Canonical home is now Disp400 (verbatim 400 SVG
+            // port, more wired). DispatchHomeScreen struct kept on disk but
+            // unregistered. Driver roster (Dpch701) + load queue (Dpch702)
+            // remain registered + reachable via the Dpch713 Me hub.
             .init(id: "Dpch701", title: "Dispatch · Driver Board",     role: .dispatch) { p in AnyView(DispatchDriverBoardScreen(theme: p)) },
             // §37 — Dispatcher 404 Driver Roster (HOS-urgency-sorted roster; wires dispatch.getDriverRoster).
             .init(id: "Dpch404", title: "Dispatch · Driver Roster",    role: .dispatch) { p in AnyView(DispatcherDriverRosterScreen(theme: p)) },
@@ -1805,7 +1810,9 @@ enum ScreenRegistry {
             .init(id: "Dpch705", title: "Dispatch · Route Optimization", role: .dispatch) { p in AnyView(DispatchRouteOptimizationScreen(theme: p)) },
             .init(id: "Dpch706", title: "Dispatch · Driver Chat",      role: .dispatch) { p in AnyView(DispatchDriverChatScreen(theme: p)) },
             .init(id: "Dpch707", title: "Dispatch · Daily KPI",        role: .dispatch) { p in AnyView(DispatchDailyKPIScreen(theme: p)) },
-            .init(id: "Dpch708", title: "Dispatch · Kanban Board",     role: .dispatch) { p in AnyView(DispatchKanbanBoardScreen(theme: p)) },
+            // 2026-06-02 — Dpch708 "Dispatch · Kanban Board" RETIRED: superseded
+            // by canonical Disp401 (verbatim 401 SVG port, same endpoints).
+            // DispatchKanbanBoardScreen struct kept on disk but unregistered.
             // 2026-05-31 — Rescue land: bespoke Dispatcher greenfield home + kanban (full ports).
             .init(id: "Disp400", title: "Dispatch · Home",            role: .dispatch) { p in AnyView(DispatcherHomeScreen(theme: p)) },
             .init(id: "Disp401", title: "Dispatch · Kanban",          role: .dispatch) { p in AnyView(DispatcherKanbanScreen(theme: p)) },

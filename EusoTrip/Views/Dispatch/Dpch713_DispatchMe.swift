@@ -166,11 +166,11 @@ struct DispatchMeScreen: View {
 
     private var operationsSection: some View {
         sectionCard(title: "OPERATIONS", icon: "antenna.radiowaves.left.and.right") {
-            row(label: "Dispatch home",       icon: "house",                  to: "Dpch700")
+            row(label: "Dispatch home",       icon: "house",                  to: "Disp400")
             row(label: "Driver board",        icon: "person.3.fill",          to: "Dpch701")
             row(label: "Load assignment",     icon: "shippingbox.fill",       to: "Dpch702")
             row(label: "Exception triage",    icon: "exclamationmark.triangle", to: "Dpch703")
-            row(label: "Kanban board",        icon: "rectangle.split.3x1",    to: "Dpch708")
+            row(label: "Kanban board",        icon: "rectangle.split.3x1",    to: "Disp401")
         }
     }
 

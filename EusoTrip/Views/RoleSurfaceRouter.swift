@@ -1497,7 +1497,7 @@ struct DispatchSurface: View {
     let palette: Theme.Palette
 
     @EnvironmentObject var session: EusoTripSession
-    @State private var screenStack: [String] = ["Dpch700"]
+    @State private var screenStack: [String] = ["Disp400"]
     @State private var showeSang: Bool = false
     /// Shared sheet→push detail layer (NAV remediation 2026-05-30).
     @State private var pushedDetail: RoleDetailPush? = nil
@@ -1510,18 +1510,23 @@ struct DispatchSurface: View {
     // Dispatch Me hub added 2026-05-21). With Dpch713 absent the Me tab
     // never reset to its root. Corrected to the real slot set.
     // (IA recon 2026-05-30.)
-    private static let tabRoots: Set<String> = ["Dpch700", "Dpch701", "Dpch702", "Dpch713"]
+    // 2026-06-02 — canonical dispatcher nav promoted to the 400/401/405
+    // SVG taxonomy (Home/Board/Comms/Me). Slots: Disp400 live-desk home,
+    // Disp401 lifecycle kanban (Board), Dpch721 Comms Hub (Comms), Dpch713
+    // Me. The voided 700-series Drivers/Loads invention is retired;
+    // Dpch701 (drivers) + Dpch702 (loads) stay reachable via the Me hub.
+    private static let tabRoots: Set<String> = ["Disp400", "Disp401", "Dpch721", "Dpch713"]
 
-    private var currentScreenId: String { screenStack.last ?? "Dpch700" }
+    private var currentScreenId: String { screenStack.last ?? "Disp400" }
 
     private var current: ProductionScreen {
         ScreenRegistry.forRole(.dispatch).first { $0.id == currentScreenId }
-            ?? ScreenRegistry.forRole(.dispatch).first { $0.id == "Dpch700" }
+            ?? ScreenRegistry.forRole(.dispatch).first { $0.id == "Disp400" }
             ?? ScreenRegistry.forRole(.dispatch).first
-            ?? ProductionScreen(id: "Dpch700",
+            ?? ProductionScreen(id: "Disp400",
                                 title: "Dispatch · Home",
                                 role: .dispatch) { p in
-                                    AnyView(DispatchHomeScreen(theme: p))
+                                    AnyView(DispatcherHomeScreen(theme: p))
                                 }
     }
 
@@ -1557,7 +1562,7 @@ struct DispatchSurface: View {
             .onReceive(NotificationCenter.default.publisher(for: .eusoDispatchNavSwap)) { note in
                 guard let id = note.userInfo?["screenId"] as? String else { return }
                 guard RoleAccess.canRender(role: .dispatch, screenId: id) else {
-                    screenStack = ["Dpch700"]; return
+                    screenStack = ["Disp400"]; return
                 }
                 pushedDetail = nil
                 withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
