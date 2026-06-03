@@ -544,8 +544,12 @@ private struct ShipperBackOverlay: ViewModifier {
     private static let screensWithOwnBack: Set<String> = [
         // 320 hub family draws its own "< Me" chevron in the header
         "320a", "320b", "320c", "320d", "320e", "320f", "320g",
-        // Post-Load wizard has its own < chevron next to the title
-        "204", "250", "251", "252", "253",
+        // Post-Load wizard has its own < chevron next to the title.
+        // 2026-06-03 — "250" REMOVED: 250_PostLoadStep1Lane draws NO chevron
+        // of its own (only "Multi-stop"/"Continue" CTAs), so suppressing the
+        // surface overlay stranded it with zero back affordance (BLOCKER).
+        // 204/251/252/253 do draw their own Back, so they stay suppressed.
+        "204", "251", "252", "253",
         // Hub roots have no parent to return to
         "200", "201", "320",
         // 205 Shipper Load Detail draws its own < chevron next to the

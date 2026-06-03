@@ -3587,7 +3587,7 @@ final class EusoAutopilotEngine: ObservableObject {
         // Hands-free: auto-finalize a command after a short pause, since
         // there's no manual "stop" tap in autopilot. The chat composers
         // leave this nil and keep tap-to-stop.
-        voice.silenceAutoStopInterval = 1.6
+        voice.silenceAutoStopInterval = 2.0   // 2026-06-03 — was 1.6, too eager (clipped commands)
         awaitingReply = false
         // Each final transcript → chat → parse → dispatch → re-listen.
         voice.onFinalTranscript = { [weak self] transcript in
@@ -3672,8 +3672,22 @@ final class EusoAutopilotEngine: ObservableObject {
         Task {
             var reply = ""
             do {
+                // 2026-06-03 — AUTOPILOT FIX. The voice command was being sent
+                // raw to esang.chat (the safety COACH prompt), which just chats
+                // ("No…") and never emits the <<<ACTION:…>>> control tokens the
+                // dispatcher needs — so autopilot "did nothing". Wrap the
+                // transcript in an explicit autopilot directive so the model
+                // drives the app. (Belt-and-suspenders for the server prompt;
+                // the matching server-side autopilot.* branch lands separately.)
+                let piloted = """
+                [EUSOTRIP AUTOPILOT] You are ESANG driving the app hands-free for a \(dispatchRole.rawValue). The operator spoke the command below. Reply with a SHORT spoken confirmation (under 12 words), then the EXACT control tokens to execute it — emit them literally, one per action, using this grammar:
+                <<<ACTION:navigate:/PATH>>>  — drive the screen there. Valid PATHs include /home /loads /me /trips /wallet /settlements /compliance /marketplace /dispatch/planner /shipper/settlements /rail/marketplace /vessel/bookings plus any visible tab name.
+                <<<ACTION:back>>>            — go back one screen.
+                Rules: NEVER refuse a navigation request; if the exact screen is unclear pick the closest tab and STILL emit a navigate token. Do not describe the tokens.
+                Operator command: \(text)
+                """
                 let resp = try await EusoTripAPI.shared.esang.chat(
-                    message: text,
+                    message: piloted,
                     currentPage: "autopilot.\(dispatchRole.rawValue)",
                     loadId: nil
                 )
