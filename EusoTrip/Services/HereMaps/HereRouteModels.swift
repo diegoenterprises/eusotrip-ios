@@ -21,13 +21,18 @@ struct HereRoutesResponse: Decodable {
 
 /// A single computed route.
 struct HereRoute: Decodable, Identifiable {
-    let id: String
+    // 2026-06-03 — HERE Routing v8 does NOT return `id` on route/section
+    // unless routeHandle/labels are requested (this client requests only
+    // polyline/summary/actions). A non-optional `id` made JSONDecoder throw
+    // keyNotFound on EVERY 200-OK response, discarding the route before its
+    // polyline was ever read — the root cause of "no map works anywhere".
+    let id: String?
     let sections: [HereRouteSection]
 }
 
 /// One section of a route (typically = one leg between two waypoints).
 struct HereRouteSection: Decodable, Identifiable {
-    let id: String
+    let id: String?
     let type: String            // "vehicle", "ferry", "pedestrian"
     let departure: HereSectionEndpoint
     let arrival:   HereSectionEndpoint

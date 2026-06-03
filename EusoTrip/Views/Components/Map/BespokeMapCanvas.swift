@@ -150,6 +150,9 @@ public struct BespokeMapCanvas: View {
                 handleTap(at: location, viewport: viewport)
             }
         }
+        // 2026-06-03 — intrinsic minimum height so no parent can collapse the
+        // engine to zero size (the frame.zero blank-map trap) for ANY caller.
+        .frame(minHeight: 160)
     }
 
     // MARK: Style resolution

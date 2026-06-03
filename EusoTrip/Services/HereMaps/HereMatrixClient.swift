@@ -74,7 +74,11 @@ actor HereMatrixClient {
         let body = MatrixRequest(
             origins:          origins.map(Coord.init),
             destinations:     destinations.map(Coord.init),
-            regionDefinition: RegionDef(type: "world"),
+            // 2026-06-03 — Matrix v8 rejects type:"world" alongside a custom
+            // vehicle object (world requires a predefined region profile with
+            // no other options) → 400 Malformed → empty candidates strip.
+            // autoCircle auto-derives a bounding circle around the points.
+            regionDefinition: RegionDef(type: "autoCircle", margin: 10_000),
             transportMode:    "truck",
             matrixAttributes: ["travelTimes", "distances"],
             departureTime:    departureTime,
@@ -122,6 +126,7 @@ actor HereMatrixClient {
     }
     private struct RegionDef: Encodable {
         let type: String
+        var margin: Int? = nil
     }
     private struct MatrixRequest: Encodable {
         let origins: [Coord]
@@ -142,8 +147,9 @@ actor HereMatrixClient {
         let length: Int?
         let axleCount: Int?
         let trailerCount: Int?
-        let type: String?
-        let emissionType: String?
+        // 2026-06-03 — removed `type` + `emissionType`: invalid in Matrix v8
+        // vehicle schema (type allows only straightTruck/tractor; there is no
+        // emissionType field) → every POST 400'd → empty candidates strip.
         let tunnelCategory: String?
         let shippedHazardousGoods: [String]?
 
@@ -155,8 +161,6 @@ actor HereMatrixClient {
             length                = profile.lengthCm
             axleCount             = profile.axleCount
             trailerCount          = profile.trailerCount
-            type                  = profile.trailerType?.hereValue
-            emissionType          = profile.emissionType?.rawValue
             tunnelCategory        = profile.tunnelCategory?.hereValue
             shippedHazardousGoods = profile.shippedHazardousGoods.isEmpty
                 ? nil

@@ -33,7 +33,13 @@ enum HereFlexiblePolyline {
 
         var index = 0
 
-        // Header: version (5 bits), precision (4 bits), thirdDimType (3 bits), thirdDimPrec (4 bits)
+        // 2026-06-03 — HERE Flexible Polyline has TWO leading varints, not one:
+        // (1) format VERSION (currently 1), then (2) header content
+        // (precision 4 bits | thirdDimType 3 bits | thirdDimPrec 4 bits).
+        // The old code read the version byte AS the header → precision=1 not 5
+        // (~10,000× scale error) and phase-shifted every lat/lng pair into
+        // garbage near (0,0). Read the version first, then the real header.
+        guard let version = decodeUnsigned(bytes, &index), version == 1 else { return [] }
         guard let header = decodeUnsigned(bytes, &index) else { return [] }
         let precision = Int(header & 0x0F)
         let thirdDimType = Int((header >> 4) & 0x07)
