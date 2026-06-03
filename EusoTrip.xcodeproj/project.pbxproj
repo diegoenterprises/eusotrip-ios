@@ -876,6 +876,7 @@
 		LBTR20260521000001 /* 340_LoadBoardTrio.swift in Sources */ = {isa = PBXBuildFile; fileRef = LBTR20260521000002 /* 340_LoadBoardTrio.swift */; };
 		LCGCSTORE0010CE0FF1A1B2C3 /* LifecycleGeocodeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = LCGCSTORE0010CE0FF1A1B2C4 /* LifecycleGeocodeStore.swift */; };
 		LMBD2026051700000011A1 /* LoadModeBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = LMBD2026051700000012A1 /* LoadModeBadge.swift */; };
+		EQRC2026060300000011A1 /* EquipmentRequirementsCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = EQRC2026060300000012A1 /* EquipmentRequirementsCatalog.swift */; };
 		CP9M2026060200000011A1 /* 903_ComplianceMe.swift in Sources */ = {isa = PBXBuildFile; fileRef = CP9M2026060200000012A1 /* 903_ComplianceMe.swift */; };
 		AD8M2026060200000011A1 /* 804_AdminMe.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD8M2026060200000012A1 /* 804_AdminMe.swift */; };
 		TM7M2026060200000011A1 /* 703_TerminalMe.swift in Sources */ = {isa = PBXBuildFile; fileRef = TM7M2026060200000012A1 /* 703_TerminalMe.swift */; };
@@ -1886,6 +1887,7 @@
 		LBTR20260521000002 /* 340_LoadBoardTrio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 340_LoadBoardTrio.swift; path = EusoTrip/Views/Catalyst/340_LoadBoardTrio.swift; sourceTree = SOURCE_ROOT; };
 		LCGCSTORE0010CE0FF1A1B2C4 /* LifecycleGeocodeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifecycleGeocodeStore.swift; sourceTree = "<group>"; };
 		LMBD2026051700000012A1 /* LoadModeBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadModeBadge.swift; sourceTree = "<group>"; };
+		EQRC2026060300000012A1 /* EquipmentRequirementsCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EquipmentRequirementsCatalog.swift; path = EusoTrip/Models/EquipmentRequirementsCatalog.swift; sourceTree = SOURCE_ROOT; };
 		CP9M2026060200000012A1 /* 903_ComplianceMe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 903_ComplianceMe.swift; path = EusoTrip/Views/Compliance/903_ComplianceMe.swift; sourceTree = SOURCE_ROOT; };
 		AD8M2026060200000012A1 /* 804_AdminMe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 804_AdminMe.swift; path = EusoTrip/Views/Admin/804_AdminMe.swift; sourceTree = SOURCE_ROOT; };
 		TM7M2026060200000012A1 /* 703_TerminalMe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 703_TerminalMe.swift; path = EusoTrip/Views/Terminal/703_TerminalMe.swift; sourceTree = SOURCE_ROOT; };
@@ -2795,6 +2797,7 @@
 				HAFD00010CE0FF10000012A1 /* HereAddressField.swift */,
 				LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */,
 				LMBD2026051700000012A1 /* LoadModeBadge.swift */,
+				EQRC2026060300000012A1 /* EquipmentRequirementsCatalog.swift */,
 				CP9M2026060200000012A1 /* 903_ComplianceMe.swift */,
 				AD8M2026060200000012A1 /* 804_AdminMe.swift */,
 				TM7M2026060200000012A1 /* 703_TerminalMe.swift */,
@@ -3604,6 +3607,7 @@
 				HAFD00010CE0FF10000011A1 /* HereAddressField.swift in Sources */,
 				LTBD00010CE0FF10000011A1 /* ListingTrustBadge.swift in Sources */,
 				LMBD2026051700000011A1 /* LoadModeBadge.swift in Sources */,
+				EQRC2026060300000011A1 /* EquipmentRequirementsCatalog.swift in Sources */,
 				CP9M2026060200000011A1 /* 903_ComplianceMe.swift in Sources */,
 				AD8M2026060200000011A1 /* 804_AdminMe.swift in Sources */,
 				TM7M2026060200000011A1 /* 703_TerminalMe.swift in Sources */,

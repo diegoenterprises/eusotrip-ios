@@ -105,6 +105,12 @@ struct ShipperPostLoad: View {
     @State private var properShippingName: String = ""
     @State private var tankerHoseSpec: String = ""
     @State private var tankerFitting: String = ""
+    // 2026-06-03 — data-driven equipment requirements (EquipmentRequirementsCatalog,
+    // from the 25/19-agent multimodal research). Per equipmentType: groupKey ->
+    // selected option keys, and groupKey -> "Other (specify)" free text. Every
+    // equipment type now has its real requirement options; nothing blocks.
+    @State private var equipReqSel: [String: Set<String>] = [:]
+    @State private var equipReqOther: [String: String] = [:]
     // ─── Catalyst Requirements (web parity, 2026-05-20) ───
     // Web wizard Step 7 captures min safety score (0-100) + a set of
     // CDL endorsements the catalyst's driver must hold. iOS now matches
@@ -2773,15 +2779,30 @@ struct ShipperPostLoad: View {
     /// `TRAILER_HAZMAT_ALLOWED` server-side; both sides must agree
     /// or the wizard's pre-flight check and the server's create
     /// check will disagree.
+    // 2026-06-03 — corrected per 25-agent multimodal compliance research
+    // (_EQUIPMENT_REQUIREMENTS_MATRIX_*). ROOT CAUSE of "I can't go to the
+    // next screen": dry_van/reefer/flatbed previously allowed ONLY ["9"], so
+    // any non-Class-9 packaged DG on a van/reefer/open-deck/rail/RoRo/ISO load
+    // hard-blocked Continue — factually wrong, since packaged/placarded DG of
+    // essentially every class is legal in those units per 49 CFR 173/174/177 +
+    // IMDG. Equipment restriction only genuinely applies to BULK-in-tank. These
+    // lists now drive an ADVISORY warning only — canAdvance no longer hard-gates
+    // on them (see canAdvance). The full packaged set:
+    fileprivate static let allPackagedClasses: [String] = [
+        "1", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6",
+        "2.1", "2.2", "2.3", "3", "4.1", "4.2", "4.3",
+        "5.1", "5.2", "6.1", "6.2", "7", "8", "9",
+    ]
     fileprivate static let trailerHazmatAllowed: [String: [String]] = [
-        "liquid_tank": ["3", "5.1", "5.2", "6.1", "8"],
+        // Bulk-in-tank: genuine spec restrictions (these stay meaningful).
+        "liquid_tank": ["2.1", "2.2", "2.3", "3", "4.3", "5.1", "5.2", "6.1", "6.2", "8", "9"],
         "gas_tank":    ["2.1", "2.2", "2.3"],
-        "hazmat_van":  ["1", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6",
-                        "2.1", "2.2", "2.3", "3", "4.1", "4.2", "4.3",
-                        "5.1", "5.2", "6.1", "6.2", "7", "8", "9"],
-        "dry_van":     ["9"],
-        "reefer":      ["9"],
-        "flatbed":     ["9"],
+        // Packaged-freight units carry essentially any class with proper
+        // packaging + securement + placarding.
+        "hazmat_van":  allPackagedClasses,
+        "dry_van":     allPackagedClasses,                                  // boxcar/van: 49 CFR 173/174
+        "flatbed":     allPackagedClasses,                                  // open deck: 393 securement + placard
+        "reefer":      ["2.2", "3", "4.1", "5.2", "6.1", "6.2", "8", "9"],  // temp-controlled classes
     ]
 
     /// 49 CFR 177.848 — for each hazmat class, the list of classes
@@ -3041,18 +3062,108 @@ struct ShipperPostLoad: View {
         // equipment + product choice. Subform-specific cards stack
         // beneath the animation.
         equipmentAnimation
+        // Comprehensive, mode/vertical/country-correct requirement options
+        // for EVERY one of the 33 equipment types (data-driven catalog). This
+        // replaces the old `default: EmptyView()` (18+ types had no form) and
+        // gives tankers their REAL per-mode connections (vessel flanges, rail
+        // BOV, ISO T-codes) instead of blanket truck cam-locks.
+        catalogRequirementsSection
         switch equipmentType {
         case .tankerHazmat, .tankerPetro, .tankerLiquid, .tankerGas,
              .vesselTanker, .vesselLNG, .vesselISOTank,
              .railTankLiquid, .railTankGas:
-            tankerSubform
+            tankerSubform   // structured UN/Class/PG/PSN + ERG search (universal)
         case .reefer, .railReeferBoxcar, .vesselReeferContainer:
-            reeferSubform
-        case .flatbed, .stepDeck, .conestoga, .oversized,
-             .railFlatcar, .railCenterbeam, .railGondola:
-            flatbedSubform
+            reeferSubform   // structured LOW/HIGH temperature window
         default:
             EmptyView()
+        }
+    }
+
+    // MARK: - Data-driven equipment requirements (all 33 equipment types)
+
+    private func equipReqIsOther(_ o: EquipReqOption) -> Bool {
+        let l = o.label.lowercased(); return l.contains("other") && l.contains("specify")
+    }
+    private func equipReqToggle(_ groupKey: String, _ optKey: String) {
+        var s = equipReqSel[groupKey] ?? []
+        if s.contains(optKey) { s.remove(optKey) } else { s.insert(optKey) }
+        equipReqSel[groupKey] = s
+    }
+    private func equipReqGroupHasOther(_ g: EquipReqGroup) -> Bool {
+        guard let sel = equipReqSel[g.key] else { return false }
+        return g.options.contains { sel.contains($0.key) && equipReqIsOther($0) }
+    }
+
+    @ViewBuilder
+    private var catalogRequirementsSection: some View {
+        let raw = equipmentType.rawValue
+        let groups = EquipmentRequirementsCatalog.groups(forRaw: raw)
+        if !groups.isEmpty {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                if let h = EquipmentRequirementsCatalog.header(forRaw: raw) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checklist")
+                            .font(.system(size: 11, weight: .heavy))
+                            .foregroundStyle(LinearGradient.diagonal)
+                        Text(h.uppercased())
+                            .font(EType.micro).tracking(0.6)
+                            .foregroundStyle(palette.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                ForEach(groups) { g in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(g.label.uppercased())
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                            .foregroundStyle(palette.textSecondary)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 6)],
+                                  alignment: .leading, spacing: 6) {
+                            ForEach(g.options) { o in
+                                let sel = (equipReqSel[g.key] ?? []).contains(o.key)
+                                Button { equipReqToggle(g.key, o.key) } label: {
+                                    Text(o.label)
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .lineLimit(2).multilineTextAlignment(.leading)
+                                        .minimumScaleFactor(0.8)
+                                        .padding(.horizontal, 10).padding(.vertical, 6)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .background(Capsule().fill(sel
+                                            ? AnyShapeStyle(LinearGradient.diagonal)
+                                            : AnyShapeStyle(palette.bgCardSoft)))
+                                        .foregroundStyle(sel
+                                            ? AnyShapeStyle(Color.white)
+                                            : AnyShapeStyle(palette.textPrimary))
+                                        .overlay(Capsule().strokeBorder(sel
+                                            ? AnyShapeStyle(Color.clear)
+                                            : AnyShapeStyle(palette.borderFaint), lineWidth: 1))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        if equipReqGroupHasOther(g) {
+                            TextField("Specify…", text: Binding(
+                                get: { equipReqOther[g.key] ?? "" },
+                                set: { equipReqOther[g.key] = $0 }))
+                                .font(EType.body)
+                                .padding(8)
+                                .background(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                                    .fill(palette.bgCardSoft))
+                        }
+                    }
+                }
+                if let c = EquipmentRequirementsCatalog.citation(forRaw: raw), !c.isEmpty {
+                    Text(c)
+                        .font(.system(size: 9))
+                        .foregroundStyle(palette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(Space.s3)
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                        .strokeBorder(LinearGradient.diagonal.opacity(0.35), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
         }
     }
 
@@ -3069,22 +3180,12 @@ struct ShipperPostLoad: View {
                     .font(EType.micro).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
             }
-            // Hose configuration — driver/catalyst needs to know what
-            // fittings + diameter to bring. Stored in `notes` on the
-            // load envelope until the backend ships a structured
-            // tanker spec field.
-            HStack(spacing: 8) {
-                tankerChip(label: "2\" cam-lock",     selected: tankerHoseSpec == "2_camlock")
-                tankerChip(label: "3\" cam-lock",     selected: tankerHoseSpec == "3_camlock")
-                tankerChip(label: "4\" cam-lock",     selected: tankerHoseSpec == "4_camlock")
-                tankerChip(label: "Dry-disconnect",   selected: tankerHoseSpec == "dry_disconnect")
-            }
-            HStack(spacing: 8) {
-                tankerChip(label: "API adapter",       selected: tankerFitting == "api")
-                tankerChip(label: "TTMA",              selected: tankerFitting == "ttma")
-                tankerChip(label: "Other",             selected: tankerFitting == "other")
-                Spacer(minLength: 0)
-            }
+            // 2026-06-03 — connection / fitting / tank-spec chips moved to the
+            // mode-correct data-driven catalog above (catalogRequirementsSection):
+            // marine ANSI presentation flanges + loading arms for VESSEL tankers,
+            // BOV / eduction / pressure-angle valves for RAIL tank cars, UN T-codes
+            // for ISO tanks — NOT blanket truck cam-locks. This card keeps only the
+            // universal UN / hazmat identification block.
             // UN / hazmat fields surface only for the hazmat/petroleum
             // / chemicals branches (gas + liquid are food-grade or
             // non-hazmat liquids). Mirrors the web Hazmat subform.
@@ -5245,11 +5346,13 @@ struct ShipperPostLoad: View {
             // (49 CFR 173). If the user picked a hazmat class that's
             // not allowed on the selected trailer code, block continue
             // and surface the warning inline. Non-hazmat loads pass.
-            if !hazmatClass.isEmpty {
-                let code = trailerHazmatCode(for: equipmentType)
-                let allowed = Self.trailerHazmatAllowed[code] ?? []
-                if !allowed.contains(hazmatClass) { return false }
-            }
+            // 2026-06-03 — WARN-NOT-BLOCK (founder mandate: no shipper ever
+            // stuck at "Continue"). The hazmat class↔equipment check is now
+            // ADVISORY only — hazmatComplianceCard renders an amber "VERIFY"
+            // with a packaging/segregation/placarding acknowledgement, but
+            // Continue is never disabled on it. Also a truck-federal rule
+            // (49 CFR 177), so it would never have applied to rail (174/AAR)
+            // or vessel (IMDG) anyway. No `return false` here by design.
             // 2026-05-17 — Gate on the state-overweight check too.
             // Allow advance when the user has acknowledged the
             // overweight scenario via an overweight or superload
@@ -5284,7 +5387,10 @@ struct ShipperPostLoad: View {
             // returned by `reeferRangeIssue` and we block until they
             // either clear / correct the range or pick a different
             // equipment that doesn't need a temp window.
-            if equipmentType == .reefer && reeferRangeIssue != nil { return false }
+            // 2026-06-03 — reefer temp-range is ADVISORY (a value outside the
+            // -30/+80°F standard envelope means "specialty unit / dry ice /
+            // LN2", not an invalid load). Surfaced as a warning on the reefer
+            // sub-form; never blocks Continue.
             return true
         case .pricing, .review:
             return true
@@ -5429,6 +5535,16 @@ struct ShipperPostLoad: View {
         lines.append("Equipment: \(equipmentType.label) [\(equipmentType.rawValue)] · vertical=\(equipmentType.vertical)")
         if !weightText.isEmpty {
             lines.append("Quantity: \(weightText) \(weightUnit.rawValue) (\(weightUnit.longLabel))")
+        }
+        // 2026-06-03 — data-driven equipment requirements (every equipment type).
+        // Each selected requirement group → "Group: option, option (+ Other: …)".
+        for g in EquipmentRequirementsCatalog.groups(forRaw: equipmentType.rawValue) {
+            let sel = equipReqSel[g.key] ?? []
+            guard !sel.isEmpty else { continue }
+            var picks = g.options.filter { sel.contains($0.key) }.map { $0.label }
+            let other = (equipReqOther[g.key] ?? "").trimmingCharacters(in: .whitespaces)
+            if !other.isEmpty { picks.append("Other: \(other)") }
+            if !picks.isEmpty { lines.append("\(g.label): \(picks.joined(separator: ", "))") }
         }
         switch equipmentType {
         case .tankerHazmat, .tankerPetro, .tankerLiquid, .tankerGas, .vesselTanker:
