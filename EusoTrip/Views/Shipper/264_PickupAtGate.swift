@@ -21,11 +21,28 @@ private struct AtGateBody: View {
     @Environment(\.palette) private var palette
     let live: ShipperAPI.LifecycleSnapshot
 
+    /// The snapshot carries no `transportMode` column — only `equipmentType`.
+    /// Derive the base mode from the equipment keyword (same rail*/vessel*
+    /// convention the LifecycleScaffold uses) so mode-dependent labels speak
+    /// the load's language; default to truck.
+    private var loadMode: TransportMode {
+        let e = (live.load.equipmentType ?? "").lowercased()
+        if e.contains("rail") || e.contains("tofc") || e.contains("cofc")
+            || e.contains("boxcar") || e.contains("hopper") || e.contains("gondola")
+            || e.contains("centerbeam") || e.contains("autorack") || e.contains("flatcar")
+            || e.contains("well car") { return .rail }
+        if e.contains("vessel") || e.contains("container ship") || e.contains("vlcc")
+            || e.contains("bulk carrier") || e.contains("ro/ro") || e.contains("roro")
+            || e.contains("lng") || e.contains("iso tank") { return .vessel }
+        if e.contains("barge") { return .barge }
+        return .truck
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             arrivalCard
-            LifecycleMapCard(live: live, label: "AT GATE", mode: .truckAtPickup, height: 200)
-            LifecycleAnimationStrip(live: live, label: "AT THE DOCK", height: 180)
+            LifecycleMapCard(live: live, label: "AT \(loadMode.pickupNoun)", mode: .truckAtPickup, height: 200)
+            LifecycleAnimationStrip(live: live, label: loadMode.atPickupLabel, height: 180)
             facilityCard
             if (live.load.hazmatClass?.isEmpty == false) { hazmatCard }
             commsRow
@@ -86,7 +103,7 @@ private struct AtGateBody: View {
 
     private var facilityCard: some View {
         LifecycleCard {
-            LifecycleSection(label: "FACILITY + GATE", icon: "lock.shield.fill")
+            LifecycleSection(label: "FACILITY + \(loadMode.pickupNoun)", icon: "lock.shield.fill")
             LifecycleRow(label: "Facility", value: dashIfEmpty(live.pickup?.facilityName))
             LifecycleRow(label: "Address",  value: dashIfEmpty(live.pickup?.address))
             LifecycleRow(label: "Contact",  value: dashIfEmpty(live.pickup?.contactName))

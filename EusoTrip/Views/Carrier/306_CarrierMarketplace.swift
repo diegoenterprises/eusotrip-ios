@@ -93,7 +93,7 @@ private struct MarketplaceBody: View {
                         LifecycleRow(label: "Equipment",  value: dashIfEmpty(ld.equipment))
                         LifecycleRow(label: "Cargo",      value: dashIfEmpty(ld.cargoType))
                         LifecycleRow(label: "Rate",       value: usd(ld.postedRate))
-                        LifecycleRow(label: "Pickup",     value: humanISO(ld.pickupISO))
+                        LifecycleRow(label: TransportLexicon.short(.originWindow, mode: TransportMode(rawValue: ld.transportMode ?? "truck") ?? .truck, equipmentRaw: ld.equipment), value: humanISO(ld.pickupISO))
                         LifecycleRow(label: "Mileage",    value: ld.mileage.map { "\($0) mi" } ?? "—")
                     }
                 }.buttonStyle(.plain)

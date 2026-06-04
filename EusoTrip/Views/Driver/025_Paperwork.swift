@@ -48,6 +48,12 @@ struct Paperwork: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
+    /// Transport mode of the active load (truck fallback) — drives the
+    /// mode-aware close-out document + charge labels (BOL/Detention).
+    private var resolvedMode: TransportMode {
+        TransportMode(rawValue: activeLoad?.transportMode ?? "truck") ?? .truck
+    }
+
     // MARK: - Figma fallback
     private let fallbackDoor       = "12"
     private let fallbackTotal      = 26
@@ -138,9 +144,10 @@ struct Paperwork: View {
                     Text("LOAD CLOSED")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(Brand.success)
-                    Text("· DETENTION BILLED")
+                    Text("· \(TransportLexicon.short(.detention, mode: resolvedMode).uppercased()) BILLED")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
                     // 2026-05-17 — Mode chip on paperwork close-out
                     // header. POD / BOL / mate's-receipt close-out
                     // differs by mode; the chip surfaces which legal
@@ -179,9 +186,10 @@ struct Paperwork: View {
     private var bolCard: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack(alignment: .firstTextBaseline) {
-                Text("BILL OF LADING · SIGNED")
+                Text("\(TransportLexicon.short(.billOfLading, mode: resolvedMode).uppercased()) · SIGNED")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                     .foregroundStyle(LinearGradient.diagonal)
+                    .lineLimit(1)
                 Spacer(minLength: 0)
                 Text("BOL #\(fallbackBolNumber)")
                     .font(EType.mono(.micro)).tracking(0.4)
@@ -272,7 +280,7 @@ struct Paperwork: View {
             metric(label: "START",      value: fallbackStart,      color: palette.textPrimary)
             metric(label: "END",        value: fallbackEnd,        color: palette.textPrimary)
             metric(label: "DOOR TIME",  value: fallbackDoorTime,   color: palette.textPrimary)
-            metric(label: "DETENTION $", value: fallbackDetCharge, color: Brand.warning, caption: fallbackDetDetail)
+            metric(label: "\(TransportLexicon.short(.detention, mode: resolvedMode).uppercased()) $", value: fallbackDetCharge, color: Brand.warning, caption: fallbackDetDetail)
         }
     }
 
@@ -409,7 +417,7 @@ struct Paperwork: View {
 
             HStack(spacing: Space.s3) {
                 Button { showBol = true } label: {
-                    Text("View BOL")
+                    Text("View \(TransportLexicon.short(.billOfLading, mode: resolvedMode))")
                         .font(EType.body.weight(.semibold))
                         .foregroundStyle(palette.textPrimary)
                         .frame(maxWidth: .infinity, minHeight: 52)

@@ -74,6 +74,12 @@ struct PickupBolSigning: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
+    /// Transport mode of the active load (truck fallback) — drives
+    /// mode-aware document terminology (BOL vs Ocean B/L vs Waybill).
+    private var resolvedMode: TransportMode {
+        TransportMode(rawValue: activeLoad?.transportMode ?? "truck") ?? .truck
+    }
+
     // MARK: - Production-clean placeholders.
     //
     // Updated 2026-04-24 (eusotrip-killers ledger-hygiene pass) — every
@@ -274,7 +280,7 @@ struct PickupBolSigning: View {
             }
 
             // Title
-            Text("Straight Bill of Lading — Non-negotiable")
+            Text(TransportLexicon.term(.billOfLading, mode: resolvedMode))
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(palette.textPrimary)
 

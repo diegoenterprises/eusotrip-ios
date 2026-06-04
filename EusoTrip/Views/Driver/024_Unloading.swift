@@ -57,6 +57,12 @@ struct Unloading: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
+    /// Transport mode of the active load (truck fallback) — drives the
+    /// mode-aware detained-equipment charge label (Detention vs Barge Det.).
+    private var resolvedMode: TransportMode {
+        TransportMode(rawValue: activeLoad?.transportMode ?? "truck") ?? .truck
+    }
+
     // MARK: - Figma fallback
     private let fallbackDoor      = "12"
     private let fallbackOff       = 4
@@ -166,9 +172,10 @@ struct Unloading: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text("DETENTION")
+                    Text(TransportLexicon.short(.detention, mode: resolvedMode).uppercased())
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(Brand.warning)
+                        .lineLimit(1)
                     Text("· PAID TIME")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(palette.textSecondary)
@@ -391,9 +398,10 @@ struct Unloading: View {
 
             return VStack(alignment: .leading, spacing: Space.s2) {
                 HStack {
-                    Text("DETENTION · PAID")
+                    Text("\(TransportLexicon.short(.detention, mode: resolvedMode).uppercased()) · PAID")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(LinearGradient.diagonal)
+                        .lineLimit(1)
                     Spacer()
                     Text("PAID")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)

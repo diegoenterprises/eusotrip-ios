@@ -274,7 +274,7 @@ struct ShipperCompliance: View {
                 .font(.system(size: 28, weight: .bold))
                 .tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
-            Text("Eusorone Technologies · last sync — · FMCSA SAFER")
+            Text("Eusorone Technologies · last sync — · Carrier safety")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
         }
@@ -331,8 +331,8 @@ struct ShipperCompliance: View {
     private func scoreHeroCard(_ s: ShipperComplianceAPI.Summary) -> some View {
         let scoreString = "\(s.score)"
         let scopeBlurb: String = {
-            if s.businessVerified { return "FMCSA SAFER · business verified" }
-            return "FMCSA SAFER · scope: shipper company"
+            if s.businessVerified { return "Carrier safety · business verified" }
+            return "Carrier safety · scope: shipper company"
         }()
         let letter = letterFromScore(s.score)
         return ZStack(alignment: .leading) {
@@ -421,8 +421,8 @@ struct ShipperCompliance: View {
             // EUSO-2118 — fleet-scope tile values pending. Label + glyph
             // canon from §17.2 / §11.4; values paint "—".
             tile(kind: .insurance, label: "INSURANCE",   big: "—", sub: "fleet rollup pending", tone: .success)
-            tile(kind: .fmcsa,     label: "FMCSA SAFER", big: "—", sub: "fleet rollup pending", tone: .success)
-            tile(kind: .hazmat,    label: "HAZMAT · IMDG", big: "—", sub: "active hazmat lanes",   tone: .hazmat)
+            tile(kind: .fmcsa,     label: "CARRIER SAFETY", big: "—", sub: "fleet rollup pending", tone: .success)
+            tile(kind: .hazmat,    label: "HAZMAT",      big: "—", sub: "active hazmat lanes",   tone: .hazmat)
             tile(kind: .claims,    label: "CLAIMS YTD",   big: "—", sub: "open · closed",          tone: .info)
         }
     }

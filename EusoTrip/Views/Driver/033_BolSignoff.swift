@@ -32,6 +32,12 @@ struct BolSignoff: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
+    /// Transport mode of the active load (truck fallback) — drives
+    /// mode-aware document terminology (BOL vs B/L vs Waybill).
+    private var resolvedMode: TransportMode {
+        TransportMode(rawValue: activeLoad?.transportMode ?? "truck") ?? .truck
+    }
+
     // MARK: - Live-load facet helpers (141st firing M3 sweep)
     //
     // Replaces the prior `fallbackXxx` literal block. Every visible
@@ -215,7 +221,7 @@ struct BolSignoff: View {
     private var bolCard: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack {
-                Text("Bill of Lading")
+                Text(TransportLexicon.term(.billOfLading, mode: resolvedMode))
                     .font(.system(size: 16, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                 Spacer()

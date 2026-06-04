@@ -176,7 +176,10 @@ private struct LoadAssignBody: View {
     }
 
     private func loadCard(_ l: UnassignedLoad) -> some View {
-        LifecycleCard {
+        // Per-load mode → speak this load's origin-window language
+        // (truck "PICKUP" · rail "WANT DATE" · vessel "ERD").
+        let mode = TransportMode(rawValue: l.transportMode ?? l.mode ?? "truck") ?? .truck
+        return LifecycleCard {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     LifecycleSection(label: l.loadNumber.uppercased(), icon: "shippingbox")
@@ -198,9 +201,10 @@ private struct LoadAssignBody: View {
                             .foregroundStyle(palette.textPrimary)
                     }
                     Spacer(minLength: 0)
-                    Text("PICKUP \(humanISO(l.pickupDate).uppercased())")
+                    Text("\(TransportLexicon.short(.originWindow, mode: mode).uppercased()) \(humanISO(l.pickupDate).uppercased())")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
+                        .lineLimit(1).minimumScaleFactor(0.8)
                 }
             }
         }

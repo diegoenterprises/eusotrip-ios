@@ -2364,9 +2364,12 @@ struct ShipperPostLoad: View {
     private var pickupTile: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text("PICKUP")
+                // Mode-correct origin term — truck "PICKUP WINDOW", vessel-tanker
+                // "LOAD LAYCAN", vessel-container "ERD", rail "WANT DATE" (TransportLexicon).
+                Text(TransportLexicon.short(.originWindow, mode: transportMode, equipmentRaw: equipmentType.rawValue).uppercased())
                     .font(EType.micro).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
                 Spacer(minLength: 4)
                 // The "Schedule" label was inside the Toggle's title
                 // string and `.labelsHidden()` failed to hide it
@@ -2410,9 +2413,12 @@ struct ShipperPostLoad: View {
 
     private var deliveryTile: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("DELIVERY")
+            // Mode-correct destination term — truck "DELIVERY WINDOW", vessel
+            // "DISCHARGE LAYCAN", rail "DELIVERY SPOT" (TransportLexicon).
+            Text(TransportLexicon.short(.destinationWindow, mode: transportMode, equipmentRaw: equipmentType.rawValue).uppercased())
                 .font(EType.micro).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
+                .lineLimit(1).minimumScaleFactor(0.7)
             // Real ETA when both pickup is set + HERE returned a
             // duration. Falls back to honest copy otherwise.
             if let eta = computedDeliveryETA {

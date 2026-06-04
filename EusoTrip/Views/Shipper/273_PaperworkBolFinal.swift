@@ -22,6 +22,23 @@ private struct BolFinalBody: View {
     let live: ShipperAPI.LifecycleSnapshot
     let loadId: String
 
+    /// The snapshot carries no `transportMode` column — only `equipmentType`.
+    /// Derive the base mode from the equipment keyword (same rail*/vessel*
+    /// convention the LifecycleScaffold uses) so mode-dependent labels speak
+    /// the load's language; default to truck.
+    private var loadMode: TransportMode {
+        let e = (live.load.equipmentType ?? "").lowercased()
+        if e.contains("rail") || e.contains("tofc") || e.contains("cofc")
+            || e.contains("boxcar") || e.contains("hopper") || e.contains("gondola")
+            || e.contains("centerbeam") || e.contains("autorack") || e.contains("flatcar")
+            || e.contains("well car") { return .rail }
+        if e.contains("vessel") || e.contains("container ship") || e.contains("vlcc")
+            || e.contains("bulk carrier") || e.contains("ro/ro") || e.contains("roro")
+            || e.contains("lng") || e.contains("iso tank") { return .vessel }
+        if e.contains("barge") { return .barge }
+        return .truck
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             documentCard
@@ -32,11 +49,11 @@ private struct BolFinalBody: View {
 
     private var documentCard: some View {
         LifecycleCard(accentGradient: true) {
-            LifecycleSection(label: "BOL", icon: "doc.text.below.ecg.fill")
+            LifecycleSection(label: TransportLexicon.short(.billOfLading, mode: loadMode, equipmentRaw: live.load.equipmentType), icon: "doc.text.below.ecg.fill")
             LifecycleRow(label: "Load number", value: live.load.loadNumber)
             LifecycleRow(label: "Lane",        value: laneDisplay(live))
             LifecycleRow(label: "Equipment",   value: dashIfEmpty(live.load.equipmentType))
-            LifecycleRow(label: "Delivered",   value: humanISO(live.load.actualDeliveryDate))
+            LifecycleRow(label: TransportLexicon.short(.delivered, mode: loadMode, equipmentRaw: live.load.equipmentType),   value: humanISO(live.load.actualDeliveryDate))
         }
     }
 
@@ -60,7 +77,7 @@ private struct BolFinalBody: View {
             Button {
                 NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "300", "loadId": loadId, "doc": "bol"])
             } label: {
-                Text("Open BOL").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
+                Text("Open \(TransportLexicon.short(.billOfLading, mode: loadMode, equipmentRaw: live.load.equipmentType))").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
                     .frame(maxWidth: .infinity).padding(.vertical, 12)
                     .background(LinearGradient.diagonal)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))

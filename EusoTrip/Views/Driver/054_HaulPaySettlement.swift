@@ -35,6 +35,12 @@ struct HaulPaySettlement: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
+    /// Transport mode of the active load (truck fallback) — drives the
+    /// mode-aware delivery-proof badge label (POD vs Outturn).
+    private var resolvedMode: TransportMode {
+        TransportMode(rawValue: activeLoad?.transportMode ?? "truck") ?? .truck
+    }
+
     // Production-clean placeholders.
     //
     // Updated 2026-04-24 (eusotrip-killers ledger-hygiene pass) — every
@@ -189,9 +195,10 @@ struct HaulPaySettlement: View {
                         .foregroundStyle(palette.textPrimary)
                 }
                 Spacer()
-                Text("POD CLEARED")
+                Text("\(TransportLexicon.short(.proofOfDelivery, mode: resolvedMode).uppercased()) CLEARED")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(Brand.success)
+                    .lineLimit(1)
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .overlay(Capsule().stroke(Brand.success.opacity(0.5), lineWidth: 1))
             }

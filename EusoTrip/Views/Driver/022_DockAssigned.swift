@@ -54,6 +54,12 @@ struct DockAssigned: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
+    /// Transport mode of the active load (truck fallback) — drives the
+    /// mode-aware loading-labor label (Lumper vs Stevedoring).
+    private var resolvedMode: TransportMode {
+        TransportMode(rawValue: activeLoad?.transportMode ?? "truck") ?? .truck
+    }
+
     // MARK: - Empty-state sentinels
     //
     // Em-dash placeholders for fields that have no live source yet.
@@ -444,7 +450,7 @@ struct DockAssigned: View {
                          sub: "Door \(doorValue)") {
                 showDockCamPicker = true
             }
-            actionButton(symbol: "message.fill", label: "Message", sub: "Lumper") {
+            actionButton(symbol: "message.fill", label: "Message", sub: TransportLexicon.short(key: "lumper", mode: resolvedMode)) {
                 openMessages?(nil)
             }
         }

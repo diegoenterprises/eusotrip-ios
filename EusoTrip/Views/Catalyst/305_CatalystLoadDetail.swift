@@ -850,9 +850,10 @@ private struct CatalystLoadDetail: View {
                 .tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
             HStack(spacing: 8) {
-                docTile(label: "BOL", icon: "doc.text", status: bolStatus(l), action: "openBOL")
+                let docMode = TransportMode(rawValue: l.transportMode ?? "truck") ?? .truck
+                docTile(label: TransportLexicon.short(.billOfLading, mode: docMode, equipmentRaw: l.equipmentType), icon: "doc.text", status: bolStatus(l), action: "openBOL")
                 docTile(label: "Rate-con", icon: "checkmark.seal", status: rateconStatus(l), action: "openRatecon")
-                docTile(label: "POD photo", icon: "photo", status: podStatus(l), action: "openPOD")
+                docTile(label: TransportLexicon.short(.proofOfDelivery, mode: docMode, equipmentRaw: l.equipmentType), icon: "photo", status: podStatus(l), action: "openPOD")
             }
         }
     }

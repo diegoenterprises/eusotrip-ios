@@ -269,10 +269,13 @@ struct CarrierLoadDetail: View {
     /// columns so a fresh tender (status = "available", no pickup
     /// scheduled) doesn't show synthetic dates.
     private func scheduleCard(_ d: LoadsAPI.LoadDetail) -> some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
+        let mode = TransportMode(rawValue: d.transportMode ?? "truck") ?? .truck
+        return VStack(alignment: .leading, spacing: Space.s2) {
             sectionHeader("SCHEDULE", icon: "calendar")
-            scheduleRow(label: "Pickup",        value: humanDate(d.pickupDate))
-            scheduleRow(label: "Delivery",      value: humanDate(d.deliveryDate))
+            scheduleRow(label: TransportLexicon.short(.originWindow, mode: mode, equipmentRaw: d.equipmentType),
+                        value: humanDate(d.pickupDate))
+            scheduleRow(label: TransportLexicon.short(.destinationWindow, mode: mode, equipmentRaw: d.equipmentType),
+                        value: humanDate(d.deliveryDate))
             if d.estimatedDeliveryDate != nil {
                 scheduleRow(label: "Est. delivery", value: humanDate(d.estimatedDeliveryDate))
             }

@@ -2140,9 +2140,10 @@ struct NextDeliveryWidget: View {
                 Image(systemName: "mappin.circle.fill")
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("NEXT DELIVERY")
+                Text("NEXT \((TransportMode(rawValue: summary?.transportMode ?? "truck") ?? .truck).deliveryNoun)")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(LinearGradient.diagonal)
+                    .lineLimit(1)
                 Spacer(minLength: 0)
                 if let s = summary {
                     Text(s.status.uppercased())

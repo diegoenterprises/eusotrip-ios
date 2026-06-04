@@ -21,11 +21,28 @@ private struct AtDockBody: View {
     @Environment(\.palette) private var palette
     let live: ShipperAPI.LifecycleSnapshot
 
+    /// The snapshot carries no `transportMode` column — only `equipmentType`.
+    /// Derive the base mode from the equipment keyword (same rail*/vessel*
+    /// convention the LifecycleScaffold uses) so mode-dependent labels speak
+    /// the load's language; default to truck.
+    private var loadMode: TransportMode {
+        let e = (live.load.equipmentType ?? "").lowercased()
+        if e.contains("rail") || e.contains("tofc") || e.contains("cofc")
+            || e.contains("boxcar") || e.contains("hopper") || e.contains("gondola")
+            || e.contains("centerbeam") || e.contains("autorack") || e.contains("flatcar")
+            || e.contains("well car") { return .rail }
+        if e.contains("vessel") || e.contains("container ship") || e.contains("vlcc")
+            || e.contains("bulk carrier") || e.contains("ro/ro") || e.contains("roro")
+            || e.contains("lng") || e.contains("iso tank") { return .vessel }
+        if e.contains("barge") { return .barge }
+        return .truck
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             statusCard
-            LifecycleMapCard(live: live, label: "AT DOCK", mode: .truckAtPickup, height: 200)
-            LifecycleAnimationStrip(live: live, label: "LOADING", height: 200)
+            LifecycleMapCard(live: live, label: loadMode.atPickupLabel, mode: .truckAtPickup, height: 200)
+            LifecycleAnimationStrip(live: live, label: loadMode.loadingVerb, height: 200)
             facilityCard
             cargoCard
             commsRow
@@ -74,7 +91,7 @@ private struct AtDockBody: View {
 
     private var statusCard: some View {
         LifecycleCard {
-            LifecycleSection(label: "DOCK STATUS", icon: "arrow.up.bin.fill")
+            LifecycleSection(label: "\(loadMode.pickupNoun) STATUS", icon: "arrow.up.bin.fill")
             LifecycleRow(label: "Stop status",  value: dashIfEmpty(live.pickup?.status.uppercased()))
             LifecycleRow(label: "Arrived at",   value: humanISO(live.pickup?.arrivedAt))
             if let dwell = live.lastGeofence?.dwellSeconds {

@@ -204,7 +204,7 @@ struct ShipperLoadDetail: View {
             // inline iOS surface to approve / reject without web
             // continuation.
             if isLoadPODPending {
-                Button("Review POD") {
+                Button("Review \(TransportLexicon.short(.proofOfDelivery, mode: loadMode, equipmentRaw: loadEquipmentRaw))") {
                     podError = nil
                     podRejectReason = ""
                     showPODReview = true
@@ -343,9 +343,10 @@ struct ShipperLoadDetail: View {
                 }
                 ToolbarItem(placement: .principal) {
                     VStack(spacing: 1) {
-                        Text("REVIEW POD")
+                        Text("REVIEW \(TransportLexicon.short(.proofOfDelivery, mode: loadMode, equipmentRaw: loadEquipmentRaw).uppercased())")
                             .font(EType.micro).tracking(1.0)
                             .foregroundStyle(LinearGradient.diagonal)
+                            .lineLimit(1).minimumScaleFactor(0.7)
                         Text(displayLoadId)
                             .font(EType.mono(.micro)).tracking(0.3)
                             .foregroundStyle(palette.textSecondary)
@@ -400,9 +401,10 @@ struct ShipperLoadDetail: View {
 
     private var podPhotoCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("BOL PHOTO")
+            Text("\(TransportLexicon.short(.billOfLading, mode: loadMode, equipmentRaw: loadEquipmentRaw).uppercased()) PHOTO")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                 .foregroundStyle(LinearGradient.diagonal)
+                .lineLimit(1).minimumScaleFactor(0.7)
             if let img = decodeBase64Image(podPacket?.photoBase64) {
                 Image(uiImage: img)
                     .resizable()
@@ -513,7 +515,7 @@ struct ShipperLoadDetail: View {
                 .disabled(!canRejectPOD)
 
                 CTAButton(
-                    title: podDecisionInFlight ? "Approving…" : "Approve POD",
+                    title: podDecisionInFlight ? "Approving…" : "Approve \(TransportLexicon.short(.proofOfDelivery, mode: loadMode, equipmentRaw: loadEquipmentRaw))",
                     action: { Task { await approvePOD() } },
                     isLoading: podDecisionInFlight
                 )
@@ -940,6 +942,18 @@ struct ShipperLoadDetail: View {
 
     private var liveDetail: LoadsAPI.LoadDetail? {
         detailStore.state.value ?? nil
+    }
+
+    /// Mode-aware terminology resolver for this load. Drives the
+    /// document/label lexicon so a vessel load reads "Ocean Bill of
+    /// Lading" and a rail load reads its native term instead of the
+    /// hardcoded truck "BOL".
+    private var loadMode: TransportMode {
+        TransportMode(rawValue: liveDetail?.transportMode ?? "truck") ?? .truck
+    }
+
+    private var loadEquipmentRaw: String? {
+        liveDetail?.equipmentType
     }
 
     // MARK: - TopBar
@@ -1468,7 +1482,7 @@ struct ShipperLoadDetail: View {
                 .foregroundStyle(palette.textTertiary)
             HStack(spacing: Space.s2) {
                 docTile(icon: "doc.text",
-                        title: "BOL",
+                        title: TransportLexicon.short(.billOfLading, mode: loadMode, equipmentRaw: loadEquipmentRaw),
                         state: bolStateText,
                         stateColor: bolStateColor,
                         iconStyle: .gradient)
@@ -1525,6 +1539,8 @@ struct ShipperLoadDetail: View {
             Text(title)
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
             Text(state)
                 .font(EType.caption)
                 .foregroundStyle(stateColor)

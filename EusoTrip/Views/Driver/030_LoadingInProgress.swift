@@ -43,6 +43,12 @@ struct LoadingInProgress: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
+    /// Transport mode of the active load (truck fallback) — drives the
+    /// mode-aware loading-phase verb (LOADING / RAMPING / STOWING).
+    private var resolvedMode: TransportMode {
+        TransportMode(rawValue: activeLoad?.transportMode ?? "truck") ?? .truck
+    }
+
     // MARK: - Production-clean placeholders.
     //
     // Updated 2026-04-24 (eusotrip-killers ledger-hygiene pass) — every
@@ -202,9 +208,10 @@ struct LoadingInProgress: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Circle().fill(Brand.success).frame(width: 6, height: 6)
-                    Text("LOADING ACTIVE")
+                    Text("\(resolvedMode.loadingVerb) ACTIVE")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(Brand.success)
+                        .lineLimit(1)
                     Text("· \(activeLoad?.loadNumber ?? fallbackLoadID)")
                         .font(EType.mono(.micro)).tracking(0.4)
                         .foregroundStyle(palette.textSecondary)

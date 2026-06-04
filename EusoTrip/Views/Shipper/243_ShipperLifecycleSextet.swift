@@ -263,7 +263,7 @@ struct ShipperDepartingScreen: View {
                             .init(label: "STATUS", value: "DEPARTED", subtitle: "gate-out cleared", color: .green),
                             .init(label: "PALLETS", value: "\(l?.palletCount ?? 0)", subtitle: "loaded · sealed", color: .blue),
                             .init(label: "ETA-DEL", value: etaText(l?.deliveryDate), subtitle: "delivery window", color: .blue),
-                            .init(label: "BOL", value: "PRE-SIGN", subtitle: "ME · TR pending", color: .orange),
+                            .init(label: TransportLexicon.short(.billOfLading, mode: lifecycleLoadMode(l?.trailerType), equipmentRaw: l?.trailerType), value: "PRE-SIGN", subtitle: "ME · TR pending", color: .orange),
                         ]
                     )
                 },
@@ -292,7 +292,7 @@ struct ShipperPreDeliveryScreen: View {
                             .init(label: "ETA", value: etaText(l?.deliveryDate), subtitle: "to dock", color: .blue),
                             .init(label: "TEMP", value: tempLabel(l?.temperatureF), subtitle: "in-range · sealed", color: .green),
                             .init(label: "PALLETS", value: "\(l?.palletCount ?? 0)", subtitle: "sealed in transit", color: .blue),
-                            .init(label: "BOL", value: "READY", subtitle: "TR co-sign queued", color: .blue),
+                            .init(label: TransportLexicon.short(.billOfLading, mode: lifecycleLoadMode(l?.trailerType), equipmentRaw: l?.trailerType), value: "READY", subtitle: "TR co-sign queued", color: .blue),
                         ]
                     )
                 },
@@ -349,7 +349,7 @@ struct ShipperLoadClosedScreen: View {
                         title: "Load closed · sealed",
                         kpis: [
                             .init(label: "PALLETS", value: "\(pal)/\(pal)", subtitle: "FINAL · sealed", color: .green),
-                            .init(label: "POD CERT", value: "ISSUED", subtitle: l?.podCertId ?? "ePOD chain sealed", color: .green),
+                            .init(label: "\(TransportLexicon.short(.proofOfDelivery, mode: lifecycleLoadMode(l?.trailerType), equipmentRaw: l?.trailerType)) CERT", value: "ISSUED", subtitle: l?.podCertId ?? "ePOD chain sealed", color: .green),
                             .init(label: "TEMP", value: tempLabel(l?.temperatureF), subtitle: "SEAL · final", color: .blue),
                             .init(label: "PAYABLE", value: "RELEASED", subtitle: "NET-30 · armed", color: .green),
                         ]
@@ -362,6 +362,23 @@ struct ShipperLoadClosedScreen: View {
 }
 
 // MARK: - Helpers
+
+/// The lifecycle load record carries no `transportMode` column — only
+/// `trailerType` (equipment). Derive the base mode from the equipment
+/// keyword (same rail*/vessel* convention the lifecycle surfaces use) so
+/// the document/charge labels speak the load's language; default to truck.
+private func lifecycleLoadMode(_ trailerType: String?) -> TransportMode {
+    let e = (trailerType ?? "").lowercased()
+    if e.contains("rail") || e.contains("tofc") || e.contains("cofc")
+        || e.contains("boxcar") || e.contains("hopper") || e.contains("gondola")
+        || e.contains("centerbeam") || e.contains("autorack") || e.contains("flatcar")
+        || e.contains("well car") { return .rail }
+    if e.contains("vessel") || e.contains("container ship") || e.contains("vlcc")
+        || e.contains("bulk carrier") || e.contains("ro/ro") || e.contains("roro")
+        || e.contains("lng") || e.contains("iso tank") { return .vessel }
+    if e.contains("barge") { return .barge }
+    return .truck
+}
 
 private func tempLabel(_ f: Double?) -> String {
     guard let f else { return "—" }

@@ -83,7 +83,7 @@ struct MeComplianceHubScreen: View {
     var body: some View {
         wrapShipperScreen(palette: theme, currentSlot: .me) {
             MeHubBody(title: "Compliance & Documents",
-                      subtitle: "Compliance · Insurance · FMCSA · Hazmat · Docs",
+                      subtitle: "Compliance · Insurance · Carrier safety · Hazmat · Docs",
                       sections: MeHubCatalog.compliance)
         }
     }
@@ -237,13 +237,13 @@ enum MeHubCatalog {
         MeSection(title: "COMPLIANCE", icon: "shield.lefthalf.filled", cells: [
             MeCell(icon: "shield.lefthalf.filled", label: "Compliance dashboard", action: .screen("216")),
             MeCell(icon: "checkmark.shield",       label: "Insurance",           action: .screen("325")),
-            MeCell(icon: "doc.text",               label: "FMCSA SAFER",         action: .screen("326")),
+            MeCell(icon: "doc.text",               label: "Carrier safety",      action: .screen("326")),
             MeCell(icon: "triangle.fill",          label: "Hazmat audit",        action: .screen("327")),
             MeCell(icon: "shippingbox.and.arrow.backward", label: "Cargo insurance", action: .screen("Ship297Ins")),
         ]),
         MeSection(title: "DOCUMENTS", icon: "folder", cells: [
             MeCell(icon: "folder",                label: "Document center", action: .screen("226")),
-            MeCell(icon: "doc.fill",              label: "BOLs",            action: .screen("228")),
+            MeCell(icon: "doc.fill",              label: "Bills of lading", action: .screen("228")),
             MeCell(icon: "exclamationmark.bubble", label: "Freight claims", action: .screen("219")),
         ]),
     ]
@@ -318,7 +318,7 @@ private struct MeHomeBody: View {
                         screenId: "320d")
                 hubCard(icon: "shield.lefthalf.filled",
                         title: "Compliance & Documents",
-                        subtitle: "Compliance · Insurance · FMCSA · Hazmat · Docs",
+                        subtitle: "Compliance · Insurance · Carrier safety · Hazmat · Docs",
                         screenId: "320e")
                 hubCard(icon: "newspaper.fill",
                         title: "Intel & The Haul",

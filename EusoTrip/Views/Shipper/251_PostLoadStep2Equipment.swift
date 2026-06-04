@@ -280,7 +280,12 @@ private struct PostLoadStep2Body: View {
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
             HStack {
-                Text("Min FMCSA rating").font(EType.caption).foregroundStyle(palette.textSecondary)
+                // Mode-aware: truck → "Min Safety Rating" (FMCSA), vessel →
+                // "Min Risk Profile", etc. Mode is in scope via draft.mode
+                // (the wizard's 3-case Mode mirrors TransportMode rawValues).
+                Text("Min \(TransportLexicon.short(.safetyRating, mode: TransportMode(rawValue: draft.mode.rawValue) ?? .truck))")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+                    .lineLimit(1).minimumScaleFactor(0.8)
                 Spacer(minLength: 0)
                 Picker("", selection: $draft.minSafetyRating) {
                     Text("Satisfactory").tag("satisfactory")

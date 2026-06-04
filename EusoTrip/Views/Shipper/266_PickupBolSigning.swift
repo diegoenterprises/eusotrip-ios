@@ -23,6 +23,23 @@ private struct BolSigningBody: View {
     let loadId: String
     @State private var openingBol = false
 
+    /// The snapshot carries no `transportMode` column — only `equipmentType`.
+    /// Derive the base mode from the equipment keyword (same rail*/vessel*
+    /// convention the LifecycleScaffold uses) so mode-dependent labels speak
+    /// the load's language; default to truck.
+    private var loadMode: TransportMode {
+        let e = (live.load.equipmentType ?? "").lowercased()
+        if e.contains("rail") || e.contains("tofc") || e.contains("cofc")
+            || e.contains("boxcar") || e.contains("hopper") || e.contains("gondola")
+            || e.contains("centerbeam") || e.contains("autorack") || e.contains("flatcar")
+            || e.contains("well car") { return .rail }
+        if e.contains("vessel") || e.contains("container ship") || e.contains("vlcc")
+            || e.contains("bulk carrier") || e.contains("ro/ro") || e.contains("roro")
+            || e.contains("lng") || e.contains("iso tank") { return .vessel }
+        if e.contains("barge") { return .barge }
+        return .truck
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             bolCard
@@ -34,7 +51,7 @@ private struct BolSigningBody: View {
 
     private var bolCard: some View {
         LifecycleCard(accentGradient: true) {
-            LifecycleSection(label: "BOL", icon: "doc.text.below.ecg.fill")
+            LifecycleSection(label: TransportLexicon.short(.billOfLading, mode: loadMode, equipmentRaw: live.load.equipmentType), icon: "doc.text.below.ecg.fill")
             LifecycleRow(label: "Load number", value: live.load.loadNumber)
             LifecycleRow(label: "Origin",      value: laneDisplay(live).components(separatedBy: " → ").first ?? "—")
             LifecycleRow(label: "Destination", value: laneDisplay(live).components(separatedBy: " → ").last ?? "—")
@@ -47,7 +64,7 @@ private struct BolSigningBody: View {
             LifecycleSection(label: "SIGNATURES", icon: "signature")
             LifecycleRow(label: "Driver",   value: dashIfEmpty(live.driver?.name))
             LifecycleRow(label: "Carrier",  value: dashIfEmpty(live.carrier?.name))
-            LifecycleRow(label: "Pickup ts", value: humanISO(live.pickup?.departedAt ?? live.pickup?.arrivedAt))
+            LifecycleRow(label: "\(loadMode.pickupNoun.capitalized) ts", value: humanISO(live.pickup?.departedAt ?? live.pickup?.arrivedAt))
         }
     }
 
@@ -73,7 +90,7 @@ private struct BolSigningBody: View {
             HStack(spacing: 6) {
                 if openingBol { ProgressView().tint(.white) }
                 else { Image(systemName: "doc.text.fill").font(.system(size: 13, weight: .heavy)) }
-                Text("Open BOL").font(.system(size: 13, weight: .heavy)).tracking(0.4)
+                Text("Open \(TransportLexicon.short(.billOfLading, mode: loadMode, equipmentRaw: live.load.equipmentType))").font(.system(size: 13, weight: .heavy)).tracking(0.4)
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity).padding(.vertical, 12)

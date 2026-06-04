@@ -85,6 +85,24 @@ private struct InTransitBody: View {
 
     private var mode: TransitMode { TransitMode(relationship: live.load.relationship) }
 
+    /// The snapshot carries no `transportMode` column — only `equipmentType`.
+    /// Derive the base transport mode from the equipment keyword (same
+    /// rail*/vessel* convention the LifecycleScaffold uses) so mode-dependent
+    /// labels speak the load's language; default to truck. Distinct from
+    /// `mode` above, which is the head-haul/backhaul/matrix lane relationship.
+    private var loadMode: TransportMode {
+        let e = (live.load.equipmentType ?? "").lowercased()
+        if e.contains("rail") || e.contains("tofc") || e.contains("cofc")
+            || e.contains("boxcar") || e.contains("hopper") || e.contains("gondola")
+            || e.contains("centerbeam") || e.contains("autorack") || e.contains("flatcar")
+            || e.contains("well car") { return .rail }
+        if e.contains("vessel") || e.contains("container ship") || e.contains("vlcc")
+            || e.contains("bulk carrier") || e.contains("ro/ro") || e.contains("roro")
+            || e.contains("lng") || e.contains("iso tank") { return .vessel }
+        if e.contains("barge") { return .barge }
+        return .truck
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             modeBanner            // bespoke per-mode pill + eyebrow (nil-render for head_haul)
@@ -275,12 +293,12 @@ private struct InTransitBody: View {
                     LifecycleRow(label: "Dwell", value: "\(dwell / 60) min")
                 }
             } else {
-                Text("Truck en route — no geofence event in this window yet.")
+                Text("\(loadMode.displayName) en route — no geofence event in this window yet.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            LifecycleRow(label: "Pickup window",   value: humanISO(live.load.pickupDate))
-            LifecycleRow(label: "Delivery window", value: humanISO(live.load.deliveryDate))
+            LifecycleRow(label: TransportLexicon.short(.originWindow, mode: loadMode, equipmentRaw: live.load.equipmentType),   value: humanISO(live.load.pickupDate))
+            LifecycleRow(label: TransportLexicon.short(.destinationWindow, mode: loadMode, equipmentRaw: live.load.equipmentType), value: humanISO(live.load.deliveryDate))
         }
     }
 

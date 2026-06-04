@@ -1353,8 +1353,8 @@ private struct AddEvidenceSheet: View {
     private let evidenceTypes: [(String, String)] = [
         ("photo", "Photo"),
         ("document", "Document"),
-        ("bol", "BOL"),
-        ("pod", "POD"),
+        ("bol", TransportLexicon.generic(key: "billOfLading")),
+        ("pod", TransportLexicon.generic(key: "proofOfDelivery")),
         ("inspection_report", "Inspection report"),
         ("repair_invoice", "Repair invoice"),
         ("statement", "Statement"),

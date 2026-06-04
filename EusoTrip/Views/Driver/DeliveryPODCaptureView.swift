@@ -466,9 +466,11 @@ struct DeliveryPODCaptureView: View {
                 }
                 ToolbarItem(placement: .principal) {
                     VStack(spacing: 1) {
-                        Text("PROOF OF DELIVERY")
+                        Text(TransportLexicon.term(.proofOfDelivery, mode: mode ?? .truck).uppercased())
                             .font(EType.micro).tracking(1.0)
                             .foregroundStyle(LinearGradient.diagonal)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                         Text(loadNumber ?? loadId)
                             .font(EType.mono(.micro)).tracking(0.3)
                             .foregroundStyle(palette.textSecondary)

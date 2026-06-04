@@ -213,7 +213,7 @@ private struct LoadBoardBody: View {
                             LifecycleRow(label: "Rate",        value: usd(ld.postedRate))
                             LifecycleRow(label: "Mileage",     value: ld.mileage.map { "\($0) mi" } ?? "—")
                             LifecycleRow(label: "Est. margin", value: usd(ld.estimatedMargin))
-                            LifecycleRow(label: "Pickup",      value: humanISO(ld.pickupISO))
+                            LifecycleRow(label: TransportLexicon.short(.originWindow, mode: TransportMode(rawValue: ld.transportMode ?? "truck") ?? .truck), value: humanISO(ld.pickupISO))
                         }
                     }.buttonStyle(.plain)
                 }
