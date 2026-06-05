@@ -35,21 +35,21 @@ struct DayCloseWallet: View {
     private let fallbackClock        = "09:40"
     private let fallbackSatLabel     = "SATURDAY · 2026-04-18"
     private let fallbackResetState   = "CLOSED · RESET RUNNING"
-    private let fallbackDayBig       = "—"
+    private let fallbackDayBig       = "-"
     private let fallbackDaySub       = ""
     private let fallbackQuarterCopy  = "BEST SATURDAY THIS QUARTER · 3 LOADS · 460 MI"
     private let fallbackQuarterDelta = "+18%"
-    private let fallbackFuel         = "—"
+    private let fallbackFuel         = "-"
     private let fallbackFuelSub      = "82 GAL DIESEL"
-    private let fallbackTolls        = "—"
+    private let fallbackTolls        = "-"
     private let fallbackTollsSub     = ""
-    private let fallbackPerDiem      = "—"
+    private let fallbackPerDiem      = "-"
     private let fallbackPerDiemSub   = ""
-    private let fallbackWkNet        = "—"
+    private let fallbackWkNet        = "-"
     private let fallbackWkNetSub     = "62 SAL DIESEL EQ. SUL"
-    private let fallbackWkMiles      = "—"
+    private let fallbackWkMiles      = "-"
     private let fallbackWkMilesSub   = "MILES WK"
-    private let fallbackeSang        = "—"
+    private let fallbackeSang        = "-"
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -182,12 +182,12 @@ struct DayCloseWallet: View {
     private var lastLegBrand: String {
         switch ctx.product {
         case .hazmatTanker, .vesselTanker:  return "Univar → Yara York NH3"
-        case .reefer:                       return "—"
+        case .reefer:                       return "-"
         case .flatbed:                      return "Birmingham Steel → Houston"
         case .container, .railIntermodal,
              .vesselContainer:              return "Curtis Bay → Norfolk box"
         case .railBulk, .vesselBulk:        return "Spur 3 → Texas City bulk"
-        case .dryVan:                       return "—"
+        case .dryVan:                       return "-"
         }
     }
 

@@ -419,7 +419,7 @@ private struct RailDropYardOperationsBody: View {
     // MARK: - Row classification helpers
 
     private func slotTitle(_ t: DropYardTrailer) -> String {
-        let slot = t.spotId ?? "—"
+        let slot = t.spotId ?? "-"
         let equip = equipmentLabel(t)
         return "Slot \(slot) · \(equip)"
     }
@@ -681,7 +681,7 @@ private struct ChassisSheet: View {
                 }
             }
             Spacer()
-            Text((c.status ?? "—").replacingOccurrences(of: "_", with: " ").uppercased())
+            Text((c.status ?? "-").replacingOccurrences(of: "_", with: " ").uppercased())
                 .font(.system(size: 8, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(color)
                 .padding(.horizontal, 8).padding(.vertical, 3)

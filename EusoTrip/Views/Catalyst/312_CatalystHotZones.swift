@@ -24,7 +24,7 @@ import SwiftUI
 //   surgeMultiplier, avgRate, topEquipment, hazmatClasses,
 //   oversizedFrequency }. The previous struct decoded fields that don't
 // exist on the wire (metro/kind/direction/summary), so every card read
-// "—" and the KPIs read 0 — the "no data" bug. We decode the real
+// "-" and the KPIs read 0 — the "no data" bug. We decode the real
 // fields and derive the risk/clear lens + direction client-side.
 private struct HotZoneCenter312: Decodable, Hashable {
     let lat: Double
@@ -70,7 +70,7 @@ private struct HotZone: Decodable, Hashable, Identifiable {
 
     var summary: String? {
         guard let r = loadToTruckRatio else { return nil }
-        let rate = avgRate.map { String(format: "$%.2f/mi", $0) } ?? "—"
+        let rate = avgRate.map { String(format: "$%.2f/mi", $0) } ?? "-"
         return String(format: "L:T %.2f · %@", r, rate)
     }
 
@@ -198,7 +198,7 @@ private struct HotZonesBody: View {
         let cells: [HeatCell] = zones.prefix(12).map { z in
             HeatCell(
                 id: z.id,
-                label: z.state ?? "—",
+                label: z.state ?? "-",
                 valueText: String(format: "%.1f×", z.loadToTruckRatio ?? 0),
                 unitText: z.metro,
                 intensity: z.loadToTruckRatio ?? 0,
@@ -277,7 +277,7 @@ private struct HotZonesBody: View {
                         Text(d).font(.caption.weight(.heavy).monospacedDigit()).foregroundStyle(color)
                     }
                 }
-                Text(z.metro ?? "—").font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
+                Text(z.metro ?? "-").font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
                 if let s = z.summary { Text(s).font(.caption).foregroundStyle(palette.textSecondary) }
                 if let d = z.detail  { Text(d).font(.caption2).foregroundStyle(palette.textTertiary) }
             }

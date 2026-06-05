@@ -132,7 +132,7 @@ private struct ZeunBody: View {
                 } else if filtered.isEmpty {
                     EusoEmptyState(systemImage: "wrench.and.screwdriver",
                                    title: "No events in this lens",
-                                   subtitle: "Scheduled service, DOT inspections, and recalls land here.")
+                                   subtitle: "Scheduled service, DOT inspections and recalls land here.")
                 } else {
                     Text("\(events.count) EVENTS · RANKED BY URGENCY · ME / ASSET-BOUND AXIS")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
@@ -261,7 +261,7 @@ private struct ZeunBody: View {
     // MARK: helpers
 
     private func shortDate(_ iso: String?) -> String {
-        guard let iso, !iso.isEmpty else { return "—" }
+        guard let iso, !iso.isEmpty else { return "-" }
         let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         if let d = f.date(from: iso) {
             let out = DateFormatter(); out.dateFormat = "MMM d"

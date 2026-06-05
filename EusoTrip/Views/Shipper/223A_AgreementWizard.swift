@@ -193,7 +193,7 @@ private struct AgreementWizardBody: View {
                 ScrollView {
                     GradientSignaturePad(
                         signerName: aSignerName.isEmpty ? aDisplayName : aSignerName,
-                        documentTitle: "\(humanType(agType)) · \(ack?.agreementNumber ?? "—")"
+                        documentTitle: "\(humanType(agType)) · \(ack?.agreementNumber ?? "-")"
                     ) { dataURL, _ in
                         Task { await signAgreement(dataURL: dataURL) }
                     }
@@ -390,7 +390,7 @@ private struct AgreementWizardBody: View {
             LifecycleCard {
                 LifecycleSection(label: "INDUSTRY VERTICAL", icon: "tag.square")
                 Picker("Vertical", selection: $selectedVertical) {
-                    Text("— Select vertical —").tag(Vertical?.none)
+                    Text("- Select vertical -").tag(Vertical?.none)
                     ForEach(Vertical.allCases) { v in
                         Text(v.displayName).tag(Vertical?.some(v))
                     }
@@ -408,7 +408,7 @@ private struct AgreementWizardBody: View {
 
                 LifecycleSection(label: "CANONICAL TRAILER", icon: "shippingbox")
                 Picker("Trailer", selection: $selectedTrailer) {
-                    Text("— Any trailer —").tag(TrailerCode?.none)
+                    Text("- Any trailer -").tag(TrailerCode?.none)
                     let pool = selectedVertical.map { TrailerCode.filtered(by: $0) } ?? TrailerCode.allCases
                     ForEach(pool) { t in
                         Text(t.displayName).tag(TrailerCode?.some(t))
@@ -538,7 +538,7 @@ private struct AgreementWizardBody: View {
         VStack(spacing: Space.s3) {
             if let a = ack {
                 LifecycleCard(accentGradient: true) {
-                    LifecycleSection(label: "AGREEMENT \(a.agreementNumber ?? "—")", icon: "doc.text")
+                    LifecycleSection(label: "AGREEMENT \(a.agreementNumber ?? "-")", icon: "doc.text")
                     LifecycleRow(label: "Type",     value: humanType(agType))
                     LifecycleRow(label: "Duration", value: humanDur(dur))
                     LifecycleRow(label: "Status",   value: (a.status ?? "draft").uppercased())
@@ -613,7 +613,7 @@ private struct AgreementWizardBody: View {
                 }
             } else {
                 LifecycleCard {
-                    Text("Generation pending — return to lanes step and tap Generate.")
+                    Text("Generation pending, return to lanes step and tap Generate.")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                 }
             }
@@ -673,12 +673,12 @@ private struct AgreementWizardBody: View {
             LifecycleCard(accentGradient: true) {
                 LifecycleSection(label: "READY TO SIGN", icon: "signature")
                 if let a = ack {
-                    LifecycleRow(label: "Agreement", value: a.agreementNumber ?? "—")
+                    LifecycleRow(label: "Agreement", value: a.agreementNumber ?? "-")
                     LifecycleRow(label: "Counterparty",
                                  value: (bDisplayName.isEmpty ? bCompanyName : bDisplayName).isEmpty
-                                        ? "—" : (bDisplayName.isEmpty ? bCompanyName : bDisplayName))
+                                        ? "-" : (bDisplayName.isEmpty ? bCompanyName : bDisplayName))
                     LifecycleRow(label: "Rate",
-                                 value: baseRate.isEmpty ? "—" : "$\(baseRate) \(rateType)")
+                                 value: baseRate.isEmpty ? "-" : "$\(baseRate) \(rateType)")
                 }
                 Button {
                     showSignPad = true

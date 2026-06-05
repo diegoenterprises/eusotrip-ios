@@ -84,7 +84,7 @@ private struct PdfViewerBody: View {
                 if pdfData != nil { downloadButton }
             }
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(doc?.name ?? "—")
+                Text(doc?.name ?? "-")
                     .font(.system(size: 17, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)

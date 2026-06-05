@@ -270,11 +270,11 @@ private struct DispatcherVehicleDetailBody: View {
             case .review:       return "Composite A · TR-101 dedicated anchor holding 0.97 ceiling. Roll into the broker-portal vehicle card."
             case .utilization:  return "91.6% fleet utilization is healthy. Push TR-201/TR-301 to match TR-101's 96.4% peak."
             case .maintenance:  return "Zeun health is strong. Bring TR-203 in for the deferred clutch service before it dips."
-            case .onTime:       return "TR-101 streaking 1.00. Use it as the playbook for the rest of the fleet — pre-stage at yard 90 min out."
+            case .onTime:       return "TR-101 streaking 1.00. Use it as the playbook for the rest of the fleet. Pre-stage at yard 90 min out."
             case .inspection:   return "0.96 pass-rate. Schedule the next CVSA roadside refresh for TR-202 before its 60d window closes."
             case .deadhead:     return "0.09 fleet deadhead is in the top decile. Mine the empty-mile data for one more PHX-KC pull."
             case .onboarding:   return "TR-101 5/5 terminal. Wrap TR-307 onboarding (step 4 still pending PIN) before its first NH₃ pull."
-            case .quarter:      return "Hold the 0.93 EOY target. TR-101 is the 4Q ceiling — copy its pull cadence onto the next 3 dedicated trucks."
+            case .quarter:      return "Hold the 0.93 EOY target. TR-101 is the 4Q ceiling. Copy its pull cadence onto the next 3 dedicated trucks."
             }
         }()
         return LifecycleCard {

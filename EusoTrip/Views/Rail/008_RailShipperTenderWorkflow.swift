@@ -123,7 +123,7 @@ struct RailShipperTenderWorkflow_008: View {
     }
 
     private func dash(_ s: String?) -> String {
-        guard let s, !s.trimmingCharacters(in: .whitespaces).isEmpty else { return "—" }
+        guard let s, !s.trimmingCharacters(in: .whitespaces).isEmpty else { return "-" }
         return s
     }
 
@@ -134,7 +134,7 @@ struct RailShipperTenderWorkflow_008: View {
         return Self.carrierRotation[(i + 1) % Self.carrierRotation.count]
     }
 
-    private var heroCarrier: String { active?.carrier ?? "—" }
+    private var heroCarrier: String { active?.carrier ?? "-" }
     private var subLine: String {
         if let a = active { return "EDI 404 sent · awaiting EDI 990 response from \(a.carrier ?? "carrier")" }
         return "No active tender · send an EDI 404 to a Class I railroad"
@@ -219,13 +219,13 @@ struct RailShipperTenderWorkflow_008: View {
             if let a = active {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(alignment: .top) {
-                        Text("ACTIVE TENDER · EDI 404 → \(a.carrier ?? "—")")
+                        Text("ACTIVE TENDER · EDI 404 → \(a.carrier ?? "-")")
                             .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                             .foregroundStyle(Color(hex: 0x6E7681))
                         Spacer()
                         statusPill(a.status)
                     }
-                    Text("\(a.carrier ?? "—") · \(a.railcarCount.map(String.init) ?? "—") \(carLabel(a.carType))")
+                    Text("\(a.carrier ?? "-") · \(a.railcarCount.map(String.init) ?? "-") \(carLabel(a.carType))")
                         .font(.system(size: 17, weight: .bold))
                         .foregroundStyle(palette.textPrimary)
                         .padding(.top, Space.s4)
@@ -244,7 +244,7 @@ struct RailShipperTenderWorkflow_008: View {
                         .foregroundStyle(palette.textSecondary)
                         .padding(.top, Space.s4)
                         .lineLimit(1).minimumScaleFactor(0.6)
-                    Text("RAIL-\(a.shipmentId.map(String.init) ?? "—") · STCC \(dash(a.commodityStcc)) · pickup \(dash(a.pickupDate))")
+                    Text("RAIL-\(a.shipmentId.map(String.init) ?? "-") · STCC \(dash(a.commodityStcc)) · pickup \(dash(a.pickupDate))")
                         .font(EType.mono(.caption))
                         .foregroundStyle(palette.textSecondary)
                         .padding(.top, 4)
@@ -378,8 +378,8 @@ struct RailShipperTenderWorkflow_008: View {
     }
 
     private func historyRow(_ r: RailTenderHistoryRow008) -> some View {
-        let lane = "\(r.carrier ?? "—") · \(dash(r.originScac ?? r.origin)) → \(dash(r.destinationScac ?? r.destination))"
-        let meta = "\(shortDate(r.timestamp ?? r.submittedAt)) · \(r.railcarCount.map(String.init) ?? "—") cars · STCC \(dash(r.commodityStcc))"
+        let lane = "\(r.carrier ?? "-") · \(dash(r.originScac ?? r.origin)) → \(dash(r.destinationScac ?? r.destination))"
+        let meta = "\(shortDate(r.timestamp ?? r.submittedAt)) · \(r.railcarCount.map(String.init) ?? "-") cars · STCC \(dash(r.commodityStcc))"
         return HStack(alignment: .top, spacing: Space.s3) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(lane)
@@ -398,12 +398,12 @@ struct RailShipperTenderWorkflow_008: View {
     }
 
     private func shortDate(_ iso: String?) -> String {
-        guard let iso, iso.count >= 10 else { return "—" }
+        guard let iso, iso.count >= 10 else { return "-" }
         // ISO-8601 "2026-05-21T..." → "May 21"
         let ymd = String(iso.prefix(10)).split(separator: "-")
-        guard ymd.count == 3, let m = Int(ymd[1]), let d = Int(ymd[2]) else { return "—" }
+        guard ymd.count == 3, let m = Int(ymd[1]), let d = Int(ymd[2]) else { return "-" }
         let months = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-        guard m >= 1, m <= 12 else { return "—" }
+        guard m >= 1, m <= 12 else { return "-" }
         return "\(months[m]) \(d)"
     }
 

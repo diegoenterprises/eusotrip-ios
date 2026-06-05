@@ -495,7 +495,7 @@ private struct RailDetentionTrackingBody: View {
         // pick a claim from the disputes/active list before invoicing. Surface
         // that honestly instead of POSTing a fabricated id.
         guard dash != nil else { return }
-        invoiceMsg = "Select an approved claim to invoice — open Disputes to pick one."
+        invoiceMsg = "Select an approved claim to invoice. Open Disputes to pick one."
         disputeMsg = nil
     }
 

@@ -350,7 +350,7 @@ struct CatalystFleetIFTA: View {
             factorCell(label: "TAXABLE MILES", value: integer(r.taxable), sub: "\(store.quarter) fleet")
             factorCell(label: "GALLONS", value: integer(r.totalGallons), sub: "at pump")
             factorCell(label: "FLEET MPG",
-                       value: r.fleetMpg.map { String(format: "%.1f", $0) } ?? "—",
+                       value: r.fleetMpg.map { String(format: "%.1f", $0) } ?? "-",
                        sub: "blended")
         }
     }

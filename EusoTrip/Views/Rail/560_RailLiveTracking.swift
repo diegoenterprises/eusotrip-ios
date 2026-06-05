@@ -153,11 +153,11 @@ private struct RailLiveTrackingBody: View {
     @State private var loadError: String? = nil
 
     private var originLabel: String {
-        guard let y = detail?.originYard else { return "—" }
+        guard let y = detail?.originYard else { return "-" }
         return [y.code, y.city].compactMap { $0 }.joined(separator: " · ")
     }
     private var destLabel: String {
-        guard let y = detail?.destinationYard else { return "—" }
+        guard let y = detail?.destinationYard else { return "-" }
         return [y.code, y.city].compactMap { $0 }.joined(separator: " · ")
     }
     private var currentPositionLabel: String {
@@ -316,9 +316,9 @@ private struct RailLiveTrackingBody: View {
 
     private var kpiStrip: some View {
         HStack(spacing: Space.s2) {
-            let speedVal = liveData?.speed.map { "\(Int($0)) mph" } ?? "— mph"
-            let etaVal   = liveData?.eta ?? "—"
-            let dwellVal = liveData?.dwellRisk ?? "—"
+            let speedVal = liveData?.speed.map { "\(Int($0)) mph" } ?? "- mph"
+            let etaVal   = liveData?.eta ?? "-"
+            let dwellVal = liveData?.dwellRisk ?? "-"
             let dwellColor: Color = {
                 switch dwellVal.lowercased() {
                 case "low":  return Brand.success
@@ -328,7 +328,7 @@ private struct RailLiveTrackingBody: View {
             }()
             MetricTile(label: "SPEED", value: speedVal)
             MetricTile(label: "ETA DEST", value: etaVal, gradientNumeral: true)
-            MetricTile(label: "DWELL RISK", value: dwellVal, accent: dwellVal == "—" ? nil : dwellColor)
+            MetricTile(label: "DWELL RISK", value: dwellVal, accent: dwellVal == "-" ? nil : dwellColor)
         }
     }
 

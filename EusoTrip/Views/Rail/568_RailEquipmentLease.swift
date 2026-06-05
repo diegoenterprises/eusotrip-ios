@@ -129,11 +129,11 @@ private struct RailEquipmentLeaseBody: View {
     private var leasesCount: Int   { dashboard?.totalLeasesActive ?? leases.count }
     private var perDiemLabel: String {
         if let pd = dashboard?.totalPerDiemPerDay { return "$\(Int(pd))" }
-        return "—"
+        return "-"
     }
     private var totalAccrLabel: String {
         if let ta = dashboard?.totalAccruedCostUsd { return "$\(formatMoney(ta))" }
-        return "—"
+        return "-"
     }
     private var renewalCount: Int { renewal?.renewalsInNext30Days ?? (renewal?.renewals?.count ?? 0) }
 
@@ -196,7 +196,7 @@ private struct RailEquipmentLeaseBody: View {
             default:          return (unit.equipmentType ?? "Unit").replacingOccurrences(of: "_", with: " ").capitalized
             }
         }()
-        let num = unit.equipmentNumber ?? unit.equipmentId ?? "—"
+        let num = unit.equipmentNumber ?? unit.equipmentId ?? "-"
         let extra = unit.hazmatClass.map { " · \($0)" } ?? ""
         return "\(typeLabel) \(num)\(extra)"
     }
@@ -375,7 +375,7 @@ private struct RailEquipmentLeaseBody: View {
     private func leaseRow(_ unit: LeasedUnit568) -> some View {
         let color = chipColor(unit)
         let hColor = healthColor(unit)
-        let accrued = unit.accruedCostUsd.map { "$\(Int($0))" } ?? "—"
+        let accrued = unit.accruedCostUsd.map { "$\(Int($0))" } ?? "-"
 
         return HStack(spacing: 12) {
             ZStack {
@@ -429,7 +429,7 @@ private struct RailEquipmentLeaseBody: View {
                     ForEach(renewals.prefix(2)) { event in
                         let daysLabel = event.daysUntilRenewal.map { "\($0) days" } ?? ""
                         let costLabel = event.termCostUsd.map { " · $\(formatMoney($0)) term" } ?? ""
-                        Text("\(event.equipmentNumber ?? "—") · renews \(event.renewalDate ?? "—") · \(daysLabel)\(costLabel)")
+                        Text("\(event.equipmentNumber ?? "-") · renews \(event.renewalDate ?? "-") · \(daysLabel)\(costLabel)")
                             .font(EType.caption)
                             .foregroundStyle(palette.textSecondary)
                     }

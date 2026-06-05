@@ -142,8 +142,8 @@ private struct VesselDemurrageDetentionBody: View {
 
                 VStack(alignment: .leading, spacing: Space.s5) {
                     if let actionError { actionErrorBanner(actionError) }
-                    if disputeOk { successBanner("Demurrage disputed — under review.") }
-                    if bookedOk { successBanner("CES exam slot requested — you'll be notified on confirmation.") }
+                    if disputeOk { successBanner("Demurrage disputed, under review.") }
+                    if bookedOk { successBanner("CES exam slot requested. You'll be notified on confirmation.") }
 
                     if loading {
                         loadingState
@@ -208,7 +208,7 @@ private struct VesselDemurrageDetentionBody: View {
             .padding(.top, Space.s5)
 
             HStack(alignment: .center) {
-                Text(detail?.bookingNumber ?? "—")
+                Text(detail?.bookingNumber ?? "-")
                     .font(.system(size: 30, weight: .bold, design: .monospaced))
                     .kerning(-0.5)
                     .foregroundStyle(palette.textPrimary)
@@ -349,7 +349,7 @@ private struct VesselDemurrageDetentionBody: View {
     private var detentionValueLabel: String {
         if detentionCharge > 0 { return money(detentionCharge) }
         if detentionFreeDays > 0 { return "\(detentionFreeDays) free days" }
-        return "—"
+        return "-"
     }
 
     private func splitCard(title: String, sub: String, value: String, gradient: Bool) -> some View {
@@ -417,7 +417,7 @@ private struct VesselDemurrageDetentionBody: View {
     private var holdTitle: String {
         if let r = heldCustoms?.holdReasons, let first = r.first, !first.isEmpty { return first }
         if let e = heldCustoms?.entryNumber, !e.isEmpty { return "CBP entry \(e) under review" }
-        return "CBP hold — cause pending"
+        return "CBP hold - cause pending"
     }
     private var holdDetail: String {
         if let w = isf?.warning, !w.isEmpty { return w }
@@ -490,7 +490,7 @@ private struct VesselDemurrageDetentionBody: View {
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1).minimumScaleFactor(0.7)
                 Spacer(minLength: 8)
-                Text(total > 0 ? money(total) : "—")
+                Text(total > 0 ? money(total) : "-")
                     .font(.system(size: 12, weight: .heavy)).monospacedDigit()
                     .foregroundStyle(Brand.danger)
             }
@@ -509,7 +509,7 @@ private struct VesselDemurrageDetentionBody: View {
         if ratePerDay > 0 || detentionRate > 0 {
             return "Day \(start)–\(start + 4) · \(money(ratePerDay)) demurrage + \(money(detentionRate)) detention"
         }
-        return "No projected charges — rates not yet set"
+        return "No projected charges - rates not yet set"
     }
 
     // MARK: Actions  (SVG y=742 — gradient "Book CES exam slot" · glass "Dispute")
@@ -678,7 +678,7 @@ private struct VesselDemurrageDetentionBody: View {
             if out.success == true { disputeOk = true; await load() }
             else { actionError = "Dispute could not be filed. Please try again." }
         } catch {
-            actionError = "Couldn't file dispute — "
+            actionError = "Couldn't file dispute. "
                 + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
         }
         disputing = false
@@ -696,7 +696,7 @@ private struct VesselDemurrageDetentionBody: View {
             if out.success == true { bookedOk = true }
             else { actionError = "CES exam slot could not be requested. Please try again." }
         } catch {
-            actionError = "Couldn't request CES exam — "
+            actionError = "Couldn't request CES exam. "
                 + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
         }
         booking = false

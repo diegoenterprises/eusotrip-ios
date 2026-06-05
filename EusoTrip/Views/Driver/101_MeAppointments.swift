@@ -369,7 +369,7 @@ struct MeAppointments: View {
 
     private var footer: some View {
         VStack(spacing: Space.s1) {
-            Text("Check in as soon as you arrive — detention clock only starts counting after a confirmed check-in. Start-loading + complete flip your status for dispatch in real time.")
+            Text("Check in as soon as you arrive, detention clock only starts counting after a confirmed check-in. Start-loading + complete flip your status for dispatch in real time.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)
@@ -407,7 +407,7 @@ struct MeAppointments: View {
     }
 
     private func humanTime(_ raw: String?) -> String {
-        guard let raw, !raw.isEmpty else { return "—" }
+        guard let raw, !raw.isEmpty else { return "-" }
         let f = DateFormatter()
         f.dateFormat = "HH:mm"
         f.locale = Locale(identifier: "en_US_POSIX")

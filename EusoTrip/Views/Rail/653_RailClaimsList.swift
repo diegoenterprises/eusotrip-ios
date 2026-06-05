@@ -524,7 +524,7 @@ private struct RailClaimsListBody: View {
     /// rather than fabricate a dollar value. (Amount lives on getClaimById /
     /// the dashboard totalValue aggregate, both flagged PORT-GAP for the row.)
     private func amountString(_ claim: FreightClaimsAPI.Claim) -> String {
-        "—"
+        "-"
     }
 
     // MARK: - Loader

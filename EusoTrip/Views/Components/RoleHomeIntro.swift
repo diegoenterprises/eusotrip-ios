@@ -65,7 +65,7 @@ struct RoleHomeIntro: View {
                     Text("Enable location for live weather")
                         .font(EType.body.weight(.semibold))
                         .foregroundStyle(palette.textPrimary)
-                    Text("Grant location to see local conditions, visibility, and route weather.")
+                    Text("Grant location to see local conditions, visibility and route weather.")
                         .font(EType.micro)
                         .foregroundStyle(palette.textSecondary)
                         .multilineTextAlignment(.leading)

@@ -198,7 +198,7 @@ struct CarrierDrivers: View {
     }
 
     private var rosterCountText: String {
-        guard active.state.isSettled else { return "—" }
+        guard active.state.isSettled else { return "-" }
         return "\(roster.count)"
     }
 
@@ -454,7 +454,7 @@ struct CarrierDrivers: View {
     /// projection only surfaces non-empty names).
     private func initials(for name: String) -> String {
         let parts = name.split(separator: " ").filter { !$0.isEmpty }
-        if parts.isEmpty { return "—" }
+        if parts.isEmpty { return "-" }
         if parts.count == 1 { return String(parts[0].prefix(1)).uppercased() }
         let first = parts[0].prefix(1)
         let last  = parts.last?.prefix(1) ?? ""
@@ -492,7 +492,7 @@ struct CarrierDrivers: View {
         EusoEmptyState(
             systemImage: "magnifyingglass",
             title: "No matches",
-            subtitle: "Try a different driver name, lane, or broker."
+            subtitle: "Try a different driver name, lane or broker."
         )
     }
 

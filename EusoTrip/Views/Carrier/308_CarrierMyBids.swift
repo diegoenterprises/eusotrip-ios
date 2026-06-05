@@ -316,7 +316,7 @@ private struct MyBidsBody: View {
         switch col.id {
         case "pending":   return "Bids awaiting shipper response will land here."
         case "countered": return "If a shipper counters your bid, the card appears here."
-        case "accepted":  return "Wins land here — load goes to your dispatch board."
+        case "accepted":  return "Wins land here. Load goes to your dispatch board."
         case "rejected":  return "Bids the shipper picked someone else on land here."
         case "withdrawn": return "Drag a pending bid here to cancel it."
         default:          return ""

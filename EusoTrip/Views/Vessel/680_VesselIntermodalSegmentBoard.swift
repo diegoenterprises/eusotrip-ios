@@ -311,7 +311,7 @@ private struct VesselIntermodalSegmentBoardBody: View {
         let label = (status ?? "")
             .replacingOccurrences(of: "_", with: " ")
             .uppercased()
-        return Text(label.isEmpty ? "—" : label)
+        return Text(label.isEmpty ? "-" : label)
             .font(.system(size: 9, weight: .heavy)).tracking(0.4)
             .foregroundStyle(Brand.blue)
             .padding(.horizontal, 10).padding(.vertical, 4)
@@ -325,7 +325,7 @@ private struct VesselIntermodalSegmentBoardBody: View {
         let legTxt: String = {
             guard let activeId = tracking?.activeSegmentId,
                   let seg = d.segments.first(where: { $0.id == activeId }) else {
-                return "—"
+                return "-"
             }
             return "leg \(seg.legNumber)"
         }()
@@ -389,8 +389,8 @@ private struct VesselIntermodalSegmentBoardBody: View {
         let modeName = modeLabel(seg.mode)
         let title = "Leg \(seg.legNumber) · \(legRole(seg)) · \(modeName.lowercased())"
         // "Yantian CNYAN → Long Beach USLGB · in transit"
-        let from = seg.originDescription ?? "—"
-        let to = seg.destinationDescription ?? "—"
+        let from = seg.originDescription ?? "-"
+        let to = seg.destinationDescription ?? "-"
         let statusTail: String = {
             switch kind {
             case .completed:
@@ -434,7 +434,7 @@ private struct VesselIntermodalSegmentBoardBody: View {
         let title = "Transfer · \(transferModeArrow(xfer.transferType))"
         // "Yantian ICT · port_terminal · recordTransfer done"
         let facility = xfer.facilityName ?? "Transfer facility"
-        let fType = xfer.facilityType ?? "—"
+        let fType = xfer.facilityType ?? "-"
         let statusTail: String = {
             switch kind {
             case .completed: return "recordTransfer done"
@@ -453,7 +453,7 @@ private struct VesselIntermodalSegmentBoardBody: View {
 
     private func transferModeArrow(_ raw: String?) -> String {
         // truck_to_vessel -> "truck → vessel"
-        guard let raw, raw.contains("_to_") else { return raw ?? "—" }
+        guard let raw, raw.contains("_to_") else { return raw ?? "-" }
         let parts = raw.components(separatedBy: "_to_")
         guard parts.count == 2 else { return raw }
         return "\(parts[0]) → \(parts[1])"

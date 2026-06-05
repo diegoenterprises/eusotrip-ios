@@ -159,9 +159,9 @@ struct CargoCover_606 {
         let premiumVal = p.premium ?? 0
         let deductible = coverage * 0.01            // mirrors server: coverage * 0.01
         let rate       = coverage > 0 ? (premiumVal / coverage) * 100 : 0
-        let origin     = (p.origin ?? "—").uppercased()
-        let dest       = (p.destination ?? "—").uppercased()
-        let policyNo   = p.policyNumber ?? "—"
+        let origin     = (p.origin ?? "-").uppercased()
+        let dest       = (p.destination ?? "-").uppercased()
+        let policyNo   = p.policyNumber ?? "-"
         let kind       = p.policyType ?? "All-risk"
 
         return .init(
@@ -170,7 +170,7 @@ struct CargoCover_606 {
             ratePct:      String(format: "%.2f%%", rate),
             deductible:   money(deductible),
             insuredShort: shortMoney(coverage),
-            certStatus:   ((p.status ?? "").lowercased() == "active") ? "on file" : (p.status ?? "—"),
+            certStatus:   ((p.status ?? "").lowercased() == "active") ? "on file" : (p.status ?? "-"),
             lines: [
                 .init(glyph: "shield.lefthalf.filled", tint: info, title: "\(kind) · line-haul",
                       detail: "\(origin) › \(dest)", state: .quoted, stateColor: info, amount: money(premiumVal)),

@@ -144,7 +144,7 @@ private struct RailYardDirectoryBody639: View {
             } else if filtered.isEmpty {
                 EusoEmptyState(systemImage: "magnifyingglass",
                                title: query.isEmpty ? "No yards in this filter" : "No yards match “\(query)”",
-                               subtitle: "Adjust the search or type filter — the directory hydrates live from getRailYards.")
+                               subtitle: "Adjust the search or type filter. The directory hydrates live from getRailYards.")
             } else {
                 indexSection
                 coverageBand
@@ -301,15 +301,15 @@ private struct RailYardDirectoryBody639: View {
                 .overlay(Text(chip).font(.system(size: 10, weight: .heavy)).foregroundStyle(tint))
             VStack(alignment: .leading, spacing: 4) {
                 Text(r.name ?? "Unnamed yard").font(.system(size: 14, weight: .bold)).foregroundStyle(palette.textPrimary)
-                Text(sub.isEmpty ? "—" : sub).font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textSecondary)
+                Text(sub.isEmpty ? "-" : sub).font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textSecondary)
             }
             Spacer()
             HStack(spacing: 6) {
                 Circle().fill(statusColor).frame(width: 8, height: 8)
-                Text(active ? "ACTIVE" : (r.status ?? "—").uppercased())
+                Text(active ? "ACTIVE" : (r.status ?? "-").uppercased())
                     .font(.system(size: 10, weight: .bold)).foregroundStyle(statusColor)
             }
-            Text(r.splcCode ?? "—").font(.system(size: 13, weight: .bold)).monospacedDigit().foregroundStyle(palette.textPrimary)
+            Text(r.splcCode ?? "-").font(.system(size: 13, weight: .bold)).monospacedDigit().foregroundStyle(palette.textPrimary)
             Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textTertiary)
         }
         .padding(.vertical, 10)

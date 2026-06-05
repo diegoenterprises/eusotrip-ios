@@ -377,7 +377,7 @@ private struct MarketIntelligenceBody: View {
         LifecycleCard(accentGradient: true) {
             LifecycleSection(label: "MACRO BLENDED $/MI", icon: "chart.line.uptrend.xyaxis")
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(m.blendedSignal.map { String(format: "$%.2f", $0) } ?? "—")
+                Text(m.blendedSignal.map { String(format: "$%.2f", $0) } ?? "-")
                     .font(.system(size: 28, weight: .heavy, design: .rounded))
                     .foregroundStyle(LinearGradient.diagonal)
                     .monospacedDigit()
@@ -396,7 +396,7 @@ private struct MarketIntelligenceBody: View {
                             .font(EType.micro).tracking(0.6)
                             .foregroundStyle(palette.textTertiary)
                         Spacer(minLength: 0)
-                        Text(p.rateRpm.map { String(format: "$%.2f / mi", $0) } ?? "—")
+                        Text(p.rateRpm.map { String(format: "$%.2f / mi", $0) } ?? "-")
                             .font(.system(size: 12, weight: .heavy)).monospacedDigit()
                             .foregroundStyle(palette.textPrimary)
                     }
@@ -412,7 +412,7 @@ private struct MarketIntelligenceBody: View {
             ForEach(rows) { r in
                 LifecycleRow(
                     label: r.region,
-                    value: r.priceUsdPerGallon.map { String(format: "$%.3f / gal", $0) } ?? "—"
+                    value: r.priceUsdPerGallon.map { String(format: "$%.3f / gal", $0) } ?? "-"
                 )
             }
         }

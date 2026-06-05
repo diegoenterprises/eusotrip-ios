@@ -327,7 +327,7 @@ struct MeHotZones: View {
                 EusoEmptyState(
                     systemImage: "flame",
                     title: "Market is calm",
-                    subtitle: "No critical zones right now — load-to-truck ratios are in balance nationally."
+                    subtitle: "No critical zones right now, load-to-truck ratios are in balance nationally."
                 )
             }
         }
@@ -560,7 +560,7 @@ struct MeHotZones: View {
     // MARK: Footer
 
     private var footer: some View {
-        Text("Data refreshes from the market-intel feed every 5 minutes. L:T = load-to-truck ratio. Ratios > 2.8 signal critical imbalance — reposition carefully.")
+        Text("Data refreshes from the market-intel feed every 5 minutes. L:T = load-to-truck ratio. Ratios > 2.8 signal critical imbalance, reposition carefully.")
             .font(EType.caption)
             .foregroundStyle(palette.textTertiary)
             .multilineTextAlignment(.center)

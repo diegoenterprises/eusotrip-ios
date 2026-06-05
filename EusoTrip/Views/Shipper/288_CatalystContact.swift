@@ -38,7 +38,7 @@ private struct CatalystContactBody: View {
                 Image(systemName: "phone.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("SHIPPER · CATALYST · CONTACT").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
-            Text(fav?.name ?? "—").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            Text(fav?.name ?? "-").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
         }
     }
 

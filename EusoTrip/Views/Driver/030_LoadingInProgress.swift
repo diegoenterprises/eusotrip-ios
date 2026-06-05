@@ -58,22 +58,22 @@ struct LoadingInProgress: View {
     // TankMonitorAPI on the iOS side. Until the live snapshot
     // hydrates, the screen renders the layout with em-dashes — no
     // fabricated flow rate, pressure, or sample value.
-    private let fallbackClock   = "—"
-    private let fallbackLoadID  = "—"
+    private let fallbackClock   = "-"
+    private let fallbackLoadID  = "-"
     private let fallbackBay     = "AWAITING BAY ASSIGNMENT"
     private let fallbackSubtitle = "Telemetry will appear when sensors connect"
-    private let fallbackFlow    = "—"
-    private let fallbackFlowSub = "—"
-    private let fallbackEtaFull = "—"
-    private let fallbackEtaSub  = "—"
-    private let fallbackVapor   = "—"
-    private let fallbackStatic  = "—"
-    private let fallbackTankT   = "—"
-    private let fallbackSample  = "—"
-    private let fallbackSampleSub = "target —"
-    private let fallbackSampleIx  = "—"
-    private let fallbackStarted   = "—"
-    private let fallbackEtaClock  = "—"
+    private let fallbackFlow    = "-"
+    private let fallbackFlowSub = "-"
+    private let fallbackEtaFull = "-"
+    private let fallbackEtaSub  = "-"
+    private let fallbackVapor   = "-"
+    private let fallbackStatic  = "-"
+    private let fallbackTankT   = "-"
+    private let fallbackSample  = "-"
+    private let fallbackSampleSub = "target -"
+    private let fallbackSampleIx  = "-"
+    private let fallbackStarted   = "-"
+    private let fallbackEtaClock  = "-"
 
     // MARK: - Real fill telemetry (wired from the live Load model).
     //
@@ -244,11 +244,11 @@ struct LoadingInProgress: View {
                     .monospacedDigit()
                 Spacer(minLength: 0)
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(gallonsTotal > 0 ? gallonsNow.formatted() : "—")
+                    Text(gallonsTotal > 0 ? gallonsNow.formatted() : "-")
                         .font(.system(size: 20, weight: .heavy, design: .rounded))
                         .foregroundStyle(LinearGradient.diagonal)
                         .monospacedDigit()
-                    Text(gallonsTotal > 0 ? "OF \(gallonsTotal.formatted()) GAL" : "OF — GAL")
+                    Text(gallonsTotal > 0 ? "OF \(gallonsTotal.formatted()) GAL" : "OF - GAL")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(palette.textTertiary)
                 }
@@ -617,54 +617,54 @@ fileprivate enum LoadingMetricsViewBuilder {
         case .dryVan, .curtainSide, .hazmatBox, .conestoga,
              .intermodalChassis:
             return LoadingMetricPair(
-                left:  .init(label: "CARGO WEIGHT", primary: "—", unit: "lb",
+                left:  .init(label: "CARGO WEIGHT", primary: "-", unit: "lb",
                              sub: "of 44,000 max", subColor: Brand.success),
-                right: .init(label: "LOAD FILL",   primary: "—", unit: "%",
+                right: .init(label: "LOAD FILL",   primary: "-", unit: "%",
                              sub: "pallets staged", subColor: Brand.warning)
             )
 
         // Flatbed family — stack height for bridge-clearance + securement.
         case .standardFlatbed, .stepDeck, .lowboyRgn, .doubleDrop, .logTrailer:
             return LoadingMetricPair(
-                left:  .init(label: "STACK HEIGHT", primary: "—", unit: "ft",
+                left:  .init(label: "STACK HEIGHT", primary: "-", unit: "ft",
                              sub: "13'6\" legal max", subColor: Brand.success),
-                right: .init(label: "TIE-DOWNS",   primary: "—", unit: "ct",
+                right: .init(label: "TIE-DOWNS",   primary: "-", unit: "ct",
                              sub: "per 49 CFR 393", subColor: Brand.warning)
             )
 
         // Reefer family — temperature is the load.
         case .reefer, .foodGradeLiquidTank:
             return LoadingMetricPair(
-                left:  .init(label: "SET TEMP",   primary: "—", unit: "°F",
+                left:  .init(label: "SET TEMP",   primary: "-", unit: "°F",
                              sub: "FSMA setpoint", subColor: Brand.success),
-                right: .init(label: "ACTUAL TEMP", primary: "—", unit: "°F",
+                right: .init(label: "ACTUAL TEMP", primary: "-", unit: "°F",
                              sub: "live reefer feed", subColor: Brand.warning)
             )
 
         // Livestock pot — head count + 28-hr countdown.
         case .livestockCattlePot:
             return LoadingMetricPair(
-                left:  .init(label: "HEAD COUNT", primary: "—", unit: "hd",
+                left:  .init(label: "HEAD COUNT", primary: "-", unit: "hd",
                              sub: "USDA cert", subColor: Brand.success),
-                right: .init(label: "28-HR TIMER", primary: "—", unit: "hr",
+                right: .init(label: "28-HR TIMER", primary: "-", unit: "hr",
                              sub: "49 USC 80502", subColor: Brand.warning)
             )
 
         // Auto carrier — per-vehicle VCR ticked off as each car loads.
         case .autoCarrier:
             return LoadingMetricPair(
-                left:  .init(label: "VEHICLES LOADED", primary: "—", unit: "of —",
+                left:  .init(label: "VEHICLES LOADED", primary: "-", unit: "of -",
                              sub: "VCR pending", subColor: Brand.success),
-                right: .init(label: "DECK FILL", primary: "—", unit: "%",
+                right: .init(label: "DECK FILL", primary: "-", unit: "%",
                              sub: "upper + lower", subColor: Brand.warning)
             )
 
         // Dry bulk / hopper — fill weight + tare.
         case .dryBulkHopper, .gravityHopper, .grainHopper, .pneumaticTank, .endDump:
             return LoadingMetricPair(
-                left:  .init(label: "NET WEIGHT", primary: "—", unit: "lb",
+                left:  .init(label: "NET WEIGHT", primary: "-", unit: "lb",
                              sub: "scale ticket", subColor: Brand.success),
-                right: .init(label: "TARE", primary: "—", unit: "lb",
+                right: .init(label: "TARE", primary: "-", unit: "lb",
                              sub: "empty unit weight", subColor: Brand.warning)
             )
 
@@ -678,10 +678,10 @@ fileprivate enum LoadingMetricsViewBuilder {
     }
 
     private static let tankerDefault = LoadingMetricPair(
-        left:  .init(label: "FLOW RATE", primary: "—", unit: "gpm",
-                     sub: "—", subColor: Brand.success),
-        right: .init(label: "ETA FULL",  primary: "—", unit: "ds",
-                     sub: "—", subColor: Brand.warning)
+        left:  .init(label: "FLOW RATE", primary: "-", unit: "gpm",
+                     sub: "-", subColor: Brand.success),
+        right: .init(label: "ETA FULL",  primary: "-", unit: "ds",
+                     sub: "-", subColor: Brand.warning)
     )
 }
 

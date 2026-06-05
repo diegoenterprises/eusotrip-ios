@@ -67,16 +67,16 @@ struct ActiveEnrouteLoaded: View {
     // the documented Figma moment still renders end-to-end in preview
     // walks and offline sims.
 
-    private let fallbackLoadID     = "—"
-    private let fallbackOriginName = "—"
-    private let fallbackDestTitle  = "—"
-    private let fallbackDestSub    = "—"
+    private let fallbackLoadID     = "-"
+    private let fallbackOriginName = "-"
+    private let fallbackDestTitle  = "-"
+    private let fallbackDestSub    = "-"
     private let fallbackMilesTotal = "620"
     /// 110th firing M2 retrofit: previous literal "881204" excised.
     /// The seal id is not yet a first-class field on `Load`; until
     /// `Load.sealNumber` ships from the backend the floating card
     /// omits the seal segment entirely rather than fabricating one.
-    private let fallbackSealID     = "—"
+    private let fallbackSealID     = "-"
 
     /// Compact label for the on-map destination flag. Prefers the
     /// receiver's city/state from the hydrated Load; falls back to
@@ -89,7 +89,7 @@ struct ActiveEnrouteLoaded: View {
             let city = dest.cityState
             if !city.isEmpty { return city }
         }
-        return "—"
+        return "-"
     }
     /// Accessibility label for the destination flag — derives from the
     /// same live binding as `destFlagText` so VoiceOver and visual
@@ -97,7 +97,7 @@ struct ActiveEnrouteLoaded: View {
     /// for spoken clarity.
     private var destFlagA11y: String {
         let label = destFlagText
-        return label == "—" ? "Destination pending" : "Destination: \(label)"
+        return label == "-" ? "Destination pending" : "Destination: \(label)"
     }
 
     // MARK: - Live/fallback computed overrides
@@ -159,7 +159,7 @@ struct ActiveEnrouteLoaded: View {
         // Seal segment only renders when we have a real seal id;
         // until `Load.sealNumber` ships, the segment is omitted so we
         // never publish a fabricated identifier in the production UI.
-        let sealSegment = (fallbackSealID == "—") ? "" : " · seal \(fallbackSealID)"
+        let sealSegment = (fallbackSealID == "-") ? "" : " · seal \(fallbackSealID)"
         return "\(palletsOrUnits) · \(descriptor) · \(weightPill)\(sealSegment)"
     }
     private var milesTotal: String {
@@ -183,7 +183,7 @@ struct ActiveEnrouteLoaded: View {
         // Corridor segment — empty until Load.corridor lands.
         let corridorSeg = ""
         // Seal segment — only render when we have a real seal id.
-        let sealSeg = (fallbackSealID == "—") ? "" : " · sealed \(fallbackSealID)"
+        let sealSeg = (fallbackSealID == "-") ? "" : " · sealed \(fallbackSealID)"
         return "\(loadID)\(corridorSeg)\(sealSeg)"
     }
 
@@ -212,10 +212,10 @@ struct ActiveEnrouteLoaded: View {
     /// rather than rendering a plausible-looking fixture percent.
     private var progress: Double { 0 }
     /// Em-dash until live mileage progress lands.
-    private var milesLeft: String { "—" }
-    private var milesDone: String { "—" }
+    private var milesLeft: String { "-" }
+    private var milesDone: String { "-" }
     /// Em-dash until live HERE Routing ETA wires in.
-    private var etaTime: String { "—" }
+    private var etaTime: String { "-" }
     /// Em-dash until the live ETA-vs-appointment comparator wires in.
     private var lateAmount: String { "" }
     /// Neutral assurance copy until receiver-policy data wires in
@@ -232,11 +232,11 @@ struct ActiveEnrouteLoaded: View {
     /// without the timezone abbreviation (server returns UTC; we
     /// render local).
     private var apptWindow: String {
-        guard let iso = activeLoad?.deliveryDate, !iso.isEmpty else { return "Appt —" }
+        guard let iso = activeLoad?.deliveryDate, !iso.isEmpty else { return "Appt -" }
         let parser = ISO8601DateFormatter()
         parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let date = parser.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
-        guard let d = date else { return "Appt —" }
+        guard let d = date else { return "Appt -" }
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "HH:mm"
@@ -245,7 +245,7 @@ struct ActiveEnrouteLoaded: View {
     /// Live HOS drive bank from HOSLiveStore. Em-dash when the store
     /// hasn't hydrated.
     private var hosDriveLeft: String {
-        guard let s = hos.status else { return "— left" }
+        guard let s = hos.status else { return "- left" }
         return "\(s.drivingRemainingDisplay) left"
     }
     /// Live break-due hint pulled from HOSLiveStore.status when the
@@ -265,7 +265,7 @@ struct ActiveEnrouteLoaded: View {
     /// Em-dash until HERE reverse-geocoding of the live fix lands;
     /// HereCurrentLocationChip already paints the live cross-street
     /// strip outside this card.
-    private var waypointText: String { "—" }
+    private var waypointText: String { "-" }
 
     // Ping position, normalized to map frame
     private var pingX: CGFloat { register == .night ? 0.40 : 0.32 }
@@ -671,7 +671,7 @@ struct ActiveEnrouteLoaded: View {
                 // / "Hope Mills, NC" excised. Origin pulls from the
                 // hydrated Load's pickupLocation; destination shares the
                 // existing destFlagText computed property (which falls
-                // back to "—" until the receiver hydrates).
+                // back to "-" until the receiver hydrates).
                 // Doctrine: 0% mock data — never publish a fabricated
                 // city pair on the production progress rail.
                 HStack {

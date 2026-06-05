@@ -260,12 +260,12 @@ private struct DispatcherCommsBody: View {
             switch kind {
             case .review:              return "Composite A · EUSORONE NH₃ thread anchor holding 4m p50 floor. Refresh weekly."
             case .responseTime:        return "7m fleet p50 is healthy. Push slower classes to match EUSORONE's 4m floor."
-            case .slaCompliance:       return "0.93 SLA — 3 breaches in classes 2-3. Re-flag those threads in the next standup."
+            case .slaCompliance:       return "0.93 SLA, 3 breaches in classes 2-3. Re-flag those threads in the next standup."
             case .escalationFree:      return "20 escalations across fleet. EUSORONE clean at 0. Audit the 20 for pattern."
             case .threadClosure:       return "42 closed, 5 in-flight. Close-loop on the 5 before quarter-end."
             case .threadVolume:        return "9.2 msg/wk fleet average. EUSORONE 18/wk ceiling shows engagement headroom."
-            case .firstTouchResolution:return "81% FTR. Investigate the 8 multi-touch threads — most need playbook update."
-            case .quarter:             return "Year-rolling 0.94 target. EUSORONE 4Q streak — copy playbook to next 3 dedicated accounts."
+            case .firstTouchResolution:return "81% FTR. Investigate the 8 multi-touch threads. Most need playbook update."
+            case .quarter:             return "Year-rolling 0.94 target. EUSORONE 4Q streak. Copy playbook to next 3 dedicated accounts."
             }
         }()
         return LifecycleCard {

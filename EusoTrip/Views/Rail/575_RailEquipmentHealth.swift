@@ -119,26 +119,26 @@ private struct RailEquipmentHealthBody: View {
 
     private var captionLabel: String { "\(fleet?.carCount ?? cars.count) CARS" }
     private var healthIndexLabel: String {
-        fleet?.healthIndex.map { String(format: "%.1f", $0) } ?? "—"
+        fleet?.healthIndex.map { String(format: "%.1f", $0) } ?? "-"
     }
     private var shoppedLabel: String { "\(fleet?.shoppedCount ?? 0) SHOPPED" }
     private var shoppedCount: Int    { fleet?.shoppedCount ?? 0 }
     private var dueServiceLabel: String {
-        fleet?.dueServiceCount.map { "\($0)" } ?? "—"
+        fleet?.dueServiceCount.map { "\($0)" } ?? "-"
     }
     private var fleetSubLabel: String {
         let count = fleet?.carCount ?? cars.count
         let div   = fleet?.divisionName ?? "Rail Division"
         return "\(count) cars · \(div)"
     }
-    private var healthyCount: String  { fleet?.healthyCount.map { "\($0)" } ?? "—" }
+    private var healthyCount: String  { fleet?.healthyCount.map { "\($0)" } ?? "-" }
     private var healthyPct: String    {
-        fleet?.healthyPercent.map { String(format: "%.0f%%", $0) } ?? "—"
+        fleet?.healthyPercent.map { String(format: "%.0f%%", $0) } ?? "-"
     }
-    private var watchCount: String    { fleet?.watchCount.map { "\($0)" } ?? "—" }
-    private var defectCount: String   { fleet?.defectCount.map { "\($0)" } ?? "—" }
+    private var watchCount: String    { fleet?.watchCount.map { "\($0)" } ?? "-" }
+    private var defectCount: String   { fleet?.defectCount.map { "\($0)" } ?? "-" }
     private var avgMilesLabel: String {
-        guard let m = fleet?.avgMilesToOverhaul else { return "—" }
+        guard let m = fleet?.avgMilesToOverhaul else { return "-" }
         return m >= 1000 ? "\(m / 1000)k" : "\(m)"
     }
 
@@ -382,7 +382,7 @@ private struct RailEquipmentHealthBody: View {
         let icon      = equipmentIcon(car.equipmentType)
         let cond      = conditionInfo(car.condition)
         let pctColor  = healthPctColor(car.condition)
-        let pctStr    = car.healthPercent.map { "\($0)%" } ?? "—"
+        let pctStr    = car.healthPercent.map { "\($0)%" } ?? "-"
 
         return HStack(spacing: 12) {
             ZStack {
@@ -394,7 +394,7 @@ private struct RailEquipmentHealthBody: View {
                     .foregroundStyle(chipColor)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text("\(car.reportingMark ?? "—") · \(car.equipmentType?.replacingOccurrences(of: "_", with: " ") ?? "—")")
+                Text("\(car.reportingMark ?? "-") · \(car.equipmentType?.replacingOccurrences(of: "_", with: " ") ?? "-")")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                 Text(carSub(car))

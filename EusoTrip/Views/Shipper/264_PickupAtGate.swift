@@ -116,7 +116,7 @@ private struct AtGateBody: View {
             LifecycleSection(label: "HAZMAT VERIFY", icon: "triangle.fill")
             LifecycleRow(label: "UN",         value: dashIfEmpty(live.load.unNumber))
             LifecycleRow(label: "Class",      value: dashIfEmpty(live.load.hazmatClass))
-            LifecycleRow(label: "ERG guide",  value: live.load.ergGuide.map { "#\($0)" } ?? "—")
+            LifecycleRow(label: "ERG guide",  value: live.load.ergGuide.map { "#\($0)" } ?? "-")
         }
     }
 }

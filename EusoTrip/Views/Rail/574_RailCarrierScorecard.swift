@@ -194,9 +194,9 @@ private struct RailCarrierScorecardBody: View {
         let count  = scorecard?.carrierCount ?? carriers.count
         return "\(period) · \(count) CARRIERS"
     }
-    private var gradeLabel: String  { scorecard?.compositeGrade ?? "—" }
+    private var gradeLabel: String  { scorecard?.compositeGrade ?? "-" }
     private var scoreLabel: String  {
-        guard let s = scorecard?.compositeScore else { return "—" }
+        guard let s = scorecard?.compositeScore else { return "-" }
         return String(format: "%.1f", s)
     }
     private var qoqLabel: String {
@@ -214,7 +214,7 @@ private struct RailCarrierScorecardBody: View {
 
     // KPI values + trends
     private func pctLabel(_ v: Double?) -> String {
-        guard let v = v else { return "—" }
+        guard let v = v else { return "-" }
         return v >= 10 ? String(format: "%.0f%%", v) : String(format: "%.1f%%", v)
     }
     private func trendTuple(_ delta: Double?, unit: String = " pts") -> (String, Bool)? {
@@ -448,7 +448,7 @@ private struct RailCarrierScorecardBody: View {
         let color     = carrierColor(c.code)
         let initials  = c.initials ?? String((c.code ?? c.name ?? "?").prefix(2)).uppercased()
         let gColor    = gradeColor(c.grade)
-        let scoreStr  = c.score.map { String(format: "%.1f", $0) } ?? "—"
+        let scoreStr  = c.score.map { String(format: "%.1f", $0) } ?? "-"
 
         return HStack(spacing: 12) {
             ZStack {
@@ -460,7 +460,7 @@ private struct RailCarrierScorecardBody: View {
                     .foregroundStyle(color)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text(c.name ?? c.code ?? "—")
+                Text(c.name ?? c.code ?? "-")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                 Text(carrierSub(c))
@@ -471,7 +471,7 @@ private struct RailCarrierScorecardBody: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 6) {
-                Text(c.grade ?? "—")
+                Text(c.grade ?? "-")
                     .font(.system(size: 12, weight: .heavy))
                     .foregroundStyle(gColor)
                     .frame(width: 44, height: 24)

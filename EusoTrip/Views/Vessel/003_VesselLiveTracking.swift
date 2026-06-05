@@ -502,12 +502,12 @@ private struct VesselLiveTrackingBody: View {
     }
 
     private var etaLabel: String {
-        guard let ts = board?.etaUtc, let d = Self.iso.date(from: ts) else { return "—" }
+        guard let ts = board?.etaUtc, let d = Self.iso.date(from: ts) else { return "-" }
         return Self.etaFmt.string(from: d)
     }
 
     private var remainingLabel: String {
-        guard let nm = board?.remainingNm, nm > 0 else { return "—" }
+        guard let nm = board?.remainingNm, nm > 0 else { return "-" }
         let nmStr = Self.grouped.string(from: NSNumber(value: nm)) ?? "\(Int(nm))"
         if let days = board?.remainingDays, days > 0 {
             return "\(nmStr) NM · \(String(format: "%.1f", days))d"
@@ -536,7 +536,7 @@ private struct VesselLiveTrackingBody: View {
     }
 
     private func eventTime(_ e: OceanTrackBoard.TrackEvent) -> String {
-        guard let ts = e.timestamp, let d = Self.iso.date(from: ts) else { return "—" }
+        guard let ts = e.timestamp, let d = Self.iso.date(from: ts) else { return "-" }
         // today → HH:mm, else MM-dd
         if Calendar.current.isDateInToday(d) { return Self.hhmm.string(from: d) }
         return Self.mmdd.string(from: d)
@@ -633,7 +633,7 @@ private struct VesselLiveTrackingBody: View {
                 "vesselShipments.getContainerPositions",
                 input: PosIn(limit: 100))
         } catch {
-            actionError = "Per-container positions unavailable — "
+            actionError = "Per-container positions unavailable. "
                 + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
         }
     }

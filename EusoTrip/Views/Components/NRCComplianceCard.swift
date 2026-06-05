@@ -136,7 +136,7 @@ struct NRCComplianceCard: View {
     private var licensePrimary: String {
         guard let l = license, let cat = l.category else { return "Not on file" }
         let category = NRCAPI.LicenseCategory(rawValue: cat)?.label ?? cat
-        let number = l.licenseNumber ?? "—"
+        let number = l.licenseNumber ?? "-"
         return "\(category) · \(number)"
     }
 
@@ -144,10 +144,10 @@ struct NRCComplianceCard: View {
         guard let l = license, let cat = l.category else {
             return "Carrier hasn't recorded NRC license. Compliance officer must record before this load can roll."
         }
-        let issuedBy = l.issuedBy ?? "—"
-        let expiresAt = l.expiresAt?.split(separator: "T").first.map(String.init) ?? "—"
-        let days = l.daysRemaining.map { "\($0)d" } ?? "—"
-        let forms = l.authorizedForms.isEmpty ? "—" : l.authorizedForms.joined(separator: ", ")
+        let issuedBy = l.issuedBy ?? "-"
+        let expiresAt = l.expiresAt?.split(separator: "T").first.map(String.init) ?? "-"
+        let days = l.daysRemaining.map { "\($0)d" } ?? "-"
+        let forms = l.authorizedForms.isEmpty ? "-" : l.authorizedForms.joined(separator: ", ")
         _ = cat
         return "Issued by \(issuedBy) · expires \(expiresAt) · \(days) · forms: \(forms)"
     }
@@ -160,7 +160,7 @@ struct NRCComplianceCard: View {
             case .watch:   return "WATCH"
             case .warn:    return "WARN"
             case .expired: return "EXPIRED"
-            case .neutral: return "—"
+            case .neutral: return "-"
             }
         }
     }
@@ -234,7 +234,7 @@ struct NRCComplianceCard: View {
     }
 
     private var cumulativeMremDisplay: String {
-        guard let d = dosimetry else { return "—" }
+        guard let d = dosimetry else { return "-" }
         return String(format: "%.1f", d.cumulativeMrem)
     }
 
@@ -296,12 +296,12 @@ struct NRCComplianceCard: View {
                 Text(kindLabel)
                     .font(EType.body).fontWeight(.semibold)
                     .foregroundStyle(palette.textPrimary)
-                Text("\(t.fromUserName ?? "—") → \(t.toUserName ?? "—")")
+                Text("\(t.fromUserName ?? "-") → \(t.toUserName ?? "-")")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                 if let mrem = t.dosimeterReadingMrem {
                     Text(String(format: "%.1f mrem at transfer · %@",
-                                mrem, NRCAPI.DosimetryKind(rawValue: t.dosimeterKind ?? "")?.label ?? "—"))
+                                mrem, NRCAPI.DosimetryKind(rawValue: t.dosimeterKind ?? "")?.label ?? "-"))
                         .font(EType.mono(.micro)).tracking(0.3)
                         .foregroundStyle(palette.textTertiary)
                 }

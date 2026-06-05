@@ -70,7 +70,7 @@ private struct GradeDetailBody: View {
         let rows = perf.state.value ?? []
         let counts: [String: Int] = rows.reduce(into: [:]) { dict, r in
             let comp = computeComposite(r)
-            let label = gradeBuckets.first(where: { comp >= $0.min && comp < $0.max })?.label ?? "—"
+            let label = gradeBuckets.first(where: { comp >= $0.min && comp < $0.max })?.label ?? "-"
             dict[label, default: 0] += 1
         }
         return LifecycleCard {

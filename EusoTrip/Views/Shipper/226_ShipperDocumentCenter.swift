@@ -36,7 +36,7 @@
 //                line surfaces only size + uploadedAt; expiry copy
 //                is inferred from `status == "expiring"`.
 //    EUSO-2141 — No storage-usage aggregate on `documents.getStats`.
-//                STORAGE KPI cell paints "—" placeholder until
+//                STORAGE KPI cell paints "-" placeholder until
 //                backend ships `storageBytes` + `planUsedPct`.
 //
 //  Doctrine refs: §2 ME-tab nav (handled by ContentView); §3
@@ -417,7 +417,7 @@ struct ShipperDocumentCenter: View {
             // Honest: surface the failure as a toast, store as
             // "operations", never fabricate a type.
             await MainActor.run {
-                uploadToast = "Couldn't classify — stored as Operations · \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)"
+                uploadToast = "Couldn't classify, stored as Operations · \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)"
             }
             return nil
         }
@@ -616,7 +616,7 @@ struct ShipperDocumentCenter: View {
             verticalSeparator
             // EUSO-2141 — storage aggregate not on API.
             kpiCell(label: "STORAGE",
-                    value: "—",
+                    value: "-",
                     valueStyle: .neutral,
                     sub: "plan pending")
         }
@@ -673,7 +673,7 @@ struct ShipperDocumentCenter: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 12, weight: .heavy))
                 .foregroundStyle(palette.textTertiary)
-            TextField("Search by load ID, partner, or type…", text: $store.search)
+            TextField("Search by load ID, partner or type…", text: $store.search)
                 .textFieldStyle(.plain)
                 .font(EType.body)
                 .foregroundStyle(palette.textPrimary)
@@ -1153,7 +1153,7 @@ struct ShipperDocumentCenter: View {
             Text("No documents yet")
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
-            Text("Tap the gradient + capsule above to add your first BOL, insurance cert, or W9.")
+            Text("Tap the gradient + capsule above to add your first BOL, insurance cert or W9.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
@@ -1451,8 +1451,8 @@ private struct DocCenterClassificationReview: View {
                 .font(.system(size: 11, weight: .heavy))
                 .foregroundStyle(Brand.warning)
             Text(result.isUnknown
-                 ? "Couldn't confidently identify this document — please confirm the type and re-file if needed. It was stored under \(result.categoryLabel)."
-                 : "Low confidence on this read — please confirm before relying on the detected type.")
+                 ? "Couldn't confidently identify this document. Please confirm the type and re-file if needed. It was stored under \(result.categoryLabel)."
+                 : "Low confidence on this read. Please confirm before relying on the detected type.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)

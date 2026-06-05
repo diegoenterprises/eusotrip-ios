@@ -12,7 +12,7 @@
 //  (loadLifecycle.ts:96 → [catalystId, driverId]).
 //
 //  Doctrine: every visible value binds to a real tRPC proc. No
-//  scenario literals; "—" until data resolves. No mock data.
+//  scenario literals; "-" until data resolves. No mock data.
 //
 
 import SwiftUI
@@ -68,39 +68,39 @@ private struct CPSBody: View {
     @Environment(\.palette) private var palette
     @State private var load: CPSLoad?
 
-    private var loadNumberDisplay: String { load?.loadNumber ?? "—" }
+    private var loadNumberDisplay: String { load?.loadNumber ?? "-" }
     private var rateDisplay: String {
         if let r = load?.rate, let n = Double(r), n > 0 {
             let v = n.rounded()
             return v < 1000 ? String(format: "$%.0f", v) : "$\(Int(v).formatted(.number))"
         }
-        return "—"
+        return "-"
     }
     private var laneDisplay: String? {
         let p = [load?.pickupLocation?.city, load?.pickupLocation?.state].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
         let d = [load?.deliveryLocation?.city, load?.deliveryLocation?.state].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
         if p.isEmpty && d.isEmpty { return nil }
-        return "\(p.isEmpty ? "—" : p) → \(d.isEmpty ? "—" : d)"
+        return "\(p.isEmpty ? "-" : p) → \(d.isEmpty ? "-" : d)"
     }
     private var deliveredAtDisplay: String {
         let iso = load?.actualDeliveryDate ?? load?.updatedAt
-        guard let iso, let dt = ISO8601DateFormatter().date(from: iso) else { return "—" }
+        guard let iso, let dt = ISO8601DateFormatter().date(from: iso) else { return "-" }
         let f = DateFormatter(); f.dateFormat = "MMM d · h:mm a"
         return f.string(from: dt)
     }
     private var settleEtaDisplay: String {
         let iso = load?.actualDeliveryDate ?? load?.deliveryDate
-        guard let iso, let delivered = ISO8601DateFormatter().date(from: iso) else { return "—" }
+        guard let iso, let delivered = ISO8601DateFormatter().date(from: iso) else { return "-" }
         let settle = Calendar.current.date(byAdding: .day, value: 30, to: delivered) ?? delivered
         let f = DateFormatter(); f.dateFormat = "MMM d"
         return f.string(from: settle)
     }
     private var equipmentDisplay: String {
         let parts = [load?.equipmentType, load?.cargoType].compactMap { $0 }.filter { !$0.isEmpty }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
     private var distanceDisplay: String {
-        guard let d = load?.distance, d > 0 else { return "—" }
+        guard let d = load?.distance, d > 0 else { return "-" }
         return "\(Int(d.rounded())) mi"
     }
 
@@ -217,7 +217,7 @@ private struct CPSBody: View {
             ("PAYOUT",     rateDisplay,           "settlement queued",    .green),
             ("DELIVERED",  deliveredAtDisplay,    "actual",               .blue),
             ("SETTLE ETA", settleEtaDisplay,      "NET-30",               .blue),
-            ("STATE",      (load?.status ?? "—").uppercased(), "load row", .orange),
+            ("STATE",      (load?.status ?? "-").uppercased(), "load row", .orange),
         ]
         let cols = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
         return LazyVGrid(columns: cols, spacing: 8) {

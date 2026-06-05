@@ -395,7 +395,7 @@ private struct DispatcherCarrierScorecardBody: View {
                         marginIndex: Int(r.score ?? 0),  // no margin source in fallback
                         loadCount: r.totalLoads ?? 0,
                         overallScore: Int(r.score ?? 0),
-                        grade: r.grade ?? "—",
+                        grade: r.grade ?? "-",
                         isOwnFleet: false,
                         complianceStatus: nil,
                         hazmatAuthorized: nil)

@@ -45,7 +45,7 @@ private struct IntermodalTracking589: Decodable {
         // Derive summary values from segments
         self.legCount = segments.count > 0 ? segments.count : nil
         self.status = currentMode != nil ? "in_progress" : "pending"
-        self.drayTimeLabel = "—"
+        self.drayTimeLabel = "-"
         self.legDescription = currentMode != nil ? "\(currentMode?.lowercased() ?? "rail") + dray" : "rail + dray"
         self.locationName = currentMode != nil ? currentMode : nil
     }
@@ -159,10 +159,10 @@ private struct RailTransloadConnectionBody: View {
 
     // MARK: Derived
 
-    private var drayTimeLabel: String { tracking?.drayTimeLabel ?? "—" }
+    private var drayTimeLabel: String { tracking?.drayTimeLabel ?? "-" }
     private var legCount: Int         { tracking?.legCount      ?? 0 }
     private var legDesc: String       { tracking?.legDescription ?? "rail + dray" }
-    private var locationLabel: String { tracking?.locationName   ?? "—" }
+    private var locationLabel: String { tracking?.locationName   ?? "-" }
     private var statusInProgress: Bool {
         (tracking?.status ?? "in_progress").lowercased() == "in_progress"
     }
@@ -174,19 +174,19 @@ private struct RailTransloadConnectionBody: View {
         }
     }
     private var transferCostLabel: String {
-        guard let c = transfer?.transferCostUsd, c > 0 else { return "—" }
+        guard let c = transfer?.transferCostUsd, c > 0 else { return "-" }
         return "$\(Int(c))"
     }
-    private var cutoffLabel: String { transfer?.cutoffLabel ?? "—" }
+    private var cutoffLabel: String { transfer?.cutoffLabel ?? "-" }
     private var containerLine1: String {
-        let num   = container?.containerNumber  ?? "—"
-        let event = container?.lastEventLabel   ?? "—"
-        let time  = container?.lastEventTime    ?? "—"
+        let num   = container?.containerNumber  ?? "-"
+        let event = container?.lastEventLabel   ?? "-"
+        let time  = container?.lastEventTime    ?? "-"
         return "\(num) · last event \(event) · \(time)"
     }
     private var containerLine2: String {
-        let cutoff = container?.drayCutoffLabel ?? "—"
-        let slack  = container?.slackLabel      ?? "—"
+        let cutoff = container?.drayCutoffLabel ?? "-"
+        let slack  = container?.slackLabel      ?? "-"
         return "Dray cutoff \(cutoff) · \(slack) of slack on connection"
     }
 
@@ -346,7 +346,7 @@ private struct RailTransloadConnectionBody: View {
     @ViewBuilder
     private func segmentRow(_ seg: IntermodalSegment589) -> some View {
         let (pillLabel, pillColor, pillBg) = segmentPillInfo(seg.status)
-        let valueLabel = seg.valueLabel ?? "—"
+        let valueLabel = seg.valueLabel ?? "-"
 
         HStack(spacing: Space.s3) {
             ZStack {
@@ -358,7 +358,7 @@ private struct RailTransloadConnectionBody: View {
                     .foregroundColor(Brand.blue)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(seg.segmentName ?? "—")
+                Text(seg.segmentName ?? "-")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(palette.textPrimary)
                 if let detail = seg.detail {
@@ -448,7 +448,7 @@ private struct RailTransloadConnectionBody: View {
         case "completed": return ("COMPLETED",    Brand.success,        Brand.success.opacity(0.14))
         case "in_progress": return ("IN PROGRESS", Brand.warning,       Brand.warning.opacity(0.14))
         case "pending":   return ("PENDING",      Brand.info,           Brand.info.opacity(0.14))
-        default:          return ("—",            palette.textTertiary, Color.black.opacity(0.05))
+        default:          return ("-",            palette.textTertiary, Color.black.opacity(0.05))
         }
     }
 

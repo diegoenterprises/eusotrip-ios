@@ -108,7 +108,7 @@ struct RailCrossBorderCustoms_006: View {
         case "cleared":     return "CLEARED"
         case "hold":        return "HOLD"
         case "in_transit":  return "IN TRANSIT"
-        case "":            return loading ? "…" : "—"
+        case "":            return loading ? "…" : "-"
         default:            return "PENDING"
         }
     }
@@ -116,12 +116,12 @@ struct RailCrossBorderCustoms_006: View {
         switch statusWord {
         case "CLEARED":    return Brand.success
         case "HOLD":       return Brand.danger
-        case "…", "—":     return palette.textTertiary
+        case "…", "-":     return palette.textTertiary
         default:           return Brand.warning
         }
     }
     private func dash(_ s: String?) -> String {
-        guard let s, !s.trimmingCharacters(in: .whitespaces).isEmpty else { return "—" }
+        guard let s, !s.trimmingCharacters(in: .whitespaces).isEmpty else { return "-" }
         return s
     }
     private var missingCount: Int { clearance?.missingDocs?.count ?? 0 }
@@ -185,7 +185,7 @@ struct RailCrossBorderCustoms_006: View {
     private var idCaption: String {
         let rr = dash(clearance?.railroad)
         let id = clearance?.loadId ?? "load_\(loadId)"
-        return rr == "—" ? id : "\(id) · \(rr)"
+        return rr == "-" ? id : "\(id) · \(rr)"
     }
 
     // MARK: - Hero (gradient-rimmed clearance)
@@ -247,9 +247,9 @@ struct RailCrossBorderCustoms_006: View {
     private var carLine: String {
         let n = clearance?.carCount ?? 0
         let rr = dash(clearance?.railroad)
-        if n <= 0 { return rr == "—" ? "intermodal · rail" : "intermodal · \(rr)" }
+        if n <= 0 { return rr == "-" ? "intermodal · rail" : "intermodal · \(rr)" }
         let noun = n == 1 ? "intermodal car" : "intermodal cars"
-        return rr == "—" ? "\(n) \(noun)" : "\(n) \(noun) · \(rr)"
+        return rr == "-" ? "\(n) \(noun)" : "\(n) \(noun) · \(rr)"
     }
 
     // MARK: - Required docs checklist
@@ -411,9 +411,9 @@ struct RailCrossBorderCustoms_006: View {
     private var etaArrivalLine: String {
         let interchange = dash(clearance?.interchange)
         let date = dash(clearance?.etaDate)
-        if interchange == "—" && date == "—" { return "Arrival window pending" }
-        if date == "—" { return "Arrives \(interchange)" }
-        if interchange == "—" { return "Arrives · \(date)" }
+        if interchange == "-" && date == "-" { return "Arrival window pending" }
+        if date == "-" { return "Arrives \(interchange)" }
+        if interchange == "-" { return "Arrives · \(date)" }
         return "Arrives \(interchange) · \(date)"
     }
 

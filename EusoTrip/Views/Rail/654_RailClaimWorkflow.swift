@@ -531,7 +531,7 @@ private struct RailClaimWorkflowBody: View {
             return WorkflowDisplayRow(
                 id: s.step,
                 title: s.name,
-                subtitle: s.description ?? (s.required?.first ?? "—"),
+                subtitle: s.description ?? (s.required?.first ?? "-"),
                 icon: icon,
                 tint: tint,
                 statusText: statusText,
@@ -558,9 +558,9 @@ private struct RailClaimWorkflowBody: View {
         if let n = claim?.claimNumber, let last = n.split(separator: "-").last {
             return "CLM-\(last)"
         }
-        return "CLM-—"
+        return "CLM--"
     }
-    private var fullClaimNumber: String { claim?.claimNumber ?? "—" }
+    private var fullClaimNumber: String { claim?.claimNumber ?? "-" }
 
     private var carrierLabel: String {
         (claim?.carrier?.name).flatMap { $0 == "-" ? nil : $0.uppercased() } ?? "BNSF"
@@ -570,20 +570,20 @@ private struct RailClaimWorkflowBody: View {
     private var statusLabel: String {
         (claim?.status?.replacingOccurrences(of: "_", with: " ")) ?? "in review"
     }
-    private var slaLabel: String { "—" }
+    private var slaLabel: String { "-" }
 
     private var claimValueString: String {
-        guard let a = claim?.amount, a > 0 else { return "$—" }
+        guard let a = claim?.amount, a > 0 else { return "$-" }
         return "$" + numberString(a)
     }
     private var claimValueShort: String {
-        guard let a = claim?.amount, a > 0 else { return "$—" }
+        guard let a = claim?.amount, a > 0 else { return "$-" }
         if a >= 1000 { return String(format: "$%.1fK", a / 1000) }
         return "$" + numberString(a)
     }
     private var claimTypeLabel: String { claim?.type ?? "damage" }
     private var originCode: String {
-        (claim?.load?.origin).flatMap { $0.isEmpty ? nil : $0 } ?? "—"
+        (claim?.load?.origin).flatMap { $0.isEmpty ? nil : $0 } ?? "-"
     }
 
     private var decisionLine1: String {
@@ -661,7 +661,7 @@ private struct RailClaimWorkflowBody: View {
                     input: DecisionInput(
                         claimId: claimId,
                         decision: "partial",
-                        reason: "Carrier-liability review — partial approval pending settlement."
+                        reason: "Carrier-liability review - partial approval pending settlement."
                     )
                 )
                 actionMessage = "Decision submitted · settlement queued."

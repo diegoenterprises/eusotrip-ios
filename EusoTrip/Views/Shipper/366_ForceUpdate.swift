@@ -7,7 +7,7 @@ import SwiftUI
 
 struct ForceUpdateScreen: View {
     let theme: Theme.Palette
-    var minimumVersion: String = "—"
+    var minimumVersion: String = "-"
     var body: some View {
         Shell(theme: theme) { ForceUpdateBody(minVersion: minimumVersion) } nav: { shipperLifecycleNav() }
     }
@@ -17,14 +17,14 @@ private struct ForceUpdateBody: View {
     @Environment(\.palette) private var palette
     let minVersion: String
 
-    private var installed: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—" }
+    private var installed: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-" }
 
     var body: some View {
         VStack(spacing: Space.s4) {
             Spacer()
             Image(systemName: "arrow.up.circle.fill").font(.system(size: 48, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
             Text("Update required").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("EusoTrip needs the latest build to keep your loads, settlements, and eSang secure.")
+            Text("EusoTrip needs the latest build to keep your loads, settlements and eSang secure.")
                 .font(EType.body).foregroundStyle(palette.textSecondary).multilineTextAlignment(.center).padding(.horizontal, 32)
             LifecycleCard {
                 LifecycleRow(label: "Installed", value: installed)

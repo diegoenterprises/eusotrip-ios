@@ -125,7 +125,7 @@ private struct VesselBidBoardBody: View {
                 } else if lanes.isEmpty {
                     EusoEmptyState(systemImage: "tray",
                                    title: "No open bids",
-                                   subtitle: "getReceivedBids returned no bids on your postings. Nothing to award yet — post a lane to start receiving competitive bids.")
+                                   subtitle: "getReceivedBids returned no bids on your postings. Nothing to award yet. Post a lane to start receiving competitive bids.")
                 } else {
                     summaryBand
                     sectionLabel
@@ -419,7 +419,7 @@ private struct VesselBidBoardBody: View {
                 let delta: String?
                 let deltaUp: Bool
                 if isBest {
-                    delta = "— best"; deltaUp = false
+                    delta = "- best"; deltaUp = false
                 } else {
                     let diff = Int((r.amount - best).rounded())
                     delta = "▴ $\(diff)"; deltaUp = true

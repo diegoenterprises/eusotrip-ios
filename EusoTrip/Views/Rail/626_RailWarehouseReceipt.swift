@@ -518,7 +518,7 @@ private enum ReceiptState626 {
         }
     }
     func sub(qty: Int, expected: Int, delta: Int, location: String?) -> String {
-        let bin = (location?.isEmpty == false) ? location! : "—"
+        let bin = (location?.isEmpty == false) ? location! : "-"
         switch self {
         case .done:   return "\(qty) ctn received · putaway \(bin)"
         case .verify: return "counting \(qty) / \(expected) ctn"

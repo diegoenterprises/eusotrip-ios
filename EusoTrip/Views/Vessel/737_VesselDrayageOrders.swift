@@ -141,7 +141,7 @@ private struct VesselDrayageOrdersBody: View {
                 } else if !hasOrders {
                     EusoEmptyState(systemImage: "shippingbox",
                                    title: "No drayage orders on the board",
-                                   subtitle: "getDrayageManagement returned no terminal-tagged moves. Nothing to dispatch — the board is clear.")
+                                   subtitle: "getDrayageManagement returned no terminal-tagged moves. Nothing to dispatch, the board is clear.")
                 } else {
                     hero
                     Text("DISPATCH BOARD · getDrayageManagement")
@@ -301,7 +301,7 @@ private struct VesselDrayageOrdersBody: View {
     }
     private var esangTitle: String {
         guard let m = worstMove else { return "ESang: board is clear of cutoff risk" }
-        return "ESang: pull \(m.container) — \(m.lfd)"
+        return "ESang: pull \(m.container) - \(m.lfd)"
     }
     private var esangSubtitle: String {
         guard let m = worstMove else { return "no last-free-day pressure on the board" }
@@ -352,14 +352,14 @@ private struct VesselDrayageOrdersBody: View {
                 bookedSum += rate
                 if let code = o.port?.code { ports.insert(code) }
 
-                let pickup = o.pickupLocation ?? (o.port?.name ?? "—")
-                let delivery = o.deliveryLocation ?? "—"
+                let pickup = o.pickupLocation ?? (o.port?.name ?? "-")
+                let delivery = o.deliveryLocation ?? "-"
 
                 mapped.append(DrayMove737(
                     lane: lane,
                     typeLabel: typeLabel(o.type),
                     typeTint: typeTint(o.type),
-                    order: o.orderNumber ?? "DRY-—",
+                    order: o.orderNumber ?? "DRY--",
                     container: containerLine(o.containerNumber, o.containerSize),
                     route: "\(pickup) → \(delivery)",
                     appt: shortTime(o.appointmentTime),
@@ -420,12 +420,12 @@ private struct VesselDrayageOrdersBody: View {
         }
     }
     private func containerLine(_ num: String?, _ size: String?) -> String {
-        let n = num ?? "—"
+        let n = num ?? "-"
         guard let s = size, !s.isEmpty else { return n }
         return "\(n) · \(s)"
     }
     private func shortTime(_ iso: String?) -> String {
-        guard let iso, let date = ISO8601DateFormatter().date(from: iso) else { return iso ?? "—" }
+        guard let iso, let date = ISO8601DateFormatter().date(from: iso) else { return iso ?? "-" }
         let f = DateFormatter(); f.dateFormat = "HH:mm"
         return f.string(from: date)
     }
@@ -437,7 +437,7 @@ private struct VesselDrayageOrdersBody: View {
     }
     private func lfdLabel(_ iso: String?, perDiem: Int?) -> String {
         if let p = perDiem, p > 0 { return "per-diem \(p)d" }
-        guard let d = daysToLFD(iso) else { return "—" }
+        guard let d = daysToLFD(iso) else { return "-" }
         if d < 0 { return "past LFD" }
         if d == 0 { return "LFD today" }
         return "LFD \(d)d"

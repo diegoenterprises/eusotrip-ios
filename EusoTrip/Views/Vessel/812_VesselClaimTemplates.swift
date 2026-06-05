@@ -67,10 +67,10 @@ private struct VesselClaimTemplatesBody: View {
     @State private var loadError: String? = nil
 
     @State private var subline = "templates · canonical perils · custom"
-    @State private var count = "—"
+    @State private var count = "-"
     @State private var autoFill = "auto-filled"
     @State private var splitLine = "canonical · custom"
-    @State private var lastUsed = "last used —"
+    @State private var lastUsed = "last used -"
     @State private var esangLine = "feeds 808 intake in one tap"
 
     @State private var templates: [Template812] = [
@@ -95,7 +95,7 @@ private struct VesselClaimTemplatesBody: View {
                 } else if templates.isEmpty {
                     EusoEmptyState(systemImage: "doc.on.doc",
                                    title: "No claim templates",
-                                   subtitle: "getClaimTemplates returned an empty library — nothing to file from yet.")
+                                   subtitle: "getClaimTemplates returned an empty library, nothing to file from yet.")
                 } else {
                     libraryHero
                     Text("TOP TEMPLATES · getClaimTemplates · BY USAGE")
@@ -252,7 +252,7 @@ private struct VesselClaimTemplatesBody: View {
                     let peril = perilFrom(tpl.type)
                     let req = tpl.requiredFields?.count ?? 0, opt = tpl.optionalFields?.count ?? 0
                     let used = lib.usage?.first { $0.templateId != nil }?.count ?? 0
-                    return Template812(peril: peril, name: tpl.name ?? "—",
+                    return Template812(peril: peril, name: tpl.name ?? "-",
                                        fields: "\(req) req · \(opt) opt",
                                        badge: idx < 2 ? "CANON" : "TOP",
                                        badgeTone: idx < 2 ? .canon : .top,

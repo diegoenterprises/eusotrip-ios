@@ -135,7 +135,7 @@ private struct VesselClaimsListBody: View {
                 } else if rows.isEmpty {
                     EusoEmptyState(systemImage: "shippingbox.and.arrow.backward",
                                    title: "No marine cargo claims",
-                                   subtitle: "freightClaims.getClaims returned an empty ledger — no incidents on file in range. Nothing to recover yet.")
+                                   subtitle: "freightClaims.getClaims returned an empty ledger, no incidents on file in range. Nothing to recover yet.")
                 } else {
                     ledgerCard
                 }
@@ -241,8 +241,8 @@ private struct VesselClaimsListBody: View {
                         : (status == "denied") ? .init(done: 5, current: -1, exception: 5)
                         : .init(done: 4, current: 3, exception: -1)
                     return ClaimRow801(symbol: causeSymbol(c.type), tint: causeTint(c.type),
-                                       title: (c.carrier ?? "—") == "-" ? "—" : (c.carrier ?? "—"),
-                                       sub: "\(c.claimNumber ?? "—") · \((c.loadNumber ?? "") == "-" ? "" : (c.loadNumber ?? ""))",
+                                       title: (c.carrier ?? "-") == "-" ? "-" : (c.carrier ?? "-"),
+                                       sub: "\(c.claimNumber ?? "-") · \((c.loadNumber ?? "") == "-" ? "" : (c.loadNumber ?? ""))",
                                        dots: dots, pill: pill, pillColor: pillColor,
                                        amount: money801(c.amount ?? 0), recovery: status)
                 }

@@ -136,7 +136,7 @@ private struct RailSettlementBatchBody: View {
     }
 
     private var periodLabel: String {
-        guard let b = periodBounds else { return "period —" }
+        guard let b = periodBounds else { return "period -" }
         let inFmt = DateFormatter(); inFmt.dateFormat = "yyyy-MM-dd"
         let outFmt = DateFormatter(); outFmt.dateFormat = "MMM d"
         guard let lo = inFmt.date(from: b.start), let hi = inFmt.date(from: b.end) else {
@@ -269,7 +269,7 @@ private struct RailSettlementBatchBody: View {
                 HStack(alignment: .top) {
                     // Batch total
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(hasAnyMoney ? money(createdBatch?.totalAmount ?? grossAmount) : "—")
+                        Text(hasAnyMoney ? money(createdBatch?.totalAmount ?? grossAmount) : "-")
                             .font(.system(size: 30, weight: .bold))
                             .monospacedDigit()
                             .foregroundStyle(hasAnyMoney ? AnyShapeStyle(LinearGradient.diagonal)
@@ -328,7 +328,7 @@ private struct RailSettlementBatchBody: View {
 
             // GROSS
             kpiCell(label: "GROSS",
-                    value: hasAnyMoney ? money(grossAmount) : "—",
+                    value: hasAnyMoney ? money(grossAmount) : "-",
                     accent: hasAnyMoney ? Brand.success : nil)
             // GUARD
             kpiCell(label: "GUARD",
@@ -410,7 +410,7 @@ private struct RailSettlementBatchBody: View {
         let needsReview = ["delayed", "hold", "exception", "review", "pending"].contains(raw)
         let chipColor: Color = needsReview ? Brand.hazmat : Brand.success
         let chipText  = needsReview ? "REVIEW" : "READY"
-        let route = "\(s.origin ?? "—") to \(s.destination ?? "—")"
+        let route = "\(s.origin ?? "-") to \(s.destination ?? "-")"
         // Mono sub: real shipment number + car count / hazmat / commodity tag.
         let carsTag: String = {
             if let c = s.carsCount { return "\(c) cars" }
@@ -447,7 +447,7 @@ private struct RailSettlementBatchBody: View {
                     .foregroundStyle(chipColor)
                     .padding(.horizontal, 10).padding(.vertical, 4)
                     .background(Capsule().fill(chipColor.opacity(0.16)))
-                Text(rowMoney.map { moneyFull($0) } ?? "—")
+                Text(rowMoney.map { moneyFull($0) } ?? "-")
                     .font(.system(size: 13, weight: .bold)).monospacedDigit()
                     .foregroundStyle(palette.textPrimary)
             }
@@ -601,7 +601,7 @@ private struct RailSettlementBatchBody: View {
 //   settlement status) eligible for a carrier-receivable batch. We list
 //   rail shipments via railShipments.getRailShipments instead; per-row money
 //   (RailBatchShipment.receivableAmount / .settlementAmount) and GROSS render
-//   only when the server actually carries them — otherwise a neutral "—",
+//   only when the server actually carries them — otherwise a neutral "-",
 //   never a fabricated figure. createBatch itself recomputes the true total
 //   server-side and returns it in CreateBatchResult.totalAmount.
 //

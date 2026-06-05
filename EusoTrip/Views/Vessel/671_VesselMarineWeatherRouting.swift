@@ -201,7 +201,7 @@ private struct VesselMarineWeatherRoutingBody: View {
         if loadError != nil { return "Route weather unavailable" }
         let segs = route?.segments?.count ?? 0
         if segs == 0 { return "No route-weather segments returned" }
-        let risk = (route?.overallRisk ?? "—")
+        let risk = (route?.overallRisk ?? "-")
         return "Vessel mid-Pacific · \(segs) legs · overall \(risk.uppercased()) on swell"
     }
 
@@ -233,7 +233,7 @@ private struct VesselMarineWeatherRoutingBody: View {
                 EusoEmptyState(
                     systemImage: "cloud.sun.rain",
                     title: "Marine-weather feed unavailable",
-                    subtitle: "DTN route-weather is not configured for this voyage. Per-leg wind, swell, and sea-state will populate the moment the feed is live.",
+                    subtitle: "DTN route-weather is not configured for this voyage. Per-leg wind, swell and sea-state will populate the moment the feed is live.",
                     comingSoon: true
                 )
             } else if let segs = route?.segments, !segs.isEmpty {
@@ -277,8 +277,8 @@ private struct VesselMarineWeatherRoutingBody: View {
     private func legRow(_ seg: RouteWeatherSegment671, isFirst: Bool, isLast: Bool) -> some View {
         let color = riskColor(seg.riskLevel)
         let title = legTitle(seg, isFirst: isFirst, isLast: isLast)
-        let seaState = (seg.riskLevel ?? "—").uppercased()
-        let waveStr = seg.waveHeight.map { String(format: "%.1f m", $0) } ?? "—"
+        let seaState = (seg.riskLevel ?? "-").uppercased()
+        let waveStr = seg.waveHeight.map { String(format: "%.1f m", $0) } ?? "-"
         return VStack(spacing: 6) {
             HStack(alignment: .top, spacing: Space.s3) {
                 Circle().fill(color).frame(width: 10, height: 10)

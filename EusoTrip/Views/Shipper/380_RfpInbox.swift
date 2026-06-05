@@ -92,8 +92,8 @@ private struct RfpInboxBody: View {
                         LifecycleSection(label: dashIfEmpty(r.title?.uppercased()), icon: "doc.text")
                         LifecycleRow(label: "Status",   value: dashIfEmpty(r.status?.uppercased()))
                         LifecycleRow(label: "Due",      value: humanISO(r.dueDate))
-                        LifecycleRow(label: "Lanes",    value: r.lanes.map { "\($0)" } ?? "—")
-                        LifecycleRow(label: "Bids in",  value: r.bidsReceived.map { "\($0)" } ?? "—")
+                        LifecycleRow(label: "Lanes",    value: r.lanes.map { "\($0)" } ?? "-")
+                        LifecycleRow(label: "Bids in",  value: r.bidsReceived.map { "\($0)" } ?? "-")
                     }
                 }.buttonStyle(.plain)
             }

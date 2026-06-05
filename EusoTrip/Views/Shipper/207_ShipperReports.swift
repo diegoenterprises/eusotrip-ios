@@ -718,8 +718,8 @@ struct ShipperReports: View {
                 metricTile(label: "LOADS",       value: "\(v.loadCount)",       icon: "shippingbox")
             }
             HStack(spacing: Space.s2) {
-                metricTile(label: "AVG / LOAD", value: v.loadCount > 0 ? currency(v.avgPerLoad) : "—", icon: "chart.bar")
-                metricTile(label: "AVG / MILE", value: v.avgPerMile > 0 ? currency(v.avgPerMile) : "—", icon: "speedometer")
+                metricTile(label: "AVG / LOAD", value: v.loadCount > 0 ? currency(v.avgPerLoad) : "-", icon: "chart.bar")
+                metricTile(label: "AVG / MILE", value: v.avgPerMile > 0 ? currency(v.avgPerMile) : "-", icon: "speedometer")
             }
         }
     }
@@ -793,7 +793,7 @@ struct ShipperReports: View {
             .background(palette.bgCard)
             .clipShape(Circle())
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.name.isEmpty ? "—" : row.name)
+                Text(row.name.isEmpty ? "-" : row.name)
                     .font(.system(size: 14, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)
@@ -802,14 +802,14 @@ struct ShipperReports: View {
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                     Text("·").font(EType.caption).foregroundStyle(palette.textTertiary)
-                    Text(row.totalLoads > 0 ? "\(row.onTimeRate)% on-time" : "— on-time")
+                    Text(row.totalLoads > 0 ? "\(row.onTimeRate)% on-time" : "- on-time")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                 }
                 .lineLimit(1)
             }
             Spacer(minLength: Space.s2)
-            Text(row.totalSpend > 0 ? currency(row.totalSpend) : "—")
+            Text(row.totalSpend > 0 ? currency(row.totalSpend) : "-")
                 .font(.system(size: 15, weight: .heavy))
                 .foregroundStyle(palette.textPrimary)
         }

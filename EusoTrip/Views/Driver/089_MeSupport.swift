@@ -305,7 +305,7 @@ struct MeSupport: View {
     }
 
     private var footer: some View {
-        Text("Your tickets and replies sync to Inbox. Urgent transit, safety, or accident reports should also go through SOS.")
+        Text("Your tickets and replies sync to Inbox. Urgent transit, safety or accident reports should also go through SOS.")
             .font(EType.caption)
             .foregroundStyle(palette.textTertiary)
             .multilineTextAlignment(.center)
@@ -420,7 +420,7 @@ private struct NewTicketSheet: View {
             dismiss()
         } catch {
             submitError = (error as? LocalizedError)?.errorDescription
-                ?? "Couldn't send — try again in a moment."
+                ?? "Couldn't send, try again in a moment."
         }
     }
 }

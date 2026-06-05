@@ -223,7 +223,7 @@ private struct OnboardingWizardBody: View {
                         .foregroundStyle(palette.textPrimary)
                 }
             }
-            Text("Confirm your business, attach the credentials your lane requires, and unlock the tiers that let you transact.")
+            Text("Confirm your business, attach the credentials your lane requires and unlock the tiers that let you transact.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -279,7 +279,7 @@ private struct OnboardingWizardBody: View {
             }
 
             if isCrossBorder {
-                inlineNote(icon: "globe", text: "Cross-border lane — you'll be offered a trusted-trader credential and a Tier 3 escalation.", tint: Brand.info)
+                inlineNote(icon: "globe", text: "Cross-border lane. You'll be offered a trusted-trader credential and a Tier 3 escalation.", tint: Brand.info)
             }
         }
     }
@@ -350,7 +350,7 @@ private struct OnboardingWizardBody: View {
 
             WizardCard {
                 cardTitle("Vertical endorsements", icon: "exclamationmark.triangle.fill")
-                Text("Add a hazmat, oversize, FSMA, or other vertical endorsement if your freight requires it.")
+                Text("Add a hazmat, oversize, FSMA or other vertical endorsement if your freight requires it.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 credentialRow(.vertical, title: "Add an endorsement",
@@ -455,7 +455,7 @@ private struct OnboardingWizardBody: View {
             let blocking = (progress?.gates ?? []).filter { $0.isBlocking }
             if !blocking.isEmpty {
                 inlineNote(icon: "lock.fill",
-                           text: "\(blocking.count) gate\(blocking.count == 1 ? "" : "s") blocking the next tier — see Business / Owners above.",
+                           text: "\(blocking.count) gate\(blocking.count == 1 ? "" : "s") blocking the next tier, see Business / Owners above.",
                            tint: Brand.warning)
             }
         }
@@ -991,9 +991,9 @@ private struct CaptureOutcome {
         if Self.clearStates.contains(n) {
             self.init(text: "Verified", tint: Brand.success, icon: "checkmark.seal.fill")
         } else if n == "failed" {
-            self.init(text: "Verification failed — retry or contact support", tint: Brand.danger, icon: "xmark.octagon.fill")
+            self.init(text: "Verification failed - retry or contact support", tint: Brand.danger, icon: "xmark.octagon.fill")
         } else if n == "incomplete" {
-            self.init(text: "Not finished — re-open to complete", tint: Brand.warning, icon: "clock.fill")
+            self.init(text: "Not finished - re-open to complete", tint: Brand.warning, icon: "clock.fill")
         } else {
             self.init(text: "Pending review (\(raw.isEmpty ? "pending" : raw))", tint: Brand.warning, icon: "clock.fill")
         }
@@ -1014,7 +1014,7 @@ private struct CaptureOutcome {
             self.init(text: msg, tint: Brand.danger, icon: "xmark.octagon.fill")
         case .none:
             // null valid = registry validator unavailable → manual review.
-            self.init(text: "Provider unavailable — manual review\(addrSuffix)", tint: Brand.warning, icon: "clock.fill")
+            self.init(text: "Provider unavailable - manual review\(addrSuffix)", tint: Brand.warning, icon: "clock.fill")
         }
     }
 
@@ -1026,7 +1026,7 @@ private struct CaptureOutcome {
             let exp = attach.expiresAt.map { " · expires \($0.prefix(10))" } ?? ""
             self.init(text: "Attached\(exp)", tint: Brand.success, icon: "checkmark.seal.fill")
         } else if n == "failed" || n == "rejected" {
-            self.init(text: "Rejected — \(attach.warnings?.first ?? "see details")", tint: Brand.danger, icon: "xmark.octagon.fill")
+            self.init(text: "Rejected - \(attach.warnings?.first ?? "see details")", tint: Brand.danger, icon: "xmark.octagon.fill")
         } else {
             self.init(text: "Pending review (\(raw.isEmpty ? "pending" : raw))", tint: Brand.warning, icon: "clock.fill")
         }

@@ -300,7 +300,7 @@ struct SparkBriefCard: View {
             } else if store.loading || store.running {
                 ProgressView().controlSize(.small)
             } else {
-                Text("No ESANG brief yet — refresh to generate one.")
+                Text("No ESANG brief yet. Refresh to generate one.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

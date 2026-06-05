@@ -110,13 +110,13 @@ private struct RailEmissionsBody: View {
     // MARK: Derived
 
     private var totalLabel: String {
-        guard let t = result?.totalCo2Tonnes else { return "—" }
+        guard let t = result?.totalCo2Tonnes else { return "-" }
         return String(format: "%.2ft", t)
     }
     private var truckLabel: String {
         if let t = truckBaseline?.totalCo2Tonnes { return String(format: "%.1ft", t) }
         if let kg = truckBaseline?.co2Kg         { return String(format: "%.1ft", kg / 1000) }
-        return "—"
+        return "-"
     }
     private var advantagePercent: Int {
         guard let actual = result?.totalCo2Tonnes,
@@ -130,31 +130,31 @@ private struct RailEmissionsBody: View {
     }
     private var routeLabel: String  { result?.routeSummary ?? "Intermodal route" }
     private var ladenLabel: String {
-        guard let l = result?.ladenTonnes, let m = result?.totalMiles else { return "—" }
+        guard let l = result?.ladenTonnes, let m = result?.totalMiles else { return "-" }
         return "\(Int(l)) t lading · \(Int(m)) mi intermodal"
     }
     private var intensityLabel: String {
         if let i = summary?.intensityGPerTonMile { return String(format: "%.0f g/tmi", i) }
-        return "—"
+        return "-"
     }
     private var savedLabel: String {
         if let s = summary?.co2SavedTonnes { return String(format: "%.1ft", s) }
         guard let actual = result?.totalCo2Tonnes,
-              let truck  = truckBaseline?.totalCo2Tonnes else { return "—" }
+              let truck  = truckBaseline?.totalCo2Tonnes else { return "-" }
         return String(format: "%.1ft", max(0, truck - actual))
     }
     private var offsetLabel: String {
-        guard let cost = result?.carbonOffsetCostUsd else { return "—" }
+        guard let cost = result?.carbonOffsetCostUsd else { return "-" }
         return "$\(Int(cost))"
     }
 
     private func legCo2(_ leg: EmissionsLeg572) -> String {
         if let t = leg.co2Tonnes { return String(format: "%.2ft", t) }
         if let kg = leg.co2Kg   { return String(format: "%.2ft", kg / 1000) }
-        return "—"
+        return "-"
     }
     private func legSub(_ leg: EmissionsLeg572) -> String {
-        var parts: [String] = [(leg.mode ?? "—").uppercased()]
+        var parts: [String] = [(leg.mode ?? "-").uppercased()]
         if let mi = leg.miles { parts.append("\(Int(mi)) mi") }
         if let desc = leg.description { parts.append(desc) }
         return parts.joined(separator: " · ")
@@ -172,9 +172,9 @@ private struct RailEmissionsBody: View {
     private var legRows: [LegRow572] {
         var rows: [LegRow572] = []
         for (i, leg) in (result?.legs ?? []).enumerated() {
-            let title = leg.leg ?? leg.mode.map { $0.capitalized } ?? "—"
+            let title = leg.leg ?? leg.mode.map { $0.capitalized } ?? "-"
             rows.append(LegRow572(id: i, title: title, sub: legSub(leg),
-                mode: leg.mode ?? "—", co2Label: legCo2(leg)))
+                mode: leg.mode ?? "-", co2Label: legCo2(leg)))
         }
         if let total = result?.totalCo2Tonnes {
             var subParts = ["totalCo2Tonnes"]

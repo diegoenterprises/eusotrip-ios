@@ -68,7 +68,7 @@ struct DockAssigned: View {
     // (same backend gap 024 Unloading documents) — they render as the
     // honest em-dash sentinel rather than a fabricated value, never on
     // the live path as a literal.
-    private let dash = "—"
+    private let dash = "-"
 
     // MARK: - Live-derived dock fields
     //
@@ -257,7 +257,7 @@ struct DockAssigned: View {
         EusoEmptyState(
             systemImage: "door.garage.closed",
             title: "No dock assigned yet",
-            subtitle: "The guard hasn't pushed a dock door for this load. You'll see the door, aisle, and approach the moment it's assigned."
+            subtitle: "The guard hasn't pushed a dock door for this load. You'll see the door, aisle and approach the moment it's assigned."
         )
         .frame(maxWidth: .infinity, minHeight: 220)
     }
@@ -884,7 +884,7 @@ struct DockYardmapSheet: View {
     }
 
     private var uwbDistanceText: String {
-        if uwb.lostLineOfSight { return "—" }
+        if uwb.lostLineOfSight { return "-" }
         guard let d = uwb.distance else { return "Locating…" }
         return String(format: "%.1f m", d)
     }
@@ -1114,7 +1114,7 @@ struct DockCamSourcePicker: View {
     }
 
     private var helperFooter: some View {
-        Text("Sources marked Pair require the terminal manager, carrier admin, or fleet owner to register hardware in Settings → Hardware Capabilities. Once registered the source lights up automatically next time you open this picker.")
+        Text("Sources marked Pair require the terminal manager, carrier admin or fleet owner to register hardware in Settings → Hardware Capabilities. Once registered the source lights up automatically next time you open this picker.")
             .font(EType.caption)
             .foregroundStyle(palette.textSecondary)
             .multilineTextAlignment(.leading)
@@ -1149,7 +1149,7 @@ struct DockCamSourcePicker: View {
     /// shown for completeness but disabled until the per-trailer
     /// capability lookup wires through.
     private var domeCamSubtitle: String {
-        "Trailer dome cam (Sensata / ORBCOMM / Spireon) — requires per-trailer registration"
+        "Trailer dome cam (Sensata / ORBCOMM / Spireon) - requires per-trailer registration"
     }
 }
 

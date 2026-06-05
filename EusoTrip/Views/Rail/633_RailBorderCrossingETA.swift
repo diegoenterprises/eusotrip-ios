@@ -138,7 +138,7 @@ private struct RailBorderCrossingETABody: View {
     }
 
     private var routeLabel: String {
-        guard let p = point else { return "—" }
+        guard let p = point else { return "-" }
         let a = p.stateProvinceA ?? ""
         let name = p.name ?? p.id
         // "Laredo/Nuevo Laredo" → "N. Laredo to Laredo"
@@ -148,7 +148,7 @@ private struct RailBorderCrossingETABody: View {
     }
 
     private var interchangeMark: String {
-        guard let p = point else { return "—" }
+        guard let p = point else { return "-" }
         let a = (p.railroadsA?.first) ?? ""
         let b = (p.railroadsB?.first) ?? ""
         if !a.isEmpty && !b.isEmpty { return "\(a) / \(b)" }
@@ -209,7 +209,7 @@ private struct RailBorderCrossingETABody: View {
                 }
                 HStack(alignment: .top, spacing: Space.s4) {
                     VStack(alignment: .leading, spacing: 0) {
-                        Text(estimate.map { hm($0.estimatedHours) } ?? "—")
+                        Text(estimate.map { hm($0.estimatedHours) } ?? "-")
                             .font(.system(size: 30, weight: .bold))
                             .monospacedDigit()
                             .foregroundStyle(LinearGradient.diagonal)
@@ -259,7 +259,7 @@ private struct RailBorderCrossingETABody: View {
     private var kpiStrip: some View {
         HStack(spacing: Space.s2) {
             kpiCell(label: "ETA",
-                    value: estimate.map { hmTight($0.estimatedHours) } ?? "—",
+                    value: estimate.map { hmTight($0.estimatedHours) } ?? "-",
                     filled: true, valueColor: .white)
             kpiCell(label: "CARS",
                     value: "\(carCount)",
@@ -276,12 +276,12 @@ private struct RailBorderCrossingETABody: View {
         hasPreClearance ? palette.textTertiary : Brand.success
     }
     private var preclearanceLabel: String {
-        guard let est = estimate else { return "—" }
+        guard let est = estimate else { return "-" }
         if hasPreClearance { return "filed" }
         let savable = est.breakdown
             .filter { $0.step.lowercased().contains("customs") }
             .reduce(into: 0.0) { acc, f in acc += f.hours }
-        return savable > 0 ? hmTight(savable) : "—"
+        return savable > 0 ? hmTight(savable) : "-"
     }
 
     @ViewBuilder
@@ -483,7 +483,7 @@ private struct RailBorderCrossingETABody: View {
 
     private var provenanceLine: String {
         let mark = interchangeMark
-        let office = point?.customsOffice ?? "—"
+        let office = point?.customsOffice ?? "-"
         return "\(mark) · \(office)"
     }
 

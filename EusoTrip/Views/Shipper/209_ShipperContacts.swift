@@ -359,7 +359,7 @@ struct ShipperContacts: View {
                 ContactRow(
                     id: fc.id,
                     initials: monogram(fc.name),
-                    name: fc.name.isEmpty ? "—" : fc.name,
+                    name: fc.name.isEmpty ? "-" : fc.name,
                     org: dispatcherOrg(for: fc),
                     role: dispatcherRole(for: fc),
                     phone: dispatcherPhone(for: fc),
@@ -764,7 +764,7 @@ struct ShipperContacts: View {
     /// ships per-dispatcher rows, treat the catalyst record as the
     /// dispatcher row, with the company echoed as the org.
     private func dispatcherOrg(for fc: ShipperAPI.FavoriteCatalyst) -> String {
-        fc.name.isEmpty ? "—" : fc.name
+        fc.name.isEmpty ? "-" : fc.name
     }
 
     private func dispatcherRole(for fc: ShipperAPI.FavoriteCatalyst) -> String? {
@@ -776,12 +776,12 @@ struct ShipperContacts: View {
 
     private func dispatcherPhone(for fc: ShipperAPI.FavoriteCatalyst) -> String {
         // contacts.list will surface phone — em-dash for now
-        "—"
+        "-"
     }
 
     private func dispatcherEmail(for fc: ShipperAPI.FavoriteCatalyst) -> String {
         // contacts.list will surface email — em-dash for now
-        "—"
+        "-"
     }
 
     private func formatCurrency(_ value: Double) -> String {

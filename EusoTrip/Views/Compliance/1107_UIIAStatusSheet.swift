@@ -87,7 +87,7 @@ struct UIIAStatusSheet: View {
                 Text("IANA UIIA status")
                     .font(.system(size: 22, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
-                Text("Uniform Intermodal Interchange & Facilities Access Agreement — register your insurer, the equipment providers you interchange with, and the agreement's validity.")
+                Text("Uniform Intermodal Interchange & Facilities Access Agreement. Register your insurer, the equipment providers you interchange with and the agreement's validity.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -262,7 +262,7 @@ struct UIIAStatusSheet: View {
                                  color: Brand.warning,
                                  glyph: "clock.fill")
         case "provider_unavailable", "unavailable":
-            return ProviderState(label: "Provider unavailable — manual review",
+            return ProviderState(label: "Provider unavailable - manual review",
                                  color: Brand.warning,
                                  glyph: "exclamationmark.triangle.fill")
         case "expired", "rejected", "blocked":
@@ -270,11 +270,11 @@ struct UIIAStatusSheet: View {
                                  color: Brand.danger,
                                  glyph: "xmark.octagon.fill")
         case "":
-            return ProviderState(label: "Submitted — status pending",
+            return ProviderState(label: "Submitted - status pending",
                                  color: Brand.warning,
                                  glyph: "clock.fill")
         default:
-            return ProviderState(label: "\(result.status ?? "Unknown") — manual review",
+            return ProviderState(label: "\(result.status ?? "Unknown") - manual review",
                                  color: Brand.warning,
                                  glyph: "questionmark.circle.fill")
         }
@@ -304,7 +304,7 @@ struct UIIAStatusSheet: View {
                     .foregroundStyle(palette.textPrimary)
                     .tint(Brand.blue)
                 } else {
-                    Text("No expiry recorded — the UIIA will register as open-ended until you set a renewal date.")
+                    Text("No expiry recorded. The UIIA will register as open-ended until you set a renewal date.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)

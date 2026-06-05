@@ -138,7 +138,7 @@ private struct VesselLossPreventionBody: View {
                     Text(atRisk).font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundStyle(Brand.danger)
                 }
                 if causes.isEmpty {
-                    Text("No loss-by-cause data in range — getLossPreventionAnalysis returned an empty breakdown.")
+                    Text("No loss-by-cause data in range, getLossPreventionAnalysis returned an empty breakdown.")
                         .font(.system(size: 12)).foregroundStyle(palette.textTertiary)
                 } else {
                     GeometryReader { geo in
@@ -171,7 +171,7 @@ private struct VesselLossPreventionBody: View {
         if alerts.isEmpty {
             EusoEmptyState(systemImage: "bell.slash",
                            title: "No risk alerts in feed",
-                           subtitle: "getLossPreventionDashboard returned an empty alert stream — nothing flagged right now.")
+                           subtitle: "getLossPreventionDashboard returned an empty alert stream, nothing flagged right now.")
         } else {
             LifecycleCard {
                 VStack(alignment: .leading, spacing: 0) {
@@ -203,8 +203,8 @@ private struct VesselLossPreventionBody: View {
         return "ESang: \(top.name.lowercased()) drives \(pct)% of value at risk"
     }
     private var esangSubtitle: String {
-        guard let lead = alerts.first else { return "no live alerts — monitor the next discharge cycle" }
-        let lane = lead.sub.split(separator: " ").first.map(String.init) ?? "—"
+        guard let lead = alerts.first else { return "no live alerts - monitor the next discharge cycle" }
+        let lane = lead.sub.split(separator: " ").first.map(String.init) ?? "-"
         return "add GPS seal monitoring on \(lane) first"
     }
 
@@ -229,7 +229,7 @@ private struct VesselLossPreventionBody: View {
                     let tint: Color = kind == .danger ? Brand.danger : (kind == .warning ? Brand.warning : Brand.blue)
                     let sym = kind == .danger ? "exclamationmark.triangle.fill" : (kind == .warning ? "thermometer.medium" : "bell.fill")
                     return RiskAlert805(symbol: sym, tint: tint, kind: kind, pill: sev.uppercased(),
-                                        title: a.message ?? "—", sub: "\(a.lane ?? "—") · \(a.createdAt ?? "")")
+                                        title: a.message ?? "-", sub: "\(a.lane ?? "-") · \(a.createdAt ?? "")")
                 }
             } else {
                 alerts = []
@@ -244,7 +244,7 @@ private struct VesselLossPreventionBody: View {
                 atRisk = usd805(total)
                 let causePalette: [Color] = [Brand.danger, Brand.warning, Brand.info, Brand.neutral]
                 causes = a.data.prefix(4).enumerated().map { i, g in
-                    LossCause805(name: g.group ?? "—", frac: (g.totalValue ?? 0) / total, color: causePalette[i % causePalette.count],
+                    LossCause805(name: g.group ?? "-", frac: (g.totalValue ?? 0) / total, color: causePalette[i % causePalette.count],
                                  detail: "\(g.claimCount ?? 0) · \(usd805(g.totalValue ?? 0))")
                 }
             } else {

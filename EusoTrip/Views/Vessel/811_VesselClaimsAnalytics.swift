@@ -197,7 +197,7 @@ private struct VesselClaimsAnalyticsBody: View {
         let total = perils.reduce(0) { $0 + $1.value }
         return total >= 1000 ? "$\(String(format: "%.1f", total/1000))K" : "$\(String(format: "%.1f", total))K"
     }
-    private var worstPeerName: String { peers.first(where: { $0.tone == .worst })?.carrier.components(separatedBy: " ·").first ?? "—" }
+    private var worstPeerName: String { peers.first(where: { $0.tone == .worst })?.carrier.components(separatedBy: " ·").first ?? "-" }
     private var worstPeerPct: Int { peers.first(where: { $0.tone == .worst })?.pct ?? 0 }
 
     // MARK: Data
@@ -232,7 +232,7 @@ private struct VesselClaimsAnalyticsBody: View {
             if let tc = a.topCarriers, !tc.isEmpty {
                 peers = tc.prefix(3).enumerated().map { idx, c in
                     let tone: PeerTone811 = idx == 0 ? .best : (idx == tc.count - 1 ? .worst : .median)
-                    return PeerRow811(carrier: c.carrier ?? "—",
+                    return PeerRow811(carrier: c.carrier ?? "-",
                                       sub: "\(c.resolvedCount) claims",
                                       pct: Int((c.recoveryPct ?? 0).rounded()),
                                       value: money(c.resolvedValue), tone: tone)
@@ -241,7 +241,7 @@ private struct VesselClaimsAnalyticsBody: View {
             if let bt = a.byType, !bt.isEmpty {
                 let colors: [Color] = [Brand.danger, Brand.info, Brand.warning, Brand.neutral]
                 perils = bt.prefix(4).enumerated().map { idx, t in
-                    PerilSeg811(label: "\(t.type ?? "—") " + money(t.value), value: t.value ?? 0, color: colors[idx % colors.count])
+                    PerilSeg811(label: "\(t.type ?? "-") " + money(t.value), value: t.value ?? 0, color: colors[idx % colors.count])
                 }
             }
         } catch {
@@ -254,7 +254,7 @@ private struct VesselClaimsAnalyticsBody: View {
     private func exportYtd() async { await load() }
 
     private func money(_ v: Double?) -> String {
-        guard let v else { return "—" }
+        guard let v else { return "-" }
         return v >= 1000 ? "$\(String(format: "%.1f", v/1000))k" : "$\(Int(v))"
     }
 

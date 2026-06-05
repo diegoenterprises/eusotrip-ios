@@ -303,7 +303,7 @@ private struct OperationsAlertsBody: View {
             Text("Operations alerts")
                 .font(.system(size: 22, weight: .heavy))
                 .foregroundStyle(palette.textPrimary)
-            Text("Load exceptions, Zeun breakdowns, and ELD violations — one queue.")
+            Text("Load exceptions, Zeun breakdowns and ELD violations, one queue.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -573,8 +573,8 @@ private struct OperationsAlertsBody: View {
                 severity: sev,
                 title: "Breakdown: \((b.issueCategory ?? "unknown").replacingOccurrences(of: "_", with: " ").capitalized)",
                 description: b.canDrive == false
-                    ? "Vehicle disabled — driver cannot continue. Immediate dispatch action needed."
-                    : "Driver reported mechanical issue — vehicle still operable.",
+                    ? "Vehicle disabled. Driver cannot continue. Immediate dispatch action needed."
+                    : "Driver reported mechanical issue. Vehicle still operable.",
                 driverName: b.driverName,
                 vehicle: b.vehicleVin,
                 loadNumber: nil,

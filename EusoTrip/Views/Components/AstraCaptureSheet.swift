@@ -41,7 +41,7 @@ public enum AstraCaptureMode: Equatable {
 
     var promptCopy: String {
         switch self {
-        case .reeferTempLog: return "Aim the camera at the reefer unit display. Astra reads setpoint, return-air temp, mode, and active alarms."
+        case .reeferTempLog: return "Aim the camera at the reefer unit display. Astra reads setpoint, return-air temp, mode and active alarms."
         case .osdReport:     return "Photograph the cargo at delivery. Astra reconciles visible counts + damage against the BOL line items."
         }
     }
@@ -121,16 +121,16 @@ private enum AstraCaptureResult: Equatable {
         switch self {
         case .reefer(let r):
             return [
-                ("Setpoint",    (r.observation["setpointF"]?.displayString ?? "—").withSuffix("°F")),
-                ("Return Air",  (r.observation["returnAirTempF"]?.displayString ?? "—").withSuffix("°F")),
-                ("Mode",         r.observation["mode"]?.displayString ?? "—"),
-                ("Data Logger",  r.observation["dataLoggerOk"]?.displayString ?? "—"),
+                ("Setpoint",    (r.observation["setpointF"]?.displayString ?? "-").withSuffix("°F")),
+                ("Return Air",  (r.observation["returnAirTempF"]?.displayString ?? "-").withSuffix("°F")),
+                ("Mode",         r.observation["mode"]?.displayString ?? "-"),
+                ("Data Logger",  r.observation["dataLoggerOk"]?.displayString ?? "-"),
             ]
         case .osd(let r):
             return [
-                ("Pallet damage visible", r.observation["anyVisiblePalletDamage"]?.displayString ?? "—"),
-                ("Seal breach visible",   r.observation["anyVisibleSealBreach"]?.displayString ?? "—"),
-                ("Confidence",            r.observation["confidence"]?.displayString ?? "—"),
+                ("Pallet damage visible", r.observation["anyVisiblePalletDamage"]?.displayString ?? "-"),
+                ("Seal breach visible",   r.observation["anyVisibleSealBreach"]?.displayString ?? "-"),
+                ("Confidence",            r.observation["confidence"]?.displayString ?? "-"),
             ]
         }
     }
@@ -138,7 +138,7 @@ private enum AstraCaptureResult: Equatable {
 
 // Small helper so summary lines can append units without if/else noise.
 private extension String {
-    func withSuffix(_ s: String) -> String { self.hasSuffix("—") ? self : self + " " + s }
+    func withSuffix(_ s: String) -> String { self.hasSuffix("-") ? self : self + " " + s }
 }
 
 // MARK: - Sheet

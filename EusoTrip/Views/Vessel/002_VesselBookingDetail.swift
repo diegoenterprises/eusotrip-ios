@@ -250,7 +250,7 @@ private struct VesselBookingDetailBody: View {
             .padding(.top, Space.s5)
 
             HStack(alignment: .center) {
-                Text(detail?.bookingNumber ?? "—")
+                Text(detail?.bookingNumber ?? "-")
                     .font(.system(size: 30, weight: .bold, design: .monospaced))
                     .kerning(-0.5)
                     .foregroundStyle(palette.textPrimary)
@@ -417,10 +417,10 @@ private struct VesselBookingDetailBody: View {
         }
     }
 
-    /// Days from now until eta (or "arrived"/"—"). No fabricated "5.9d".
+    /// Days from now until eta (or "arrived"/"-"). No fabricated "5.9d".
     private var etaStr: String {
         if detail?.ata != nil { return "in" }
-        guard let iso = detail?.eta, let when = parseISO(iso) else { return "—" }
+        guard let iso = detail?.eta, let when = parseISO(iso) else { return "-" }
         let days = when.timeIntervalSinceNow / 86_400
         if days <= 0 { return "due" }
         return String(format: "%.1fd", days)
@@ -539,7 +539,7 @@ private struct VesselBookingDetailBody: View {
     }
 
     private func containerRow(_ c: OceanContainer002, isLast: Bool, remaining: Int) -> some View {
-        var label = c.containerNumber ?? "—"
+        var label = c.containerNumber ?? "-"
         if let size = prettySize(c.sizeType) { label += " · \(size)" }
         // SVG: the 5th visible row trails "+N more" in secondary; others trail
         // their live status in gradient.
@@ -629,10 +629,10 @@ private struct VesselBookingDetailBody: View {
     private func meterNote(started: Bool, hasData: Bool) -> String {
         let port = portShort(detail?.destinationPort) ?? "the discharge port"
         if !hasData {
-            return "Afloat — meter starts on terminal discharge at \(port)"
+            return "Afloat - meter starts on terminal discharge at \(port)"
         }
         return started
-            ? "Meter running — free time consuming at \(port)"
+            ? "Meter running - free time consuming at \(port)"
             : "Free time intact at \(port)"
     }
 
@@ -773,7 +773,7 @@ private struct VesselBookingDetailBody: View {
             let _: TrackOut? = try await EusoTripAPI.shared.query(
                 "vesselShipments.liveTrackOceanShipment", input: TrackIn(referenceNumber: ref))
         } catch {
-            actionError = "Tracking unavailable — "
+            actionError = "Tracking unavailable. "
                 + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
         }
     }
@@ -799,7 +799,7 @@ private struct VesselBookingDetailBody: View {
                     "vesselShipments.getBOL", input: BOLById(id: bol.id))
             }
         } catch {
-            actionError = "Couldn't open documents — "
+            actionError = "Couldn't open documents. "
                 + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
         }
     }

@@ -494,7 +494,7 @@ struct MeWallet: View {
             EusoEmptyState(
                 systemImage: "list.bullet.rectangle",
                 title: "No transactions yet",
-                subtitle: "Settlements, fees, and payouts will land here."
+                subtitle: "Settlements, fees and payouts will land here."
             )
             .frame(maxWidth: .infinity)
             .padding(Space.s3)
@@ -756,7 +756,7 @@ struct MeWallet: View {
                     Text("\(doc.documentType ?? "1099") · \(String(doc.year))")
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
-                    Text(doc.available ? "Issued \(formatShort(doc.issuedAt) ?? "—")" : "Pending IRS issuance window")
+                    Text(doc.available ? "Issued \(formatShort(doc.issuedAt) ?? "-")" : "Pending IRS issuance window")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                 }

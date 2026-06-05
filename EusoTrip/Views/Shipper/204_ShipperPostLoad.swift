@@ -886,7 +886,7 @@ struct ShipperPostLoad: View {
                                 .padding(.horizontal, 5).padding(.vertical, 1)
                                 .background(Capsule().fill(LinearGradient.diagonal))
                         }
-                        Text("Drop a Rate Con, BOL, Load Tender or Run Ticket — Gemini Vision pre-fills lane, equipment, cargo, weight, and rate.")
+                        Text("Drop a Rate Con, BOL, Load Tender or Run Ticket. Gemini Vision pre-fills lane, equipment, cargo, weight and rate.")
                             .font(EType.caption)
                             .foregroundStyle(palette.textSecondary)
                             .multilineTextAlignment(.leading)
@@ -945,7 +945,7 @@ struct ShipperPostLoad: View {
                             Text("No saved templates yet")
                                 .font(EType.bodyStrong)
                                 .foregroundStyle(palette.textPrimary)
-                            Text("Post a load + tap 'Save as template' on the review step. Saved templates show up here AND on the web platform — same account, same shipping list.")
+                            Text("Post a load + tap 'Save as template' on the review step. Saved templates show up here AND on the web platform, same account, same shipping list.")
                                 .font(EType.caption)
                                 .foregroundStyle(palette.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -1001,7 +1001,7 @@ struct ShipperPostLoad: View {
         let o = locationDisplay(tpl.origin)
         let d = locationDisplay(tpl.destination)
         if o.isEmpty && d.isEmpty { return "Lane not set" }
-        return "\(o.isEmpty ? "—" : o) → \(d.isEmpty ? "—" : d)"
+        return "\(o.isEmpty ? "-" : o) → \(d.isEmpty ? "-" : d)"
     }
 
     private func templateMetaText(_ tpl: LoadTemplatesAPI.Template) -> String {
@@ -1230,7 +1230,7 @@ struct ShipperPostLoad: View {
                 }
                 .buttonStyle(.plain)
             }
-            Text("Saves to your account so you can quick-post the same lane next time. Templates sync across iOS and the web platform — same shipper, same list.")
+            Text("Saves to your account so you can quick-post the same lane next time. Templates sync across iOS and the web platform, same shipper, same list.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1644,7 +1644,7 @@ struct ShipperPostLoad: View {
                         .overlay(Capsule().strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Open bulk upload — CSV / XLS / PDF")
+                    .accessibilityLabel("Open bulk upload - CSV / XLS / PDF")
                 }
 
                 Button(action: closeTapped) {
@@ -2034,7 +2034,7 @@ struct ShipperPostLoad: View {
         let oTrim = origin.trimmingCharacters(in: .whitespacesAndNewlines)
         let dTrim = destination.trimmingCharacters(in: .whitespacesAndNewlines)
         if oTrim.isEmpty || dTrim.isEmpty {
-            return "Add origin + destination — distance / ETA estimates auto-fill"
+            return "Add origin + destination - distance / ETA estimates auto-fill"
         }
         if isRouting {
             return "Computing distance + ETA via ESANG…"
@@ -2870,7 +2870,7 @@ struct ShipperPostLoad: View {
         var out: [String] = []
         if !hazmatClass.isEmpty { out.append("H") }
         if isTank { out.append("N") }
-        return out.isEmpty ? ["—"] : out
+        return out.isEmpty ? ["-"] : out
     }
 
     /// Human-readable list of equipment labels that accept the
@@ -2889,7 +2889,7 @@ struct ShipperPostLoad: View {
             default:            break
             }
         }
-        return matches.isEmpty ? ["—"] : matches
+        return matches.isEmpty ? ["-"] : matches
     }
 
     /// Equipment-type picker — covers truck / rail / vessel
@@ -3273,7 +3273,7 @@ struct ShipperPostLoad: View {
                 .foregroundStyle(LinearGradient.diagonal)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 4) {
-                    Text((m.name ?? "—").capitalized)
+                    Text((m.name ?? "-").capitalized)
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
@@ -4113,7 +4113,7 @@ struct ShipperPostLoad: View {
         if cargoType.isHazmatFlavored {
             // 1. Hazmat case → derive from ERG match + user fields.
             if let m = ergMatch, m.found, let un = m.unNumber {
-                let cls = (m.hazardClass ?? hazmatClass).isEmpty ? "—" : (m.hazardClass ?? hazmatClass)
+                let cls = (m.hazardClass ?? hazmatClass).isEmpty ? "-" : (m.hazardClass ?? hazmatClass)
                 let pg  = packingGroup.isEmpty ? "" : " · PG \(packingGroup)"
                 let hose = tankerHoseSpec.isEmpty ? "" : " · \(hoseLabel(tankerHoseSpec))"
                 return "UN\(un) · Class \(cls)\(pg)\(hose)"
@@ -4122,7 +4122,7 @@ struct ShipperPostLoad: View {
             //    what they typed honestly.
             let typedUN = unNumber.uppercased().replacingOccurrences(of: "UN", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
             if !typedUN.isEmpty {
-                let cls = hazmatClass.isEmpty ? "—" : hazmatClass
+                let cls = hazmatClass.isEmpty ? "-" : hazmatClass
                 let pg  = packingGroup.isEmpty ? "" : " · PG \(packingGroup)"
                 return "UN\(typedUN) · Class \(cls)\(pg)\(isLookingUpERG ? " · looking up…" : "")"
             }
@@ -4140,7 +4140,7 @@ struct ShipperPostLoad: View {
         case .stepDeck:        return "Step deck · 48′/53′"
         case .conestoga:       return "Conestoga · curtain-side"
         case .container:       return "20′ / 40′ / 53′ ISO container"
-        case .oversized:       return oversizeDimsText.contains("—") ? "Oversized · dims pending" : oversizeDimsText
+        case .oversized:       return oversizeDimsText.contains("-") ? "Oversized · dims pending" : oversizeDimsText
         case .powerOnly:       return "Power-only · driver bring own trailer"
         case .railTOFC:        return "Rail · TOFC (trailer-on-flatcar)"
         case .railCOFC:        return "Rail · COFC (container-on-flatcar)"
@@ -4572,7 +4572,7 @@ struct ShipperPostLoad: View {
     private var rateUnitHint: String {
         switch transportMode {
         case .truck:
-            return "Linehaul total — divided by route miles for the $/mile market compare."
+            return "Linehaul total - divided by route miles for the $/mile market compare."
         case .rail:
             return "Posted in $ per ton-mile; rail freight industry standard for unit/manifest traffic."
         case .vessel:
@@ -4651,12 +4651,12 @@ struct ShipperPostLoad: View {
                 // doesn't see a stuck "computing distance" state on
                 // step 3 with no path to recover. Mirrors the route
                 // meta strip on step 1.
-                Text("Route error: \(routeErr) — go back to step 1 to retry")
+                Text("Route error: \(routeErr) - go back to step 1 to retry")
                     .font(EType.caption)
                     .foregroundStyle(Brand.danger)
                     .fixedSize(horizontal: false, vertical: true)
             } else if (routeDistanceMeters ?? 0) <= 0 {
-                Text("Distance computing — meter populates after route resolves")
+                Text("Distance computing - meter populates after route resolves")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -4833,7 +4833,7 @@ struct ShipperPostLoad: View {
                 .font(EType.micro).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
             TextField(
-                "Anything carriers should know — temperature ranges, dock hours, COI…",
+                "Anything carriers should know, temperature ranges, dock hours, COI…",
                 text: $notes,
                 axis: .vertical
             )
@@ -5015,10 +5015,10 @@ struct ShipperPostLoad: View {
             Divider().overlay(palette.borderFaint)
             reviewRow(label: "Vertical",       value: equipmentType.vertical.uppercased())
             Divider().overlay(palette.borderFaint)
-            reviewRow(label: "Quantity",       value: parseDouble(weightText).map { "\(formatQty($0)) \(weightUnit.rawValue)" } ?? "—")
+            reviewRow(label: "Quantity",       value: parseDouble(weightText).map { "\(formatQty($0)) \(weightUnit.rawValue)" } ?? "-")
 
             reviewSection("FREIGHT CHARGE")
-            reviewRow(label: "Posted rate",    value: parseDouble(rateText).map(dollars) ?? "—", isHero: true)
+            reviewRow(label: "Posted rate",    value: parseDouble(rateText).map(dollars) ?? "-", isHero: true)
             if let cmp = rateComparison {
                 Divider().overlay(palette.borderFaint)
                 reviewRow(label: "Vs market",  value: "\(cmp.position.replacingOccurrences(of: "_", with: " ")) · \(cmp.percentile)th pct")
@@ -5160,7 +5160,7 @@ struct ShipperPostLoad: View {
     private var distanceReviewText: String {
         guard let m = routeDistanceMeters, m > 0 else {
             if let err = routingError { return "error: \(err)" }
-            return "—"
+            return "-"
         }
         return String(format: "%.0f mi", Double(m) / 1609.34)
     }
@@ -5169,15 +5169,15 @@ struct ShipperPostLoad: View {
         if let eta = computedDeliveryETA {
             return deliveryETAFormatter.string(from: eta)
         }
-        if hasPickupDate { return "—" }
+        if hasPickupDate { return "-" }
         return "Catalyst proposes"
     }
 
     private var reeferTempRangeText: String {
         let lo = reeferTempLowText.trimmingCharacters(in: .whitespaces)
         let hi = reeferTempHighText.trimmingCharacters(in: .whitespaces)
-        if lo.isEmpty && hi.isEmpty { return "—" }
-        return "\(lo.isEmpty ? "—" : lo)°F – \(hi.isEmpty ? "—" : hi)°F"
+        if lo.isEmpty && hi.isEmpty { return "-" }
+        return "\(lo.isEmpty ? "-" : lo)°F – \(hi.isEmpty ? "-" : hi)°F"
     }
 
     private var flatbedGearText: String {
@@ -5186,15 +5186,15 @@ struct ShipperPostLoad: View {
         if flatbedTarps           { gear.append("tarps") }
         if flatbedChains          { gear.append("chains") }
         if flatbedEdgeProtectors  { gear.append("edge protectors") }
-        return gear.isEmpty ? "—" : gear.joined(separator: ", ")
+        return gear.isEmpty ? "-" : gear.joined(separator: ", ")
     }
 
     private var oversizeDimsText: String {
         let l = oversizeLengthText.trimmingCharacters(in: .whitespaces)
         let w = oversizeWidthText.trimmingCharacters(in: .whitespaces)
         let h = oversizeHeightText.trimmingCharacters(in: .whitespaces)
-        if l.isEmpty && w.isEmpty && h.isEmpty { return "—" }
-        return "L \(l.isEmpty ? "—" : l) · W \(w.isEmpty ? "—" : w) · H \(h.isEmpty ? "—" : h) ft"
+        if l.isEmpty && w.isEmpty && h.isEmpty { return "-" }
+        return "L \(l.isEmpty ? "-" : l) · W \(w.isEmpty ? "-" : w) · H \(h.isEmpty ? "-" : h) ft"
     }
 
     private func hoseLabel(_ raw: String) -> String {
@@ -5203,7 +5203,7 @@ struct ShipperPostLoad: View {
         case "3_camlock":     return "3\" cam-lock"
         case "4_camlock":     return "4\" cam-lock"
         case "dry_disconnect":return "Dry-disconnect"
-        case "":              return "—"
+        case "":              return "-"
         default:              return raw
         }
     }
@@ -5213,14 +5213,14 @@ struct ShipperPostLoad: View {
         case "api":   return "API adapter"
         case "ttma":  return "TTMA"
         case "other": return "Other"
-        case "":      return "—"
+        case "":      return "-"
         default:      return raw
         }
     }
 
     private func nonEmpty(_ s: String) -> String {
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-        return t.isEmpty ? "—" : t
+        return t.isEmpty ? "-" : t
     }
 
     private func formatDate(_ d: Date) -> String {
@@ -6125,8 +6125,8 @@ private struct PostLoadDraftsEntryBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             VStack(alignment: .leading, spacing: 4) {
-                row(label: "ORIGIN", value: s.origin.isEmpty ? "—" : s.origin)
-                row(label: "DESTINATION", value: s.destination.isEmpty ? "—" : s.destination)
+                row(label: "ORIGIN", value: s.origin.isEmpty ? "-" : s.origin)
+                row(label: "DESTINATION", value: s.destination.isEmpty ? "-" : s.destination)
                 row(label: "CARGO", value: s.cargoTypeRaw.replacingOccurrences(of: "_", with: " ").capitalized)
                 row(label: "EQUIPMENT", value: s.equipmentTypeRaw.replacingOccurrences(of: "_", with: " ").capitalized)
                 row(label: "SAVED", value: savedAtLabel(s.savedAt))
@@ -6167,7 +6167,7 @@ private struct PostLoadDraftsEntryBody: View {
     }
 
     private func savedAtLabel(_ unix: Double) -> String {
-        guard unix > 0 else { return "—" }
+        guard unix > 0 else { return "-" }
         let date = Date(timeIntervalSince1970: unix)
         let f = RelativeDateTimeFormatter()
         f.unitsStyle = .abbreviated

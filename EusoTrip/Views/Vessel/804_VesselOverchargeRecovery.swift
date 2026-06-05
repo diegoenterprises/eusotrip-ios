@@ -277,11 +277,11 @@ private struct VesselOverchargeRecoveryBody: View {
                     let st = rec.status ?? "identified"
                     let tone: StatusPill.Kind = st == "recovered" ? .success : (st == "disputed" ? .warning : (st == "written_off" ? .neutral : .info))
                     let chip: Color = st == "recovered" ? Brand.success : (st == "disputed" ? Brand.warning : (st == "written_off" ? Brand.neutral : Brand.blue))
-                    let code = (rec.carrier ?? "—").uppercased().prefix(4)
+                    let code = (rec.carrier ?? "-").uppercased().prefix(4)
                     return RecoveryCase804(
                         carrierCode: String(code),
-                        title: "\(rec.carrier ?? "—") · \(rec.type ?? "review")",
-                        sub: "\(rec.invoiceNumber ?? "—") · \(st)",
+                        title: "\(rec.carrier ?? "-") · \(rec.type ?? "review")",
+                        sub: "\(rec.invoiceNumber ?? "-") · \(st)",
                         tone: tone, chip: chip, pill: st.uppercased(),
                         value: usd804(rec.recoveredAmount ?? 0),
                         ofOver: "of \(usd804(rec.overchargeAmount ?? 0)) over",

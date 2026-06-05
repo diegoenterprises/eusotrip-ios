@@ -86,7 +86,7 @@ struct ShippereSangCoachSheet: View {
         ("Carrier vet",     "Which carriers should I avoid based on recent on-time and DOT scores?"),
         ("Settlement",      "What's in my settlement queue this week?"),
         ("Spend YTD",       "How much have I spent on freight year-to-date?"),
-        ("Post a load",     "Help me post a load — walk me through the form."),
+        ("Post a load",     "Help me post a load, walk me through the form."),
         ("Best lane rate",  "What's a good rate per mile for my busiest lane?"),
     ]
 
@@ -343,9 +343,9 @@ struct ShippereSangCoachSheet: View {
         // Honest header line.
         let headline: String
         if isUnknown || lowConfidence {
-            headline = "I couldn't confidently identify this document (\(conf)% confidence) — please confirm what it is."
+            headline = "I couldn't confidently identify this document (\(conf)% confidence). Please confirm what it is."
         } else {
-            headline = "Got it — that's a \(humanDocType(doc.classifiedType)) (\(conf)% confidence)."
+            headline = "Got it. That's a \(humanDocType(doc.classifiedType)) (\(conf)% confidence)."
         }
 
         var lines: [String] = [headline]
@@ -372,9 +372,9 @@ struct ShippereSangCoachSheet: View {
         // Seed the composer so the shipper has a one-tap follow-up that
         // references the document ESANG now knows about.
         if isUnknown || lowConfidence {
-            draft = "About the document I just shared — "
+            draft = "About the document I just shared, "
         } else {
-            draft = "About this \(humanDocType(doc.classifiedType).lowercased()) — "
+            draft = "About this \(humanDocType(doc.classifiedType).lowercased()), "
         }
         composerFocused = true
     }
@@ -444,27 +444,27 @@ enum ShippereSangGreeting {
 
     static let variants: [DayPart: [String]] = [
         .morning: [
-            "Morning. I've got your overnight bid sweep ready — want a quick rundown?",
+            "Morning. I've got your overnight bid sweep ready. Want a quick rundown?",
             "Morning, shipper. Three lanes need posting before the 10AM cutoff. Where do you want to start?",
-            "Hey — early start. I'm tracking carrier capacity on your top lanes. What can I tee up?",
+            "Hey, early start. I'm tracking carrier capacity on your top lanes. What can I tee up?",
             "Morning. Settlement queue cleared overnight. Any new lanes you want to post?",
         ],
         .day: [
-            "Hey — afternoon. Two of your loads need attention; want me to surface them?",
+            "Hey, afternoon. Two of your loads need attention; want me to surface them?",
             "Hey, shipper. Catalysts are bidding live on your active posts. What do you need?",
             "Afternoon. I'm watching your spend run-rate vs. budget. What's on your mind?",
-            "Hey. Ready to post a load, vet a carrier, or check settlements?",
+            "Hey. Ready to post a load, vet a carrier or check settlements?",
         ],
         .evening: [
-            "Evening — bid windows on three loads close by midnight. Want me to summarize?",
+            "Evening. Bid windows on three loads close by midnight. Want me to summarize?",
             "Evening, shipper. Carriers are staging for tomorrow's pickups. Anything to adjust?",
-            "Hey. End of day — I can pull your dashboard or queue tomorrow's posts. What helps?",
-            "Evening. Settlement, agreements, or fresh load posts — where do we go?",
+            "Hey. End of day, I can pull your dashboard or queue tomorrow's posts. What helps?",
+            "Evening. Settlement, agreements or fresh load posts. Where do we go?",
         ],
         .night: [
-            "Hey — running late. I've got bids stacking on your overnight posts. What do you need?",
+            "Hey, running late. I've got bids stacking on your overnight posts. What do you need?",
             "Quiet hours, but the carrier marketplace is awake. Want me to walk through the queue?",
-            "Hey. ESANG is on the night watch — load status, exception triage, settlement. What's first?",
+            "Hey. ESANG is on the night watch, load status, exception triage, settlement. What's first?",
             "Late one. Your active loads are tracking; I'll flag any that drift. What can I get for you?",
         ],
     ]

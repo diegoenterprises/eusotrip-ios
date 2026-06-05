@@ -26,7 +26,7 @@
 //
 //  Backend gaps surfaced (logged in audit log, no fake data):
 //    EUSO-2108 — `controlTower.overview` doesn't ship `onTimeRate` /
-//                `onTimeTrail`. KPI strip ON-TIME cell paints "—"
+//                `onTimeTrail`. KPI strip ON-TIME cell paints "-"
 //                placeholder until backend exposes the metric.
 //
 //  Doctrine refs: §2 ME nav (handled by ContentView); §3 numbers-first
@@ -188,7 +188,7 @@ struct ShipperControlTower: View {
         if case .loaded(let o, let e, _) = store.state {
             return "\(e.totalExceptions) EXCEPTIONS · \(o.total.inTransit) IN TRANSIT"
         }
-        return "—"
+        return "-"
     }
 
     private var counterTint: Color {
@@ -225,7 +225,7 @@ struct ShipperControlTower: View {
         if case .loaded(let o, _, _) = store.state {
             return "\(o.total.active) active · \(matrixSize) MATRIX loads · live HERE basemap"
         }
-        return "Truck · rail · vessel — every load, every mode, real-time on the HERE basemap."
+        return "Truck · rail · vessel, every load, every mode, real-time on the HERE basemap."
     }
 
     // MARK: Content state machine
@@ -240,7 +240,7 @@ struct ShipperControlTower: View {
             EusoEmptyState(
                 systemImage: "eye",
                 title: "Nothing in flight yet",
-                subtitle: "Once you post your first load, the control tower lights up with live mode counts, exceptions, and activity.",
+                subtitle: "Once you post your first load, the control tower lights up with live mode counts, exceptions and activity.",
                 comingSoon: false
             )
             .padding(.horizontal, Space.s3)
@@ -341,7 +341,7 @@ struct ShipperControlTower: View {
             kpiDivider
             // EUSO-2108 — backend doesn't ship onTimeRate yet.
             kpiCell(label: "ON-TIME",
-                    value: "—",
+                    value: "-",
                     valueStyle: .neutral,
                     trail: "data pending",
                     trailColor: palette.textTertiary)
@@ -736,7 +736,7 @@ struct ShipperControlTower: View {
                 .font(.system(size: 11, weight: .heavy))
                 .foregroundStyle(LinearGradient.diagonal)
                 .frame(width: 20)
-            Text(r.label ?? "—")
+            Text(r.label ?? "-")
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
                 .lineLimit(1)

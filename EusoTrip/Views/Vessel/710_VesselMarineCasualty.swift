@@ -404,7 +404,7 @@ private struct VesselMarineCasualtyBody: View {
                 }
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(ev.label ?? "—")
+                Text(ev.label ?? "-")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                 if let ts = ev.ts, !ts.isEmpty {
@@ -446,7 +446,7 @@ private struct VesselMarineCasualtyBody: View {
                 // current getById projection — real empty state.
                 EusoEmptyState(systemImage: "checklist",
                                title: "No corrective actions",
-                               subtitle: "Add the survey, re-brief, and class follow-ups required to close the casualty.")
+                               subtitle: "Add the survey, re-brief and class follow-ups required to close the casualty.")
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(actions.enumerated()), id: \.offset) { idx, action in
@@ -471,7 +471,7 @@ private struct VesselMarineCasualtyBody: View {
                 .strokeBorder(Brand.warning, lineWidth: 1.8)
                 .frame(width: 18, height: 18)
             VStack(alignment: .leading, spacing: 2) {
-                Text(a.action ?? "—")
+                Text(a.action ?? "-")
                     .font(.system(size: 12.5, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                 Text(correctiveMeta(a))
@@ -492,7 +492,7 @@ private struct VesselMarineCasualtyBody: View {
         var parts: [String] = []
         if let who = a.assignedTo, !who.isEmpty { parts.append("owner: \(who)") }
         if let due = a.dueDate, !due.isEmpty { parts.append("due \(due)") }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
 
     // MARK: - Action row (File CG-2692 · Add action)

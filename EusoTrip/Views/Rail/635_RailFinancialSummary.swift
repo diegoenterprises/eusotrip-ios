@@ -191,7 +191,7 @@ private struct RailFinancialSummaryBody: View {
                 // Lead money figure + label + right cycle state
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(netCleared.map { money($0) } ?? "—")
+                        Text(netCleared.map { money($0) } ?? "-")
                             .font(.system(size: 26, weight: .bold))
                             .monospacedDigit()
                             .foregroundStyle(LinearGradient.diagonal)
@@ -241,7 +241,7 @@ private struct RailFinancialSummaryBody: View {
                 Text("NET")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(.white.opacity(0.85))
-                Text(netCleared.map { moneyK($0) } ?? "—")
+                Text(netCleared.map { moneyK($0) } ?? "-")
                     .font(.system(size: 22, weight: .semibold)).monospacedDigit()
                     .foregroundStyle(.white)
                     .lineLimit(1).minimumScaleFactor(0.6)
@@ -253,12 +253,12 @@ private struct RailFinancialSummaryBody: View {
 
             // DEMURRAGE — slate cell, warning numeral
             kpiCell(label: "DEMURRAGE",
-                    value: summary?.demurrage.map { moneyK(-abs($0)) } ?? "—",
+                    value: summary?.demurrage.map { moneyK(-abs($0)) } ?? "-",
                     valueColor: Color(hex: 0xFFB74D))
 
             // DISPUTE — slate cell, danger numeral
             kpiCell(label: "DISPUTE",
-                    value: summary?.dispute.map { moneyK($0) } ?? "—",
+                    value: summary?.dispute.map { moneyK($0) } ?? "-",
                     valueColor: Color(hex: 0xFF6B5E))
         }
     }
@@ -342,7 +342,7 @@ private struct RailFinancialSummaryBody: View {
                 EusoEmptyState(
                     systemImage: "list.bullet.rectangle",
                     title: "Itemized ledger unavailable",
-                    subtitle: "railShipments.getRailFinancialSummary is not yet served. Line-haul settlements, demurrage, and accessorial/FSC breakdowns appear here once it lands.",
+                    subtitle: "railShipments.getRailFinancialSummary is not yet served. Line-haul settlements, demurrage and accessorial/FSC breakdowns appear here once it lands.",
                     comingSoon: true
                 )
             }
@@ -381,7 +381,7 @@ private struct RailFinancialSummaryBody: View {
                     .foregroundStyle(pillColor)
                     .padding(.horizontal, 10).padding(.vertical, 4)
                     .background(Capsule().fill(pillColor.opacity(0.22)))
-                Text(amount.map { money($0) } ?? "—")
+                Text(amount.map { money($0) } ?? "-")
                     .font(.system(size: 14, weight: .bold)).monospacedDigit()
                     .foregroundStyle(amountColor)
             }
@@ -402,7 +402,7 @@ private struct RailFinancialSummaryBody: View {
                     .foregroundStyle(palette.textSecondary)
             }
             Text(netCleared.map { "Net \(money($0)) cleared · release \(summary?.heldBills ?? 0) held freight bills on recalc" }
-                 ?? "Net — · release held freight bills on recalc")
+                 ?? "Net - · release held freight bills on recalc")
                 .font(.system(size: 11))
                 .foregroundStyle(palette.textSecondary)
             Text("Payee \(summary?.payee ?? "BNSF Intermodal · Eusorone Technologies (DU)") · \(summary?.reference ?? "RAIL-260524-9C20")")
@@ -478,7 +478,7 @@ private struct RailFinancialSummaryBody: View {
                 "railShipments.approvePayout")
             await reload()
         } catch {
-            approveError = "Payout approval unavailable — railShipments.approvePayout is not yet served. "
+            approveError = "Payout approval unavailable - railShipments.approvePayout is not yet served. "
                 + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
         }
         approving = false

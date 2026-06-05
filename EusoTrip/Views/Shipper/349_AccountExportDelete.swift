@@ -65,7 +65,7 @@ private struct ExportDeleteBody: View {
     private var exportCard: some View {
         LifecycleCard {
             LifecycleSection(label: "DATA EXPORT", icon: "square.and.arrow.up")
-            Text("Receive a ZIP of your loads, settlements, contacts, and documents. Sent to your account email when ready.")
+            Text("Receive a ZIP of your loads, settlements, contacts and documents. Sent to your account email when ready.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
             Button { Task { await requestExport() } } label: {
                 HStack(spacing: 6) {

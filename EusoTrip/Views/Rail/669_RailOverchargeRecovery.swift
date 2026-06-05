@@ -365,8 +365,8 @@ private struct RailOverchargeRecoveryBody: View {
                 .frame(width: 40, height: 40)
                 .overlay(Image(systemName: "doc.text").font(.system(size: 16, weight: .regular)).foregroundStyle(status.tint))
             VStack(alignment: .leading, spacing: 4) {
-                Text(r.carrier ?? "—").font(.system(size: 14, weight: .bold)).foregroundStyle(palette.textPrimary)
-                Text("\(r.invoiceNumber ?? "—") · \(basis)")
+                Text(r.carrier ?? "-").font(.system(size: 14, weight: .bold)).foregroundStyle(palette.textPrimary)
+                Text("\(r.invoiceNumber ?? "-") · \(basis)")
                     .font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textSecondary).lineLimit(1)
                 stepper(status.stage)
             }
@@ -409,9 +409,9 @@ private struct RailOverchargeRecoveryBody: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("ESANG AI").font(.system(size: 9, weight: .heavy)).kerning(1.0)
                         .foregroundStyle(LinearGradient.diagonal)
-                    Text("Escalate \(invoice) — \(amount), \(carrier)\u{2019}s audit")
+                    Text("Escalate \(invoice) - \(amount), \(carrier)\u{2019}s audit")
                         .font(.system(size: 12, weight: .semibold)).foregroundStyle(palette.textPrimary)
-                    Text("it\u{2019}s your largest open recovery — push it to dispute next.")
+                    Text("it\u{2019}s your largest open recovery. Push it to dispute next.")
                         .font(.system(size: 12)).foregroundStyle(palette.textSecondary)
                 }
                 Spacer()

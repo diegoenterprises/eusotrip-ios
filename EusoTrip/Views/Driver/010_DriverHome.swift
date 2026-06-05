@@ -1051,13 +1051,13 @@ struct DriverHome: View {
                         origin: vm.originCity,
                         destination: vm.destCity,
                         miles: 0,
-                        equipment: "—",
+                        equipment: "-",
                         rate: 0,
                         rpm: 0,
                         pickupWindow: vm.pickupStatusPill,
                         broker: "Dispatch",
                         hazmat: false,
-                        weight: "—",
+                        weight: "-",
                         hotScore: 0,
                         originLat: 39.8283, originLng: -98.5795,
                         destLat: 39.8283, destLng: -98.5795
@@ -1317,7 +1317,7 @@ struct DriverHome: View {
                     Text("Enable location for live weather")
                         .font(EType.body.weight(.semibold))
                         .foregroundStyle(palette.textPrimary)
-                    Text("Grant location access to see local conditions, visibility, and route weather alerts.")
+                    Text("Grant location access to see local conditions, visibility and route weather alerts.")
                         .font(EType.micro)
                         .foregroundStyle(palette.textSecondary)
                         .multilineTextAlignment(.leading)
@@ -1377,7 +1377,7 @@ struct DriverHome: View {
                     Circle()
                         .fill(palette.textTertiary.opacity(0.5))
                         .frame(width: 5, height: 5)
-                    Text("Quiet on your lane — we'll let you know the moment tenders land.")
+                    Text("Quiet on your lane. We'll let you know the moment tenders land.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                         .lineLimit(2)
@@ -1488,7 +1488,7 @@ struct DriverHome: View {
                 HStack {
                     HStack(spacing: Space.s2) {
                         StatusPill(text: vm.pickupStatusPill, kind: .info)
-                        if vm.cargoWeightPill != "—" {
+                        if vm.cargoWeightPill != "-" {
                             StatusPill(text: vm.cargoWeightPill, kind: .neutral)
                         }
                         // 2026-05-17 — Driver Home active-load mode
@@ -1664,7 +1664,7 @@ struct DriverHome: View {
                             Text("No recent activity yet")
                                 .font(EType.bodyStrong)
                                 .foregroundStyle(palette.textPrimary)
-                            Text("Assignments, duty changes, and payouts will show up here.")
+                            Text("Assignments, duty changes and payouts will show up here.")
                                 .font(EType.caption)
                                 .foregroundStyle(palette.textSecondary)
                                 .lineLimit(2)
@@ -2269,7 +2269,7 @@ private struct HosTile: View {
     var label: String = "HOS DRIVE LEFT"
     @Environment(\.palette) var palette
 
-    /// Parse "7h 22m" → (hours, minutes). Falls back gracefully on "—" / bad input.
+    /// Parse "7h 22m" → (hours, minutes). Falls back gracefully on "-" / bad input.
     private var parts: (hours: String, minutes: String)? {
         let s = value.replacingOccurrences(of: " ", with: "")
         guard let hIdx = s.firstIndex(of: "h") else { return nil }
@@ -2381,7 +2381,7 @@ struct MileageTrackerWidget: View {
                     .lineLimit(2)
             } else {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(monthlyMiles.map { fmt($0) } ?? "—")
+                    Text(monthlyMiles.map { fmt($0) } ?? "-")
                         .font(.system(size: 36, weight: .heavy))
                         .foregroundStyle(LinearGradient.diagonal)
                         .monospacedDigit()
@@ -2738,7 +2738,7 @@ struct VehicleHealthWidget: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(palette.textSecondary)
                 } else {
-                    Text("Telematics pending — ELD sync not yet active.")
+                    Text("Telematics pending, ELD sync not yet active.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                         .padding(.top, 2)
@@ -3164,14 +3164,14 @@ struct CurrentRouteWidget: View {
                     .font(.system(size: 13, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                 HStack(alignment: .center, spacing: 4) {
-                    Text(l.pickupLocation?.cityState ?? "—")
+                    Text(l.pickupLocation?.cityState ?? "-")
                         .font(.system(size: 15, weight: .heavy))
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
                     Image(systemName: "arrow.right")
                         .font(.system(size: 11, weight: .heavy))
                         .foregroundStyle(LinearGradient.diagonal)
-                    Text(l.deliveryLocation?.cityState ?? "—")
+                    Text(l.deliveryLocation?.cityState ?? "-")
                         .font(.system(size: 15, weight: .heavy))
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
@@ -3181,14 +3181,14 @@ struct CurrentRouteWidget: View {
                     Image(systemName: "road.lanes")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(palette.textTertiary)
-                    Text(l.distanceValue > 0 ? "\(Int(l.distanceValue)) mi" : "— mi")
+                    Text(l.distanceValue > 0 ? "\(Int(l.distanceValue)) mi" : "- mi")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(palette.textSecondary)
                     Spacer(minLength: 0)
                     Image(systemName: "calendar")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(palette.textTertiary)
-                    Text(l.pickupDate ?? "—")
+                    Text(l.pickupDate ?? "-")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(palette.textTertiary)
                 }

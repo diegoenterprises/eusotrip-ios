@@ -478,7 +478,7 @@ private struct RailEquipmentPositionsBody: View {
                     .frame(width: 22, height: 14)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(car.carNumber ?? "—")
+                Text(car.carNumber ?? "-")
                     .font(.system(size: 14, weight: .bold)).foregroundStyle(palette.textPrimary)
                 if !sub.isEmpty {
                     Text(sub)
@@ -587,7 +587,7 @@ private struct RailEquipmentPositionsBody: View {
             if avgSpeed > 0 { return "\(avgSpeed) mph" }
         }
         if let h = car.dwellHours, h > 0 { return "\(Int(h.rounded()))h" }
-        return "—"
+        return "-"
     }
 
     // MARK: Data loading

@@ -250,7 +250,7 @@ private struct RailShipmentDetail: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()
-                Text(detail?.shipmentNumber ?? (loading ? "…" : "—"))
+                Text(detail?.shipmentNumber ?? (loading ? "…" : "-"))
                     .font(EType.mono(.micro))
                     .foregroundStyle(palette.textTertiary)
             }
@@ -421,7 +421,7 @@ private struct RailShipmentDetail: View {
 
     private var etaPillText: String {
         if let r = remainingDays { return r <= 0 ? "ARRIVING" : String(format: "ETA %@d", trimDays(r)) }
-        return "ETA —"
+        return "ETA -"
     }
     private var statusPillText: String {
         let cars = detail?.numberOfCars ?? 0
@@ -594,7 +594,7 @@ private struct RailShipmentDetail: View {
         case let (s?, i?) where s != i: return "\(s) · \(i)"
         case let (s?, _):               return s
         case let (_, i?):               return i
-        default:                        return "carrier —"
+        default:                        return "carrier -"
         }
     }
     private var linehaulLabelCaption: String {
@@ -602,7 +602,7 @@ private struct RailShipmentDetail: View {
         return n > 0 ? "LINEHAUL · \(n)-CAR BLOCK" : "LINEHAUL"
     }
     private var linehaulLabel: String {
-        guard let v = detail?.rate?.value else { return loading ? "…" : "—" }
+        guard let v = detail?.rate?.value else { return loading ? "…" : "-" }
         return dollars(v)
     }
     private var railSubLine: String {
@@ -615,7 +615,7 @@ private struct RailShipmentDetail: View {
         return "\(Int((progressFraction * 100).rounded()))%"
     }
     private var etaLabel: String {
-        guard let r = remainingDays else { return "ETA —" }
+        guard let r = remainingDays else { return "ETA -" }
         return r <= 0 ? "arriving" : String(format: "ETA %@d", trimDays(r))
     }
 
@@ -706,7 +706,7 @@ private struct RailShipmentDetail: View {
     private var commodityLine: String {
         if let c = nonEmpty(detail?.commodity) { return c }
         if let h = nonEmpty(detail?.hazmatClass) { return "Hazmat \(h)" }
-        return "Commodity —"
+        return "Commodity -"
     }
 
     /// On-time only when computable from real transit days (pre-mortem §5 —
@@ -762,7 +762,7 @@ private struct RailShipmentDetail: View {
         let cars = detail?.numberOfCars ?? detail?.waybills?.count ?? 0
         let consistTile = RailDocTile002(
             id: "consist", title: "Consist",
-            detail: cars > 0 ? "\(cars) car\(cars == 1 ? "" : "s")" : "—",
+            detail: cars > 0 ? "\(cars) car\(cars == 1 ? "" : "s")" : "-",
             state: cars > 0 ? "ready" : "none")
 
         let hz = nonEmpty(detail?.hazmatClass) ?? detail?.waybills?.first?.hazmatInfo?.`class`

@@ -40,7 +40,7 @@ private struct RankBidsBody: View {
                 if loading { LifecycleCard { Text("eSang ranking bids…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
                 else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
                 else if let r = result { picksCard(r) }
-                else { LifecycleCard { Text("No bids on this load yet — nothing to rank.").font(EType.caption).foregroundStyle(palette.textSecondary) } }
+                else { LifecycleCard { Text("No bids on this load yet - nothing to rank.").font(EType.caption).foregroundStyle(palette.textSecondary) } }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 56)

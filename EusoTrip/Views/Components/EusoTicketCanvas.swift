@@ -605,24 +605,24 @@ extension EusoTicketCanvas {
         footer: EusoTicketFooter
     ) {
         self.kind = kind
-        let ln = load?.loadNumber ?? "—"
+        let ln = load?.loadNumber ?? "-"
         self.loadNumber = ln
         self.bolNumber = bolNumberOverride ?? Self.bolFromLoadNumber(ln)
-        self.renderDate = renderDateOverride ?? Self.formatYMD(load?.pickupDate) ?? "—"
+        self.renderDate = renderDateOverride ?? Self.formatYMD(load?.pickupDate) ?? "-"
         self.loadShortId = Self.shortIdFromLoadNumber(ln)
 
-        self.fromCity = load?.pickupLocation?.cityState ?? "—"
-        self.fromAddress = Self.formatAddress(load?.origin) ?? "—"
-        self.fromTime = load?.pickupDate.flatMap(Self.formatLongDateTime).map { "Pickup \($0)" } ?? "—"
+        self.fromCity = load?.pickupLocation?.cityState ?? "-"
+        self.fromAddress = Self.formatAddress(load?.origin) ?? "-"
+        self.fromTime = load?.pickupDate.flatMap(Self.formatLongDateTime).map { "Pickup \($0)" } ?? "-"
 
-        self.toCity = load?.deliveryLocation?.cityState ?? "—"
-        self.toAddress = Self.formatAddress(load?.destination) ?? "—"
-        self.toTime = load?.deliveryDate.flatMap(Self.formatLongDateTime).map { "Deliver \($0)" } ?? "—"
+        self.toCity = load?.deliveryLocation?.cityState ?? "-"
+        self.toAddress = Self.formatAddress(load?.destination) ?? "-"
+        self.toTime = load?.deliveryDate.flatMap(Self.formatLongDateTime).map { "Deliver \($0)" } ?? "-"
 
         self.shipperOfRecord = shipperOfRecord
         self.carrier = carrier
 
-        self.commodityPrimary = Self.commodityLine(load: load) ?? "—"
+        self.commodityPrimary = Self.commodityLine(load: load) ?? "-"
         self.commodityMeta1 = Self.commodityMeta(load: load)
         self.commodityMeta2 = Self.equipmentMeta(load: load)
 
@@ -631,7 +631,7 @@ extension EusoTicketCanvas {
                           : (load?.hazmatClass != nil && load?.hazmatClass?.isEmpty == false ? "Hazmat" : nil)
         self.hazmatPG = (load?.hazmatClass != nil && load?.hazmatClass?.isEmpty == false) ? "PG II" : nil
 
-        self.rateDisplay = load?.rateDisplay ?? "—"
+        self.rateDisplay = load?.rateDisplay ?? "-"
         self.rateMeta = "all-in · prepaid · invoiced post-POD"
 
         self.signatureReceipt = signatureReceipt
@@ -689,12 +689,12 @@ extension EusoTicketCanvas {
     }
     private static func commodityLine(load: LoadsAPI.LoadDetail?) -> String? {
         guard let load = load else { return nil }
-        let name = load.commodityName ?? load.commodity ?? load.cargoType ?? "—"
+        let name = load.commodityName ?? load.commodity ?? load.cargoType ?? "-"
         return "\(name) · \(load.weightDisplay)"
     }
     private static func commodityMeta(load: LoadsAPI.LoadDetail?) -> String {
         if let un = load?.unNumber { return "UN\(un) · PG II · NMFC 145880" }
-        return "—"
+        return "-"
     }
     private static func equipmentMeta(load: LoadsAPI.LoadDetail?) -> String {
         if let eq = load?.equipmentType, !eq.isEmpty {

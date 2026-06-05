@@ -145,8 +145,8 @@ private struct ProfileBody: View {
                 }.buttonStyle(.plain)
             }
             Text("Profile").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            let tier = (gam?.tier ?? "—").uppercased()
-            let year = profile?.memberSinceYear.map { String($0) } ?? "—"
+            let tier = (gam?.tier ?? "-").uppercased()
+            let year = profile?.memberSinceYear.map { String($0) } ?? "-"
             Text("TIER \(tier) · MEMBER \(year)")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textSecondary)
         }
@@ -161,10 +161,10 @@ private struct ProfileBody: View {
                         Text(initialsFor(profile?.name)).font(.system(size: 20, weight: .heavy)).foregroundStyle(.white)
                     }
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(profile?.name ?? "—")
+                        Text(profile?.name ?? "-")
                             .font(.system(size: 18, weight: .heavy))
                             .foregroundStyle(palette.textPrimary)
-                        Text("\(profile?.companyName ?? "—") · owner-op")
+                        Text("\(profile?.companyName ?? "-") · owner-op")
                             .font(.caption).foregroundStyle(palette.textSecondary)
                     }
                     Spacer()
@@ -186,10 +186,10 @@ private struct ProfileBody: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("USDOT \(profile?.dotNumber ?? "—") · MC-\(profile?.mcNumber ?? "—")")
+                    Text("USDOT \(profile?.dotNumber ?? "-") · MC-\(profile?.mcNumber ?? "-")")
                         .font(.caption.monospaced())
                         .foregroundStyle(palette.textTertiary)
-                    Text(profile?.email ?? "—").font(.caption).foregroundStyle(palette.textTertiary)
+                    Text(profile?.email ?? "-").font(.caption).foregroundStyle(palette.textTertiary)
                 }
             }
         }
@@ -202,7 +202,7 @@ private struct ProfileBody: View {
         return LifecycleCard {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("POOL TIER · \((gam?.tier ?? "—").uppercased())")
+                    Text("POOL TIER · \((gam?.tier ?? "-").uppercased())")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(palette.textTertiary)
                     Spacer()
@@ -270,7 +270,7 @@ private struct ProfileBody: View {
     }
 
     private func initialsFor(_ name: String?) -> String {
-        guard let name = name?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return "—" }
+        guard let name = name?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return "-" }
         let parts = name.split(separator: " ").map(String.init)
         let first = parts.first?.first.map(String.init) ?? ""
         let last = parts.count > 1 ? (parts.last?.first.map(String.init) ?? "") : ""

@@ -227,7 +227,7 @@ enum HotZoneDemand {
         case .critical: return "CRITICAL"
         case .high:     return "HIGH"
         case .elevated: return "ELEVATED"
-        case .unknown:  return "—"
+        case .unknown:  return "-"
         }
     }
 
@@ -1404,7 +1404,7 @@ struct HotZonesWidget: View {
         return HStack(spacing: Space.s3) {
             pulseChip(
                 label: "AVG RATE",
-                value: pulse?.avgRate.map { String(format: "$%.2f", $0) } ?? "—",
+                value: pulse?.avgRate.map { String(format: "$%.2f", $0) } ?? "-",
                 trailing: "/mi",
                 tint: Brand.success
             )
@@ -1416,7 +1416,7 @@ struct HotZonesWidget: View {
             )
             pulseChip(
                 label: "L/T RATIO",
-                value: pulse?.avgRatio.map { String(format: "%.1fx", $0) } ?? "—",
+                value: pulse?.avgRatio.map { String(format: "%.1fx", $0) } ?? "-",
                 trailing: "",
                 tint: Brand.warning
             )
@@ -1543,7 +1543,7 @@ struct HotZonesWidget: View {
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
             }
-            Text(price.map(formatPrice) ?? "—")
+            Text(price.map(formatPrice) ?? "-")
                 .font(.system(size: 14, weight: .bold))
                 .monospacedDigit()
                 .foregroundStyle(palette.textPrimary)
@@ -2415,13 +2415,13 @@ struct HotZonesListSheet: View {
     private func summaryStrip(_ pulse: HotZonesMarketPulse) -> some View {
         HStack(spacing: Space.s2) {
             summaryTile(label: "AVG RATE",
-                        value: pulse.avgRate.map { String(format: "$%.2f", $0) } ?? "—",
+                        value: pulse.avgRate.map { String(format: "$%.2f", $0) } ?? "-",
                         tint: Brand.success)
             summaryTile(label: "CRITICAL",
                         value: pulse.criticalZones.map(String.init) ?? "0",
                         tint: Brand.danger)
             summaryTile(label: "L/T",
-                        value: pulse.avgRatio.map { String(format: "%.1fx", $0) } ?? "—",
+                        value: pulse.avgRatio.map { String(format: "%.1fx", $0) } ?? "-",
                         tint: Brand.warning)
         }
     }

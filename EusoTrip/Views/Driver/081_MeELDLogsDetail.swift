@@ -538,7 +538,7 @@ struct MeELDLogsDetail: View {
                             signature: signatureText.trimmingCharacters(in: .whitespaces)
                         )
                         showCertifySheet = false
-                        flashToast(ok ? "Log certified" : "Couldn't certify — try again")
+                        flashToast(ok ? "Log certified" : "Couldn't certify - try again")
                     }
                 } label: {
                     Text("Certify \(longDayLabel(selectedDate))")
@@ -620,7 +620,7 @@ struct MeELDLogsDetail: View {
                     Task {
                         let ok = await store.addRemark(text, entryId: entry.id)
                         remarkTarget = nil
-                        flashToast(ok ? "Remark added" : "Couldn't add remark — try again")
+                        flashToast(ok ? "Remark added" : "Couldn't add remark - try again")
                     }
                 } label: {
                     Text("Save remark")

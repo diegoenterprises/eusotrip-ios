@@ -612,21 +612,21 @@ private struct TevrPreviewHost: View {
             ),
             TimelineEventNode(
                 id: "evt-2",
-                title: "AEI scan — Fort Madison",
+                title: "AEI scan - Fort Madison",
                 detail: "Fort Madison, IA · 78 cars confirmed",
                 timestamp: "10:48 CT",
                 state: .done
             ),
             TimelineEventNode(
                 id: "evt-3",
-                title: "In transit — Galesburg",
+                title: "In transit - Galesburg",
                 detail: "tankcar UN1203 Class 3 monitored · no exceptions",
                 timestamp: "now",
                 state: .current
             ),
             TimelineEventNode(
                 id: "evt-4",
-                title: "Hold — interchange congestion",
+                title: "Hold - interchange congestion",
                 detail: "Cameron, IL · awaiting BNSF crew",
                 timestamp: "12:30 CT",
                 state: .hold

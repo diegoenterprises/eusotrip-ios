@@ -172,7 +172,7 @@ struct IDVLivenessSheet: View {
             CredentialScanCard(
                 credentialType: "drivers_license",
                 title: "Scan your photo ID",
-                subtitle: "Driver's license, passport, or state ID. We read it on-device and submit the reference for verification."
+                subtitle: "Driver's license, passport or state ID. We read it on-device and submit the reference for verification."
             ) { scanned in
                 // The OCR envelope returns the extracted document number
                 // (identifier) and the credential-type code. We forward the
@@ -565,8 +565,8 @@ struct IDVLivenessSheet: View {
         case .danger:  sub = "Document verification failed."
         default:
             sub = (r.status?.lowercased() == "provider_unavailable")
-                ? "Verification provider unavailable — manual review required."
-                : "Awaiting verification — manual review may be required."
+                ? "Verification provider unavailable. Manual review required."
+                : "Awaiting verification. Manual review may be required."
         }
         return VerdictState(title: "Document verification", subtitle: sub,
                             icon: "doc.text.magnifyingglass", color: color,
@@ -585,7 +585,7 @@ struct IDVLivenessSheet: View {
             sub = "Live capture confirmed (PAD L2)."
         } else if r.livenessPassed == false {
             color = Brand.danger; kind = .danger; pill = "Failed"
-            sub = "Liveness check failed — presentation attack suspected."
+            sub = "Liveness check failed. Presentation attack suspected."
         } else {
             // null — fall back to status, but never green.
             let (_, k, p) = severity(for: r.status)
@@ -593,8 +593,8 @@ struct IDVLivenessSheet: View {
             kind = (k == .danger) ? .danger : .warning
             pill = (k == .danger) ? p : "Pending review"
             sub = (r.status?.lowercased() == "provider_unavailable")
-                ? "Liveness provider unavailable — manual review required."
-                : "Liveness inconclusive — manual review required."
+                ? "Liveness provider unavailable. Manual review required."
+                : "Liveness inconclusive. Manual review required."
         }
         return VerdictState(title: "Liveness (PAD L2)", subtitle: sub,
                             icon: "faceid", color: color,
@@ -636,13 +636,13 @@ struct IDVLivenessSheet: View {
         case "provider_unavailable":
             return VerdictState(
                 title: "Provider unavailable",
-                subtitle: "A verification provider was unavailable. Route to manual review — do not auto-clear.",
+                subtitle: "A verification provider was unavailable. Route to manual review, do not auto-clear.",
                 icon: "exclamationmark.triangle.fill", color: Brand.warning,
                 pillText: "Provider unavailable", pillKind: .warning)
         default: // pending / incomplete
             return VerdictState(
                 title: "Pending review",
-                subtitle: "Checks returned without a confirmed pass. Route to manual review — do not auto-clear.",
+                subtitle: "Checks returned without a confirmed pass. Route to manual review, do not auto-clear.",
                 icon: "clock.fill", color: Brand.warning,
                 pillText: "Pending review", pillKind: .warning)
         }
@@ -650,7 +650,7 @@ struct IDVLivenessSheet: View {
 
     private func idvRows(_ r: KycAPI.IdvResult) -> [(String, String)] {
         var rows: [(String, String)] = []
-        rows.append(("Status", (r.status ?? "—").capitalized))
+        rows.append(("Status", (r.status ?? "-").capitalized))
         if let v = r.vendor { rows.append(("Provider", v)) }
         if let s = r.score { rows.append(("Match score", "\(s)")) }
         if let rec = r.recommendation { rows.append(("Recommendation", rec.capitalized)) }
@@ -664,7 +664,7 @@ struct IDVLivenessSheet: View {
         } else {
             rows.append(("Liveness", "Inconclusive"))
         }
-        rows.append(("Status", (r.status ?? "—").capitalized))
+        rows.append(("Status", (r.status ?? "-").capitalized))
         if let v = r.vendor { rows.append(("Provider", v)) }
         if let s = r.score { rows.append(("Confidence", "\(s)")) }
         if let rec = r.recommendation { rows.append(("Recommendation", rec.capitalized)) }

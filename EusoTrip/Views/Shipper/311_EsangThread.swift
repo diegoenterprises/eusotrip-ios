@@ -316,7 +316,7 @@ private struct eSangThreadBody: View {
         // Guard: empty conversationId means we have no thread to send
         // to. Surface a real error instead of firing into the void.
         guard !resolvedConversationId.isEmpty else {
-            sendError = "No conversation selected — open a load thread first."
+            sendError = "No conversation selected - open a load thread first."
             sending = false
             return
         }

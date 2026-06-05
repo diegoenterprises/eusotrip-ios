@@ -282,7 +282,7 @@ struct MessagesScreen: View {
             loadError = "Please sign in to load messages."
             didFirstLoad = true
         } catch {
-            loadError = "Couldn't refresh messages — \(error.localizedDescription)"
+            loadError = "Couldn't refresh messages, \(error.localizedDescription)"
             didFirstLoad = true
         }
     }
@@ -315,7 +315,7 @@ struct MessagesScreen: View {
                 }
                 lastDeletedSnapshot = nil
             }
-            loadError = "Couldn't delete — \(error.localizedDescription)"
+            loadError = "Couldn't delete, \(error.localizedDescription)"
         }
     }
 
@@ -329,7 +329,7 @@ struct MessagesScreen: View {
             Text("No conversations yet")
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
-            Text("Start a direct chat with dispatch, a broker, or another driver — or spin up a group for your lane.")
+            Text("Start a direct chat with dispatch, a broker or another driver, or spin up a group for your lane.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)

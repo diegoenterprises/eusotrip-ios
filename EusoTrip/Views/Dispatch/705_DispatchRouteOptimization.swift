@@ -127,10 +127,10 @@ private struct RouteBody: View {
         } else {
             ForEach(pins) { p in
                 LifecycleCard {
-                    LifecycleSection(label: (p.loadNumber ?? "—").uppercased(), icon: "shippingbox")
+                    LifecycleSection(label: (p.loadNumber ?? "-").uppercased(), icon: "shippingbox")
                     LifecycleRow(label: "Driver",   value: dashIfEmpty(p.driverName))
                     LifecycleRow(label: "Lat/Lng",  value: latlng(p))
-                    LifecycleRow(label: "Speed",    value: p.speed.map { String(format: "%.0f mph", $0) } ?? "—")
+                    LifecycleRow(label: "Speed",    value: p.speed.map { String(format: "%.0f mph", $0) } ?? "-")
                     LifecycleRow(label: "Last ping",value: humanISO(p.lastPingISO))
                     LifecycleRow(label: "ETA",      value: humanISO(p.etaISO))
                 }
@@ -139,7 +139,7 @@ private struct RouteBody: View {
     }
 
     private func latlng(_ p: FleetPin) -> String {
-        guard let lat = p.latitude, let lng = p.longitude else { return "—" }
+        guard let lat = p.latitude, let lng = p.longitude else { return "-" }
         return String(format: "%.3f, %.3f", lat, lng)
     }
 

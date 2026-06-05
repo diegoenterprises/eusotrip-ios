@@ -57,7 +57,7 @@ private struct DriverBoardBody: View {
                 Text("DISPATCH · DRIVER BOARD").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Live driver board").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("Statuses, loads, HOS — refreshing on pull-down.").font(EType.caption).foregroundStyle(palette.textSecondary)
+            Text("Statuses, loads, HOS - refreshing on pull-down.").font(EType.caption).foregroundStyle(palette.textSecondary)
         }
     }
 
@@ -89,7 +89,7 @@ private struct DriverBoardBody: View {
                     LifecycleRow(label: "Status",   value: d.status.uppercased())
                     LifecycleRow(label: "Load",     value: dashIfEmpty(d.load))
                     LifecycleRow(label: "Location", value: dashIfEmpty(d.location))
-                    LifecycleRow(label: "HOS left", value: d.hoursRemaining.map { String(format: "%.1fh", $0) } ?? "—")
+                    LifecycleRow(label: "HOS left", value: d.hoursRemaining.map { String(format: "%.1fh", $0) } ?? "-")
                 }
             }
         }

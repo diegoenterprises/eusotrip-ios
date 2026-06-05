@@ -327,7 +327,7 @@ private struct VesselReeferAlertConsoleBody821: View {
                 val = band == .recovered ? String(format: "%.1f°", celsius(t))
                                          : String(format: "%@%.1f°", dev >= 0 ? "+" : "", dev)
             } else {
-                val = band == .warning ? "ajar" : "—"
+                val = band == .warning ? "ajar" : "-"
             }
             return AlertUnit821(
                 band: band,

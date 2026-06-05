@@ -113,7 +113,7 @@ private struct ShipperLoadRow: Identifiable, Hashable {
             .replacingOccurrences(of: " → ", with: " → ")
         // Mono meta line per wireframe canon:
         //   `LD-260427-XXXXXXXXXX · MC-306 · 50k lb · 239 mi`
-        // Composed defensively — drop empty parts, no "—" filler.
+        // Composed defensively — drop empty parts, no "-" filler.
         let parts = [
             m.loadNumber,
             m.product.isEmpty ? m.equipment : m.product,
@@ -698,7 +698,7 @@ struct ShipperLoads: View {
         EusoEmptyState(
             systemImage: "magnifyingglass",
             title: "No matches",
-            subtitle: "Try a different load number, origin, or destination."
+            subtitle: "Try a different load number, origin or destination."
         )
         .padding(Space.s4)
     }

@@ -36,11 +36,11 @@ struct BeatComplete: View {
     private let fallbackClock        = "09:30"
     private let fallbackOffDutyTotal = "34:00"
     private let fallbackHosLine      = "HOS 0/11/14"
-    private let fallbackGreeting     = "—"
+    private let fallbackGreeting     = "-"
     private let fallbackCadence      = "New tender waiting · depart 10:15 · weather 42°F scattered"
     private let fallbackDate         = "2026-04-19"
     private let fallbackDepart       = "10:15 from yard"
-    private let fallbackEta          = "—"
+    private let fallbackEta          = "-"
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -167,19 +167,19 @@ struct BeatComplete: View {
     // The previous fixture switch leaked third-party customer brand
     // identifiers (a big-box DC, distributor, fertilizer plant, port basin,
     // etc.) into the production-path UI, which is a ledger-hygiene
-    // violation. We render "—" for the cases on the deferred-low-risk path
+    // violation. We render "-" for the cases on the deferred-low-risk path
     // (.reefer, .dryVan) per the 111th firing's recommendation; the
     // remaining vertical fixtures stay until the broader LifecycleProductContext
     // rewrite (pending; see 111th firing report Branch C / explicit non-recommendation).
     private var legLabel: String {
         switch ctx.product {
         case .hazmatTanker, .vesselTanker:  return "Univar Curtis Bay → Yara York"
-        case .reefer:                       return "—"
+        case .reefer:                       return "-"
         case .flatbed:                      return "Birmingham Steel → Houston yard"
         case .container, .vesselContainer:  return "Curtis Bay port → Norfolk ramp"
         case .railIntermodal:               return "Ramp → Curtis Bay port"
         case .railBulk, .vesselBulk:        return "Spur 3 → Texas City"
-        case .dryVan:                       return "—"
+        case .dryVan:                       return "-"
         }
     }
 

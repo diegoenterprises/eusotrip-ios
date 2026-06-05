@@ -235,7 +235,7 @@ private struct DispatcherProfileBody: View {
             HStack(alignment: .top, spacing: 0) {
                 statCell("FLEET", "\(p.fleetCount) truck\(p.fleetCount == 1 ? "" : "s")")
                 statCell("ROSTER", "\(p.rosterCount) driver\(p.rosterCount == 1 ? "" : "s")")
-                statCell("BASE", p.baseLabel ?? "—")
+                statCell("BASE", p.baseLabel ?? "-")
             }
             .padding(.top, 14)
         }
@@ -247,7 +247,7 @@ private struct DispatcherProfileBody: View {
         var bits: [String] = []
         if let d = p.dotNumber, !d.isEmpty { bits.append("USDOT \(d)") }
         if let m = p.mcNumber, !m.isEmpty { bits.append("MC \(m)") }
-        return bits.isEmpty ? "—" : bits.joined(separator: " · ")
+        return bits.isEmpty ? "-" : bits.joined(separator: " · ")
     }
 
     private func pill(_ text: String, fill: AnyShapeStyle, fg: Color, bordered: Bool = false) -> some View {
@@ -421,7 +421,7 @@ private struct DispatcherProfileBody: View {
                     .font(.system(size: 11, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text(value.map(String.init) ?? "—")
+                Text(value.map(String.init) ?? "-")
                     .font(.system(size: 16, weight: .bold, design: .monospaced))
                     .foregroundStyle(danger ? Brand.danger : palette.textPrimary)
             }
@@ -457,7 +457,7 @@ private struct DispatcherProfileBody: View {
             let d: DeskStats402 = try await EusoTripAPI.shared.queryNoInput("dispatch.getDashboardStats")
             self.desk = d
         } catch {
-            self.desk = nil   // rows render "—" rather than a fabricated number
+            self.desk = nil   // rows render "-" rather than a fabricated number
         }
         loading = false
     }

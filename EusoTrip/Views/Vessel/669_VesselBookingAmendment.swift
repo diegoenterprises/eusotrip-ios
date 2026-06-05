@@ -125,7 +125,7 @@ private struct VesselBookingAmendmentBody: View {
                 } else if !hasHistory {
                     EusoEmptyState(systemImage: "doc.text.magnifyingglass",
                                    title: "No amendments yet",
-                                   subtitle: "amendmentHistory returned an empty ledger for this booking — nothing has been proposed, approved, or rejected. Propose a change to start the trail.")
+                                   subtitle: "amendmentHistory returned an empty ledger for this booking, nothing has been proposed, approved or rejected. Propose a change to start the trail.")
                     ctaRow
                 } else {
                     hero
@@ -290,12 +290,12 @@ private struct VesselBookingAmendmentBody: View {
 
     private var esangTitle: String {
         if nRejected > 0 { return "ESang: \(nRejected) amendment\(nRejected == 1 ? "" : "s") were rejected by the carrier" }
-        if nApproved > 0 { return "ESang: \(nApproved) amendment\(nApproved == 1 ? "" : "s") approved — booking is current" }
+        if nApproved > 0 { return "ESang: \(nApproved) amendment\(nApproved == 1 ? "" : "s") approved - booking is current" }
         return "ESang: amendment proposed, awaiting carrier"
     }
     private var esangSubtitle: String {
         if nRejected > 0 { return "re-propose with the carrier's counter, or revert to the confirmed booking" }
-        if nApproved > 0 { return "no open changes — the confirmed booking matches the amendment" }
+        if nApproved > 0 { return "no open changes - the confirmed booking matches the amendment" }
         return "the carrier has not yet approved or rejected this change"
     }
 

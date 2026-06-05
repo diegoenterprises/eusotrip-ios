@@ -415,7 +415,7 @@ struct DeliveryPODCaptureView: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 11, weight: .heavy))
                         .foregroundStyle(Brand.danger)
-                    Text("Broken-seal incident — catalyst dispatch + customs broker notified at submit.")
+                    Text("Broken-seal incident, catalyst dispatch + customs broker notified at submit.")
                         .font(.system(size: 10, weight: .heavy)).tracking(0.2)
                         .foregroundStyle(Brand.danger)
                         .fixedSize(horizontal: false, vertical: true)
@@ -927,7 +927,7 @@ struct DeliveryPODCaptureView: View {
             let resp = try await EusoTripAPI.shared.documentRouter.classifyAndRoute(
                 documentBase64: base64,
                 mimeType: .jpeg,
-                callerContext: "driver delivery proof_of_delivery — extract signature-block presence, receiver name, barcode/PRO number, weight confirmation off the signed BOL"
+                callerContext: "driver delivery proof_of_delivery - extract signature-block presence, receiver name, barcode/PRO number, weight confirmation off the signed BOL"
             )
             docRead = PODDocRead(response: resp)
         } catch {
@@ -1012,7 +1012,7 @@ struct DeliveryPODCaptureView: View {
                 Text("OS&D notes (optional)")
                     .font(EType.caption).tracking(0.4)
                     .foregroundStyle(palette.textTertiary)
-                TextField("over / short / damage — leave blank if clean",
+                TextField("over / short / damage - leave blank if clean",
                           text: $notes,
                           axis: .vertical)
                     .lineLimit(3, reservesSpace: true)

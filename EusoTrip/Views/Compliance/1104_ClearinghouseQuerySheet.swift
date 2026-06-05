@@ -15,9 +15,9 @@
 //      - "registered_pre_employment" / "consent_filed" / "verified" → green
 //        "Consent on file" only when the server actually confirms it.
 //      - null / "pending" / "provider_unavailable" → neutral "Pending review"
-//        / "Provider unavailable — manual review" with Brand.warning. NEVER a
+//        / "Provider unavailable - manual review" with Brand.warning. NEVER a
 //        fake success.
-//      - any status containing "prohibit" → RED "PROHIBITED — dispatch blocked".
+//      - any status containing "prohibit" → RED "PROHIBITED - dispatch blocked".
 //      - "not_enrolled" → neutral "Driver not enrolled in Clearinghouse".
 //
 //  Push-nav mandate: this is sheet content, presented via .sheet by the
@@ -63,11 +63,11 @@ struct ClearinghouseQuerySheet: View {
         var detail: String {
             switch self {
             case .preEmployment:
-                return "Full query — required before the driver performs any safety-sensitive function. Returns all violation data on file."
+                return "Full query. Required before the driver performs any safety-sensitive function. Returns all violation data on file."
             case .annual:
-                return "Limited annual query — confirms whether any new information exists in the driver's record over the prior 12 months."
+                return "Limited annual query. Confirms whether any new information exists in the driver's record over the prior 12 months."
             case .limited:
-                return "One-off limited query — checks only for the presence of new information; does not return the underlying records."
+                return "One-off limited query. Checks only for the presence of new information; does not return the underlying records."
             }
         }
     }
@@ -233,9 +233,9 @@ struct ClearinghouseQuerySheet: View {
         var title: String {
             switch self {
             case .onFile:       return "Consent on file"
-            case .prohibited:   return "PROHIBITED — dispatch blocked"
+            case .prohibited:   return "PROHIBITED - dispatch blocked"
             case .notEnrolled:  return "Driver not enrolled"
-            case .providerDown: return "Provider unavailable — manual review"
+            case .providerDown: return "Provider unavailable - manual review"
             case .pending:      return "Pending review"
             }
         }
@@ -270,7 +270,7 @@ struct ClearinghouseQuerySheet: View {
             case .providerDown:
                 return "The Clearinghouse query provider did not respond. The consent is recorded; a compliance officer must complete the query manually before dispatch."
             case .pending:
-                return "Consent recorded. The query result is not yet available — a compliance officer must verify the return before this driver is cleared to dispatch."
+                return "Consent recorded. The query result is not yet available. A compliance officer must verify the return before this driver is cleared to dispatch."
             }
         }
     }

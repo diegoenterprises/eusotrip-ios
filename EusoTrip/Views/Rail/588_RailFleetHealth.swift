@@ -185,7 +185,7 @@ private struct RailFleetHealthBody: View {
     // MARK: Derived
 
     private var availLabel: String {
-        guard let pct = summary?.availabilityPct else { return "—" }
+        guard let pct = summary?.availabilityPct else { return "-" }
         return "\(Int(pct))%"
     }
     private var healthyCount: Int  { summary?.healthyCount  ?? 0 }
@@ -383,7 +383,7 @@ private struct RailFleetHealthBody: View {
                     .foregroundColor(Brand.blue)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(cls.railcarNumber ?? "—")
+                Text(cls.railcarNumber ?? "-")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(palette.textPrimary)
                 if let mech = cls.mechanicalCondition {
@@ -471,7 +471,7 @@ private struct RailFleetHealthBody: View {
         case "FAIR":     return ("FAIR",     Brand.info)
         case "POOR":     return ("POOR",     Brand.warning)
         case "CRITICAL": return ("CRITICAL", Brand.danger)
-        default:         return ("—",        Brand.info)
+        default:         return ("-",        Brand.info)
         }
     }
 

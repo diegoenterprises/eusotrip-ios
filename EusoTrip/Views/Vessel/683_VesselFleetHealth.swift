@@ -195,13 +195,13 @@ private struct VesselFleetHealthBody: View {
         if let imo = asset?.imoNumber ?? particulars?.imoNumber, !imo.isEmpty {
             return imo.uppercased().hasPrefix("IMO") ? imo : "IMO \(imo)"
         }
-        return "IMO —"
+        return "IMO -"
     }
 
     // MARK: - Hero card (gradient rim + composite ring)
 
     private var heroCard: some View {
-        let vesselName = asset?.name ?? particulars?.name ?? "—"
+        let vesselName = asset?.name ?? particulars?.name ?? "-"
         let teu = asset?.teuCapacity
         let classSoc = asset?.classificationSociety ?? particulars?.classification
         let built = asset?.yearBuilt ?? particulars?.yearBuilt
@@ -258,7 +258,7 @@ private struct VesselFleetHealthBody: View {
                 .frame(width: 56, height: 56)
                 .rotationEffect(.degrees(-90))
             VStack(spacing: 0) {
-                Text(score.map(String.init) ?? "—")
+                Text(score.map(String.init) ?? "-")
                     .font(.system(size: 17, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                     .monospacedDigit()
@@ -280,7 +280,7 @@ private struct VesselFleetHealthBody: View {
         if let imo, !imo.isEmpty { parts.append(imo.uppercased().hasPrefix("IMO") ? imo : "IMO \(imo)") }
         if let teu { parts.append("\(teu.formatted(.number.grouping(.automatic))) TEU") }
         if let classSoc, !classSoc.isEmpty { parts.append(classSoc.uppercased()) }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
 
     private func originLine(built: Int?) -> String {
@@ -297,7 +297,7 @@ private struct VesselFleetHealthBody: View {
                 Text("HEALTH")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(.white.opacity(0.85))
-                Text(compositeScore.map(String.init) ?? "—")
+                Text(compositeScore.map(String.init) ?? "-")
                     .font(.system(size: 28, weight: .semibold))
                     .foregroundStyle(.white).monospacedDigit()
                 Text("composite")
@@ -338,7 +338,7 @@ private struct VesselFleetHealthBody: View {
 
     private var surveyValue: String {
         if let d = summary?.avgDaysSinceService { return "\(d)d" }
-        return "—"
+        return "-"
     }
 
     private var classSubLine: String {
@@ -598,7 +598,7 @@ private struct VesselFleetHealthBody: View {
     // MARK: - Derived condition values (all from live endpoints)
 
     private var compositeScore: Int? {
-        // Composite reads off the maintenance health rollup; nil renders "—"
+        // Composite reads off the maintenance health rollup; nil renders "-"
         // rather than a fabricated 92.
         summary?.healthScore
     }

@@ -402,7 +402,7 @@ struct TheHaulLeaderboard: View {
                 } else {
                     // Server didn't include a delta for this cut — render
                     // a neutral caption instead of a fabricated arrow.
-                    Text("—")
+                    Text("-")
                         .font(EType.caption.monospacedDigit())
                         .foregroundColor(palette.textTertiary)
                 }
@@ -449,7 +449,7 @@ struct TheHaulLeaderboard: View {
     private func deltaLabel(delta: Int) -> String {
         if delta > 0 { return "▲ \(delta) vs last \(selectedPeriod.shortUnit)" }
         if delta < 0 { return "▼ \(abs(delta)) vs last \(selectedPeriod.shortUnit)" }
-        return "— unchanged"
+        return "- unchanged"
     }
 
     // MARK: - Shared loading / error helpers

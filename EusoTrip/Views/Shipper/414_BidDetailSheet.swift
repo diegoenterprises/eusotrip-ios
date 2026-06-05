@@ -54,7 +54,7 @@ private struct BidDetailBody: View {
                 Image(systemName: "hand.raised.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("SHIPPER · BID DETAIL").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
-            Text(bid?.catalystName ?? "—").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            Text(bid?.catalystName ?? "-").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
         }
     }
 
@@ -76,7 +76,7 @@ private struct BidDetailBody: View {
     private func scoreCard(_ b: ShipperAPI.Bid) -> some View {
         LifecycleCard {
             LifecycleSection(label: "SAFETY + SCORE", icon: "shield")
-            LifecycleRow(label: "Safety score", value: b.safetyScore > 0 ? String(format: "%.2f", b.safetyScore) : "—")
+            LifecycleRow(label: "Safety score", value: b.safetyScore > 0 ? String(format: "%.2f", b.safetyScore) : "-")
             if b.recommended {
                 Text("ESANG ★ RECOMMENDED").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white)
                     .padding(.horizontal, 8).padding(.vertical, 3)

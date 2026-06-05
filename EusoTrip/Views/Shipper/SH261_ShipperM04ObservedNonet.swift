@@ -167,7 +167,7 @@ private struct ShipperM04ObservedBody: View {
 
     // MARK: - Dynamic display helpers
 
-    private var loadNumberDisplay: String { load?.loadNumber ?? "—" }
+    private var loadNumberDisplay: String { load?.loadNumber ?? "-" }
     private var laneDisplay: String? {
         guard let p = load?.pickupCity, let d = load?.destCity else { return nil }
         return "\(p) → \(d)"
@@ -254,7 +254,7 @@ private struct ShipperM04ObservedBody: View {
             LifecycleCard {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("OBSERVED QUOTES").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                    Text("No bids yet — carriers will surface offers as they tender on this load.")
+                    Text("No bids yet. Carriers will surface offers as they tender on this load.")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -322,7 +322,7 @@ private struct ShipperM04ObservedBody: View {
         if let dist = distanceDisplay { contextBits.append(dist) }
         if let t = targetRate { contextBits.append("target \(usd(t))") }
         let contextLine = contextBits.joined(separator: " · ")
-        let avatar = load?.shipper?.initials ?? load?.shipper?.name.map { initials($0) } ?? "—"
+        let avatar = load?.shipper?.initials ?? load?.shipper?.name.map { initials($0) } ?? "-"
         return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
@@ -344,7 +344,7 @@ private struct ShipperM04ObservedBody: View {
             return t - b.amount
         }()
         let savingsCaption: String = {
-            guard let s = savings else { return "vs target —" }
+            guard let s = savings else { return "vs target -" }
             return s >= 0 ? "−\(usd(abs(s))) vs target" : "+\(usd(abs(s))) over target"
         }()
         let kpis: [(String, String, String, Color)] = {
@@ -352,43 +352,43 @@ private struct ShipperM04ObservedBody: View {
             case .freshPosted:
                 return [
                     ("STATE",   "POSTED",                        "bids window open",                        .green),
-                    ("TARGET",  target.map { usd($0) } ?? "—",   "shipper target",                          .blue),
+                    ("TARGET",  target.map { usd($0) } ?? "-",   "shipper target",                          .blue),
                     ("QUOTES",  "\(ladder.count)",               ladder.isEmpty ? "awaiting tenders" : "live carriers", .blue),
-                    ("DIST",    distanceDisplay ?? "—",          dashIfEmpty(load?.equipmentType),          .blue),
+                    ("DIST",    distanceDisplay ?? "-",          dashIfEmpty(load?.equipmentType),          .blue),
                 ]
             case .firstQuote, .secondQuote, .thirdQuote, .fourthQuote:
                 return [
-                    ("LEAD",    lead.map { initials($0.catalystName) } ?? "—",  lead?.catalystName ?? "no bids yet", .green),
-                    ("BEST",    lead.map { usd($0.amount) } ?? "—",             savingsCaption,                      .green),
+                    ("LEAD",    lead.map { initials($0.catalystName) } ?? "-",  lead?.catalystName ?? "no bids yet", .green),
+                    ("BEST",    lead.map { usd($0.amount) } ?? "-",             savingsCaption,                      .green),
                     ("QUOTES",  "\(ladder.count)",                              "live carriers",                     .blue),
-                    ("LANE",    distanceDisplay ?? "—",                         dashIfEmpty(load?.equipmentType),    .blue),
+                    ("LANE",    distanceDisplay ?? "-",                         dashIfEmpty(load?.equipmentType),    .blue),
                 ]
             case .awarded:
                 return [
-                    ("WINNER",  lead.map { initials($0.catalystName) } ?? "—",  lead.map { "\($0.catalystName) · \(usd($0.amount))" } ?? "pending feed", .green),
-                    ("BEST",    lead.map { usd($0.amount) } ?? "—",             savingsCaption,                      .green),
+                    ("WINNER",  lead.map { initials($0.catalystName) } ?? "-",  lead.map { "\($0.catalystName) · \(usd($0.amount))" } ?? "pending feed", .green),
+                    ("BEST",    lead.map { usd($0.amount) } ?? "-",             savingsCaption,                      .green),
                     ("STATE",   "AWARDED",                                      "tender accept",                     .green),
                     ("QUOTES",  "\(ladder.count)",                              "bids observed",                     .blue),
                 ]
             case .onSite:
                 return [
                     ("STATE",   "ON-SITE",                                      lead?.catalystName ?? "awarded carrier", .green),
-                    ("LANE",    distanceDisplay ?? "—",                         laneDisplay ?? "—",                  .blue),
-                    ("AMOUNT",  lead.map { usd($0.amount) } ?? "—",             savingsCaption,                      .green),
+                    ("LANE",    distanceDisplay ?? "-",                         laneDisplay ?? "-",                  .blue),
+                    ("AMOUNT",  lead.map { usd($0.amount) } ?? "-",             savingsCaption,                      .green),
                     ("QUOTES",  "\(ladder.count)",                              "bids observed",                     .blue),
                 ]
             case .inTransit:
                 return [
                     ("STATE",   "ROLLING",                                      lead?.catalystName ?? "awarded carrier", .green),
-                    ("LANE",    distanceDisplay ?? "—",                         laneDisplay ?? "—",                  .blue),
-                    ("AMOUNT",  lead.map { usd($0.amount) } ?? "—",             savingsCaption,                      .green),
+                    ("LANE",    distanceDisplay ?? "-",                         laneDisplay ?? "-",                  .blue),
+                    ("AMOUNT",  lead.map { usd($0.amount) } ?? "-",             savingsCaption,                      .green),
                     ("QUOTES",  "\(ladder.count)",                              "bids observed",                     .blue),
                 ]
             case .atDelivery:
                 return [
                     ("STATE",   "ARRIVED",                                      lead?.catalystName ?? "awarded carrier", .green),
-                    ("LANE",    distanceDisplay ?? "—",                         laneDisplay ?? "—",                  .green),
-                    ("AMOUNT",  lead.map { usd($0.amount) } ?? "—",             savingsCaption,                      .green),
+                    ("LANE",    distanceDisplay ?? "-",                         laneDisplay ?? "-",                  .green),
+                    ("AMOUNT",  lead.map { usd($0.amount) } ?? "-",             savingsCaption,                      .green),
                     ("POD",     "PENDING",                                      "quartet closes on co-sign",         .orange),
                 ]
             }
@@ -425,7 +425,7 @@ private struct ShipperM04ObservedBody: View {
                 if let b = lead {
                     return "Awarded to \(b.catalystName) at \(usd(b.amount)). Tender acceptance and pickup arm next in the chain."
                 }
-                return "Award stage — the winning bid surfaces here once the bid feed resolves."
+                return "Award stage. The winning bid surfaces here once the bid feed resolves."
             case .onSite, .inTransit, .atDelivery:
                 if let b = lead {
                     return "\(b.catalystName) carries this load at \(usd(b.amount)). Status echoes through the chain as the driver progresses."
@@ -449,7 +449,7 @@ private struct ShipperM04ObservedBody: View {
     private func initials(_ name: String) -> String {
         let parts = name.split(separator: " ").prefix(2)
         let s = parts.map { String($0.prefix(1)) }.joined().uppercased()
-        return s.isEmpty ? "—" : s
+        return s.isEmpty ? "-" : s
     }
 }
 

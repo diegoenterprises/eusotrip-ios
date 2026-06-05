@@ -436,12 +436,12 @@ private struct VesselEquipmentHealthBody: View {
         let ev = (m.eventType ?? "").lowercased()
         // Derive a real status off the event type — no invented data.
         if ev.contains("alarm") || ev.contains("fail") {
-            return ("Reefer event — \(m.eventType ?? "alarm")", "exclamationmark.triangle.fill", Brand.danger, "FAIL")
+            return ("Reefer event - \(m.eventType ?? "alarm")", "exclamationmark.triangle.fill", Brand.danger, "FAIL")
         }
         if ev.contains("drift") || ev.contains("warn") || ev.contains("watch") {
-            return ("Reefer event — \(m.eventType ?? "watch")", "thermometer.medium", Brand.warning, "WATCH")
+            return ("Reefer event - \(m.eventType ?? "watch")", "thermometer.medium", Brand.warning, "WATCH")
         }
-        return ("Reefer event — \(m.eventType ?? "ok")", "bolt.fill", Brand.success, "OK")
+        return ("Reefer event - \(m.eventType ?? "ok")", "bolt.fill", Brand.success, "OK")
     }
 
     private func componentSubtitle(_ m: VesselTrackingMovement676) -> String {
@@ -449,7 +449,7 @@ private struct VesselEquipmentHealthBody: View {
         if let t = m.temperature { parts.append("\(t)°C") }
         if let h = m.humidity { parts.append("\(h)% RH") }
         if let ts = m.timestamp { parts.append(ts) }
-        return parts.isEmpty ? (m.eventType ?? "—") : parts.joined(separator: " · ")
+        return parts.isEmpty ? (m.eventType ?? "-") : parts.joined(separator: " · ")
     }
 
     // MARK: - Vessel strip (ONE OLYMPUS)

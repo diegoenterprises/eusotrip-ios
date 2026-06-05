@@ -240,7 +240,7 @@ private struct VesselReeferPreCoolBody820: View {
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
 
             darkKpiTile(label: "PENDING", value: "\(pendingCount)", caption: "pulldown", tone: pendingCount > 0 ? Brand.warning : palette.textPrimary)
-            darkKpiTile(label: "FSMA", value: fsmaOK ? "OK" : (fsmaRequired ? "REQ" : "—"),
+            darkKpiTile(label: "FSMA", value: fsmaOK ? "OK" : (fsmaRequired ? "REQ" : "-"),
                         caption: fsmaOK ? "attested" : "21 CFR 1.908", tone: fsmaOK ? Brand.success : Brand.info)
         }
     }
@@ -406,7 +406,7 @@ private struct VesselReeferPreCoolBody820: View {
                 (status == "precool" || status == "pre_cool" || status == "verified") ? .verified
                 : (status == "pulling" || status == "pulldown") ? .pulling
                 : .fsma
-            let temp = c.map { String(format: "%.1f°", $0) } ?? "—"
+            let temp = c.map { String(format: "%.1f°", $0) } ?? "-"
             return PreCoolHold820(
                 band: band,
                 title: "\(key.capitalized) · setpoint",

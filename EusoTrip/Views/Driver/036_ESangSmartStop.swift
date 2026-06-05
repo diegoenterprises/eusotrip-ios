@@ -154,7 +154,7 @@ struct eSangSmartStop: View {
         guard activeLoad != nil else {
             return "We'll surface ranked options as live route + parking data lands."
         }
-        return "Live ranking from EusoMap, OPIS, HERE Parking, and FMCSA HOS rules."
+        return "Live ranking from EusoMap, OPIS, HERE Parking and FMCSA HOS rules."
     }
 
     // Stop card — fully neutral until SmartStopCandidateStore ships.
@@ -166,17 +166,17 @@ struct eSangSmartStop: View {
     private var stopBrandColor: Color { palette.tintNeutral }
 
     /// Stop name — em-dash placeholder until ranked candidate lands.
-    private var stopName: String { "—" }
+    private var stopName: String { "-" }
 
     /// ESANG score — em-dash until ranked candidate lands.
-    private var stopScore: String { "—" }
+    private var stopScore: String { "-" }
 
     /// Location string — em-dash until ranked candidate lands.
     private var stopLocation: String { "AWAITING LIVE CANDIDATE" }
 
-    private var distanceValue: String { "—" }
-    private var etaDeltaValue:  String { "—" }
-    private var parkSpacesValue: String { "—" }
+    private var distanceValue: String { "-" }
+    private var etaDeltaValue:  String { "-" }
+    private var parkSpacesValue: String { "-" }
 
     /// Reasons list — the third row is product-aware via ctx (live).
     /// Rows 1+2 are neutral system descriptors of what ESANG considers

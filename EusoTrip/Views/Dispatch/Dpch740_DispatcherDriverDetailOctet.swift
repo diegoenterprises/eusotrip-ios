@@ -305,10 +305,10 @@ private struct DispatcherDriverDetailBody: View {
             case .review:      return "Refresh weekly. Roster KPIs roll into the dispatcher score-card. No payroll vantage in this lens."
             case .lane:        return "Pre-assign SQ for the next NH₃ pull. ESang re-scores when the lane refreshes."
             case .incident:    return "Clean 90-day record. Attest to §13.3 to surface SQ in the broker eligible-roster API."
-            case .performance: return "Refine the 30-day KPI goal — stretch the on-time floor to +0.6 pt over Aurora's mean."
+            case .performance: return "Refine the 30-day KPI goal. Stretch the on-time floor to +0.6 pt over Aurora's mean."
             case .hos:         return "Pre-clear HOS for the next KC-Omaha pull. Driver has 8h 42m of clean headroom."
-            case .onboarding:  return "Push the MVR refresh task to SQ — annual cycle hits in 14 days."
-            case .compliance:  return "HME runway is healthy — 187 days. Queue renewal reminder 60 days out."
+            case .onboarding:  return "Push the MVR refresh task to SQ. Annual cycle hits in 14 days."
+            case .compliance:  return "HME runway is healthy, 187 days. Queue renewal reminder 60 days out."
             case .quarter:     return "Q1 archive is closed; QC-log the recap and roll the totals into the Q2 baseline."
             }
         }()

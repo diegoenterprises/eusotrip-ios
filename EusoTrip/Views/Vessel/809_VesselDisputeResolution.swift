@@ -170,7 +170,7 @@ private struct VesselDisputeResolutionBody: View {
         HStack(spacing: 12) {
             Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
             VStack(alignment: .leading, spacing: 3) {
-                Text("Counter to $26.4k — recovers ~$8k over accepting").font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textPrimary)
+                Text("Counter to $26.4k - recovers ~$8k over accepting").font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Text("ESang · \(esangLine)").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
             }
             Spacer(minLength: 0)
@@ -222,7 +222,7 @@ private struct VesselDisputeResolutionBody: View {
                     let party: Party809 = (off.by ?? "").lowercased().contains("carrier") ? .theirs
                         : ((off.amount ?? 0) == 0 ? .draft : .ours)
                     let tag = party == .theirs ? "THEIRS" : (party == .draft ? "DRAFT" : "OURS")
-                    return Offer809(party: party, tag: tag, title: off.by ?? "—",
+                    return Offer809(party: party, tag: tag, title: off.by ?? "-",
                                     sub: off.rationale ?? "", amount: money(off.amount))
                 }
                 if let claim = d.amount, let counter = d.offers?.last?.amount {
@@ -237,7 +237,7 @@ private struct VesselDisputeResolutionBody: View {
     }
 
     private func money(_ v: Double?) -> String {
-        guard let v else { return "—" }
+        guard let v else { return "-" }
         return "$" + Int(v).formatted(.number.grouping(.automatic))
     }
 

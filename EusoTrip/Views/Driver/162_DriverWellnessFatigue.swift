@@ -144,7 +144,7 @@ struct DriverWellnessFatigue_162: View {
     // MARK: - Derived display (all from the payload; sample values never hardcoded)
 
     private func dash(_ s: String?) -> String {
-        guard let s, !s.trimmingCharacters(in: .whitespaces).isEmpty else { return "—" }
+        guard let s, !s.trimmingCharacters(in: .whitespaces).isEmpty else { return "-" }
         return s
     }
 
@@ -155,8 +155,8 @@ struct DriverWellnessFatigue_162: View {
         case "moderate": return "Moderate"
         case "elevated": return "Elevated"
         case "critical": return "Critical"
-        case "":         return loading ? "…" : "—"
-        default:         return (risk?.riskLevel ?? "—").capitalized
+        case "":         return loading ? "…" : "-"
+        default:         return (risk?.riskLevel ?? "-").capitalized
         }
     }
     private var riskColor: Color {
@@ -177,7 +177,7 @@ struct DriverWellnessFatigue_162: View {
     /// "in 6h 00m" — computed honestly from nextMandatoryBreak vs now.
     private var nextBreakRelative: String {
         guard let iso = risk?.nextMandatoryBreak,
-              let when = ISO8601DateFormatter().date(from: normalizedISO(iso)) else { return "—" }
+              let when = ISO8601DateFormatter().date(from: normalizedISO(iso)) else { return "-" }
         let delta = when.timeIntervalSinceNow
         if delta <= 0 { return "now" }
         let totalMin = Int(delta / 60)
@@ -189,7 +189,7 @@ struct DriverWellnessFatigue_162: View {
 
     /// "time-of-day low · route highway · weather none" footnote, from factors.
     private var factorFootnote: String {
-        guard let f = risk?.factors else { return "—" }
+        guard let f = risk?.factors else { return "-" }
         let parts = [
             "time-of-day \(dash(f.timeOfDayFactor).lowercased())",
             "route \(dash(f.routeDifficulty).lowercased())",
@@ -216,8 +216,8 @@ struct DriverWellnessFatigue_162: View {
         return out + "Z"
     }
 
-    private func num(_ n: Int?) -> String { n.map(String.init) ?? "—" }
-    private func hrs(_ n: Int?) -> String { n.map { "\($0)h" } ?? "—" }
+    private func num(_ n: Int?) -> String { n.map(String.init) ?? "-" }
+    private func hrs(_ n: Int?) -> String { n.map { "\($0)h" } ?? "-" }
 
     /// "last check-in 2d ago" computed from resources.lastCheckIn.
     private var lastCheckInLine: String {
@@ -486,16 +486,16 @@ struct DriverWellnessFatigue_162: View {
     private var crisisRows: [CrisisRowModel] {
         guard let lines = resources?.crisisLines, !lines.isEmpty else {
             return [
-                CrisisRowModel(name: "988 Suicide & Crisis Lifeline", phone: "—", kind: .none),
-                CrisisRowModel(name: "Crisis Text Line", phone: "—", kind: .none),
-                CrisisRowModel(name: "SAMHSA National Helpline", phone: "—", kind: .none),
+                CrisisRowModel(name: "988 Suicide & Crisis Lifeline", phone: "-", kind: .none),
+                CrisisRowModel(name: "Crisis Text Line", phone: "-", kind: .none),
+                CrisisRowModel(name: "SAMHSA National Helpline", phone: "-", kind: .none),
             ]
         }
         return lines.map { l in
-            let phone = l.phone ?? "—"
+            let phone = l.phone ?? "-"
             let kind: CrisisKind = phone.lowercased().contains("text") ? .sms
-                : (phone == "—" ? .none : .tel)
-            return CrisisRowModel(name: l.name ?? "—", phone: phone, kind: kind)
+                : (phone == "-" ? .none : .tel)
+            return CrisisRowModel(name: l.name ?? "-", phone: phone, kind: kind)
         }
     }
 
@@ -641,11 +641,11 @@ struct DriverWellnessFatigue_162: View {
                 "driverWellness.logWellnessCheckIn",
                 input: In(mood: mood, sleepQuality: sleepQuality, sleepHours: sleepHours, stressLevel: stress))
             if resp.success == true {
-                actionAck = resp.recommendation ?? "Check-in logged — confidential."
+                actionAck = resp.recommendation ?? "Check-in logged, confidential."
                 checkInPresented = false
                 await load()   // re-read so lastCheckIn refreshes
             } else {
-                loadError = "Check-in returned no success flag — try again."
+                loadError = "Check-in returned no success flag, try again."
             }
         } catch {
             loadError = "Check-in failed. " +

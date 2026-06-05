@@ -159,7 +159,7 @@ struct ELDIntegrationView: View {
                 Text("Read-only symbiotic connection")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
-                Text("EusoTrip pulls HOS, GPS, and DVIR records from your ELD. We never send status changes or commands back to the vendor.")
+                Text("EusoTrip pulls HOS, GPS and DVIR records from your ELD. We never send status changes or commands back to the vendor.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -399,11 +399,11 @@ struct ELDIntegrationView: View {
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
             } else {
-                Text("Hours-of-Service limits enforced: 11-hour driving, 14-hour shift, 30-minute break after 8 hours, and 60/70-hour rolling cycle per 49 CFR 395.")
+                Text("Hours-of-Service limits enforced: 11-hour driving, 14-hour shift, 30-minute break after 8 hours and 60/70-hour rolling cycle per 49 CFR 395.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }
-            Text("Once connected, your duty-status clocks, violations, and daily logs are sourced directly from your ELD vendor — no self-reporting gaps.")
+            Text("Once connected, your duty-status clocks, violations and daily logs are sourced directly from your ELD vendor, no self-reporting gaps.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .padding(.top, 2)
@@ -478,9 +478,9 @@ struct ELDIntegrationView: View {
 
     private var subheadlineText: String {
         if store.isConnected {
-            return "Duty-status clocks, 30-min break signals, and violations are sourced directly from the ELD. Self-reporting is disabled."
+            return "Duty-status clocks, 30-min break signals and violations are sourced directly from the ELD. Self-reporting is disabled."
         }
-        return "Your API key stays server-side — EusoTrip never stores it in the app. Select your provider below."
+        return "Your API key stays server-side. EusoTrip never stores it in the app. Select your provider below."
     }
 
     private var apiKeyCardTitle: String {

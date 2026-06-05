@@ -115,7 +115,7 @@ private enum DocCategory: String, CaseIterable, Identifiable {
         case .medical: return "No medical card on file. DOT medical certificates expire every 24 months."
         case .twic:    return "No TWIC on file. Port / terminal access requires an active TWIC card."
         case .hazmat:  return "No hazmat endorsement on file. Required for placarded loads."
-        case .other:   return "Registrations, insurance, permits, and miscellaneous documents land here."
+        case .other:   return "Registrations, insurance, permits and miscellaneous documents land here."
         }
     }
 
@@ -315,7 +315,7 @@ struct MeDocs: View {
         EusoEmptyState(
             systemImage: "folder",
             title: "No documents on file",
-            subtitle: "Scan your CDL, medical card, TWIC, or hazmat endorsement below — ESANG reads the type and expiry and files it in the right bucket."
+            subtitle: "Scan your CDL, medical card, TWIC or hazmat endorsement below. ESANG reads the type and expiry and files it in the right bucket."
         )
     }
 
@@ -572,7 +572,7 @@ struct MeDocs: View {
                     ProgressView().scaleEffect(0.75).tint(palette.textPrimary)
                 }
             }
-            Text("Snap your CDL, medical card, TWIC, or hazmat endorsement — ESANG reads the credential type and expiry and files it in the right bucket. No 60-option dropdown.")
+            Text("Snap your CDL, medical card, TWIC or hazmat endorsement. ESANG reads the credential type and expiry and files it in the right bucket. No 60-option dropdown.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -804,10 +804,10 @@ private enum CredentialHint: String, CaseIterable, Identifiable {
     /// authoritative — this only nudges it.
     var callerContext: String {
         switch self {
-        case .cdl:     return "driver Me·Docs credential scan — commercial driver's license (CDL)"
-        case .medical: return "driver Me·Docs credential scan — DOT medical examiner's certificate"
-        case .twic:    return "driver Me·Docs credential scan — TWIC transportation worker identification credential"
-        case .hazmat:  return "driver Me·Docs credential scan — hazmat endorsement / certificate"
+        case .cdl:     return "driver Me·Docs credential scan - commercial driver's license (CDL)"
+        case .medical: return "driver Me·Docs credential scan - DOT medical examiner's certificate"
+        case .twic:    return "driver Me·Docs credential scan - TWIC transportation worker identification credential"
+        case .hazmat:  return "driver Me·Docs credential scan - hazmat endorsement / certificate"
         }
     }
 }

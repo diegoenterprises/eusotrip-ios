@@ -227,10 +227,10 @@ private struct VesselDemurrageChargeApprovalBody: View {
                         : ((c.chargeType ?? "").lowercased().contains("chassis") ? .chassis : .demurrage)
                     return PendingCharge815(
                         kind: kind,
-                        title: "\(c.chargeType?.capitalized ?? "Charge") · \(c.terminalName ?? "—")",
-                        sub: c.loadReference ?? "—",
+                        title: "\(c.chargeType?.capitalized ?? "Charge") · \(c.terminalName ?? "-")",
+                        sub: c.loadReference ?? "-",
                         amount: "$\(Int(c.finalCharge ?? 0))",
-                        aged: "—",
+                        aged: "-",
                         selected: kind != .chassis)
                 }
             }

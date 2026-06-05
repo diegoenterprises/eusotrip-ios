@@ -106,11 +106,11 @@ struct FleetBulkRegisterStep: View {
     private var headerSubtitle: String {
         switch vertical {
         case "rail":
-            return "Add each locomotive, intermodal chassis, or rail car by VIN. We auto-fill make/model/year via NHTSA and create AAR-compliant maintenance schedules + DVIR baselines."
+            return "Add each locomotive, intermodal chassis or rail car by VIN. We auto-fill make/model/year via NHTSA and create AAR-compliant maintenance schedules + DVIR baselines."
         case "vessel":
             return "Add support vehicles and shore equipment by VIN. USCG-documented vessels are registered separately via the USCG vessel document scanner."
         default:
-            return "Scan each truck's VIN or type it in. We auto-fill make/model/year via NHTSA, seed Zeun maintenance schedules, and queue a DVIR baseline so your drivers are ready on day one."
+            return "Scan each truck's VIN or type it in. We auto-fill make/model/year via NHTSA, seed Zeun maintenance schedules and queue a DVIR baseline so your drivers are ready on day one."
         }
     }
 
@@ -305,7 +305,7 @@ struct FleetBulkRegisterStep: View {
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(Brand.warning)
                 ForEach(r.rejected, id: \.vin) { rej in
-                    Text("• \(rej.vin) — \(rej.reason)")
+                    Text("• \(rej.vin) · \(rej.reason)")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                 }
             }

@@ -123,7 +123,7 @@ struct DriverGatePass_161: View {
     // MARK: Derived display (all from the payload; sample values never hardcoded)
 
     private func dash(_ s: String?) -> String {
-        guard let s, !s.trimmingCharacters(in: .whitespaces).isEmpty else { return "—" }
+        guard let s, !s.trimmingCharacters(in: .whitespaces).isEmpty else { return "-" }
         return s
     }
 
@@ -134,7 +134,7 @@ struct DriverGatePass_161: View {
         case "expired": return "EXPIRED"
         case "revoked": return "REVOKED"
         case "":        return loading ? "…" : "NOT ISSUED"
-        default:        return (pass?.passStatus ?? "—").uppercased()
+        default:        return (pass?.passStatus ?? "-").uppercased()
         }
     }
     private var statusColor: Color {
@@ -169,7 +169,7 @@ struct DriverGatePass_161: View {
         return String(s[11..<16])
     }
     private var validWindow: String {
-        guard let f = clock(pass?.validFrom), let u = clock(pass?.validUntil) else { return "—" }
+        guard let f = clock(pass?.validFrom), let u = clock(pass?.validUntil) else { return "-" }
         return "\(f) – \(u)"
     }
     /// "YYYY-MM-DD" → "MMM DD" (uppercased) plus the relative "OPENS IN N MIN"
@@ -177,15 +177,15 @@ struct DriverGatePass_161: View {
     private var validDayLine: String {
         let day = relativeDay(pass?.validFrom ?? pass?.scheduledDate)
         let rel = opensRelative()
-        if day == "—" && rel == nil { return "—" }
+        if day == "-" && rel == nil { return "-" }
         return [day, rel].compactMap { $0 }.joined(separator: " · ")
     }
     private func relativeDay(_ iso: String?) -> String {
-        guard let iso, iso.count >= 10 else { return "—" }
+        guard let iso, iso.count >= 10 else { return "-" }
         let mm = String(Array(iso)[5..<7]); let dd = String(Array(iso)[8..<10])
         let months = ["01":"JAN","02":"FEB","03":"MAR","04":"APR","05":"MAY","06":"JUN",
                       "07":"JUL","08":"AUG","09":"SEP","10":"OCT","11":"NOV","12":"DEC"]
-        guard let mon = months[mm] else { return "—" }
+        guard let mon = months[mm] else { return "-" }
         return "\(mon) \(dd)"
     }
     /// Minutes until the pass window opens, computed from validFrom.
@@ -226,7 +226,7 @@ struct DriverGatePass_161: View {
     private var routeLine: String {
         let o = pass?.originState, d = pass?.destState
         if let o, let d, !o.isEmpty, !d.isEmpty { return "\(o) → \(d)" }
-        return "—"
+        return "-"
     }
     private var loadMetaLine: String {
         var parts: [String] = []
@@ -234,7 +234,7 @@ struct DriverGatePass_161: View {
             parts.append("\(Int(v)) MI")
         }
         if let ln = pass?.loadNumber, !ln.isEmpty { parts.append(ln) }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
     private var facilityLine: String { dash(pass?.facilityName) }
     private var dockLine: String {
@@ -242,7 +242,7 @@ struct DriverGatePass_161: View {
         // We only have terminalId, not a city — show dock + terminal ref honestly.
         let term = pass?.terminalId.flatMap { $0.isEmpty ? nil : "TERMINAL \($0)" }
         let line = [dock, term].compactMap { $0 }.joined(separator: " · ")
-        return line.isEmpty ? "—" : line
+        return line.isEmpty ? "-" : line
     }
 
     // MARK: Body
@@ -440,10 +440,10 @@ struct DriverGatePass_161: View {
         var parts: [String] = []
         if kindChip != "APPOINTMENT" { parts.append(kindChip) }
         let day = relativeDay(pass?.scheduledDate)
-        if day != "—" { parts.append(day) }
+        if day != "-" { parts.append(day) }
         if let t = pass?.scheduledTime, !t.isEmpty { parts.append(t) }
         if let dk = pass?.dockNumber, !dk.isEmpty { parts.append("DOCK \(dk)") }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
 
     // MARK: ESang watch band
@@ -471,7 +471,7 @@ struct DriverGatePass_161: View {
     private var esangPrimaryLine: String {
         if let u = clock(pass?.validUntil) {
             let dock = pass?.dockNumber.flatMap { $0.isEmpty ? nil : " dock \($0)" } ?? ""
-            return "Pass valid until \(u) — present at the\(dock) gate."
+            return "Pass valid until \(u), present at the\(dock) gate."
         }
         return "Present this pass at the dock gate."
     }
@@ -587,7 +587,7 @@ struct DriverGatePass_161: View {
                     : "Checked in at the gate."
                 await load()   // re-read to reflect checked_in status
             } else {
-                actionError = "Check-in returned no success flag — reload and try again."
+                actionError = "Check-in returned no success flag, reload and try again."
             }
         } catch {
             actionError = "Check-in failed. " +

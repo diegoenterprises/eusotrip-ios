@@ -353,18 +353,18 @@ struct TerminalHome: View {
         .eusoCard(radius: Radius.lg)
     }
 
-    /// Format dwell hours as a one-decimal label. Returns "—" for
+    /// Format dwell hours as a one-decimal label. Returns "-" for
     /// zero so the empty case never renders as "0.0 hr".
     private func dwell(_ v: Double) -> String {
-        guard v > 0 else { return "—" }
+        guard v > 0 else { return "-" }
         return String(format: "%.1f hr", v)
     }
 
     /// Format a utilization ratio (0.0…1.0) as a percentage rounded
-    /// to whole digits. Returns "—" for zero so the empty case
+    /// to whole digits. Returns "-" for zero so the empty case
     /// never renders as "0%".
     private func utilization(_ v: Double) -> String {
-        guard v > 0 else { return "—" }
+        guard v > 0 else { return "-" }
         return "\(Int((v * 100).rounded()))%"
     }
 

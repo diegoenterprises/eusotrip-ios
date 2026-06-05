@@ -123,7 +123,7 @@ private struct LayoverEvent672: Identifiable {
 
     init(row: LayoverRow672) {
         self.id = row.id
-        self.facility = row.facilityName ?? "—"
+        self.facility = row.facilityName ?? "-"
         self.days = max(0, row.days ?? 0)
         let status = LayoverStatus672.from(row.status)
         self.status = status
@@ -354,10 +354,10 @@ private struct RailLayoverTrackingBody672: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("ESANG AI").font(.system(size: 9, weight: .heavy)).kerning(1.0).foregroundStyle(LinearGradient.diagonal)
                 if let lead, lead.status == .disputed {
-                    Text("File the \(lead.facility) dispute now —").font(.system(size: 12, weight: .semibold)).foregroundStyle(palette.textPrimary)
+                    Text("File the \(lead.facility) dispute now.").font(.system(size: 12, weight: .semibold)).foregroundStyle(palette.textPrimary)
                     Text("\(lead.charge) leaves BNSF\u{2019}s rebill window soon.").font(.system(size: 12)).foregroundStyle(palette.textSecondary)
                 } else if let lead {
-                    Text("\(lead.facility) is your worst offender —").font(.system(size: 12, weight: .semibold)).foregroundStyle(palette.textPrimary)
+                    Text("\(lead.facility) is your worst offender.").font(.system(size: 12, weight: .semibold)).foregroundStyle(palette.textPrimary)
                     Text("\(lead.days) days held · \(lead.charge) accruing.").font(.system(size: 12)).foregroundStyle(palette.textSecondary)
                 } else {
                     Text("No layover aging to escalate.").font(.system(size: 12, weight: .semibold)).foregroundStyle(palette.textPrimary)

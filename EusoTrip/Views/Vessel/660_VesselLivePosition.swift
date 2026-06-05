@@ -116,7 +116,7 @@ private struct VesselLivePositionBody_660: View {
     @State private var steps: [ApproachStep660] = ApproachStep660.seeds
 
     // ESang (esangCoach.forScreen) ---------------------------------------------------
-    @State private var esangLine = "Hold 14.2 kn — berth all-fast by 15:00"
+    @State private var esangLine = "Hold 14.2 kn - berth all-fast by 15:00"
     @State private var esangDetail = "30 min early · tide +1.4m rising · berth clear"
 
     @State private var loading = true
@@ -456,7 +456,7 @@ private struct ApproachStep660: Identifiable {
                   detail: wire.detail ?? "",
                   pill: st == "armed" ? "ARMED" : (st == "pending" ? "PENDING" : "CLEARED"),
                   pillKind: st == "armed" ? .warning : (st == "pending" ? .neutral : .info),
-                  value: wire.value ?? "—")
+                  value: wire.value ?? "-")
     }
 
     /// Design-time seeds mirror the SVG; overwritten by getGeofenceEvents.

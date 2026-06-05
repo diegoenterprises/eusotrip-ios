@@ -170,7 +170,7 @@ public struct HazmatPlacardScanView: View {
     private func resultBlock(_ r: PlacardScanResponse) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                Text(r.ocr.unNumber.map { "UN \($0)" } ?? "UN —")
+                Text(r.ocr.unNumber.map { "UN \($0)" } ?? "UN -")
                     .font(.title3.bold())
                 if let cls = r.material?.hazardClass ?? r.ocr.hazardClassNumber {
                     Text("Class \(cls)")
@@ -264,14 +264,14 @@ public struct HazmatPlacardScanView: View {
                 Text("Identified: \(prettyType(r.classifiedType))")
                     .font(.headline)
             } else if r.classifiedType.lowercased() == "unknown" {
-                Text("Couldn't confidently identify this as a hazmat placard — please confirm the values below by eye.")
+                Text("Couldn't confidently identify this as a hazmat placard, please confirm the values below by eye.")
                     .font(.callout)
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 // The server returned a type, but either confidence is low
                 // or it doesn't read as a placard — be honest about it.
-                Text("Read as “\(prettyType(r.classifiedType))” at \(confidencePct)% — not confident this is a hazmat placard. Please confirm before relying on it.")
+                Text("Read as “\(prettyType(r.classifiedType))” at \(confidencePct)%, not confident this is a hazmat placard. Please confirm before relying on it.")
                     .font(.callout)
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
@@ -287,7 +287,7 @@ public struct HazmatPlacardScanView: View {
                 }
                 .padding(.top, 2)
             } else {
-                Text("No UN number, hazard class, or proper shipping name could be read off this frame.")
+                Text("No UN number, hazard class or proper shipping name could be read off this frame.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

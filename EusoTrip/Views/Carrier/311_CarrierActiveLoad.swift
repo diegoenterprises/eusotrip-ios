@@ -44,7 +44,7 @@ private struct ActiveLoadBody: View {
                 Image(systemName: "shippingbox.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("CARRIER · ACTIVE LOAD").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
-            Text(snap.state.value??.load.loadNumber ?? "—").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            Text(snap.state.value??.load.loadNumber ?? "-").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
         }
     }
 

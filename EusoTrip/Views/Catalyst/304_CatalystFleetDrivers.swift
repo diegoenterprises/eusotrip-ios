@@ -47,7 +47,7 @@
 //
 //  When the active driver is loaded but the per-driver expiry/HOS
 //  procs throw or return empty, each tile collapses to its empty
-//  state ("—") — never a fabricated value.
+//  state ("-") — never a fabricated value.
 //
 //  Powered by ESANG AI™.
 //
@@ -423,20 +423,20 @@ private struct CatalystFleetDrivers: View {
         HStack(alignment: .top, spacing: 10) {
             heroStatTile(
                 eyebrow: "HOS · DRIVE",
-                value: driver.hoursRemaining.map { hosDisplay($0) } ?? "—",
+                value: driver.hoursRemaining.map { hosDisplay($0) } ?? "-",
                 meta: driver.hoursRemaining != nil ? "left of 11h" : "no log today",
                 emphasis: .none
             )
             heroStatTile(
                 eyebrow: "OTR · YTD",
-                value: heroOverview.map { "\($0.complianceScore)%" } ?? "—",
+                value: heroOverview.map { "\($0.complianceScore)%" } ?? "-",
                 meta: "compliance",
                 emphasis: .gradient
             )
             heroStatTile(
                 eyebrow: "DOCS · OK",
-                value: heroOverview.map { "\($0.documents.valid)" } ?? "—",
-                meta: heroOverview.map { "/\($0.documents.total) on file" } ?? "—",
+                value: heroOverview.map { "\($0.documents.valid)" } ?? "-",
+                meta: heroOverview.map { "/\($0.documents.total) on file" } ?? "-",
                 emphasis: .none
             )
             heroStatTile(
@@ -869,7 +869,7 @@ private struct CatalystFleetDrivers: View {
                 .foregroundStyle(palette.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
             if filteredOutCount > 0 {
-                Text("\(filteredOutCount) of \(drivers.count) driver\(drivers.count == 1 ? "" : "s") filtered out — missing one or more required endorsements")
+                Text("\(filteredOutCount) of \(drivers.count) driver\(drivers.count == 1 ? "" : "s") filtered out, missing one or more required endorsements")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1156,7 +1156,7 @@ private struct CatalystFleetDrivers: View {
 
     private var medicalCardCountdownDisplay: String {
         guard let item = heroExpiring.first(where: { $0.type.lowercased().contains("medical") }) else {
-            return medicalDocStatus(typeContains: "medical") ?? "—"
+            return medicalDocStatus(typeContains: "medical") ?? "-"
         }
         return "\(item.daysRemaining)d"
     }
@@ -1172,7 +1172,7 @@ private struct CatalystFleetDrivers: View {
         if let item = heroExpiring.first(where: { $0.type.lowercased().contains("annual") || $0.type.lowercased().contains("mvr") }) {
             return "\(item.daysRemaining)d"
         }
-        return "—"
+        return "-"
     }
 
     private var annualReviewMetaDisplay: String {
@@ -1186,7 +1186,7 @@ private struct CatalystFleetDrivers: View {
         if let mvrDoc = heroDocuments.first(where: { $0.type.lowercased().contains("mvr") && ($0.status?.lowercased() == "valid") }) {
             return formatExpiryDate(mvrDoc.uploadedAt ?? "")
         }
-        return "—"
+        return "-"
     }
 
     private var mvrSourceDisplay: String {
@@ -1200,12 +1200,12 @@ private struct CatalystFleetDrivers: View {
         if let drugDoc = heroDocuments.first(where: { $0.type.lowercased().contains("drug") && ($0.status?.lowercased() == "valid") }) {
             return formatExpiryDate(drugDoc.uploadedAt ?? "")
         }
-        return "—"
+        return "-"
     }
 
     private var drugScreenMetaDisplay: String {
         if heroDocuments.contains(where: { $0.type.lowercased().contains("drug") && ($0.status?.lowercased() == "valid") }) {
-            return "Random — neg"
+            return "Random - neg"
         }
         return "no test on file"
     }
@@ -1219,7 +1219,7 @@ private struct CatalystFleetDrivers: View {
         if let mostRecent = heroDocuments.compactMap({ $0.uploadedAt }).max() {
             return "Last refresh \(formatExpiryDate(mostRecent))"
         }
-        return "Last refresh —"
+        return "Last refresh -"
     }
 
     private var clearinghouseLine: String {
@@ -1233,7 +1233,7 @@ private struct CatalystFleetDrivers: View {
     }
 
     private func formatExpiryDate(_ raw: String) -> String {
-        guard !raw.isEmpty else { return "—" }
+        guard !raw.isEmpty else { return "-" }
         // Already-formatted YYYY-MM-DD — keep as-is.
         if raw.count >= 10, let y = Int(raw.prefix(4)) ?? nil, y > 1900 {
             _ = y
@@ -1334,7 +1334,7 @@ private struct CatalystInviteDriverSheet: View {
                 Text("Scan to onboard")
                     .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                Text("Share this QR with a driver you want to attach to your fleet. They scan, sign up, and land in your roster automatically with companyId pre-set.")
+                Text("Share this QR with a driver you want to attach to your fleet. They scan, sign up and land in your roster automatically with companyId pre-set.")
                     .font(.system(size: 12))
                     .foregroundStyle(palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -1357,7 +1357,7 @@ private struct CatalystInviteDriverSheet: View {
                 ShareLink(
                     item: URL(string: "https://eusotrip.com/invite/\(inviteCode)?role=carrier&kind=driver")!,
                     subject: Text("Join my Eusotrip fleet"),
-                    message: Text("Tap to join — onboards you to my carrier fleet automatically.")
+                    message: Text("Tap to join. Onboards you to my carrier fleet automatically.")
                 ) {
                     HStack(spacing: 8) {
                         Image(systemName: "square.and.arrow.up")

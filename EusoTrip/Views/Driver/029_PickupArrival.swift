@@ -36,11 +36,11 @@ struct PickupArrival: View {
     // Updated 2026-04-24 (eusotrip-killers ledger-hygiene pass).
     // Live values come from `loads.getById` (facility) +
     // `yardManagement.getMyQueuePosition` (bay/rig state).
-    private let fallbackClock   = "—"
-    private let fallbackLoadID  = "—"
-    private let fallbackFacility = "—"
+    private let fallbackClock   = "-"
+    private let fallbackLoadID  = "-"
+    private let fallbackFacility = "-"
     private let fallbackBayLine  = "Awaiting bay assignment"
-    private let fallbackRigState = "—"
+    private let fallbackRigState = "-"
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -161,7 +161,7 @@ struct PickupArrival: View {
                 Text("Grounding active · impedance reading")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
-                Text("Strap clamped to tank shell lug. Hold — ESANG is reading impedance to terminal earth. Need ≤ 10 Ω before any valve opens.")
+                Text("Strap clamped to tank shell lug. Hold. ESANG is reading impedance to terminal earth. Need ≤ 10 Ω before any valve opens.")
                     .font(EType.body)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -182,7 +182,7 @@ struct PickupArrival: View {
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(LinearGradient.diagonal)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Reading 7.4 ohms and falling. We're inside spec. Stand by for the actual crack, downwind side — I'll call the valve sequence.")
+                    Text("Reading 7.4 ohms and falling. We're inside spec. Stand by for the actual crack, downwind side. I'll call the valve sequence.")
                         .font(EType.body)
                         .foregroundStyle(palette.textPrimary)
                         .italic()

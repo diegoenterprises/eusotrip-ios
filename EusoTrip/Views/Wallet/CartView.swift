@@ -63,7 +63,7 @@ public struct CartView: View {
                     .tracking(1.0)
                     .foregroundStyle(.secondary)
             }
-            Text("Bundle fuel, permits, tolls, insurance, and compliance in one EusoWallet flow.")
+            Text("Bundle fuel, permits, tolls, insurance and compliance in one EusoWallet flow.")
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

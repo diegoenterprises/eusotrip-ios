@@ -224,7 +224,7 @@ private struct RailFRAAccidentReportsBody: View {
                     .padding(.top, 26).padding(.leading, 22)
 
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    Text(streakDays.map { "\($0)" } ?? "—")
+                    Text(streakDays.map { "\($0)" } ?? "-")
                         .font(.system(size: 40, weight: .bold))
                         .monospacedDigit()
                         .foregroundStyle(LinearGradient.diagonal)
@@ -460,7 +460,7 @@ private struct RailFRAAccidentReportsBody: View {
     }
 
     private static func monthLabel(_ s: String?) -> String {
-        guard let d = date(s) else { return "—" }
+        guard let d = date(s) else { return "-" }
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "MMM"

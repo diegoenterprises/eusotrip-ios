@@ -205,7 +205,7 @@ struct BolSignoff: View {
                 Text("Sign BOL + Spectra cert")
                     .font(.system(size: 22, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
-                Text("Last step before you roll — review then sign · ~30 sec")
+                Text("Last step before you roll - review then sign · ~30 sec")
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(2)

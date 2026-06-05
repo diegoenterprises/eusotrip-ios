@@ -603,7 +603,7 @@ struct LoadDetailSheet: View {
                    load.weight.localizedCaseInsensitiveContains("48") {
                     requirementRow(icon: "scalemass.fill",
                                    title: "Overweight permit",
-                                   subtitle: "Gross >46,000 lb — carrier must carry permit",
+                                   subtitle: "Gross >46,000 lb, carrier must carry permit",
                                    accent: Brand.warning)
                 }
             }
@@ -682,7 +682,7 @@ struct LoadDetailSheet: View {
                 prohibitedRow(icon: "building.2.fill",
                               text: "No downtown truck routes between 07:00–09:30 and 16:00–18:30 local.")
                 prohibitedRow(icon: "arrow.up.arrow.down",
-                              text: "Bridges with posted weight <46,000 lb — alternate via I-highways only.")
+                              text: "Bridges with posted weight <46,000 lb, alternate via I-highways only.")
                 if load.equipment == "Flatbed" || load.equipment == "Step Deck" {
                     prohibitedRow(icon: "exclamationmark.triangle",
                                   text: "Oversized load: follow state DOT permit routing only. No county or city bypass.")
@@ -824,7 +824,7 @@ struct LoadDetailSheet: View {
             default:         parts.append(formatted)
             }
         }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
 
     private func escortGlyph(_ position: String) -> String {
@@ -990,7 +990,7 @@ struct LoadDetailSheet: View {
         } else if !load.broker.isEmpty {
             name = load.broker
         } else {
-            return "—"
+            return "-"
         }
         return String(name.prefix(2)).uppercased()
     }
@@ -1000,9 +1000,9 @@ struct LoadDetailSheet: View {
         if commercial?.broker == nil, commercial != nil {
             // Confirmed shipper-direct — fall back to whatever name the
             // load card already had so the card isn't blank.
-            return load.broker.isEmpty ? "—" : load.broker
+            return load.broker.isEmpty ? "-" : load.broker
         }
-        return load.broker.isEmpty ? "—" : load.broker
+        return load.broker.isEmpty ? "-" : load.broker
     }
 
     private var brokerSecondaryLine: String {
@@ -1217,8 +1217,8 @@ struct LoadDetailSheet: View {
                     .foregroundStyle(palette.textPrimary)
             }
             Text(status == "auto_accepted"
-                 ? "Your bid matched a shipper auto-accept rule. The load is yours — head to My Loads to start the trip."
-                 : "Your bid is in the chain. You'll get a realtime push the moment the shipper accepts, counters, or assigns to another carrier.")
+                 ? "Your bid matched a shipper auto-accept rule. The load is yours. Head to My Loads to start the trip."
+                 : "Your bid is in the chain. You'll get a realtime push the moment the shipper accepts, counters or assigns to another carrier.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1331,7 +1331,7 @@ struct LoadDetailSheet: View {
     /// `bid:received` socket events.
     private func book() async {
         guard let backendId = load.backendLoadId else {
-            bookState = .error("Load id is missing — refresh the load board and try again.")
+            bookState = .error("Load id is missing. Refresh the load board and try again.")
             return
         }
         bookState = .submitting
@@ -1383,7 +1383,7 @@ struct LoadDetailSheet: View {
                         }
                         return "Server error \(code). Try again in a moment."
                     case .decodingFailed:
-                        return "We couldn't read the server's response. Try again — if it persists, retry from the load board."
+                        return "We couldn't read the server's response. Try again. If it persists, retry from the load board."
                     case .notConfigured:
                         return "API not configured. Try restarting the app."
                     case .badURL:
@@ -1392,7 +1392,7 @@ struct LoadDetailSheet: View {
                         return "Server returned an empty response. Try again."
                     }
                 }
-                if ns.domain == NSURLErrorDomain { return "Network unavailable — check your connection and try again." }
+                if ns.domain == NSURLErrorDomain { return "Network unavailable. Check your connection and try again." }
                 return error.localizedDescription
             }()
             bookState = .error(msg)
@@ -1711,8 +1711,8 @@ struct CounterOfferSheet: View {
                     .font(EType.body)
                     .foregroundStyle(palette.textSecondary)
                 Text(isAutoAccepted
-                     ? "Your bid matched a shipper auto-accept rule. The load is yours — head to My Loads to start the trip."
-                     : "The shipper sees your counter on their bid board. You'll get a realtime push once they accept, reject, or counter back.")
+                     ? "Your bid matched a shipper auto-accept rule. The load is yours. Head to My Loads to start the trip."
+                     : "The shipper sees your counter on their bid board. You'll get a realtime push once they accept, reject or counter back.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textTertiary)
             }
@@ -1773,7 +1773,7 @@ struct CounterOfferSheet: View {
             if let api = error as? EusoTripAPIError, case .trpcError(let m) = api {
                 lastError = m
             } else {
-                lastError = "Couldn't send counter — try again."
+                lastError = "Couldn't send counter. Try again."
             }
         }
     }

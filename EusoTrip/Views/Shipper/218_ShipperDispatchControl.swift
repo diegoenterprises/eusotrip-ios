@@ -234,7 +234,7 @@ struct ShipperDispatchControl: View {
                 .minimumScaleFactor(0.78)
             Spacer()
             // EUSO-2122 — pending-tender count not yet on API surface.
-            Text("— PENDING TENDERS")
+            Text("- PENDING TENDERS")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
@@ -338,7 +338,7 @@ struct ShipperDispatchControl: View {
                 .stroke(LinearGradient.primary,
                         style: StrokeStyle(lineWidth: 6, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-            Text("—")
+            Text("-")
                 .font(.system(size: 14, weight: .heavy))
                 .foregroundStyle(palette.textTertiary)
         }
@@ -573,7 +573,7 @@ struct ShipperDispatchControl: View {
             EusoEmptyState(
                 systemImage: "antenna.radiowaves.left.and.right.slash",
                 title: "Nothing in flight",
-                subtitle: "When a posted load gets accepted, it lights up here with the catalyst, driver, and ETA.",
+                subtitle: "When a posted load gets accepted, it lights up here with the catalyst, driver and ETA.",
                 comingSoon: false
             )
         case .error(let msg):
@@ -703,8 +703,8 @@ struct ShipperDispatchControl: View {
                         .lineLimit(1)
                 }
                 HStack(spacing: 12) {
-                    rowMeta(icon: "person.2.fill", value: row.catalyst.isEmpty ? "—" : row.catalyst)
-                    rowMeta(icon: "person.fill",    value: row.driver.isEmpty ? "—" : row.driver)
+                    rowMeta(icon: "person.2.fill", value: row.catalyst.isEmpty ? "-" : row.catalyst)
+                    rowMeta(icon: "person.fill",    value: row.driver.isEmpty ? "-" : row.driver)
                     rowMeta(icon: "clock.fill",     value: row.eta.isEmpty ? "TBD" : row.eta)
                     Spacer(minLength: 0)
                     Text(formatRate(row.rate))
@@ -761,7 +761,7 @@ struct ShipperDispatchControl: View {
         let n = Int(value.rounded())
         if n >= 10_000 { return String(format: "$%.1fk", Double(n) / 1_000) }
         if n >= 1_000  { return String(format: "$%.1fk", Double(n) / 1_000) }
-        if n == 0       { return "—" }
+        if n == 0       { return "-" }
         return "$\(n)"
     }
 
@@ -912,8 +912,8 @@ private struct DispatchDetailSheet: View {
             Text("ASSIGNMENT")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                 .foregroundStyle(palette.textTertiary)
-            kvRow("Catalyst", value: load.catalyst.isEmpty ? "—" : load.catalyst, icon: "person.2.fill")
-            kvRow("Driver",    value: load.driver.isEmpty ? "—" : load.driver,    icon: "person.fill")
+            kvRow("Catalyst", value: load.catalyst.isEmpty ? "-" : load.catalyst, icon: "person.2.fill")
+            kvRow("Driver",    value: load.driver.isEmpty ? "-" : load.driver,    icon: "person.fill")
             kvRow("ETA",       value: load.eta.isEmpty ? "TBD" : load.eta,        icon: "clock.fill")
             kvRow("Rate",      value: formatRate(load.rate),                       icon: "dollarsign.circle.fill")
         }
@@ -1104,7 +1104,7 @@ private struct DispatchDetailSheet: View {
         let n = Int(value.rounded())
         if n >= 10_000 { return String(format: "$%.1fk", Double(n) / 1_000) }
         if n >= 1_000  { return String(format: "$%.1fk", Double(n) / 1_000) }
-        if n == 0       { return "—" }
+        if n == 0       { return "-" }
         return "$\(n)"
     }
 }

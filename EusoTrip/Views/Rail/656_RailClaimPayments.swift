@@ -265,7 +265,7 @@ private struct RailClaimPaymentsBody656: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(p.claimNumber ?? p.claimId ?? p.id)
                     .font(.system(size: 14, weight: .bold)).foregroundStyle(palette.textPrimary).lineLimit(1)
-                Text(sub.isEmpty ? (p.method ?? "—") : sub)
+                Text(sub.isEmpty ? (p.method ?? "-") : sub)
                     .font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textSecondary).lineLimit(1)
             }
             Spacer()
@@ -333,7 +333,7 @@ private struct RailClaimPaymentsBody656: View {
         case "processing": return ("clock",                  Brand.warning, "OPEN",       .warning)
         case "failed":     return ("exclamationmark.triangle", Brand.danger, "REVIEW",     .danger)
         case "pending":    return ("clock",                  Brand.warning, "PENDING",    .warning)
-        default:           return ("circle",                 Brand.info,    "—",          .info)
+        default:           return ("circle",                 Brand.info,    "-",          .info)
         }
     }
 

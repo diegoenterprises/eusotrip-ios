@@ -229,7 +229,7 @@ struct MeNotificationsView: View {
     private var pushSubline: String {
         switch push.phase {
         case .authorized:
-            return "Load offers, safety alerts, and compliance warnings are delivered to this device."
+            return "Load offers, safety alerts and compliance warnings are delivered to this device."
         case .denied:
             return "Push is disabled in iOS Settings. You'll still see alerts in the app, but not on the lock screen."
         case .requesting: return "Asking iOS for permission."

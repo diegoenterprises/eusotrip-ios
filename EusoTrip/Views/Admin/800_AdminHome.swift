@@ -391,10 +391,10 @@ struct AdminHome: View {
     }
 
     /// Format a health composite ratio (0.0…1.0) as a percentage
-    /// rounded to whole digits. Returns "—" for zero so the empty
+    /// rounded to whole digits. Returns "-" for zero so the empty
     /// case never renders as "0%".
     private func health(_ v: Double) -> String {
-        guard v > 0 else { return "—" }
+        guard v > 0 else { return "-" }
         return "\(Int((v * 100).rounded()))%"
     }
 

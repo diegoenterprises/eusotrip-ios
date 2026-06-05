@@ -130,8 +130,8 @@ private struct PriceBookBody: View {
     private func lane(_ e: PricebookEntry) -> String {
         let o = [e.originCity, e.originState].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
         let d = [e.destinationCity, e.destinationState].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
-        if o.isEmpty && d.isEmpty { return "—" }
-        return "\(o.isEmpty ? "—" : o) → \(d.isEmpty ? "—" : d)"
+        if o.isEmpty && d.isEmpty { return "-" }
+        return "\(o.isEmpty ? "-" : o) → \(d.isEmpty ? "-" : d)"
     }
 
     private func suffix(for rateType: String) -> String {
@@ -145,12 +145,12 @@ private struct PriceBookBody: View {
     }
 
     private func usdString(_ s: String?) -> String {
-        guard let s = s, let v = Double(s) else { return "—" }
+        guard let s = s, let v = Double(s) else { return "-" }
         return usd(v)
     }
 
     private func fscDescription(_ e: PricebookEntry) -> String {
-        guard (e.fscIncluded ?? 0) == 1, let m = e.fscMethod, let v = e.fscValue else { return "—" }
+        guard (e.fscIncluded ?? 0) == 1, let m = e.fscMethod, let v = e.fscValue else { return "-" }
         return "\(m.uppercased()) · \(v)"
     }
 

@@ -825,7 +825,7 @@ private struct ErgDetailSheet: View {
                 .font(EType.micro)
                 .tracking(1.1)
                 .foregroundStyle(palette.textTertiary)
-            Text(value ?? "—")
+            Text(value ?? "-")
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
         }

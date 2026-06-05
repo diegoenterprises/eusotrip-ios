@@ -274,7 +274,7 @@ struct ShipperAppIntents: View {
                     GradientCapsuleCTA(label: activeIntent.ctaLabel, width: 140)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Run the active Siri shortcut — re-fires the App Intents runtime via IntentDonationManager.shared.donate so Siri's relevance ranking promotes this intent.")
+                .accessibilityLabel("Run the active Siri shortcut. Re-fires the App Intents runtime via IntentDonationManager.shared.donate so Siri's relevance ranking promotes this intent.")
             }
             .padding(.top, 14)
             .padding(.horizontal, 20)

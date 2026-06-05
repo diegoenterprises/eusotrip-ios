@@ -47,7 +47,7 @@ private struct RailStatusUpdateBody: View {
     private let options: [RailStatusOption] = [
         RailStatusOption(value: "at_interchange", title: "At interchange", note: "NS Inman handoff · records yard + timestamp", danger: false),
         RailStatusOption(value: "in_yard",        title: "In yard (spotted)", note: "starts demurrage free-time meter", danger: false),
-        RailStatusOption(value: "exception_hold", title: "Hold — exception", note: "flags control tower · requires note", danger: true)
+        RailStatusOption(value: "exception_hold", title: "Hold - exception", note: "flags control tower · requires note", danger: true)
     ]
 
     var body: some View {

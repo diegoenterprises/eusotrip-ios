@@ -168,14 +168,14 @@ private struct VesselContainerPositionsBody: View {
             case "on_water":   return ("ON WATER", Brand.info)
             case "discharged": return ("DISCH.",   Brand.success)
             case "at_port":    return ("AT PORT",  palette.textTertiary)
-            default:           return ((c.status ?? "—").uppercased(), palette.textSecondary)
+            default:           return ((c.status ?? "-").uppercased(), palette.textSecondary)
             }
         }()
         return HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(c.containerNumber ?? "—")\(c.containerType.map { " · \($0)" } ?? "")")
+                Text("\(c.containerNumber ?? "-")\(c.containerType.map { " · \($0)" } ?? "")")
                     .font(.system(size: 13, weight: .semibold)).monospaced().foregroundStyle(palette.textPrimary)
-                Text(c.location ?? "—").font(EType.caption).foregroundStyle(palette.textSecondary)
+                Text(c.location ?? "-").font(EType.caption).foregroundStyle(palette.textSecondary)
             }
             Spacer()
             Text(label).font(.system(size: 8.5, weight: .heavy)).tracking(0.5).foregroundStyle(tone)

@@ -901,7 +901,7 @@ private struct CatalystDriverQuarterDetailBody: View {
                 "drivers.refineQuarterGoal",
                 input: RefineIn(driverId: driverId, quarterId: "Q2-2026", targetPct: 96.4))
             if ack.success == false {
-                actionError = "Couldn't refine the Q2 goal — try again."
+                actionError = "Couldn't refine the Q2 goal - try again."
             }
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -919,7 +919,7 @@ private struct CatalystDriverQuarterDetailBody: View {
                 "drivers.pinQuarter",
                 input: PinIn(driverId: driverId, quarterId: row?.quarterId ?? quarterId))
             if ack.success == false {
-                actionError = "Couldn't pin the quarter — try again."
+                actionError = "Couldn't pin the quarter - try again."
             }
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

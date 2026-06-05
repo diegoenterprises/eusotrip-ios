@@ -39,7 +39,7 @@
 //      CTA flips back to its idle label and the inline error
 //      surfaces — local state never lies about the commit landing.
 //    • Empty / blank server fields surface as em-dash sentinels
-//      ("—") — every nullable column on a fresh assignment (no
+//      ("-") — every nullable column on a fresh assignment (no
 //      permit attached, no driver paired, no bridge clearance
 //      surveyed, no notes) renders as a neutral em-dash, never
 //      a fabricated value.
@@ -144,10 +144,10 @@ struct EscortAssignmentDetail: View {
 
     private var header: some View {
         let live: EscortAPI.AssignmentDetail? = detailStore.state.value ?? nil
-        let loadNumber = live?.loadNumber ?? previewLoadNumber ?? "—"
+        let loadNumber = live?.loadNumber ?? previewLoadNumber ?? "-"
         let lane: String = {
             if let live { return "\(live.origin) → \(live.destination)" }
-            return previewLane ?? "—"
+            return previewLane ?? "-"
         }()
         let status = live?.status ?? ""
 
@@ -312,8 +312,8 @@ struct EscortAssignmentDetail: View {
     private func scheduleCard(_ d: EscortAPI.AssignmentDetail) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             sectionHeader("CORRIDOR", icon: "map")
-            scheduleRow(label: "Origin",      value: d.origin.isEmpty ? "—" : d.origin)
-            scheduleRow(label: "Destination", value: d.destination.isEmpty ? "—" : d.destination)
+            scheduleRow(label: "Origin",      value: d.origin.isEmpty ? "-" : d.origin)
+            scheduleRow(label: "Destination", value: d.destination.isEmpty ? "-" : d.destination)
             if let miles = d.routedMiles, miles > 0 {
                 scheduleRow(label: "Routed miles", value: milesString(miles))
             }
@@ -636,17 +636,17 @@ struct EscortAssignmentDetail: View {
     }
 
     /// Format a corridor-coverage ratio (0.0…1.0) as a percentage
-    /// rounded to whole digits. Returns "—" for zero so the empty
+    /// rounded to whole digits. Returns "-" for zero so the empty
     /// case never renders as "0%".
     private func coverage(_ v: Double) -> String {
-        guard v > 0 else { return "—" }
+        guard v > 0 else { return "-" }
         return "\(Int((v * 100).rounded()))%"
     }
 
     /// Sentence-case the server enum so the metric tile reads
     /// "Lead", "Chase", or "Lead+Chase" instead of the raw token.
     private func roleDisplay(_ raw: String) -> String {
-        guard !raw.isEmpty else { return "—" }
+        guard !raw.isEmpty else { return "-" }
         switch raw.lowercased() {
         case "lead":         return "Lead"
         case "chase":        return "Chase"
@@ -668,10 +668,10 @@ struct EscortAssignmentDetail: View {
     }
 
     /// Format escort-corridor mileage as a thousands-separated whole-mile
-    /// string. Returns "—" for zero so the empty case never renders as
+    /// string. Returns "-" for zero so the empty case never renders as
     /// "0 mi".
     private func milesString(_ v: Double) -> String {
-        guard v > 0 else { return "—" }
+        guard v > 0 else { return "-" }
         let f = NumberFormatter()
         f.numberStyle = .decimal
         f.maximumFractionDigits = 0
@@ -680,9 +680,9 @@ struct EscortAssignmentDetail: View {
     }
 
     /// Format bridge clearance feet as a doctrinal "13'6\"" string.
-    /// Returns "—" for zero.
+    /// Returns "-" for zero.
     private func clearanceString(_ ft: Double) -> String {
-        guard ft > 0 else { return "—" }
+        guard ft > 0 else { return "-" }
         let whole = Int(ft)
         let inches = Int(((ft - Double(whole)) * 12).rounded())
         if inches == 0 { return "\(whole)'" }
@@ -694,7 +694,7 @@ struct EscortAssignmentDetail: View {
     /// when nil / empty / unparseable so missing dates always look
     /// like a deliberate sentinel.
     private func humanDate(_ iso: String?) -> String {
-        guard let iso = iso, !iso.isEmpty else { return "—" }
+        guard let iso = iso, !iso.isEmpty else { return "-" }
         let isoFmt = ISO8601DateFormatter()
         isoFmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         var date = isoFmt.date(from: iso)
@@ -807,8 +807,8 @@ private func escortNavTrailing_601() -> [NavSlot] {
     EscortAssignmentDetailScreen(
         theme: Theme.dark,
         assignmentId: "0",
-        previewLoadNumber: "—",
-        previewLane: "—",
+        previewLoadNumber: "-",
+        previewLane: "-",
         previewStartedAt: nil,
         previewEscortRole: nil,
         previewPermitNumber: nil,
@@ -822,8 +822,8 @@ private func escortNavTrailing_601() -> [NavSlot] {
     EscortAssignmentDetailScreen(
         theme: Theme.light,
         assignmentId: "0",
-        previewLoadNumber: "—",
-        previewLane: "—",
+        previewLoadNumber: "-",
+        previewLane: "-",
         previewStartedAt: nil,
         previewEscortRole: nil,
         previewPermitNumber: nil,

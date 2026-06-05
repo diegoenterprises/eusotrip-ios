@@ -446,7 +446,7 @@ private struct RailWaybill: View {
             .replacingOccurrences(of: "·", with: " ")
             .split(separator: " ").map(String.init).filter { !$0.isEmpty }
         let letters = parts.suffix(2).compactMap { $0.first }.map(String.init)
-        return letters.joined().uppercased().isEmpty ? "—" : letters.joined().uppercased()
+        return letters.joined().uppercased().isEmpty ? "-" : letters.joined().uppercased()
     }
 
     // MARK: - COMMODITY · HAZMAT — SVG y=452 label, card y=462, 400×104
@@ -534,7 +534,7 @@ private struct RailWaybill: View {
         if let raw = detail?.weight, let v = Double(raw), v > 0 {
             return "\(grouped(Int(v))) lb gross"
         }
-        return "Weight —"
+        return "Weight -"
     }
 
     private var carsLabel: String {

@@ -38,7 +38,7 @@
 //      `primaryUser*`, `monthlyVolumeUsd`, `mrrUsd`,
 //      `lifetimeVolumeUsd`, `lifetimeRevenueUsd`, `nextRenewalAt`,
 //      `healthScore`, `riskNote`, …) renders as a neutral em-dash
-//      ("—") — never a fabricated value or a fallback zero.
+//      ("-") — never a fabricated value or a fallback zero.
 //    • Audit-trail / contacts / usage-metrics rows are server-
 //      paged. An empty array surfaces an honest empty sub-card
 //      ("No audit events yet", etc.) rather than a synthetic row.
@@ -207,7 +207,7 @@ struct AdminTenantDetail: View {
                 disabledActionPill(label: "REINSTATE", icon: "play.fill")
                 disabledActionPill(label: "CHURN",     icon: "tray.full.fill")
             }
-            Text("Destructive admin mutations ship in 804+ — guarded confirm.")
+            Text("Destructive admin mutations ship in 804+, guarded confirm.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
         }
@@ -357,9 +357,9 @@ struct AdminTenantDetail: View {
                 kpiTile(label: "LIFETIME · REV",   value: usd(env.lifetimeRevenueUsd))
             }
             HStack(spacing: Space.s2) {
-                kpiTile(label: "SIGNED UP",      value: env.signedUpAt.isEmpty ? "—" : env.signedUpAt)
-                kpiTile(label: "NEXT RENEWAL",   value: env.nextRenewalAt ?? "—")
-                kpiTile(label: "HEALTH",         value: env.healthScore.map { "\($0)/100" } ?? "—")
+                kpiTile(label: "SIGNED UP",      value: env.signedUpAt.isEmpty ? "-" : env.signedUpAt)
+                kpiTile(label: "NEXT RENEWAL",   value: env.nextRenewalAt ?? "-")
+                kpiTile(label: "HEALTH",         value: env.healthScore.map { "\($0)/100" } ?? "-")
             }
             if let note = env.riskNote, !note.isEmpty {
                 HStack(alignment: .top, spacing: 6) {
@@ -433,7 +433,7 @@ struct AdminTenantDetail: View {
                 .overlay(Circle().strokeBorder(palette.borderFaint))
                 .clipShape(Circle())
             VStack(alignment: .leading, spacing: 2) {
-                Text(c.name.isEmpty ? "—" : c.name)
+                Text(c.name.isEmpty ? "-" : c.name)
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
                 Text(c.role.uppercased())
@@ -551,11 +551,11 @@ struct AdminTenantDetail: View {
                 billingRow(label: "BALANCE",
                            value: usd(p.balanceUsd))
                 billingRow(label: "ON-TIME · 90D",
-                           value: p.onTimeRate90d.map { String(format: "%.0f%%", $0 * 100) } ?? "—")
+                           value: p.onTimeRate90d.map { String(format: "%.0f%%", $0 * 100) } ?? "-")
                 billingRow(label: "PRIMARY METHOD",
                            value: primaryMethodLabel(p))
                 billingRow(label: "STRIPE CUSTOMER",
-                           value: p.stripeCustomerId.map { stripeCustomerShort($0) } ?? "—")
+                           value: p.stripeCustomerId.map { stripeCustomerShort($0) } ?? "-")
             }
             .padding(Space.s3)
             .background(palette.bgCard)
@@ -615,7 +615,7 @@ struct AdminTenantDetail: View {
         if p.stripeCustomerId != nil {
             return "ACH · WIRE"
         }
-        return "—"
+        return "-"
     }
 
     private func stripeCustomerShort(_ id: String) -> String {
@@ -793,12 +793,12 @@ struct AdminTenantDetail: View {
 
     /// USD formatter — falls back to em-dash when nil.
     private func usd(_ v: Double?) -> String {
-        guard let v = v else { return "—" }
+        guard let v = v else { return "-" }
         let f = NumberFormatter()
         f.numberStyle = .currency
         f.currencyCode = "USD"
         f.maximumFractionDigits = v >= 1000 ? 0 : 2
-        return f.string(from: NSNumber(value: v)) ?? "—"
+        return f.string(from: NSNumber(value: v)) ?? "-"
     }
 }
 

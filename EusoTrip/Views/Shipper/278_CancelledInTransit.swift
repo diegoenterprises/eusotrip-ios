@@ -39,7 +39,7 @@ private struct CancelInTransitBody: View {
             LifecycleRow(label: "Driver",   value: dashIfEmpty(live.driver?.name))
             LifecycleRow(label: "Lane",     value: laneDisplay(live))
             if live.load.hazmatClass?.isEmpty == false {
-                LifecycleRow(label: "Hazmat", value: "Class \(dashIfEmpty(live.load.hazmatClass)) — verify 49 CFR 397 secure parking before any salvage routing.")
+                LifecycleRow(label: "Hazmat", value: "Class \(dashIfEmpty(live.load.hazmatClass)) - verify 49 CFR 397 secure parking before any salvage routing.")
             }
         }
     }

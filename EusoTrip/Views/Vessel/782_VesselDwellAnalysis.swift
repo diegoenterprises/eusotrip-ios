@@ -32,7 +32,7 @@
 //      than fabricate five reason rows, we group the real records into the buckets the
 //      data supports and flag the dedicated rollup proc (yardManagement.getDwellReasons)
 //      as the gap. "pct vs prior period" likewise has no historical comparator yet → shown
-//      as "—" rather than faked. "Export 30-day report" / "By terminal" are honest STUBs.
+//      as "-" rather than faked. "Export 30-day report" / "By terminal" are honest STUBs.
 //
 //  0 mock data on load · honest empty/error states. RimCard782 / KpiTile782 /
 //  ReasonRow782 / ESangRow782 are file-scoped bespoke helpers (the canonical port's
@@ -135,7 +135,7 @@ private struct VesselDwellAnalysisBody: View {
                 } else {
                     EusoEmptyState(systemImage: "chart.bar.doc.horizontal",
                                    title: "No dwell exposure in range",
-                                   subtitle: "getDemurrageDetention returned no detention records — there is no demurrage accruing at \(locationId) to analyze. Nothing to root-cause.")
+                                   subtitle: "getDemurrageDetention returned no detention records, there is no demurrage accruing at \(locationId) to analyze. Nothing to root-cause.")
                 }
                 Color.clear.frame(height: 96)
             }
@@ -230,7 +230,7 @@ private struct VesselDwellAnalysisBody: View {
         let top = d.reasons.max(by: { $0.chargedAmountUsd < $1.chargedAmountUsd })
         let pct = (top != nil && d.exposureUsd > 0) ? Int((top!.chargedAmountUsd / d.exposureUsd * 100).rounded()) : 0
         let action = top.map { "Clear \($0.label.lowercased()) boxes first" } ?? "Review dwell exposure"
-        let detail = top.map { "\($0.events) events drive \(money($0.chargedAmountUsd)) — \(pct)% of exposure" } ?? "No active dwell exposure"
+        let detail = top.map { "\($0.events) events drive \(money($0.chargedAmountUsd)) - \(pct)% of exposure" } ?? "No active dwell exposure"
         return ESangRow782(action: action, detail: detail)
     }
 

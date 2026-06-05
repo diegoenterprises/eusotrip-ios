@@ -254,9 +254,9 @@ private struct RailNetworkDisruptionBody: View {
         let chipColor: Color = isEmbargo ? Brand.danger : Brand.warning
         let chipIcon  = isEmbargo ? "exclamationmark.triangle.fill" : "building.2.fill"
         let pillLabel = isEmbargo ? "EMBARGO" : "OUTAGE"
-        let title = alert.headline.map { String($0.prefix(44)) } ?? (alert.eventType ?? "—")
+        let title = alert.headline.map { String($0.prefix(44)) } ?? (alert.eventType ?? "-")
         let stateSub = (alert.states ?? []).prefix(2).joined(separator: ", ")
-        let causeSub = stateSub.isEmpty ? "—" : stateSub
+        let causeSub = stateSub.isEmpty ? "-" : stateSub
         let rightText = isEmbargo ? "weather" : "~6h"
 
         return HStack(spacing: 12) {
@@ -329,9 +329,9 @@ private struct RailNetworkDisruptionBody: View {
     }
 
     private func rerouteRow(_ yard: RailYard579, rank: Int) -> some View {
-        let title = "Via \(yard.name ?? yard.yardCode ?? "—")"
-        let city  = yard.city ?? "—"
-        let state = yard.state ?? "—"
+        let title = "Via \(yard.name ?? yard.yardCode ?? "-")"
+        let city  = yard.city ?? "-"
+        let state = yard.state ?? "-"
         let sub   = "ETD +\(rank)d → \(city), \(state) · alternate route"
         let avoidLabel = rank == 1 ? "avoids embargo" : "+1d dwell"
 

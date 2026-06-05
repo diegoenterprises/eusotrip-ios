@@ -478,7 +478,7 @@ private struct MeHomeBody: View {
         Button { showTierWizard = true } label: {
             HStack(spacing: 6) {
                 Image(systemName: "rosette").font(.system(size: 11, weight: .heavy))
-                Text((riosTier?.resolvedTier.label ?? "Tier —").uppercased())
+                Text((riosTier?.resolvedTier.label ?? "Tier -").uppercased())
                     .font(EType.micro).tracking(0.6)
                 if let n = riosTier?.blocking?.count, n > 0 {
                     Text("· \(n) to next tier").font(EType.micro).opacity(0.8)

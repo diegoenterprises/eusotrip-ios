@@ -126,7 +126,7 @@ struct TrustedTraderSheet: View {
             Text("Attach trusted-trader status")
                 .font(EType.h2)
                 .foregroundStyle(palette.textPrimary)
-            Text("Record a customs trusted-trader program so cross-border lanes read the company's cleared standing. Status reflects the server record — it is not self-certified.")
+            Text("Record a customs trusted-trader program so cross-border lanes read the company's cleared standing. Status reflects the server record, it is not self-certified.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -345,8 +345,8 @@ struct TrustedTraderSheet: View {
 
                 if !cleared {
                     Text(pending
-                         ? "Submitted. The program record stays in pending review until customs validation completes — it is not yet a cleared credential."
-                         : "Provider unavailable or status not confirmed — this credential requires manual review before it counts as cleared.")
+                         ? "Submitted. The program record stays in pending review until customs validation completes, it is not yet a cleared credential."
+                         : "Provider unavailable or status not confirmed. This credential requires manual review before it counts as cleared.")
                         .font(EType.caption)
                         .foregroundStyle(accent)
                         .fixedSize(horizontal: false, vertical: true)

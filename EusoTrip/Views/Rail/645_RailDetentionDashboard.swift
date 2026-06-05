@@ -220,7 +220,7 @@ private struct RailDetentionDashboardBody: View {
                     Text("TOP OFFENDER")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
-                    Text(topOffender?.customer ?? "—")
+                    Text(topOffender?.customer ?? "-")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(Color(hex: 0xFF7A66))
                         .lineLimit(1).minimumScaleFactor(0.7)
@@ -318,7 +318,7 @@ private struct RailDetentionDashboardBody: View {
                 .foregroundStyle(palette.textTertiary)
             ForEach(Array(reasons.enumerated()), id: \.offset) { _, r in
                 HStack {
-                    Text((r.reason ?? "—").replacingOccurrences(of: "_", with: " ").capitalized)
+                    Text((r.reason ?? "-").replacingOccurrences(of: "_", with: " ").capitalized)
                         .font(EType.caption)
                         .foregroundStyle(palette.textPrimary)
                     Spacer()
@@ -356,7 +356,7 @@ private struct RailDetentionDashboardBody: View {
             .frame(width: 28, height: 28)
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(row.customer ?? "—")
+                Text(row.customer ?? "-")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                 Text("\(row.cars ?? 0) cars · avg \(Int((row.avgDwellHrs ?? 0).rounded()))h dwell")
@@ -478,7 +478,7 @@ private struct RailDetentionDashboardBody: View {
         // ranking (gapped) there's no row to attach a dispute to — we surface
         // that honestly rather than inventing an id.
         guard !rankedCustomers.isEmpty else {
-            ack = "No ranked detention rows to dispute yet — per-customer ranking endpoint is pending."
+            ack = "No ranked detention rows to dispute yet. Per-customer ranking endpoint is pending."
             return
         }
         disputeBusy = true; ack = nil

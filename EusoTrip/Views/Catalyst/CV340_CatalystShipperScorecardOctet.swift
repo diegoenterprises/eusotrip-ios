@@ -273,10 +273,10 @@ private struct CatalystShipperBody: View {
     private var nextStepCard: some View {
         let copy: String = {
             switch kind {
-            case .scorecard:    return "A composite, 5.8d pay speed — exemplary. Use Eusorone as the reference payor on the next broker-pitch."
+            case .scorecard:    return "A composite, 5.8d pay speed, exemplary. Use Eusorone as the reference payor on the next broker-pitch."
             case .profile:      return "Eusorone is a Tier-1 shipper-of-record. Lock the next quarter's rate book before Q2 kick-off."
             case .documents:    return "All 12 documents are current. Set a 60-day reminder before MSA/COI anniversaries."
-            case .analytics:    return "88.4% tender-win, 5.8d DSO — best-in-class. Replicate the playbook for the next dormant payor."
+            case .analytics:    return "88.4% tender-win, 5.8d DSO, best-in-class. Replicate the playbook for the next dormant payor."
             case .settlements:  return "$14,820 closed in 9 invoices. Aim for a 10th this period to hold the rolling cadence."
             case .onboarding:   return "All 6 onboarding steps closed. Push to Tier-1 priority on next NH₃ tender."
             case .compliance:   return "§387 §388 clean. Renew the COI 30 days before its 2026-08-04 anniversary."

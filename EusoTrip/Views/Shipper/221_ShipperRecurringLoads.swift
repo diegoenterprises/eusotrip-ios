@@ -28,13 +28,13 @@
 //  Backend gaps surfaced (logged in audit log, no fake data):
 //    EUSO-2129 — `loadTemplates.list` doesn't ship `cadence` (rrule),
 //                `isPaused`, or `nextFireAt`. Daily / Weekly chip
-//                counts paint "—". Status pill / tier rim infer from
+//                counts paint "-". Status pill / tier rim infer from
 //                `isArchived` (paused proxy) until backend adds an
 //                explicit `cadence` + `nextFireAt` column. Countdown
 //                bar paints empty track for active rows.
 //    EUSO-2130 — No portfolio aggregates (queued-loads / saved-YTD /
 //                next-fire). KPI hero `QUEUED` / `SAVED YTD` / `NEXT`
-//                cells paint "—" until backend ships
+//                cells paint "-" until backend ships
 //                `loadTemplates.getStats`.
 //
 //  Doctrine refs: §2 LOADS-tab nav (handled by ContentView); §3
@@ -407,10 +407,10 @@ struct ShipperRecurringLoads: View {
                     kpiCell(label: "QUEUED", value: "\(totalUses)", valueStyle: .primary, trailingUnit: "posts")
                     kpiDivider
                     // EUSO-2130 — saved-YTD aggregate not on API.
-                    kpiCell(label: "SAVED YTD", value: "—", valueStyle: .primary, trailingUnit: nil)
+                    kpiCell(label: "SAVED YTD", value: "-", valueStyle: .primary, trailingUnit: nil)
                     kpiDivider
                     // EUSO-2129 — next-fire across portfolio not shipped.
-                    kpiCell(label: "NEXT", value: "—", valueStyle: .success, trailingUnit: nil)
+                    kpiCell(label: "NEXT", value: "-", valueStyle: .success, trailingUnit: nil)
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 18)
@@ -490,7 +490,7 @@ struct ShipperRecurringLoads: View {
         let isActive = (store.filter == f)
         let label: String = {
             if let c = count, c > 0 { return "\(f.label) · \(c)" }
-            if f == .daily || f == .weekly { return "\(f.label) · —" }
+            if f == .daily || f == .weekly { return "\(f.label) · -" }
             return f.label
         }()
         return Button(action: { tapFilter(f) }) {
@@ -583,9 +583,9 @@ struct ShipperRecurringLoads: View {
                     HStack(alignment: .firstTextBaseline, spacing: 0) {
                         statCell(value: rateValue(t), unit: "/ load")
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        statCell(value: t.useCount.map { "\($0)" } ?? "—", unit: "posts")
+                        statCell(value: t.useCount.map { "\($0)" } ?? "-", unit: "posts")
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        statCell(value: t.isFavorite == true ? "★" : "—", unit: "favorite",
+                        statCell(value: t.isFavorite == true ? "★" : "-", unit: "favorite",
                                  colorOverride: t.isFavorite == true ? Brand.warning : nil)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -642,7 +642,7 @@ struct ShipperRecurringLoads: View {
         let o = locationLabel(t.origin)
         let d = locationLabel(t.destination)
         if o.isEmpty && d.isEmpty { return t.name }
-        return "\(o.isEmpty ? "—" : o) → \(d.isEmpty ? "—" : d)"
+        return "\(o.isEmpty ? "-" : o) → \(d.isEmpty ? "-" : d)"
     }
 
     private func locationLabel(_ loc: LoadTemplatesAPI.Template.Location?) -> String {
@@ -682,7 +682,7 @@ struct ShipperRecurringLoads: View {
     }
 
     private func rateValue(_ t: LoadTemplatesAPI.Template) -> String {
-        guard let r = t.rate, !r.isEmpty else { return "—" }
+        guard let r = t.rate, !r.isEmpty else { return "-" }
         return "$\(r)"
     }
 
@@ -926,8 +926,8 @@ struct ShipperRecurringLoadDetail: View {
 
     private var fields: some View {
         VStack(alignment: .leading, spacing: 8) {
-            row("Origin", "\(template.origin?.city ?? "—") · \(template.origin?.state ?? "—")")
-            row("Destination", "\(template.destination?.city ?? "—") · \(template.destination?.state ?? "—")")
+            row("Origin", "\(template.origin?.city ?? "-") · \(template.origin?.state ?? "-")")
+            row("Destination", "\(template.destination?.city ?? "-") · \(template.destination?.state ?? "-")")
             if let d = template.distance { row("Distance", "\(d) mi") }
             if let c = template.commodity { row("Commodity", c) }
             if let c = template.cargoType { row("Cargo type", c) }

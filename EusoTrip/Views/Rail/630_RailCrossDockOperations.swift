@@ -372,7 +372,7 @@ private struct RailCrossDockOperationsBody: View {
             return RowStyle(color: Brand.success, pill: "DONE", ttcLabel: "closed")
         }
         if s == "cancelled" {
-            return RowStyle(color: palette.textTertiary, pill: "CANCELLED", ttcLabel: "—")
+            return RowStyle(color: palette.textTertiary, pill: "CANCELLED", ttcLabel: "-")
         }
         return RowStyle(color: Brand.rail, pill: "PLANNED", ttcLabel: "start")
     }
@@ -387,7 +387,7 @@ private struct RailCrossDockOperationsBody: View {
 
     /// "<from-container> → <to-container> · <detail>" mono line.
     private func transferLine(_ op: CrossDockOp) -> String {
-        let from = op.inboundTrailer.flatMap { $0.isEmpty ? nil : $0 } ?? "—"
+        let from = op.inboundTrailer.flatMap { $0.isEmpty ? nil : $0 } ?? "-"
         let to: String = {
             let pri = (op.priority ?? "normal").lowercased()
             if (op.status ?? "").lowercased() == "in_progress",
@@ -395,7 +395,7 @@ private struct RailCrossDockOperationsBody: View {
                (op.palletsTransferred ?? 0) == 0 {
                 return "hazmat hold · UN1830"
             }
-            return op.outboundTrailer.flatMap { $0.isEmpty ? nil : $0 } ?? "—"
+            return op.outboundTrailer.flatMap { $0.isEmpty ? nil : $0 } ?? "-"
         }()
         let pallets = op.palletCount ?? 0
         let detail = pallets > 0 ? " · \(pallets) pallets" : ""
@@ -414,27 +414,27 @@ private struct RailCrossDockOperationsBody: View {
     }
 
     /// Tabular time-to-close: minutes for in-progress, clock for planned,
-    /// "—" for holds with no estimate.
+    /// "-" for holds with no estimate.
     private func timeToClose(_ op: CrossDockOp) -> String {
         let s = (op.status ?? "planned").lowercased()
         let pri = (op.priority ?? "normal").lowercased()
         if s == "in_progress", (pri == "high" || pri == "urgent"),
            (op.palletsTransferred ?? 0) == 0 {
-            return "—"   // HOLD · docs pend
+            return "-"   // HOLD · docs pend
         }
         if s == "planned" {
             // Show the scheduled start clock (HH:mm) when present.
             if let start = op.startTime, let clock = hhmm(start) {
                 return clock
             }
-            return "—"
+            return "-"
         }
         if s == "completed" { return "✓" }
         // in_progress / staging → minutes until estimated completion.
         if let eta = op.estimatedCompletion, let mins = minutesUntil(eta) {
             return "\(mins) min"
         }
-        return "—"
+        return "-"
     }
 
     // MARK: - Date helpers
@@ -545,7 +545,7 @@ private struct RailCrossDockOperationsBody: View {
         // POSTing a fabricated locationId.
         guard let anchor = ops.first,
               let loc = anchor.inboundDock.flatMap({ $0.isEmpty ? nil : $0 }) ?? anchor.outboundDock else {
-            planError = "No yard location context — open a cross-dock op first."
+            planError = "No yard location context. Open a cross-dock op first."
             loadError = planError
             return
         }

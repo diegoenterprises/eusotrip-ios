@@ -90,7 +90,7 @@ private struct DVIRSectionAckBody: View {
             }
             Text("Section \(sectionsCompleted) · acked").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
             if let l = load {
-                Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "—") → \(l.destCity ?? "—")")
+                Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "-") → \(l.destCity ?? "-")")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
             }
         }
@@ -178,7 +178,7 @@ private struct DVIRSectionAckBody: View {
             case 9:  return "Coupling + air system passed. Tire chains + emergency kit (S10) next."
             case 10: return "Emergency kit verified. Reefer + cargo seal (S11) next."
             case 11: return "Reefer + cargo seal logged. ELD + comms (S12) next."
-            case 12: return "ELD + comms cleared — 86% done. Fuel + DEF (S13) up next; submit fires at S14."
+            case 12: return "ELD + comms cleared, 86% done. Fuel + DEF (S13) up next; submit fires at S14."
             default: return "Continue walk-around per §392."
             }
         }()

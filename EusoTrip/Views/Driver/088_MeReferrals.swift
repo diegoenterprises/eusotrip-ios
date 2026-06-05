@@ -381,7 +381,7 @@ struct MeReferrals: View {
                 EusoEmptyState(
                     systemImage: "paperplane",
                     title: "No referrals yet",
-                    subtitle: "Share your code with a driver. You'll see their funnel stage here as they sign up, run their first load, and verify KYC."
+                    subtitle: "Share your code with a driver. You'll see their funnel stage here as they sign up, run their first load and verify KYC."
                 )
             } else {
                 VStack(spacing: Space.s2) {
@@ -434,7 +434,7 @@ struct MeReferrals: View {
 
     private var rewardSchedule: some View {
         VStack(alignment: .leading, spacing: Space.s1) {
-            Text("Rewards land automatically — $25 when your referee completes their first load, $10 when they pass KYC. Paid to your EusoWallet.")
+            Text("Rewards land automatically, $25 when your referee completes their first load, $10 when they pass KYC. Paid to your EusoWallet.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.leading)
@@ -451,7 +451,7 @@ struct MeReferrals: View {
     }
 
     private func shareMessage(for code: String) -> String {
-        "Join me on EusoTrip — use my code \(code) when you sign up and we both earn. https://eusotrip.com/ref/\(code)"
+        "Join me on EusoTrip, use my code \(code) when you sign up and we both earn. https://eusotrip.com/ref/\(code)"
     }
 }
 

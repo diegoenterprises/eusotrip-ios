@@ -38,7 +38,7 @@
 //      explanatory subtitle. Per §13 doctrine: "every backend stub
 //      gap has a neutral empty state on the client (no fake data)."
 //    • Empty / blank server fields surface as em-dash sentinels
-//      ("—") — every nullable column on a fresh tender (no pickup
+//      ("-") — every nullable column on a fresh tender (no pickup
 //      date scheduled, no rate posted) renders as a neutral em-dash,
 //      never a fabricated value.
 //    • Preview hint passthrough (loadNumber / lane / posted /
@@ -98,8 +98,8 @@ struct BrokerTenderDetail: View {
 
     private var header: some View {
         let live: LoadsAPI.LoadDetail? = detailStore.state.value ?? nil
-        let loadNumber = live?.loadNumber ?? previewLoadNumber ?? "—"
-        let lane: String = live?.laneDisplay ?? previewLane ?? "—"
+        let loadNumber = live?.loadNumber ?? previewLoadNumber ?? "-"
+        let lane: String = live?.laneDisplay ?? previewLane ?? "-"
         let status = live?.status ?? ""
 
         return VStack(alignment: .leading, spacing: Space.s2) {
@@ -361,7 +361,7 @@ struct BrokerTenderDetail: View {
     /// always passes this hint through, so the cold-open path is
     /// rare in practice.
     private func responsesDisplay() -> String {
-        guard let n = previewRespondingCarriers else { return "—" }
+        guard let n = previewRespondingCarriers else { return "-" }
         return "\(n) " + (n == 1 ? "carrier" : "carriers")
     }
 
@@ -472,10 +472,10 @@ struct BrokerTenderDetail: View {
             if let ws = d.worldscalePct, !ws.isEmpty, let n = Double(ws), n > 0 {
                 scheduleRow(label: "Worldscale", value: "WS \(Int(n.rounded()))")
             }
-            if let w = d.weightDisplay as String?, w != "—" {
+            if let w = d.weightDisplay as String?, w != "-" {
                 scheduleRow(label: "Weight", value: w)
             }
-            if let dist = d.distanceDisplay as String?, dist != "—" {
+            if let dist = d.distanceDisplay as String?, dist != "-" {
                 scheduleRow(label: "Distance", value: dist)
             }
             if let hz = d.hazmatClass, !hz.isEmpty {
@@ -536,7 +536,7 @@ struct BrokerTenderDetail: View {
                     .padding(.top, 2)
                 }
             } else {
-                scheduleRow(label: "Market range", value: "—")
+                scheduleRow(label: "Market range", value: "-")
             }
             if let cur = d.currency, !cur.isEmpty, cur.uppercased() != "USD" {
                 scheduleRow(label: "Currency", value: cur.uppercased())
@@ -595,7 +595,7 @@ struct BrokerTenderDetail: View {
                         .lineLimit(1)
                 }
             }
-            Text("Carrier shortlist with bid history, fit-score, and award affordances will appear here once `brokers.getTenderResponses` ships server-side.")
+            Text("Carrier shortlist with bid history, fit-score and award affordances will appear here once `brokers.getTenderResponses` ships server-side.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -612,7 +612,7 @@ struct BrokerTenderDetail: View {
 
     /// Notes block — only renders when the load actually carries
     /// special-instructions text from the server. Drafts with no
-    /// notes get the section omitted entirely (no "—" filler).
+    /// notes get the section omitted entirely (no "-" filler).
     @ViewBuilder
     private func notesCard(_ d: LoadsAPI.LoadDetail) -> some View {
         if let notes = d.notes, !notes.isEmpty {
@@ -760,7 +760,7 @@ struct BrokerTenderDetail: View {
     /// Em-dash on empty/nil so a draft cargoType missing from the row
     /// surfaces as a neutral cell.
     private func humanCargoType(_ raw: String?) -> String {
-        guard let r = raw, !r.isEmpty else { return "—" }
+        guard let r = raw, !r.isEmpty else { return "-" }
         switch r.lowercased() {
         case "general":      return "General freight"
         case "hazmat":       return "Hazmat"
@@ -779,7 +779,7 @@ struct BrokerTenderDetail: View {
     /// when nil / empty / unparseable so missing dates always look
     /// like a deliberate sentinel.
     private func humanDate(_ iso: String?) -> String {
-        guard let iso = iso, !iso.isEmpty else { return "—" }
+        guard let iso = iso, !iso.isEmpty else { return "-" }
         let isoFmt = ISO8601DateFormatter()
         isoFmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         var date = isoFmt.date(from: iso)
@@ -894,8 +894,8 @@ private func brokerNavTrailing_402() -> [NavSlot] {
     BrokerTenderDetailScreen(
         theme: Theme.dark,
         tenderId: "0",
-        previewLoadNumber: "—",
-        previewLane: "—",
+        previewLoadNumber: "-",
+        previewLane: "-",
         previewPostedAt: nil,
         previewRespondingCarriers: nil,
         previewTargetRate: nil,
@@ -909,8 +909,8 @@ private func brokerNavTrailing_402() -> [NavSlot] {
     BrokerTenderDetailScreen(
         theme: Theme.light,
         tenderId: "0",
-        previewLoadNumber: "—",
-        previewLane: "—",
+        previewLoadNumber: "-",
+        previewLane: "-",
         previewPostedAt: nil,
         previewRespondingCarriers: nil,
         previewTargetRate: nil,

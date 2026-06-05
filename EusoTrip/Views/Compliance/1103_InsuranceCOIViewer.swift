@@ -333,7 +333,7 @@ private struct InsuranceCOIBody: View {
                 Image(systemName: "bell.slash")
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(Brand.warning)
-                Text("Lapse monitoring pending — the subscription is registered but not yet active.")
+                Text("Lapse monitoring pending. The subscription is registered but not yet active.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
@@ -488,7 +488,7 @@ private enum CoiStatusState {
         case .verified:
             return "Certificate accepted and attached to the company compliance file."
         case .pending:
-            return "Submitted for verification. The provider hasn't returned a confirmed result yet — this stays in manual review until it clears. Not yet counted as active coverage."
+            return "Submitted for verification. The provider hasn't returned a confirmed result yet. This stays in manual review until it clears. Not yet counted as active coverage."
         case .rejected:
             return "The provider could not validate this certificate. Review the policy details and re-submit, or escalate for manual review."
         }

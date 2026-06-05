@@ -145,7 +145,7 @@ struct PretripDVIR: View {
     private var headerMetaLine: String {
         // Empty unitLabel → em-dash neutral so we never paint a
         // hardcoded fixture. Production injection must populate this.
-        let unit = vm.unitLabel.isEmpty ? "Unit —" : vm.unitLabel
+        let unit = vm.unitLabel.isEmpty ? "Unit -" : vm.unitLabel
         if let load = vm.loadLabel, !load.isEmpty { return "\(unit) · \(load)" }
         return unit
     }
@@ -475,7 +475,7 @@ struct PretripDVIR: View {
             case .na:
                 Circle().strokeBorder(palette.borderSoft, lineWidth: 1.5)
                     .frame(width: size, height: size)
-                Text("—")
+                Text("-")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(palette.textSecondary)
             case .none:
@@ -598,7 +598,7 @@ struct PretripDVIR: View {
             Text("UNIT")
                 .font(EType.micro).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
-            Text(vm.unitLabel.isEmpty ? "—" : vm.unitLabel)
+            Text(vm.unitLabel.isEmpty ? "-" : vm.unitLabel)
                 .font(EType.body)
                 .foregroundStyle(vm.unitLabel.isEmpty ? palette.textTertiary : palette.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -661,8 +661,8 @@ struct PretripDVIR: View {
                 .foregroundStyle(vm.defectCount > 0 ? Brand.warning : Brand.success)
                 .fontWeight(.semibold)
              + Text(vm.defectCount > 0
-                    ? " — unit will not leave the yard until cleared."
-                    : " — signed under 49 CFR 396.13.")
+                    ? ", unit will not leave the yard until cleared."
+                    : ", signed under 49 CFR 396.13.")
                 .foregroundStyle(palette.textSecondary))
                 .font(EType.caption)
                 .multilineTextAlignment(.center)

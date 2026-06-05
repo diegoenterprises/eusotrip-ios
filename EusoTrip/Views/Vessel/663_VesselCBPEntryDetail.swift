@@ -349,7 +349,7 @@ private struct VesselCBPEntryDetailBody: View {
         // "CBP exam hold — CET" style: agency + hold type.
         let agency = hold.agency ?? "CBP"
         let type = hold.holdType ?? "exam hold"
-        return "\(agency) exam hold — \(type)"
+        return "\(agency) exam hold - \(type)"
     }
     private func holdMeta(_ hold: CBPHold663) -> String {
         // "CBP · PGA referral · UN1830 Cl.8" — agency + reason.

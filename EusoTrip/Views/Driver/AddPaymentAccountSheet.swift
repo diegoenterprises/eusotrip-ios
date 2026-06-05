@@ -692,7 +692,7 @@ private final class StripeCardWebController: UIViewController, WKScriptMessageHa
         <body>
           <div class="wrap">
             <h1>Add a card</h1>
-            <p class="sub">Card details are collected by Stripe — never by EusoTrip.</p>
+            <p class="sub">Card details are collected by Stripe, never by EusoTrip.</p>
             <div id="card-element"></div>
             <button id="submit" disabled>Add card</button>
             <div id="err" role="alert" aria-live="polite"></div>

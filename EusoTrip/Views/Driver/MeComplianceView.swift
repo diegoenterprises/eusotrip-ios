@@ -154,7 +154,7 @@ enum ComplianceCatalog {
             headline: "eDVIR explicit in the regs",
             citation: "49 CFR § 396",
             effective: "Mar 23, 2026",
-            summary: "Electronic DVIR creation, signature, and retention are now explicitly permitted in Part 396 — not just allowed by analogy via 49 CFR 390.32.",
+            summary: "Electronic DVIR creation, signature and retention are now explicitly permitted in Part 396, not just allowed by analogy via 49 CFR 390.32.",
             detail: """
 FMCSA rewrote Part 396 to call out electronic DVIRs directly. Drivers may originate, sign, and retain DVIRs entirely on an app or tablet — no paper copy required — provided the record is reproducible on demand during an inspection.
 
@@ -211,14 +211,14 @@ FMCSA removed the option to use liquid-burning flares as emergency warning devic
 • Bidirectional reflective triangles (3 per truck), or
 • Solid-fuel (fusee) flares, provided they are not carried on a cargo tank hauling flammable gas or flammable liquid.
 
-The flame-device restriction on flammable-gas and flammable-liquid cargo tanks remains in full force — if you haul those, you cannot carry any burning flare, solid-fuel or otherwise. EusoTrip has updated the in-cab emergency-warning-device picker to drop "Liquid flare".
+The flame-device restriction on flammable-gas and flammable-liquid cargo tanks remains in full force. If you haul those, you cannot carry any burning flare, solid-fuel or otherwise. EusoTrip has updated the in-cab emergency-warning-device picker to drop "Liquid flare".
 """,
             callToAction: "I understand",
             severity: .action
         ),
         ComplianceRule(
             tag: .phmsaExxon,
-            headline: "PHMSA preemption docket — Exxon Mobil",
+            headline: "PHMSA preemption docket - Exxon Mobil",
             citation: "PHMSA-2025-0777",
             effective: "Comments closed Mar 23, 2026 · Rebuttals closed Apr 21, 2026",
             summary: "PHMSA is weighing whether federal hazmat law preempts state tort claims against a gasoline CTMV operator over benzene cancer risk.",

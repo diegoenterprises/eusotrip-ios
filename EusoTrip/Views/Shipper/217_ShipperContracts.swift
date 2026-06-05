@@ -36,7 +36,7 @@
 //                or vs-spot delta. The wireframe-canon row anatomy
 //                paints `customer` as the lane line, `type` as the
 //                spec line, and the 3-stat triplet uses
-//                value / endDate / "—" placeholders. Status pill is
+//                value / endDate / "-" placeholders. Status pill is
 //                derived from `status` only.
 //
 //  Doctrine refs: §2 LOADS-tab nav (handled by ContentView); §3
@@ -254,9 +254,9 @@ struct ShipperContracts: View {
     private var counterEyebrow: String {
         if case .loaded(let stats, _) = store.state {
             // EUSO-2120 — fillRate aggregate not yet on API surface.
-            return "\(stats.active) ACTIVE · — FILL"
+            return "\(stats.active) ACTIVE · - FILL"
         }
-        return "—"
+        return "-"
     }
 
     private var counterColor: Color {
@@ -368,7 +368,7 @@ struct ShipperContracts: View {
                     kpiDivider
                     // EUSO-2120 — committedLoads aggregate pending.
                     kpiCell(label: "COMMITTED",
-                            value: "—",
+                            value: "-",
                             valueStyle: .primary,
                             trailingUnit: "loads")
                     kpiDivider
@@ -379,7 +379,7 @@ struct ShipperContracts: View {
                     kpiDivider
                     // EUSO-2120 — fillRate aggregate pending.
                     kpiCell(label: "FILL",
-                            value: "—",
+                            value: "-",
                             valueStyle: .success,
                             trailingUnit: nil)
                 }
@@ -542,13 +542,13 @@ struct ShipperContracts: View {
                         .padding(.top, 4)
 
                     HStack(alignment: .firstTextBaseline, spacing: 0) {
-                        statCell(value: row.value > 0 ? formatMoney(row.value) : "—", unit: "/ load")
+                        statCell(value: row.value > 0 ? formatMoney(row.value) : "-", unit: "/ load")
                             .frame(maxWidth: .infinity, alignment: .leading)
                         // EUSO-2121 — filled-count not on row envelope.
-                        statCell(value: "—", unit: "filled")
+                        statCell(value: "-", unit: "filled")
                             .frame(maxWidth: .infinity, alignment: .leading)
                         // EUSO-2121 — vs-spot delta not on row envelope.
-                        statCell(value: "—", unit: "vs spot")
+                        statCell(value: "-", unit: "vs spot")
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .padding(.top, Space.s2 + 2)
@@ -633,7 +633,7 @@ struct ShipperContracts: View {
         default:
             return CanonStatus(tier: .neutral,
                                pillKind: .closed,
-                               pillLegend: (row.status ?? "—").uppercased(),
+                               pillLegend: (row.status ?? "-").uppercased(),
                                pillWidth: 84,
                                fill: .gradient)
         }
@@ -690,7 +690,7 @@ struct ShipperContracts: View {
             HStack {
                 Spacer()
                 // EUSO-2121 — per-row fill rate not shipped.
-                Text("— FILL")
+                Text("- FILL")
                     .font(.system(size: 9, weight: .heavy))
                     .tracking(0.4)
                     .foregroundStyle(palette.textSecondary)
@@ -934,7 +934,7 @@ struct ShipperContracts: View {
         if n >= 1_000_000 { return String(format: "$%.1fM", Double(n) / 1_000_000) }
         if n >= 10_000    { return String(format: "$%.0fk", Double(n) / 1_000) }
         if n >= 1_000     { return String(format: "$%.1fk", Double(n) / 1_000) }
-        if n == 0          { return "—" }
+        if n == 0          { return "-" }
         return "$\(n)"
     }
 }
@@ -1052,7 +1052,7 @@ private struct ContractDetailSheet: View {
             Text("CONTRACT")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                 .foregroundStyle(palette.textTertiary)
-            Text(d.contractNumber ?? "—")
+            Text(d.contractNumber ?? "-")
                 .font(.system(size: 22, weight: .heavy, design: .rounded))
                 .foregroundStyle(palette.textPrimary)
             HStack(spacing: 6) {
@@ -1092,8 +1092,8 @@ private struct ContractDetailSheet: View {
     private func termsCard(_ t: ContractsAPI.ContractDetail.Terms) -> some View {
         sectionCard(title: "TERMS") {
             VStack(spacing: 6) {
-                kvRow("Effective", value: t.startDate?.isEmpty == false ? t.startDate! : "—")
-                kvRow("Expires", value: t.endDate?.isEmpty == false ? t.endDate! : "—")
+                kvRow("Effective", value: t.startDate?.isEmpty == false ? t.startDate! : "-")
+                kvRow("Expires", value: t.endDate?.isEmpty == false ? t.endDate! : "-")
                 kvRow("Auto-renew", value: t.autoRenew ? "Enabled" : "Disabled")
             }
         }
@@ -1103,8 +1103,8 @@ private struct ContractDetailSheet: View {
         sectionCard(title: "PRICING") {
             VStack(spacing: 6) {
                 kvRow("Base rate", value: formatMoney(p.baseRate))
-                kvRow("Rate type", value: p.rateType.isEmpty ? "—" : p.rateType.capitalized)
-                kvRow("Fuel surcharge", value: p.fuelSurcharge.isEmpty ? "—" : p.fuelSurcharge.capitalized)
+                kvRow("Rate type", value: p.rateType.isEmpty ? "-" : p.rateType.capitalized)
+                kvRow("Fuel surcharge", value: p.fuelSurcharge.isEmpty ? "-" : p.fuelSurcharge.capitalized)
             }
         }
     }
@@ -1112,8 +1112,8 @@ private struct ContractDetailSheet: View {
     private func volumeCard(_ v: ContractsAPI.ContractDetail.Volume) -> some View {
         sectionCard(title: "VOLUME COMMITMENT") {
             VStack(spacing: 6) {
-                kvRow("Commitment", value: v.commitment > 0 ? "\(v.commitment) loads" : "—")
-                kvRow("Period", value: v.period.isEmpty ? "—" : v.period.capitalized)
+                kvRow("Commitment", value: v.commitment > 0 ? "\(v.commitment) loads" : "-")
+                kvRow("Period", value: v.period.isEmpty ? "-" : v.period.capitalized)
             }
         }
     }
@@ -1165,7 +1165,7 @@ private struct ContractDetailSheet: View {
         if n >= 1_000_000 { return String(format: "$%.1fM", Double(n) / 1_000_000) }
         if n >= 10_000    { return String(format: "$%.0fk", Double(n) / 1_000) }
         if n >= 1_000     { return String(format: "$%.1fk", Double(n) / 1_000) }
-        if n == 0          { return "—" }
+        if n == 0          { return "-" }
         return "$\(n)"
     }
 }
@@ -1183,7 +1183,7 @@ private func sheetStatusStyle(_ status: String?, palette: Theme.Palette) -> Shee
     case "approved":        return SheetStatusStyle(label: "Approved", color: Brand.info)
     case "expired":         return SheetStatusStyle(label: "Expired",  color: Brand.danger)
     case "terminated":      return SheetStatusStyle(label: "Terminated", color: Brand.danger)
-    default:                 return SheetStatusStyle(label: status?.capitalized ?? "—", color: palette.textTertiary)
+    default:                 return SheetStatusStyle(label: status?.capitalized ?? "-", color: palette.textTertiary)
     }
 }
 

@@ -372,10 +372,10 @@ private struct RailShipmentAmendmentBody: View {
                     .foregroundStyle(chip.color)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text(c.fieldName ?? "—")
+                Text(c.fieldName ?? "-")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                Text(sub.isEmpty ? "—" : sub)
+                Text(sub.isEmpty ? "-" : sub)
                     .font(.system(size: 11, weight: .regular, design: .monospaced))
                     .tracking(0.4)
                     .foregroundStyle(palette.textSecondary)

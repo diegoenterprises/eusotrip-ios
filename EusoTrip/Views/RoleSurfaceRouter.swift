@@ -156,7 +156,7 @@ struct DriverSurfaceHost: View {
                 Text("Driver routing fault")
                     .font(EType.h2)
                     .foregroundStyle(palette.textPrimary)
-                Text("ContentView should have dispatched the Driver surface directly. Reaching `RoleSurfaceRouter` for `.driver` is a build-time wiring bug — file a defect.")
+                Text("ContentView should have dispatched the Driver surface directly. Reaching `RoleSurfaceRouter` for `.driver` is a build-time wiring bug. File a defect.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -2000,7 +2000,7 @@ struct WebContinuationSurface: View {
                           systemImage: "safari")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
-                    Label("You stay signed in — your session carries over.",
+                    Label("You stay signed in. Your session carries over.",
                           systemImage: "checkmark.shield")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
@@ -2342,7 +2342,7 @@ struct HardwareCapabilitiesView: View {
             Text("Tell EusoTrip what hardware you have")
                 .font(EType.body.weight(.bold))
                 .foregroundStyle(palette.textPrimary)
-            Text("Drivers see the matching dock-cam, yardmap, and AR fallback paths light up automatically. Anything left blank stays as 'Pair hardware' on the driver side — the affordance never disappears.")
+            Text("Drivers see the matching dock-cam, yardmap and AR fallback paths light up automatically. Anything left blank stays as 'Pair hardware' on the driver side. The affordance never disappears.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
         }
@@ -2410,7 +2410,7 @@ struct HardwareCapabilitiesView: View {
                 }
                 ForEach(caps.uwbAnchors, id: \.self) { a in
                     HStack(alignment: .top, spacing: 6) {
-                        Text("· Door \(a.doorNumber) — \(a.vendor) (\(a.accessoryConfigData.prefix(8))…)")
+                        Text("· Door \(a.doorNumber) · \(a.vendor) (\(a.accessoryConfigData.prefix(8))…)")
                             .font(EType.caption)
                             .foregroundStyle(palette.textSecondary)
                         Spacer(minLength: 0)
@@ -2472,7 +2472,7 @@ struct HardwareCapabilitiesView: View {
                 }
                 ForEach(caps.cameraFeeds, id: \.self) { f in
                     HStack(alignment: .top, spacing: 6) {
-                        Text("· Door \(f.doorNumber) — \(f.vendor)\(f.label.map { " · \($0)" } ?? "")")
+                        Text("· Door \(f.doorNumber) · \(f.vendor)\(f.label.map { " · \($0)" } ?? "")")
                             .font(EType.caption)
                             .foregroundStyle(palette.textSecondary)
                         Spacer(minLength: 0)
@@ -2534,7 +2534,7 @@ struct HardwareCapabilitiesView: View {
                 }
                 ForEach(caps.doorMarkers, id: \.self) { m in
                     HStack(alignment: .top, spacing: 6) {
-                        Text("· Door \(m.doorNumber) — marker \(m.markerId) (offset \(m.offsetX, specifier: "%.2f")m, \(m.offsetY, specifier: "%.2f")m)")
+                        Text("· Door \(m.doorNumber) · marker \(m.markerId) (offset \(m.offsetX, specifier: "%.2f")m, \(m.offsetY, specifier: "%.2f")m)")
                             .font(EType.caption)
                             .foregroundStyle(palette.textSecondary)
                         Spacer(minLength: 0)
@@ -2613,7 +2613,7 @@ struct HardwareCapabilitiesView: View {
                     .padding(8)
                     .background(palette.bgCardSoft)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
-                Text("Paste a Polygon, MultiPolygon, Feature, or FeatureCollection. Drivers see translucent dock-lane / staging-zone overlays on top of the HereMapView basemap.")
+                Text("Paste a Polygon, MultiPolygon, Feature or FeatureCollection. Drivers see translucent dock-lane / staging-zone overlays on top of the HereMapView basemap.")
                     .font(.system(size: 10))
                     .foregroundStyle(palette.textTertiary)
                 Button("Save terminal capabilities") {

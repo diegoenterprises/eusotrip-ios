@@ -268,7 +268,7 @@ private struct RailDemurrageCalculatorBody: View {
                 Text("PER DIEM")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(.white.opacity(0.85))
-                Text(a.perDiemUsd.map { "\(money($0))/d" } ?? "—")
+                Text(a.perDiemUsd.map { "\(money($0))/d" } ?? "-")
                     .font(.system(size: 22, weight: .semibold)).monospacedDigit()
                     .foregroundStyle(.white)
                     .lineLimit(1).minimumScaleFactor(0.6)
@@ -279,7 +279,7 @@ private struct RailDemurrageCalculatorBody: View {
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
 
             kpiCell(label: "FREE TIME",
-                    value: a.freeTimeDays.map { "\($0)d" } ?? "—",
+                    value: a.freeTimeDays.map { "\($0)d" } ?? "-",
                     valueColor: palette.textSecondary)
             kpiCell(label: "OVER",
                     value: "\(a.daysOver ?? 0)",
@@ -321,7 +321,7 @@ private struct RailDemurrageCalculatorBody: View {
             let lines = a.lines ?? []
             if lines.isEmpty {
                 LifecycleCard {
-                    Text("No accrual lines — calculateAccrual returned an empty schedule for this box.")
+                    Text("No accrual lines - calculateAccrual returned an empty schedule for this box.")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }

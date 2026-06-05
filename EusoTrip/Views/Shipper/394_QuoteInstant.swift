@@ -100,8 +100,8 @@ private struct QuoteBody: View {
                 LifecycleStatTile(label: "MID",    value: usd(r.midUsd), icon: "scalemass")
                 LifecycleStatTile(label: "HIGH",   value: usd(r.highUsd), icon: "arrow.up.circle")
             }
-            LifecycleRow(label: "Confidence",  value: r.confidencePct.map { "\($0)%" } ?? "—")
-            LifecycleRow(label: "Comparable",   value: r.comparable.map { "\($0) loads" } ?? "—")
+            LifecycleRow(label: "Confidence",  value: r.confidencePct.map { "\($0)%" } ?? "-")
+            LifecycleRow(label: "Comparable",   value: r.comparable.map { "\($0) loads" } ?? "-")
         }
     }
 

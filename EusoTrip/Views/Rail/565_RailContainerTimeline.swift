@@ -157,13 +157,13 @@ private struct RailContainerTimelineBody: View {
 
     private var rampDwellLabel: String {
         if let h = intermodal?.rampDwellHours { return String(format: "%.1fh", h) }
-        return "—"
+        return "-"
     }
     private var etaHoursLabel: String {
         if let h = intermodal?.nextRampEtaHours { return "\(Int(h))h" }
-        return "—"
+        return "-"
     }
-    private var etaDateLabel: String { intermodal?.nextRampEtaDateStr ?? "—" }
+    private var etaDateLabel: String { intermodal?.nextRampEtaDateStr ?? "-" }
     private var destAbbrev: String {
         let name = intermodal?.nextRampName ?? ""
         guard !name.isEmpty else { return "DEST" }
@@ -175,24 +175,24 @@ private struct RailContainerTimelineBody: View {
             let dir = tracking?.currentHeading ?? ""
             return "\(Int(spd)) mph\(dir.isEmpty ? "" : " \(dir)")"
         }
-        return "—"
+        return "-"
     }
     private var liveSpeedInt: String {
         if let spd = tracking?.currentSpeedMph { return "\(Int(spd))" }
-        return "—"
+        return "-"
     }
     private var liveHeading: String { tracking?.currentHeading ?? "" }
-    private var locationLabel: String { tracking?.currentLocation ?? "—" }
-    private var trainLabel: String { tracking?.trainId ?? "—" }
+    private var locationLabel: String { tracking?.currentLocation ?? "-" }
+    private var trainLabel: String { tracking?.trainId ?? "-" }
     private var pingLabel: String {
         if let p = tracking?.lastPingMinutesAgo { return "ping \(p)m ago" }
-        return "—"
+        return "-"
     }
 
     private var containerLabel: String {
         let num  = container?.containerNumber ?? containerNumber
-        let size = container?.containerSize ?? "—"
-        let rr   = container?.railroadCode ?? "—"
+        let size = container?.containerSize ?? "-"
+        let rr   = container?.railroadCode ?? "-"
         return "\(num) · \(size) · \(rr)"
     }
     private var containerStatus: String { (container?.status ?? "IN TRANSIT").uppercased() }
@@ -365,10 +365,10 @@ private struct RailContainerTimelineBody: View {
         return HStack(spacing: 12) {
             milestoneChip(state)
             VStack(alignment: .leading, spacing: 4) {
-                Text(evt.description ?? evt.eventType?.replacingOccurrences(of: "_", with: " ").capitalized ?? "—")
+                Text(evt.description ?? evt.eventType?.replacingOccurrences(of: "_", with: " ").capitalized ?? "-")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                Text(evt.details ?? evt.location ?? evt.timestamp ?? "—")
+                Text(evt.details ?? evt.location ?? evt.timestamp ?? "-")
                     .font(.system(size: 11, weight: .regular, design: .monospaced))
                     .tracking(0.4)
                     .foregroundStyle(palette.textSecondary)

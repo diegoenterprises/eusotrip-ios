@@ -249,7 +249,7 @@ private struct RailFreeTimeBody: View {
     }
 
     private var countdownText: String {
-        guard let days = leadAlert?.daysUntilLFD else { return "—" }
+        guard let days = leadAlert?.daysUntilLFD else { return "-" }
         if days < 0 { return "PAST" }
         let remHours = max(0, freeWindowHours - usedHours)
         let d = remHours / 24
@@ -260,8 +260,8 @@ private struct RailFreeTimeBody: View {
 
     private var lfdContextText: String {
         guard let a = leadAlert else { return "no spotted cars" }
-        let lfd = a.lastFreeDay.map { humanDate($0) } ?? "—"
-        let where_ = a.port?.name ?? a.terminal ?? "—"
+        let lfd = a.lastFreeDay.map { humanDate($0) } ?? "-"
+        let where_ = a.port?.name ?? a.terminal ?? "-"
         return "LFD \(lfd) · \(where_)"
     }
 
@@ -388,8 +388,8 @@ private struct RailFreeTimeBody: View {
     }
 
     private func rowTitle(_ a: LFDAlert) -> String {
-        let cn = a.containerNumber ?? "—"
-        let where_ = a.port?.name ?? a.terminal ?? "—"
+        let cn = a.containerNumber ?? "-"
+        let where_ = a.port?.name ?? a.terminal ?? "-"
         return "\(cn) · \(where_)"
     }
 
@@ -400,12 +400,12 @@ private struct RailFreeTimeBody: View {
         let days = a.daysUntilLFD ?? 0
         if days < 0 { return "LFD passed · per-diem accruing" }
         if days == 0 { return "spotted · LFD today · pull now" }
-        return "spotted · LFD \(a.lastFreeDay.map { humanDate($0) } ?? "—")"
+        return "spotted · LFD \(a.lastFreeDay.map { humanDate($0) } ?? "-")"
     }
 
     private func overflowLine(_ a: LFDAlert) -> String {
-        let cn = a.containerNumber ?? "—"
-        let lfd = a.lastFreeDay.map { humanDate($0) } ?? "—"
+        let cn = a.containerNumber ?? "-"
+        let lfd = a.lastFreeDay.map { humanDate($0) } ?? "-"
         return "+ \(cn) · LFD \(lfd) · ample · \(totalContainers) cars total"
     }
 
@@ -428,7 +428,7 @@ private struct RailFreeTimeBody: View {
     }
 
     private func daysText(_ days: Int?) -> String {
-        guard let d = days else { return "—" }
+        guard let d = days else { return "-" }
         if d < 0 { return "+\(abs(d))d" }
         return "\(d)d"
     }
@@ -463,8 +463,8 @@ private struct RailFreeTimeBody: View {
     private var exposureLine: String {
         let exposed = alerts.first { ($0.estimatedPerDiem ?? 0) > 0 } ?? leadAlert
         if let a = exposed, let perDiem = a.estimatedPerDiem, perDiem > 0 {
-            let cn = a.containerNumber ?? "—"
-            let lfd = a.lastFreeDay.map { humanDate($0) } ?? "—"
+            let cn = a.containerNumber ?? "-"
+            let lfd = a.lastFreeDay.map { humanDate($0) } ?? "-"
             return "Projected \(currency(perDiem)) if \(cn) not pulled by LFD \(lfd)"
         }
         let total = alerts.reduce(into: 0.0) { acc, a in acc += a.estimatedPerDiem ?? 0 }
@@ -475,7 +475,7 @@ private struct RailFreeTimeBody: View {
     }
 
     private var exposureRef: String {
-        let ref = leadAlert?.bookingRef ?? "—"
+        let ref = leadAlert?.bookingRef ?? "-"
         return "Eusorone Technologies (DU) · \(ref) · US \(freeWindowHours)h"
     }
 

@@ -170,7 +170,7 @@ private struct RailExceptionsHoldsBody: View {
     private var totalExceptions: Int { holdCount + alertCount + (demurrageBreach ? 1 : 0) }
     private var demurrageBreach: Bool { (demurrage?.daysOver ?? 0) > 0 }
     private var demurrageAmount: String {
-        guard let amt = demurrage?.totalAmount, amt > 0 else { return "—" }
+        guard let amt = demurrage?.totalAmount, amt > 0 else { return "-" }
         return "$\(Int(amt.rounded()))"
     }
     private var isCritical: Bool { holdCount > 0 || alertCount > 0 }
@@ -181,11 +181,11 @@ private struct RailExceptionsHoldsBody: View {
             ExceptionItem563(
                 glyph: "nosign",
                 tintColor: Brand.danger,
-                title: "Bad-order hold — out of service",
+                title: "Bad-order hold - out of service",
                 subtitle: "\(insp.railcarNumber ?? "railcar") · \(insp.defectCode ?? "AAR mech defect")",
                 pill: "HOLD",
                 pillColor: Brand.danger,
-                detail: insp.location ?? "—",
+                detail: insp.location ?? "-",
                 detailIsBold: false
             )
         }
@@ -196,11 +196,11 @@ private struct RailExceptionsHoldsBody: View {
             ExceptionItem563(
                 glyph: "exclamationmark.triangle.fill",
                 tintColor: Brand.warning,
-                title: "FRA exception — \(v.type ?? "safety alert")",
+                title: "FRA exception - \(v.type ?? "safety alert")",
                 subtitle: "getFRASafetyCompliance · \(v.description ?? "review pending")",
                 pill: "FRA ALERT",
                 pillColor: Brand.warning,
-                detail: v.reviewDue ?? "—",
+                detail: v.reviewDue ?? "-",
                 detailIsBold: false
             )
         }
@@ -211,7 +211,7 @@ private struct RailExceptionsHoldsBody: View {
         return [ExceptionItem563(
             glyph: "clock.badge.exclamationmark.fill",
             tintColor: Brand.danger,
-            title: "Demurrage breach — free time out",
+            title: "Demurrage breach - free time out",
             subtitle: "getLiveDemurrage · \(days) day\(days == 1 ? "" : "s") over · accruing",
             pill: "ACCRUING",
             pillColor: Brand.danger,
@@ -249,7 +249,7 @@ private struct RailExceptionsHoldsBody: View {
                                     .font(.system(size: 28)).foregroundStyle(Brand.success)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text("No active exceptions").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                                    Text("Fleet clear · no holds, FRA alerts, or demurrage breaches")
+                                    Text("Fleet clear · no holds, FRA alerts or demurrage breaches")
                                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                                 }
                             }
@@ -360,7 +360,7 @@ private struct RailExceptionsHoldsBody: View {
         HStack(spacing: Space.s2) {
             MetricTile(label: "OPEN HOLDS",  value: "\(holdCount)",    accent: holdCount > 0 ? Brand.danger : nil)
             MetricTile(label: "FRA ALERTS",  value: "\(alertCount)",   accent: alertCount > 0 ? Brand.warning : nil)
-            MetricTile(label: "DEMURRAGE",   value: demurrageAmount,   gradientNumeral: demurrageAmount != "—")
+            MetricTile(label: "DEMURRAGE",   value: demurrageAmount,   gradientNumeral: demurrageAmount != "-")
         }
     }
 

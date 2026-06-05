@@ -240,7 +240,7 @@ public struct XRReeferStatusHUD: View {
     }
 
     private func tempLabel(_ f: Double?) -> String {
-        guard let f else { return "—" }
+        guard let f else { return "-" }
         return String(format: "%.1f°F", f)
     }
 

@@ -287,12 +287,12 @@ private struct CatalystDriverBBody: View {
     private var nextStepCard: some View {
         let copy: String = {
             switch kind {
-            case .scoreAxis:   return "Composite axis A+. Pinned to §9.1 driver books — refresh weekly with the next QC cycle."
+            case .scoreAxis:   return "Composite axis A+. Pinned to §9.1 driver books. Refresh weekly with the next QC cycle."
             case .profileTier: return "Gold tier (§13) holds +0.08 pillar boost. Reconfirm criteria on Q2 baseline."
             case .document:    return "Pre-employment drug screen (§382.301) missing. File by EOD to clear driver for next NH₃ pull."
-            case .analytic:    return "On-time 94%, §395.8 ELD clean. Hold the cadence — Schedule C records auto-feed quarter close."
+            case .analytic:    return "On-time 94%, §395.8 ELD clean. Hold the cadence. Schedule C records auto-feed quarter close."
             case .settlement:  return "Allocation A38FB12C7E at $1,805, POD signed. NET-30 wires next via ACH ····6411."
-            case .onboarding:  return "Drug screen step (§382) missing — schedule lab booking today."
+            case .onboarding:  return "Drug screen step (§382) missing. Schedule lab booking today."
             case .compliance:  return "Random-testing pool row (§382.305) missing. Pair with the §382.301 doc filing above."
             case .quarter:     return "Q1 closed 2026-03-31 at 94.0% OTP. Schedule C ready for tax cabinet archive."
             }

@@ -131,14 +131,14 @@ struct EnRouteDrive: View {
     }
 
     /// Em-dash until HERE Routing turn-by-turn lands in the card.
-    private var turnDistance: String         { "—" }
+    private var turnDistance: String         { "-" }
     private var turnDistanceUnit: String     { "mi" }
     /// Em-dash until HERE Routing returns the next exit / waypoint.
-    private var exitChip: String             { "—" }
+    private var exitChip: String             { "-" }
     private var turnHeadline: String         { "Awaiting live route" }
     private var turnSubhead: String          { "TURN-BY-TURN PENDING" }
     private var thenPillText: String         { "THEN" }
-    private var waypointShield: String       { "—" }
+    private var waypointShield: String       { "-" }
 
     /// Hazmat reroute callout — ctx-driven. Returns empty for
     /// non-hazmat loads so the band hides. Empty when no live load
@@ -146,10 +146,10 @@ struct EnRouteDrive: View {
     private var hazmatReroute: String { ctx.enRouteHazmatBand }
 
     /// Em-dash until ELD speed signal wires in.
-    private var speedLimit: String   { "—" }
-    private var currentSpeed: String { "—" }
+    private var speedLimit: String   { "-" }
+    private var currentSpeed: String { "-" }
     /// Em-dash until HERE Routing ETA wires into the bottom card.
-    private var etaBig: String       { "—" }
+    private var etaBig: String       { "-" }
     private var etaSub: String       { "AWAITING LIVE ETA" }
 
     /// Live HOS drive bank from HOSLiveStore. `drivingRemaining` is
@@ -158,13 +158,13 @@ struct EnRouteDrive: View {
     /// "Xh YYm" string the HOS dashboard renders shows up here.
     /// Em-dash until the store hydrates a status snapshot.
     private var hosDriveLeft: String {
-        hos.status?.drivingRemainingDisplay ?? "—"
+        hos.status?.drivingRemainingDisplay ?? "-"
     }
 
     /// In-transit binder summary — product-aware at runtime, neutral
     /// "binder" placeholder when no live load is hydrated.
     private var shieldValue: String {
-        guard activeLoad != nil else { return "BINDER —" }
+        guard activeLoad != nil else { return "BINDER -" }
         return ctx.enRouteBinderValue
     }
 
@@ -695,13 +695,13 @@ struct EnRouteDrive: View {
             // turn-by-turn cross-street labels land for this screen. The four positions are
             // preserved so the visual rhythm of the decorative corridor stays consistent.
             GeometryReader { geo in
-                crossStreetLabel(text: "—",
+                crossStreetLabel(text: "-",
                                  at: .init(x: geo.size.width * 0.18, y: geo.size.height * 0.18))
-                crossStreetLabel(text: "—",
+                crossStreetLabel(text: "-",
                                  at: .init(x: geo.size.width * 0.78, y: geo.size.height * 0.40))
-                crossStreetLabel(text: "—",
+                crossStreetLabel(text: "-",
                                  at: .init(x: geo.size.width * 0.20, y: geo.size.height * 0.56))
-                crossStreetLabel(text: "—",
+                crossStreetLabel(text: "-",
                                  at: .init(x: geo.size.width * 0.78, y: geo.size.height * 0.64))
             }
 

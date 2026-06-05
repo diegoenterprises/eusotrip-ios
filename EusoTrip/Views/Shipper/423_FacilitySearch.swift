@@ -48,7 +48,7 @@ private struct FacilitySearchBody: View {
                 Text("SHIPPER · FACILITY SEARCH").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Facility intelligence").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("1,400+ petroleum / chemical / port facilities. Search by name, product grade, city, or state.").font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+            Text("1,400+ petroleum / chemical / port facilities. Search by name, product grade, city or state.").font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -74,7 +74,7 @@ private struct FacilitySearchBody: View {
                     LifecycleSection(label: h.name.uppercased(), icon: kindIcon(h.kind))
                     LifecycleRow(label: "Type",     value: dashIfEmpty(h.kind?.uppercased()))
                     LifecycleRow(label: "Location", value: [h.city, h.state, h.country].compactMap { $0 }.joined(separator: ", "))
-                    LifecycleRow(label: "Products", value: (h.products ?? []).joined(separator: ", ").isEmpty ? "—" : (h.products ?? []).joined(separator: ", "))
+                    LifecycleRow(label: "Products", value: (h.products ?? []).joined(separator: ", ").isEmpty ? "-" : (h.products ?? []).joined(separator: ", "))
                 }
             }
         }

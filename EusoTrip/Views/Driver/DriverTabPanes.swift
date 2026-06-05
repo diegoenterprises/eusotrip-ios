@@ -318,13 +318,13 @@ struct DriverTripsPane: View {
                     StatusPill(text: trip.phase.displayName, kind: .info)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
-                    Text(load.pickupLocation?.city ?? "—")
+                    Text(load.pickupLocation?.city ?? "-")
                         .font(EType.h2)
                         .foregroundStyle(palette.textPrimary)
                     Image(systemName: "arrow.right")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(LinearGradient.diagonal)
-                    Text(load.deliveryLocation?.city ?? "—")
+                    Text(load.deliveryLocation?.city ?? "-")
                         .font(EType.h2)
                         .foregroundStyle(LinearGradient.diagonal)
                 }
@@ -483,12 +483,12 @@ struct DriverTripsPane: View {
     }
 
     private var milesRemaining: String {
-        guard let load = trip.currentLoad else { return "—" }
+        guard let load = trip.currentLoad else { return "-" }
         return "\(Int(load.distanceValue)) mi"
     }
 
     private var etaDisplay: String {
-        trip.currentLoad?.deliveryDate.flatMap { String($0.prefix(16)) } ?? "—"
+        trip.currentLoad?.deliveryDate.flatMap { String($0.prefix(16)) } ?? "-"
     }
 
     private var nextStopDisplay: String {
@@ -585,7 +585,7 @@ struct DriverTripsPane: View {
                     radius: 18, y: 6)
         }
         .buttonStyle(PressableCardStyle())
-        .accessibilityLabel("SOS emergency — breakdown, accident, medical, spill")
+        .accessibilityLabel("SOS emergency - breakdown, accident, medical, spill")
     }
 
     // MARK: View mode (list / map) segmented control
@@ -925,7 +925,7 @@ struct DriverTripsPane: View {
             .shadow(color: Brand.magenta.opacity(0.30), radius: 16, x: 2, y: 6)
         }
         .buttonStyle(PressableCardStyle())
-        .accessibilityLabel("My Loads — Active, Pending, Finished")
+        .accessibilityLabel("My Loads - Active, Pending, Finished")
     }
 
     // MARK: Origin → Destination search card
@@ -1041,7 +1041,7 @@ struct DriverTripsPane: View {
                     Text("No loads match your filters")
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
-                    Text("Try clearing the origin, destination, or equipment chip.")
+                    Text("Try clearing the origin, destination or equipment chip.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                         .multilineTextAlignment(.center)
@@ -1370,7 +1370,7 @@ struct MyLoadsSheet: View {
                                 MyLoadCard(load: load, heroNamespace: loadHero)
                             }
                             .buttonStyle(.plain)
-                            .accessibilityHint("Shows route, rate, and broker detail")
+                            .accessibilityHint("Shows route, rate and broker detail")
                             .cafeDoorReveal(index: idx)
                         }
                     }
@@ -1460,7 +1460,7 @@ struct MyLoadsSheet: View {
                             // count — the store fetches one bucket at a time
                             // to avoid triple-firing `loads.search`. Other
                             // buckets render as a dash until tapped.
-                            Text(active ? "\(visible.count)" : "—")
+                            Text(active ? "\(visible.count)" : "-")
                                 .font(EType.micro).tracking(0.4)
                                 .foregroundStyle(active ? .white : palette.textTertiary)
                                 .padding(.horizontal, 6).padding(.vertical, 1)
@@ -1501,7 +1501,7 @@ struct MyLoadsSheet: View {
                         "Accept a tender from Eusoboards and you'll see it here.")
             case .pending:
                 return ("No pending tenders",
-                        "Brokers will offer here — tender accept or decline within the window.")
+                        "Brokers will offer here, tender accept or decline within the window.")
             case .finished:
                 return ("No completed loads yet",
                         "Your finished loads + POD receipts will log here.")
@@ -1815,7 +1815,7 @@ struct DriverLoadsPane: View {
                             // Only the currently-selected bucket exposes
                             // a live count — the store loads one bucket
                             // at a time. Other buckets render as a dash.
-                            Text(active ? "\(visible.count)" : "—")
+                            Text(active ? "\(visible.count)" : "-")
                                 .font(EType.micro).tracking(0.4)
                                 .foregroundStyle(active ? .white
                                                         : palette.textTertiary)
@@ -1861,7 +1861,7 @@ struct DriverLoadsPane: View {
                             "Accept a tender from Eusoboards and you'll see it here.")
                 case .pending:
                     return ("No pending tenders",
-                            "Brokers will offer here — tender accept or decline within the window.")
+                            "Brokers will offer here, tender accept or decline within the window.")
                 case .finished:
                     return ("No completed loads yet",
                             "Your finished loads + POD receipts will log here.")
@@ -1879,7 +1879,7 @@ struct DriverLoadsPane: View {
                         MyLoadCard(load: load)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityHint("Shows route, rate, and broker detail")
+                    .accessibilityHint("Shows route, rate and broker detail")
                 }
             }
         }
@@ -1942,7 +1942,7 @@ struct DriverLoadsPane: View {
             .shadow(color: Brand.magenta.opacity(0.35), radius: 18, y: 6)
         }
         .buttonStyle(PressableCardStyle())
-        .accessibilityLabel("Zeun Mechanics — diagnostics, DVIR, maintenance, breakdowns")
+        .accessibilityLabel("Zeun Mechanics - diagnostics, DVIR, maintenance, breakdowns")
     }
 }
 
@@ -2365,7 +2365,7 @@ struct DriverWalletPane: View {
                 EusoEmptyState(
                     systemImage: "clock.arrow.circlepath",
                     title: "No activity yet",
-                    subtitle: "Every payout, fee, and load credit shows up here the moment it clears."
+                    subtitle: "Every payout, fee and load credit shows up here the moment it clears."
                 )
                 .padding(Space.s2)
             case .error(let err):
@@ -3018,11 +3018,11 @@ struct WalletSheetContainer: View {
         case .transfer:
             return "Move funds between your EusoWallet and linked accounts, or split settlements across multiple banks."
         case .card:
-            return "The Euso debit card spends directly from your EusoWallet available balance. Activation ships alongside the issuer partner — this flow will go live once the card issuer router lands."
+            return "The Euso debit card spends directly from your EusoWallet available balance. Activation ships alongside the issuer partner. This flow will go live once the card issuer router lands."
         case .factoring:
             return "Advance against your pending POD at a flat factoring rate. Cash lands in your EusoWallet in under 10 minutes and the platform recovers from the broker settlement."
         case .paymentMethods:
-            return "Manage the accounts you use to deposit, withdraw, and factor. Plaid-backed verification; tier fees shown per rail."
+            return "Manage the accounts you use to deposit, withdraw and factor. Plaid-backed verification; tier fees shown per rail."
         case .tax:
             return "Your 1099-NEC populates each January as settlements clear. W-9 goes on file when you link your first account."
         case .none:
@@ -3965,7 +3965,7 @@ struct DriverMessagesSheet: View {
                 }
                 lastDeletedSnapshot = nil
             }
-            loadError = "Couldn't delete — \(error.localizedDescription)"
+            loadError = "Couldn't delete - \(error.localizedDescription)"
         }
     }
 
@@ -3985,7 +3985,7 @@ struct DriverMessagesSheet: View {
             loadError = "Please sign in to load messages."
             didFirstLoad = true
         } catch {
-            loadError = "Couldn't refresh messages — \(error.localizedDescription)"
+            loadError = "Couldn't refresh messages - \(error.localizedDescription)"
             didFirstLoad = true
         }
     }
@@ -4000,7 +4000,7 @@ struct DriverMessagesSheet: View {
             Text("No conversations yet")
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
-            Text("Start a direct chat with dispatch, a broker, or another driver — or spin up a group for your lane.")
+            Text("Start a direct chat with dispatch, a broker or another driver, or spin up a group for your lane.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
@@ -4160,40 +4160,40 @@ enum eSangGreeting {
     /// the time of day, then opens the lane for the driver to talk.
     private static let variants: [DayPart: [String]] = [
         .earlyMorning: [
-            "Morning, driver. Coffee's kicking in for both of us — I've got your HOS, the load, and weather on deck. What are we chasing first?",
-            "Early start, huh? I'm riding shotgun — HOS, dispatch, weather, all pulled up. Talk to me.",
+            "Morning, driver. Coffee's kicking in for both of us. I've got your HOS, the load and weather on deck. What are we chasing first?",
+            "Early start, huh? I'm riding shotgun, HOS, dispatch, weather, all pulled up. Talk to me.",
             "Hey, you're up before the sun again. I'm watching the clock and the road. What's on the radar?",
-            "Good morning. Let's make this one smooth — HOS is green, weather's clean. What do you need from me?"
+            "Good morning. Let's make this one smooth, HOS is green, weather's clean. What do you need from me?"
         ],
         .morning: [
             // 113th firing — corridor fixture excised ("I-20 weather"). Live
             // greeting hydrates real corridor weather from the routing layer.
-            "Hey, good morning — I'm locked in on your HOS, the assigned load, and the corridor weather. What's first?",
+            "Hey, good morning. I'm locked in on your HOS, the assigned load and the corridor weather. What's first?",
             "Morning, driver. The rig's dialed in and so am I. Tell me what you want to tackle.",
             "Hey there. Dispatch queue is quiet so far, HOS looks healthy. What's on your mind?",
-            "Good to see you rolling. Weather, route, clock — all pulled up. What can I chase down for you?",
-            "Morning. I've been watching your lane overnight — nothing hot. How can I help today?"
+            "Good to see you rolling. Weather, route, clock, all pulled up. What can I chase down for you?",
+            "Morning. I've been watching your lane overnight, nothing hot. How can I help today?"
         ],
         .afternoon: [
-            "Hey — afternoon stretch. Load's tracking, HOS has runway. What do you need a hand with?",
+            "Hey, afternoon stretch. Load's tracking, HOS has runway. What do you need a hand with?",
             "Afternoon, driver. I've got your eyes on the road so you keep yours on the road. What's up?",
-            "Hey. Midday check-in — everything on your load looks clean from here. Talk to me.",
-            "Good afternoon. I'm monitoring the corridor ahead — nothing flagged. What's on your list?"
+            "Hey. Midday check-in, everything on your load looks clean from here. Talk to me.",
+            "Good afternoon. I'm monitoring the corridor ahead, nothing flagged. What's on your list?"
         ],
         .evening: [
-            "Hey — evening driver. I'm tracking traffic into sundown. What can I get for you?",
+            "Hey, evening driver. I'm tracking traffic into sundown. What can I get for you?",
             "Evening, driver. Let's bring this one home clean. What's on your mind?",
             "Hey. Sun's sliding down, HOS still has room. How can I help wrap this leg?",
             "Evening. I'm keeping an eye on overnight parking within your buffer. What do you need?"
         ],
         .night: [
-            "Hey — running on night shift. I've got HOS, weather, and a parking list ready. What's first?",
-            "Evening, driver. It's quiet out there — perfect time to nail this load. Talk to me.",
+            "Hey, running on night shift. I've got HOS, weather and a parking list ready. What's first?",
+            "Evening, driver. It's quiet out there, perfect time to nail this load. Talk to me.",
             "Hey. You hanging in? Clock and road are watched. What can I chase for you?",
-            "Late push tonight. I'm here — HOS, fuel, safe stops, all pulled up. What do you need?"
+            "Late push tonight. I'm here, HOS, fuel, safe stops, all pulled up. What do you need?"
         ],
         .lateNight: [
-            "Hey — you're grinding. Watching your HOS like a hawk so you don't have to. What's up?",
+            "Hey. You're grinding. Watching your HOS like a hawk so you don't have to. What's up?",
             "Late one tonight, driver. I'm on weather and parking within your remaining clock. Talk to me.",
             "Hey. Running on fumes out there? I've got truck stops w/ open parking queued. What do you need?",
             "Middle of the night and the only company worth having is the one watching your clock. What's first?"
@@ -4897,14 +4897,14 @@ struct DrivereSangCoachSheet: View {
             // clock / Dallas on-time with 45-min cushion". Replaced with a
             // generic clock-pointer response. Live endpoint serves the real
             // hours from `hos.getStatus`.
-            return "I'm reading your remaining drive time and 14-hour clock — open the HOS panel for the exact minutes and I'll flag the next break window."
+            return "I'm reading your remaining drive time and 14-hour clock, open the HOS panel for the exact minutes and I'll flag the next break window."
         }
         if p.contains("weather") || p.contains("rain") || p.contains("storm") {
             // 113th firing — was: "I-20 west / Longview / Visibility 10+ mi"
             // corridor-specific fixture copy. Replaced with a generic radar
             // response. Live endpoint pulls real corridor weather from the
             // routing layer.
-            return "Pulling the radar along your route — I'll ping you the moment anything severe pops onto the corridor ahead."
+            return "Pulling the radar along your route. I'll ping you the moment anything severe pops onto the corridor ahead."
         }
         if p.contains("fuel") || p.contains("diesel") {
             // 113th firing — was: competitor brand fixtures "Love's #448 in
@@ -4918,14 +4918,14 @@ struct DrivereSangCoachSheet: View {
             // real shipper / dock / over-window / accessorial dollars from the
             // Load + dispatch.getExceptions payload. Removed the Walmart DC 4492
             // / 2h 14m / $150 fixture per 111th firing's M2 leak sweep.
-            return "Filed. Detention claim is in queue with the receiver — I'll ping you the moment they cut the add-on."
+            return "Filed. Detention claim is in queue with the receiver. I'll ping you the moment they cut the add-on."
         }
         if p.contains("eta") || p.contains("dallas") || p.contains("arriv") {
             // 113th firing — was: hard-coded "ETA 13:13 CDT at 2115 Dallas
             // Logistics Blvd — 7 min ahead". Replaced with a generic ETA
             // pointer. Live endpoint serves real ETA from the active Load
             // + routing telemetry.
-            return "Math says you're trending toward your receiver appointment — tap the load card for the live ETA breakdown and the cushion you've got in hand."
+            return "Math says you're trending toward your receiver appointment, tap the load card for the live ETA breakdown and the cushion you've got in hand."
         }
         return "Got it. I'll dig into that and come back with specifics in a sec."
     }
@@ -5033,7 +5033,7 @@ struct NewMessageSheet: View {
                     .font(.system(size: 24, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                 Text(mode == .direct
-                     ? "Pick a dispatcher, broker, or driver to DM."
+                     ? "Pick a dispatcher, broker or driver to DM."
                      : "Pick 2+ people and give the group a name.")
                     .font(EType.micro)
                     .foregroundStyle(palette.textSecondary)
@@ -5417,7 +5417,7 @@ struct NewMessageSheet: View {
             errorText = "Sign in to find people to message."
             didFirstLoad = true
         } catch {
-            errorText = "Couldn't reach the directory — \(error.localizedDescription)"
+            errorText = "Couldn't reach the directory - \(error.localizedDescription)"
             didFirstLoad = true
         }
     }
@@ -5455,7 +5455,7 @@ struct NewMessageSheet: View {
         } catch EusoTripAPIError.unauthenticated {
             errorText = "Please sign in to start a conversation."
         } catch {
-            errorText = "Couldn't start the conversation — \(error.localizedDescription)"
+            errorText = "Couldn't start the conversation - \(error.localizedDescription)"
         }
     }
 
@@ -5483,7 +5483,7 @@ struct NewMessageSheet: View {
         } catch EusoTripAPIError.unauthenticated {
             errorText = "Please sign in to create a group."
         } catch {
-            errorText = "Couldn't create the group — \(error.localizedDescription)"
+            errorText = "Couldn't create the group - \(error.localizedDescription)"
         }
     }
 

@@ -47,7 +47,7 @@ private struct CancelPrePickupBody: View {
                 LifecycleRow(label: "Status",     value: dashIfEmpty(e.status?.uppercased()))
                 LifecycleRow(label: "Release at", value: humanISO(e.releaseAt))
             } else {
-                Text("No escrow hold for this load — no refund required.")
+                Text("No escrow hold for this load - no refund required.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

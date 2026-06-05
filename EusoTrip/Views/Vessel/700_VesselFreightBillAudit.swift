@@ -141,11 +141,11 @@ private struct VesselFreightBillAuditBody: View {
         if let f = expenses.first?.facilityName, !f.isEmpty {
             return "\(f) · drayage"
         }
-        return "—"
+        return "-"
     }
 
     private var billRef: String {
-        settlement?.bookingNumber ?? "—"
+        settlement?.bookingNumber ?? "-"
     }
 
     /// Findings list built from the real expense rows. Each row's amount is

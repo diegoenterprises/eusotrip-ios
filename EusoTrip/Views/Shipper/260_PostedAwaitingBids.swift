@@ -103,12 +103,12 @@ private struct PostedBody: View {
                 )
             }
             if live.bidsSummary.count == 0 {
-                Text("No bids yet — carriers will surface offers here as they come in. Live updates over the lifecycle socket channel.")
+                Text("No bids yet. Carriers will surface offers here as they come in. Live updates over the lifecycle socket channel.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text(live.recommendedBidId != nil
-                     ? "ESANG flagged a recommended bid — open the bids feed to review."
+                     ? "ESANG flagged a recommended bid. Open the bids feed to review."
                      : "Bids in flight. Open the bids feed for full triage.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -120,7 +120,7 @@ private struct PostedBody: View {
         LifecycleCard {
             LifecycleSection(label: "LOAD", icon: "doc.text")
             LifecycleRow(label: "Posted rate",  value: usd(live.load.rate))
-            LifecycleRow(label: "Distance",     value: live.load.distance.map { "\(Int($0)) mi" } ?? "—")
+            LifecycleRow(label: "Distance",     value: live.load.distance.map { "\(Int($0)) mi" } ?? "-")
             LifecycleRow(label: "Equipment",    value: dashIfEmpty(live.load.equipmentType))
             LifecycleRow(label: TransportLexicon.short(.originWindow, mode: loadMode, equipmentRaw: live.load.equipmentType), value: humanISO(live.load.pickupDate))
             if let bidEnd = live.load.biddingEnds {

@@ -288,7 +288,7 @@ struct MeEarningsBreakdown: View {
                     }
                 }
                 .frame(height: 4)
-                Text(pct > 0 ? String(format: "%.1f%% of total", pct) : "—")
+                Text(pct > 0 ? String(format: "%.1f%% of total", pct) : "-")
                     .font(EType.micro)
                     .tracking(0.5)
                     .foregroundStyle(palette.textTertiary)
@@ -347,7 +347,7 @@ struct MeEarningsBreakdown: View {
                         .fill(palette.bgCard.opacity(0.8))
                 )
             VStack(alignment: .leading, spacing: 2) {
-                Text(load.loadNumber.isEmpty ? "—" : load.loadNumber)
+                Text(load.loadNumber.isEmpty ? "-" : load.loadNumber)
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
                 if let pretty = prettyDate(load.date) {
@@ -386,7 +386,7 @@ struct MeEarningsBreakdown: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
             }
-            Text("Every settled wallet transaction tagged as earnings is counted. The split mirrors how your settlement statement is lined up, so the dollar columns match what your CPA and dispatch see — no rounding differences.")
+            Text("Every settled wallet transaction tagged as earnings is counted. The split mirrors how your settlement statement is lined up, so the dollar columns match what your CPA and dispatch see, no rounding differences.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

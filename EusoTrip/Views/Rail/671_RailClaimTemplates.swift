@@ -75,7 +75,7 @@ private struct ClaimTemplate671: Identifiable {
 
     init(_ dto: ClaimTemplateDTO671, mostUsed: Bool) {
         self.id = dto.id
-        self.name = dto.name ?? "—"
+        self.name = dto.name ?? "-"
         let t = (dto.type ?? "").lowercased()
         let style = ClaimTemplate671.style(for: t)
         self.badge = style.badge + (mostUsed ? " \u{2605}" : "")
@@ -182,7 +182,7 @@ private struct RailClaimTemplatesBody671: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Start a claim from a standard form")
                     .font(.system(size: 13, weight: .bold)).foregroundStyle(palette.textPrimary)
-                Text("Pre-filled fields, AAR-aligned — pick the type below.")
+                Text("Pre-filled fields, AAR-aligned. Pick the type below.")
                     .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
             }
             Spacer()
@@ -266,7 +266,7 @@ private struct RailClaimTemplatesBody671: View {
                 Text("ESANG AI").font(.system(size: 9, weight: .heavy)).kerning(1.0).foregroundStyle(LinearGradient.diagonal)
                 Text("For the Joliet box short on arrival, use the")
                     .font(.system(size: 12, weight: .semibold)).foregroundStyle(palette.textPrimary)
-                Text("Shortage form — it scaffolds the BOL reconciliation.")
+                Text("Shortage form. It scaffolds the BOL reconciliation.")
                     .font(.system(size: 12)).foregroundStyle(palette.textSecondary)
             }
             Spacer()

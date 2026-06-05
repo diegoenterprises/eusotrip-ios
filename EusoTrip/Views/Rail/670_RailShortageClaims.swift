@@ -166,8 +166,8 @@ private struct RailShortageClaimsBody670: View {
     @State private var claims: [ClaimVM670] = []
     @State private var exposure: String = "$0"
     @State private var totalClaims: Int = 0
-    @State private var expectedTotal: String = "—"
-    @State private var receivedTotal: String = "—"
+    @State private var expectedTotal: String = "-"
+    @State private var receivedTotal: String = "-"
     @State private var loading = true
     @State private var loadError: String? = nil
 
@@ -415,7 +415,7 @@ private struct RailShortageClaimsBody670: View {
                     .font(.system(size: 9, weight: .heavy)).kerning(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
                 if let f = flagged {
-                    Text("\(f.claim) is the least-provable claim —")
+                    Text("\(f.claim) is the least-provable claim.")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(palette.textPrimary)
                     Text("\(f.value) · its \(f.statute) statute window is closing.")
@@ -488,8 +488,8 @@ private struct RailShortageClaimsBody670: View {
         exposure = Self.usd(totalValue)
         let expSum = resp.claims.reduce(0) { $0 + ($1.expectedQty ?? 0) }
         let recSum = resp.claims.reduce(0) { $0 + ($1.receivedQty ?? 0) }
-        expectedTotal = expSum > 0 ? "\(expSum) units" : "—"
-        receivedTotal = recSum > 0 ? "\(recSum) units" : "—"
+        expectedTotal = expSum > 0 ? "\(expSum) units" : "-"
+        receivedTotal = recSum > 0 ? "\(recSum) units" : "-"
     }
 
     // MARK: - Wire → VM mapping (pure)
@@ -507,7 +507,7 @@ private struct RailShortageClaimsBody670: View {
             id: w.id,
             commodity: w.commodity ?? "Cargo shortage",
             claim: w.claimNumber ?? "CLM-\(w.id.prefix(4))",
-            load: w.loadNumber ?? "—",
+            load: w.loadNumber ?? "-",
             statute: "OT5 \(daysLeft)d",
             expectedQty: expected,
             receivedQty: receivedQ,

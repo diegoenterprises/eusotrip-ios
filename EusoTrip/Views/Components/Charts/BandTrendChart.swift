@@ -453,7 +453,7 @@ public struct BandTrendChart: View {
     }
 
     private func lastValueString(for s: BandTrendSeries) -> String {
-        guard let last = s.points.last else { return "—" }
+        guard let last = s.points.last else { return "-" }
         return valueFormat(last.y)
     }
 

@@ -709,7 +709,7 @@ struct MeTraining: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
             }
-            Text("Dispatch, your safety manager, and the FMCSA-aligned CSA engine all push training here. Completions feed your safety score and the carrier scorecard in real time — this is the real record.")
+            Text("Dispatch, your safety manager and the FMCSA-aligned CSA engine all push training here. Completions feed your safety score and the carrier scorecard in real time. This is the real record.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

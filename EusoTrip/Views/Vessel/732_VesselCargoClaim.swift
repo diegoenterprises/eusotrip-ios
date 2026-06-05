@@ -77,7 +77,7 @@ private struct ClaimDossier_732 {
     /// Seed dossier — PREVIEW ONLY. Mirrors the rendered wireframe so the port previews 1:1.
     /// The live screen injects the result of getClaimById; nothing here loads at runtime.
     static var preview: ClaimDossier_732 {
-        var advisory = AttributedString("Upload the notice of claim before Jun 5 — it's the only doc holding the full $13,200 recovery.")
+        var advisory = AttributedString("Upload the notice of claim before Jun 5. It's the only doc holding the full $13,200 recovery.")
         if let r = advisory.range(of: "Jun 5") { advisory[r].foregroundColor = Brand.danger }
         if let r = advisory.range(of: "$13,200") { advisory[r].foregroundColor = Brand.blue }
         return .init(
@@ -160,7 +160,7 @@ private struct VesselCargoClaimBody_732: View {
                 } else {
                     EusoEmptyState(systemImage: "shippingbox.and.arrow.backward",
                                    title: "No cargo claim on file",
-                                   subtitle: "getClaimById returned no dossier for this container — nothing to recover yet. File a claim from the shipment to open one.")
+                                   subtitle: "getClaimById returned no dossier for this container, nothing to recover yet. File a claim from the shipment to open one.")
                 }
                 Color.clear.frame(height: 96)
             }
@@ -471,7 +471,7 @@ private struct VesselCargoClaimBody_732: View {
             // The Hague-Visby notice of claim is the structural missing doc this archetype surfaces.
             let evidence = secured + [ClaimEvidenceItem_732(name: "Notice of claim · Hague-Visby 3-day window", secured: false)]
 
-            var advisory = AttributedString("Upload the notice of claim — it's the only doc holding the full recovery.")
+            var advisory = AttributedString("Upload the notice of claim. It's the only doc holding the full recovery.")
             if let rng = advisory.range(of: "Notice of claim") { advisory[rng].foregroundColor = Brand.danger }
 
             let badge = (r.type ?? "claim").uppercased()
@@ -479,9 +479,9 @@ private struct VesselCargoClaimBody_732: View {
 
             claim = ClaimDossier_732(
                 claimRef: r.claimNumber ?? "VES",
-                containerRef: container.isEmpty ? "—" : container,
+                containerRef: container.isEmpty ? "-" : container,
                 incident: "\((r.type ?? "Cargo").capitalized) claim · \((r.status ?? "reported").capitalized)",
-                portName: "—",
+                portName: "-",
                 badge: badge,
                 claimedCents: claimedCents,
                 recoverableCents: recoverableCents,

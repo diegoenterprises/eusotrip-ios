@@ -305,7 +305,7 @@ private struct CatalystDriverScorecard: View {
     }
 
     private var rosterCounterLabel: String {
-        guard let s = scorecard else { return "—" }
+        guard let s = scorecard else { return "-" }
         return "\(s.metrics.totalLoads) LOADS · 1 DRIVER"
     }
 
@@ -483,7 +483,7 @@ private struct CatalystDriverScorecard: View {
 
     private func trendLabel(_ trend: DriversAPI.PerformanceTrend) -> String {
         if trend.change == 0 {
-            return "vs prior \(period.rawValue) — flat"
+            return "vs prior \(period.rawValue) - flat"
         }
         let sign = trend.change > 0 ? "+" : ""
         return "\(sign)\(String(format: "%.1f", trend.change)) pts vs prior"

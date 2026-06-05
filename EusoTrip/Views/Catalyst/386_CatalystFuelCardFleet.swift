@@ -411,7 +411,7 @@ private struct FuelCardFleetContent_386: View {
         case "cancelled":
             return ("CANCELLED", Brand.danger, Brand.danger.opacity(0.14))
         default:
-            return ((raw ?? "—").uppercased(), palette.textTertiary, palette.bgCardSoft)
+            return ((raw ?? "-").uppercased(), palette.textTertiary, palette.bgCardSoft)
         }
     }
 
@@ -507,7 +507,7 @@ private struct FuelCardFleetContent_386: View {
                 .font(.system(size: 18, weight: .semibold))
                 .tracking(0.4)
                 .monospacedDigit()
-                .foregroundStyle(value == "—" ? palette.textTertiary : palette.textPrimary)
+                .foregroundStyle(value == "-" ? palette.textTertiary : palette.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
             Text(sub)

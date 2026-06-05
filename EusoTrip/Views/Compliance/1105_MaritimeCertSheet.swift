@@ -322,7 +322,7 @@ struct MaritimeCertSheet: View {
                     )
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 if flagged {
-                    Text("Scanned with low confidence — please double-check.")
+                    Text("Scanned with low confidence. Please double-check.")
                         .font(EType.micro)
                         .foregroundStyle(Brand.warning)
                 }
@@ -409,7 +409,7 @@ struct MaritimeCertSheet: View {
                 return "The credential is on file. We'll monitor the validity window and alert you before it lapses."
             }
             if raw == "provider_unavailable" {
-                return "Validation provider is unavailable — your submission is queued for manual review. No verified status is granted yet."
+                return "Validation provider is unavailable. Your submission is queued for manual review. No verified status is granted yet."
             }
             return "Submitted for review. No verified status is granted until validation completes."
         }()

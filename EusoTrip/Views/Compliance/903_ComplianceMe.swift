@@ -60,7 +60,7 @@ struct ComplianceMeScreen: View {
                     .foregroundStyle(LinearGradient.diagonal)
             }
             Spacer(minLength: 0)
-            Text(session.user?.companyId.map { "companyId · \($0)" } ?? "—")
+            Text(session.user?.companyId.map { "companyId · \($0)" } ?? "-")
                 .font(.system(size: 9, weight: .heavy, design: .monospaced))
                 .tracking(1.0).foregroundStyle(palette.textTertiary).lineLimit(1)
         }

@@ -180,7 +180,7 @@ private struct VesselDemurrageDetentionWatchBody: View {
                 LifecycleCard(accentDanger: r == .breached) {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
-                            Text("\(c.containerNumber ?? "—") · \(c.containerSize ?? "—")").font(.system(size: 14, weight: .bold)).monospaced().foregroundStyle(palette.textPrimary)
+                            Text("\(c.containerNumber ?? "-") · \(c.containerSize ?? "-")").font(.system(size: 14, weight: .bold)).monospaced().foregroundStyle(palette.textPrimary)
                             if c.reefer == true {
                                 Text("REEFER").font(.system(size: 9, weight: .heavy)).foregroundStyle(Brand.info)
                                     .padding(.horizontal, 8).padding(.vertical, 3).background(Capsule().fill(Brand.info.opacity(0.12)))
@@ -192,7 +192,7 @@ private struct VesselDemurrageDetentionWatchBody: View {
                             Spacer()
                             Text("$\(Int(c.chargeUsd ?? 0))").font(.system(size: 15, weight: .bold)).monospacedDigit().foregroundStyle(tone(r))
                         }
-                        Text(c.detail ?? "LFD \(c.lastFreeDay ?? "—")").font(EType.caption).foregroundStyle(palette.textSecondary)
+                        Text(c.detail ?? "LFD \(c.lastFreeDay ?? "-")").font(EType.caption).foregroundStyle(palette.textSecondary)
                     }
                 }
             }

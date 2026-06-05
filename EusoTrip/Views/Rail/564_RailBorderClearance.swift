@@ -211,7 +211,7 @@ private struct RailBorderClearanceBody: View {
                         Text("\(d.numberOfCars ?? 1)")
                             .font(.system(size: 22, weight: .heavy)).monospacedDigit()
                             .foregroundStyle(palette.textPrimary)
-                        Text("\(d.hazmatClass ?? "") · UN\(d.unNumber ?? "—")")
+                        Text("\(d.hazmatClass ?? "") · UN\(d.unNumber ?? "-")")
                             .font(.system(size: 11))
                             .foregroundStyle(palette.textSecondary)
                     }

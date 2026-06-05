@@ -155,7 +155,7 @@ private struct CommandCenterBody: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(d.name ?? "Driver").font(EType.body.weight(.semibold))
-                            Text("\(d.currentCity ?? "—"), \(d.currentState ?? "—")").font(.caption).foregroundStyle(palette.textSecondary)
+                            Text("\(d.currentCity ?? "-"), \(d.currentState ?? "-")").font(.caption).foregroundStyle(palette.textSecondary)
                         }
                         Spacer()
                         if let h = d.hosRemainingMin {
@@ -178,7 +178,7 @@ private struct CommandCenterBody: View {
                             Spacer()
                             Text((l.status ?? "").uppercased()).font(.caption2.weight(.bold)).tracking(0.6).foregroundStyle(palette.textSecondary)
                         }
-                        Text("\(l.pickupCity ?? "—"), \(l.pickupState ?? "—") → \(l.destCity ?? "—"), \(l.destState ?? "—")").font(.caption).foregroundStyle(palette.textSecondary)
+                        Text("\(l.pickupCity ?? "-"), \(l.pickupState ?? "-") → \(l.destCity ?? "-"), \(l.destState ?? "-")").font(.caption).foregroundStyle(palette.textSecondary)
                         if let r = l.rate { Text("$\(r)").font(.caption.monospacedDigit().weight(.semibold)) }
                     }
                 }
@@ -499,7 +499,7 @@ private struct PerformanceBody: View {
                                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                             }
                         }
-                        Text(h.route ?? "—").font(.caption).foregroundStyle(palette.textSecondary)
+                        Text(h.route ?? "-").font(.caption).foregroundStyle(palette.textSecondary)
                         HStack {
                             if let r = h.rating { Label(String(format: "%.1f", r), systemImage: "star.fill").font(.caption2).foregroundStyle(.yellow) }
                             Spacer()

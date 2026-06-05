@@ -436,7 +436,7 @@ public struct ReeferTempLogChart: View {
                         Text(zone.name)
                             .font(EType.micro)
                             .foregroundStyle(palette.textSecondary)
-                        Text(zone.lastValue.map(preciseTempLabel) ?? "—")
+                        Text(zone.lastValue.map(preciseTempLabel) ?? "-")
                             .font(EType.caption.weight(.semibold)).monospacedDigit()
                             .foregroundStyle(
                                 zone.position == .rear && isWarn ? Brand.danger : palette.textPrimary

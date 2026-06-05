@@ -75,7 +75,7 @@ private struct HazmatBody: View {
     private var ergCopilotCard: some View {
         LifecycleCard {
             LifecycleSection(label: "ESANG ERG COPILOT", icon: "sparkles")
-            Text("Ask anything about UN \(draft.unNumber.isEmpty ? "—" : draft.unNumber).")
+            Text("Ask anything about UN \(draft.unNumber.isEmpty ? "-" : draft.unNumber).")
                 .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
             HStack(spacing: 8) {
                 TextField("e.g. \"What if it spills?\"", text: $copilotQuestion, axis: .horizontal)
@@ -124,7 +124,7 @@ private struct HazmatBody: View {
     private var segregationCard: some View {
         LifecycleCard {
             LifecycleSection(label: "SEGREGATION CHECK · 49 CFR 177.848", icon: "rectangle.split.2x1")
-            Text("Pick a partner class to verify it can ride with class \(draft.hazmatClass.isEmpty ? "—" : draft.hazmatClass) on the same trailer.")
+            Text("Pick a partner class to verify it can ride with class \(draft.hazmatClass.isEmpty ? "-" : draft.hazmatClass) on the same trailer.")
                 .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {

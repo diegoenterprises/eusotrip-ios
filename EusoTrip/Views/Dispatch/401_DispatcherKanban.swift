@@ -536,8 +536,8 @@ private struct DispatcherKanbanBody: View {
     }
 
     private func laneText(_ l: KanbanLoad) -> String {
-        let o = (l.originCity ?? "—")
-        let d = (l.destinationCity ?? "—")
+        let o = (l.originCity ?? "-")
+        let d = (l.destinationCity ?? "-")
         return "\(o) → \(d)"
     }
 
@@ -555,18 +555,18 @@ private struct DispatcherKanbanBody: View {
         }
         if let un = l.hazmatClass, !un.isEmpty { parts.append(un) }
         if let w = l.weight, w > 0 { parts.append("\(Int(w / 1000))k") }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
 
     private func shortId(_ ln: String) -> String { "LD…\(String(ln.uppercased().suffix(4)))" }
 
     private func usd(_ v: Double?) -> String {
-        guard let v else { return "—" }
+        guard let v else { return "-" }
         return "$\(Int(v).formatted())"
     }
 
     private func initials(_ name: String?) -> String {
-        guard let name, !name.isEmpty else { return "—" }
+        guard let name, !name.isEmpty else { return "-" }
         let parts = name.split(separator: " ")
         let first = parts.first?.first.map(String.init) ?? ""
         let last = parts.dropFirst().first?.first.map(String.init) ?? ""

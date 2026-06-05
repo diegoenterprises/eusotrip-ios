@@ -452,7 +452,7 @@ private struct RailCrewAvailabilityBody: View {
     }
 
     private var nextCallLabel: String {
-        guard let d = nextCallDate else { return "—" }
+        guard let d = nextCallDate else { return "-" }
         let secs = max(0, Int(d.timeIntervalSinceNow))
         let h = secs / 3600, m = (secs % 3600) / 60
         if h > 0 { return "\(h)h \(m)m" }
@@ -460,7 +460,7 @@ private struct RailCrewAvailabilityBody: View {
     }
 
     private var nextCallShort: String {
-        guard let d = nextCallDate else { return "—" }
+        guard let d = nextCallDate else { return "-" }
         let secs = max(0, Int(d.timeIntervalSinceNow))
         let h = secs / 3600, m = (secs % 3600) / 60
         if h > 0 { return "\(h)h" }

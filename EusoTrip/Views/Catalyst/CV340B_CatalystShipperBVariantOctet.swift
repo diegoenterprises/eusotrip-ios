@@ -288,10 +288,10 @@ private struct CatalystShipperBBody: View {
     private var nextStepCard: some View {
         let copy: String = {
             switch kind {
-            case .scoreAxis:   return "Composite axis A. Pinned to §9.5 shipper books — refresh weekly with the next QC cycle."
+            case .scoreAxis:   return "Composite axis A. Pinned to §9.5 shipper books. Refresh weekly with the next QC cycle."
             case .profileTier: return "Gold tier (§13.5) holds +0.06 pillar boost. Reconfirm criteria on Q2 baseline."
             case .document:    return "COI (§387.7) on file with 187d runway. Set 60-day reminder before anniversary."
-            case .analytic:    return "DSO 5.8d, tender 88%. Best-in-class payor — replicate the playbook on dormant accounts."
+            case .analytic:    return "DSO 5.8d, tender 88%. Best-in-class payor. Replicate the playbook on dormant accounts."
             case .settlement:  return "Invoice A38FB12C7E at $1,805, NET-30, 12d outstanding. Auto-collect at maturity."
             case .onboarding:  return "All 6 steps closed (MSA / W-9 / COI / terms / rate-card / first PO). Lock for Q2."
             case .compliance:  return "§387 §388 clean. Renew COI 30 days before 2026-08-04 anniversary."

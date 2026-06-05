@@ -159,7 +159,7 @@ private struct RailRampScheduleBody: View {
     private var totalToday: Int   { allWindows.count }
     private var onTimePct: String {
         if let p = compliance?.overallCompliancePct { return "\(Int(p))%" }
-        return "—"
+        return "-"
     }
     private var missedCount: Int  { compliance?.totalNoShow ?? 0 }
 
@@ -171,23 +171,23 @@ private struct RailRampScheduleBody: View {
     private var rampStatusColor: Color {
         rampStatusLabel == "RAMP OPEN" ? Brand.success : Brand.warning
     }
-    private var nextTrackLabel: String { nextWindow?.dockId?.replacingOccurrences(of: "D", with: "track ") ?? "—" }
+    private var nextTrackLabel: String { nextWindow?.dockId?.replacingOccurrences(of: "D", with: "track ") ?? "-" }
     private var nextWindowLabel: String {
         if let m = minutesUntil(nextWindow?.scheduledAt) { return "in \(m)m" }
-        return "—"
+        return "-"
     }
     private var nextWindowDetail: String {
-        "\(nextWindow?.carrierId ?? "—") · \(timeLabel(nextWindow?.scheduledAt)) arrival"
+        "\(nextWindow?.carrierId ?? "-") · \(timeLabel(nextWindow?.scheduledAt)) arrival"
     }
 
     private var lastGateLabel: String {
-        guard let entry = gateLog?.entries?.first else { return "—" }
-        let num = entry.trailerNumber ?? entry.loadNumber ?? "—"
+        guard let entry = gateLog?.entries?.first else { return "-" }
+        let num = entry.trailerNumber ?? entry.loadNumber ?? "-"
         let t = timeLabel(entry.updatedAt)
         return "last gate \(String(num.prefix(14))) in \(t)"
     }
     private var adherenceLabel: String {
-        let pct = compliance?.overallCompliancePct.map { "\(Int($0))%" } ?? "—"
+        let pct = compliance?.overallCompliancePct.map { "\(Int($0))%" } ?? "-"
         let missed = missedCount > 0 ? " · \(missedCount) missed window" : ""
         return "adherence \(pct)\(missed)"
     }
@@ -200,7 +200,7 @@ private struct RailRampScheduleBody: View {
     }
 
     private func timeLabel(_ isoString: String?) -> String {
-        guard let s = isoString, let d = Self.iso.date(from: s) else { return "—" }
+        guard let s = isoString, let d = Self.iso.date(from: s) else { return "-" }
         let fmt = DateFormatter()
         fmt.dateFormat = "HH:mm"
         return fmt.string(from: d)
@@ -358,11 +358,11 @@ private struct RailRampScheduleBody: View {
 
     private func trainWindowRow(_ window: TrainWindow582) -> some View {
         let (pillLabel, pillColor) = windowPillInfo(window.status ?? "")
-        let trackLabel = window.dockId.map { "track \($0.replacingOccurrences(of: "D", with: ""))" } ?? "—"
-        let carrierCode = String((window.carrierId ?? "—").prefix(12))
+        let trackLabel = window.dockId.map { "track \($0.replacingOccurrences(of: "D", with: ""))" } ?? "-"
+        let carrierCode = String((window.carrierId ?? "-").prefix(12))
         let dirLabel = (window.type ?? "").lowercased() == "outbound" ? "outbound" : "inbound"
         let title = "\(carrierCode) · \(dirLabel)"
-        let sub = "\(trackLabel) · \(window.estimatedDurationMin.map { "\($0) min est." } ?? "—")"
+        let sub = "\(trackLabel) · \(window.estimatedDurationMin.map { "\($0) min est." } ?? "-")"
 
         return HStack(spacing: 12) {
             ZStack {

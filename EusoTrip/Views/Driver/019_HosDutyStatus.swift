@@ -159,9 +159,9 @@ struct HosDutyStatus: View {
     }
 
     /// 30-min break resume clock, projected forward from nextBreakDue if
-    /// we're inside the break, otherwise "—".
+    /// we're inside the break, otherwise "-".
     private var resumeAt: String {
-        guard let status = store.status else { return "—" }
+        guard let status = store.status else { return "-" }
         if status.breakRequired,
            let iso = status.nextBreakDue,
            let date = ISO8601DateFormatter().date(from: iso) {
@@ -172,7 +172,7 @@ struct HosDutyStatus: View {
            let date = ISO8601DateFormatter().date(from: iso) {
             return "at " + HosDutyStatus.clockFormatter.string(from: date).uppercased()
         }
-        return "—"
+        return "-"
     }
 
     private var beforeNextBreak: String {
@@ -816,7 +816,7 @@ struct HosDutyStatus: View {
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textTertiary)
             }
-            Text("Self-certified record — \(store.today?.certified == true ? "certified" : "uncertified")")
+            Text("Self-certified record, \(store.today?.certified == true ? "certified" : "uncertified")")
                 .font(EType.mono(.micro)).tracking(0.3)
                 .foregroundStyle(palette.textTertiary)
         }

@@ -72,8 +72,8 @@ private struct DriversListBody: View {
                     LifecycleRow(label: "CDL",         value: "\(dashIfEmpty(d.cdlClass)) · \(dashIfEmpty(d.cdlState))")
                     LifecycleRow(label: "CDL expires", value: humanISO(d.cdlExpires, format: "MMM d, yyyy"))
                     LifecycleRow(label: "Medical",     value: humanISO(d.medicalExpires, format: "MMM d, yyyy"))
-                    LifecycleRow(label: "Hazmat",      value: d.hazmatEndorsement == true ? "Endorsed" : "—")
-                    LifecycleRow(label: "Safety score", value: d.safetyScore.map { String(format: "%.2f", $0) } ?? "—")
+                    LifecycleRow(label: "Hazmat",      value: d.hazmatEndorsement == true ? "Endorsed" : "-")
+                    LifecycleRow(label: "Safety score", value: d.safetyScore.map { String(format: "%.2f", $0) } ?? "-")
                 }
             }
         }

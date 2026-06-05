@@ -244,7 +244,7 @@ struct DriverInviteBulkStep: View {
                 .font(EType.body).foregroundStyle(palette.textPrimary)
             if !r.failed.isEmpty {
                 ForEach(r.failed, id: \.email) { f in
-                    Text("• \(f.email) — \(f.reason)")
+                    Text("• \(f.email) · \(f.reason)")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                 }
             }

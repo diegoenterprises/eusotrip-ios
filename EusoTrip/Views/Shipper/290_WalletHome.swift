@@ -57,7 +57,7 @@ private struct WalletHomeBody: View {
     private func balanceHero(_ b: WalletBalance) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("AVAILABLE BALANCE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(.white.opacity(0.85))
-            Text(usd(b.available) == "—" ? "$0" : usd(b.available)).font(.system(size: 32, weight: .heavy)).foregroundStyle(.white).monospacedDigit()
+            Text(usd(b.available) == "-" ? "$0" : usd(b.available)).font(.system(size: 32, weight: .heavy)).foregroundStyle(.white).monospacedDigit()
             HStack(spacing: 8) {
                 Text("MTD VOLUME \(usd(b.monthVolume))").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 3).background(.white.opacity(0.18)).clipShape(Capsule())
             }

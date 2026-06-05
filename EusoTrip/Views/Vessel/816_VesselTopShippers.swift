@@ -75,10 +75,10 @@ private struct VesselTopShippersBody: View {
     @State private var hasData = false
 
     @State private var subline    = "0 shippers · 90-day window · ranked by load volume"
-    @State private var leaderName = "—"
+    @State private var leaderName = "-"
     @State private var leaderSub  = "no loads in window"
     @State private var leaderRate = "$0"
-    @State private var leaderGrade = "GRADE —"
+    @State private var leaderGrade = "GRADE -"
     @State private var leaderGradeTone: StatusPill.Kind = .neutral
     @State private var totalShippers = 0
     @State private var kpiShippers = "0"
@@ -101,7 +101,7 @@ private struct VesselTopShippersBody: View {
                 } else if !hasData {
                     EusoEmptyState(systemImage: "chart.bar.xaxis",
                                    title: "No shippers ranked yet",
-                                   subtitle: "shipperScorecard.topShippers returned no shippers in the 90-day window — nothing to rank.")
+                                   subtitle: "shipperScorecard.topShippers returned no shippers in the 90-day window, nothing to rank.")
                 } else {
                     spotlightCard
                     HStack(spacing: 8) {

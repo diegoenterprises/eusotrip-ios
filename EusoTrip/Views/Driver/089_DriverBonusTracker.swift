@@ -139,7 +139,7 @@ private struct BonusTrackerBody: View {
             Text("Rewards & badges")
                 .font(.system(size: 22, weight: .heavy))
                 .foregroundStyle(palette.textPrimary)
-            Text("Points, tier progress, and badges you've earned (or can still chase).")
+            Text("Points, tier progress and badges you've earned (or can still chase).")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)

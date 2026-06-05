@@ -101,8 +101,8 @@ struct VesselOceanTrackMap: View {
     /// VERBATIM to the 003 chip, but LIVE off the AIS fix.
     private var aisChipLabel: String? {
         guard let p = store.position else { return nil }
-        let kn = p.speed.map { String(format: "%.1f kn", $0) } ?? "— kn"
-        let hdg = p.heading.map { String(format: "hdg %03.0f°", $0) } ?? "hdg —"
+        let kn = p.speed.map { String(format: "%.1f kn", $0) } ?? "- kn"
+        let hdg = p.heading.map { String(format: "hdg %03.0f°", $0) } ?? "hdg -"
         let lng = Self.formatLng(p.lng)
         return "\(kn) · \(hdg)\n\(lng)"
     }

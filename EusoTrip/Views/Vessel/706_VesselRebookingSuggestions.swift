@@ -80,9 +80,9 @@ private struct VesselRebookingSuggestionsBody: View {
     @State private var hasSuggestions = false
 
     @State private var suggestions: [RebookSuggestion706] = []
-    @State private var bestAdded = "—"
+    @State private var bestAdded = "-"
     @State private var bestVoyage = "no matching voyage"
-    @State private var bestEtd = "—"
+    @State private var bestEtd = "-"
     @State private var blankedVoyage = "0FE3W"
     @State private var originalBooking = "VES-260518-7C3A09F18B"
     @State private var emptyMessage: String? = nil
@@ -100,7 +100,7 @@ private struct VesselRebookingSuggestionsBody: View {
                 } else if !hasSuggestions {
                     EusoEmptyState(systemImage: "ferry",
                                    title: "No rebooking suggestions",
-                                   subtitle: emptyMessage ?? "No scheduled voyage matches this booking's origin/destination pair. rebookingSuggestions returned an empty set — nothing to re-book onto yet.")
+                                   subtitle: emptyMessage ?? "No scheduled voyage matches this booking's origin/destination pair. rebookingSuggestions returned an empty set, nothing to re-book onto yet.")
                 } else {
                     exposureHero
                     kpiStrip
@@ -112,7 +112,7 @@ private struct VesselRebookingSuggestionsBody: View {
                             .frame(width: 132)
                     }
                     ESangRow706(title: "ESang: \(bestVoyage) is your shortest delay",
-                                subtitle: "re-book now — \(bestAdded) added vs the blanked voyage, same O/D pair")
+                                subtitle: "re-book now - \(bestAdded) added vs the blanked voyage, same O/D pair")
                 }
                 Color.clear.frame(height: 96)
             }
@@ -347,7 +347,7 @@ private struct VesselRebookingSuggestionsBody: View {
 
     /// Compact ETD label ("May 26") from an ISO 8601 departure timestamp.
     private func shortDate(_ iso: String?) -> String {
-        guard let iso, !iso.isEmpty else { return "—" }
+        guard let iso, !iso.isEmpty else { return "-" }
         let parser = ISO8601DateFormatter()
         parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let date = parser.date(from: iso)

@@ -93,7 +93,7 @@ private struct RailDieselFuelIndexBody: View {
     // MARK: Derived
 
     private var heroPriceLabel: String {
-        index?.nationalAverage.map { String(format: "$%.2f", $0) } ?? "—"
+        index?.nationalAverage.map { String(format: "$%.2f", $0) } ?? "-"
     }
     /// Hi / lo across the live 8-week series when present.
     private var hiLoLabel: String {
@@ -390,7 +390,7 @@ private struct RailDieselFuelIndexBody: View {
     private func paddRow(_ row: PaddRow) -> some View {
         let glyphTint: Color = row.carb ? Brand.success : Brand.hazmat
         let chipColor: Color = row.wowUp ? Brand.warning : Brand.success
-        let priceStr: String = row.price.map { String(format: "$%.2f", $0) } ?? "—"
+        let priceStr: String = row.price.map { String(format: "$%.2f", $0) } ?? "-"
         return HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)

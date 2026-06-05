@@ -453,7 +453,7 @@ struct MeLoadBoardView: View {
             Image(systemName: "shippingbox").font(.system(size: 28, weight: .heavy))
                 .foregroundStyle(palette.textTertiary)
             Text("No loads match").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-            Text("Try a wider lane, drop the hazmat filter, or change equipment. The whole national feed is one search away.")
+            Text("Try a wider lane, drop the hazmat filter or change equipment. The whole national feed is one search away.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
         }

@@ -98,13 +98,13 @@ private struct ADBody: View {
     /// Sticky reference to the driver currently being dragged.
     @State private var draggingDriverId: Int? = nil
 
-    private var loadNumberDisplay: String { load?.loadNumber ?? "—" }
+    private var loadNumberDisplay: String { load?.loadNumber ?? "-" }
     private var laneDisplay: String? {
         guard let p = load?.pickupLocation?.city, let d = load?.deliveryLocation?.city else { return nil }
         return "\(p) → \(d)"
     }
     private var distanceDisplay: String {
-        guard let d = load?.distance, d > 0 else { return "—" }
+        guard let d = load?.distance, d > 0 else { return "-" }
         return "\(Int(d.rounded())) mi"
     }
     private var rateDisplay: String {
@@ -112,11 +112,11 @@ private struct ADBody: View {
             let v = n.rounded()
             return v < 1000 ? String(format: "$%.0f", v) : "$\(Int(v).formatted(.number))"
         }
-        return "—"
+        return "-"
     }
     private var equipmentDisplay: String {
         let parts = [load?.equipmentType, load?.cargoType].compactMap { $0 }.filter { !$0.isEmpty }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
     private var selectedDriver: ADDriver? {
         drivers.first { $0.id == selectedDriverId }
@@ -231,7 +231,7 @@ private struct ADBody: View {
             ("RATE",       rateDisplay,         .green),
             ("DISTANCE",   distanceDisplay,     .blue),
             ("EQUIPMENT",  equipmentDisplay,    .blue),
-            ("STATE",      load?.status ?? "—", .orange),
+            ("STATE",      load?.status ?? "-", .orange),
         ]
         let cols = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
         return LazyVGrid(columns: cols, spacing: 8) {
@@ -260,7 +260,7 @@ private struct ADBody: View {
                 .padding(.horizontal, 2)
             if drivers.isEmpty {
                 LifecycleCard {
-                    Text("No drivers available — pull to refresh.")
+                    Text("No drivers available, pull to refresh.")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                 }
             } else {
@@ -302,7 +302,7 @@ private struct ADBody: View {
                     .font(EType.caption.weight(.semibold))
                     .foregroundStyle(palette.textPrimary)
                 let lic = [d.licenseNumber, d.licenseState].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
-                let status = d.status ?? "—"
+                let status = d.status ?? "-"
                 let suffix = (d.hazmatEndorsement ?? false) ? " · HAZMAT" : ""
                 Text("\(status)\(lic.isEmpty ? "" : " · " + lic)\(suffix)")
                     .font(.caption2).foregroundStyle(palette.textTertiary).lineLimit(1)
@@ -384,7 +384,7 @@ private struct ADBody: View {
         struct In: Encodable { let id: String }
         do {
             load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId))
-        } catch { /* tolerated; UI shows "—" */ }
+        } catch { /* tolerated; UI shows "-" */ }
     }
 
     private func loadDrivers() async {

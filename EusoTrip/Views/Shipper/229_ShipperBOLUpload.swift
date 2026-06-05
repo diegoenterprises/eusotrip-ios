@@ -9,7 +9,7 @@
 //  data. The hero card + KPI quartet now render LIVE rows from
 //  `documents.getAll` filtered to the BOL category (mirrors
 //  300_DocumentsAll's proc-call + state pattern). Where no live source
-//  exists, the field shows an honest em-dash "—"; where no endpoint
+//  exists, the field shows an honest em-dash "-"; where no endpoint
 //  exists at all (the per-party signatory state), the section shows an
 //  honest empty state — never fabricated rows.
 //
@@ -35,7 +35,7 @@
 //    EUSO-2147 — `documents.bol.getDetail(loadId:)` not yet on iOS
 //                API. Lane / spec / page-count / SHA-256 integrity are
 //                NOT in the `documents.getAll` projection, so they
-//                render "—" until that envelope ships.
+//                render "-" until that envelope ships.
 //    EUSO-2148 — `documents.bol.getSignatories(bolId:)` not shipped.
 //                The SIGNATORIES section renders an honest empty state
 //                (was three fabricated persona rows) until it lands.
@@ -96,20 +96,20 @@ struct ShipperBOLUpload: View {
     private let titleText = "BOL detail"
 
     // §15.3 audit-trail suffix — derived from the LIVE document id when
-    // present, otherwise from the supplied loadId, otherwise honest "—".
+    // present, otherwise from the supplied loadId, otherwise honest "-".
     private var bolId: String {
         if let id = bol?.id, !id.isEmpty { return id }
         if !loadId.isEmpty {
             let suffix = loadId.replacingOccurrences(of: "LD-", with: "")
             return "BOL-\(suffix)"
         }
-        return "—"
+        return "-"
     }
 
     private var activeStage: BOLStage { BOLStage.from(status: bol?.status) }
 
     private var counterEyebrow: String {
-        bolCount > 0 ? "\(bolCount) BOL" : "—"
+        bolCount > 0 ? "\(bolCount) BOL" : "-"
     }
 
     var body: some View {
@@ -309,7 +309,7 @@ struct ShipperBOLUpload: View {
     // MARK: Hero BOL card (live)
 
     private func heroCard(_ doc: DocumentsAPI.Document) -> some View {
-        let statusUpper = doc.status.isEmpty ? "—" : doc.status.uppercased()
+        let statusUpper = doc.status.isEmpty ? "-" : doc.status.uppercased()
         return HStack(spacing: 0) {
             RoundedRectangle(cornerRadius: 1.5)
                 .fill(LinearGradient.bolSuccessGrad)
@@ -341,7 +341,7 @@ struct ShipperBOLUpload: View {
 
                 // Lane + spec are NOT in the documents.getAll projection
                 // (EUSO-2147). Honest em-dash, no fabricated lane.
-                Text("Lane — · spec — (EUSO-2147)")
+                Text("Lane - · spec - (EUSO-2147)")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
@@ -392,17 +392,17 @@ struct ShipperBOLUpload: View {
 
     private func kpiQuartet(_ doc: DocumentsAPI.Document) -> some View {
         HStack(spacing: 0) {
-            // PAGES not in projection → honest "—" w/ gap ref.
-            kpiCellView(label: "PAGES", value: "—", style: .primary, sub: "EUSO-2147")
+            // PAGES not in projection → honest "-" w/ gap ref.
+            kpiCellView(label: "PAGES", value: "-", style: .primary, sub: "EUSO-2147")
             kpiDivider
             // SIZE is live.
             kpiCellView(label: "SIZE", value: humanBytes(doc.size), style: .gradient, sub: "on file")
             kpiDivider
-            // INTEGRITY hash not in projection → honest "—".
-            kpiCellView(label: "INTEGRITY", value: "—", style: .primary, sub: "SHA-256")
+            // INTEGRITY hash not in projection → honest "-".
+            kpiCellView(label: "INTEGRITY", value: "-", style: .primary, sub: "SHA-256")
             kpiDivider
-            // No signatory endpoint (EUSO-2148) → honest "—".
-            kpiCellView(label: "SIGNED", value: "—", style: .primary, sub: "EUSO-2148")
+            // No signatory endpoint (EUSO-2148) → honest "-".
+            kpiCellView(label: "SIGNED", value: "-", style: .primary, sub: "EUSO-2148")
         }
         .padding(.vertical, Space.s4)
         .frame(maxWidth: .infinity)
@@ -451,7 +451,7 @@ struct ShipperBOLUpload: View {
     }
 
     private func humanBytes(_ bytes: Int) -> String {
-        guard bytes > 0 else { return "—" }
+        guard bytes > 0 else { return "-" }
         let units = ["B", "KB", "MB", "GB"]
         var value = Double(bytes)
         var idx = 0

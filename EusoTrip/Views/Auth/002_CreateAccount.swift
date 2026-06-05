@@ -218,7 +218,7 @@ struct CreateAccountView: View {
         case .mode:            return "Select your transport mode(s). Multi-select allowed for multi-modal operators."
         case .role:            return "Select your role to begin registration. Each role has specific regulatory requirements."
         case .form:            return vm.role.tagline
-        case .verifyEmailSent: return "Last step — we sent you a link."
+        case .verifyEmailSent: return "Last step. We sent you a link."
         }
     }
 
@@ -472,7 +472,7 @@ struct CreateAccountView: View {
                     .font(EType.caption)
                     .fontWeight(.semibold)
                     .foregroundStyle(palette.textPrimary)
-                Text("EusoTrip automatically verifies FMCSA, PHMSA, TSA, FRA, FMC, USCG, and state requirements during registration. All data is encrypted and stored per DOT 49 CFR standards.")
+                Text("EusoTrip automatically verifies FMCSA, PHMSA, TSA, FRA, FMC, USCG and state requirements during registration. All data is encrypted and stored per DOT 49 CFR standards.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -668,7 +668,7 @@ struct CreateAccountView: View {
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                 }
-                Text("This role is on our roadmap — the surfaces are being wired against the same compliance and payout rails the truck side uses today. To claim your spot early, email us and we'll either fast-track you with an invite code or notify you the moment this role opens to self-sign-up.")
+                Text("This role is on our roadmap. The surfaces are being wired against the same compliance and payout rails the truck side uses today. To claim your spot early, email us and we'll either fast-track you with an invite code or notify you the moment this role opens to self-sign-up.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1041,7 +1041,7 @@ struct CreateAccountView: View {
                 title: vm.role == .railEngineer
                     ? "Scan your FRA engineer cert"
                     : "Scan your FRA conductor cert",
-                subtitle: "Auto-fills cert #, expiration, employer railroad, and territory."
+                subtitle: "Auto-fills cert #, expiration, employer railroad and territory."
             ) { applyFRACert($0) }
 
             GlassField(label: "FRA cert #",
@@ -1150,7 +1150,7 @@ struct CreateAccountView: View {
             CredentialScanCard(
                 credentialType: "uscg_mmc",
                 title: "Scan your USCG MMC",
-                subtitle: "Auto-fills credential #, expiration, GT capacity, and route."
+                subtitle: "Auto-fills credential #, expiration, GT capacity and route."
             ) { applyMMC($0) }
 
             GlassField(label: "MMC license #",
@@ -1224,7 +1224,7 @@ struct CreateAccountView: View {
             CredentialScanCard(
                 credentialType: "customs_broker_license",
                 title: "Scan your CBP Form 3124 license",
-                subtitle: "Auto-fills license #, port of entry, and examination date."
+                subtitle: "Auto-fills license #, port of entry and examination date."
             ) { applyCBPLicense($0) }
 
             GlassField(label: "CBP license #",
@@ -1415,7 +1415,7 @@ struct CreateAccountView: View {
             CredentialScanCard(
                 credentialType: cdlCredentialType,
                 title: cdlScanTitle,
-                subtitle: "We'll auto-fill number, state, class, DOB, and endorsements."
+                subtitle: "We'll auto-fill number, state, class, DOB and endorsements."
             ) { applyDriverCredential($0) }
 
             HStack(spacing: Space.s3) {
@@ -1530,7 +1530,7 @@ struct CreateAccountView: View {
             CredentialScanCard(
                 credentialType: "us_dot_authority",
                 title: "Scan your USDOT / MC authority letter",
-                subtitle: "Auto-fills DOT, MC, legal name, and hazmat authorization."
+                subtitle: "Auto-fills DOT, MC, legal name and hazmat authorization."
             ) { applyCarrierAuthority($0) }
 
             // FMCSA SAFER live verification — typing a DOT or MC and
@@ -1562,7 +1562,7 @@ struct CreateAccountView: View {
             CredentialScanCard(
                 credentialType: "us_coi",
                 title: "Scan your ACORD 25 COI (optional)",
-                subtitle: "Pulls policy #, insurer, auto / cargo limits, MCS-90, and expiration."
+                subtitle: "Pulls policy #, insurer, auto / cargo limits, MCS-90 and expiration."
             ) { applyCarrierCOI($0) }
         }
     }
@@ -1576,7 +1576,7 @@ struct CreateAccountView: View {
             CredentialScanCard(
                 credentialType: "us_mc_authority",
                 title: "Scan your MC authority letter",
-                subtitle: "Auto-fills MC number, legal entity, and operating status."
+                subtitle: "Auto-fills MC number, legal entity and operating status."
             ) { applyBrokerAuthority($0) }
 
             // FMCSA SAFER live verification. Brokers register with MC
@@ -1610,7 +1610,7 @@ struct CreateAccountView: View {
             CredentialScanCard(
                 credentialType: "bond_bmc84",
                 title: "Scan your BMC-84 surety bond (optional)",
-                subtitle: "Auto-fills surety company, bond number, and bond amount."
+                subtitle: "Auto-fills surety company, bond number and bond amount."
             ) { applyBrokerBond($0) }
         }
     }
@@ -2076,7 +2076,7 @@ struct CreateAccountView: View {
                     Text("Verify your identity (FMCSA Motus)")
                         .font(.system(size: 14, weight: .heavy))
                         .foregroundStyle(palette.textPrimary)
-                    Text("FMCSA's new USDOT system (Motus) requires identity proofing. Scan your government ID and take a selfie — we pre-proof the same evidence so you can fast-path registration.")
+                    Text("FMCSA's new USDOT system (Motus) requires identity proofing. Scan your government ID and take a selfie. We pre-proof the same evidence so you can fast-path registration.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -2384,7 +2384,7 @@ struct CreateAccountView: View {
         if let detail = motusResult?.dedup.motusAttestation.detail, !detail.isEmpty {
             return detail
         }
-        return "Proofed biometrically. FMCSA Motus government attestation is pending — we'll never mark it verified until the government confirms."
+        return "Proofed biometrically. FMCSA Motus government attestation is pending. We'll never mark it verified until the government confirms."
     }
 
     // MARK: - Motus capture + verify pipeline
@@ -2496,7 +2496,7 @@ struct CreateAccountView: View {
                 applyMotusPrefill(p)
                 motusPrefillApplied = true
                 let linked = accel.identityLinked ? " Identity linked to your USDOT/MC." : ""
-                motusAccelNote = "FMCSA registration found — we prefilled your details below. Confirm and edit as needed.\(linked)"
+                motusAccelNote = "FMCSA registration found. We prefilled your details below. Confirm and edit as needed.\(linked)"
             } else {
                 motusPrefill = nil
                 // Surface the first real warning, else an honest not-found.

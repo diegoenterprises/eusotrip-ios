@@ -98,7 +98,7 @@ private struct VesselShipmentsBody: View {
                         title: searchText.isEmpty ? "No shipments" : "No results for \(searchText)",
                         subtitle: searchText.isEmpty
                             ? "Vessel shipments assigned to you will appear here."
-                            : "Try a different origin, destination, or vessel name."
+                            : "Try a different origin, destination or vessel name."
                     )
                 } else {
                     VStack(spacing: Space.s2) {
@@ -218,13 +218,13 @@ private struct VesselShipmentsBody: View {
                 modeBadge(for: s)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 4) {
-                        Text(s.origin ?? "—")
+                        Text(s.origin ?? "-")
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(palette.textPrimary)
                         Image(systemName: "arrow.right")
                             .font(.system(size: 9, weight: .bold))
                             .foregroundStyle(LinearGradient.diagonal)
-                        Text(s.destination ?? "—")
+                        Text(s.destination ?? "-")
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(palette.textPrimary)
                     }
@@ -235,7 +235,7 @@ private struct VesselShipmentsBody: View {
                     }
                 }
                 Spacer()
-                StatusPill(text: (s.status ?? "—").replacingOccurrences(of: "_", with: " ").uppercased(),
+                StatusPill(text: (s.status ?? "-").replacingOccurrences(of: "_", with: " ").uppercased(),
                            kind: statusKind)
             }
             // Lifecycle strip (7 stages: Booked → Gate In → Loaded → At Sea → Arrived → Discharged → Delivered)

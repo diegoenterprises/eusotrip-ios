@@ -97,7 +97,7 @@ private struct LoadConsolBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(LinearGradient.diagonal)
                 if dropHover, let g = hoveringGroup {
-                    let savings = g.savingsUsd.map { usd($0) } ?? "—"
+                    let savings = g.savingsUsd.map { usd($0) } ?? "-"
                     Text("Release to consolidate \(g.loadIds.count) loads · save \(savings)")
                         .font(EType.caption)
                         .foregroundStyle(LinearGradient.diagonal)

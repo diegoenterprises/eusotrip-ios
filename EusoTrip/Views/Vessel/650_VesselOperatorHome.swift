@@ -340,16 +340,16 @@ private struct VesselOperatorHomeBody: View {
         return HStack(spacing: Space.s3) {
             ZStack {
                 Circle().fill(statusColor.opacity(0.14)).frame(width: 32, height: 32)
-                Text(String(member.name?.prefix(2).uppercased() ?? "—"))
+                Text(String(member.name?.prefix(2).uppercased() ?? "-"))
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(statusColor)
             }
             VStack(alignment: .leading, spacing: 1) {
-                Text(member.name ?? "—").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                Text(member.role ?? "—").font(EType.caption).foregroundStyle(palette.textSecondary)
+                Text(member.name ?? "-").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                Text(member.role ?? "-").font(EType.caption).foregroundStyle(palette.textSecondary)
             }
             Spacer()
-            Text((member.status ?? "—").replacingOccurrences(of: "_", with: " ").uppercased())
+            Text((member.status ?? "-").replacingOccurrences(of: "_", with: " ").uppercased())
                 .font(.system(size: 8, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(statusColor)
                 .padding(.horizontal, 8).padding(.vertical, 3)

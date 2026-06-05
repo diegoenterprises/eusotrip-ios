@@ -113,7 +113,7 @@ private struct VesselNetworkDisruptionBody: View {
                 } else if !hasDisruption {
                     EusoEmptyState(systemImage: "checkmark.seal",
                                    title: "No network disruption",
-                                   subtitle: "blankSailing.dashboard reports 0 cancelled sailings on loop EUS-TPEB-07 · WK23 — nothing at risk, nothing to reroute.")
+                                   subtitle: "blankSailing.dashboard reports 0 cancelled sailings on loop EUS-TPEB-07 · WK23 · nothing at risk, nothing to reroute.")
                 } else {
                     exposureHero
                     kpiStrip
@@ -269,7 +269,7 @@ private struct VesselNetworkDisruptionBody: View {
                 bookings = voyages.prefix(3).enumerated().map { idx, v in
                     let kind = kinds[min(idx, kinds.count - 1)]
                     return ImpactedBooking689(
-                        ref: "VES · v.\(v.voyageNumber ?? "—")",
+                        ref: "VES · v.\(v.voyageNumber ?? "-")",
                         teu: v.vesselName ?? "vessel TBD",
                         lane: "\(v.carrier ?? "carrier") · loop omit",
                         action: labels[min(idx, labels.count - 1)],

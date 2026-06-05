@@ -45,7 +45,7 @@ private enum RailCertType: String, CaseIterable, Identifiable {
         case .leqp:       return "Locomotive Engineer Qual. Program (LEQP)"
         case .lffd:       return "Locomotive Familiarization (LFFD)"
         case .ptcQual:    return "PTC Qualification"
-        case .tdg:        return "TDG (Canada — Dangerous Goods)"
+        case .tdg:        return "TDG (Canada - Dangerous Goods)"
         case .cror:       return "CROR (Canadian Rail Operating Rules)"
         }
     }
@@ -53,8 +53,8 @@ private enum RailCertType: String, CaseIterable, Identifiable {
     /// One-line description shown under the picker.
     var blurb: String {
         switch self {
-        case .fraEng240:  return "49 CFR Part 240 — locomotive engineer certification."
-        case .fraCond242: return "49 CFR Part 242 — conductor certification."
+        case .fraEng240:  return "49 CFR Part 240 - locomotive engineer certification."
+        case .fraCond242: return "49 CFR Part 242 - conductor certification."
         case .leqp:       return "Railroad locomotive engineer qualification program."
         case .lffd:       return "Locomotive familiarization for the territory operated."
         case .ptcQual:    return "Positive Train Control operating qualification."
@@ -148,7 +148,7 @@ struct RailCertSheet: View {
                         CredentialScanCard(
                             credentialType: "fra_cert",
                             title: "Scan rail certificate",
-                            subtitle: "Photograph the FRA / rail cert — we'll read the number and dates.",
+                            subtitle: "Photograph the FRA / rail cert. We'll read the number and dates.",
                             onResult: { applyScan($0) }
                         )
                         .padding(Space.s4)
@@ -183,7 +183,7 @@ struct RailCertSheet: View {
             Text("Attach rail certificate")
                 .font(EType.h2)
                 .foregroundStyle(palette.textPrimary)
-            Text("Capture an FRA / rail operating credential for this operator. Status is set by the verifier — we never mark a cert verified ourselves.")
+            Text("Capture an FRA / rail operating credential for this operator. Status is set by the verifier. We never mark a cert verified ourselves.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -421,7 +421,7 @@ struct RailCertSheet: View {
         let icon = isVerified ? "checkmark.seal.fill" : "clock.fill"
         let headline = isVerified
             ? "Certificate attached"
-            : (raw.isEmpty ? "Submitted — pending review" : "Pending review")
+            : (raw.isEmpty ? "Submitted - pending review" : "Pending review")
 
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(spacing: Space.s2) {
@@ -437,7 +437,7 @@ struct RailCertSheet: View {
                            kind: isVerified ? .success : .warning)
             }
             if !isVerified {
-                Text("The verifier hasn't confirmed this credential yet. It will show as verified only when the verifier clears it — not before.")
+                Text("The verifier hasn't confirmed this credential yet. It will show as verified only when the verifier clears it, not before.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

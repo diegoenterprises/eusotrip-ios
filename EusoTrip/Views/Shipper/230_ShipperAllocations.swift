@@ -318,7 +318,7 @@ struct ShipperWeeklyAllocations: View {
                     return Double(cleaned)
                 }
         }
-        guard !rates.isEmpty else { return "—" }
+        guard !rates.isEmpty else { return "-" }
         let avg = rates.reduce(0, +) / Double(rates.count)
         return String(format: "$%.0f", avg)
     }

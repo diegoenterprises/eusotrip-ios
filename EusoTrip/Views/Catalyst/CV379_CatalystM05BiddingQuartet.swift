@@ -107,27 +107,27 @@ private struct CVQBody: View {
     @Environment(\.palette) private var palette
     @State private var load: CVQLoad?
 
-    private var loadNumberDisplay: String { load?.loadNumber ?? "—" }
+    private var loadNumberDisplay: String { load?.loadNumber ?? "-" }
     private var rateDisplay: String {
         if let r = load?.rate, let n = Double(r), n > 0 {
             let v = n.rounded()
             return v < 1000 ? String(format: "$%.0f", v) : "$\(Int(v).formatted(.number))"
         }
-        return "—"
+        return "-"
     }
     private var laneDisplay: String? {
         let p = [load?.pickupLocation?.city, load?.pickupLocation?.state].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
         let d = [load?.deliveryLocation?.city, load?.deliveryLocation?.state].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
         if p.isEmpty && d.isEmpty { return nil }
-        return "\(p.isEmpty ? "—" : p) → \(d.isEmpty ? "—" : d)"
+        return "\(p.isEmpty ? "-" : p) → \(d.isEmpty ? "-" : d)"
     }
     private var distanceDisplay: String {
-        guard let d = load?.distance, d > 0 else { return "—" }
+        guard let d = load?.distance, d > 0 else { return "-" }
         return "\(Int(d.rounded())) mi"
     }
     private var equipmentDisplay: String {
         let parts = [load?.equipmentType, load?.cargoType].compactMap { $0 }.filter { !$0.isEmpty }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
 
     var body: some View {
@@ -227,7 +227,7 @@ private struct CVQBody: View {
                     ("STAGE",   "AWARDED",       "Aurora wins",          .green),
                     ("RATE",    rateDisplay,     "awarded",              .green),
                     ("DIST",    distanceDisplay, "lane",                 .blue),
-                    ("STATE",   (load?.status ?? "—").uppercased(), "load row", .green),
+                    ("STATE",   (load?.status ?? "-").uppercased(), "load row", .green),
                 ]
             }
         }()
@@ -255,7 +255,7 @@ private struct CVQBody: View {
     private var nextStepCard: some View {
         let copy: String = {
             switch kind {
-            case .firstBid:       return "First quote in. Lane is open — competing carriers have minutes to counter."
+            case .firstBid:       return "First quote in. Lane is open. Competing carriers have minutes to counter."
             case .competingQuote: return "Second quote lands. Shipper now weighs both offers; the cheaper or faster wins."
             case .thirdQuote:     return "Third quote on the board. Final-call clock running before the shipper awards."
             case .awardedAurora:  return "Aurora awarded. Ledger committed; assign a driver from the dispatcher board next."

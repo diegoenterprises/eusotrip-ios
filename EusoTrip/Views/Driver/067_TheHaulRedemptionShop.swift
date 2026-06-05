@@ -70,7 +70,7 @@ public struct TheHaulRedemptionShopView: View {
                 Spacer(minLength: 0)
                 pointsBadge
             }
-            Text("Spend your Haul miles on perks, gear, and time off.")
+            Text("Spend your Haul miles on perks, gear and time off.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }

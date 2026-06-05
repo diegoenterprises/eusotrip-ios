@@ -432,7 +432,7 @@ private struct GateDetailRow: View {
             // Surface the raw server status when it's informative (e.g.
             // "provider_unavailable") so the operator knows WHY it's pending.
             let raw = (party.status ?? "").lowercased()
-            if raw == "provider_unavailable" { return "Provider unavailable — manual review" }
+            if raw == "provider_unavailable" { return "Provider unavailable - manual review" }
             return party.status?.capitalized ?? "Pending review"
         case .blocked: return party.status?.capitalized ?? "Blocked"
         }

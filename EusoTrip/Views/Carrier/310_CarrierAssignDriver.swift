@@ -210,7 +210,7 @@ private struct AssignDriverBody: View {
                     .foregroundStyle(selected == d.id ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(d.name).font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                    Text("\(dashIfEmpty(d.cdlClass)) · HOS \(d.hosRemainingHours.map { String(format: "%.1fh", $0) } ?? "—") remaining")
+                    Text("\(dashIfEmpty(d.cdlClass)) · HOS \(d.hosRemainingHours.map { String(format: "%.1fh", $0) } ?? "-") remaining")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                     if let truck = d.truckNumber, !truck.isEmpty {
                         Text("Truck \(truck) · \(dashIfEmpty(d.lastKnownCity))")

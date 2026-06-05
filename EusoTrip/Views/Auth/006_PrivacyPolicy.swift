@@ -62,7 +62,7 @@ struct PrivacyPolicyView: View {
             Text("Privacy Policy")
                 .font(EType.h1)
                 .foregroundStyle(LinearGradient.diagonal)
-            Text("Eusorone Technologies Inc. — EusoTrip Freight & Energy Logistics Platform")
+            Text("Eusorone Technologies Inc. - EusoTrip Freight & Energy Logistics Platform")
                 .font(EType.body)
                 .foregroundStyle(palette.textSecondary)
             HStack(spacing: Space.s3) {
@@ -83,7 +83,7 @@ struct PrivacyPolicyView: View {
                 Text("YOUR PRIVACY MATTERS")
                     .font(EType.micro).tracking(0.8)
                     .foregroundStyle(Color.emerald300)
-                Text("We are committed to protecting your personal information. This policy explains what data we collect, how we use it, who we share it with, and your rights. We comply with CCPA, TDPSA, VCDPA, and other applicable privacy laws. We do not sell your personal information.")
+                Text("We are committed to protecting your personal information. This policy explains what data we collect, how we use it, who we share it with and your rights. We comply with CCPA, TDPSA, VCDPA and other applicable privacy laws. We do not sell your personal information.")
                     .font(EType.body)
                     .foregroundStyle(palette.textPrimary)
                     .lineSpacing(2)
@@ -263,7 +263,7 @@ struct PrivacyPolicyView: View {
             highlight: false,
             blocks: [
                 .paragraph("Eusorone Technologies Inc. (\"Company,\" \"we,\" \"us,\" or \"our\") operates the EusoTrip freight and energy logistics platform (the \"Platform\"). This Privacy Policy describes how we collect, use, disclose, store, and protect your personal information when you access or use the Platform, visit our website, or interact with us in any way."),
-                .paragraph("This Privacy Policy applies to all Users of the Platform, including Shippers, Catalysts, Brokers, Drivers, Dispatchers (Dispatch), Escort/Pilot Vehicle Operators, Terminal Managers, Compliance Officers, Safety Managers, and all other registered and unregistered visitors."),
+                .paragraph("This Privacy Policy applies to all Users of the Platform, including Shippers, Catalysts, Brokers, Drivers, Dispatchers (Dispatch), Escort/Pilot Vehicle Operators, Terminal Managers, Compliance Officers, Safety Managers and all other registered and unregistered visitors."),
                 .paragraph("By using the Platform, you consent to the data practices described in this Privacy Policy. If you do not agree with this Privacy Policy, please do not use the Platform. This Privacy Policy is incorporated into and subject to our Terms of Service."),
                 .paragraph("We are committed to complying with applicable privacy and data protection laws, including but not limited to the California Consumer Privacy Act (CCPA/CPRA, Cal. Civ. Code 1798.100 et seq.), the Texas Data Privacy and Security Act (TDPSA), the Virginia Consumer Data Protection Act (VCDPA), the Colorado Privacy Act (CPA), the Connecticut Data Privacy Act (CTDPA), the Gramm-Leach-Bliley Act (GLBA) to the extent applicable to financial services, and applicable provisions of the European General Data Protection Regulation (GDPR) for any EU/EEA users.")
             ]
@@ -277,12 +277,12 @@ struct PrivacyPolicyView: View {
             blocks: [
                 .emphasized("2.1 Information You Provide Directly:"),
                 .bullets([
-                    "Account & Registration Data: Name, email address, phone number, mailing address, company name, job title, role selection, username, and password",
+                    "Account & Registration Data: Name, email address, phone number, mailing address, company name, job title, role selection, username and password",
                     "Identity & Credential Data: Commercial Driver's License (CDL) number and state, CDL endorsements, TWIC card number, medical examiner's certificate, USDOT number, MC/MX authority number, FMCSA safety rating, employer identification number (EIN), Social Security Number (last 4 digits for verification), date of birth",
                     "Insurance & Financial Data: Insurance policy numbers and coverage amounts, surety bond information, bank account details (for payments/factoring), payment card information (processed via PCI-DSS compliant third-party processors), tax identification information",
                     "Regulatory & Compliance Data: PHMSA registration numbers, EPA IDs, hazmat training certificates, drug and alcohol testing program enrollment, CSA scores, inspection history, accident history, safety audit documentation",
                     "Operational Data: Load details (origin, destination, commodity, weight, dimensions, special handling), rate information, bid amounts, contract terms, delivery schedules, proof of delivery documents, bills of lading, shipping papers",
-                    "Communications: Messages sent through the Platform, support tickets, feedback, reviews, ratings, and any other content you submit",
+                    "Communications: Messages sent through the Platform, support tickets, feedback, reviews, ratings and any other content you submit",
                     "Vehicle & Equipment Data: Vehicle identification numbers (VIN), license plate numbers, vehicle specifications, trailer information, maintenance records, inspection reports"
                 ]),
                 .emphasized("2.2 Information Collected Automatically:"),
@@ -291,13 +291,13 @@ struct PrivacyPolicyView: View {
                     "Device & Technical Data: IP address, browser type and version, operating system, device identifiers, mobile device type, screen resolution, language preferences, referring URLs",
                     "Usage Data: Pages visited, features used, click patterns, search queries, session duration, load views, bid activity, login timestamps, feature engagement metrics",
                     "ELD & Telematics Data: Hours of Service records, engine diagnostics, fuel consumption, hard braking events, acceleration patterns, vehicle fault codes (collected from integrated ELD and telematics systems)",
-                    "Cookies & Tracking Technologies: We use cookies, web beacons, pixels, and similar technologies as described in Section 8 below"
+                    "Cookies & Tracking Technologies: We use cookies, web beacons, pixels and similar technologies as described in Section 8 below"
                 ]),
                 .emphasized("2.3 Information from Third Parties:"),
                 .bullets([
                     "FMCSA/SAFER Data: Catalyst safety ratings, authority status, insurance filing status, inspection and crash data from FMCSA SAFER system",
                     "Credit & Background Checks: Credit reports (with your authorization), criminal background check results, MVR (Motor Vehicle Records) reports, employment verification",
-                    "Identity Verification Services: Results from third-party identity verification, document authentication, and fraud detection services",
+                    "Identity Verification Services: Results from third-party identity verification, document authentication and fraud detection services",
                     "Payment Processors: Transaction confirmation data, chargeback notifications, fraud alerts from payment processing partners",
                     "Insurance Verification: Insurance status updates from catalyst insurance databases and verification services"
                 ])
@@ -314,41 +314,41 @@ struct PrivacyPolicyView: View {
                 .emphasized("3.1 Platform Operations & Service Delivery:"),
                 .bullets([
                     "Creating and managing your account and verifying your identity and credentials",
-                    "Facilitating load matching, bidding, booking, and transportation management",
-                    "Processing payments, invoices, factoring, and financial transactions",
-                    "Providing real-time tracking, dispatch, and fleet management services",
+                    "Facilitating load matching, bidding, booking and transportation management",
+                    "Processing payments, invoices, factoring and financial transactions",
+                    "Providing real-time tracking, dispatch and fleet management services",
                     "Managing compliance documentation and regulatory reporting",
-                    "Operating gamification features, rewards programs, and driver incentives",
+                    "Operating gamification features, rewards programs and driver incentives",
                     "Facilitating communications between Users through in-platform messaging",
-                    "Providing AI-powered analytics, SpectraMatch crude oil identification, and ERG guidance"
+                    "Providing AI-powered analytics, SpectraMatch crude oil identification and ERG guidance"
                 ]),
                 .emphasized("3.2 Safety & Regulatory Compliance:"),
                 .bullets([
                     "Monitoring Hours of Service compliance and ELD data as required by 49 CFR Part 395",
-                    "Verifying CDL status, endorsements, medical certificates, and driver qualifications per 49 CFR Part 391",
+                    "Verifying CDL status, endorsements, medical certificates and driver qualifications per 49 CFR Part 391",
                     "Monitoring hazardous materials shipping compliance per 49 CFR Parts 171-180",
                     "Conducting drug and alcohol testing program administration per 49 CFR Part 382",
-                    "Reporting required safety data to FMCSA, PHMSA, DOT, and other regulatory agencies",
+                    "Reporting required safety data to FMCSA, PHMSA, DOT and other regulatory agencies",
                     "Emergency response coordination during supply chain disruptions or hazmat incidents"
                 ]),
                 .emphasized("3.3 Platform Integrity & Anti-Circumvention:"),
                 .bullets([
-                    "Detecting and preventing fraud, unauthorized access, and abuse of the Platform",
+                    "Detecting and preventing fraud, unauthorized access and abuse of the Platform",
                     "Monitoring for potential circumvention of Platform fees as described in our Terms of Service",
-                    "Analyzing transaction patterns to detect double brokering, cargo theft, and other prohibited conduct",
+                    "Analyzing transaction patterns to detect double brokering, cargo theft and other prohibited conduct",
                     "Enforcing our Terms of Service and other Platform policies"
                 ]),
                 .emphasized("3.4 Analytics & Improvement:"),
                 .bullets([
                     "Analyzing usage patterns to improve Platform features and user experience",
                     "Generating aggregated, anonymized market intelligence and benchmarking data",
-                    "Developing new features, products, and services",
+                    "Developing new features, products and services",
                     "Conducting research and development of AI and machine learning models"
                 ]),
                 .emphasized("3.5 Communications:"),
                 .bullets([
                     "Sending transactional notifications (load updates, payment confirmations, bid alerts)",
-                    "Sending safety alerts, emergency mobilization orders, and regulatory updates",
+                    "Sending safety alerts, emergency mobilization orders and regulatory updates",
                     "Sending marketing and promotional communications (with your consent where required)",
                     "Responding to your inquiries and providing customer support"
                 ])
@@ -463,7 +463,7 @@ struct PrivacyPolicyView: View {
                     "Strictly Necessary Cookies: Required for the Platform to function (authentication, session management, security tokens, load balancing). These cannot be disabled.",
                     "Functional Cookies: Remember your preferences and settings (language, role, dashboard layout, map preferences).",
                     "Analytics Cookies: Help us understand how Users interact with the Platform (page views, feature usage, error tracking). We use these to improve the Platform.",
-                    "Performance Cookies: Monitor Platform performance, load times, and identify technical issues."
+                    "Performance Cookies: Monitor Platform performance, load times and identify technical issues."
                 ]),
                 .paragraph("Managing Cookies: You can control cookies through your browser settings. Disabling certain cookies may limit Platform functionality. Strictly necessary cookies cannot be disabled without impacting core Platform operations."),
                 .paragraph("Do Not Track: We currently respond to \"Do Not Track\" browser signals by disabling non-essential analytics cookies.")
@@ -553,7 +553,7 @@ struct PrivacyPolicyView: View {
             iconTint: Color.slate400,
             highlight: false,
             blocks: [
-                .paragraph("We may update this Privacy Policy from time to time to reflect changes in our practices, technologies, legal requirements, or other factors. When we make material changes, we will:"),
+                .paragraph("We may update this Privacy Policy from time to time to reflect changes in our practices, technologies, legal requirements or other factors. When we make material changes, we will:"),
                 .bullets([
                     "Update the \"Last Updated\" date at the top of this page",
                     "Provide notice through the Platform (in-app notification or banner)",
@@ -570,7 +570,7 @@ struct PrivacyPolicyView: View {
             iconTint: Color.blue400,
             highlight: false,
             blocks: [
-                .paragraph("If you have questions, concerns, or requests regarding this Privacy Policy or our data practices, please contact us:"),
+                .paragraph("If you have questions, concerns or requests regarding this Privacy Policy or our data practices, please contact us:"),
                 .emphasized("Data Protection Officer"),
                 .paragraph("Eusorone Technologies Inc. · privacy@eusorone.com"),
                 .emphasized("Legal Department"),

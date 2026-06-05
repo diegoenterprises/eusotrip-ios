@@ -246,7 +246,7 @@ private struct CatalystLoadDetail: View {
     }
 
     private var loadIdLabel: String {
-        load?.loadNumber ?? "—"
+        load?.loadNumber ?? "-"
     }
 
     private var titleRow: some View {
@@ -282,8 +282,8 @@ private struct CatalystLoadDetail: View {
 
     private var routeTitle: String {
         guard let l = load else { return "Loading…" }
-        let from = l.pickupLocation?.cityState ?? "—"
-        let to = l.deliveryLocation?.cityState ?? "—"
+        let from = l.pickupLocation?.cityState ?? "-"
+        let to = l.deliveryLocation?.cityState ?? "-"
         return "\(from) → \(to)"
     }
 
@@ -334,8 +334,8 @@ private struct CatalystLoadDetail: View {
     }
 
     private func etaLabel(_ l: LoadsAPI.LoadDetail) -> String {
-        guard let iso = l.estimatedDeliveryDate ?? l.deliveryDate else { return "—" }
-        return formatTime(iso) ?? "—"
+        guard let iso = l.estimatedDeliveryDate ?? l.deliveryDate else { return "-" }
+        return formatTime(iso) ?? "-"
     }
 
     private func distanceLabel(_ l: LoadsAPI.LoadDetail) -> String {
@@ -590,7 +590,7 @@ private struct CatalystLoadDetail: View {
                 .font(.system(size: 9, weight: .heavy))
                 .tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
-            Text(progressPercent(l).map { "\($0)%" } ?? "—")
+            Text(progressPercent(l).map { "\($0)%" } ?? "-")
                 .font(.system(size: 18, weight: .bold))
                 .monospacedDigit()
                 .foregroundStyle(palette.textPrimary)

@@ -114,7 +114,7 @@ private struct AtDockBody: View {
             LifecycleSection(label: "CARGO", icon: "shippingbox")
             LifecycleRow(label: "Cargo type", value: dashIfEmpty(live.load.cargoType))
             LifecycleRow(label: "Equipment",  value: dashIfEmpty(live.load.equipmentType))
-            LifecycleRow(label: "Weight",     value: live.load.weight.map { "\(Int($0)) lb" } ?? "—")
+            LifecycleRow(label: "Weight",     value: live.load.weight.map { "\(Int($0)) lb" } ?? "-")
             if live.load.hazmatClass?.isEmpty == false {
                 LifecycleRow(label: "Hazmat", value: "Class \(dashIfEmpty(live.load.hazmatClass)) · UN \(dashIfEmpty(live.load.unNumber))")
             }

@@ -209,7 +209,7 @@ private struct VesselIntermodalJourneyBody: View {
 
     // MARK: Top bar — back + eyebrow + hero + leg pill + lane subtitle
 
-    private var heroNumber: String { detail?.intermodalNumber ?? "IM-—" }
+    private var heroNumber: String { detail?.intermodalNumber ?? "IM--" }
 
     private var legPillText: String {
         let total = detail?.numberOfSegments ?? (detail?.segments?.count ?? 0)
@@ -222,8 +222,8 @@ private struct VesselIntermodalJourneyBody: View {
 
     private var laneSubtitle: String {
         let segs = detail?.segments?.sorted { ($0.legNumber ?? 0) < ($1.legNumber ?? 0) } ?? []
-        let origin = segs.first?.originDescription ?? "—"
-        let dest = segs.last?.destinationDescription ?? "—"
+        let origin = segs.first?.originDescription ?? "-"
+        let dest = segs.last?.destinationDescription ?? "-"
         let legs = detail?.numberOfSegments ?? segs.count
         let modes = Set(segs.compactMap { $0.mode }).count
         return "\(origin) → \(dest) · \(legs) legs · \(modes) modes"
@@ -301,7 +301,7 @@ private struct VesselIntermodalJourneyBody: View {
             parts.append("\(Int(kg).formatted()) kg")
         }
         if let seal = c?.sealNumber { parts.append("seal \(seal)") }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
     private var doorToDoorLine: String {
         let days = detail?.estimatedTransitDays
@@ -314,7 +314,7 @@ private struct VesselIntermodalJourneyBody: View {
             let remaining = max(0, d - a); return "\(remaining)d"
         }
         if let d = detail?.estimatedTransitDays { return "\(d)d" }
-        return "—"
+        return "-"
     }
 
     // MARK: Journey timeline (segments + transfers, in leg order)
@@ -382,7 +382,7 @@ private struct VesselIntermodalJourneyBody: View {
         case "VESSEL": return "OCEAN"
         case "RAIL":   return "RAIL"
         case "TRUCK":  return "DRAY"
-        default:       return "—"
+        default:       return "-"
         }
     }
     private func legKindLabel(_ mode: String?, isEndLeg: Bool) -> String {
@@ -459,8 +459,8 @@ private struct VesselIntermodalJourneyBody: View {
         }
     }
     private func legLaneLine(_ seg: IMSegment008) -> String {
-        let o = seg.originDescription ?? "—"
-        let d = seg.destinationDescription ?? "—"
+        let o = seg.originDescription ?? "-"
+        let d = seg.destinationDescription ?? "-"
         return "\(o) → \(d)"
     }
     private func legDetailLine(_ seg: IMSegment008) -> String {
@@ -510,7 +510,7 @@ private struct VesselIntermodalJourneyBody: View {
         case "VESSEL": return "vessel"
         case "RAIL":   return "rail"
         case "TRUCK":  return "truck"
-        default:       return "—"
+        default:       return "-"
         }
     }
     private func facilityFromType(_ t: String?) -> String? {
@@ -674,7 +674,7 @@ private struct VesselIntermodalJourneyBody: View {
     // MARK: Formatting
 
     private func money(_ v: Double?, _ currency: String) -> String {
-        guard let v else { return "—" }
+        guard let v else { return "-" }
         let f = NumberFormatter()
         f.numberStyle = .currency
         f.currencyCode = currency
@@ -727,7 +727,7 @@ private struct VesselIntermodalJourneyBody: View {
                     "currentMode": t.currentMode as Any
                 ])
         } catch {
-            actionError = "Couldn't open live tracking — "
+            actionError = "Couldn't open live tracking. "
                 + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
         }
     }

@@ -160,7 +160,7 @@ private func severityStyle(_ raw: String?) -> SeverityStyle {
     case "major":     return SeverityStyle(label: "Major",    color: Brand.warning)
     case "moderate":  return SeverityStyle(label: "Moderate", color: Brand.info)
     case "minor":     return SeverityStyle(label: "Minor",    color: Brand.success)
-    default:           return SeverityStyle(label: (raw ?? "—").capitalized, color: Brand.info)
+    default:           return SeverityStyle(label: (raw ?? "-").capitalized, color: Brand.info)
     }
 }
 
@@ -263,7 +263,7 @@ struct ShipperFreightClaims: View {
         if case .loaded(let d, _) = store.state {
             return "\(d.open) OPEN · \(d.resolved) PAID YTD"
         }
-        return "—"
+        return "-"
     }
 
     private var counterAccessibility: String {
@@ -367,17 +367,17 @@ struct ShipperFreightClaims: View {
 
     @ViewBuilder
     private func kpiStrip(d: ShipperFreightClaimsAPI.Dashboard?) -> some View {
-        let openValue     = d.map { "\($0.open)" } ?? "—"
+        let openValue     = d.map { "\($0.open)" } ?? "-"
         let openSub       = (d?.open ?? 0) == 0 ? "none active" : "needs triage"
         let openSubTone: SubTone = (d?.open ?? 0) == 0 ? .success : .secondary
-        let resolvedValue = d.map { "\($0.resolved)" } ?? "—"
+        let resolvedValue = d.map { "\($0.resolved)" } ?? "-"
         let resolvedSub: String = {
-            guard let d, d.avgResolutionDays > 0 else { return "avg cycle —" }
+            guard let d, d.avgResolutionDays > 0 else { return "avg cycle -" }
             return "avg cycle \(Int(d.avgResolutionDays.rounded())) days"
         }()
-        let recoveredValue = d.map { formatMoney($0.totalValue) } ?? "—"
+        let recoveredValue = d.map { formatMoney($0.totalValue) } ?? "-"
         // EUSO-2125 — per-year breakdown not on API surface.
-        let recoveredSub = d.map { _ in "lifetime · per-year split pending" } ?? "—"
+        let recoveredSub = d.map { _ in "lifetime · per-year split pending" } ?? "-"
 
         HStack(spacing: 8) {
             kpiTile(label: "OPEN",
@@ -660,7 +660,7 @@ struct ShipperFreightClaims: View {
 
     private func historyTitle(_ row: ShipperFreightClaimsAPI.ClaimRow) -> String {
         let kind = prettifyType(row.type)
-        let amt = row.amount > 0 ? formatMoney(row.amount) : "—"
+        let amt = row.amount > 0 ? formatMoney(row.amount) : "-"
         return "\(kind) · settled \(amt)"
     }
 
@@ -700,7 +700,7 @@ struct ShipperFreightClaims: View {
                     .foregroundStyle(palette.textTertiary)
             }
             if total == 0 {
-                Text("No open claims — every filed claim is moving.")
+                Text("No open claims - every filed claim is moving.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textTertiary)
                     .padding(.vertical, Space.s2)
@@ -856,7 +856,7 @@ struct ShipperFreightClaims: View {
                         statusPill(label: row.status, color: stColor)
                         Spacer(minLength: 0)
                     }
-                    Text(row.description.isEmpty ? "—" : row.description)
+                    Text(row.description.isEmpty ? "-" : row.description)
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(2)
@@ -991,7 +991,7 @@ struct ShipperFreightClaims: View {
         if n >= 1_000_000 { return String(format: "$%.1fM", Double(n) / 1_000_000) }
         if n >= 10_000    { return String(format: "$%.0fk", Double(n) / 1_000) }
         if n >= 1_000     { return String(format: "$%.1fk", Double(n) / 1_000) }
-        if n == 0          { return "—" }
+        if n == 0          { return "-" }
         return "$\(n)"
     }
 }
@@ -1179,13 +1179,13 @@ private struct ClaimDetailSheet: View {
     private var metaCard: some View {
         sectionCard(title: "FILED") {
             VStack(spacing: 6) {
-                kvRow("Filed",   value: claim.filedDate.isEmpty ? "—" : claim.filedDate)
+                kvRow("Filed",   value: claim.filedDate.isEmpty ? "-" : claim.filedDate)
                 kvRow("Carrier", value: (claim.carrier?.isEmpty == false && claim.carrier != "-")
                       ? claim.carrier!
-                      : "—")
+                      : "-")
                 kvRow("Shipper", value: (claim.shipper?.isEmpty == false && claim.shipper != "-")
                       ? claim.shipper!
-                      : "—")
+                      : "-")
             }
         }
     }
@@ -1308,7 +1308,7 @@ private struct ClaimDetailSheet: View {
         if n >= 1_000_000 { return String(format: "$%.1fM", Double(n) / 1_000_000) }
         if n >= 10_000    { return String(format: "$%.0fk", Double(n) / 1_000) }
         if n >= 1_000     { return String(format: "$%.1fk", Double(n) / 1_000) }
-        if n == 0          { return "—" }
+        if n == 0          { return "-" }
         return "$\(n)"
     }
 }
@@ -1416,7 +1416,7 @@ private struct AddEvidenceSheet: View {
             Text("Add evidence to the claim file")
                 .font(EType.body.weight(.bold))
                 .foregroundStyle(palette.textPrimary)
-            Text("Posts directly to freightClaims.addClaimEvidence. The server returns a signed upload URL — paste a hosted link or open the upload sheet (coming next).")
+            Text("Posts directly to freightClaims.addClaimEvidence. The server returns a signed upload URL. Paste a hosted link or open the upload sheet (coming next).")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
         }

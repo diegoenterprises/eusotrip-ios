@@ -436,7 +436,7 @@ struct MeSafetyCoach: View {
     private var quietDayEmpty: some View {
         EusoEmptyState(
             systemImage: "checkmark.seal",
-            title: "Quiet day — no coaching needed right now",
+            title: "Quiet day - no coaching needed right now",
             subtitle: "ESANG didn't find anything worth flagging for your role + recent signal. Pull to refresh, or type a focus above to request a specific topic."
         )
     }
@@ -472,7 +472,7 @@ struct MeSafetyCoach: View {
 
     private var disclosureFooter: some View {
         VStack(spacing: Space.s1) {
-            Text("ESANG coaching is advisory — it does not replace your carrier's safety program, your doctor, or an official regulatory opinion.")
+            Text("ESANG coaching is advisory. It does not replace your carrier's safety program, your doctor or an official regulatory opinion.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)

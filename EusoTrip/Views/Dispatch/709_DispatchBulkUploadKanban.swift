@@ -312,7 +312,7 @@ private struct BulkBody: View {
                 LifecycleCard {
                     LifecycleSection(label: "JOB", icon: col.icon)
                     LifecycleRow(label: "Entity",  value: dashIfEmpty(j.entityType))
-                    LifecycleRow(label: "Status",  value: (j.status ?? "—").uppercased())
+                    LifecycleRow(label: "Status",  value: (j.status ?? "-").uppercased())
                     LifecycleRow(label: "Rows",    value: "\(j.totalRows ?? 0)")
                     LifecycleRow(label: "Success", value: "\(j.successCount ?? 0)")
                     LifecycleRow(label: "Failed",  value: "\(j.failCount ?? 0)")
@@ -365,11 +365,11 @@ private struct BulkBody: View {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         guard let data = try? Data(contentsOf: url), !data.isEmpty else {
-            actionError = "Couldn't open \(url.lastPathComponent) — file was empty or unreadable."
+            actionError = "Couldn't open \(url.lastPathComponent). File was empty or unreadable."
             return
         }
         guard let text = decodeText(data), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            actionError = "\(url.lastPathComponent) isn't text-decodable. Export the spreadsheet/PDF to CSV (or paste the data) and retry — AI parse maps the columns from there."
+            actionError = "\(url.lastPathComponent) isn't text-decodable. Export the spreadsheet/PDF to CSV (or paste the data) and retry. AI parse maps the columns from there."
             return
         }
         await uploadAndProcess(csvText: text, fileName: url.lastPathComponent)
@@ -402,9 +402,9 @@ private struct BulkBody: View {
             )
             let rows = r.totalRows ?? 0
             if let conf = r.aiConfidence, conf > 0 {
-                lastAction = "Parsed \(fileName) → \(rows) row\(rows == 1 ? "" : "s") (\(Int((conf).rounded()))% map confidence). Now in UPLOADED — Validate to continue."
+                lastAction = "Parsed \(fileName) → \(rows) row\(rows == 1 ? "" : "s") (\(Int((conf).rounded()))% map confidence). Now in UPLOADED, Validate to continue."
             } else {
-                lastAction = "Parsed \(fileName) → \(rows) row\(rows == 1 ? "" : "s"). Now in UPLOADED — Validate to continue."
+                lastAction = "Parsed \(fileName) → \(rows) row\(rows == 1 ? "" : "s"). Now in UPLOADED, Validate to continue."
             }
             uploadProgressNote = nil
             withAnimation(.easeOut(duration: 0.18)) { selected = "uploaded" }

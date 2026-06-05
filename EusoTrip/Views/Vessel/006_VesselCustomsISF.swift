@@ -102,7 +102,7 @@ private struct ISFStatusVM006 {
                   state: .filed, chipText: "2/2", glyph: "ferry", tint: Brand.vessel),
         ],
         esangTitle: "ESang AI: file the 2 open elements now",
-        esangSub: "18h 22m to cut-off — clears the $5,000 CBP exposure"
+        esangSub: "18h 22m to cut-off - clears the $5,000 CBP exposure"
     )
 }
 
@@ -157,7 +157,7 @@ private struct VesselCustomsISFBody006: View {
                 } else {
                     EusoEmptyState(systemImage: "doc.text.magnifyingglass",
                                    title: "No ISF 10+2 elements to surface",
-                                   subtitle: "getISFRequirements returned an empty catalog — nothing to file.")
+                                   subtitle: "getISFRequirements returned an empty catalog, nothing to file.")
                 }
                 Color.clear.frame(height: 96)
             }
@@ -387,7 +387,7 @@ private struct VesselCustomsISFBody006: View {
                     gatewayNote: "CBP ACE · LIVE",
                     elements: rows,
                     esangTitle: "ESang AI: file all \(openCount) ISF elements now",
-                    esangSub: "ISF 10+2 must clear 24h before loading — $5,000/violation exposure"
+                    esangSub: "ISF 10+2 must clear 24h before loading - $5,000/violation exposure"
                 )
             }
         } catch {

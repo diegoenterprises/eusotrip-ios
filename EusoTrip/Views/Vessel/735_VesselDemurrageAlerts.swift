@@ -50,7 +50,7 @@ private struct WatchBox735: Identifiable {
     @Published var exposure = 0.0           // climbing total — seeded from the live read, then ticks
     @Published var perDay = 0.0
     @Published var lfdFractionUsed = 0.0    // worst container free-time consumed → arc gauge
-    @Published var lfdLabel = "—"
+    @Published var lfdLabel = "-"
     @Published var esang = "No container is inside its per-diem window."
     @Published var degraded = false
     @Published var atRiskCount = 0
@@ -117,7 +117,7 @@ private struct WatchBox735: Identifiable {
             lfdFractionUsed = min(1, max(0, used / Double(free)))
             lfdLabel = (w.chargeableDays ?? 0) > 0 ? "OVER" : "\(free)d"
         } else {
-            lfdFractionUsed = 0; lfdLabel = "—"
+            lfdFractionUsed = 0; lfdLabel = "-"
         }
 
         let formatCharge: (String?) -> String = { raw in
@@ -127,7 +127,7 @@ private struct WatchBox735: Identifiable {
         let portFor: (Record735) -> String = { r in
             let kind = (r.status ?? "").lowercased() == "accruing" ? "per-diem accruing" : (r.status ?? "watch")
             let days = r.chargeableDays ?? 0
-            return "Container #\(r.containerId.map(String.init) ?? "—") · \(kind)\(days > 0 ? " +\(days)d" : "")"
+            return "Container #\(r.containerId.map(String.init) ?? "-") · \(kind)\(days > 0 ? " +\(days)d" : "")"
         }
         let critBoxes: [WatchBox735] = crit.map { r in
             WatchBox735(cid: r.chargeType?.capitalized ?? "Demurrage",
@@ -144,7 +144,7 @@ private struct WatchBox735: Identifiable {
         boxes = critBoxes + warnBoxes
 
         if let w = worst {
-            esang = "Pull container #\(w.containerId.map(String.init) ?? "—") today · \(w.ratePerDay.flatMap { Double($0) }.map { "$\(Int($0))/day" } ?? "per-diem") at LFD"
+            esang = "Pull container #\(w.containerId.map(String.init) ?? "-") today · \(w.ratePerDay.flatMap { Double($0) }.map { "$\(Int($0))/day" } ?? "per-diem") at LFD"
         } else if boxes.isEmpty {
             esang = "No container is inside its per-diem window."
         }
@@ -203,7 +203,7 @@ private struct VesselDemurrageAlertsBody735: View {
                 } else if !model.hasData {
                     EusoEmptyState(systemImage: "shippingbox",
                                    title: "No demurrage accruing",
-                                   subtitle: "demurrageAlerts.dashboard returned no at-risk containers. Nothing is inside its per-diem window — no exposure to watch.")
+                                   subtitle: "demurrageAlerts.dashboard returned no at-risk containers. Nothing is inside its per-diem window, no exposure to watch.")
                 } else {
                     heroCard
                     Text("CONTAINER WATCH · FREE TIME vs PER-DIEM")

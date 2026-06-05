@@ -217,7 +217,7 @@ private struct PayrollBody: View {
                         .font(.caption.monospaced().weight(.semibold))
                         .foregroundStyle(palette.textPrimary)
                     Spacer()
-                    statusBadge(d.status ?? "—")
+                    statusBadge(d.status ?? "-")
                 }
                 Text("Net $\(Int(net).formatted(.number))")
                     .font(.title3.weight(.heavy).monospacedDigit())
@@ -313,7 +313,7 @@ private struct PayrollBody: View {
         defer { running = false }
         // Wire to a real payroll-batch creation; for now log + refresh.
         // Future: settlementBatching.createBatch + processBatchPayment.
-        ack = "Payroll queued for \(dueDocs.count) settlement(s) — $\(Int(dueAmount).formatted(.number))"
+        ack = "Payroll queued for \(dueDocs.count) settlement(s) - $\(Int(dueAmount).formatted(.number))"
         await loadAll()
     }
 }

@@ -187,7 +187,7 @@ private struct VesselETAPredictionBody770: View {
                 Text(degraded ? "rough est." : arrivalShort(d.estimatedArrival)).font(.system(size: 30, weight: .heavy)).monospacedDigit().foregroundStyle(LinearGradient.diagonal)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(arrivalTime(d.estimatedArrival)) · likeliest (P50)").font(.system(size: 11, weight: .semibold)).foregroundStyle(palette.textSecondary)
-                    Text("\(aisFixes) AIS fixes — band \(degraded ? "widened (AIS gap)" : "tightens on tick")").font(.system(size: 11)).foregroundStyle(palette.textTertiary)
+                    Text("\(aisFixes) AIS fixes - band \(degraded ? "widened (AIS gap)" : "tightens on tick")").font(.system(size: 11)).foregroundStyle(palette.textTertiary)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
@@ -255,12 +255,12 @@ private struct VesselETAPredictionBody770: View {
             OrbeSang(state: .idle, diameter: 32)
             VStack(alignment: .leading, spacing: 2) {
                 Text(degraded
-                     ? "Hold drayage booking — AIS gap, ETA is a rough estimate"
+                     ? "Hold drayage booking - AIS gap, ETA is a rough estimate"
                      : "Book the \(arrivalShort(d.estimatedArrival)) PM drayage slot now")
                     .font(.system(size: 13, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Text(degraded
-                     ? "esangCoach.forScreen — re-reasons when AIS resumes"
-                     : "\(confidencePct(d.confidence))% of the band lands before the next morning — esangCoach.forScreen")
+                     ? "esangCoach.forScreen - re-reasons when AIS resumes"
+                     : "\(confidencePct(d.confidence))% of the band lands before the next morning - esangCoach.forScreen")
                     .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
             }
             Spacer(minLength: 0)
@@ -286,7 +286,7 @@ private struct VesselETAPredictionBody770: View {
         return (max(0.05, p50 - halfWidth), p50 + lateBias, min(0.95, p50 + halfWidth + lateBias))
     }
     private func coneAxisLabels(_ d: ETAPrediction770) -> [String] {
-        guard let mid = iso(d.estimatedArrival) else { return ["—","—","—","—","—"] }
+        guard let mid = iso(d.estimatedArrival) else { return ["-","-","-","-","-"] }
         let f = DateFormatter(); f.dateFormat = "MMM d"
         return (-2...2).map { off in f.string(from: Calendar.current.date(byAdding: .day, value: off, to: mid) ?? mid) }
     }
@@ -316,7 +316,7 @@ private struct VesselETAPredictionBody770: View {
         return ISO8601DateFormatter().date(from: s) ?? ISO8601DateFormatter().date(from: s + "T00:00:00Z")
     }
     private func arrivalShort(_ s: String?) -> String {
-        guard let d = iso(s) else { return "—" }
+        guard let d = iso(s) else { return "-" }
         let f = DateFormatter(); f.dateFormat = "MMM d"; return f.string(from: d)
     }
     private func arrivalTime(_ s: String?) -> String {

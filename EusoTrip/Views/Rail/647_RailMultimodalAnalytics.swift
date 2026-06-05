@@ -194,7 +194,7 @@ private struct RailMultimodalAnalyticsBody: View {
         // Real avg-transit from the dashboard (currently 0 server-side until
         // the segment-transit roll-up lands — render the live value, dash if 0).
         let avg = dash?.avgTransitDays ?? 0
-        let avgStr = avg > 0 ? String(format: "%.1fd", avg) : "—"
+        let avgStr = avg > 0 ? String(format: "%.1fd", avg) : "-"
 
         return ZStack {
             RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
@@ -256,9 +256,9 @@ private struct RailMultimodalAnalyticsBody: View {
     }
 
     // PORT-GAP: on-time % is not returned by either endpoint → dash.
-    private var onTimeStr: String { "—" }
+    private var onTimeStr: String { "-" }
     // PORT-GAP: rail-share QoQ delta is not returned → dash.
-    private var railQoQStr: String { "—" }
+    private var railQoQStr: String { "-" }
 
     // MARK: - Mode-split KPI strip (rail / truck / ocean / on-time)
 
@@ -266,7 +266,7 @@ private struct RailMultimodalAnalyticsBody: View {
         let ms = dash?.modeSplit ?? [:]
         let total = ms.values.reduce(into: 0) { acc, v in acc += v }
         let pct: (String) -> String = { key in
-            guard total > 0 else { return "—" }
+            guard total > 0 else { return "-" }
             return "\(Int((Double(ms[key] ?? 0) / Double(total) * 100).rounded()))%"
         }
         return HStack(spacing: Space.s2) {
@@ -274,7 +274,7 @@ private struct RailMultimodalAnalyticsBody: View {
             modeTile(label: "TRUCK",   value: pct("truck"),  highlighted: false)
             modeTile(label: "OCEAN",   value: pct("vessel"), highlighted: false)
             // PORT-GAP: on-time % not on the endpoint → live dash, never faked.
-            modeTile(label: "ON-TIME", value: "—",           highlighted: false)
+            modeTile(label: "ON-TIME", value: "-",           highlighted: false)
         }
     }
 
@@ -292,7 +292,7 @@ private struct RailMultimodalAnalyticsBody: View {
             // QoQ delta row — PORT-GAP: per-mode QoQ deltas are not returned by
             // the endpoint (modeSplit gives counts only). Render an em-dash so
             // the row geometry holds without fabricating a trend.
-            Text("—")
+            Text("-")
                 .font(.system(size: 11, weight: .regular))
                 .foregroundStyle(highlighted ? Color.white.opacity(0.9) : palette.textTertiary)
                 .monospacedDigit()
@@ -396,7 +396,7 @@ private struct RailMultimodalAnalyticsBody: View {
                     .monospacedDigit()
                 // PORT-GAP: per-lane transit-days + mode chip ("3.9d · rail")
                 // not returned by getLaneAnalytics → dash.
-                Text("— · rail")
+                Text("- · rail")
                     .font(.system(size: 9, weight: .regular))
                     .foregroundStyle(palette.textTertiary)
             }

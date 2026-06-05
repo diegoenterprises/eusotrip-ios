@@ -17,7 +17,7 @@
 //  reads `loads.getById`; lane / load-ref / distance / payout / carrier
 //  bind to the fetched load. Telemetry the envelope does not carry
 //  (DVIR / dock / ETA / HOS / pickup window) renders an honest em-dash
-//  "—" — no fabricated demo chain. Bottom nav frozen (Shipper: Home /
+//  "-" — no fabricated demo chain. Bottom nav frozen (Shipper: Home /
 //  Loads / ESANG / Me — per shipper-bottom-nav doctrine).
 //
 
@@ -172,7 +172,7 @@ private struct ShipperBackhaulEchoBody: View {
     private var loadRef: String {
         if let n = load?.loadNumber?.trimmingCharacters(in: .whitespaces), !n.isEmpty { return n }
         if let id = load?.id { return "LD-\(id)" }
-        return "—"
+        return "-"
     }
 
     // Real lane line from the fetched load — em-dash for any field it doesn't carry.
@@ -187,19 +187,19 @@ private struct ShipperBackhaulEchoBody: View {
         case let (c?, s?): return "\(c), \(s)"
         case let (c?, nil): return c
         case let (nil, s?): return s
-        case (nil, nil):    return "—"
+        case (nil, nil):    return "-"
         }
     }
 
     private var distanceText: String {
-        guard let mi = load?.distance, mi > 0 else { return "—" }
+        guard let mi = load?.distance, mi > 0 else { return "-" }
         return "\(Int(mi.rounded())) mi"
     }
 
     // Live rate off the load — honest em-dash when the envelope carries none.
     private var payoutText: String {
         guard let r = load?.rate?.trimmingCharacters(in: .whitespaces), !r.isEmpty,
-              let amt = Double(r) else { return "—" }
+              let amt = Double(r) else { return "-" }
         return "$\(Int(amt.rounded()))"
     }
 
@@ -215,7 +215,7 @@ private struct ShipperBackhaulEchoBody: View {
 
     // Real carrier from the fetched load — em-dash when the envelope carries none.
     private var carrierLine: String {
-        guard let name = load?.carrierName?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return "—" }
+        guard let name = load?.carrierName?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return "-" }
         return name
     }
 
@@ -249,36 +249,36 @@ private struct ShipperBackhaulEchoBody: View {
             case .awarded:
                 return [
                     ("STATE",   c.echoState,    "echo state",            .green),
-                    ("WINDOW",  "—",            "no live source",        .green),
+                    ("WINDOW",  "-",            "no live source",        .green),
                     ("DIST",    distanceText,   "lane distance",         .green),
                     ("LEDGER",  "SEALED",       "your chain · closed",   .green),
                 ]
             case .pickupAnnex:
                 return [
                     ("STATE",   c.echoState,    "echo state",            .green),
-                    ("DVIR",    "—",            "no live source",        .orange),
-                    ("PICKUP",  "—",            "no live source",        .blue),
+                    ("DVIR",    "-",            "no live source",        .orange),
+                    ("PICKUP",  "-",            "no live source",        .blue),
                     ("LEDGER",  "SEALED",       "your chain · closed",   .green),
                 ]
             case .pickupFired:
                 return [
                     ("STATE",   c.echoState,    "echo state",            .green),
-                    ("DVIR",    "—",            "no live source",        .green),
-                    ("DOCK",    "—",            "no live source",        .orange),
+                    ("DVIR",    "-",            "no live source",        .green),
+                    ("DOCK",    "-",            "no live source",        .orange),
                     ("LEDGER",  "SEALED",       "your chain · closed",   .green),
                 ]
             case .inTransit:
                 return [
                     ("STATE",   c.echoState,    "echo state",            .green),
-                    ("ETA",     "—",            "no live source",        .blue),
-                    ("HOS",     "—",            "no live source",        .green),
+                    ("ETA",     "-",            "no live source",        .blue),
+                    ("HOS",     "-",            "no live source",        .green),
                     ("LEDGER",  "SEALED",       "your chain · closed",   .green),
                 ]
             case .delivery:
                 return [
                     ("STATE",   c.echoState,    "echo state",            .green),
-                    ("ETA",     "—",            "no live source",        .blue),
-                    ("HOS",     "—",            "no live source",        .green),
+                    ("ETA",     "-",            "no live source",        .blue),
+                    ("HOS",     "-",            "no live source",        .green),
                     ("LEDGER",  "SEALED",       "your chain · closed",   .green),
                 ]
             }
@@ -304,7 +304,7 @@ private struct ShipperBackhaulEchoBody: View {
             switch kind {
             case .eyebrow:      return "Read-only echo. Your sealed chain triggered Aurora's backhaul tender; ledger stays sealed regardless of outcome."
             case .awarded:      return "ME accepted Aurora's tender on your sealed chain. The award is logged; ledger remains sealed."
-            case .pickupAnnex:  return "Pickup watch armed. ME is mid-DVIR. You see this for chain-of-custody only — no action required."
+            case .pickupAnnex:  return "Pickup watch armed. ME is mid-DVIR. You see this for chain-of-custody only, no action required."
             case .pickupFired:  return "Pickup fired. DVIR cleared; loading begins. Echo will close on POD."
             case .inTransit:    return "Carrier driving toward the receiver. You retain audit visibility; chain-of-custody auto-attests."
             case .delivery:     return "Carrier approaching receiver. Delivery echo will close on dock touch; POD chain seals automatically."

@@ -126,7 +126,7 @@ private struct RailCrewCallBoardBody: View {
     private var calledCount: Int       { availability?.calledCount       ?? 0 }
     private var boardSize: Int         { availability?.extraBoardDepth   ?? 0 }
     private var avgTurnLabel: String   {
-        guard let t = availability?.avgTurnHours else { return "—" }
+        guard let t = availability?.avgTurnHours else { return "-" }
         return String(format: "%.1fh", t)
     }
     private var boardStatusLabel: String {
@@ -304,9 +304,9 @@ private struct RailCrewCallBoardBody: View {
     private func crewRow(_ member: CrewMember584) -> some View {
         let (chipColor, pillLabel, pillColor) = crewStatusInfo(member.status)
         let craftTitle = [member.craft, member.crewId].compactMap { $0 }.joined(separator: " · ")
-        let hosHours   = member.hosAvailableHours.map { String(format: "%.1fh", $0) } ?? "—"
+        let hosHours   = member.hosAvailableHours.map { String(format: "%.1fh", $0) } ?? "-"
         let hosWord    = (member.status ?? "").lowercased() == "on_call" ? "left" : "avail"
-        let subText    = "\(member.boardPosition ?? "—") · HOS \(hosHours) \(hosWord)"
+        let subText    = "\(member.boardPosition ?? "-") · HOS \(hosHours) \(hosWord)"
 
         HStack(spacing: Space.s3) {
             ZStack {
@@ -318,7 +318,7 @@ private struct RailCrewCallBoardBody: View {
                     .foregroundColor(chipColor)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(craftTitle.isEmpty ? "—" : craftTitle)
+                Text(craftTitle.isEmpty ? "-" : craftTitle)
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(palette.textPrimary)
                 Text(subText)
@@ -342,12 +342,12 @@ private struct RailCrewCallBoardBody: View {
     // MARK: Next call strip
 
     private var nextCallStrip: some View {
-        let trainLine   = nextCall.map { "Train \($0.trainSymbol ?? "—") · consist \($0.consistLead ?? "—") lead" } ?? "—"
+        let trainLine   = nextCall.map { "Train \($0.trainSymbol ?? "-") · consist \($0.consistLead ?? "-") lead" } ?? "-"
         let dutyLine    = nextCall.map { nc -> String in
-            let dutyStr = nc.onDutyInMinutes.map { formatOnDuty($0) } ?? "on-duty —"
-            let rid     = nc.railId ?? "—"
+            let dutyStr = nc.onDutyInMinutes.map { formatOnDuty($0) } ?? "on-duty -"
+            let rid     = nc.railId ?? "-"
             return "\(dutyStr) · \(rid)"
-        } ?? "—"
+        } ?? "-"
 
         return VStack(alignment: .leading, spacing: 6) {
             HStack {

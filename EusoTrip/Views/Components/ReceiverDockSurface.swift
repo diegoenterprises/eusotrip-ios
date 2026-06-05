@@ -316,7 +316,7 @@ private struct DockCard: View {
                 }
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text("DOOR \(dock.appointmentDoor ?? "—")")
+                Text("DOOR \(dock.appointmentDoor ?? "-")")
                     .font(.system(size: 22, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                 if let scac = dock.scac, let trailer = dock.trailerNumber {
@@ -426,7 +426,7 @@ private struct DockListRow: View {
                 .fill(isSelected ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(Color.clear))
                 .frame(width: 6, height: 6)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Door \(dock.appointmentDoor ?? "—")")
+                Text("Door \(dock.appointmentDoor ?? "-")")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
                 Text("\(dock.scac ?? "") \(dock.trailerNumber ?? "")")
@@ -478,7 +478,7 @@ private struct OsdReportPanel: View {
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.bubble.fill")
                     .foregroundStyle(Brand.danger)
-                Text("OS&D — Overage / Shortage / Damage")
+                Text("OS&D - Overage / Shortage / Damage")
                     .font(EType.bodyStrong)
                     .foregroundStyle(Brand.danger)
             }
@@ -697,7 +697,7 @@ public final class ReceiverVoiceController: NSObject, ObservableObject {
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
             DispatchQueue.main.async {
                 guard status == .authorized else {
-                    self?.state = .error("Speech recognition not authorized — enable in Settings.")
+                    self?.state = .error("Speech recognition not authorized. Enable in Settings.")
                     return
                 }
                 self?.beginCapture()

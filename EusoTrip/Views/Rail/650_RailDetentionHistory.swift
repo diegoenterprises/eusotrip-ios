@@ -129,7 +129,7 @@ private struct RailDetentionHistoryBody: View {
         if let d = ISO8601DateFormatter().date(from: raw) { return fmt.string(from: d) }
         // Best-effort "yyyy-MM-dd…" prefix → "yyyy-MM"
         if raw.count >= 7 { return String(raw.prefix(7)) }
-        return "—"
+        return "-"
     }
 
     var body: some View {

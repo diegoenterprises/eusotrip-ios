@@ -133,7 +133,7 @@ private struct WalletBody: View {
         let net = summary?.netFlow30d ?? 0
         return VStack(spacing: Space.s2) {
             HStack(spacing: Space.s2) {
-                kpi("BALANCE",     "$\(Int(bal).formatted(.number))", balance?.bankName ?? "—", .blue)
+                kpi("BALANCE",     "$\(Int(bal).formatted(.number))", balance?.bankName ?? "-", .blue)
                 kpi("RECEIVABLES", "$\(Int(recv).formatted(.number))",
                     "\(summary?.receivableCount ?? 0) load\((summary?.receivableCount ?? 0) == 1 ? "" : "s") · POD pending", .green)
             }
@@ -199,7 +199,7 @@ private struct WalletBody: View {
                             .background(Capsule().fill(palette.bgCardSoft))
                             .foregroundStyle(palette.textTertiary)
                     }
-                    Text("\(kindUpper) · \((t.status ?? "—").uppercased())")
+                    Text("\(kindUpper) · \((t.status ?? "-").uppercased())")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Capsule().fill(kindColor.opacity(0.18)))

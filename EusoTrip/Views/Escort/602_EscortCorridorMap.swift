@@ -32,7 +32,7 @@
 //      shipped, the store resolves to `.error` and the screen
 //      surfaces an honest retry banner. No fixture data ever.
 //    • Empty / blank server fields surface as em-dash sentinels
-//      ("—"). A corridor with zero resolved legs folds to `.empty`
+//      ("-"). A corridor with zero resolved legs folds to `.empty`
 //      so the operator sees a deliberate "Corridor not yet routed"
 //      empty state rather than a blank scaffold.
 //    • Header preview-hint passthrough (loadNumber / lane / status)
@@ -86,10 +86,10 @@ struct EscortCorridorMap: View {
 
     private var header: some View {
         let live = corridor.state.value ?? nil
-        let loadNumber = live?.loadNumber ?? previewLoadNumber ?? "—"
+        let loadNumber = live?.loadNumber ?? previewLoadNumber ?? "-"
         let lane: String = {
             if let live { return "\(live.origin) → \(live.destination)" }
-            return previewLane ?? "—"
+            return previewLane ?? "-"
         }()
         let status = live?.status ?? previewStatus ?? ""
 
@@ -237,7 +237,7 @@ struct EscortCorridorMap: View {
     private func legRow(_ leg: EscortAPI.CorridorLeg) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Text(leg.label.isEmpty ? "—" : leg.label)
+                Text(leg.label.isEmpty ? "-" : leg.label)
                     .font(.system(size: 12, weight: .heavy)).tracking(0.4)
                     .foregroundStyle(palette.textPrimary)
                 Spacer(minLength: 0)
@@ -246,14 +246,14 @@ struct EscortCorridorMap: View {
                 }
             }
             HStack(spacing: 6) {
-                Text(leg.origin.isEmpty ? "—" : leg.origin)
+                Text(leg.origin.isEmpty ? "-" : leg.origin)
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
                 Image(systemName: "arrow.right")
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(palette.textTertiary)
-                Text(leg.destination.isEmpty ? "—" : leg.destination)
+                Text(leg.destination.isEmpty ? "-" : leg.destination)
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
@@ -346,7 +346,7 @@ struct EscortCorridorMap: View {
                 .foregroundStyle(glyphStyle)
                 .frame(width: 18, height: 18)
             VStack(alignment: .leading, spacing: 2) {
-                Text(m.label.isEmpty ? "—" : m.label)
+                Text(m.label.isEmpty ? "-" : m.label)
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
                 if let note = m.note, !note.isEmpty {
@@ -420,7 +420,7 @@ struct EscortCorridorMap: View {
                 .foregroundStyle(breached
                                  ? AnyShapeStyle(Brand.danger)
                                  : AnyShapeStyle(LinearGradient.diagonal))
-            Text(g.label.isEmpty ? "—" : g.label)
+            Text(g.label.isEmpty ? "-" : g.label)
                 .font(.system(size: 10, weight: .heavy)).tracking(0.3)
                 .foregroundStyle(fg)
         }
@@ -465,10 +465,10 @@ struct EscortCorridorMap: View {
                 .frame(width: 18, height: 18)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(ev.role.isEmpty ? "—" : ev.role.uppercased())
+                    Text(ev.role.isEmpty ? "-" : ev.role.uppercased())
                         .font(.system(size: 10, weight: .heavy)).tracking(0.6)
                         .foregroundStyle(LinearGradient.diagonal)
-                    Text(ev.vehicleId.isEmpty ? "—" : ev.vehicleId)
+                    Text(ev.vehicleId.isEmpty ? "-" : ev.vehicleId)
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                 }
@@ -549,7 +549,7 @@ struct EscortCorridorMap: View {
     private var loadingCard: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
             sectionHeader("LOADING", icon: "arrow.clockwise")
-            Text("Pulling the corridor route, milestones, and lead/chase pairing…")
+            Text("Pulling the corridor route, milestones and lead/chase pairing…")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
         }
@@ -638,12 +638,12 @@ struct EscortCorridorMap: View {
     }
 
     private func coverage(_ v: Double) -> String {
-        guard v > 0 else { return "—" }
+        guard v > 0 else { return "-" }
         return "\(Int((v * 100).rounded()))%"
     }
 
     private func milesString(_ v: Double) -> String {
-        guard v > 0 else { return "—" }
+        guard v > 0 else { return "-" }
         let f = NumberFormatter()
         f.numberStyle = .decimal
         f.maximumFractionDigits = 0
@@ -654,7 +654,7 @@ struct EscortCorridorMap: View {
     /// Header KPI display for total miles. `nil` / 0 fold to em-dash
     /// (no fabricated zero).
     private func milesDisplay(_ v: Double?) -> String {
-        guard let v, v > 0 else { return "—" }
+        guard let v, v > 0 else { return "-" }
         let f = NumberFormatter()
         f.numberStyle = .decimal
         f.maximumFractionDigits = 0
@@ -662,7 +662,7 @@ struct EscortCorridorMap: View {
     }
 
     private func clearanceString(_ ft: Double) -> String {
-        guard ft > 0 else { return "—" }
+        guard ft > 0 else { return "-" }
         let whole = Int(ft)
         let inches = Int(((ft - Double(whole)) * 12).rounded())
         if inches == 0 { return "\(whole)'" }
@@ -864,8 +864,8 @@ private func escortNavTrailing_602() -> [NavSlot] {
     EscortCorridorMapScreen(
         theme: Theme.dark,
         assignmentId: "0",
-        previewLoadNumber: "—",
-        previewLane: "—",
+        previewLoadNumber: "-",
+        previewLane: "-",
         previewStatus: nil
     )
     .environmentObject(EusoTripSession())
@@ -876,8 +876,8 @@ private func escortNavTrailing_602() -> [NavSlot] {
     EscortCorridorMapScreen(
         theme: Theme.light,
         assignmentId: "0",
-        previewLoadNumber: "—",
-        previewLane: "—",
+        previewLoadNumber: "-",
+        previewLane: "-",
         previewStatus: nil
     )
     .environmentObject(EusoTripSession())

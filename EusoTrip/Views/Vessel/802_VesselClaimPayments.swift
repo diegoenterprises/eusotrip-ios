@@ -262,7 +262,7 @@ private struct VesselClaimPaymentsBody: View {
                 carriers = max(uniqueCarriers, 0)
                 remits = r.payments.prefix(2).map { p in
                     RemitRow802(dot: methodColor(p.method),
-                                title: "\(p.claimNumber ?? "—") · \((p.method ?? "").uppercased())",
+                                title: "\(p.claimNumber ?? "-") · \((p.method ?? "").uppercased())",
                                 amount: usd802(p.amount ?? 0),
                                 ref: (p.status ?? "").lowercased())
                 }

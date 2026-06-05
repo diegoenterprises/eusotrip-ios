@@ -53,8 +53,8 @@ private struct BolSigningBody: View {
         LifecycleCard(accentGradient: true) {
             LifecycleSection(label: TransportLexicon.short(.billOfLading, mode: loadMode, equipmentRaw: live.load.equipmentType), icon: "doc.text.below.ecg.fill")
             LifecycleRow(label: "Load number", value: live.load.loadNumber)
-            LifecycleRow(label: "Origin",      value: laneDisplay(live).components(separatedBy: " → ").first ?? "—")
-            LifecycleRow(label: "Destination", value: laneDisplay(live).components(separatedBy: " → ").last ?? "—")
+            LifecycleRow(label: "Origin",      value: laneDisplay(live).components(separatedBy: " → ").first ?? "-")
+            LifecycleRow(label: "Destination", value: laneDisplay(live).components(separatedBy: " → ").last ?? "-")
             LifecycleRow(label: "Equipment",   value: dashIfEmpty(live.load.equipmentType))
         }
     }
@@ -73,7 +73,7 @@ private struct BolSigningBody: View {
             LifecycleSection(label: "HAZMAT MANIFEST", icon: "triangle.fill")
             LifecycleRow(label: "UN",        value: dashIfEmpty(live.load.unNumber))
             LifecycleRow(label: "Class",     value: dashIfEmpty(live.load.hazmatClass))
-            LifecycleRow(label: "ERG guide", value: live.load.ergGuide.map { "#\($0)" } ?? "—")
+            LifecycleRow(label: "ERG guide", value: live.load.ergGuide.map { "#\($0)" } ?? "-")
         }
     }
 

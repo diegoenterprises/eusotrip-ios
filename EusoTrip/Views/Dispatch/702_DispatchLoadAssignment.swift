@@ -254,7 +254,7 @@ private struct LoadAssignBody: View {
                         .background(Capsule().fill(Color.green.opacity(0.18)))
                         .foregroundStyle(Color.green)
                 }
-                LifecycleRow(label: "HOS left", value: d.hoursRemaining.map { String(format: "%.1fh", $0) } ?? "—")
+                LifecycleRow(label: "HOS left", value: d.hoursRemaining.map { String(format: "%.1fh", $0) } ?? "-")
                 if isHover, let dragId = draggingLoadId,
                    let l = loads.first(where: { $0.id == dragId }) {
                     HStack(spacing: 4) {
@@ -325,7 +325,7 @@ private struct LoadAssignBody: View {
                             LifecycleCard {
                                 LifecycleSection(label: d.name.uppercased(), icon: "person")
                                 LifecycleRow(label: "Status",   value: d.status.uppercased())
-                                LifecycleRow(label: "HOS left", value: d.hoursRemaining.map { String(format: "%.1fh", $0) } ?? "—")
+                                LifecycleRow(label: "HOS left", value: d.hoursRemaining.map { String(format: "%.1fh", $0) } ?? "-")
                                 if assigning == d.id { ProgressView().padding(.top, 6) }
                             }
                         }.buttonStyle(.plain).disabled(assigning != nil)

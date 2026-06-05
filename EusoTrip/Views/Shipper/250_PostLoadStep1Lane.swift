@@ -54,7 +54,7 @@ private struct PostLoadStep1Body: View {
                 .foregroundStyle(palette.textPrimary)
                 .lineLimit(2)
                 .minimumScaleFactor(0.75)
-            Text("Enter origin, destination, and the pickup window.")
+            Text("Enter origin, destination and the pickup window.")
                 .font(EType.body).foregroundStyle(palette.textSecondary)
                 .lineLimit(2).minimumScaleFactor(0.85)
         }
@@ -181,7 +181,7 @@ private struct PostLoadStep1Body: View {
                     Image(systemName: draft.isUSMCA ? "checkmark.seal.fill" : "exclamationmark.shield.fill")
                         .font(.system(size: 11, weight: .heavy))
                         .foregroundStyle(LinearGradient.diagonal)
-                    Text(draft.isUSMCA ? "USMCA lane — preferential treatment eligible" : "Cross-border lane — customs broker required")
+                    Text(draft.isUSMCA ? "USMCA lane - preferential treatment eligible" : "Cross-border lane - customs broker required")
                         .font(.system(size: 10, weight: .heavy)).tracking(0.4)
                         .foregroundStyle(palette.textPrimary)
                 }

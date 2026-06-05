@@ -144,7 +144,7 @@ private struct ReviewBody: View {
         if draft.isHazmatComputed { triggers.append("hazmat (regulatory)") }
         if let r = draft.rate, r > 5000 { triggers.append("rate > $5,000 (escrow)") }
         if draft.vertical == .heavyHaulSpecialized { triggers.append("heavy haul (escort + permits)") }
-        return "Auto-engaged: \(triggers.joined(separator: " · ")). Disabling overrides the platform default — you'll be liable if settlement releases against an unverified POD."
+        return "Auto-engaged: \(triggers.joined(separator: " · ")). Disabling overrides the platform default. You'll be liable if settlement releases against an unverified POD."
     }
 
     // ── T-009 (canonical documents lock-in, 2026-05-20) ─────────────
@@ -333,8 +333,8 @@ private struct ReviewBody: View {
             LifecycleSection(label: "LANE", icon: "map")
             LifecycleRow(label: "Origin",      value: dashIfEmpty(draft.origin))
             LifecycleRow(label: "Destination", value: dashIfEmpty(draft.destination))
-            LifecycleRow(label: "Pickup",      value: draft.pickupDate.map(formatDate) ?? "—")
-            LifecycleRow(label: "Delivery",    value: draft.deliveryDate.map(formatDate) ?? "—")
+            LifecycleRow(label: "Pickup",      value: draft.pickupDate.map(formatDate) ?? "-")
+            LifecycleRow(label: "Delivery",    value: draft.deliveryDate.map(formatDate) ?? "-")
         }
     }
 
@@ -343,7 +343,7 @@ private struct ReviewBody: View {
             LifecycleSection(label: "EQUIPMENT", icon: "shippingbox")
             LifecycleRow(label: "Cargo type",  value: draft.cargoType.label)
             LifecycleRow(label: "Equipment",   value: dashIfEmpty(draft.equipmentType))
-            LifecycleRow(label: "Weight",      value: draft.weight.map { "\(Int($0)) lb" } ?? "—")
+            LifecycleRow(label: "Weight",      value: draft.weight.map { "\(Int($0)) lb" } ?? "-")
             LifecycleRow(label: "Commodity",   value: dashIfEmpty(draft.commodity))
         }
     }
@@ -352,7 +352,7 @@ private struct ReviewBody: View {
         LifecycleCard {
             LifecycleSection(label: "PRICING", icon: "dollarsign.circle")
             LifecycleRow(label: "Target rate", value: usd(draft.rate))
-            LifecycleRow(label: "FSC %",       value: draft.fuelSurchargeRate.map { String(format: "%.1f%%", $0) } ?? "—")
+            LifecycleRow(label: "FSC %",       value: draft.fuelSurchargeRate.map { String(format: "%.1f%%", $0) } ?? "-")
             if !draft.accessorialsAllowed.isEmpty {
                 LifecycleRow(label: "Accessorials", value: draft.accessorialsAllowed.joined(separator: ", "))
             }
@@ -369,7 +369,7 @@ private struct ReviewBody: View {
             LifecycleRow(label: "Class",    value: dashIfEmpty(draft.hazmatClass))
             LifecycleRow(label: "PG",       value: dashIfEmpty(draft.packingGroup))
             LifecycleRow(label: "PSN",      value: dashIfEmpty(draft.properShippingName))
-            LifecycleRow(label: "ERG",      value: draft.ergGuide.map { "#\($0)" } ?? "—")
+            LifecycleRow(label: "ERG",      value: draft.ergGuide.map { "#\($0)" } ?? "-")
             LifecycleRow(label: "CHEMTREC", value: dashIfEmpty(draft.chemtrecPhone))
             // Country-specific regulatory frames
             switch (draft.originCountry, draft.destinationCountry) {
@@ -390,7 +390,7 @@ private struct ReviewBody: View {
             if let lo = draft.reeferTempLow, let hi = draft.reeferTempHigh {
                 LifecycleRow(label: "Setpoint", value: "\(Int(lo))–\(Int(hi))°F")
             } else {
-                LifecycleRow(label: "Setpoint", value: "—")
+                LifecycleRow(label: "Setpoint", value: "-")
             }
             LifecycleRow(label: "Pre-cool", value: draft.preCoolRequired ? "Required" : "Not required")
             LifecycleRow(label: "Mode",     value: draft.continuousMode ? "Continuous" : "Cycle-sentry")
@@ -401,7 +401,7 @@ private struct ReviewBody: View {
         LifecycleCard {
             LifecycleSection(label: "STOPS", icon: "list.number")
             ForEach(draft.stops) { stop in
-                LifecycleRow(label: "\(stop.sequence). \(stop.address)", value: stop.appointmentISO ?? "—")
+                LifecycleRow(label: "\(stop.sequence). \(stop.address)", value: stop.appointmentISO ?? "-")
             }
         }
     }

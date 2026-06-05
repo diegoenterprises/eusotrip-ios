@@ -247,9 +247,9 @@ private struct BHPickupBody: View {
             case .dvirComplete:      return "DVIR closed at 14/14 with the S13+S14 composite. ON-SITE armed at dock 7B; pickup roll begins on gate-in."
             case .loadedDeparted:    return "Loaded and rolling. 12/12 pallets sealed, BOL signed. Long-haul leg holds 372mi to LA."
             case .approaching:       return "30 mi to Naturipe LA RDC. Inner-ring 0.5 mi crosses at the gate; gate-in armed on entry."
-            case .atDelivery:        return "Gate inbound to DOCK 7B. Queue is 0 ahead — back in when receiver waves you to plate."
+            case .atDelivery:        return "Gate inbound to DOCK 7B. Queue is 0 ahead, back in when receiver waves you to plate."
             case .dockedLoading:     return "Backed into bay 7B 0:09 ago. Forklift OXN-FL-04 active at 4 ppm; depart at 06:42 MST."
-            case .loadingInProgress: return "32/72 loaded, 40 left. Forklift cadence steady at 4 ppm — on track to depart in 0:19."
+            case .loadingInProgress: return "32/72 loaded, 40 left. Forklift cadence steady at 4 ppm, on track to depart in 0:19."
             }
         }()
         return LifecycleCard {

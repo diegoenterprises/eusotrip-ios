@@ -262,12 +262,12 @@ private struct DispatcherSettlementBody: View {
             switch kind {
             case .review:        return "Composite A · EUSORONE NH₃ settlement anchor holding 4.2d DSO floor. Refresh weekly."
             case .dso:           return "11.4d fleet DSO is healthy. Push TR-201 / TR-301 to match EUSORONE's 4.2d floor."
-            case .qpayVelocity:  return "0.88 QPAY velocity — accelerate the slow accounts via the next NACHA window."
+            case .qpayVelocity:  return "0.88 QPAY velocity, accelerate the slow accounts via the next NACHA window."
             case .openLedger:    return "$48.7K open across 4 classes. Drain via QPAY in the next NACHA cycle."
-            case .cleanRate:     return "Clean rate 0.96. Investigate the 3.8% adjustment band — most likely lumper reconciliation."
+            case .cleanRate:     return "Clean rate 0.96. Investigate the 3.8% adjustment band, most likely lumper reconciliation."
             case .onboarding:    return "EUSORONE 5/5 closed; bring the 3 in-progress accounts to terminal before Q2 cut."
-            case .compliance:    return "Zero open audits. Quarterly compliance row clean — archive Q1 evidence pack."
-            case .quarter:       return "Year-rolling 0.95 target. EUSORONE 4Q streak — copy playbook to next 3 dedicated accounts."
+            case .compliance:    return "Zero open audits. Quarterly compliance row clean, archive Q1 evidence pack."
+            case .quarter:       return "Year-rolling 0.95 target. EUSORONE 4Q streak. Copy playbook to next 3 dedicated accounts."
             }
         }()
         return LifecycleCard {

@@ -217,7 +217,7 @@ private enum DockStatus {
         case .unloading: return "UNLOADING"
         case .completed: return "DONE"
         case .cancelled: return "CANCELLED"
-        case .unknown:   return "—"
+        case .unknown:   return "-"
         }
     }
 
@@ -322,7 +322,7 @@ struct ShipperDockAppointments: View {
     private var topPill: some View {
         let today = store.summary?.today ?? store.summary?.todayTotal
         let loading = store.rows.filter { DockStatus($0.status) == .loading || DockStatus($0.status) == .unloading }.count
-        let todayStr = today.map(String.init) ?? "—"
+        let todayStr = today.map(String.init) ?? "-"
         return Text("\(todayStr) TODAY · \(loading) LOADING")
             .font(EType.mono(.micro))
             .tracking(0.4)
@@ -340,7 +340,7 @@ struct ShipperDockAppointments: View {
         let loading = store.rows.filter {
             let st = DockStatus($0.status); return st == .loading || st == .unloading
         }.count
-        // NEXT = first scheduled block's local HH:mm after now, else "—".
+        // NEXT = first scheduled block's local HH:mm after now, else "-".
         let next = nextScheduledTime()
         return VStack(alignment: .leading, spacing: Space.s3) {
             Text("DOCK SCHEDULE · HOUSTON TERMINAL · TODAY")
@@ -348,10 +348,10 @@ struct ShipperDockAppointments: View {
                 .tracking(0.5)
                 .foregroundStyle(palette.textTertiary)
             HStack(spacing: 0) {
-                statCell("TODAY", s?.today.map(String.init) ?? "—", palette.textPrimary)
+                statCell("TODAY", s?.today.map(String.init) ?? "-", palette.textPrimary)
                 statCell("LOADING", String(loading), Brand.warning)
-                statCell("DONE", done.map(String.init) ?? "—", palette.textSecondary)
-                statCell("NEXT", next ?? "—", Brand.info)
+                statCell("DONE", done.map(String.init) ?? "-", palette.textSecondary)
+                statCell("NEXT", next ?? "-", Brand.info)
             }
         }
         .padding(Space.s4)
@@ -564,7 +564,7 @@ struct ShipperDockAppointments: View {
     }
 
     private func referenceLine(_ row: DockAppointmentRow) -> String {
-        row.loadNumber ?? (row.loadId.map { "LOAD-\($0)" } ?? "—")
+        row.loadNumber ?? (row.loadId.map { "LOAD-\($0)" } ?? "-")
     }
 
     private func detailLine(_ row: DockAppointmentRow) -> String {

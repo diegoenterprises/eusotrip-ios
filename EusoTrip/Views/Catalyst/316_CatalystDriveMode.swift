@@ -149,9 +149,9 @@ private struct DriveModeBody: View {
 
     private var modeContextCopy: String {
         switch mode {
-        case .drive: return "Ready to roll — Houston → Dallas, MC-306 tanker."
+        case .drive: return "Ready to roll · Houston → Dallas, MC-306 tanker."
         case .offRotation: return "Entered 06:00 CDT today · 1 active haul"
-        case .park: return "Parked at home base — Belle Plaine bay 2."
+        case .park: return "Parked at home base · Belle Plaine bay 2."
         }
     }
 

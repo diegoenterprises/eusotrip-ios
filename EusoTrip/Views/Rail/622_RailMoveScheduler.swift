@@ -390,7 +390,7 @@ private struct RailMoveSchedulerBody: View {
                 Text(moveLabel(row))
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                Text(idLine(row, suffix: service.map { "service \($0) min" } ?? "service —"))
+                Text(idLine(row, suffix: service.map { "service \($0) min" } ?? "service -"))
                     .font(EType.mono(.caption)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
                 ZStack(alignment: .leading) {

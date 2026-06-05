@@ -97,7 +97,7 @@ private struct ClosedPaidBody: View {
                     }.buttonStyle(.plain)
                 }
                 Spacer(minLength: 0)
-                Text(rating > 0 ? "\(rating)/5" : "—")
+                Text(rating > 0 ? "\(rating)/5" : "-")
                     .font(.system(size: 13, weight: .heavy)).foregroundStyle(palette.textPrimary).monospacedDigit()
             }
             Text("Rating is recorded against the carrier's composite score the moment you tap.")
@@ -118,7 +118,7 @@ private struct ClosedPaidBody: View {
         // the same endpoint via a typed mutation.
         struct In: Encodable { let loadId: String; let catalystId: String; let rating: Int; let review: String? }
         guard let cId = live.carrier?.id else {
-            ratingError = "Carrier not assigned — can't record rating."
+            ratingError = "Carrier not assigned - can't record rating."
             return
         }
         do {

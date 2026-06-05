@@ -226,7 +226,7 @@ private struct RailCrewHOSRosterBody: View {
         return HStack(spacing: Space.s3) {
             roleAvatar(m)
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(m.role?.capitalized ?? "Crew") · \(m.crewId ?? "—")")
+                Text("\(m.role?.capitalized ?? "Crew") · \(m.crewId ?? "-")")
                     .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
                 Text("\(String(format: "%.1f", m.onDutyHours ?? 0))h on duty\(m.endorsement.map { " · \($0)" } ?? "")")
                     .font(.system(size: 11)).monospaced().foregroundStyle(palette.textSecondary)

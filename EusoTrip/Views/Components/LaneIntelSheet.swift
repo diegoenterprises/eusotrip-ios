@@ -185,7 +185,7 @@ public struct LaneIntelSheet: View {
             if let band = r.rateBand {
                 rateBandView(band)
             } else {
-                Text("No comparable settlements in last 90 days — rate band unavailable.")
+                Text("No comparable settlements in last 90 days. Rate band unavailable.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             // Synthesis paragraph
@@ -321,7 +321,7 @@ public struct LaneIntelSheet: View {
                 ForEach(history) { item in
                     HStack(alignment: .top, spacing: 8) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(item.question ?? "—")
+                            Text(item.question ?? "-")
                                 .font(.footnote.weight(.semibold))
                                 .lineLimit(2)
                             if let prev = item.synthesisPreview, !prev.isEmpty {

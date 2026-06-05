@@ -28,7 +28,7 @@
 //      • Recent service / DVIR-derived events for the assigned unit.
 //
 //    HONEST-EMPTY (NO field on the backend `AssignedVehicle` model — the
-//    SVG's literal numbers are DESIGN MOCKS, so we render "—" / "No spec
+//    SVG's literal numbers are DESIGN MOCKS, so we render "-" / "No spec
 //    on file" rather than inventing "9,500 GAL" / "80,000 LB" / "30 D"):
 //      • Tanker spec (DOT-406 ALUMINUM, TC-406, 4-compartment, capacity)
 //      • Per-compartment commodity + net gallons
@@ -259,7 +259,7 @@ struct VehicleAndEquipment: View {
     //
     //  None of these tanker-spec fields exist on the backend model, so we
     //  render an HONEST "No tanker spec on file" card with the structure
-    //  intact and "—" placeholders. We never print the SVG's mock numbers.
+    //  intact and "-" placeholders. We never print the SVG's mock numbers.
 
     private func equipmentSpecCard(_ v: VehicleAPI.AssignedVehicle) -> some View {
         VStack(alignment: .leading, spacing: Space.s3) {
@@ -275,13 +275,13 @@ struct VehicleAndEquipment: View {
             }
             // The backend AssignedVehicle has no tanker-equipment fields.
             VStack(alignment: .leading, spacing: Space.s2) {
-                specRow(label: "DOT SPEC", value: "—")
+                specRow(label: "DOT SPEC", value: "-")
                 Divider().overlay(palette.borderFaint)
-                specRow(label: "CAPACITY", value: "—")
+                specRow(label: "CAPACITY", value: "-")
                 Divider().overlay(palette.borderFaint)
-                specRow(label: "COMPARTMENTS", value: "—")
+                specRow(label: "COMPARTMENTS", value: "-")
                 Divider().overlay(palette.borderFaint)
-                specRow(label: "TRAILER UNIT", value: "—")
+                specRow(label: "TRAILER UNIT", value: "-")
             }
             Label("No tanker spec on file for this unit. Capacity, DOT-406 class, TC-406 compartment data and commodity land here once the equipment record is populated by dispatch.",
                   systemImage: "info.circle")
@@ -336,7 +336,7 @@ struct VehicleAndEquipment: View {
                 .font(EType.micro)
                 .tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
-            Text("—")
+            Text("-")
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
             Text("GAL · NET")
@@ -395,13 +395,13 @@ struct VehicleAndEquipment: View {
     }
 
     // MARK: Stat tiles — GVWR · TRACTOR FUEL · MPG 30D
-    //  SVG: three 80pt tiles. None backed by the model → honest "—".
+    //  SVG: three 80pt tiles. None backed by the model → honest "-".
 
     private var statTilesRow: some View {
         HStack(spacing: Space.s2) {
-            statTile(label: "GVWR", value: "—", sub: "LB · COMBINED", gradient: false)
-            statTile(label: "TRACTOR FUEL", value: "—", sub: "GAL DIESEL", gradient: false)
-            statTile(label: "MPG 30D", value: "—", sub: "ROLLING", gradient: true)
+            statTile(label: "GVWR", value: "-", sub: "LB · COMBINED", gradient: false)
+            statTile(label: "TRACTOR FUEL", value: "-", sub: "GAL DIESEL", gradient: false)
+            statTile(label: "MPG 30D", value: "-", sub: "ROLLING", gradient: true)
         }
     }
 
@@ -580,7 +580,7 @@ struct VehicleAndEquipment: View {
 
     // MARK: Service countdowns — OIL · DOT ANNUAL · TIRE ROTATE
     //  SVG: three tiles ("1,100 MI TO CHANGE", "30 D TO ANNUAL", "8,950 MI
-    //  TO GO"). No maintenance-schedule fields on the model → honest "—".
+    //  TO GO"). No maintenance-schedule fields on the model → honest "-".
 
     private var serviceCountdownRow: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
@@ -589,9 +589,9 @@ struct VehicleAndEquipment: View {
                 .tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
             HStack(spacing: Space.s2) {
-                statTile(label: "OIL", value: "—", sub: "MI TO CHANGE", gradient: true)
-                statTile(label: "DOT ANNUAL", value: "—", sub: "D TO ANNUAL", gradient: false)
-                statTile(label: "TIRE ROTATE", value: "—", sub: "MI TO GO", gradient: false)
+                statTile(label: "OIL", value: "-", sub: "MI TO CHANGE", gradient: true)
+                statTile(label: "DOT ANNUAL", value: "-", sub: "D TO ANNUAL", gradient: false)
+                statTile(label: "TIRE ROTATE", value: "-", sub: "MI TO GO", gradient: false)
             }
             Text("Live oil-change mileage, DOT-annual inspection date and tire-rotation interval populate from the unit's maintenance schedule when on file.")
                 .font(EType.caption)
@@ -623,7 +623,7 @@ struct VehicleAndEquipment: View {
                     Text("ESang · oil service")
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
-                    Text("Routing to a partner shop isn't wired yet — booking lands when the service-scheduling endpoint ships.")
+                    Text("Routing to a partner shop isn't wired yet. Booking lands when the service-scheduling endpoint ships.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -660,7 +660,7 @@ struct VehicleAndEquipment: View {
 
                 // "Book oil" — no booking mutation exists; disabled-with-reason.
                 Button {
-                    bookOilNotice = "Oil-service booking isn't available yet — no scheduling endpoint on the server."
+                    bookOilNotice = "Oil-service booking isn't available yet, no scheduling endpoint on the server."
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "calendar.badge.exclamationmark")
@@ -686,7 +686,7 @@ struct VehicleAndEquipment: View {
     private var maintenanceLogNotice: String {
         switch maintenance.state {
         case .loaded(let rows) where !rows.isEmpty:
-            return "\(rows.count) service event\(rows.count == 1 ? "" : "s") on record for this unit — see the Last Service list above."
+            return "\(rows.count) service event\(rows.count == 1 ? "" : "s") on record for this unit, see the Last Service list above."
         case .empty:
             return "No service events on record for this unit yet."
         default:

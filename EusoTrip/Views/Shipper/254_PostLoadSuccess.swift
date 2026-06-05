@@ -34,7 +34,7 @@ private struct SuccessBody: View {
                 .font(.system(size: 64, weight: .heavy))
                 .foregroundStyle(.white)
             Text("Posted").font(.system(size: 28, weight: .heavy)).foregroundStyle(.white)
-            Text(draft.postedLoadNumber ?? "—")
+            Text(draft.postedLoadNumber ?? "-")
                 .font(.system(size: 13, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(.white.opacity(0.9))
                 .padding(.horizontal, 12).padding(.vertical, 4)

@@ -628,7 +628,7 @@ private struct VesselBerthWindowBody: View {
                   let sa = Self.parse(a), let sd = Self.parse(d), sd > sa else { return nil }
             return sd.timeIntervalSince(sa)
         }
-        guard !turns.isEmpty else { return "—" }
+        guard !turns.isEmpty else { return "-" }
         let avgH = (turns.reduce(0, +) / Double(turns.count)) / 3600
         return String(format: "%.1fh", avgH)
     }

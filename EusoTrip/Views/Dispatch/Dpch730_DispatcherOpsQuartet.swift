@@ -112,7 +112,7 @@ private struct YardSlotsBody: View {
         HStack(spacing: Space.s2) {
             kpi("ACTIVE", "\(occupied)", "/\(max(totalSlots, 1))", .green)
             kpi("OPEN",   "\(open)",     "avail",                  .blue)
-            kpi("OOS",    "\(oos)",      slots.first(where: { ($0.status ?? "") == "oos" })?.slotCode ?? "—", oos > 0 ? .orange : .green)
+            kpi("OOS",    "\(oos)",      slots.first(where: { ($0.status ?? "") == "oos" })?.slotCode ?? "-", oos > 0 ? .orange : .green)
             kpi("DWELL",  "\(avgDwell)m", "avg",                   .blue)
         }
     }
@@ -141,7 +141,7 @@ private struct YardSlotsBody: View {
         }()
         return VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(s.slotCode ?? "—").font(.system(size: 14, weight: .heavy).monospacedDigit()).foregroundStyle(palette.textPrimary)
+                Text(s.slotCode ?? "-").font(.system(size: 14, weight: .heavy).monospacedDigit()).foregroundStyle(palette.textPrimary)
                 Spacer()
                 Text(st.uppercased())
                     .font(.system(size: 8, weight: .heavy)).tracking(0.6)
@@ -288,8 +288,8 @@ private struct ReassignBody: View {
             VStack(alignment: .leading, spacing: 4) {
                 if let l = load {
                     Text(l.loadNumber ?? "LD-\(l.id ?? 0)").font(.caption.monospaced().weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("\(l.pickupCity ?? "—") → \(l.destCity ?? "—")").font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
-                    Text("\(l.trailerType ?? "—") · \(l.cargoType ?? "—") · \(l.weight ?? "—") · \(Int(l.distance ?? 0)) mi · ETA \(etaText(l.pickupDate))")
+                    Text("\(l.pickupCity ?? "-") → \(l.destCity ?? "-")").font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
+                    Text("\(l.trailerType ?? "-") · \(l.cargoType ?? "-") · \(l.weight ?? "-") · \(Int(l.distance ?? 0)) mi · ETA \(etaText(l.pickupDate))")
                         .font(.caption).foregroundStyle(palette.textSecondary)
                 }
             }
@@ -308,7 +308,7 @@ private struct ReassignBody: View {
                     }
                     VStack(alignment: .leading, spacing: 2) {
                         HStack {
-                            Text(c.name ?? "—").font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
+                            Text(c.name ?? "-").font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
                             if isBest {
                                 Text("BEST FIT · \(c.fitScore ?? 0)")
                                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
@@ -380,7 +380,7 @@ private struct ReassignBody: View {
     }
 
     private func etaText(_ iso: String?) -> String {
-        guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return "—" }
+        guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return "-" }
         let f = DateFormatter(); f.dateFormat = "h:mm a"
         return f.string(from: d)
     }
@@ -517,11 +517,11 @@ private struct QuickTenderBody: View {
                         Text(card.loadNumber ?? "LD-\(card.id)")
                             .font(.caption.monospaced().weight(.semibold))
                             .foregroundStyle(palette.textPrimary)
-                        Text("\(card.pickupCity ?? "—"), \(card.pickupState ?? "—") → \(card.destCity ?? "—"), \(card.destState ?? "—")")
+                        Text("\(card.pickupCity ?? "-"), \(card.pickupState ?? "-") → \(card.destCity ?? "-"), \(card.destState ?? "-")")
                             .font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
-                        Text("\(card.trailerType ?? "—") · \(card.cargoType ?? "—")").font(.caption).foregroundStyle(palette.textSecondary)
+                        Text("\(card.trailerType ?? "-") · \(card.cargoType ?? "-")").font(.caption).foregroundStyle(palette.textSecondary)
                         HStack {
-                            Text("$\(card.rate ?? "—")")
+                            Text("$\(card.rate ?? "-")")
                                 .font(.title3.weight(.heavy).monospacedDigit())
                                 .foregroundStyle(palette.textPrimary)
                             Spacer()
@@ -577,11 +577,11 @@ private struct QuickTenderBody: View {
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Capsule().fill(palette.bgCardSoft))
                         .foregroundStyle(palette.textPrimary)
-                    Text("\(item.pickupCity ?? "—") → \(item.destCity ?? "—") · \(item.trailerType ?? "—") · \(item.assignedDriverName ?? "ME")")
+                    Text("\(item.pickupCity ?? "-") → \(item.destCity ?? "-") · \(item.trailerType ?? "-") · \(item.assignedDriverName ?? "ME")")
                         .font(.caption).foregroundStyle(palette.textSecondary)
                         .lineLimit(1)
                     Spacer()
-                    Text("$\(item.rate ?? "—")").font(.caption.monospaced().weight(.semibold))
+                    Text("$\(item.rate ?? "-")").font(.caption.monospaced().weight(.semibold))
                 }
                 .padding(8)
                 .background(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).fill(palette.bgCard))
@@ -736,7 +736,7 @@ private struct EscortBody: View {
                 if let l = load {
                     Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · ESCORT MANDATORY")
                         .font(.caption.monospaced().weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("\(l.trailerType ?? "—") · \(l.cargoType ?? "—") · UN\(l.hazmatClass ?? "—") · $\(l.rate ?? "—")")
+                    Text("\(l.trailerType ?? "-") · \(l.cargoType ?? "-") · UN\(l.hazmatClass ?? "-") · $\(l.rate ?? "-")")
                         .font(.caption).foregroundStyle(palette.textSecondary)
                     Text("\(Int(l.distance ?? 0)) mi · driver \(l.assignedDriverName ?? "ME")")
                         .font(.caption2).foregroundStyle(palette.textTertiary)

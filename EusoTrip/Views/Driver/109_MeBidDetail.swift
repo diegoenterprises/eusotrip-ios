@@ -59,7 +59,7 @@ final class MeBidDetailStore: ObservableObject {
         defer { working = false }
         do {
             _ = try await api.loadBidding.accept(bidId: bidId)
-            lastAck = "Bid accepted — load assigned."
+            lastAck = "Bid accepted, load assigned."
             await load()
         } catch {
             lastError = "Couldn't accept. Compliance gate may have rejected (FMCSA / authority)."
@@ -497,7 +497,7 @@ struct MeBidDetailView: View {
     // MARK: - helpers
 
     private func amountLabel(_ raw: String?) -> String {
-        guard let r = raw, let v = Double(r) else { return "$—" }
+        guard let r = raw, let v = Double(r) else { return "$-" }
         if v >= 1000 { return String(format: "$%.0f", v) }
         return String(format: "$%.2f", v)
     }

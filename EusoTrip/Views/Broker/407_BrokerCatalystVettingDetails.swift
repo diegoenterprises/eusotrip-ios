@@ -153,7 +153,7 @@ private struct DetailsBody: View {
                 LifecycleSection(label: (c.name ?? "Applicant").uppercased(), icon: "building.2.fill")
                 LifecycleRow(label: "USDOT",   value: dashIfEmpty(c.dotNumber))
                 LifecycleRow(label: "MC",      value: dashIfEmpty(c.mcNumber))
-                LifecycleRow(label: "Status",  value: (c.complianceStatus ?? "—").capitalized)
+                LifecycleRow(label: "Status",  value: (c.complianceStatus ?? "-").capitalized)
                 if let a = c.createdAt, !a.isEmpty {
                     LifecycleRow(label: "Applied", value: humanDate(a))
                 }
@@ -204,9 +204,9 @@ private struct DetailsBody: View {
                             HStack {
                                 Text(l.loadNumber ?? l.id).font(EType.body.weight(.bold))
                                 Spacer()
-                                Text((l.status ?? "—").uppercased()).font(.caption2.weight(.bold)).tracking(0.6).foregroundStyle(palette.textSecondary)
+                                Text((l.status ?? "-").uppercased()).font(.caption2.weight(.bold)).tracking(0.6).foregroundStyle(palette.textSecondary)
                             }
-                            Text("\(l.pickupCity ?? "—") → \(l.destCity ?? "—")").font(.caption).foregroundStyle(palette.textSecondary)
+                            Text("\(l.pickupCity ?? "-") → \(l.destCity ?? "-")").font(.caption).foregroundStyle(palette.textSecondary)
                         }
                     }
                 }
@@ -216,7 +216,7 @@ private struct DetailsBody: View {
                 Text("No insurance docs on file.").font(EType.caption).foregroundStyle(palette.textTertiary)
             } else {
                 ForEach(insurance.prefix(3)) { d in
-                    LifecycleRow(label: d.type ?? "Doc", value: d.name ?? "—")
+                    LifecycleRow(label: d.type ?? "Doc", value: d.name ?? "-")
                 }
             }
         }
@@ -241,7 +241,7 @@ private struct DetailsBody: View {
                             }
                             Spacer()
                             if row.unavailable == true {
-                                Text("—").font(.title3.weight(.heavy).monospacedDigit()).foregroundStyle(palette.textTertiary)
+                                Text("-").font(.title3.weight(.heavy).monospacedDigit()).foregroundStyle(palette.textTertiary)
                             } else {
                                 Text("\(Int(row.score))%")
                                     .font(.title3.weight(.heavy).monospacedDigit())
@@ -265,9 +265,9 @@ private struct DetailsBody: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(d.name ?? "Document").font(EType.body.weight(.semibold))
                             HStack {
-                                Text(d.type ?? "—").font(.caption2.weight(.bold)).tracking(0.6).foregroundStyle(palette.textTertiary)
+                                Text(d.type ?? "-").font(.caption2.weight(.bold)).tracking(0.6).foregroundStyle(palette.textTertiary)
                                 Spacer()
-                                Text((d.status ?? "—").uppercased()).font(.caption2.weight(.bold)).tracking(0.6).foregroundStyle(palette.textSecondary)
+                                Text((d.status ?? "-").uppercased()).font(.caption2.weight(.bold)).tracking(0.6).foregroundStyle(palette.textSecondary)
                             }
                         }
                     }
@@ -290,9 +290,9 @@ private struct DetailsBody: View {
                                 Spacer()
                                 if let r = l.rate { Text("$\(r)").font(.caption.monospacedDigit().weight(.semibold)) }
                             }
-                            Text("\(l.pickupCity ?? "—") → \(l.destCity ?? "—")").font(.caption).foregroundStyle(palette.textSecondary)
+                            Text("\(l.pickupCity ?? "-") → \(l.destCity ?? "-")").font(.caption).foregroundStyle(palette.textSecondary)
                             HStack {
-                                Text((l.status ?? "—").uppercased()).font(.caption2.weight(.bold)).tracking(0.6).foregroundStyle(palette.textTertiary)
+                                Text((l.status ?? "-").uppercased()).font(.caption2.weight(.bold)).tracking(0.6).foregroundStyle(palette.textTertiary)
                                 Spacer()
                                 if let c = l.createdAt { Text(humanDate(c)).font(.caption2).foregroundStyle(palette.textTertiary) }
                             }
@@ -340,7 +340,7 @@ private struct DetailsBody: View {
 
     private func dashIfEmpty(_ s: String?) -> String {
         let t = (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        return t.isEmpty ? "—" : t
+        return t.isEmpty ? "-" : t
     }
     private func humanDate(_ iso: String) -> String {
         let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

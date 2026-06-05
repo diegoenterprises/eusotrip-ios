@@ -386,7 +386,7 @@ private struct RailYardOperationsBody: View {
     }
 
     private func capacityString(_ cap: Int?) -> String {
-        guard let cap = cap else { return "—" }
+        guard let cap = cap else { return "-" }
         let fmt = NumberFormatter()
         fmt.numberStyle = .decimal
         return fmt.string(from: NSNumber(value: cap)) ?? "\(cap)"

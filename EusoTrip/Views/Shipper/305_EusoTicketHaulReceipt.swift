@@ -98,7 +98,7 @@ private struct ShipperEusoTicketHaulReceiptBody: View {
                     .overlay(Capsule().strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
                 }
             }
-            Text(load?.loadNumber ?? "—")
+            Text(load?.loadNumber ?? "-")
                 .font(.system(size: 9, weight: .heavy, design: .monospaced))
                 .tracking(1.0).foregroundStyle(palette.textTertiary).lineLimit(1)
         }
@@ -113,7 +113,7 @@ private struct ShipperEusoTicketHaulReceiptBody: View {
     }
 
     private var receiptShareMessage: String {
-        "EusoTrip Haul Receipt for \(load?.loadNumber ?? "load") — settlement record."
+        "EusoTrip Haul Receipt for \(load?.loadNumber ?? "load"), settlement record."
     }
 
     private func joinLoadRoom() {
@@ -161,7 +161,7 @@ private struct ShipperEusoTicketHaulReceiptBody: View {
             let meta = cp.companyId.map { "companyId \($0) · \(cp.role)" } ?? cp.role
             return EusoTicketParty(name: name, monogram: monogram(for: name), meta: meta, avatarStyle: .dark)
         }
-        return EusoTicketParty(name: "Pending carrier", monogram: "—", meta: "no driver assigned", avatarStyle: .dark)
+        return EusoTicketParty(name: "Pending carrier", monogram: "-", meta: "no driver assigned", avatarStyle: .dark)
     }
 
     private var signatureForCanvas: EusoTicketCanvas.SignatureReceipt? {
@@ -194,7 +194,7 @@ private struct ShipperEusoTicketHaulReceiptBody: View {
     }
 
     private var footerForCanvas: EusoTicketFooter {
-        EusoTicketFooter(usdot: "USDOT — pending", mc: "MC — pending", irp: "IRP —", boc3: "BOC-3 pending", safetyTag: "FMCSA SAFER reference at dispatch")
+        EusoTicketFooter(usdot: "USDOT - pending", mc: "MC - pending", irp: "IRP -", boc3: "BOC-3 pending", safetyTag: "FMCSA SAFER reference at dispatch")
     }
 
     private func monogram(for name: String) -> String {

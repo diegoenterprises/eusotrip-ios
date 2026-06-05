@@ -62,7 +62,7 @@ struct TermsOfServiceView: View {
             Text("Terms of Service")
                 .font(EType.h1)
                 .foregroundStyle(LinearGradient.diagonal)
-            Text("Eusorone Technologies Inc. — EusoTrip Freight & Energy Logistics Platform")
+            Text("Eusorone Technologies Inc. - EusoTrip Freight & Energy Logistics Platform")
                 .font(EType.body)
                 .foregroundStyle(palette.textSecondary)
             HStack(spacing: Space.s3) {
@@ -83,7 +83,7 @@ struct TermsOfServiceView: View {
                 Text("LEGALLY BINDING AGREEMENT")
                     .font(EType.micro).tracking(0.8)
                     .foregroundStyle(Color.amber300)
-                Text("These Terms of Service constitute a legally binding contract between you and Eusorone Technologies Inc. By using EusoTrip, you agree to be bound by these Terms, including the mandatory arbitration clause, class action waiver, and anti-circumvention provisions. If you do not agree, do not use the Platform.")
+                Text("These Terms of Service constitute a legally binding contract between you and Eusorone Technologies Inc. By using EusoTrip, you agree to be bound by these Terms, including the mandatory arbitration clause, class action waiver and anti-circumvention provisions. If you do not agree, do not use the Platform.")
                     .font(EType.body)
                     .foregroundStyle(palette.textPrimary)
                     .lineSpacing(2)
@@ -281,22 +281,22 @@ struct TermsOfServiceView: View {
             iconTint: Color.green400,
             highlight: false,
             blocks: [
-                .paragraph("EusoTrip is a comprehensive freight and energy logistics technology platform that facilitates the connection of Shippers, Catalysts, Brokers, Drivers, Dispatchers (Dispatch), Escort/Pilot Vehicle Operators, Terminal Managers, Compliance Officers, Safety Managers, and other transportation industry participants (\"Users\"). The Platform provides tools for:"),
+                .paragraph("EusoTrip is a comprehensive freight and energy logistics technology platform that facilitates the connection of Shippers, Catalysts, Brokers, Drivers, Dispatchers (Dispatch), Escort/Pilot Vehicle Operators, Terminal Managers, Compliance Officers, Safety Managers and other transportation industry participants (\"Users\"). The Platform provides tools for:"),
                 .bullets([
-                    "Load posting, searching, matching, and booking across all commodity types including but not limited to hazardous materials, crude oil, refined petroleum products, chemicals, dry goods, agricultural products, and oversized/overweight freight",
-                    "Real-time GPS tracking, Hours of Service (HOS) monitoring, and Electronic Logging Device (ELD) compliance",
-                    "Automated dispatch, route optimization, and fleet management",
-                    "Digital bill of lading (BOL), proof of delivery (POD), rate confirmations, and document management",
-                    "Bidding, rate negotiation, and marketplace transactions",
+                    "Load posting, searching, matching, and booking across all commodity types including but not limited to hazardous materials, crude oil, refined petroleum products, chemicals, dry goods, agricultural products and oversized/overweight freight",
+                    "Real-time GPS tracking, Hours of Service (HOS) monitoring and Electronic Logging Device (ELD) compliance",
+                    "Automated dispatch, route optimization and fleet management",
+                    "Digital bill of lading (BOL), proof of delivery (POD), rate confirmations and document management",
+                    "Bidding, rate negotiation and marketplace transactions",
                     "Regulatory compliance management (FMCSA, PHMSA, DOT, EPA, OSHA, TSA, EIA)",
-                    "Financial services including invoicing, factoring, wallet, and payment processing",
-                    "Emergency response coordination, supply chain disruption management, and crisis mobilization",
-                    "Gamification, rewards, and driver incentive programs (\"The Haul\")",
-                    "AI-powered analytics, crude oil identification (SpectraMatch), and emergency response guidance (ERG)",
-                    "Communication, messaging, and collaboration tools"
+                    "Financial services including invoicing, factoring, wallet and payment processing",
+                    "Emergency response coordination, supply chain disruption management and crisis mobilization",
+                    "Gamification, rewards and driver incentive programs (\"The Haul\")",
+                    "AI-powered analytics, crude oil identification (SpectraMatch) and emergency response guidance (ERG)",
+                    "Communication, messaging and collaboration tools"
                 ]),
                 .emphasized("The Platform is a technology marketplace and intermediary."),
-                .paragraph("Eusorone Technologies Inc. does not itself transport goods, operate vehicles, employ drivers, or act as a motor catalyst, freight broker, or freight forwarder unless separately licensed and disclosed. The Platform facilitates connections between independent parties who negotiate and execute transportation services directly.")
+                .paragraph("Eusorone Technologies Inc. does not itself transport goods, operate vehicles, employ drivers, or act as a motor catalyst, freight broker or freight forwarder unless separately licensed and disclosed. The Platform facilitates connections between independent parties who negotiate and execute transportation services directly.")
             ]
         ),
         Section(
@@ -306,7 +306,7 @@ struct TermsOfServiceView: View {
             iconTint: Color.purple400,
             highlight: false,
             blocks: [
-                .paragraph("3.1 Account Registration. To use the Platform, you must create an account and provide accurate, complete, and current information during registration. You agree to update your information promptly if it changes. Providing false, misleading, or outdated information is grounds for immediate account termination."),
+                .paragraph("3.1 Account Registration. To use the Platform, you must create an account and provide accurate, complete and current information during registration. You agree to update your information promptly if it changes. Providing false, misleading or outdated information is grounds for immediate account termination."),
                 .paragraph("3.2 Role-Specific Requirements. Depending on your selected role, you may be required to provide and maintain valid:"),
                 .bullets([
                     "Shippers: PHMSA registration (if shipping hazmat), EPA ID (if applicable), commodity classifications, insurance certificates",
@@ -316,7 +316,7 @@ struct TermsOfServiceView: View {
                     "Terminal Managers: Facility EPA ID, SPCC plan, state permits, OSHA compliance documentation",
                     "Escorts: State pilot/escort certifications, vehicle insurance, required equipment"
                 ]),
-                .paragraph("3.3 Verification. We reserve the right to verify all credentials, licenses, registrations, insurance, and other documentation at any time. Failure to pass verification or maintain current credentials may result in account suspension or termination."),
+                .paragraph("3.3 Verification. We reserve the right to verify all credentials, licenses, registrations, insurance and other documentation at any time. Failure to pass verification or maintain current credentials may result in account suspension or termination."),
                 .paragraph("3.4 Account Security. You are solely responsible for maintaining the confidentiality of your account credentials. You agree to notify us immediately of any unauthorized access. You are liable for all activities conducted through your account.")
             ]
         ),
@@ -365,7 +365,7 @@ struct TermsOfServiceView: View {
                 .paragraph("5.2 Payment Obligations. All fees are non-refundable except as expressly stated. You authorize Eusorone Technologies Inc. to charge fees to your designated payment method. Late payments accrue interest at the lesser of 1.5% per month or the maximum rate permitted by law."),
                 .paragraph("5.3 Escrow & Payment Processing. When the Platform facilitates payments between Users (e.g., freight charges from Shippers to Catalysts), Eusorone Technologies Inc. may hold funds in escrow until delivery confirmation. Eusorone Technologies Inc. is not liable for disputes between Users regarding payment amounts, freight charges, accessorial charges, or detention/demurrage fees."),
                 .paragraph("5.4 Factoring. If you use the Platform's factoring services, separate factoring terms and a notice of assignment will govern those transactions. Factoring rates, advance percentages, and reserve amounts will be disclosed prior to activation."),
-                .paragraph("5.5 Taxes. You are solely responsible for all applicable federal, state, and local taxes arising from your use of the Platform and your transportation operations. Eusorone Technologies Inc. may issue 1099 forms as required by law."),
+                .paragraph("5.5 Taxes. You are solely responsible for all applicable federal, state and local taxes arising from your use of the Platform and your transportation operations. Eusorone Technologies Inc. may issue 1099 forms as required by law."),
                 .paragraph("5.6 Chargebacks & Disputes. Unauthorized chargebacks or payment reversals may result in account suspension, collections action, and/or reporting to credit bureaus. Payment disputes must be submitted through the Platform's dispute resolution process within 30 days of the transaction.")
             ]
         ),
@@ -409,7 +409,7 @@ struct TermsOfServiceView: View {
                     "Federal Motor Catalyst Safety Act and FMCSRs (49 CFR Parts 350-399)",
                     "Hazardous Materials Transportation Act (49 U.S.C. 5101-5128) and PHMSA regulations (49 CFR Parts 100-185)",
                     "OSHA standards (29 CFR Part 1910 and 1926)",
-                    "EPA regulations including RCRA, CERCLA, Clean Water Act, and Clean Air Act",
+                    "EPA regulations including RCRA, CERCLA, Clean Water Act and Clean Air Act",
                     "TSA Transportation Worker Identification Credential (TWIC) requirements (49 CFR Part 1572)",
                     "Drug and alcohol testing requirements (49 CFR Part 382 and Part 40)",
                     "Commercial Driver's License standards (49 CFR Part 383)",
@@ -469,7 +469,7 @@ struct TermsOfServiceView: View {
             iconTint: Color.pink400,
             highlight: false,
             blocks: [
-                .paragraph("You agree to indemnify, defend, and hold harmless Eusorone Technologies Inc., its officers, directors, employees, agents, affiliates, successors, and assigns (collectively, \"Indemnified Parties\") from and against any and all claims, damages, losses, liabilities, costs, and expenses (including reasonable attorneys' fees and court costs) arising out of or relating to:"),
+                .paragraph("You agree to indemnify, defend, and hold harmless Eusorone Technologies Inc., its officers, directors, employees, agents, affiliates, successors and assigns (collectively, \"Indemnified Parties\") from and against any and all claims, damages, losses, liabilities, costs, and expenses (including reasonable attorneys' fees and court costs) arising out of or relating to:"),
                 .bullets([
                     "Your use of or inability to use the Platform",
                     "Your violation of these Terms or any applicable law or regulation",
@@ -520,9 +520,9 @@ struct TermsOfServiceView: View {
             iconTint: Color.teal400,
             highlight: false,
             blocks: [
-                .paragraph("14.1 No Employment Relationship. Users of the Platform are independent contractors and not employees, agents, joint venturers, or partners of Eusorone Technologies Inc. Nothing in these Terms creates an employer-employee relationship between Eusorone Technologies Inc. and any User, including Drivers, Catalysts, or Dispatchers."),
+                .paragraph("14.1 No Employment Relationship. Users of the Platform are independent contractors and not employees, agents, joint venturers or partners of Eusorone Technologies Inc. Nothing in these Terms creates an employer-employee relationship between Eusorone Technologies Inc. and any User, including Drivers, Catalysts, or Dispatchers."),
                 .paragraph("14.2 No Authority to Bind. No User has the authority to bind Eusorone Technologies Inc. to any contract, obligation, or liability. Users shall not represent themselves as employees or agents of Eusorone Technologies Inc."),
-                .paragraph("14.3 Tax Responsibility. Each User is solely responsible for their own tax obligations, including income taxes, self-employment taxes, sales taxes, fuel taxes (IFTA), and any other applicable taxes. Eusorone Technologies Inc. does not withhold taxes on behalf of Users."),
+                .paragraph("14.3 Tax Responsibility. Each User is solely responsible for their own tax obligations, including income taxes, self-employment taxes, sales taxes, fuel taxes (IFTA) and any other applicable taxes. Eusorone Technologies Inc. does not withhold taxes on behalf of Users."),
                 .paragraph("14.4 Benefits. Users are not entitled to any employee benefits from Eusorone Technologies Inc., including but not limited to health insurance, retirement benefits, workers' compensation, unemployment insurance, or paid time off.")
             ]
         ),
@@ -534,7 +534,7 @@ struct TermsOfServiceView: View {
             highlight: false,
             blocks: [
                 .paragraph("15.1 Entire Agreement. These Terms, together with the Privacy Policy and any additional terms or policies referenced herein, constitute the entire agreement between you and Eusorone Technologies Inc. regarding the Platform and supersede all prior agreements and understandings."),
-                .paragraph("15.2 Severability. If any provision of these Terms is held to be invalid, illegal, or unenforceable, the remaining provisions shall remain in full force and effect. The invalid provision shall be modified to the minimum extent necessary to make it valid and enforceable while preserving its original intent."),
+                .paragraph("15.2 Severability. If any provision of these Terms is held to be invalid, illegal or unenforceable, the remaining provisions shall remain in full force and effect. The invalid provision shall be modified to the minimum extent necessary to make it valid and enforceable while preserving its original intent."),
                 .paragraph("15.3 Waiver. The failure of Eusorone Technologies Inc. to enforce any provision of these Terms shall not constitute a waiver of that provision or any other provision."),
                 .paragraph("15.4 Assignment. You may not assign or transfer these Terms or any rights hereunder without Eusorone Technologies Inc.'s prior written consent. Eusorone Technologies Inc. may freely assign these Terms."),
                 .paragraph("15.5 Force Majeure. Eusorone Technologies Inc. shall not be liable for any delay or failure in performance resulting from causes beyond its reasonable control, including acts of God, natural disasters, pandemics, war, terrorism, government actions, civil unrest, power outages, internet failures, or labor disputes."),

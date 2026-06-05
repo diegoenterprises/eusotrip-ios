@@ -122,16 +122,16 @@ private struct FleetCarbonVM_403 {
     /// Honest empty envelope — every figure paints an em-dash until a real
     /// `sustainability.getFleetCarbon` hydrate lands.
     static let empty = FleetCarbonVM_403(
-        co2eYTD: "—", intensityInline: "—",
-        vsSmartWay: "—", offsetToNetZero: "—",
+        co2eYTD: "-", intensityInline: "-",
+        vsSmartWay: "-", offsetToNetZero: "-",
         benchmarkFrac: 0.0, fleetFrac: 0.0,
-        bandCaption: "—",
-        intensity: "—", intensityYoY: "—", fleetMPG: "—", mpgDelta: "—",
-        offsetCost: "—",
+        bandCaption: "-",
+        intensity: "-", intensityYoY: "-", fleetMPG: "-", mpgDelta: "-",
+        offsetCost: "-",
         lanes: [],
         laneAvg: 0, laneMax: 100,
-        insightTitle: "—",
-        insightSub: "—"
+        insightTitle: "-",
+        insightSub: "-"
     )
 }
 
@@ -334,7 +334,7 @@ private struct FleetCarbonBody_403: View {
             }
             VStack(spacing: Space.s4) {
                 if vm.lanes.isEmpty {
-                    Text("—")
+                    Text("-")
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                         .frame(maxWidth: .infinity, minHeight: 40)

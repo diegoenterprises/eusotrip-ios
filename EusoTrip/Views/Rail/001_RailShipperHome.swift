@@ -266,11 +266,11 @@ private struct RailShipperHome: View {
         let accent = warn ? Brand.warning : Brand.danger
         return HStack(alignment: .top, spacing: Space.s3) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("\(r.railRef ?? "—") · \(r.issue ?? "")")
+                Text("\(r.railRef ?? "-") · \(r.issue ?? "")")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
-                Text(r.route ?? "—")
+                Text(r.route ?? "-")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)
@@ -438,11 +438,11 @@ private struct RailShipperHome: View {
         return HStack(alignment: .top, spacing: Space.s3) {
             equipmentBadge(for: s)
             VStack(alignment: .leading, spacing: 4) {
-                Text("\(s.origin ?? "—") → \(s.destination ?? "—")")
+                Text("\(s.origin ?? "-") → \(s.destination ?? "-")")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)
-                Text("\(s.railRef ?? "—") · \(s.meta ?? "")")
+                Text("\(s.railRef ?? "-") · \(s.meta ?? "")")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)

@@ -114,11 +114,11 @@ private struct RailConsistBoardBody: View {
         let hazmat = min(c.hazmatCars ?? 0, total)
         return VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text(c.consistNumber ?? "—").font(.system(size: 15, weight: .bold)).monospaced().foregroundStyle(palette.textPrimary)
+                Text(c.consistNumber ?? "-").font(.system(size: 15, weight: .bold)).monospaced().foregroundStyle(palette.textPrimary)
                 Spacer()
-                StatusPill(text: (c.status ?? "—").uppercased(), kind: rolling ? .info : .neutral)
+                StatusPill(text: (c.status ?? "-").uppercased(), kind: rolling ? .info : .neutral)
             }
-            Text("\(c.originYard ?? "—") → \(c.destinationYard ?? "—") · \(assigned)/\(total) cars\(c.note.map { " · \($0)" } ?? "")")
+            Text("\(c.originYard ?? "-") → \(c.destinationYard ?? "-") · \(assigned)/\(total) cars\(c.note.map { " · \($0)" } ?? "")")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
             ConsistCarStrip555(total: total, assigned: assigned, hazmat: hazmat, trackTint: palette.textTertiary)
         }

@@ -286,7 +286,7 @@ private struct VesselContainerTimelineBody: View {
             } else if displayNodes.isEmpty {
                 EusoEmptyState(systemImage: "point.topleft.down.curvedto.point.bottomright.up",
                                title: "No events recorded",
-                               subtitle: "Gate, load, and AIS events for this container will appear here.")
+                               subtitle: "Gate, load and AIS events for this container will appear here.")
             } else {
                 VerticalEventTimeline(nodes: displayNodes)
                     .padding(Space.s4)
@@ -321,7 +321,7 @@ private struct VesselContainerTimelineBody: View {
                 title: prettyEventType(m.eventType),
                 sub: m.location?.description
                     ?? geoString(m.location)
-                    ?? "—",
+                    ?? "-",
                 state: isLast ? .current : .done
             )
         }
@@ -349,7 +349,7 @@ private struct VesselContainerTimelineBody: View {
     }
 
     private func prettyTimestamp(_ raw: String?) -> String {
-        guard let raw, !raw.isEmpty else { return "—" }
+        guard let raw, !raw.isEmpty else { return "-" }
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let date = iso.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)

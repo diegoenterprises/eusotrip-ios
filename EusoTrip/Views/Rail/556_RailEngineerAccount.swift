@@ -139,7 +139,7 @@ private struct RailEngineerAccountBody: View {
                     }
                     Text("RAIL ENGINEER · \(me?.companyName ?? "___ CARRIER (PROPOSED)")")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
-                    Text("crew id \(me?.crewId ?? "—") · FRA cert active")
+                    Text("crew id \(me?.crewId ?? "-") · FRA cert active")
                         .font(.system(size: 11)).monospaced().foregroundStyle(palette.textTertiary)
                 }
                 Spacer(minLength: 0)
@@ -346,7 +346,7 @@ private struct RailEngineerAccountBody: View {
                         HStack {
                             Text(c.title).font(EType.body).foregroundStyle(palette.textPrimary)
                             Spacer()
-                            Text(c.statusLabel ?? "—").font(.system(size: 11, weight: .bold))
+                            Text(c.statusLabel ?? "-").font(.system(size: 11, weight: .bold))
                                 .foregroundStyle((c.expiring ?? false) ? Brand.warning : Brand.success)
                         }
                     }

@@ -133,7 +133,7 @@ private struct VesselDetentionTrackingBody: View {
                 } else if records.isEmpty {
                     EusoEmptyState(systemImage: "clock.badge.checkmark",
                                    title: "No active detention",
-                                   subtitle: "getDetentionTracking returned no accruing boxes. Nothing past free time — no per-diem to track right now.")
+                                   subtitle: "getDetentionTracking returned no accruing boxes. Nothing past free time, no per-diem to track right now.")
                 } else {
                     heroCard
                     HStack(spacing: 8) {
@@ -207,7 +207,7 @@ private struct VesselDetentionTrackingBody: View {
     }
 
     private var highestLabel: String {
-        guard let r = topRecord else { return "—" }
+        guard let r = topRecord else { return "-" }
         return "\(hours(r.detentionHours ?? 0)) / \(money(r.accruedCharge ?? 0))"
     }
     private var accrualFraction: Double {
@@ -268,7 +268,7 @@ private struct VesselDetentionTrackingBody: View {
     }
 
     private func rowTitle(_ r: DetentionRecord784) -> String {
-        let trailer = r.trailerNumber ?? r.loadId ?? "—"
+        let trailer = r.trailerNumber ?? r.loadId ?? "-"
         switch r.status ?? "normal" {
         case "critical": return "\(trailer) · \(hours(r.detentionHours ?? 0)) over"
         case "warning":  return "\(trailer) · approaching LFD"
@@ -294,11 +294,11 @@ private struct VesselDetentionTrackingBody: View {
         let target = records.first { $0.status == "warning" } ?? topRecord
         let title: String = target.map { r in
             let t = r.trailerNumber ?? r.loadId ?? "the top box"
-            return (r.status == "warning") ? "Return \(t) before it passes LFD" : "Return \(t) — your highest-accruing box"
+            return (r.status == "warning") ? "Return \(t) before it passes LFD" : "Return \(t) - your highest-accruing box"
         } ?? "Return the highest-accruing box first"
         let detail: String = target.map { r in
             (r.status == "warning")
-                ? "\(hours(r.detentionHours ?? 0)) over free — stops a new $\(Int(r.rate ?? 0))/h charge"
+                ? "\(hours(r.detentionHours ?? 0)) over free - stops a new $\(Int(r.rate ?? 0))/h charge"
                 : "\(money(r.accruedCharge ?? 0)) accrued at $\(Int(r.rate ?? 0))/h"
         } ?? "\(money(totalAccrued)) accruing across \(overCount) boxes"
 

@@ -108,26 +108,26 @@ private struct RailTenderWorkflowBody: View {
     // MARK: Derived
 
     private var tenderRateLabel: String {
-        activeTender?.rateUsd.map { "$\(Int($0))" } ?? "—"
+        activeTender?.rateUsd.map { "$\(Int($0))" } ?? "-"
     }
     private var rateMileLabel: String {
-        activeTender?.ratePerMile.map { "$\(String(format: "%.2f", $0))/mi" } ?? "—"
+        activeTender?.ratePerMile.map { "$\(String(format: "%.2f", $0))/mi" } ?? "-"
     }
     private var laneLabel: String {
-        let o = activeTender?.origin ?? "—"
-        let d = activeTender?.destination ?? "—"
+        let o = activeTender?.origin ?? "-"
+        let d = activeTender?.destination ?? "-"
         return "\(shortName(o)) → \(shortName(d))"
     }
-    private var tenderIdCaption: String { activeTender?.id ?? "—" }
+    private var tenderIdCaption: String { activeTender?.id ?? "-" }
     private var respondLabel: String {
-        activeTender?.respondByMinutes.map { "\($0)m" } ?? "—"
+        activeTender?.respondByMinutes.map { "\($0)m" } ?? "-"
     }
     private var pendingCount: Int  { stats?.pendingCount ?? 0 }
     private var acceptRateLabel: String {
-        stats?.acceptRatePct.map { "\(Int($0))%" } ?? "—"
+        stats?.acceptRatePct.map { "\(Int($0))%" } ?? "-"
     }
     private var avgReplyLabel: String {
-        stats?.avgReplyMinutes.map { "\(Int($0))m" } ?? "—"
+        stats?.avgReplyMinutes.map { "\(Int($0))m" } ?? "-"
     }
 
     private func shortName(_ s: String) -> String {
@@ -218,7 +218,7 @@ private struct RailTenderWorkflowBody: View {
                     Text("all-in tender · \(rateMileLabel)")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(palette.textSecondary)
-                    Text(activeTender?.note ?? activeTender?.equipmentType ?? "—")
+                    Text(activeTender?.note ?? activeTender?.equipmentType ?? "-")
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                 }
@@ -315,9 +315,9 @@ private struct RailTenderWorkflowBody: View {
     private func historyRow(_ item: TenderHistoryItem569) -> some View {
         let o = outcome(item)
         let color = chipColor(o)
-        let lane = "\(item.origin ?? "—") → \(item.destination ?? "—")"
+        let lane = "\(item.origin ?? "-") → \(item.destination ?? "-")"
         let sub = [item.railId, item.outcomeNote].compactMap { $0 }.joined(separator: " · ")
-        let rateLabel = item.rateUsd.map { "$\(Int($0))" } ?? "—"
+        let rateLabel = item.rateUsd.map { "$\(Int($0))" } ?? "-"
 
         return HStack(spacing: 12) {
             ZStack {
@@ -333,7 +333,7 @@ private struct RailTenderWorkflowBody: View {
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)
-                Text(sub.isEmpty ? "—" : sub)
+                Text(sub.isEmpty ? "-" : sub)
                     .font(.system(size: 11, weight: .regular, design: .monospaced))
                     .tracking(0.4)
                     .foregroundStyle(palette.textSecondary)

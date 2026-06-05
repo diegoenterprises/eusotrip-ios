@@ -586,7 +586,7 @@ private struct CatalystEusoTicketRenderer: View {
     private var hazmatCallout: some View {
         let hazClass = load?.hazmatClass ?? "3"
         let hazLabel = hazClass == "3" ? "FLAM" : "HAZ"
-        let pg = (load?.unNumber != nil || load?.hazmatClass == "3") ? "PG II" : "—"
+        let pg = (load?.unNumber != nil || load?.hazmatClass == "3") ? "PG II" : "-"
 
         return HStack(alignment: .center, spacing: 8) {
             ZStack {
@@ -899,7 +899,7 @@ private struct CatalystEusoTicketRenderer: View {
 
     private var commodityDisplay: String {
         if let l = load {
-            let name = l.commodityName ?? l.commodity ?? l.cargoType ?? "—"
+            let name = l.commodityName ?? l.commodity ?? l.cargoType ?? "-"
             return "\(name) · \(l.weightDisplay)"
         }
         return CatalystPersona.flagshipCommodity
@@ -1022,7 +1022,7 @@ private struct CatalystEusoTicketRenderer: View {
             // so the dispatcher chain runs server-side. iOS just
             // confirms by surfacing the documentUrl.
             if let url = URL(string: res.documentUrl) {
-                let title = "EusoTicket · \(bol.isEmpty ? "—" : bol)"
+                let title = "EusoTicket · \(bol.isEmpty ? "-" : bol)"
                 let subtitle = load.map { "Load \($0.loadNumber)" }
                 let loadIdForWallet = load.map { $0.id }
                 await MainActor.run {

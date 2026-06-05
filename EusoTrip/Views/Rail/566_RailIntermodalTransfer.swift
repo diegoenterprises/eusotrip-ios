@@ -75,7 +75,7 @@ private struct RailIntermodalTransferBody: View {
     }
     private var avgTimeLabel: String {
         let times = transfers.compactMap { $0.transferTimeMinutes }
-        guard !times.isEmpty else { return "—" }
+        guard !times.isEmpty else { return "-" }
         let avg = times.reduce(0, +) / Double(times.count)
         return "\(Int(avg))m"
     }
@@ -118,7 +118,7 @@ private struct RailIntermodalTransferBody: View {
     }
     private var facilityAbbrev: String {
         let name = activeTransfer?.facilityName ?? ""
-        guard !name.isEmpty else { return "—" }
+        guard !name.isEmpty else { return "-" }
         let words = name.split(separator: " ")
         if words.count >= 2 { return "\(words[0].prefix(3)) \(words[1].prefix(2))".uppercased() }
         return String(name.prefix(6)).uppercased()
@@ -184,18 +184,18 @@ private struct RailIntermodalTransferBody: View {
     private var heroCard: some View {
         let t = activeTransfer
         let isActive = t.map { transferStatus($0) == .active } ?? false
-        let typeLabel = t.map { "\(transferTypeLabel($0)) · \(($0.facilityType ?? "ramp"))" } ?? "—"
-        let costLabel = t.flatMap { $0.transferCost }.map { "$\(Int($0))" } ?? "—"
-        let containerLabel = t?.containerNumber.map { "\($0) transfer" } ?? "—"
+        let typeLabel = t.map { "\(transferTypeLabel($0)) · \(($0.facilityType ?? "ramp"))" } ?? "-"
+        let costLabel = t.flatMap { $0.transferCost }.map { "$\(Int($0))" } ?? "-"
+        let containerLabel = t?.containerNumber.map { "\($0) transfer" } ?? "-"
         let segLabel: String = {
             if let from = t?.fromSegmentId, let to = t?.toSegmentId {
                 return "seg \(from) → seg \(to) · \(t?.notes ?? "drayage")"
             }
-            return t?.notes ?? "—"
+            return t?.notes ?? "-"
         }()
         let facilityType = t?.facilityType ?? "ramp"
         let facilityName: String = {
-            let name = t?.facilityName ?? "—"
+            let name = t?.facilityName ?? "-"
             let words = name.split(separator: " ")
             if words.count >= 2 { return "\(words[0]) \(words[1].prefix(2))" }
             return String(name.prefix(10))
@@ -257,7 +257,7 @@ private struct RailIntermodalTransferBody: View {
     private var kpiStrip: some View {
         HStack(spacing: Space.s2) {
             MetricTile(label: "TODAY",    value: "\(todayCount)")
-            MetricTile(label: "AVG TIME", value: avgTimeLabel, gradientNumeral: avgTimeLabel != "—")
+            MetricTile(label: "AVG TIME", value: avgTimeLabel, gradientNumeral: avgTimeLabel != "-")
             MetricTile(label: "PENDING",  value: "\(pendingCount)", accent: pendingCount > 0 ? Brand.warning : nil)
         }
     }
@@ -322,7 +322,7 @@ private struct RailIntermodalTransferBody: View {
                 Text(title)
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                Text(sub.isEmpty ? "—" : sub)
+                Text(sub.isEmpty ? "-" : sub)
                     .font(.system(size: 11, weight: .regular, design: .monospaced))
                     .tracking(0.4)
                     .foregroundStyle(palette.textSecondary)

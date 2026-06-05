@@ -311,7 +311,7 @@ struct MeAutoAcceptRulesView: View {
             Image(systemName: "checkmark.seal").font(.system(size: 28, weight: .heavy))
                 .foregroundStyle(palette.textTertiary)
             Text("No rules yet").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-            Text("Tap New to create your first rule. Set thresholds for rate / per-mile / safety / insurance — bids matching all criteria auto-accept.")
+            Text("Tap New to create your first rule. Set thresholds for rate / per-mile / safety / insurance. Bids matching all criteria auto-accept.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
             Button {

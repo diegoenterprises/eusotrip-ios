@@ -107,7 +107,7 @@ private struct VesselDemurrageCalculatorBody: View {
                     if tiers.isEmpty {
                         EusoEmptyState(systemImage: "function",
                                        title: "Within free time",
-                                       subtitle: "calculateDetention returned no billable tiers — the box is still inside its \(freeTimeDisplay) free window. Nothing to escalate.")
+                                       subtitle: "calculateDetention returned no billable tiers, the box is still inside its \(freeTimeDisplay) free window. Nothing to escalate.")
                     } else {
                         ladderCard
                     }

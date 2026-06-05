@@ -258,7 +258,7 @@ struct ZeunBreakdownReporter: View {
                     .font(EType.micro).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Toggle(isOn: $store.canDrive) {
-                    Text(store.canDrive ? "Yes — I can move under power" : "No — I'm stranded")
+                    Text(store.canDrive ? "Yes - I can move under power" : "No - I'm stranded")
                         .font(EType.body)
                         .foregroundStyle(palette.textPrimary)
                 }
@@ -419,10 +419,10 @@ struct ZeunBreakdownReporter: View {
                                 .foregroundStyle(LinearGradient.diagonal)
                                 .frame(width: 22)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(p.name ?? "—")
+                                Text(p.name ?? "-")
                                     .font(EType.bodyStrong)
                                     .foregroundStyle(palette.textPrimary)
-                                Text("\(p.distance ?? "—") mi · \(p.type ?? "—")")
+                                Text("\(p.distance ?? "-") mi · \(p.type ?? "-")")
                                     .font(EType.caption)
                                     .foregroundStyle(palette.textSecondary)
                             }
@@ -571,7 +571,7 @@ struct ZeunProviderNetwork: View {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(palette.textSecondary)
-                TextField("Shop name, city, or service…", text: $store.query)
+                TextField("Shop name, city or service…", text: $store.query)
                     .submitLabel(.search)
                     .onSubmit { Task { await store.refresh() } }
                 if !store.query.isEmpty {
@@ -644,7 +644,7 @@ struct ZeunProviderNetwork: View {
                     .frame(width: 36, height: 36)
                     .background(Circle().fill(palette.bgCardSoft))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(p.name ?? "—")
+                    Text(p.name ?? "-")
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
@@ -776,7 +776,7 @@ struct ZeunProviderDetail: View {
     private func identityCard(_ d: ZeunMechanicsAPI.ProviderDetail) -> some View {
         ActiveCard {
             VStack(alignment: .leading, spacing: 4) {
-                Text(d.name ?? "—")
+                Text(d.name ?? "-")
                     .font(EType.h2)
                     .foregroundStyle(palette.textPrimary)
                 if let chain = d.chainName {
@@ -998,13 +998,13 @@ struct ZeunBreakdownDetail: View {
     private func summaryCard(_ d: ZeunMechanicsAPI.BreakdownDetail) -> some View {
         ActiveCard {
             VStack(alignment: .leading, spacing: 4) {
-                Text((d.issueCategory ?? "—").replacingOccurrences(of: "_", with: " ").capitalized)
+                Text((d.issueCategory ?? "-").replacingOccurrences(of: "_", with: " ").capitalized)
                     .font(EType.h2)
                     .foregroundStyle(palette.textPrimary)
                 HStack {
-                    StatusPill(text: d.severity ?? "—",
+                    StatusPill(text: d.severity ?? "-",
                                kind: severityPillKind(d.severity))
-                    StatusPill(text: (d.status ?? "—").replacingOccurrences(of: "_", with: " ").capitalized,
+                    StatusPill(text: (d.status ?? "-").replacingOccurrences(of: "_", with: " ").capitalized,
                                kind: .info)
                     if let canDrive = d.canDrive {
                         StatusPill(text: canDrive ? "Driveable" : "Stranded",
@@ -1030,7 +1030,7 @@ struct ZeunBreakdownDetail: View {
                     .font(EType.micro).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 if let primary = diag.primaryDiagnosis {
-                    Text(primary.issue ?? "—")
+                    Text(primary.issue ?? "-")
                         .font(EType.bodyStrong)
                     if let p = primary.probability {
                         Text("Confidence \(Int((p * 100).rounded()))%")
@@ -1164,7 +1164,7 @@ struct ZeunMaintenanceTracker: View {
                                 ForEach(history) { h in
                                     HStack {
                                         VStack(alignment: .leading, spacing: 1) {
-                                            Text(h.serviceType ?? "—")
+                                            Text(h.serviceType ?? "-")
                                                 .font(EType.bodyStrong)
                                             Text("\((h.serviceDate ?? "").prefix(10)) · \(h.odometerAtService ?? 0) mi")
                                                 .font(EType.caption)
@@ -1219,7 +1219,7 @@ struct ZeunMaintenanceTracker: View {
                 ForEach(items) { item in
                     HStack {
                         VStack(alignment: .leading, spacing: 1) {
-                            Text((item.serviceType ?? "—").replacingOccurrences(of: "_", with: " ").capitalized)
+                            Text((item.serviceType ?? "-").replacingOccurrences(of: "_", with: " ").capitalized)
                                 .font(EType.bodyStrong)
                                 .foregroundStyle(palette.textPrimary)
                             if let due = item.dueOdometer {
@@ -1435,7 +1435,7 @@ struct ZeunPartDiagnosisScreen: View {
                         .font(EType.micro).tracking(0.8)
                         .foregroundStyle(palette.textTertiary)
                 }
-                Text("Snap or pick a clear photo of the part. ESANG reads visible faults, wear, and damage.")
+                Text("Snap or pick a clear photo of the part. ESANG reads visible faults, wear and damage.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1498,7 +1498,7 @@ struct ZeunPartDiagnosisScreen: View {
                         .foregroundStyle(palette.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    Text("Couldn't confidently identify this photo — please confirm the component below before diagnosing.")
+                    Text("Couldn't confidently identify this photo, please confirm the component below before diagnosing.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1623,13 +1623,13 @@ struct ZeunPartDiagnosisScreen: View {
                 Text("CONTEXT (optional)")
                     .font(EType.micro).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
-                TextField("Equipment type — e.g. Class 8 tractor, reefer trailer", text: $store.equipmentType)
+                TextField("Equipment type, e.g. Class 8 tractor, reefer trailer", text: $store.equipmentType)
                     .textFieldStyle(.roundedBorder)
                     .disabled(store.isDiagnosing)
-                TextField("Part name — e.g. brake chamber, serpentine belt", text: $store.partName)
+                TextField("Part name, e.g. brake chamber, serpentine belt", text: $store.partName)
                     .textFieldStyle(.roundedBorder)
                     .disabled(store.isDiagnosing)
-                Text("Both optional — they sharpen the read but ESANG diagnoses from the photo regardless.")
+                Text("Both optional. They sharpen the read but ESANG diagnoses from the photo regardless.")
                     .font(EType.micro)
                     .foregroundStyle(palette.textTertiary)
             }
@@ -1679,7 +1679,7 @@ struct ZeunPartDiagnosisScreen: View {
             EusoEmptyState(
                 systemImage: "checkmark.shield.fill",
                 title: "No faults detected",
-                subtitle: "ESANG couldn't see any visible damage, wear, or fault in this photo. Re-shoot from another angle if you suspect an issue."
+                subtitle: "ESANG couldn't see any visible damage, wear or fault in this photo. Re-shoot from another angle if you suspect an issue."
             )
             .padding(.top, Space.s2)
         } else {

@@ -278,7 +278,7 @@ private struct VesselPortDirectoryBody: View {
                                     .controlSize(.mini)
                                     .tint(palette.textSecondary)
                             } else {
-                                Text(port.unlocode ?? "—")
+                                Text(port.unlocode ?? "-")
                                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                                     .foregroundStyle(palette.textSecondary)
                             }

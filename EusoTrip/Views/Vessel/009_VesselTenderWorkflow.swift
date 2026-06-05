@@ -177,7 +177,7 @@ private struct VesselTenderWorkflowBody: View {
                 .font(.system(size: 17, weight: .bold))
                 .foregroundStyle(palette.textPrimary)
                 .padding(.top, Space.s3)
-            Text(req.lane ?? "—")
+            Text(req.lane ?? "-")
                 .font(.system(size: 12, weight: .regular))
                 .foregroundStyle(palette.textSecondary)
                 .padding(.top, 4)
@@ -290,7 +290,7 @@ private struct VesselTenderWorkflowBody: View {
 
     private func historyTitle(_ h: VesselTenderRequest009) -> String {
         let carrier = h.carrier ?? "Carrier"
-        let lane = h.lane ?? "—"
+        let lane = h.lane ?? "-"
         return "\(carrier) · \(lane)"
     }
     private func historyDetail(_ h: VesselTenderRequest009) -> String {
@@ -300,7 +300,7 @@ private struct VesselTenderWorkflowBody: View {
         if !cont.isEmpty { parts.append(cont) }
         switch (h.status ?? "").lowercased() {
         case "declined", "rolled":
-            parts.append("rolled — no space")
+            parts.append("rolled - no space")
         default:
             if let a = h.amount { parts.append("\(money(a)) \(rateUnitLabel(h.rateType))") }
         }
@@ -442,7 +442,7 @@ private struct VesselTenderWorkflowBody: View {
         }
     }
     private func money(_ v: Double?) -> String {
-        guard let v else { return "—" }
+        guard let v else { return "-" }
         let f = NumberFormatter()
         f.numberStyle = .currency; f.currencyCode = "USD"
         f.maximumFractionDigits = (v.truncatingRemainder(dividingBy: 1) == 0) ? 0 : 2
@@ -521,7 +521,7 @@ private struct VesselTenderWorkflowBody: View {
                 actionError = "Re-request was not accepted by the server."
             }
         } catch {
-            actionError = "Couldn't re-request — "
+            actionError = "Couldn't re-request. "
                 + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
         }
     }
@@ -540,7 +540,7 @@ private struct VesselTenderWorkflowBody: View {
             object: nil,
             userInfo: ["shipmentId": active?.shipmentId as Any,
                        "bookingNumber": active?.bookingNumber as Any])
-        actionNote = "Cancellation requested — your ops desk will confirm withdrawal."
+        actionNote = "Cancellation requested. Your ops desk will confirm withdrawal."
     }
 }
 

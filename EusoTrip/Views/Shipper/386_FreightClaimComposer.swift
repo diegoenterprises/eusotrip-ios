@@ -139,7 +139,7 @@ private struct ClaimComposerBody: View {
                 Text("Identifying evidence…").font(EType.caption).foregroundStyle(palette.textTertiary)
             }
         } else if let err = classifyError {
-            Text("Couldn't auto-identify this evidence — \(err). Your photo will still be filed with the claim.")
+            Text("Couldn't auto-identify this evidence, \(err). Your photo will still be filed with the claim.")
                 .font(EType.caption).foregroundStyle(Brand.warning)
                 .fixedSize(horizontal: false, vertical: true)
         } else if let c = classification {
@@ -159,7 +159,7 @@ private struct ClaimComposerBody: View {
                         .foregroundStyle(conf >= 85 ? Brand.success : conf >= 60 ? Brand.warning : Brand.danger)
                 }
                 if unsure {
-                    Text("Couldn't confidently identify this document — please confirm it's the right evidence for the claim.")
+                    Text("Couldn't confidently identify this document. Please confirm it's the right evidence for the claim.")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {

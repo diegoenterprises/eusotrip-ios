@@ -400,7 +400,7 @@ private struct RailFRASafetyBody: View {
                     EusoEmptyState(
                         systemImage: "checkmark.shield",
                         title: "No FRA safety record",
-                        subtitle: "This railroad's FRA safety index, accident history, and open inspections appear here once the carrier files them.")
+                        subtitle: "This railroad's FRA safety index, accident history and open inspections appear here once the carrier files them.")
                     ctaPair
                 } else {
                     heroCard
@@ -511,7 +511,7 @@ private struct RailFRASafetyBody: View {
                     HStack(alignment: .center, spacing: Space.s2) {
                         complianceRing
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(indexLabel ?? "—")
+                            Text(indexLabel ?? "-")
                                 .font(.system(size: 38, weight: .heavy).monospacedDigit())
                                 .foregroundStyle(LinearGradient.diagonal)
                             Text("FRA safety index")
@@ -599,12 +599,12 @@ private struct RailFRASafetyBody: View {
 
     private var kpiStrip: some View {
         HStack(spacing: Space.s2) {
-            MetricTile(label: "Safety index", value: indexLabel ?? "—", gradientNumeral: indexLabel != nil)
+            MetricTile(label: "Safety index", value: indexLabel ?? "-", gradientNumeral: indexLabel != nil)
             MetricTile(label: "Accidents 12mo",
-                       value: accidents12mo.map { "\($0)" } ?? "—",
+                       value: accidents12mo.map { "\($0)" } ?? "-",
                        accent: (accidents12mo ?? 0) > 0 ? Brand.danger : palette.textPrimary)
             MetricTile(label: "Open insp",
-                       value: openInspections.map { "\($0)" } ?? "—",
+                       value: openInspections.map { "\($0)" } ?? "-",
                        accent: (openInspections ?? 0) > 0 ? Brand.warning : palette.textPrimary)
         }
     }
@@ -711,7 +711,7 @@ private struct RailFRASafetyBody: View {
                     .font(.system(size: 16, weight: .semibold)).foregroundStyle(color)
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(item.title ?? "—")
+                Text(item.title ?? "-")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                 if let detail = item.detail {

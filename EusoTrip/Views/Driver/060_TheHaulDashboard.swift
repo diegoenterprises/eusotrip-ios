@@ -51,7 +51,7 @@
 //         fills anywhere in the rendered UI.
 //    §3   Numbers-first — current points and rank are the dominant
 //         visual anchors of their cards. Rank delta renders "▲4"
-//         (gradient) vs "▼3" (danger) vs "—" (tertiary).
+//         (gradient) vs "▼3" (danger) vs "-" (tertiary).
 //    §4   Tokenized spacing (`Space.sN`), radii (`Radius.sm/md/lg`),
 //         type (`EType.*`).
 //    §5   Palette semantic — `palette.textPrimary/Secondary/Tertiary`,
@@ -537,7 +537,7 @@ struct TheHaulDashboard: View {
                 badgeTile(badge: badge)
             }
             if pick.isEmpty {
-                Text("—")
+                Text("-")
                     .font(EType.caption)
                     .foregroundColor(palette.textTertiary)
             }
@@ -690,12 +690,12 @@ struct TheHaulDashboard: View {
                         .font(EType.micro.monospacedDigit())
                         .foregroundColor(palette.danger)
                 } else {
-                    Text("—")
+                    Text("-")
                         .font(EType.micro)
                         .foregroundColor(palette.textTertiary)
                 }
             } else {
-                Text("—")
+                Text("-")
                     .font(EType.micro)
                     .foregroundColor(palette.textTertiary)
             }
@@ -736,7 +736,7 @@ struct TheHaulDashboard: View {
             actionRow(
                 systemImage: "arrow.clockwise",
                 title: "Refresh The Haul",
-                subtitle: "Pulls fresh XP, missions, badges, and rank"
+                subtitle: "Pulls fresh XP, missions, badges and rank"
             ) {
                 Task { await refreshAll() }
             }
@@ -766,7 +766,7 @@ struct TheHaulDashboard: View {
 
     private var missionsActionSubtitle: String {
         guard case .loaded(let items) = missionsStore.state else {
-            return "Weekly, monthly, and seasonal targets"
+            return "Weekly, monthly and seasonal targets"
         }
         let active = items.filter { $0.claimedAt == nil }.count
         return active == 0
@@ -877,7 +877,7 @@ struct TheHaulDashboard: View {
             HStack(spacing: Space.s2) {
                 Image(systemName: "exclamationmark.triangle")
                     .foregroundColor(palette.danger)
-                Text("Couldn't load — \(err.localizedDescription)")
+                Text("Couldn't load - \(err.localizedDescription)")
                     .font(EType.caption)
                     .foregroundColor(palette.textSecondary)
                     .lineLimit(2)

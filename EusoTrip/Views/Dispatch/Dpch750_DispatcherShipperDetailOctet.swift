@@ -277,14 +277,14 @@ private struct DispatcherShipperDetailBody: View {
     private var nextStepCard: some View {
         let copy: String = {
             switch kind {
-            case .review:           return "Composite pillar A — refresh weekly. Use to set tender priority + payment terms by shipper."
+            case .review:           return "Composite pillar A, refresh weekly. Use to set tender priority + payment terms by shipper."
             case .pullVolume:       return "Cadence is healthy. Hold the 9.5/wk floor for the NH₃ pillar; nudge dormant account up."
-            case .tenderWin:        return "11.6% tender loss is acceptable. Investigate the 16 lost loads — were they price or capacity?"
+            case .tenderWin:        return "11.6% tender loss is acceptable. Investigate the 16 lost loads. Were they price or capacity?"
             case .paymentBehavior:  return "21.4d DSO is over the Eusorone 14.2d pillar. Push a NET-15 conversation on Q2 contracts."
             case .laneWin:          return "NH₃ pillar holding 50/50. Lock the Eusorone flagship; cross-sell the other 3 corridors."
             case .accountHealth:    return "3 active + 1 dormant. Re-engage the dormant account with a quick-tender invite."
             case .onboarding:       return "Eusorone is fully onboarded. Drive the 3 in-progress accounts to terminal; revive the seeded one."
-            case .quarter:          return "Q1→Q4 +0.18 monotonic — healthy trajectory. Hold the playbook into next year."
+            case .quarter:          return "Q1→Q4 +0.18 monotonic, healthy trajectory. Hold the playbook into next year."
             }
         }()
         return LifecycleCard {

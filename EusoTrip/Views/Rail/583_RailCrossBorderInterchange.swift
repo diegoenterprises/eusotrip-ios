@@ -145,11 +145,11 @@ private struct RailCrossBorderInterchangeBody: View {
         (interchangePoint?.tradeAgreement ?? "USMCA") + " OK"
     }
     private var dwellLabel: String {
-        guard let h = crossingTime?.estimatedHours else { return "—" }
+        guard let h = crossingTime?.estimatedHours else { return "-" }
         return String(format: "%.1fh", h)
     }
     private var portLabel: String {
-        guard let p = interchangePoint?.port, let d = interchangePoint?.direction else { return "—" }
+        guard let p = interchangePoint?.port, let d = interchangePoint?.direction else { return "-" }
         return "\(p) · \(d)"
     }
     private var carCount: Int  { interchangePoint?.cars ?? 0 }
@@ -333,7 +333,7 @@ private struct RailCrossBorderInterchangeBody: View {
                     .foregroundColor(chipColor)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(check.checkName ?? "—")
+                Text(check.checkName ?? "-")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(palette.textPrimary)
                 if !subText.isEmpty {
@@ -436,7 +436,7 @@ private struct RailCrossBorderInterchangeBody: View {
         case "failed":  return ("FAILED",  Brand.danger)
         case "hold":    return ("HOLD",    Brand.danger)
         case "pending": return ("PENDING", Brand.info)
-        default:        return ("—",       Brand.info)
+        default:        return ("-",       Brand.info)
         }
     }
 

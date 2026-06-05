@@ -14,7 +14,7 @@ struct CameraPermissionScreen: View {
             title: "Camera",
             eyebrow: "Shipper · Camera",
             icon: "camera.fill",
-            message: "Camera access lets you capture POD photos, scan BOLs, and attach evidence to freight claims directly from the dock.",
+            message: "Camera access lets you capture POD photos, scan BOLs and attach evidence to freight claims directly from the dock.",
             bullets: [
                 "POD photo capture with on-device OCR",
                 "Scan BOL barcodes / QR codes",

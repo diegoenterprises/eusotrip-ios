@@ -35,7 +35,7 @@
 //                stage from `status` (pending → AUDIT, approved →
 //                APPROVED, completed/paid → CLEARED, disputed →
 //                AUDIT with warn paint). Per-stage timestamps paint
-//                "—" pending the envelope extension.
+//                "-" pending the envelope extension.
 //    EUSO-2143 — Settlement-attached documents (BOL · POD · rate-con)
 //                not on the envelope. Documents strip paints honest
 //                placeholder chips citing the backend gap.
@@ -85,7 +85,7 @@ private func deriveLifecycle(status: String?) -> [LifecycleStage] {
         else if i == activeIdx {
             state = (s == "disputed") ? .warn : .active
         } else { state = .upcoming }
-        out.append(LifecycleStage(label: label, timestamp: "—", state: state))
+        out.append(LifecycleStage(label: label, timestamp: "-", state: state))
     }
     return out
 }
@@ -273,7 +273,7 @@ struct ShipperSettlementDetail: View {
         if case .loaded(let s) = store.phase {
             return SettlementStatusStyle.from(s.status).pillLegend
         }
-        return "—"
+        return "-"
     }
 
     // MARK: Back chevron + breadcrumb

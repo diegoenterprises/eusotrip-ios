@@ -135,11 +135,11 @@ struct RailNewShipment_007: View {
     // MARK: Derived display
 
     private func dash(_ s: String?) -> String {
-        guard let s, !s.trimmingCharacters(in: .whitespaces).isEmpty else { return "—" }
+        guard let s, !s.trimmingCharacters(in: .whitespaces).isEmpty else { return "-" }
         return s
     }
     private func money(_ v: Double?) -> String {
-        guard let v else { return "—" }
+        guard let v else { return "-" }
         return "$" + Self.grouped(Int(v.rounded()))
     }
     private static func grouped(_ n: Int) -> String {
@@ -159,8 +159,8 @@ struct RailNewShipment_007: View {
     }
     private var laneCaption: String {
         let ref = createdRef ?? "RAIL DRAFT"
-        let miles = compare?.distanceMiles.map { "~\(Self.grouped(Int($0.rounded()))) mi" } ?? "— mi"
-        let line = dash(tariff?.railroad).uppercased() == "—" ? "BNSF single-line" : "\(dash(tariff?.railroad)) single-line"
+        let miles = compare?.distanceMiles.map { "~\(Self.grouped(Int($0.rounded()))) mi" } ?? "- mi"
+        let line = dash(tariff?.railroad).uppercased() == "-" ? "BNSF single-line" : "\(dash(tariff?.railroad)) single-line"
         return "\(ref) · \(line) · \(miles)"
     }
 

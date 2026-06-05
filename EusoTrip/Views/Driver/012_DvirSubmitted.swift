@@ -68,7 +68,7 @@ struct DvirSubmitted: View {
 
     /// Header is structural — it renders the same shape whether the
     /// store is loading or has a snap. The right-side timestamp swaps
-    /// to "—" while the network round-trips.
+    /// to "-" while the network round-trips.
     private var topBar: some View {
         HStack(spacing: Space.s3) {
             Button { navBack?() } label: {
@@ -115,8 +115,8 @@ struct DvirSubmitted: View {
         case .error:
             return "Couldn't reach inspections service"
         case .loaded(let snap):
-            let unit = snap?.unitDisplay ?? "—"
-            let when = snap?.submittedDisplay ?? "—"
+            let unit = snap?.unitDisplay ?? "-"
+            let when = snap?.submittedDisplay ?? "-"
             return "\(unit) · Pre-trip DVIR · \(when)"
         }
     }
@@ -420,14 +420,14 @@ struct DvirSubmitted: View {
 //
 // These keep the view body free of formatting/branching and let the
 // store stay a pure data shape. All optionals fall back to neutral
-// "—" so the layout never collapses on partial hydration.
+// "-" so the layout never collapses on partial hydration.
 
 extension DvirSubmittedReviewStore.Snapshot {
 
     var unitDisplay: String {
         if let unit = dvir?.unitNumber, !unit.isEmpty { return "Unit \(unit)" }
         if let vId = defect?.vehicleId, !vId.isEmpty { return "Unit \(vId)" }
-        return "—"
+        return "-"
     }
 
     /// "Freightliner Cascadia '24" trim line — only render when the
@@ -446,7 +446,7 @@ extension DvirSubmittedReviewStore.Snapshot {
 
     var submittedDisplay: String {
         guard let raw = dvir?.reportDate ?? defect?.reportedAt, !raw.isEmpty
-        else { return "—" }
+        else { return "-" }
         // Server returns ISO-8601 — surface the time portion when we
         // can parse it, else the raw prefix.
         if let date = ISO8601DateFormatter().date(from: raw) {
@@ -499,7 +499,7 @@ extension DvirSubmittedReviewStore.Snapshot {
 
     var systemDisplay: String {
         if let cat = defect?.category, !cat.isEmpty { return cat }
-        return "—"
+        return "-"
     }
 
     var findingDisplay: String {
@@ -509,7 +509,7 @@ extension DvirSubmittedReviewStore.Snapshot {
         }
         if let desc = defect?.description, !desc.isEmpty { return desc }
         if let item = defect?.item, !item.isEmpty { return item }
-        return "—"
+        return "-"
     }
 
     /// FMCSA-style classification line. Until the backend exposes a
@@ -520,12 +520,12 @@ extension DvirSubmittedReviewStore.Snapshot {
         let report = dvir?.reportType?.uppercased().replacingOccurrences(of: "_", with: " ") ?? ""
         let parts = [sev.isEmpty ? nil : sev, report.isEmpty ? nil : report]
             .compactMap { $0 }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
 
     var reportedDisplay: String {
         guard let raw = defect?.reportedAt ?? dvir?.reportDate, !raw.isEmpty
-        else { return "—" }
+        else { return "-" }
         if let date = ISO8601DateFormatter().date(from: raw) {
             let f = DateFormatter()
             f.dateFormat = "yyyy-MM-dd HH:mm"
@@ -546,7 +546,7 @@ extension DvirSubmittedReviewStore.Snapshot {
     }
 
     var overallConditionLabel: String {
-        guard let raw = dvir?.overallCondition, !raw.isEmpty else { return "—" }
+        guard let raw = dvir?.overallCondition, !raw.isEmpty else { return "-" }
         return raw.replacingOccurrences(of: "_", with: " ").capitalized
     }
 

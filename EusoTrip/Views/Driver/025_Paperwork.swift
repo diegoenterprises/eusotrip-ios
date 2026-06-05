@@ -57,31 +57,31 @@ struct Paperwork: View {
     // MARK: - Figma fallback
     private let fallbackDoor       = "12"
     private let fallbackTotal      = 26
-    private let fallbackTrailer    = "—"
-    private let fallbackBolNumber  = "—"
-    private let fallbackShipperN   = "—"
-    private let fallbackShipperA   = "—"
-    private let fallbackConsignN   = "—"
-    private let fallbackConsignA   = "—"
+    private let fallbackTrailer    = "-"
+    private let fallbackBolNumber  = "-"
+    private let fallbackShipperN   = "-"
+    private let fallbackShipperA   = "-"
+    private let fallbackConsignN   = "-"
+    private let fallbackConsignA   = "-"
     // M2 doctrine (110th→111th hygiene firing): seal IDs are PII and must
     // hydrate from the live Load. Em-dash sentinels render until activeLoad
-    // surfaces the assigned seal pair; sealFactValue collapses the row to "—"
+    // surfaces the assigned seal pair; sealFactValue collapses the row to "-"
     // when either side is unhydrated rather than fabricating an identifier.
     // Same fix pattern landed on 018_ActiveEnrouteLoaded.swift:75 (fallbackSealID).
-    private let fallbackSealBefore = "—"
-    private let fallbackSealAfter  = "—"
+    private let fallbackSealBefore = "-"
+    private let fallbackSealAfter  = "-"
     private var sealFactValue: String {
-        (fallbackSealBefore == "—" || fallbackSealAfter == "—")
-            ? "—"
+        (fallbackSealBefore == "-" || fallbackSealAfter == "-")
+            ? "-"
             : "\(fallbackSealBefore) → \(fallbackSealAfter) intact"
     }
-    private let fallbackSignedBy   = "—"
+    private let fallbackSignedBy   = "-"
     private let fallbackStart      = "00:33"
     private let fallbackEnd        = "07:03"
     private let fallbackDoorTime   = "6h 30m"
-    private let fallbackDetCharge  = "—"
+    private let fallbackDetCharge  = "-"
     private let fallbackDetDetail  = "$60/hr past 2h · 4h 30m past 2h free · billed to shipper"
-    private let fallbackBreakInfo  = "10-hour break starts now. Park in row C of the overflow lot — 14 open slots as of 06:55. Next load brief unlocks at 17:03."
+    private let fallbackBreakInfo  = "10-hour break starts now. Park in row C of the overflow lot, 14 open slots as of 06:55. Next load brief unlocks at 17:03."
 
     // MARK: - Body
 
@@ -217,7 +217,7 @@ struct Paperwork: View {
                 factRow(
                     label: "SEAL BEFORE → AFTER",
                     value: sealFactValue,
-                    affirm: sealFactValue != "—"
+                    affirm: sealFactValue != "-"
                 )
                 divider
                 factRow(label: "SIGNED BY", value: fallbackSignedBy, affirm: false)

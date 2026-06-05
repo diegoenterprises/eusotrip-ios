@@ -105,7 +105,7 @@ struct DriverComplianceDashboard: View {
     }
 
     private func hosSub(_ h: HOSStatus?) -> String {
-        guard let h = h else { return "—" }
+        guard let h = h else { return "-" }
         return String(format: "%.1fh cycle remaining · %@", h.cycleRemaining, h.status.uppercased())
     }
 
@@ -147,10 +147,10 @@ struct DriverComplianceDashboard: View {
 
     @ViewBuilder
     private var carrierCard: some View {
-        let dot: String = carrier?.dotNumber ?? "—"
-        let mc:  String = carrier?.mcNumber ?? "—"
+        let dot: String = carrier?.dotNumber ?? "-"
+        let mc:  String = carrier?.mcNumber ?? "-"
         let name = carrier?.legalName ?? carrier?.name ?? "Carrier of record"
-        let cstatus = (carrier?.complianceStatus ?? "—").uppercased()
+        let cstatus = (carrier?.complianceStatus ?? "-").uppercased()
         statusCard(
             eyebrow: "CARRIER · FMCSA SAFER",
             title: name,
@@ -178,14 +178,14 @@ struct DriverComplianceDashboard: View {
 
     private func expirySub(label: String, days: Int?) -> String {
         guard let d = days else { return "\(label) · expiration date pending carrier sync" }
-        if d <= 0   { return "\(label) · LAPSED — renewal blocking new loads" }
-        if d <= 7   { return "\(label) · expires within 7 days — renew this week" }
-        if d <= 30  { return "\(label) · expires within 30 days — renew soon" }
+        if d <= 0   { return "\(label) · LAPSED - renewal blocking new loads" }
+        if d <= 7   { return "\(label) · expires within 7 days - renew this week" }
+        if d <= 30  { return "\(label) · expires within 30 days - renew soon" }
         return "\(label) · current"
     }
 
     private func expiryBadge(_ days: Int?) -> StatusBadge {
-        guard let d = days else { return .init(label: "—",       color: palette.textSecondary) }
+        guard let d = days else { return .init(label: "-",       color: palette.textSecondary) }
         if d <= 0   { return .init(label: "EXPIRED", color: Brand.danger) }
         if d <= 7   { return .init(label: "WARN",    color: Brand.danger) }
         if d <= 30  { return .init(label: "WATCH",   color: Brand.warning) }
@@ -203,7 +203,7 @@ struct DriverComplianceDashboard: View {
         if s.contains("revoked") || s.contains("suspended") || s.contains("unsatisfactory") {
             return .init(label: "BLOCKED", color: Brand.danger)
         }
-        return .init(label: "—", color: palette.textSecondary)
+        return .init(label: "-", color: palette.textSecondary)
     }
 
     // MARK: - Card primitive

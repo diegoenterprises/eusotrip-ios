@@ -440,7 +440,7 @@ private struct ValidationResultCard: View {
         switch outcome {
         case .verified:    return "Verified"
         case .rejected:    return "No match"
-        case .unavailable: return "Validator unavailable — review"
+        case .unavailable: return "Validator unavailable - review"
         }
     }
 

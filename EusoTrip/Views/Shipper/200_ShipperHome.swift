@@ -259,7 +259,7 @@ struct ShipperHome: View {
                     Text("Enable location for live weather")
                         .font(EType.body.weight(.semibold))
                         .foregroundStyle(palette.textPrimary)
-                    Text("Grant location access to see local conditions, visibility, and route weather alerts.")
+                    Text("Grant location access to see local conditions, visibility and route weather alerts.")
                         .font(EType.micro)
                         .foregroundStyle(palette.textSecondary)
                         .multilineTextAlignment(.leading)
@@ -450,7 +450,7 @@ struct ShipperHome: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Open Me · Diego Usoro · Eusorone Technologies")
-        .accessibilityHint("Open your account, wallet, network, and settings")
+        .accessibilityHint("Open your account, wallet, network and settings")
     }
 
     // MARK: - Attention card — gradient-rimmed, danger-washed top

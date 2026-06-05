@@ -32,10 +32,10 @@
 //                compliance status not yet shipped. CATALYST
 //                COMPLIANCE section paints a single placeholder card
 //                ("Fleet-scope catalyst compliance pending") instead
-//                of synthesising rows. 2×2 grid tiles paint "—" for
+//                of synthesising rows. 2×2 grid tiles paint "-" for
 //                Insurance/FMCSA/Hazmat/Claims values.
 //    EUSO-2119 — TopBar "{N} CATALYSTS · {V} VIOLATIONS" counter
-//                paints "—" until fleet-scope endpoint lands.
+//                paints "-" until fleet-scope endpoint lands.
 //
 //  Doctrine refs: §2 ME-tab nav (handled by ContentView); §3
 //  numbers-first copy ("98.2 / 100"); §4.3 single iridescent
@@ -257,7 +257,7 @@ struct ShipperCompliance: View {
                 .minimumScaleFactor(0.78)
             Spacer()
             // EUSO-2119 — fleet-scope catalyst count + violations not on API surface yet.
-            Text("— CATALYSTS · — VIOLATIONS")
+            Text("- CATALYSTS · - VIOLATIONS")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
@@ -274,7 +274,7 @@ struct ShipperCompliance: View {
                 .font(.system(size: 28, weight: .bold))
                 .tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
-            Text("Eusorone Technologies · last sync — · Carrier safety")
+            Text("Eusorone Technologies · last sync - · Carrier safety")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
         }
@@ -419,11 +419,11 @@ struct ShipperCompliance: View {
             spacing: Space.s3
         ) {
             // EUSO-2118 — fleet-scope tile values pending. Label + glyph
-            // canon from §17.2 / §11.4; values paint "—".
-            tile(kind: .insurance, label: "INSURANCE",   big: "—", sub: "fleet rollup pending", tone: .success)
-            tile(kind: .fmcsa,     label: "CARRIER SAFETY", big: "—", sub: "fleet rollup pending", tone: .success)
-            tile(kind: .hazmat,    label: "HAZMAT",      big: "—", sub: "active hazmat lanes",   tone: .hazmat)
-            tile(kind: .claims,    label: "CLAIMS YTD",   big: "—", sub: "open · closed",          tone: .info)
+            // canon from §17.2 / §11.4; values paint "-".
+            tile(kind: .insurance, label: "INSURANCE",   big: "-", sub: "fleet rollup pending", tone: .success)
+            tile(kind: .fmcsa,     label: "CARRIER SAFETY", big: "-", sub: "fleet rollup pending", tone: .success)
+            tile(kind: .hazmat,    label: "HAZMAT",      big: "-", sub: "active hazmat lanes",   tone: .hazmat)
+            tile(kind: .claims,    label: "CLAIMS YTD",   big: "-", sub: "open · closed",          tone: .info)
         }
     }
 
@@ -653,10 +653,10 @@ struct ShipperCompliance: View {
                     .background(Capsule().fill((s.creditApproved ? Brand.success : Brand.warning).opacity(0.18)))
             }
             HStack(spacing: Space.s3) {
-                kpiCol(label: "RATING",     value: s.creditRating.isEmpty ? "—" : s.creditRating)
+                kpiCol(label: "RATING",     value: s.creditRating.isEmpty ? "-" : s.creditRating)
                 kpiCol(label: "LIMIT",      value: formatMoney(s.creditLimit))
                 kpiCol(label: "AVAILABLE",  value: formatMoney(s.availableCredit), accent: Brand.success)
-                kpiCol(label: "TERMS",      value: s.paymentTerms.isEmpty ? "—" : s.paymentTerms)
+                kpiCol(label: "TERMS",      value: s.paymentTerms.isEmpty ? "-" : s.paymentTerms)
             }
         }
         .padding(Space.s3)
@@ -703,7 +703,7 @@ struct ShipperCompliance: View {
             }
             HStack(spacing: Space.s3) {
                 kpiCol(label: "GENERAL LIABILITY", value: formatMoney(lib.coverage))
-                kpiCol(label: "EXPIRES", value: lib.expires.isEmpty ? "—" : lib.expires)
+                kpiCol(label: "EXPIRES", value: lib.expires.isEmpty ? "-" : lib.expires)
             }
         }
         .padding(Space.s3)
@@ -957,7 +957,7 @@ struct ShipperCompliance: View {
         if n >= 1_000_000 { return String(format: "$%.1fM", Double(n) / 1_000_000) }
         if n >= 10_000    { return String(format: "$%.0fk", Double(n) / 1_000) }
         if n >= 1_000     { return String(format: "$%.1fk", Double(n) / 1_000) }
-        if n == 0          { return "—" }
+        if n == 0          { return "-" }
         return "$\(n)"
     }
 }

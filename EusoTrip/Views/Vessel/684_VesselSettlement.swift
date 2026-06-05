@@ -383,11 +383,11 @@ private struct VesselSettlementBody: View {
                 .padding(.top, Space.s2)
                 // Platform fee
                 feeRow(title: "Platform fee", sub: "calculateFee",
-                       amount: platformFee == nil ? "—" : fmtUSD(platformDeduct, signed: true))
+                       amount: platformFee == nil ? "-" : fmtUSD(platformDeduct, signed: true))
                     .padding(.top, Space.s2)
                 // Factoring advance
                 feeRow(title: "Factoring advance", sub: "net-7 QuickPay",
-                       amount: factoringFee == nil ? "—" : fmtUSD(factoringDeduct, signed: true))
+                       amount: factoringFee == nil ? "-" : fmtUSD(factoringDeduct, signed: true))
                     .padding(.top, Space.s2)
             }
             .padding(Space.s4)
@@ -606,7 +606,7 @@ private struct VesselSettlementBody: View {
                 input: PlatformFeeIn(transactionType: "VESSEL_SETTLEMENT", amount: gross))
             self.platformFee = ack.totalFee ?? ack.feeAmount ?? ack.baseFee
         } catch {
-            // Soft-fail: the line renders "—" rather than blocking the surface.
+            // Soft-fail: the line renders "-" rather than blocking the surface.
             self.platformFee = nil
         }
         // adaptiveFee.calculateFintechFee — product=FACTORING.

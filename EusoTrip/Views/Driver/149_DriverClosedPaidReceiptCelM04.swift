@@ -13,7 +13,7 @@
 //  Doctrine: every visible value binds to a tRPC read. No scenario
 //  literals — the wireframe ships canonical CEL/M-04/JR/DU strings
 //  to illustrate a moment; this production view substitutes them
-//  with whichever load is currently bound and shows "—" when a
+//  with whichever load is currently bound and shows "-" when a
 //  field hasn't resolved yet. Both action buttons route through
 //  DriverNavController.
 //
@@ -135,14 +135,14 @@ private struct PRBody: View {
     @State private var load: PRLoadCtx?
     @State private var earnings: PREarnings?
 
-    private var loadNumberDisplay: String { load?.loadNumber ?? "—" }
+    private var loadNumberDisplay: String { load?.loadNumber ?? "-" }
     private var distanceDisplay: String {
-        guard let d = load?.distance, d > 0 else { return "—" }
+        guard let d = load?.distance, d > 0 else { return "-" }
         return "\(Int(d.rounded())) mi"
     }
     private var settleDateDisplay: String {
         guard let iso = load?.deliveryDate,
-              let delivered = ISO8601DateFormatter().date(from: iso) else { return "—" }
+              let delivered = ISO8601DateFormatter().date(from: iso) else { return "-" }
         let settle = Calendar.current.date(byAdding: .day, value: 30, to: delivered) ?? delivered
         let f = DateFormatter(); f.dateFormat = "M/d"
         return f.string(from: settle)
@@ -154,13 +154,13 @@ private struct PRBody: View {
         if let r = load?.rate, let n = Double(r), n > 0 {
             return Self.currency(n)
         }
-        return "—"
+        return "-"
     }
     private var rpmDisplay: String {
         if let r = earnings?.ratePerMile, r > 0 {
             return String(format: "$%.2f", r)
         }
-        return "—"
+        return "-"
     }
     private var laneDisplay: String? {
         guard let p = load?.pickupLocation?.city, let d = load?.deliveryLocation?.city else { return nil }
@@ -242,12 +242,12 @@ private struct PRBody: View {
     }
 
     private var identityRow: some View {
-        let driverInitials = load?.driver?.initials ?? "—"
+        let driverInitials = load?.driver?.initials ?? "-"
         let driverName = load?.driver?.name ?? "driver"
-        let carrierName = load?.catalyst?.companyName ?? load?.catalyst?.name ?? "—"
-        let mc = load?.catalyst?.mcNumber.map { "MC-\($0)" } ?? "—"
-        let dispatchName = load?.catalyst?.name ?? "—"
-        let shipperName = load?.shipper?.name ?? "—"
+        let carrierName = load?.catalyst?.companyName ?? load?.catalyst?.name ?? "-"
+        let mc = load?.catalyst?.mcNumber.map { "MC-\($0)" } ?? "-"
+        let dispatchName = load?.catalyst?.name ?? "-"
+        let shipperName = load?.shipper?.name ?? "-"
         return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
@@ -278,7 +278,7 @@ private struct PRBody: View {
             ("PAYOUT", payoutDisplay,    "NET-30 · settled",              .green),
             ("RPM",    rpmDisplay,       distanceDisplay,                 .blue),
             ("NET-30", settleDateDisplay, "settle date",                  .blue),
-            ("STATE",  "CLOSED",          load?.status ?? "—",            .green),
+            ("STATE",  "CLOSED",          load?.status ?? "-",            .green),
         ]
         let cols = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
         return LazyVGrid(columns: cols, spacing: 8) {

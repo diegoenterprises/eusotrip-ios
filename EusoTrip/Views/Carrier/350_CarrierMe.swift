@@ -46,7 +46,7 @@ struct CarrierMeScreen: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("You'll need to sign back in to dispatch loads, view drivers, and access ELD.")
+            Text("You'll need to sign back in to dispatch loads, view drivers and access ELD.")
         }
     }
 
@@ -63,7 +63,7 @@ struct CarrierMeScreen: View {
                     .foregroundStyle(LinearGradient.diagonal)
             }
             Spacer(minLength: 0)
-            Text(session.user?.companyId.map { "companyId · \($0)" } ?? "—")
+            Text(session.user?.companyId.map { "companyId · \($0)" } ?? "-")
                 .font(.system(size: 9, weight: .heavy, design: .monospaced))
                 .tracking(1.0).foregroundStyle(palette.textTertiary).lineLimit(1)
         }

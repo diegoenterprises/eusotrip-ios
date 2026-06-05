@@ -466,7 +466,7 @@ private struct RailYardMapBody: View {
                 // Trailing: occupancy pill + tabular slots-used.
                 VStack(alignment: .trailing, spacing: Space.s1) {
                     occupancyPill(pctInt: pctInt, occupied: occ, capacity: cap, accent: accent)
-                    Text(cap > 0 ? "\(occ)/\(cap)" : "—")
+                    Text(cap > 0 ? "\(occ)/\(cap)" : "-")
                         .font(.system(size: 14, weight: .bold, design: .default))
                         .monospacedDigit()
                         .foregroundStyle(palette.textPrimary)
@@ -489,7 +489,7 @@ private struct RailYardMapBody: View {
         let label: String
         let color: Color
         if capacity <= 0 {
-            label = "—"; color = palette.textTertiary
+            label = "-"; color = palette.textTertiary
         } else if pctInt < 30 {
             label = "OPEN"; color = Brand.rail
         } else {

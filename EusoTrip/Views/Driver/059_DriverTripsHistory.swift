@@ -259,7 +259,7 @@ struct DriverTripsHistory: View {
         EusoEmptyState(
             systemImage: "checkmark.seal",
             title: "No completed trips yet",
-            subtitle: "Once a load is marked delivered, it moves here with final pay, miles, and cargo.",
+            subtitle: "Once a load is marked delivered, it moves here with final pay, miles and cargo.",
             cta: (label: "Refresh", action: {
                 Task { await loadsStore.refresh() }
             })
@@ -467,7 +467,7 @@ struct DriverTripsHistory: View {
     private func routeLine(origin: String, destination: String) -> String {
         let o = origin.trimmingCharacters(in: .whitespaces)
         let d = destination.trimmingCharacters(in: .whitespaces)
-        if o.isEmpty && d.isEmpty { return "—" }
+        if o.isEmpty && d.isEmpty { return "-" }
         if o.isEmpty { return "→ \(d)" }
         if d.isEmpty { return "\(o) →" }
         return "\(o) → \(d)"

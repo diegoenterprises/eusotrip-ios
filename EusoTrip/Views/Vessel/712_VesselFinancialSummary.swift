@@ -349,7 +349,7 @@ private struct VesselFinancialSummaryBody: View {
             kpiCell(label: "REVENUE", value: moneyKPI(r.revenue),
                     footnote: "MTD", footColor: Brand.success, gradient: false, valueColor: palette.textPrimary)
             kpiCell(label: "COST", value: moneyKPI(r.totalCost),
-                    footnote: r.revenue > 0 ? "\(Int((r.totalCost / r.revenue * 100).rounded()))% of rev" : "—",
+                    footnote: r.revenue > 0 ? "\(Int((r.totalCost / r.revenue * 100).rounded()))% of rev" : "-",
                     footColor: palette.textSecondary, gradient: false, valueColor: palette.textPrimary)
             kpiCell(label: "MARGIN", value: "\(Int(r.marginPct.rounded()))%",
                     footnote: r.marginPct >= 0 ? "net" : "loss",

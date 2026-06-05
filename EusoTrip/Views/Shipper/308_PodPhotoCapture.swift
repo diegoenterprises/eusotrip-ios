@@ -104,7 +104,7 @@ private struct PodCaptureBody: View {
         } else if let err = classifyError {
             LifecycleCard(accentWarning: true) {
                 LifecycleSection(label: "DOCUMENT INTELLIGENCE", icon: "sparkles.tv")
-                Text("Couldn't read the document — \(err). You can still submit; we'll review it after upload.")
+                Text("Couldn't read the document, \(err). You can still submit; we'll review it after upload.")
                     .font(EType.caption).foregroundStyle(Brand.warning)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -142,7 +142,7 @@ private struct PodCaptureBody: View {
             if lowConfidence {
                 Text(c.classifiedType == "unknown"
                      ? "We couldn't confidently identify this document. Please confirm it's the proof of delivery before submitting."
-                     : "Low confidence this is a proof of delivery — please double-check the photo before submitting.")
+                     : "Low confidence this is a proof of delivery. Please double-check the photo before submitting.")
                     .font(EType.caption).foregroundStyle(Brand.warning)
                     .fixedSize(horizontal: false, vertical: true)
             } else if !isPod {

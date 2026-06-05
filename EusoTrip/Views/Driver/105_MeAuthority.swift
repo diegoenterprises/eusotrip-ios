@@ -242,7 +242,7 @@ struct MeAuthority: View {
                 Text("YOUR AUTHORITY")
                     .font(EType.micro).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
-                Text(a.companyName ?? "—")
+                Text(a.companyName ?? "-")
                     .font(EType.h2)
                     .foregroundStyle(palette.textPrimary)
                 if let legal = a.legalName, legal != a.companyName {
@@ -251,8 +251,8 @@ struct MeAuthority: View {
                         .foregroundStyle(palette.textSecondary)
                 }
                 HStack(spacing: Space.s3) {
-                    MetricTile(label: "DOT", value: a.dotNumber ?? "—")
-                    MetricTile(label: "MC",  value: a.mcNumber ?? "—")
+                    MetricTile(label: "DOT", value: a.dotNumber ?? "-")
+                    MetricTile(label: "MC",  value: a.mcNumber ?? "-")
                 }
                 if let exp = a.insuranceExpiry?.prefix(10) {
                     Text("Insurance expires \(exp)")
@@ -260,7 +260,7 @@ struct MeAuthority: View {
                         .foregroundStyle(palette.textSecondary)
                 }
                 StatusPill(
-                    text: (a.complianceStatus ?? "—").capitalized,
+                    text: (a.complianceStatus ?? "-").capitalized,
                     kind: (a.complianceStatus ?? "").lowercased() == "compliant" ? .success : .warning
                 )
             }
@@ -277,7 +277,7 @@ struct MeAuthority: View {
                              : (l.lesseeName ?? "Operator"))
                             .font(EType.bodyStrong)
                             .foregroundStyle(palette.textPrimary)
-                        Text("\(l.leaseType.replacingOccurrences(of: "_", with: " ").capitalized) · MC \(l.lessorMcNumber ?? l.mcNumber ?? "—")")
+                        Text("\(l.leaseType.replacingOccurrences(of: "_", with: " ").capitalized) · MC \(l.lessorMcNumber ?? l.mcNumber ?? "-")")
                             .font(EType.caption)
                             .foregroundStyle(palette.textSecondary)
                     }
@@ -360,7 +360,7 @@ struct MeAuthority: View {
                     EusoEmptyState(
                         systemImage: "magnifyingglass",
                         title: "No carriers found",
-                        subtitle: "Search by company name, MC, or DOT to find authorities accepting lease-on."
+                        subtitle: "Search by company name, MC or DOT to find authorities accepting lease-on."
                     )
                     .padding(.top, Space.s4)
                 } else {
@@ -405,16 +405,16 @@ struct MeAuthority: View {
                     .frame(width: 32, height: 32)
                     .background(Circle().fill(palette.bgCardSoft))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(a.companyName ?? "—")
+                    Text(a.companyName ?? "-")
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
-                    Text("MC \(a.mcNumber ?? "—") · DOT \(a.dotNumber ?? "—")")
+                    Text("MC \(a.mcNumber ?? "-") · DOT \(a.dotNumber ?? "-")")
                         .font(EType.caption.monospacedDigit())
                         .foregroundStyle(palette.textSecondary)
                     HStack(spacing: 6) {
                         StatusPill(
-                            text: (a.complianceStatus ?? "—").capitalized,
+                            text: (a.complianceStatus ?? "-").capitalized,
                             kind: (a.complianceStatus ?? "").lowercased() == "compliant" ? .success : .warning
                         )
                         if a.insuranceValid == true {
@@ -452,7 +452,7 @@ struct MeAuthority: View {
                     EusoEmptyState(
                         systemImage: "truck.box",
                         title: "No equipment on file",
-                        subtitle: "Vehicles in your fleet show up here with their authority source — own or leased."
+                        subtitle: "Vehicles in your fleet show up here with their authority source, own or leased."
                     )
                     .padding(.top, Space.s4)
                 } else {
@@ -477,12 +477,12 @@ struct MeAuthority: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)
-                Text("VIN \(v.vin ?? "—") · \(v.licensePlate ?? "—")")
+                Text("VIN \(v.vin ?? "-") · \(v.licensePlate ?? "-")")
                     .font(EType.caption.monospacedDigit())
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
                 if v.authoritySource == "leased" {
-                    Text("Leased · MC \(v.leaseMcNumber ?? "—")")
+                    Text("Leased · MC \(v.leaseMcNumber ?? "-")")
                         .font(EType.micro.weight(.semibold))
                         .foregroundStyle(Brand.warning)
                 } else {

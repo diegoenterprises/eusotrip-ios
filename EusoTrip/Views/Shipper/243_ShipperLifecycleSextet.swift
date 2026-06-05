@@ -126,7 +126,7 @@ private struct LifecycleBody: View {
                 Text("\(s.stage) · \(s.citation)")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                 if let l = load {
-                    Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "—") → \(l.destCity ?? "—") · \(l.trailerType ?? "—")")
+                    Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "-") → \(l.destCity ?? "-") · \(l.trailerType ?? "-")")
                         .font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
                 }
             }
@@ -141,7 +141,7 @@ private struct LifecycleBody: View {
                     Text(initialsFor(l.assignedDriverName)).font(.system(size: 16, weight: .heavy)).foregroundStyle(.white)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(l.carrierName ?? "—").font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
+                    Text(l.carrierName ?? "-").font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
                     if let n = l.assignedDriverName { Text(n).font(.caption).foregroundStyle(palette.textSecondary) }
                 }
                 Spacer()
@@ -171,7 +171,7 @@ private struct LifecycleBody: View {
     }
 
     private func initialsFor(_ name: String?) -> String {
-        guard let n = name?.trimmingCharacters(in: .whitespaces), !n.isEmpty else { return "—" }
+        guard let n = name?.trimmingCharacters(in: .whitespaces), !n.isEmpty else { return "-" }
         let parts = n.split(separator: " ").map(String.init)
         let f = parts.first?.first.map(String.init) ?? ""
         let l = parts.count > 1 ? (parts.last?.first.map(String.init) ?? "") : ""
@@ -202,14 +202,14 @@ struct ShipperAtGateScreen: View {
                         citation: "§277 · WITHIN-TRACK THIRD-PORT 2/3",
                         title: "Driver at the gate",
                         kpis: [
-                            .init(label: "DOCK", value: l?.dockNumber ?? "—", subtitle: "bay live", color: .blue),
+                            .init(label: "DOCK", value: l?.dockNumber ?? "-", subtitle: "bay live", color: .blue),
                             .init(label: "DWELL", value: "0:00", subtitle: "2H FREE", color: .green),
-                            .init(label: "PAYABLE", value: "$\(l?.rate ?? "—")", subtitle: "NET-30", color: .green),
+                            .init(label: "PAYABLE", value: "$\(l?.rate ?? "-")", subtitle: "NET-30", color: .green),
                             .init(label: "ETA-LOAD", value: "~2h", subtitle: "estimated", color: .orange),
                         ]
                     )
                 },
-                subtitleFor: { l in "Dock \(l?.dockNumber ?? "—") · ME at gate · 0:00 ago" }
+                subtitleFor: { l in "Dock \(l?.dockNumber ?? "-") · ME at gate · 0:00 ago" }
             )
         }
     }
@@ -231,10 +231,10 @@ struct ShipperAtDockScreen: View {
                         citation: "§278 · WITHIN-TRACK FOURTH-PORT 2/3",
                         title: "At dock · loading",
                         kpis: [
-                            .init(label: "DOCK", value: l?.dockNumber ?? "—", subtitle: "IN · loading", color: .orange),
+                            .init(label: "DOCK", value: l?.dockNumber ?? "-", subtitle: "IN · loading", color: .orange),
                             .init(label: "PALLETS", value: "\(l?.palletCount ?? 0)", subtitle: "to load", color: .blue),
                             .init(label: "TEMP", value: tempLabel(l?.temperatureF), subtitle: "SEAL · pickup", color: .blue),
-                            .init(label: "PAYABLE", value: "$\(l?.rate ?? "—")", subtitle: "NET-30 · queued", color: .green),
+                            .init(label: "PAYABLE", value: "$\(l?.rate ?? "-")", subtitle: "NET-30 · queued", color: .green),
                         ]
                     )
                 },
@@ -319,13 +319,13 @@ struct ShipperAtDeliveryScreen: View {
                         title: "My delivery · arrived",
                         kpis: [
                             .init(label: "ETA", value: "0m", subtitle: "ARRIVED · OTA", color: .green),
-                            .init(label: "DOCK", value: l?.dockNumber ?? "—", subtitle: "IN · receiving", color: .orange),
+                            .init(label: "DOCK", value: l?.dockNumber ?? "-", subtitle: "IN · receiving", color: .orange),
                             .init(label: "TEMP", value: tempLabel(l?.temperatureF), subtitle: "SEAL · arrival", color: .blue),
-                            .init(label: "PAYABLE", value: "$\(l?.rate ?? "—")", subtitle: "NET-30 · staged", color: .green),
+                            .init(label: "PAYABLE", value: "$\(l?.rate ?? "-")", subtitle: "NET-30 · staged", color: .green),
                         ]
                     )
                 },
-                subtitleFor: { l in "Dock \(l?.dockNumber ?? "—") receiving bay · BOL co-sign begun · 0/\(l?.palletCount ?? 0) staged" }
+                subtitleFor: { l in "Dock \(l?.dockNumber ?? "-") receiving bay · BOL co-sign begun · 0/\(l?.palletCount ?? 0) staged" }
             )
         }
     }
@@ -381,12 +381,12 @@ private func lifecycleLoadMode(_ trailerType: String?) -> TransportMode {
 }
 
 private func tempLabel(_ f: Double?) -> String {
-    guard let f else { return "—" }
+    guard let f else { return "-" }
     return String(format: "%.0f°F", f)
 }
 
 private func etaText(_ iso: String?) -> String {
-    guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return "—" }
+    guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return "-" }
     let mins = Int(d.timeIntervalSinceNow / 60)
     if mins < 0 { return "ARRIVED" }
     if mins < 60 { return "\(mins)m" }

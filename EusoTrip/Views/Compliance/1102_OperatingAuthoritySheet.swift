@@ -304,7 +304,7 @@ private struct OperatingAuthorityBody: View {
                 Text("Attach operating authority")
                     .font(.system(size: 22, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
-                Text("Capture the credential, run a live registry check where one exists, and enroll the company in out-of-service monitoring.")
+                Text("Capture the credential, run a live registry check where one exists and enroll the company in out-of-service monitoring.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -477,7 +477,7 @@ private struct OperatingAuthorityBody: View {
                         if case .done = phase { phase = .idle }
                     }
                 if fmcsaMode != nil {
-                    Text("USDOT/MC numbers are filled automatically once SAFER verify succeeds — you can override above.")
+                    Text("USDOT/MC numbers are filled automatically once SAFER verify succeeds. You can override above.")
                         .font(EType.micro)
                         .foregroundStyle(palette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -666,7 +666,7 @@ private struct OperatingAuthorityBody: View {
                         monitoringNote = "Active"
                     }
                 } else {
-                    monitoringNote = "Subscribed — pending first check"
+                    monitoringNote = "Subscribed - pending first check"
                 }
             } catch {
                 monitoringNote = "Couldn't enroll OOS monitor: " + errorText(error)
@@ -822,13 +822,13 @@ private struct StatusLook {
             tint = Brand.warning
             icon = "wifi.exclamationmark"
             headline = "PROVIDER UNAVAILABLE"
-            body = "The verifying registry couldn't be reached. The authority is recorded and queued for manual review — it is not marked verified."
+            body = "The verifying registry couldn't be reached. The authority is recorded and queued for manual review, it is not marked verified."
         default:
             // pending, queued, submitted, manual_review, unknown, null → neutral
             tint = Brand.warning
             icon = "clock.badge.checkmark"
             headline = "PENDING REVIEW"
-            body = "Recorded on the company. Most registries have no real-time feed, so this stays pending until the issuing body confirms — we don't fake a verified state."
+            body = "Recorded on the company. Most registries have no real-time feed, so this stays pending until the issuing body confirms, we don't fake a verified state."
         }
     }
 }

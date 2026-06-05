@@ -257,7 +257,7 @@ private struct VesselChainOfCustodyBody: View {
     }
 
     private func blockRow(_ block: CustodyBlock667, isLatest: Bool) -> some View {
-        let title = (block.eventType ?? "—").uppercased()
+        let title = (block.eventType ?? "-").uppercased()
             + (block.eventData?.summary.map { " · \($0)" } ?? "")
         let hashStr = truncatedHash(block.blockHash)
         let prevStr = truncatedHash(block.previousBlockHash)

@@ -388,7 +388,7 @@ struct DisputeListView: View {
                             .monospacedDigit()
                     }
                 }
-                Text(d.reason ?? "—")
+                Text(d.reason ?? "-")
                     .font(EType.body)
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(2)
@@ -428,7 +428,7 @@ struct DisputeListView: View {
             Text("No active disputes")
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
-            Text("Filed disputes will land here. The counterparty also sees them — both sides exchange evidence in-app, no email back-and-forth.")
+            Text("Filed disputes will land here. The counterparty also sees them. Both sides exchange evidence in-app, no email back-and-forth.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
@@ -640,7 +640,7 @@ struct DisputeDetailView: View {
             Text("REASON")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                 .foregroundStyle(LinearGradient.diagonal)
-            Text(dispute.reason ?? "—")
+            Text(dispute.reason ?? "-")
                 .font(EType.body)
                 .foregroundStyle(palette.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -659,7 +659,7 @@ struct DisputeDetailView: View {
                 .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                 .foregroundStyle(LinearGradient.diagonal)
             if dispute.evidence.isEmpty {
-                Text("No replies yet. Add a response below — both sides see every message.")
+                Text("No replies yet. Add a response below. Both sides see every message.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             } else {
@@ -692,7 +692,7 @@ struct DisputeDetailView: View {
                 Text(threadLabel(for: e))
                     .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                     .foregroundStyle(palette.textTertiary)
-                Text(e.message ?? e.description ?? "—")
+                Text(e.message ?? e.description ?? "-")
                     .font(EType.body)
                     .foregroundStyle(palette.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -741,7 +741,7 @@ struct DisputeDetailView: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                     .foregroundStyle(palette.textTertiary)
                 HStack(alignment: .bottom, spacing: Space.s2) {
-                    TextField("Reply with context, evidence, or a counter-offer…",
+                    TextField("Reply with context, evidence or a counter-offer…",
                               text: $responseDraft,
                               axis: .vertical)
                         .lineLimit(2, reservesSpace: true)

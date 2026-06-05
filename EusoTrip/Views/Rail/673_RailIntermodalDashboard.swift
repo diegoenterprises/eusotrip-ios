@@ -18,7 +18,7 @@
 //    -> drives the hero band (boxes-moving count, mode-split bar + legend, avg transit days).
 //  STUB · named-gap (to the-oath):
 //    (1) no onTimePct on the server -> 92% derived client-side; propose {onTimePct}.
-//    (2) avgTransitDays returns 0 -> shown as "—" until settled-history populates it.
+//    (2) avgTransitDays returns 0 -> shown as "-" until settled-history populates it.
 //    (3) getIntermodalTracking does not yet return {activeLeg,positionPct,etaIso,atTransfer,cutoffIso}
 //        so the per-journey leg spine + ETA + ESang line are seeded in #Preview ONLY; the live
 //        board renders an honest empty state until that tick lands.
@@ -103,7 +103,7 @@ private struct RailIntermodalDashboardBody: View {
     private var onTimePct: Int { 92 }
 
     private var avgTransitLabel: String {
-        guard let d = dash?.avgTransitDays, d > 0.01 else { return "—" }
+        guard let d = dash?.avgTransitDays, d > 0.01 else { return "-" }
         return String(format: "%.1fd", d)
     }
 
@@ -353,7 +353,7 @@ private struct RailIntermodalDashboardBody: View {
             .padding(.trailing, 12)
             VStack(alignment: .leading, spacing: 3) {
                 Text("ESANG AI").font(.system(size: 9, weight: .heavy)).kerning(1.0).foregroundStyle(eusoPrimary)
-                Text("Re-slot the Memphis dray now — it\u{2019}s at the")
+                Text("Re-slot the Memphis dray now, it\u{2019}s at the")
                     .font(.system(size: 12, weight: .semibold)).foregroundStyle(palette.textPrimary)
                 Text("ramp with 2h to cutoff; next window is 14:00.")
                     .font(.system(size: 12)).foregroundStyle(palette.textSecondary)

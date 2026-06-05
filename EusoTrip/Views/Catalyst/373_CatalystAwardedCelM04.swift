@@ -11,7 +11,7 @@
 //  losers), and a CEL-fleet driver-assign candidate strip (≤ 24h).
 //
 //  Server wiring (no stubs / no fake data — every visible award value
-//  binds to a real tRPC proc or paints "—" until it resolves):
+//  binds to a real tRPC proc or paints "-" until it resolves):
 //    • `catalysts.getAcceptedBid` ({ loadId }) → the catalyst-side
 //      winning-bid envelope ({ id, loadId, amount, status, notes,
 //      submittedAt, loadNumber, rate }) or null. MCP-confirmed at
@@ -158,11 +158,11 @@ private struct CatalystAwardedCelM04Body: View {
         return r
     }
     private var awardedAmountDisplay: String {
-        guard let a = awardedAmount else { return "—" }
+        guard let a = awardedAmount else { return "-" }
         return "$\(Int(a.rounded()).formatted(.number))"
     }
     private var winDisplay: String {
-        guard let a = awardedAmount, let t = targetRate else { return "—" }
+        guard let a = awardedAmount, let t = targetRate else { return "-" }
         let win = t - a
         let sign = win >= 0 ? "+" : "−"
         return "\(sign)$\(Int(abs(win).rounded()).formatted(.number))"
@@ -172,12 +172,12 @@ private struct CatalystAwardedCelM04Body: View {
         return "vs $\(Int(t.rounded()).formatted(.number)) target"
     }
     private var rpmDisplay: String {
-        guard let a = awardedAmount, laneMiles > 0 else { return "—" }
+        guard let a = awardedAmount, laneMiles > 0 else { return "-" }
         return String(format: "$%.2f/mi", a / Double(laneMiles))
     }
     private var loadNumberDisplay: String {
         if let n = award?.loadNumber, !n.isEmpty { return n }
-        return "—"
+        return "-"
     }
     private var awardConfirmed: Bool {
         (award?.status ?? "").lowercased() == "accepted"
@@ -572,7 +572,7 @@ private struct CatalystAwardedCelM04Body: View {
             }
         }()
         let isOurselves = rank == .ourselvesAwarded
-        let amountText = amount > 0 ? "$\(amount.formatted(.number))" : "—"
+        let amountText = amount > 0 ? "$\(amount.formatted(.number))" : "-"
 
         return HStack(spacing: 10) {
             ZStack {
@@ -791,7 +791,7 @@ private struct CatalystAwardedCelM04Body: View {
         loadError = nil
         defer { loading = false }
         guard !loadId.isEmpty, loadId != "0" else {
-            // No id — leave award nil; honest empty values render as "—".
+            // No id — leave award nil; honest empty values render as "-".
             return
         }
         struct In: Encodable { let loadId: String }

@@ -19,7 +19,7 @@
 //                          progress bar 54% to net-zero (placeholders pending EUSO-2112)
 //    5. EQUIVALENT TO label
 //    6. Equivalence triplet 3 tiles (TREES / DIESEL / CARS) — hydrates from live
-//                          calculator result; falls back to "—" when no result
+//                          calculator result; falls back to "-" when no result
 //    7. PER-SHIPMENT CALCULATOR · {loadId} eyebrow
 //    8. Calculator card    lane summary + mode tabs (Truck active · Rail / Multimodal
 //                          placeholders) + result row (EMISSIONS + VS LANE AVG delta)
@@ -32,7 +32,7 @@
 //
 //  Backend gaps surfaced (logged in audit log, no fake data):
 //    EUSO-2112 — `sustainability.getCarbonLedger` not yet shipped
-//                from iOS API surface. Hero YTD card paints "—"
+//                from iOS API surface. Hero YTD card paints "-"
 //                placeholders for total CO₂e / loads / net-zero
 //                progress / saved tonnes until backend ships the
 //                ledger envelope.
@@ -238,8 +238,8 @@ struct ShipperSustainability: View {
                 .minimumScaleFactor(0.78)
             Spacer()
             // EUSO-2112 — getCarbonLedger not yet on iOS API; counter
-            // paints "—" until backend ships the YTD ledger.
-            Text("YTD · — t SAVED")
+            // paints "-" until backend ships the YTD ledger.
+            Text("YTD · - t SAVED")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
@@ -287,7 +287,7 @@ struct ShipperSustainability: View {
                     )
                     .alignmentGuide(.firstTextBaseline) { d in d[VerticalAlignment.center] + 8 }
 
-                Text("—")
+                Text("-")
                     .font(.system(size: 44, weight: .bold).monospacedDigit())
                     .foregroundStyle(palette.textTertiary)
                 Text("t CO₂e")
@@ -352,17 +352,17 @@ struct ShipperSustainability: View {
             equivalenceTile(
                 glyph: .leaf,
                 label: "TREES NEEDED",
-                value: result.map { "\($0.equivalents.treesNeededToOffset)" } ?? "—"
+                value: result.map { "\($0.equivalents.treesNeededToOffset)" } ?? "-"
             )
             equivalenceTile(
                 glyph: .fuelPump,
                 label: "DIESEL EQUIV",
-                value: result.map { "\($0.equivalents.gallonsOfGasoline) gal" } ?? "—"
+                value: result.map { "\($0.equivalents.gallonsOfGasoline) gal" } ?? "-"
             )
             equivalenceTile(
                 glyph: .car,
                 label: "CAR MILES",
-                value: result.map { formatThousandsInt($0.equivalents.milesInAvgCar) } ?? "—"
+                value: result.map { formatThousandsInt($0.equivalents.milesInAvgCar) } ?? "-"
             )
         }
     }

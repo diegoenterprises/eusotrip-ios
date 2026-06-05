@@ -53,19 +53,19 @@ struct HaulPaySettlement: View {
     // Doctrine: 0% mock data — no fake settlements rendered in
     // production. The screen still draws the layout; placeholder values
     // disappear the moment the live earnings record hydrates.
-    private let fallbackClock        = "—"
-    private let fallbackLoadTag      = "LOAD · —"
-    private let fallbackNetBig       = "$ —"
+    private let fallbackClock        = "-"
+    private let fallbackLoadTag      = "LOAD · -"
+    private let fallbackNetBig       = "$ -"
     private let fallbackNetSub       = ""
     private let fallbackNetCaption   = "AWAITING POD"
-    private let fallbackGrossLabel   = "Gross invoice · —"
-    private let fallbackGrossSub     = "—"
-    private let fallbackGrossValue   = "—"
-    private let fallbackInstant      = "—"
-    private let fallbackInstantSub   = "FEE —"
-    private let fallback24h          = "—"
+    private let fallbackGrossLabel   = "Gross invoice · -"
+    private let fallbackGrossSub     = "-"
+    private let fallbackGrossValue   = "-"
+    private let fallbackInstant      = "-"
+    private let fallbackInstantSub   = "FEE -"
+    private let fallback24h          = "-"
     private let fallback24hSub       = "FREE"
-    private let fallbackPreCheck     = "—"
+    private let fallbackPreCheck     = "-"
     private let fallbackPreCheckSub  = "AUTO · FREE"
     private let fallbackeSang        = "ESANG will narrate the cadence the moment your settlement clears."
 
@@ -286,21 +286,21 @@ struct HaulPaySettlement: View {
         // for the right product type, but values are em-dashed
         // until the settlement record is live.
         var rows: [DedRow] = [
-            .init(icon: "rectangle.stack.fill", label: "HaulPay factoring", sub: "2.5% OF GROSS", value: "−$—"),
-            .init(icon: "shield.fill",          label: "EusoPlatform fee",  sub: "1.0% OF GROSS", value: "−$—"),
+            .init(icon: "rectangle.stack.fill", label: "HaulPay factoring", sub: "2.5% OF GROSS", value: "−$-"),
+            .init(icon: "shield.fill",          label: "EusoPlatform fee",  sub: "1.0% OF GROSS", value: "−$-"),
         ]
         if ctx.isHazmat {
-            rows.append(.init(icon: "drop.fill", label: "HM-HazmatPool escrow", sub: "REVERSED ON POD", value: "−$—"))
+            rows.append(.init(icon: "drop.fill", label: "HM-HazmatPool escrow", sub: "REVERSED ON POD", value: "−$-"))
         }
         switch ctx.product {
         case .reefer:
-            rows.append(.init(icon: "thermometer.snowflake", label: "Cold-chain audit", sub: "USDA TRACE FEE", value: "−$—"))
+            rows.append(.init(icon: "thermometer.snowflake", label: "Cold-chain audit", sub: "USDA TRACE FEE", value: "−$-"))
         case .flatbed:
-            rows.append(.init(icon: "link", label: "Securement audit", sub: "DOT 393 ATTEST", value: "−$—"))
+            rows.append(.init(icon: "link", label: "Securement audit", sub: "DOT 393 ATTEST", value: "−$-"))
         case .container, .railIntermodal, .vesselContainer:
-            rows.append(.init(icon: "cube.box.fill", label: "Chassis pool fee", sub: "DAILY USE", value: "−$—"))
+            rows.append(.init(icon: "cube.box.fill", label: "Chassis pool fee", sub: "DAILY USE", value: "−$-"))
         case .railBulk, .vesselBulk:
-            rows.append(.init(icon: "circle.hexagongrid.fill", label: "Grounding kit fee", sub: "BULK CARGO", value: "−$—"))
+            rows.append(.init(icon: "circle.hexagongrid.fill", label: "Grounding kit fee", sub: "BULK CARGO", value: "−$-"))
         default:
             break
         }

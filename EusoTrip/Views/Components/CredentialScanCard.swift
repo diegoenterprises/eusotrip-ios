@@ -27,7 +27,7 @@ import VisionKit
 
 /// Convenience accessor for one scanned field's display string.
 extension CredentialScannerAPI.ScannedField {
-    var displayString: String { value?.stringValue ?? "—" }
+    var displayString: String { value?.stringValue ?? "-" }
     var asStringArray: [String]? { value?.arrayValue }
     /// Confidence below 0.85 is highlighted as "needs review" so the
     /// host form can prompt the user to double-check.

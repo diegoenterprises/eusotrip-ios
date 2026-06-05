@@ -51,34 +51,34 @@ struct eSangDispatchChat: View {
 
     private var brief: String {
         let n = ctx.beatCommodityDescriptor
-        return "Morning, Michael Eusorone. Reset returned at 09:30. I pulled one tender in your lane — Univar Curtis Bay to Yara York, \(n.contains("NH3") ? "NH3, " : "")150 mi, $1,420. Weather is 42°F scattered showers along I-83. Want the breakdown?"
+        return "Morning, Michael Eusorone. Reset returned at 09:30. I pulled one tender in your lane, Univar Curtis Bay to Yara York, \(n.contains("NH3") ? "NH3, " : "")150 mi, $1,420. Weather is 42°F scattered showers along I-83. Want the breakdown?"
     }
 
     private var driverReply: String {
-        "Yeah — how does the rate compare and is tractor good to go?"
+        "Yeah, how does the rate compare and is tractor good to go?"
     }
 
     private var dispatchReply: String {
         switch ctx.product {
         case .hazmatTanker, .vesselTanker:
-            return "$9.46/mi net — +$0.42 over lane avg the last 14 days. Tractor passed Saturday's post-trip, MC-331 domes were purged, urea at 78%. DOT inspection sticker expires May 14."
+            return "$9.46/mi net, +$0.42 over lane avg the last 14 days. Tractor passed Saturday's post-trip, MC-331 domes were purged, urea at 78%. DOT inspection sticker expires May 14."
         case .reefer:
-            return "$9.46/mi net — +$0.42 over lane avg. Reefer pulled-down to set-point, fuel at 64%, thermograph clean. DOT inspection clean."
+            return "$9.46/mi net, +$0.42 over lane avg. Reefer pulled-down to set-point, fuel at 64%, thermograph clean. DOT inspection clean."
         case .flatbed:
-            return "$9.46/mi net — +$0.42 over lane avg. Tarps + 12 straps + 2 chains staged, WLL within spec. DOT inspection clean."
+            return "$9.46/mi net, +$0.42 over lane avg. Tarps + 12 straps + 2 chains staged, WLL within spec. DOT inspection clean."
         case .container, .railIntermodal, .vesselContainer:
-            return "$9.46/mi net — +$0.42 over lane avg. Chassis pre-trip clean, twistlocks oiled, EDI 322 armed. DOT inspection clean."
+            return "$9.46/mi net, +$0.42 over lane avg. Chassis pre-trip clean, twistlocks oiled, EDI 322 armed. DOT inspection clean."
         case .railBulk, .vesselBulk:
-            return "$9.46/mi net — +$0.42 over lane avg. Grounding kit checked, hatches sealed, AAR waybill ready."
+            return "$9.46/mi net, +$0.42 over lane avg. Grounding kit checked, hatches sealed, AAR waybill ready."
         case .dryVan:
-            return "$9.46/mi net — +$0.42 over lane avg. Trailer swept dry, seal staged, pallet jack on board. DOT inspection clean."
+            return "$9.46/mi net, +$0.42 over lane avg. Trailer swept dry, seal staged, pallet jack on board. DOT inspection clean."
         }
     }
 
     private var prepReply: String {
         switch ctx.product {
         case .hazmatTanker, .vesselTanker:
-            return "I queued the pre-trip DVIR and pre-loaded the ERG 125 card for UN1005. No surprise — I'll hold the tender 13 more minutes."
+            return "I queued the pre-trip DVIR and pre-loaded the ERG 125 card for UN1005. No surprise. I'll hold the tender 13 more minutes."
         case .reefer:
             return "Pre-trip DVIR is queued and the temp trace export is waiting. I'll hold the tender 13 more minutes."
         case .flatbed:
@@ -417,7 +417,7 @@ struct eSangDispatchChat: View {
 
         let line: String
         if unconfident {
-            line = "📎 Document attached — couldn't confidently identify it, please confirm what it is."
+            line = "📎 Document attached. Couldn't confidently identify it, please confirm what it is."
         } else {
             let label = humanDocType(doc.classifiedType)
             var s = "📎 \(label) (\(confidencePct)%)"
@@ -429,9 +429,9 @@ struct eSangDispatchChat: View {
                 .prefix(3)
                 .map { "\(humanFieldKey($0.key)): \($0.value)" }
             if !keyFields.isEmpty {
-                s += " — " + keyFields.joined(separator: ", ")
+                s += " - " + keyFields.joined(separator: ", ")
             } else if !doc.summary.isEmpty {
-                s += " — " + doc.summary
+                s += " - " + doc.summary
             }
             line = s
         }

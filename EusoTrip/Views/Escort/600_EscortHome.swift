@@ -315,10 +315,10 @@ struct EscortHome: View {
     }
 
     /// Format escort-corridor mileage as a thousands-separated whole-mile
-    /// string. Returns "—" for zero so the empty case never renders as
+    /// string. Returns "-" for zero so the empty case never renders as
     /// "0 mi".
     private func miles(_ v: Double) -> String {
-        guard v > 0 else { return "—" }
+        guard v > 0 else { return "-" }
         let f = NumberFormatter()
         f.numberStyle = .decimal
         f.maximumFractionDigits = 0
@@ -327,10 +327,10 @@ struct EscortHome: View {
     }
 
     /// Format a corridor-coverage ratio (0.0…1.0) as a percentage
-    /// rounded to whole digits. Returns "—" for zero so the empty
+    /// rounded to whole digits. Returns "-" for zero so the empty
     /// case never renders as "0%".
     private func coverage(_ v: Double) -> String {
-        guard v > 0 else { return "—" }
+        guard v > 0 else { return "-" }
         return "\(Int((v * 100).rounded()))%"
     }
 

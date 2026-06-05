@@ -210,7 +210,7 @@ struct MeEarnings068: View {
             EusoEmptyState(
                 systemImage: "chart.bar",
                 title: "Earnings kick in after your first load",
-                subtitle: "Week, month, and YTD rollups show up once settlements post."
+                subtitle: "Week, month and YTD rollups show up once settlements post."
             )
         case .loaded(let s):
             heroBody(s)
@@ -598,7 +598,7 @@ struct MeEarnings068: View {
     }
 
     private func shortWeekLabel(_ iso: String?) -> String {
-        guard let iso, let d = dateFromISO(iso) else { return "—" }
+        guard let iso, let d = dateFromISO(iso) else { return "-" }
         let f = DateFormatter()
         f.dateFormat = "MMM d"
         return f.string(from: d).uppercased()
@@ -769,7 +769,7 @@ private struct TopLoadDetailSheet: View {
                             MetricTile(label: "Rate",
                                        value: row.miles > 0
                                            ? "$" + String(format: "%.2f", row.totalPay / row.miles) + "/mi"
-                                           : "—",
+                                           : "-",
                                        gradientNumeral: true)
                         }
                     }

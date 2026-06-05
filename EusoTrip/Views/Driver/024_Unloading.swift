@@ -67,14 +67,14 @@ struct Unloading: View {
     private let fallbackDoor      = "12"
     private let fallbackOff       = 4
     private let fallbackTotal     = 26
-    private let fallbackTrailer   = "—"
+    private let fallbackTrailer   = "-"
     private let fallbackStarted   = "00:32"
     private let fallbackEtaRemain = "3:15"
     private let fallbackRate      = "2"
     private let fallbackDetention = "2:47"
-    private let fallbackDetRate   = "—"
-    private let fallbackDetCharge = "—"
-    private let fallbackReceiver  = "—"
+    private let fallbackDetRate   = "-"
+    private let fallbackDetCharge = "-"
+    private let fallbackReceiver  = "-"
     private let fallbackReceiverSub = "dispatch bell · door 12"
 
     // MARK: - Real-logic bindings
@@ -241,7 +241,7 @@ struct Unloading: View {
                     Text(fallbackTrailer)
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
-                        .accessibilityLabel(fallbackTrailer == "—" ? "Trailer pending" : "Trailer \(fallbackTrailer)")
+                        .accessibilityLabel(fallbackTrailer == "-" ? "Trailer pending" : "Trailer \(fallbackTrailer)")
                     Spacer()
                     Text("DOOR \(fallbackDoor)")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
@@ -501,7 +501,7 @@ struct Unloading: View {
             Image(systemName: "sparkles")
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(Brand.success)
-            Text("Wake the house crew if it stalls. No lumper overnight — they run a two-person crew at 4 \(ctx.unloadUnitLabel)/hr. If detention passes $75, ping dispatch from the Chat button and they'll rebill the shipper.")
+            Text("Wake the house crew if it stalls. No lumper overnight. They run a two-person crew at 4 \(ctx.unloadUnitLabel)/hr. If detention passes $75, ping dispatch from the Chat button and they'll rebill the shipper.")
                 .font(EType.body)
                 .foregroundStyle(palette.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)

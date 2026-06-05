@@ -218,23 +218,23 @@ private struct CatalystM04BiddingBody: View {
 
     // MARK: - Dynamic display helpers
 
-    private var loadNumberDisplay: String { load?.loadNumber ?? "—" }
+    private var loadNumberDisplay: String { load?.loadNumber ?? "-" }
     private var laneDisplay: String? {
         guard let p = load?.pickupCity, let d = load?.destCity else { return nil }
         return "\(p) → \(d)"
     }
-    private var equipmentDisplay: String { load?.equipmentType ?? load?.trailerType ?? "—" }
+    private var equipmentDisplay: String { load?.equipmentType ?? load?.trailerType ?? "-" }
     private var distanceDisplay: String {
-        guard let d = load?.distance, d > 0 else { return "—" }
+        guard let d = load?.distance, d > 0 else { return "-" }
         return "\(Int(d.rounded())) mi"
     }
     private var rateDisplay: String {
-        guard let r = load?.rate, let n = Double(r), n > 0 else { return "—" }
+        guard let r = load?.rate, let n = Double(r), n > 0 else { return "-" }
         let v = n.rounded()
         return v < 1000 ? String(format: "$%.0f", v) : "$\(Int(v).formatted(.number))"
     }
     private var carrierCodeDisplay: String {
-        load?.catalyst?.companyName ?? load?.catalyst?.name ?? "—"
+        load?.catalyst?.companyName ?? load?.catalyst?.name ?? "-"
     }
 
     private func header(_ c: CMConfig) -> some View {
@@ -249,7 +249,7 @@ private struct CatalystM04BiddingBody: View {
             Text("Bidding · \(c.titleStage)")
                 .font(.system(size: 22, weight: .heavy))
                 .foregroundStyle(palette.textPrimary)
-            Text("\(laneDisplay ?? "—") · \(equipmentDisplay) · \(rateDisplay) lead · \(distanceDisplay) · \(c.timeLeft) left")
+            Text("\(laneDisplay ?? "-") · \(equipmentDisplay) · \(rateDisplay) lead · \(distanceDisplay) · \(c.timeLeft) left")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -303,9 +303,9 @@ private struct CatalystM04BiddingBody: View {
     }
 
     private var identityRow: some View {
-        let shipIni = load?.shipper?.initials ?? "—"
-        let shipName = load?.shipper?.name ?? "—"
-        let shipCompany = load?.shipper?.companyName ?? "—"
+        let shipIni = load?.shipper?.initials ?? "-"
+        let shipName = load?.shipper?.name ?? "-"
+        let shipCompany = load?.shipper?.companyName ?? "-"
         return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
@@ -315,7 +315,7 @@ private struct CatalystM04BiddingBody: View {
                         .font(EType.caption.weight(.semibold))
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
-                    Text("\(loadNumberDisplay) · \(laneDisplay ?? "—") · \(distanceDisplay)")
+                    Text("\(loadNumberDisplay) · \(laneDisplay ?? "-") · \(distanceDisplay)")
                         .font(.caption2)
                         .foregroundStyle(palette.textTertiary)
                         .lineLimit(2)
@@ -328,7 +328,7 @@ private struct CatalystM04BiddingBody: View {
     private func kpiGrid(_ c: CMConfig) -> some View {
         let lead = effectiveQuotes.first { $0.code == c.leadCode } ?? effectiveQuotes[0]
         let winnerCode = load?.catalyst?.name ?? lead.code
-        let driverIni = load?.driver?.initials ?? "—"
+        let driverIni = load?.driver?.initials ?? "-"
         let kpis: [(String, String, String, Color)] = {
             switch kind {
             case .firstBid:

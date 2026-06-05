@@ -40,13 +40,13 @@ struct LoadLockedPrehaul: View {
     // Updated 2026-04-24 (eusotrip-killers ledger-hygiene pass).
     // Live values: `loads.getById` for origin/dest/manifest and
     // `loadLifecycle.getRollClock` for the appointment timer.
-    private let fallbackClock       = "—"
-    private let fallbackLoadID      = "—"
-    private let fallbackOrigin      = "—"
-    private let fallbackDestination = "—"
-    private let fallbackManifest    = "—"
-    private let fallbackRollClock   = "—"
-    private let fallbackApptSub     = "—"
+    private let fallbackClock       = "-"
+    private let fallbackLoadID      = "-"
+    private let fallbackOrigin      = "-"
+    private let fallbackDestination = "-"
+    private let fallbackManifest    = "-"
+    private let fallbackRollClock   = "-"
+    private let fallbackApptSub     = "-"
 
     private var checklist: [PrehaulCheck] {
         switch ctx.product {
@@ -194,7 +194,7 @@ struct LoadLockedPrehaul: View {
     /// fabricated "5/5" all-current badge.
     private var prehaulEndorsementBadge: String {
         let badge = ctx.facets.driverEndorsementBadge
-        return badge == LiveLoadFacets.dash ? "—" : badge
+        return badge == LiveLoadFacets.dash ? "-" : badge
     }
 
     /// EusoShield binder row subtitle. `facets.insuranceBinderWindow`
@@ -484,7 +484,7 @@ struct LoadLockedPrehaul: View {
             }
             let content = UNMutableNotificationContent()
             content.title = "Pre-haul gate waiting"
-            content.body = "\(snapshotLoadNum) — clear your remaining checks and roll."
+            content.body = "\(snapshotLoadNum), clear your remaining checks and roll."
             content.sound = .default
             let trigger = UNTimeIntervalNotificationTrigger(
                 timeInterval: 5 * 60,

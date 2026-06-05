@@ -130,8 +130,8 @@ private struct CatalystCompliance: View {
         let liability = overview?.liabilityInsurance
         let body = """
         Renewal request — Eusotrans LLC carrier insurance
-        DOT \(safer?.dotNumber ?? "—") · MC \(safer?.mcNumber ?? "—")
-        Liability current expiry: \(liability?.expires ?? "—") · status: \(liability?.status ?? "—")
+        DOT \(safer?.dotNumber ?? "-") · MC \(safer?.mcNumber ?? "-")
+        Liability current expiry: \(liability?.expires ?? "-") · status: \(liability?.status ?? "-")
         Coverage: $\(Int(liability?.coverage ?? 0))
         Please send a renewal quote at your earliest convenience.
         """
@@ -210,7 +210,7 @@ private struct CatalystCompliance: View {
 
     private var scoreHeader: String {
         if let s = overview?.score { return "SCORE \(s) / 100" }
-        return "—"
+        return "-"
     }
 
     private var titleBlock: some View {
@@ -247,7 +247,7 @@ private struct CatalystCompliance: View {
         let icon = available ? "shield.lefthalf.filled" : "shield.slash"
         let title = available ? "FMCSA SAFER · \(safer?.safetyRating ?? "NOT RATED")" : "FMCSA SAFER · UNAVAILABLE"
         let reason = available
-            ? "DOT \(safer?.dotNumber ?? "—") · \(safer?.oosViolations ?? 0) out-of-service violations"
+            ? "DOT \(safer?.dotNumber ?? "-") · \(safer?.oosViolations ?? 0) out-of-service violations"
             : (safer?.reason ?? "No DOT number on file")
 
         return HStack(spacing: 12) {
@@ -289,7 +289,7 @@ private struct CatalystCompliance: View {
 
     private var scoreHeroCard: some View {
         let score = overview?.score ?? 0
-        let safetyRating = overview?.safetyRating ?? safer?.safetyRating ?? "—"
+        let safetyRating = overview?.safetyRating ?? safer?.safetyRating ?? "-"
 
         return HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
@@ -373,7 +373,7 @@ private struct CatalystCompliance: View {
     }
 
     private func authorityTile(label: String, value: String) -> some View {
-        let display = value.isEmpty ? "—" : value
+        let display = value.isEmpty ? "-" : value
         let tint: Color = value.isEmpty ? palette.textTertiary : Brand.success
         return VStack(alignment: .leading, spacing: 4) {
             Text(label)
@@ -457,18 +457,18 @@ private struct CatalystCompliance: View {
         case "expiring": return ("EXPIRING", Brand.warning)
         case "expired":  return ("EXPIRED",  Brand.danger)
         case "missing":  return ("MISSING",  Brand.danger)
-        default:          return (raw.uppercased().isEmpty ? "—" : raw.uppercased(), palette.textTertiary)
+        default:          return (raw.uppercased().isEmpty ? "-" : raw.uppercased(), palette.textTertiary)
         }
     }
 
     private func coverageLine(_ policy: ComplianceAPI.CatalystComplianceInsurance) -> String {
         let coverage = formatCurrency(policy.coverage)
-        let exp = policy.expires.isEmpty ? "—" : "exp \(policy.expires)"
+        let exp = policy.expires.isEmpty ? "-" : "exp \(policy.expires)"
         return "\(coverage) · \(exp)"
     }
 
     private func formatCurrency(_ value: Double) -> String {
-        guard value > 0 else { return "—" }
+        guard value > 0 else { return "-" }
         let f = NumberFormatter()
         f.numberStyle = .currency
         f.currencyCode = "USD"

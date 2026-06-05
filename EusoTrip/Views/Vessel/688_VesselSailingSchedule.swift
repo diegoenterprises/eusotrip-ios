@@ -190,7 +190,7 @@ private struct VesselSailingScheduleBody: View {
 
     private var cutoffHero: some View {
         let v = nextBookable
-        let voyageLabel = (v?.voyageNumber).map { "v.\($0)" } ?? "—"
+        let voyageLabel = (v?.voyageNumber).map { "v.\($0)" } ?? "-"
         let etd = shortDateTime(v?.scheduledDeparture)
         let eta = shortDate(v?.scheduledArrival)
         let booking = "VES-260523-3C9F0A71B4"
@@ -354,7 +354,7 @@ private struct VesselSailingScheduleBody: View {
         let isBookable = (voyage.id == nextBookable?.id)
         let dotColor: Color = isCancelled ? Brand.danger : (isBookable ? Brand.magenta : Brand.info)
         let vesselName = ganttVesselName(rowIndex)
-        let voyLabel = (voyage.voyageNumber).map { "v.\($0)" } ?? "—"
+        let voyLabel = (voyage.voyageNumber).map { "v.\($0)" } ?? "-"
         let barStartCol = weekCols[min(rowIndex, weekCols.count - 1)] * scale
         let etaStr = "\(shortDate(voyage.scheduledArrival)) · \(transitDays(voyage))"
 
@@ -514,7 +514,7 @@ private struct VesselSailingScheduleBody: View {
                     .font(.system(size: 10.5)).foregroundColor(palette.textSecondary)
                  + Text(nextBookable.flatMap { $0.voyageNumber }.map { "v.\($0)" } ?? "v.428E")
                     .font(.system(size: 10.5, weight: .bold)).foregroundColor(palette.textPrimary)
-                 + Text(" now — v.430E is blanked; next firm slot is ")
+                 + Text(" now, v.430E is blanked; next firm slot is ")
                     .font(.system(size: 10.5)).foregroundColor(palette.textSecondary)
                  + Text(firmGap)
                     .font(.system(size: 10.5, weight: .bold)).foregroundColor(palette.textPrimary)
@@ -569,7 +569,7 @@ private struct VesselSailingScheduleBody: View {
     }
 
     private func transitDays(_ v: VesselVoyage688) -> String {
-        guard let dep = parseISO(v.scheduledDeparture), let arr = parseISO(v.scheduledArrival) else { return "—" }
+        guard let dep = parseISO(v.scheduledDeparture), let arr = parseISO(v.scheduledArrival) else { return "-" }
         let days = Int(arr.timeIntervalSince(dep) / 86400.0)
         return "\(max(days, 0))d"
     }
@@ -602,13 +602,13 @@ private struct VesselSailingScheduleBody: View {
     }
 
     private func shortDate(_ s: String?) -> String {
-        guard let d = parseISO(s) else { return "—" }
+        guard let d = parseISO(s) else { return "-" }
         let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "MMM d"
         return f.string(from: d)
     }
 
     private func shortDateTime(_ s: String?) -> String {
-        guard let d = parseISO(s) else { return "—" }
+        guard let d = parseISO(s) else { return "-" }
         let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "MMM d HH:mm"
         return f.string(from: d)
     }

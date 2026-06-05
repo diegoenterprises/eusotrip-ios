@@ -225,7 +225,7 @@ private struct RailDemurrageAnalyticsBody: View {
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
                     // PORT-GAP — MoM delta requires the trend series; with no
-                    // endpoint we surface "—" rather than the wireframe's
+                    // endpoint we surface "-" rather than the wireframe's
                     // hard-coded "+8% MoM".
                     Text(monthOverMonthLabel)
                         .font(EType.mono(.body)).tracking(0.2)
@@ -251,7 +251,7 @@ private struct RailDemurrageAnalyticsBody: View {
 
     private var monthOverMonthLabel: String {
         // No weeklyTrend endpoint → cannot compute a real MoM delta.
-        weeklyTrend.count >= 8 ? "+0% MoM" : "— MoM"
+        weeklyTrend.count >= 8 ? "+0% MoM" : "- MoM"
     }
 
     @ViewBuilder
@@ -421,7 +421,7 @@ private struct RailDemurrageAnalyticsBody: View {
     }
 
     private func avgDaysLabel(_ hours: Double?) -> String {
-        guard let h = hours, h > 0 else { return "—" }
+        guard let h = hours, h > 0 else { return "-" }
         return String(format: "%.1fd", h / 24.0)
     }
 
@@ -571,7 +571,7 @@ private struct RailDemurrageAnalyticsBody: View {
         // fabricating an id. The live mutation path lives in
         // `submitDispute(...)` below and fires the moment an id is threaded in.
         disputeAck = nil
-        disputeError = "Select a car on Demurrage Watch to open a dispute — analytics carries no per-car demurrage id yet."
+        disputeError = "Select a car on Demurrage Watch to open a dispute. Analytics carries no per-car demurrage id yet."
     }
 
     /// Live createDispute wire. Kept as a dedicated method so the analytics

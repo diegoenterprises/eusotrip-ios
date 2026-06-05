@@ -94,7 +94,7 @@ private struct TicketBody: View {
                 Text("DISPATCH · EUSOTICKET").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Run-ticket capture").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("Electronic ticketing — origin/destination auto-resolve from load number.").font(EType.caption).foregroundStyle(palette.textSecondary)
+            Text("Electronic ticketing, origin/destination auto-resolve from load number.").font(EType.caption).foregroundStyle(palette.textSecondary)
         }
     }
 
@@ -151,7 +151,7 @@ private struct TicketBody: View {
                     LifecycleRow(label: "Origin",      value: dashIfEmpty(t.origin))
                     LifecycleRow(label: "Destination", value: dashIfEmpty(t.destination))
                     LifecycleRow(label: "Status",      value: t.status.uppercased())
-                    LifecycleRow(label: "Miles",       value: t.totalMiles.map { String(format: "%.0f mi", $0) } ?? "—")
+                    LifecycleRow(label: "Miles",       value: t.totalMiles.map { String(format: "%.0f mi", $0) } ?? "-")
                     LifecycleRow(label: "Fuel",        value: usd(t.totalFuel))
                     LifecycleRow(label: "Tolls",       value: usd(t.totalTolls))
                     LifecycleRow(label: "Expenses",    value: usd(t.totalExpenses))
@@ -182,7 +182,7 @@ private struct TicketBody: View {
         struct Out: Decodable { let ticketNumber: String?; let id: Int? }
         do {
             let r: Out = try await EusoTripAPI.shared.mutation("runTickets.create", input: In(loadNumber: loadNumber))
-            lastCreated = "Opened ticket \(r.ticketNumber ?? "—") for \(loadNumber)."
+            lastCreated = "Opened ticket \(r.ticketNumber ?? "-") for \(loadNumber)."
             loadNumber = ""
             await loadAll()
         } catch {

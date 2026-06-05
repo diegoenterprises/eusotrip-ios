@@ -103,7 +103,7 @@ private struct VesselBunkerPricesBody: View {
                 } else if !hasData {
                     EusoEmptyState(systemImage: "fuelpump",
                                    title: "No bunker index to show",
-                                   subtitle: "fuel.getTrends and fuel.getPrices returned no price history. Nothing to chart — the marine VLSFO/MGO spot feed (vesselBunker.getPrices) is a surfaced backend gap.")
+                                   subtitle: "fuel.getTrends and fuel.getPrices returned no price history. Nothing to chart, the marine VLSFO/MGO spot feed (vesselBunker.getPrices) is a surfaced backend gap.")
                 } else {
                     heroCard
                     if series.count >= 2 {
@@ -282,7 +282,7 @@ private struct VesselBunkerPricesBody: View {
             // ESang line is derived honestly from the real series (no fabricated booking figures).
             if series.count >= 2 {
                 let dir = weekDelta >= 0 ? "rising" : "easing"
-                esangLine = String(format: "Index %@ %+.1f%% pt/pt — review BAF cover", dir, weekDelta)
+                esangLine = String(format: "Index %@ %+.1f%% pt/pt - review BAF cover", dir, weekDelta)
             } else {
                 esangLine = ""
             }
@@ -367,7 +367,7 @@ private let previewSeed670 = PreviewSeed670(
         .init(name: "Midwest",    code: "PADD2", price: 3.62, delta:  1.4),
         .init(name: "West Coast", code: "PADD5", price: 4.18, delta:  2.1),
     ],
-    esangLine: "Index rising +1.4% pt/pt — review BAF cover")
+    esangLine: "Index rising +1.4% pt/pt - review BAF cover")
 
 /// Preview-only Shell wrapper that injects the seed into the body so the populated bespoke
 /// chart/table render in Xcode previews. The seed is referenced ONLY from here — on device the

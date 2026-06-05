@@ -127,8 +127,8 @@ struct DocumentClassifierSheet: View {
                 .font(.system(size: 18, weight: .heavy))
                 .foregroundStyle(palette.textPrimary)
             Text(mode == .prefillWizard
-                 ? "Rate confirmations, BOLs, run tickets, load tenders — anything load-shaped. Gemini Vision extracts lane, equipment, cargo, weight, rate, and dates straight into the wizard."
-                 : "CSV load batches, carrier packets, signed agreements, COIs, EIN letters, 1099s — anything. We classify each doc and route it to the right place.")
+                 ? "Rate confirmations, BOLs, run tickets, load tenders, anything load-shaped. Gemini Vision extracts lane, equipment, cargo, weight, rate and dates straight into the wizard."
+                 : "CSV load batches, carrier packets, signed agreements, COIs, EIN letters, 1099s, anything. We classify each doc and route it to the right place.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

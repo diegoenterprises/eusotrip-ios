@@ -423,7 +423,7 @@ private struct RailEDIMessagesBody: View {
     }
 
     private func nodeMeta(_ txn: EdiTransaction) -> String {
-        let ctrl = (txn.controlNumber.map { "CTRL \($0)" }) ?? "CTRL —"
+        let ctrl = (txn.controlNumber.map { "CTRL \($0)" }) ?? "CTRL -"
         let dir = (txn.direction ?? "").lowercased()
         let route: String
         let inOut: String
@@ -432,7 +432,7 @@ private struct RailEDIMessagesBody: View {
         } else if dir == "outbound" {
             route = "EUSO → \(txn.partner ?? "BNSF")"; inOut = "OUT"
         } else {
-            route = txn.partner ?? "BNSF"; inOut = "—"
+            route = txn.partner ?? "BNSF"; inOut = "-"
         }
         return "\(ctrl) · \(route) · \(inOut)"
     }
@@ -561,7 +561,7 @@ private struct RailEDIMessagesBody: View {
         case "sent":             label = "SENT";   statusColor = Brand.blue
         case "error", "errored",
              "failed", "rejected": label = "ERROR"; statusColor = Brand.danger
-        case "":                 label = "—";      statusColor = Brand.neutral
+        case "":                 label = "-";      statusColor = Brand.neutral
         default:                 label = raw.uppercased(); statusColor = palette.textSecondary
         }
         return STState(chip: chip, label: label, statusColor: statusColor)
@@ -571,7 +571,7 @@ private struct RailEDIMessagesBody: View {
     /// server doesn't ship a pre-formatted relativeTime.
     private func relativeFrom(_ iso: String?) -> String {
         guard let iso,
-              let date = ISO8601DateFormatter().date(from: iso) else { return "—" }
+              let date = ISO8601DateFormatter().date(from: iso) else { return "-" }
         let secs = -date.timeIntervalSinceNow
         if secs < 60 { return "now" }
         let mins = Int(secs / 60)
@@ -634,7 +634,7 @@ private struct RailEDIMessagesBody: View {
                 "nativeEdi.generateOutbound",
                 input: GenerateOutboundInput(type: "997")
             )
-            let cn = res.controlNumber ?? "—"
+            let cn = res.controlNumber ?? "-"
             actionIsError = false
             actionMessage = "Outbound \(res.type ?? "997") generated · CTRL \(cn)"
             await reload()

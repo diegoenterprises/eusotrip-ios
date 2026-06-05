@@ -271,7 +271,7 @@ struct CarrierDispatchBoard: View {
             return (active.state.value ?? []).count
         }()
         return VStack(alignment: .trailing, spacing: 2) {
-            Text(total < 0 ? "—" : "\(total)")
+            Text(total < 0 ? "-" : "\(total)")
                 .font(.system(size: 22, weight: .heavy, design: .rounded))
                 .foregroundStyle(LinearGradient.diagonal)
                 .monospacedDigit()
@@ -324,7 +324,7 @@ struct CarrierDispatchBoard: View {
                                 Text(bin.headerLabel)
                                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                             }
-                            Text(count.map { "\($0)" } ?? "—")
+                            Text(count.map { "\($0)" } ?? "-")
                                 .font(.system(size: 13, weight: .heavy)).monospacedDigit()
                         }
                         .foregroundStyle(on ? AnyShapeStyle(Color.white) : AnyShapeStyle(palette.textSecondary))

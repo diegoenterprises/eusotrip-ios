@@ -150,7 +150,7 @@ private struct InTransitBody: View {
     private var etaStrip: some View {
         HStack(spacing: Space.s2) {
             LifecycleStatTile(label: "ETA",      value: humanISO(live.load.estimatedDeliveryDate, format: "MMM d · HH:mm"), icon: "clock")
-            LifecycleStatTile(label: "DISTANCE", value: live.load.distance.map { "\(Int($0)) mi" } ?? "—", icon: "ruler")
+            LifecycleStatTile(label: "DISTANCE", value: live.load.distance.map { "\(Int($0)) mi" } ?? "-", icon: "ruler")
             LifecycleStatTile(label: "STATUS",   value: live.load.status.uppercased(), icon: "flag")
         }
     }
@@ -180,9 +180,9 @@ private struct InTransitBody: View {
                 }
                 LifecycleRow(label: "Backhaul load", value: live.load.loadNumber)
                 LifecycleRow(label: "Carrier",
-                             value: live.carrier?.name ?? "—")
+                             value: live.carrier?.name ?? "-")
                 LifecycleRow(label: "Distance remaining",
-                             value: live.load.distance.map { "\(Int($0)) mi" } ?? "—")
+                             value: live.load.distance.map { "\(Int($0)) mi" } ?? "-")
             }
         }
     }
@@ -237,7 +237,7 @@ private struct InTransitBody: View {
                     Spacer(minLength: 0)
                 }
 
-                LifecycleRow(label: "Driver", value: live.driver?.name ?? "—")
+                LifecycleRow(label: "Driver", value: live.driver?.name ?? "-")
 
                 // Real miles-progress line — ONLY if computable.
                 if let milesLine = matrixMilesLine {
@@ -293,7 +293,7 @@ private struct InTransitBody: View {
                     LifecycleRow(label: "Dwell", value: "\(dwell / 60) min")
                 }
             } else {
-                Text("\(loadMode.displayName) en route — no geofence event in this window yet.")
+                Text("\(loadMode.displayName) en route - no geofence event in this window yet.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

@@ -241,7 +241,7 @@ struct MeViolationsManager: View {
             title: showResolvedToo ? "No violations in your file" : "All clear",
             subtitle: showResolvedToo
                 ? "Nothing on record. When HOS or inspection events land they'll show up here."
-                : "No open HOS, DVIR, or inspection violations to resolve. Flip the toggle above to see resolved history."
+                : "No open HOS, DVIR or inspection violations to resolve. Flip the toggle above to see resolved history."
         )
     }
 
@@ -448,7 +448,7 @@ struct MeViolationsManager: View {
                         let note = resolveNote.trimmingCharacters(in: .whitespacesAndNewlines)
                         let ok = await store.resolve(id: v.id, notes: note.isEmpty ? nil : note)
                         resolveTarget = nil
-                        flashToast(ok ? "Violation resolved" : "Couldn't resolve — try again")
+                        flashToast(ok ? "Violation resolved" : "Couldn't resolve - try again")
                     }
                 } label: {
                     Text("Mark resolved")
@@ -486,7 +486,7 @@ struct MeViolationsManager: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
             }
-            Text("Resolutions close the carrier's compliance record but do not overwrite the underlying CSA event. DataQs challenges (49 CFR §386) remain the canonical path to correct an FMCSA-reported violation — the corrective note here is the carrier's internal audit trail.")
+            Text("Resolutions close the carrier's compliance record but do not overwrite the underlying CSA event. DataQs challenges (49 CFR §386) remain the canonical path to correct an FMCSA-reported violation, the corrective note here is the carrier's internal audit trail.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

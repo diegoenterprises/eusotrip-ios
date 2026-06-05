@@ -141,7 +141,7 @@ private struct VesselOperatorAccountBody: View {
                     }
                     Text("VESSEL OPERATOR · \(me?.companyName ?? "___ OPERATOR (PROPOSED)")")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
-                    Text("crew id \(me?.crewId ?? "—") · STCW II/1 active")
+                    Text("crew id \(me?.crewId ?? "-") · STCW II/1 active")
                         .font(.system(size: 11)).monospaced().foregroundStyle(palette.textTertiary)
                 }
                 Spacer(minLength: 0)
@@ -321,7 +321,7 @@ private struct VesselOperatorAccountBody: View {
                         HStack {
                             Text(c.title).font(EType.body).foregroundStyle(palette.textPrimary)
                             Spacer()
-                            Text(c.statusLabel ?? "—").font(.system(size: 11, weight: .bold))
+                            Text(c.statusLabel ?? "-").font(.system(size: 11, weight: .bold))
                                 .foregroundStyle((c.expiring ?? false) ? Brand.warning : Brand.success)
                         }
                     }

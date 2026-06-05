@@ -33,8 +33,8 @@ struct ArrivalCheckpoint: View {
 
     private let fallbackClock      = "23:16"
     private let fallbackOnSite     = "0:02"
-    private let fallbackParked     = "—"
-    private let fallbackYard       = "—"
+    private let fallbackParked     = "-"
+    private let fallbackYard       = "-"
     private let fallbackYardAddr   = "3608 HAWKINS POINT RD · BALTIMORE MD 21226"
 
     var body: some View {

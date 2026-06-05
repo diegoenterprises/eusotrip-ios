@@ -122,7 +122,7 @@ struct MeSettlements: View {
         EusoEmptyState(
             systemImage: "doc.plaintext",
             title: "No settlements yet",
-            subtitle: "Once your first load batches for payout, every batch lands here — upcoming and paid. Pull to refresh after your first run."
+            subtitle: "Once your first load batches for payout, every batch lands here, upcoming and paid. Pull to refresh after your first run."
         )
     }
 

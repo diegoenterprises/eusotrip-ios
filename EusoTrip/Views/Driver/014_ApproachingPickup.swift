@@ -63,7 +63,7 @@ struct ApproachingPickup: View {
 
     // MARK: - Figma-verbatim fallback (used only while the backend
     // hasn't hydrated a real load — matches the 2026-04-24 frame).
-    private let fallbackFacility = "—"
+    private let fallbackFacility = "-"
     private let fallbackAppt     = "APPT 09:00 CDT"
     private let fallbackMiles    = "4.2"
 
@@ -180,7 +180,7 @@ struct ApproachingPickup: View {
                         Text("Hands-free hazmat checklist")
                             .font(EType.body.weight(.semibold))
                             .foregroundStyle(palette.textPrimary)
-                        Text("Reads each step aloud — say the confirm phrase to advance.")
+                        Text("Reads each step aloud, say the confirm phrase to advance.")
                             .font(.caption)
                             .foregroundStyle(palette.textSecondary)
                             .lineLimit(2)

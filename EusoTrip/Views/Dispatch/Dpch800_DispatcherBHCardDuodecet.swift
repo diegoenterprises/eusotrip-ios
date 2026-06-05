@@ -54,7 +54,7 @@ private extension DispatcherBHCardKind {
                          title: "Reassign backhaul",
                          subhead: "BH-7C3A · ME NO RESPONSE 4:00",
                          pillCopy: "LD-260517-BH7C3A09F1 · parent LD-7C3A SEALED · PHX WVDC dock 7B → Naturipe LA RDC",
-                         chainPill: "Tender risks expiry — pre-stage carrier B + carrier C as fallback")
+                         chainPill: "Tender risks expiry. Pre-stage carrier B + carrier C as fallback")
         case .tenderResolved:
             return .init(eyebrow: "DISPATCHER · TENDER · BACKHAUL · RESOLVED",
                          citation: "§304 · DISPATCHER BH RESOLVED · TRIPLET 3/3 CLOSED · NEXT-CHAIN 7/N",
@@ -217,7 +217,7 @@ private struct DispatcherBHCardBody: View {
                 actionAck = "Tender reassigned · returned to the pool · carrier B armed for next acceptance."
                 await loadCtx()
             } else {
-                actionError = "Reassign returned no success flag — reload and try again."
+                actionError = "Reassign returned no success flag. Reload and try again."
             }
         } catch let err {
             actionError = (err as? LocalizedError)?.errorDescription ?? "Reassign failed: \(err)"
@@ -379,11 +379,11 @@ private struct DispatcherBHCardBody: View {
             case .tenderResolved:  return "ME accepted at §304. Triplet 3/3 closed; DVIR sub-axis opens next."
             case .pickupArmed:     return "Pickup board armed. DVIR 2/14 in progress; -30 ping fires when ME pulls toward dock 7B."
             case .pickupFired:     return "ME loading at dock 7B (0:08 ago). DVIR 14/14 sealed; advance card to in-transit on gate-out."
-            case .inTransit:       return "ME on I-10 WB, 372 mi to RDC. ETA holds 06:24 MST; clean HOS — no intervention needed."
+            case .inTransit:       return "ME on I-10 WB, 372 mi to RDC. ETA holds 06:24 MST; clean HOS, no intervention needed."
             case .deliveryApproach:return "26 mi to receiver. Pre-arm DOCK 7B + paperwork access; ESang nudges 5 min out."
             case .atDelivery:      return "Gate-in at DOCK 7B. Queue 0 ahead; receiver-bay attestation arms on dock placement."
             case .dockedLoading:   return "Bay 7B occupied · 12/72 at 4 ppm. Depart at 06:42 MST; BOL pre-sign arms on dock-plate touch."
-            case .bolPreSign:      return "BOL DRAFT loaded · pallets 72/72 sealed. Window closing in 0:04 — ME taps to sign next."
+            case .bolPreSign:      return "BOL DRAFT loaded · pallets 72/72 sealed. Window closing in 0:04. ME taps to sign next."
             case .bolSigned:       return "BOL SIGNED + verified (0x9F1C). Window closes; paperwork watch armed for filing."
             case .paperwork:       return "Paperwork open · BOL filed. POD watch armed; POD-ink fires when receiver co-signs."
             case .closed:          return "Chain sealed. POD submitted, wallet credited $2,128 NET-30. Chain-seal available for archive."

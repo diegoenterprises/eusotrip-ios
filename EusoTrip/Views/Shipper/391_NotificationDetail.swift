@@ -51,7 +51,7 @@ private struct NotifDetailBody: View {
                 Image(systemName: "bell.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("SHIPPER · NOTIFICATION").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
-            Text(detail?.title ?? "—").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            Text(detail?.title ?? "-").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
         }
     }
 

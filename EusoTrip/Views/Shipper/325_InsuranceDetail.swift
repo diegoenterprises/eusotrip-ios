@@ -205,13 +205,13 @@ private struct InsuranceBody: View {
                     icon: "exclamationmark.triangle.fill",
                     tint: Brand.warning,
                     title: "This doesn't look like a Certificate of Insurance",
-                    detail: "It was identified as “\(detectedTypeLabel(s.classifiedType))”. Pre-filled fields below may not apply — please re-upload your COI."
+                    detail: "It was identified as “\(detectedTypeLabel(s.classifiedType))”. Pre-filled fields below may not apply. Please re-upload your COI."
                 )
             } else if lowConfidence {
                 classifierNotice(
                     icon: "questionmark.circle.fill",
                     tint: Brand.warning,
-                    title: "Couldn't confidently identify this — please confirm",
+                    title: "Couldn't confidently identify this - please confirm",
                     detail: "We think it's a COI, but only at \(Int(conf * 100))% confidence. Double-check the extracted values before saving."
                 )
             }
@@ -401,7 +401,7 @@ private struct InsuranceBody: View {
 
     /// Parse a coverage-limit string that may arrive as "$1,000,000",
     /// "1000000", or "1,000,000.00" into a Double. Returns nil when it
-    /// isn't a number so we honestly render "—" instead of 0.
+    /// isn't a number so we honestly render "-" instead of 0.
     private func parseLimit(_ raw: String?) -> Double? {
         guard let raw else { return nil }
         let cleaned = raw.filter { $0.isNumber || $0 == "." }
@@ -475,7 +475,7 @@ private struct InsuranceBody: View {
             return "No insurance certificate on file"
         }
         if lower.contains("offline") || lower.contains("network") {
-            return "Insurance service is offline — try again"
+            return "Insurance service is offline - try again"
         }
         return "Couldn't load insurance"
     }

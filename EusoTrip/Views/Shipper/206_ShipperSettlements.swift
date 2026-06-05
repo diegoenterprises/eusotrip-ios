@@ -160,7 +160,7 @@ struct ShipperSettlements: View {
         case .loading: suffix = "syncing ledger…"
         case .loaded:  suffix = "payable / paid ledger · last sync just now"
         case .empty:   suffix = "ledger empty · post a load to start the cycle"
-        case .error:   suffix = "ledger sync failed — pull to retry"
+        case .error:   suffix = "ledger sync failed - pull to retry"
         }
         return "\(company) · \(suffix)"
     }
@@ -349,7 +349,7 @@ struct ShipperSettlements: View {
     private func standardBody(_ r: ShipperAPI.DeliveryConfirmation, status: LedgerStatus) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
-                Text(r.loadNumber.isEmpty ? "—" : r.loadNumber)
+                Text(r.loadNumber.isEmpty ? "-" : r.loadNumber)
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: 8)
@@ -364,7 +364,7 @@ struct ShipperSettlements: View {
                 .foregroundStyle(palette.textSecondary)
                 .lineLimit(2)
             HStack(alignment: .center, spacing: Space.s2) {
-                Text(r.rate > 0 ? currency(r.rate) : "—")
+                Text(r.rate > 0 ? currency(r.rate) : "-")
                     .font(.system(size: 18, weight: .bold).monospacedDigit())
                     .foregroundStyle(palette.textPrimary)
                 Text(breakdownText(for: r, status: status))
@@ -383,7 +383,7 @@ struct ShipperSettlements: View {
     private func compactBody(_ r: ShipperAPI.DeliveryConfirmation, status: LedgerStatus) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(r.loadNumber.isEmpty ? "—" : r.loadNumber)
+                Text(r.loadNumber.isEmpty ? "-" : r.loadNumber)
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: 8)
@@ -515,7 +515,7 @@ struct ShipperSettlements: View {
 
     private func breakdownText(for r: ShipperAPI.DeliveryConfirmation, status: LedgerStatus) -> String {
         if status == .disputed { return "+ detention · contested" }
-        guard r.rate > 0 else { return "—" }
+        guard r.rate > 0 else { return "-" }
         let lineHaul = r.rate * 0.825
         let fsc      = r.rate * 0.110
         let acc      = r.rate * 0.065
@@ -560,7 +560,7 @@ struct ShipperSettlements: View {
     /// DSO until the backend ships invoice→pay-cleared timestamps.
     private var avgDSODisplay: String {
         let paidDays = paid30dRows.map { daysSinceDeliveredCount($0) }
-        guard !paidDays.isEmpty else { return "—" }
+        guard !paidDays.isEmpty else { return "-" }
         let avg = Double(paidDays.reduce(0, +)) / Double(paidDays.count)
         return String(format: "%.1fd", avg)
     }
@@ -668,9 +668,9 @@ struct ShipperSettlements: View {
                           .trimmingCharacters(in: CharacterSet(charactersIn: ","))
         let d = row.destination.trimmingCharacters(in: .whitespacesAndNewlines)
                                .trimmingCharacters(in: CharacterSet(charactersIn: ","))
-        if o.isEmpty && d.isEmpty { return "—" }
-        let left  = o.isEmpty ? "—" : o
-        let right = d.isEmpty ? "—" : d
+        if o.isEmpty && d.isEmpty { return "-" }
+        let left  = o.isEmpty ? "-" : o
+        let right = d.isEmpty ? "-" : d
         return "\(left) → \(right)"
     }
 

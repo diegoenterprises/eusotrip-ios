@@ -125,11 +125,11 @@ private struct RailConsigneeTrackingLinkBody: View {
 
     private var expiresLabel: String {
         if let d = expiresInDays { return "\(d)d" }
-        return "—"
+        return "-"
     }
 
     private var stateLabel: String {
-        guard link != nil else { return "—" }
+        guard link != nil else { return "-" }
         return revoked ? "Revoked" : "Active"
     }
 

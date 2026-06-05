@@ -23,7 +23,7 @@
 //    - The 24h cooldown is shown as a live countdown. The change is NOT
 //      applied while the cooldown is running, regardless of code entry.
 //    - If simSwapClean == false OR == null (no provider attestation),
-//      we surface a Brand.danger "SIM-swap risk — review required"
+//      we surface a Brand.danger "SIM-swap risk - review required"
 //      banner and make explicit the change will NOT auto-apply.
 //    - We never present an instant apply. confirmStepUp returning
 //      verified==true but applied!=true reads as "verified — pending
@@ -400,7 +400,7 @@ struct StepUpAuthSheet: View {
             } else {
                 statusRow(icon: "exclamationmark.triangle.fill",
                           color: Brand.danger,
-                          title: "SIM-swap risk — review required",
+                          title: "SIM-swap risk - review required",
                           body: clean == false
                             ? "A recent SIM port was detected on the verified number. This change will NOT auto-apply and is routed to manual review."
                             : "No SIM-swap attestation was returned. This change will NOT auto-apply and is routed to manual review.")
@@ -521,7 +521,7 @@ struct StepUpAuthSheet: View {
             }
             detailRow("Code verified", boolText(r.verified))
             detailRow("Change applied", boolText(r.applied))
-            detailRow("Status", (r.status ?? "—").capitalized)
+            detailRow("Status", (r.status ?? "-").capitalized)
             if let req = r.requestId { detailRow("Request", "#\(req)") }
             if let reason = r.reason, !reason.isEmpty { detailRow("Reason", reason) }
             if let rec = r.recommendation, !rec.isEmpty {
@@ -760,14 +760,14 @@ struct StepUpAuthSheet: View {
 
         if r.verified == true && r.applied == true {
             return VState(title: "Change applied",
-                          subtitle: "Code verified, cooldown satisfied, and the change is now applied.",
+                          subtitle: "Code verified, cooldown satisfied and the change is now applied.",
                           icon: "checkmark.seal.fill", color: Brand.success,
                           pillText: "Applied", pillKind: .success)
         }
         if r.verified == true {
             // Verified but NOT applied — held by cooldown / SIM-swap / review.
             let held = challenge?.simSwapClean != true || cooldownRemaining > 0
-            return VState(title: "Verified — pending apply",
+            return VState(title: "Verified - pending apply",
                           subtitle: held
                             ? "Your code was verified, but the change is held for review (cooldown or SIM-swap risk). It is not yet applied."
                             : "Your code was verified. The change is queued to apply and is not yet live.",
@@ -786,7 +786,7 @@ struct StepUpAuthSheet: View {
         }
         // Unknown / null — surface verbatim, never green.
         return VState(title: "Pending review",
-                      subtitle: "The step-up returned without a confirmed apply. Routed to manual review — the change is not applied.",
+                      subtitle: "The step-up returned without a confirmed apply. Routed to manual review. The change is not applied.",
                       icon: "exclamationmark.triangle.fill", color: Brand.warning,
                       pillText: (r.status ?? "Pending").capitalized, pillKind: .warning)
     }

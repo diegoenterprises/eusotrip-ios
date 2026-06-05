@@ -357,7 +357,7 @@ struct ShipperCarPlayDashboard: View {
                         GradientCapsuleCTA(label: activeTile.ctaLabel, width: 140)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Add the active load tile to CarPlay — pins the Houston to Dallas active-load widget to the Driver Cluster zone of the head unit's Dashboard scene.")
+                    .accessibilityLabel("Add the active load tile to CarPlay. Pins the Houston to Dallas active-load widget to the Driver Cluster zone of the head unit's Dashboard scene.")
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 14)
@@ -447,7 +447,7 @@ struct ShipperCarPlayDashboard: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Manage CarPlay integration. Per-tile, per-zone, and pairing settings live in 211 Settings.")
+        .accessibilityLabel("Manage CarPlay integration. Per-tile, per-zone and pairing settings live in 211 Settings.")
     }
 
     private var footer: some View {
@@ -627,7 +627,7 @@ private struct GradientPassHeader: View {
         }
         .frame(maxWidth: .infinity, minHeight: 40, maxHeight: 40)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(sceneLine) — \(title) — Apple Play")
+        .accessibilityLabel("\(sceneLine) - \(title) - Apple Play")
     }
 }
 

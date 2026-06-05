@@ -363,7 +363,7 @@ private struct VesselTerminalAppointmentBody: View {
                 Text(conf.confirmationNumber ?? "CONF-\(conf.id)")
                     .font(.system(size: 22, weight: .heavy, design: .monospaced))
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("Slot \(selectedTime ?? "—") PT · \(displayDate) · LBCT Pier T gate 7")
+                Text("Slot \(selectedTime ?? "-") PT · \(displayDate) · LBCT Pier T gate 7")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                 Text("GP-XXXXXX gate pass issued on confirm · valid 4 h from slot")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)

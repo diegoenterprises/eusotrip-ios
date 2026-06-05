@@ -104,7 +104,7 @@ private struct VesselDemurrageAnalyticsBody: View {
                 } else if rows.isEmpty {
                     EusoEmptyState(systemImage: "chart.bar.xaxis",
                                    title: "No demurrage to analyze",
-                                   subtitle: "getVesselFinancialSummary returned no demurrage charges. Nothing has accrued in range — no trend to chart, nothing to dispute.")
+                                   subtitle: "getVesselFinancialSummary returned no demurrage charges. Nothing has accrued in range, no trend to chart, nothing to dispute.")
                 } else {
                     summaryBand
                     trendCard

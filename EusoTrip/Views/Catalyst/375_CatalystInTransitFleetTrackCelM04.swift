@@ -199,7 +199,7 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
     }
 
     private var loadIdLabel: String {
-        transitLoad?.loadNumber ?? "—"
+        transitLoad?.loadNumber ?? "-"
     }
 
     private var titleRow: some View {
@@ -259,7 +259,7 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
     // MARK: KPI quartet
 
     private func kpiQuartet(_ l: ActiveLoadRow_375) -> some View {
-        let hos = rollingDriver?.hoursRemaining.map { formatHOS_375($0) } ?? "—"
+        let hos = rollingDriver?.hoursRemaining.map { formatHOS_375($0) } ?? "-"
         return HStack(spacing: 8) {
             kpiTile("ETA", l.eta.isEmpty ? "TBD" : l.eta, "appt")
             kpiTile("LANE", laneShort(l), "route")
@@ -361,7 +361,7 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
                         .font(.system(size: 12, weight: .heavy))
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
-                    Text("HOS \(d.status.lowercased()) · \(d.hoursRemaining.map { formatHOS_375($0) } ?? "—") · \(d.id)")
+                    Text("HOS \(d.status.lowercased()) · \(d.hoursRemaining.map { formatHOS_375($0) } ?? "-") · \(d.id)")
                         .font(.system(size: 9, design: .monospaced))
                         .foregroundStyle(palette.textSecondary)
                         .lineLimit(1)
@@ -469,15 +469,15 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
             TelemetryRow_375(
                 title: "Rolling · \(laneShort(l)) corridor",
                 detail: "ETA \(l.eta.isEmpty ? "TBD" : l.eta) · live position feed",
-                trailing: locBacked ? "live" : "—",
+                trailing: locBacked ? "live" : "-",
                 realBacked: locBacked),
             TelemetryRow_375(
-                title: "HOS · \(rollingDriver?.status.lowercased() ?? "driving") · \(rollingDriver?.hoursRemaining.map { formatHOS_375($0) } ?? "—") remaining",
+                title: "HOS · \(rollingDriver?.status.lowercased() ?? "driving") · \(rollingDriver?.hoursRemaining.map { formatHOS_375($0) } ?? "-") remaining",
                 detail: "660-min cap math · catalysts.getMyDrivers.hoursRemaining",
-                trailing: rollingDriver?.hoursRemaining.map { formatHOS_375($0) } ?? "—",
+                trailing: rollingDriver?.hoursRemaining.map { formatHOS_375($0) } ?? "-",
                 realBacked: hosBacked),
             TelemetryRow_375(
-                title: "Exception watch · \(transitLoad == nil ? "—" : "clear")",
+                title: "Exception watch · \(transitLoad == nil ? "-" : "clear")",
                 detail: "0 alerts on \(l.loadNumber) · on-time to appt",
                 trailing: "0",
                 realBacked: transitLoad != nil)
@@ -672,7 +672,7 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
     }
 
     private func rateDisplay(_ rate: Double) -> String {
-        guard rate > 0 else { return "—" }
+        guard rate > 0 else { return "-" }
         let f = NumberFormatter()
         f.numberStyle = .currency
         f.currencyCode = "USD"

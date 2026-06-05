@@ -115,12 +115,12 @@ private struct LoadOfferBody: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text("DRIVER · OFFER · \(load?.trailerType?.uppercased() ?? "—") · \(load?.cargoType?.uppercased() ?? "—")")
+                Text("DRIVER · OFFER · \(load?.trailerType?.uppercased() ?? "-") · \(load?.cargoType?.uppercased() ?? "-")")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             if let l = load {
                 Text(l.loadNumber ?? "LD-\(l.id ?? 0)").font(.caption.monospaced().weight(.semibold)).foregroundStyle(palette.textSecondary)
-                Text("\(l.pickupCity ?? "—") → \(l.destCity ?? "—")")
+                Text("\(l.pickupCity ?? "-") → \(l.destCity ?? "-")")
                     .font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
                 if let exp = l.expiresAt, let d = ISO8601DateFormatter().date(from: exp) {
                     let mins = max(0, Int(d.timeIntervalSinceNow / 60))
@@ -149,7 +149,7 @@ private struct LoadOfferBody: View {
                             .foregroundStyle(.green)
                     }
                 }
-                Text("$\(l.rate ?? "—")")
+                Text("$\(l.rate ?? "-")")
                     .font(.system(size: 36, weight: .heavy).monospacedDigit())
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("linehaul · \(rpmString(l)) · \(Int(l.distance ?? 0)) mi")
@@ -181,7 +181,7 @@ private struct LoadOfferBody: View {
     private var lifecycleProgressCard: some View {
         LifecycleCard {
             VStack(alignment: .leading, spacing: 8) {
-                Text("LIFECYCLE · \(load?.trailerType?.uppercased() ?? "—") · \(load?.cargoType?.uppercased() ?? "—") \(load?.temperatureRange ?? "")")
+                Text("LIFECYCLE · \(load?.trailerType?.uppercased() ?? "-") · \(load?.cargoType?.uppercased() ?? "-") \(load?.temperatureRange ?? "")")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                 HStack(spacing: 4) {
                     ForEach(["POSTED", "BIDDING", "AWARDED", "PICKUP"], id: \.self) { stage in
@@ -250,7 +250,7 @@ private struct LoadOfferBody: View {
                 actionAck = "Offer accepted · load \(resp.loadId ?? loadId) is now yours."
                 await loadCtx()
             } else {
-                actionError = "Accept returned no success flag — reload and try again."
+                actionError = "Accept returned no success flag, reload and try again."
             }
         } catch let err {
             actionError = (err as? LocalizedError)?.errorDescription ?? "Accept failed: \(err)"
@@ -268,7 +268,7 @@ private struct LoadOfferBody: View {
                 actionAck = "Offer declined · returned to the pool."
                 await loadCtx()
             } else {
-                actionError = "Decline returned no success flag — reload and try again."
+                actionError = "Decline returned no success flag, reload and try again."
             }
         } catch let err {
             actionError = (err as? LocalizedError)?.errorDescription ?? "Decline failed: \(err)"
@@ -338,7 +338,7 @@ private struct AssignReceiptBody: View {
             if let l = load {
                 let etaPickup = etaText(l.pickupDate)
                 let ago = timeAgo(l.acceptedAt)
-                Text("GROSS $\(l.rate ?? "—") · PICKUP \(etaPickup) · \(ago) AGO")
+                Text("GROSS $\(l.rate ?? "-") · PICKUP \(etaPickup) · \(ago) AGO")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textSecondary)
             }
         }
@@ -348,7 +348,7 @@ private struct AssignReceiptBody: View {
         LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("§271 · CROSS-TRACK PARITY PORT").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "—") → \(l.destCity ?? "—") · \(l.trailerType ?? "—") · DU paid · ME drives")
+                Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "-") → \(l.destCity ?? "-") · \(l.trailerType ?? "-") · DU paid · ME drives")
                     .font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
             }
         }
@@ -362,8 +362,8 @@ private struct AssignReceiptBody: View {
                     Text("RM").font(.system(size: 16, weight: .heavy)).foregroundStyle(.white)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(l.dispatcherCompany ?? "—").font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
-                    Text(l.dispatcherContact ?? "—").font(.caption).foregroundStyle(palette.textSecondary)
+                    Text(l.dispatcherCompany ?? "-").font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
+                    Text(l.dispatcherContact ?? "-").font(.caption).foregroundStyle(palette.textSecondary)
                     if let d = l.dispatcherDot, let m = l.dispatcherMc {
                         Text("USDOT \(d) · MC-\(m)").font(.caption2.monospaced()).foregroundStyle(palette.textTertiary)
                     }
@@ -377,8 +377,8 @@ private struct AssignReceiptBody: View {
     private func payoutGrid(_ l: DriverLoadCtx) -> some View {
         let cols = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
         return LazyVGrid(columns: cols, spacing: 8) {
-            kpi("GROSS", "$\(l.rate ?? "—")", "line haul", .green)
-            kpi("FSC", "$\(l.fsc ?? "—")", "18% line-haul", .blue)
+            kpi("GROSS", "$\(l.rate ?? "-")", "line haul", .green)
+            kpi("FSC", "$\(l.fsc ?? "-")", "18% line-haul", .blue)
             kpi("DISTANCE", "\(Int(l.distance ?? 0)) mi", "to destination", .blue)
             kpi("ETA PICKUP", etaText(l.pickupDate), "window open", .blue)
         }
@@ -407,14 +407,14 @@ private struct AssignReceiptBody: View {
     }
 
     private func etaText(_ iso: String?) -> String {
-        guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return "—" }
+        guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return "-" }
         let mins = Int(d.timeIntervalSinceNow / 60)
         if mins < 0 { return "ARRIVED" }
         if mins < 60 { return "\(mins)m" }
         return "\(mins / 60)h \(mins % 60)m"
     }
     private func timeAgo(_ iso: String?) -> String {
-        guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return "—" }
+        guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return "-" }
         let mins = max(0, Int(Date().timeIntervalSince(d) / 60))
         if mins < 1 { return "0:01" }
         if mins < 60 { return "0:\(String(format: "%02d", mins))" }
@@ -499,7 +499,7 @@ private struct PickupApproachBody: View {
         LifecycleCard {
             VStack(alignment: .leading, spacing: 4) {
                 Text("PICKUP FACILITY").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text(l.pickupFacilityName ?? "\(l.pickupCity ?? "—") facility").font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
+                Text(l.pickupFacilityName ?? "\(l.pickupCity ?? "-") facility").font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
                 Text("\(windowText(l)) · 0:42 buffer").font(.caption).foregroundStyle(palette.textSecondary)
             }
         }
@@ -538,7 +538,7 @@ private struct PickupApproachBody: View {
     }
 
     private func etaTime(_ iso: String?) -> String {
-        guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return "—" }
+        guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return "-" }
         let f = DateFormatter(); f.dateFormat = "H:mm"
         return f.string(from: d)
     }
@@ -546,8 +546,8 @@ private struct PickupApproachBody: View {
         switch (l.pickupWindowStart, l.pickupWindowEnd) {
         case let (s?, e?):
             let f = ISO8601DateFormatter(); let out = DateFormatter(); out.dateFormat = "H:mm"
-            let sd = f.date(from: s).map { out.string(from: $0) } ?? "—"
-            let ed = f.date(from: e).map { out.string(from: $0) } ?? "—"
+            let sd = f.date(from: s).map { out.string(from: $0) } ?? "-"
+            let ed = f.date(from: e).map { out.string(from: $0) } ?? "-"
             return "\(sd)–\(ed) PDT"
         default:
             return "open / close"

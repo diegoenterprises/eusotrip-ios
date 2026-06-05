@@ -169,9 +169,9 @@ private struct RailETAPredictionBody: View {
         .padding(.top, Space.s4)
     }
 
-    /// No predictEta model → no confidence number to show. Renders "—" until
+    /// No predictEta model → no confidence number to show. Renders "-" until
     /// the forecast endpoint ships (PORT-GAP) rather than the SVG's mock 82%.
-    private var confidenceText: String { "—" }
+    private var confidenceText: String { "-" }
 
     // MARK: - HERO · map canvas route panel
 
@@ -381,7 +381,7 @@ private struct RailETAPredictionBody: View {
             parts.append(String(format: "est %.0fh", h))
         }
         // PORT-GAP: per-leg confidence% lives on predictEta (absent) — omitted.
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
 
     private func legClock(_ seg: IMSegment643) -> String {

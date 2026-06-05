@@ -117,7 +117,7 @@ public struct PremiumTierView: View {
             featureRow(icon: "shield.checkered", title: "Compliance watchdog",
                        body: "Multi-trailer segregation checks, USMCA cert auto-draft, ERG follow-ups across your active book.")
             featureRow(icon: "phone.bubble.fill", title: "Priority human support",
-                       body: "Direct line to the ESang ops desk for routing, customs, and HOS escalations.")
+                       body: "Direct line to the ESang ops desk for routing, customs and HOS escalations.")
 
             if let err = upgradeError {
                 Text(err).font(.callout).foregroundStyle(.red)
@@ -298,13 +298,13 @@ public struct PremiumTierView: View {
         }
         func decNum(_ d: Decimal) -> Double { (d as NSDecimalNumber).doubleValue }
         return [
-            MultiplierRow(label: "BASE",           value: decFmt(breakdown.base),          numericValue: decNum(breakdown.base),          explanation: e.base ?? "—"),
-            MultiplierRow(label: "COUNTRY",        value: decFmt(breakdown.country),       numericValue: decNum(breakdown.country),       explanation: e.country ?? "—"),
-            MultiplierRow(label: "VERTICAL",       value: decFmt(breakdown.vertical),      numericValue: decNum(breakdown.vertical),      explanation: e.vertical ?? "—"),
-            MultiplierRow(label: "PRODUCT",        value: decFmt(breakdown.product),       numericValue: decNum(breakdown.product),       explanation: e.product ?? "—"),
-            MultiplierRow(label: "HAZMAT",         value: decFmt(breakdown.hazmat),        numericValue: decNum(breakdown.hazmat),        explanation: e.hazmat ?? "—"),
-            MultiplierRow(label: "DISTANCE",       value: decFmt(breakdown.distance),      numericValue: decNum(breakdown.distance),      explanation: e.distance ?? "—"),
-            MultiplierRow(label: "CYCLE DAMPENER", value: decFmt(breakdown.cycleDampener), numericValue: decNum(breakdown.cycleDampener), explanation: e.cycleDampener ?? "—"),
+            MultiplierRow(label: "BASE",           value: decFmt(breakdown.base),          numericValue: decNum(breakdown.base),          explanation: e.base ?? "-"),
+            MultiplierRow(label: "COUNTRY",        value: decFmt(breakdown.country),       numericValue: decNum(breakdown.country),       explanation: e.country ?? "-"),
+            MultiplierRow(label: "VERTICAL",       value: decFmt(breakdown.vertical),      numericValue: decNum(breakdown.vertical),      explanation: e.vertical ?? "-"),
+            MultiplierRow(label: "PRODUCT",        value: decFmt(breakdown.product),       numericValue: decNum(breakdown.product),       explanation: e.product ?? "-"),
+            MultiplierRow(label: "HAZMAT",         value: decFmt(breakdown.hazmat),        numericValue: decNum(breakdown.hazmat),        explanation: e.hazmat ?? "-"),
+            MultiplierRow(label: "DISTANCE",       value: decFmt(breakdown.distance),      numericValue: decNum(breakdown.distance),      explanation: e.distance ?? "-"),
+            MultiplierRow(label: "CYCLE DAMPENER", value: decFmt(breakdown.cycleDampener), numericValue: decNum(breakdown.cycleDampener), explanation: e.cycleDampener ?? "-"),
         ]
     }
 

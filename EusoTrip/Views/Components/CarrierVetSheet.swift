@@ -206,7 +206,7 @@ public struct CarrierVetSheet: View {
             if let s = r.eusotripScorecard {
                 scorecardRow(s)
             } else {
-                Text("No prior loads with this carrier — scorecard not available.")
+                Text("No prior loads with this carrier. Scorecard not available.")
                     .font(.footnote).foregroundStyle(.tertiary)
             }
             if !r.redFlags.isEmpty {

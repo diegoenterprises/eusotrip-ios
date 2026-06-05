@@ -107,7 +107,7 @@ private struct RfpDetailBody: View {
                 Image(systemName: "doc.text").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("SHIPPER · RFP DETAIL · LIVE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
-            Text(rfp?.title ?? "—").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            Text(rfp?.title ?? "-").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
             Text("Drag an UNAWARDED lane onto AWARDED to commit. Best bid per lane is the auto-pick.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -259,7 +259,7 @@ private struct RfpDetailBody: View {
 
     private func awardLane(_ laneId: String) async {
         await MainActor.run { awarding = laneId; actionError = nil }
-        let label = rfp?.lanes.first(where: { $0.id == laneId }).map { "\($0.origin ?? "—") → \($0.destination ?? "—")" } ?? "lane \(laneId)"
+        let label = rfp?.lanes.first(where: { $0.id == laneId }).map { "\($0.origin ?? "-") → \($0.destination ?? "-")" } ?? "lane \(laneId)"
         struct In: Encodable { let rfpId: String; let laneId: String }
         struct Out: Decodable { let success: Bool? }
         do {

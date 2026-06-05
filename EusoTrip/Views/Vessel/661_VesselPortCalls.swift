@@ -64,7 +64,7 @@ private struct RotationTick_661: Equatable {
     static let live = RotationTick_661(
         nextCallNm: 6.2, nextCallEta: "14:30",
         degraded: false,
-        esangLine: "Long Beach 15:00 — Oakland window tightens")
+        esangLine: "Long Beach 15:00 - Oakland window tightens")
 }
 
 @MainActor
@@ -77,8 +77,8 @@ private final class RotationVM_661: ObservableObject {
 
     @Published var loop = "EUS-TPEB-07"
     @Published var rotation: [String] = []
-    @Published var nextPort = "—"
-    @Published var nextCode = "—"
+    @Published var nextPort = "-"
+    @Published var nextCode = "-"
     @Published var calls: [PortCall_661] = []
 
     private var streamTask: Task<Void, Never>?
@@ -137,7 +137,7 @@ private final class RotationVM_661: ObservableObject {
             var mapped: [PortCall_661] = []
             var firstUpcoming: Int? = nil
             for (idx, c) in raw.enumerated() {
-                let code = (c.unlocode ?? c.portId ?? "—").uppercased()
+                let code = (c.unlocode ?? c.portId ?? "-").uppercased()
                 let port = c.portName ?? code
                 let departed = (c.departureTime?.isEmpty == false)
                 let alongside = (c.inPort == true) && !departed
@@ -167,13 +167,13 @@ private final class RotationVM_661: ObservableObject {
             }
 
             calls = mapped
-            rotation = raw.map { ($0.unlocode ?? $0.portId ?? "—").uppercased() }
+            rotation = raw.map { ($0.unlocode ?? $0.portId ?? "-").uppercased() }
             if let ni = firstUpcoming {
                 nextPort = raw[ni].portName ?? rotation[ni]
                 nextCode = rotation[ni]
             } else if let last = raw.last {
-                nextPort = last.portName ?? (last.unlocode ?? "—").uppercased()
-                nextCode = (last.unlocode ?? last.portId ?? "—").uppercased()
+                nextPort = last.portName ?? (last.unlocode ?? "-").uppercased()
+                nextCode = (last.unlocode ?? last.portId ?? "-").uppercased()
             }
             hasCalls = true
         } catch {
@@ -188,7 +188,7 @@ private final class RotationVM_661: ObservableObject {
     private let imoForLoop = "9839430"
 
     private static func shortTime(_ iso: String?) -> String {
-        guard let iso, !iso.isEmpty else { return "—" }
+        guard let iso, !iso.isEmpty else { return "-" }
         // ISO 8601 — surface "MMM d HH:mm" without pulling in a heavy formatter.
         let parts = iso.split(separator: "T")
         let date = String(parts.first ?? "")
@@ -200,7 +200,7 @@ private final class RotationVM_661: ObservableObject {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime]
         let ref = departure?.isEmpty == false ? departure : arrival
-        guard let ref, !ref.isEmpty, let d = f.date(from: ref) else { return "—" }
+        guard let ref, !ref.isEmpty, let d = f.date(from: ref) else { return "-" }
         let days = Int((d.timeIntervalSinceNow / 86400).rounded())
         if days == 0 { return "today" }
         return days < 0 ? "\(days)d" : "+\(days)d"
@@ -249,7 +249,7 @@ private struct VesselPortCallsBody: View {
                 } else if !vm.hasCalls {
                     EusoEmptyState(systemImage: "ferry",
                                    title: "No port calls in range",
-                                   subtitle: "getVesselPortCalls returned no AIS port-call history for this rotation. Nothing to plot — no fabricated calls.")
+                                   subtitle: "getVesselPortCalls returned no AIS port-call history for this rotation. Nothing to plot, no fabricated calls.")
                 } else {
                     rotationHero
                     scheduleList

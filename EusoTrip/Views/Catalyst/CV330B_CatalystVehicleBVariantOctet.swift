@@ -278,10 +278,10 @@ private struct CatalystVehicleBBody: View {
     private func nextStepCard(_ c: CVBConfig) -> some View {
         let copy: String = {
             switch kind {
-            case .scoreAxis:   return "Composite axis grade A. Pinned to §9.4 vehicle books — refresh weekly with the next QC cycle."
+            case .scoreAxis:   return "Composite axis grade A. Pinned to §9.4 vehicle books. Refresh weekly with the next QC cycle."
             case .profileTier: return "Gold tier (§13.4) holds +0.06 pillar boost. Reconfirm criteria on Q2 baseline."
             case .document:    return "Hazmat HM-126F registration is missing. File §107.601 by EOD to clear the asset for the next NH₃ pull."
-            case .analytic:    return "MPG index +0.12 vs fleet mean. Hold the cadence — owner-op driving discipline is the lever."
+            case .analytic:    return "MPG index +0.12 vs fleet mean. Hold the cadence. Owner-op driving discipline is the lever."
             case .settlement:  return "Allocation A38FB12C7E at $1,320, POD signed. NET-30 wires next; advance-eligible 1.5%/5D."
             case .onboarding:  return "CVSA periodic inspection expired (§396.17). Schedule mechanic + DOT lane immediately."
             case .compliance:  return "Hazmat-transport pool row HM-126F missing. Pair with the §107.601 doc filing above."

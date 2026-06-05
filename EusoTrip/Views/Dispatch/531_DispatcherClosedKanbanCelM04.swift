@@ -14,7 +14,7 @@
 //  Doctrine: every visible value binds to `loads.getById`. No
 //  scenario literals — the wireframe shows canonical CEL/M-04/NC
 //  strings to illustrate the moment; production substitutes whichever
-//  load is bound and shows "—" when a field hasn't resolved.
+//  load is bound and shows "-" when a field hasn't resolved.
 //
 
 import SwiftUI
@@ -67,17 +67,17 @@ private struct DCKBody: View {
     @Environment(\.palette) private var palette
     @State private var load: DCKLoadCtx?
 
-    private var loadNumberDisplay: String { load?.loadNumber ?? "—" }
+    private var loadNumberDisplay: String { load?.loadNumber ?? "-" }
     private var rateDisplay: String {
         if let r = load?.rate, let n = Double(r), n > 0 {
             let v = n.rounded()
             return v < 1000 ? String(format: "$%.0f", v) : "$\(Int(v).formatted(.number))"
         }
-        return "—"
+        return "-"
     }
     private var settleDateDisplay: String {
         guard let iso = load?.deliveryDate,
-              let delivered = ISO8601DateFormatter().date(from: iso) else { return "—" }
+              let delivered = ISO8601DateFormatter().date(from: iso) else { return "-" }
         let settle = Calendar.current.date(byAdding: .day, value: 30, to: delivered) ?? delivered
         let f = DateFormatter(); f.dateFormat = "M/d"
         return f.string(from: settle)
@@ -183,7 +183,7 @@ private struct DCKBody: View {
             ("LANE",   "CLOSED",            "from PAPERWORK · ring rolled", .green),
             ("PAYOUT", rateDisplay,         "NET-30 \(settleDateDisplay)",  .green),
             ("CARDS",  "0",                 "open on this load",            .blue),
-            ("STATE",  "PAID",              load?.status ?? "—",            .green),
+            ("STATE",  "PAID",              load?.status ?? "-",            .green),
         ]
         let cols = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
         return LazyVGrid(columns: cols, spacing: 8) {

@@ -161,7 +161,7 @@ private struct CatalystLifecycleBody: View {
                 Text(c.citation).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                 Text(c.pillCopy).font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true)
                 if let l = load {
-                    Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "—") → \(l.destCity ?? "—") · \(l.trailerType ?? "—")")
+                    Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "-") → \(l.destCity ?? "-") · \(l.trailerType ?? "-")")
                         .font(.caption2).foregroundStyle(palette.textSecondary)
                 }
             }
@@ -270,7 +270,7 @@ private struct CatalystLifecycleBody: View {
             case .departing:   return "Long-haul leg begins. POD arming activates at receiver-gate; net-30 downstream wires on POD-ink."
             case .preDelivery: return "Call ahead 15 minutes out. Confirm receiver dock + paperwork access; backhaul tender pre-stages."
             case .atDelivery:  return "Receiver inspects + co-signs. POD-ink lands the chain; NET-30 downstream wires on issue."
-            case .podReceipt:  return "ePOD CERT issued, NET-30 wired. Payout-advance 1.5%/5D armed — pull if cash-flow needed."
+            case .podReceipt:  return "ePOD CERT issued, NET-30 wired. Payout-advance 1.5%/5D armed. Pull if cash-flow needed."
             case .loadClosed:  return "Rollup confirmed, backhaul tender ready. Approve to keep Aurora moving on the PHX-LA chain."
             }
         }()

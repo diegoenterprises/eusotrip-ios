@@ -65,7 +65,7 @@ private struct VesselStatusUpdateBody: View {
     private let options: [VesselStatusOption] = [
         VesselStatusOption(value: "arrived",        title: "Arrived", note: "Port of Savannah call · records ATA timestamp", danger: false),
         VesselStatusOption(value: "transshipment",  title: "Transshipment", note: "relay leg via hub port · keeps in-transit", danger: false),
-        VesselStatusOption(value: "customs_hold",   title: "Customs hold — exception", note: "flags control tower · requires note", danger: true)
+        VesselStatusOption(value: "customs_hold",   title: "Customs hold - exception", note: "flags control tower · requires note", danger: true)
     ]
 
     var body: some View {
@@ -152,7 +152,7 @@ private struct VesselStatusUpdateBody: View {
             Circle().fill(LinearGradient.diagonal).frame(width: 18, height: 18)
             VStack(alignment: .leading, spacing: 2) {
                 Text("ESANG AI").font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textPrimary)
-                Text("Berth window confirmed at GPA Garden City — no anchorage wait.").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+                Text("Berth window confirmed at GPA Garden City, no anchorage wait.").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
             }
         }
     }

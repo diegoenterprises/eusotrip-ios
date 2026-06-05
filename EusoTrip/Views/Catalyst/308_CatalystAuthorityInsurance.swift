@@ -178,7 +178,7 @@ private struct AuthInsBody: View {
                 Text("CATALYST · AUTHORITY + INSURANCE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Authority + Insurance").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            let usdot = authority?.usdot ?? authority?.dotNumber ?? "—"
+            let usdot = authority?.usdot ?? authority?.dotNumber ?? "-"
             Text("USDOT \(usdot)").font(EType.caption).foregroundStyle(palette.textSecondary)
             let renewals = stats?.renewalsYTD ?? 0
             let active = stats?.activePolicies ?? 0
@@ -219,7 +219,7 @@ private struct AuthInsBody: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("OPERATING AUTHORITY").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
             LifecycleCard {
-                authRow(title: "USDOT \(a.usdot ?? a.dotNumber ?? "—")",
+                authRow(title: "USDOT \(a.usdot ?? a.dotNumber ?? "-")",
                         subtitle: "SAFER · BASIC clean · \(a.oosCount ?? 0) OOS · MCS-150 \(shortDate(a.lastMcs150))",
                         badge: (a.standing ?? "ACTIVE").uppercased(),
                         badgeColor: .green)
@@ -287,7 +287,7 @@ private struct AuthInsBody: View {
         let (badge, color): (String, Color) = renewing ? ("RENEW", .orange) : ("CURRENT", .green)
         return LifecycleCard(accentDanger: renewing) {
             authRow(title: "\(p.policyType ?? "Policy") · \(p.coverageAmount ?? "")",
-                    subtitle: "\(p.carrier ?? "—") · POL \(p.policyNumber ?? "—") · expires \(shortDate(p.expirationDate))",
+                    subtitle: "\(p.carrier ?? "-") · POL \(p.policyNumber ?? "-") · expires \(shortDate(p.expirationDate))",
                     badge: badge,
                     badgeColor: color)
         }
@@ -334,7 +334,7 @@ private struct AuthInsBody: View {
     }
 
     private func shortDate(_ iso: String?) -> String {
-        guard let iso, !iso.isEmpty else { return "—" }
+        guard let iso, !iso.isEmpty else { return "-" }
         let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         if let d = f.date(from: iso) {
             let out = DateFormatter(); out.dateFormat = "yyyy-MM-dd"

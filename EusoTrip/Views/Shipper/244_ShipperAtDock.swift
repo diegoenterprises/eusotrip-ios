@@ -85,7 +85,7 @@ final class ShipperAtDockStore: ObservableObject {
     /// tower write as a named stub.
     func trackLive(driverId: Int?) async {
         guard let driverId else {
-            actionError = "No carrier assigned yet — nothing to track."
+            actionError = "No carrier assigned yet - nothing to track."
             return
         }
         trackingInFlight = true

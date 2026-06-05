@@ -151,7 +151,7 @@ private struct DLBody: View {
                 actionAck = "POD signed · cert \(resp.podCertId ?? podCertId) issued · NET-30 wires next."
                 await loadCtx()
             } else {
-                actionError = "POD sign returned no success flag — reload and try again."
+                actionError = "POD sign returned no success flag, reload and try again."
             }
         } catch let err {
             actionError = (err as? LocalizedError)?.errorDescription ?? "POD sign failed: \(err)"
@@ -175,7 +175,7 @@ private struct DLBody: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(s.citation).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                 if let l = load {
-                    Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "—") → \(l.destCity ?? "—") · \(l.trailerType ?? "—")")
+                    Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "-") → \(l.destCity ?? "-") · \(l.trailerType ?? "-")")
                         .font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
                 }
             }
@@ -217,9 +217,9 @@ private struct DLBody: View {
 
 // MARK: - Helpers shared across stages
 
-private func tempLabel(_ f: Double?) -> String { f.map { String(format: "%.0f°F", $0) } ?? "—" }
+private func tempLabel(_ f: Double?) -> String { f.map { String(format: "%.0f°F", $0) } ?? "-" }
 private func etaLabel(_ iso: String?) -> String {
-    guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return "—" }
+    guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return "-" }
     let f = DateFormatter(); f.dateFormat = "H:mm"
     return f.string(from: d)
 }
@@ -240,7 +240,7 @@ struct DriverAtGateScreen: View {
                     title: "At the gate",
                     subtitle: "Gate inbound · 2 trucks ahead",
                     kpis: [
-                        .init(label: "DOCK",  value: l?.dockNumber ?? "—", subtitle: "bay open", color: .blue),
+                        .init(label: "DOCK",  value: l?.dockNumber ?? "-", subtitle: "bay open", color: .blue),
                         .init(label: "DWELL", value: "0:00", subtitle: "queue 2", color: .green),
                         .init(label: "PALLETS", value: "\(l?.palletCount ?? 0)", subtitle: "to load", color: .blue),
                         .init(label: "DOCK ETA", value: "0:15", subtitle: "estimated", color: .blue),
@@ -268,12 +268,12 @@ struct DriverAtDockScreen: View {
                     title: "At dock · loading",
                     subtitle: "Live load · sealed on close",
                     kpis: [
-                        .init(label: "DOCK", value: l?.dockNumber ?? "—", subtitle: "IN · loading", color: .orange),
+                        .init(label: "DOCK", value: l?.dockNumber ?? "-", subtitle: "IN · loading", color: .orange),
                         .init(label: "PALLETS", value: "\(l?.palletCount ?? 0)", subtitle: "to load · sealed on close", color: .blue),
                         .init(label: "TEMP", value: tempLabel(l?.temperatureF), subtitle: "SEAL · pickup", color: .blue),
                         .init(label: "DWELL", value: "0:42", subtitle: "within 2h free", color: .green),
                     ],
-                    nextStep: "Load is sealing now. BOL pre-sign queued — sign in app when shipper releases."
+                    nextStep: "Load is sealing now. BOL pre-sign queued, sign in app when shipper releases."
                 )
             }
         }
@@ -353,7 +353,7 @@ struct DriverAtDeliveryScreen: View {
                     subtitle: "Receiving bay · BOL co-sign begun",
                     kpis: [
                         .init(label: "ETA", value: "0m", subtitle: "ARRIVED · OTA", color: .green),
-                        .init(label: "DOCK", value: l?.dockNumber ?? "—", subtitle: "IN · receiving", color: .orange),
+                        .init(label: "DOCK", value: l?.dockNumber ?? "-", subtitle: "IN · receiving", color: .orange),
                         .init(label: "TEMP", value: tempLabel(l?.temperatureF), subtitle: "SEAL · arrival", color: .blue),
                         .init(label: "PALLETS", value: "\(l?.palletCount ?? 0)", subtitle: "staging", color: .blue),
                     ],
@@ -412,7 +412,7 @@ struct DriverLoadClosedScreen: View {
                     kpis: [
                         .init(label: "PALLETS", value: "\(pal)/\(pal)", subtitle: "FINAL · sealed", color: .green),
                         .init(label: "POD CERT", value: "ISSUED", subtitle: l?.podCertId ?? "ePOD chain sealed", color: .green),
-                        .init(label: "PAYOUT", value: "$\(l?.rate ?? "—")", subtitle: "STAGED · NET-30", color: .green),
+                        .init(label: "PAYOUT", value: "$\(l?.rate ?? "-")", subtitle: "STAGED · NET-30", color: .green),
                         .init(label: "BACKHAUL", value: "ARMED", subtitle: "advance eligible", color: .blue),
                     ],
                     nextStep: "Backhaul offer arrives shortly. Take it or close the trip and rest."

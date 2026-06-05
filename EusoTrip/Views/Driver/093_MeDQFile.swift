@@ -99,7 +99,7 @@ struct MeDQFile: View {
                     )
                     .rotationEffect(.degrees(-90))
                 VStack(spacing: 2) {
-                    Text(hasData ? "\(score)" : "—")
+                    Text(hasData ? "\(score)" : "-")
                         .font(.system(size: 42, weight: .heavy, design: .rounded))
                         .foregroundStyle(LinearGradient.diagonal)
                         .monospacedDigit()
@@ -255,7 +255,7 @@ struct MeDQFile: View {
                 EusoEmptyState(
                     systemImage: "doc.text.magnifyingglass",
                     title: "Nothing on file yet",
-                    subtitle: "Upload your CDL, medical card, and any endorsements so dispatch can match you to compliant loads."
+                    subtitle: "Upload your CDL, medical card and any endorsements so dispatch can match you to compliant loads."
                 )
             } else {
                 ForEach(store.documents) { doc in
@@ -365,7 +365,7 @@ struct MeDQFile: View {
     }
 
     private func humanizeDate(_ iso: String?) -> String {
-        guard let iso, !iso.isEmpty else { return "—" }
+        guard let iso, !iso.isEmpty else { return "-" }
         let inF = DateFormatter()
         inF.dateFormat = "yyyy-MM-dd"
         inF.locale = Locale(identifier: "en_US_POSIX")

@@ -131,7 +131,7 @@ private struct RailCrossBorderComplianceCheckBody: View {
     // MARK: Time formatting
 
     private var lastRunClock: String {
-        guard let t = ranAt else { return "—" }
+        guard let t = ranAt else { return "-" }
         let f = DateFormatter()
         f.dateFormat = "HH:mm"
         return "\(f.string(from: t)) CT"
@@ -451,7 +451,7 @@ private struct RailCrossBorderComplianceCheckBody: View {
         return HStack(alignment: .top, spacing: 12) {
             Circle().fill(ink).frame(width: 8, height: 8).padding(.top, 4)
             VStack(alignment: .leading, spacing: 3) {
-                Text(run.ranAt ?? "—")
+                Text(run.ranAt ?? "-")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                 Text(run.summary ?? "")
@@ -476,7 +476,7 @@ private struct RailCrossBorderComplianceCheckBody: View {
         case "PASS":   return ("PASS",   Brand.success)
         case "FAIL":   return ("FAIL",   Brand.danger)
         case "REVIEW": return ("REVIEW", Brand.warning)
-        default:       return ((verdict ?? "—").uppercased(), palette.textTertiary)
+        default:       return ((verdict ?? "-").uppercased(), palette.textTertiary)
         }
     }
 

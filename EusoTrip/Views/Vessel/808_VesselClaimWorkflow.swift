@@ -268,7 +268,7 @@ private struct VesselClaimWorkflowBody: View {
 
     /// Trim long server step names ("Initial Review") to the strip's compact slot.
     private func shortLabel(_ name: String?) -> String {
-        guard let name, !name.isEmpty else { return "—" }
+        guard let name, !name.isEmpty else { return "-" }
         let first = name.split(separator: " ").first.map(String.init) ?? name
         return String(first.prefix(9))
     }

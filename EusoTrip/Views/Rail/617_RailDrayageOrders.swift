@@ -557,7 +557,7 @@ private struct RailDrayageOrdersBody: View {
 
     private func idLine(for order: DrayageOrder) -> String {
         // "TCNU 769312 · 40HC · LB" — container · size · port code.
-        let cnRaw = order.containerNumber ?? order.orderNumber ?? "—"
+        let cnRaw = order.containerNumber ?? order.orderNumber ?? "-"
         let cn: String = {
             if cnRaw.count > 4 {
                 let prefix = String(cnRaw.prefix(4))
@@ -567,7 +567,7 @@ private struct RailDrayageOrdersBody: View {
             return cnRaw
         }()
         let size = sizeShort(order.containerSize)
-        let port = order.port?.code ?? "—"
+        let port = order.port?.code ?? "-"
         return "\(cn) · \(size) · \(port)"
     }
 
@@ -578,7 +578,7 @@ private struct RailDrayageOrdersBody: View {
         case "20ft":    return "20'"
         case "45ft":    return "45'"
         case "53ft":    return "53'"
-        default:        return s ?? "—"
+        default:        return s ?? "-"
         }
     }
 
@@ -594,11 +594,11 @@ private struct RailDrayageOrdersBody: View {
     private func rightValue(for order: DrayageOrder) -> String {
         switch (order.status ?? "").lowercased() {
         case "dispatched":
-            return shortTime(order.appointmentTime) ?? "—"
+            return shortTime(order.appointmentTime) ?? "-"
         case "in_transit", "at_port":
-            return dwell(since: order.appointmentTime) ?? "—"
+            return dwell(since: order.appointmentTime) ?? "-"
         default:
-            return "—"
+            return "-"
         }
     }
 
@@ -631,7 +631,7 @@ private struct RailDrayageOrdersBody: View {
             guard (o.status ?? "").lowercased() == "dispatched" else { return nil }
             return o.appointmentTime.flatMap { parseDate($0) }
         }.sorted()
-        guard let first = times.first else { return "—" }
+        guard let first = times.first else { return "-" }
         let f = DateFormatter(); f.dateFormat = "HH:mm"
         return f.string(from: first)
     }
@@ -675,7 +675,7 @@ private struct RailDrayageOrdersBody: View {
         // server. No mutation to call, so surface the real gap rather than
         // fabricate a success ack. Once the mutation lands (with
         // blockchainAuditTrail insert + WS broadcast), wire it here.
-        dispatchNotice = "Dispatch is not yet wired — multiModal.dispatchDrayage has not shipped. (PORT-GAP)"
+        dispatchNotice = "Dispatch is not yet wired - multiModal.dispatchDrayage has not shipped. (PORT-GAP)"
     }
 }
 

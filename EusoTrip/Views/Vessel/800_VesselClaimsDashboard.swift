@@ -94,7 +94,7 @@ private struct VesselClaimsDashboardBody: View {
                 } else if !hasData {
                     EusoEmptyState(systemImage: "doc.text.magnifyingglass",
                                    title: "No claims on file",
-                                   subtitle: "getClaimsDashboard returned an empty ledger — no incidents to triage. Nothing to age or escalate.")
+                                   subtitle: "getClaimsDashboard returned an empty ledger, no incidents to triage. Nothing to age or escalate.")
                 } else {
                     agingCard
                     kpiRow
@@ -206,7 +206,7 @@ private struct VesselClaimsDashboardBody: View {
     private var esangSubtitle: String {
         if aging.over90 > 0 { return "work them now · denial risk rises sharply after 90d" }
         if counts.open > 0 { return "investigate before they age into the 60–90d band" }
-        return "no open incidents in range — nothing to escalate"
+        return "no open incidents in range - nothing to escalate"
     }
 
     private func load() async {
@@ -238,7 +238,7 @@ private struct VesselClaimsDashboardBody: View {
                 var subParts: [String] = [status.uppercased(), typeTxt]
                 if let d = c.filedDate, !d.isEmpty { subParts.append("filed \(d)") }
                 return ClaimRow800(
-                    claim: c.claimNumber ?? "—",
+                    claim: c.claimNumber ?? "-",
                     chip: chip,
                     pill: status.uppercased(),
                     sub: subParts.joined(separator: " · "),

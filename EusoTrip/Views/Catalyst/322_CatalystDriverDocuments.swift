@@ -263,7 +263,7 @@ private struct CatalystDriverDocuments: View {
     }
 
     private var subtitleLine: String {
-        let name = resolvedDriverName.isEmpty ? "—" : resolvedDriverName
+        let name = resolvedDriverName.isEmpty ? "-" : resolvedDriverName
         return "Eusotrans LLC · \(name) · 49 CFR §391 vault"
     }
 
@@ -319,28 +319,28 @@ private struct CatalystDriverDocuments: View {
         HStack(spacing: 0) {
             kpiCell(
                 eyebrow: "VALID",
-                value: overview.map { "\($0.documents.valid)" } ?? "—",
+                value: overview.map { "\($0.documents.valid)" } ?? "-",
                 meta: "on file",
                 emphasis: .success
             )
             kpiDivider
             kpiCell(
                 eyebrow: "EXPIRING",
-                value: overview.map { "\($0.documents.expiringSoon)" } ?? "—",
+                value: overview.map { "\($0.documents.expiringSoon)" } ?? "-",
                 meta: "≤ 30d",
                 emphasis: .warning
             )
             kpiDivider
             kpiCell(
                 eyebrow: "EXPIRED",
-                value: overview.map { "\($0.documents.expired)" } ?? "—",
+                value: overview.map { "\($0.documents.expired)" } ?? "-",
                 meta: "action req",
                 emphasis: overview.map { $0.documents.expired > 0 ? .danger : .neutral } ?? .neutral
             )
             kpiDivider
             kpiCell(
                 eyebrow: "SCORE",
-                value: overview.map { "\($0.complianceScore)%" } ?? "—",
+                value: overview.map { "\($0.complianceScore)%" } ?? "-",
                 meta: "DQ compliance",
                 emphasis: .gradient
             )
@@ -517,7 +517,7 @@ private struct CatalystDriverDocuments: View {
         case "expired":       return DocStatus(label: "EXPIRED",  tint: Brand.danger)
         case "missing":       return DocStatus(label: "MISSING",  tint: Brand.danger)
         case "pending":       return DocStatus(label: "PENDING",  tint: Brand.info)
-        default:               return DocStatus(label: s.uppercased().isEmpty ? "—" : s.uppercased(), tint: palette.textTertiary)
+        default:               return DocStatus(label: s.uppercased().isEmpty ? "-" : s.uppercased(), tint: palette.textTertiary)
         }
     }
 
@@ -729,7 +729,7 @@ private struct CatalystDocumentDetailSheet: View {
             List {
                 Section("Type") {
                     LabeledRow(label: "Type", value: prettyType(document.type))
-                    LabeledRow(label: "Status", value: (document.status ?? "—").uppercased())
+                    LabeledRow(label: "Status", value: (document.status ?? "-").uppercased())
                     if let reg = document.regulation, !reg.isEmpty {
                         LabeledRow(label: "Regulation", value: reg)
                     }
@@ -769,7 +769,7 @@ private struct CatalystDocumentDetailSheet: View {
     }
 
     private func formatDate(_ raw: String?) -> String {
-        guard let r = raw, !r.isEmpty else { return "—" }
+        guard let r = raw, !r.isEmpty else { return "-" }
         if r.count >= 10 { return String(r.prefix(10)) }
         return r
     }
@@ -871,7 +871,7 @@ private struct CatalystDocumentUploadSheet: View {
                                 Text("Scan to autofill")
                                     .font(.system(size: 14, weight: .heavy))
                                     .foregroundStyle(palette.textPrimary)
-                                Text("Gemini Vision detects type, identifier, and expiration. Confirm and save.")
+                                Text("Gemini Vision detects type, identifier and expiration. Confirm and save.")
                                     .font(.system(size: 11, weight: .regular))
                                     .foregroundStyle(palette.textSecondary)
                                     .fixedSize(horizontal: false, vertical: true)

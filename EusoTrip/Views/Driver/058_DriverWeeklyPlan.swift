@@ -381,7 +381,7 @@ struct DriverWeeklyPlan: View {
                 .foregroundColor(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         case .error(let err):
-            Text("Weekly earnings unavailable — \(err.localizedDescription)")
+            Text("Weekly earnings unavailable - \(err.localizedDescription)")
                 .font(EType.caption)
                 .foregroundColor(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -536,7 +536,7 @@ struct DriverWeeklyPlan: View {
     private func routeLine(origin: String, destination: String) -> String {
         let o = origin.trimmingCharacters(in: .whitespaces)
         let d = destination.trimmingCharacters(in: .whitespaces)
-        if o.isEmpty && d.isEmpty { return "—" }
+        if o.isEmpty && d.isEmpty { return "-" }
         if o.isEmpty { return "→ \(d)" }
         if d.isEmpty { return "\(o) →" }
         return "\(o) → \(d)"
@@ -579,7 +579,7 @@ struct DriverWeeklyPlan: View {
     private func weekShortLabel(start: String) -> String {
         // weekStart arrives as `YYYY-MM-DD` from earnings router.
         let parts = start.split(separator: "-")
-        guard parts.count >= 3 else { return "—" }
+        guard parts.count >= 3 else { return "-" }
         let month = String(parts[1])
         let day = String(parts[2])
         return "\(month.trimmingPrefix("0"))/\(day.trimmingPrefix("0"))"
@@ -648,7 +648,7 @@ extension MyLoadsStore.Bucket {
     var emptySubtitle: String {
         switch self {
         case .active:
-            return "When dispatch pairs you with a load, it shows up here with the route, rate, and pickup time."
+            return "When dispatch pairs you with a load, it shows up here with the route, rate and pickup time."
         case .pending:
             return "Offers tendered to you but not yet accepted show up here."
         case .finished:

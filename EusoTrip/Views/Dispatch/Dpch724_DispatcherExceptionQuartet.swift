@@ -152,9 +152,9 @@ private struct HOSReassignBody: View {
         LifecycleCard {
             VStack(alignment: .leading, spacing: 4) {
                 if let l = load {
-                    Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "—") → \(l.destCity ?? "—")")
+                    Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "-") → \(l.destCity ?? "-")")
                         .font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
-                    Text("\(l.trailerType ?? "—") · \(l.cargoType ?? "—") · $\(l.rate ?? "—")")
+                    Text("\(l.trailerType ?? "-") · \(l.cargoType ?? "-") · $\(l.rate ?? "-")")
                         .font(.caption).foregroundStyle(palette.textSecondary)
                     Text("\(Int(l.distance ?? 0)) mi · ETA \(etaText(l.deliveryDate))")
                         .font(.caption2).foregroundStyle(palette.textTertiary)
@@ -268,7 +268,7 @@ private struct HOSReassignBody: View {
                 actionAck = "Reassigned · driver \(resp.driverId ?? driverId) is now on LD-\(resp.loadId ?? loadId). Notification fired."
                 await loadCtx()
             } else {
-                actionError = "Reassign returned no success flag — reload and try again."
+                actionError = "Reassign returned no success flag. Reload and try again."
             }
         } catch let err {
             actionError = (err as? LocalizedError)?.errorDescription ?? "Reassign failed: \(err)"
@@ -276,7 +276,7 @@ private struct HOSReassignBody: View {
     }
 
     private func etaText(_ iso: String?) -> String {
-        guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return "—" }
+        guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return "-" }
         let mins = Int(d.timeIntervalSinceNow / 60)
         if mins < 0 { return "ARRIVED" }
         let f = DateFormatter(); f.dateFormat = "h:mm a"
@@ -386,9 +386,9 @@ private struct CancelLoadBody: View {
         LifecycleCard {
             VStack(alignment: .leading, spacing: 4) {
                 if let l = load {
-                    Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "—") → \(l.destCity ?? "—")")
+                    Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "-") → \(l.destCity ?? "-")")
                         .font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
-                    Text("\(l.trailerType ?? "—") · \(l.cargoType ?? "—") · $\(l.rate ?? "—") · \(Int(l.distance ?? 0)) mi")
+                    Text("\(l.trailerType ?? "-") · \(l.cargoType ?? "-") · $\(l.rate ?? "-") · \(Int(l.distance ?? 0)) mi")
                         .font(.caption).foregroundStyle(palette.textSecondary)
                 }
             }
@@ -496,7 +496,7 @@ private struct CancelLoadBody: View {
                 actionAck = "Load cancelled · reason '\(resp.reason ?? reason)' archived to audit chain."
                 await loadCtx()
             } else {
-                actionError = "Cancel returned no success flag — reload and try again."
+                actionError = "Cancel returned no success flag. Reload and try again."
             }
         } catch let err {
             actionError = (err as? LocalizedError)?.errorDescription ?? "Cancel failed: \(err)"
@@ -636,7 +636,7 @@ private struct LatePickupBody: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(load?.assignedDriverName ?? "Driver").font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
                     if let l = load {
-                        Text("\(l.trailerType ?? "—") · \(l.pickupCity ?? "—") → \(l.destCity ?? "—")").font(.caption).foregroundStyle(palette.textSecondary)
+                        Text("\(l.trailerType ?? "-") · \(l.pickupCity ?? "-") → \(l.destCity ?? "-")").font(.caption).foregroundStyle(palette.textSecondary)
                     }
                     Text("4 mi out · HOS 9:14 left").font(.caption2.monospaced()).foregroundStyle(palette.textTertiary)
                 }
@@ -703,7 +703,7 @@ private struct LatePickupBody: View {
                         Text("AUTO-RELEASE TIMER")
                             .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                         Text(secs <= 0
-                             ? "Window expired — shipper has released this load to the marketplace."
+                             ? "Window expired. Shipper has released this load to the marketplace."
                              : "until shipper auto-releases load to marketplace")
                             .font(.caption).foregroundStyle(palette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -764,10 +764,10 @@ private struct LatePickupBody: View {
                 input: In(loadId: loadId, minutes: 30, reason: "Driver 38 min late · 4 mi out · dispatcher extended via Dpch726")
             )
             if resp.success == true {
-                actionAck = "Pickup window extended +\(resp.extendedMinutes ?? 30)m · new ETA \(resp.newPickupIso?.prefix(16) ?? "—")."
+                actionAck = "Pickup window extended +\(resp.extendedMinutes ?? 30)m · new ETA \(resp.newPickupIso?.prefix(16) ?? "-")."
                 await loadCtx()
             } else {
-                actionError = "Extend returned no success flag — reload and try again."
+                actionError = "Extend returned no success flag. Reload and try again."
             }
         } catch let err {
             actionError = (err as? LocalizedError)?.errorDescription ?? "Extend failed: \(err)"
@@ -788,7 +788,7 @@ private struct LatePickupBody: View {
                 actionAck = "Released to market · load returned to the pool · carriers can re-bid now."
                 await loadCtx()
             } else {
-                actionError = "Release returned no success flag — reload and try again."
+                actionError = "Release returned no success flag. Reload and try again."
             }
         } catch let err {
             actionError = (err as? LocalizedError)?.errorDescription ?? "Release failed: \(err)"
@@ -796,7 +796,7 @@ private struct LatePickupBody: View {
     }
 
     private func initialsFor(_ name: String?) -> String {
-        guard let n = name?.trimmingCharacters(in: .whitespaces), !n.isEmpty else { return "—" }
+        guard let n = name?.trimmingCharacters(in: .whitespaces), !n.isEmpty else { return "-" }
         let parts = n.split(separator: " ").map(String.init)
         let f = parts.first?.first.map(String.init) ?? ""
         let l = parts.count > 1 ? (parts.last?.first.map(String.init) ?? "") : ""
@@ -881,7 +881,7 @@ private struct DockMismatchBody: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(load?.assignedDriverName ?? "Driver").font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
                     if let l = load {
-                        Text("\(l.trailerType ?? "—") · \(l.cargoType ?? "—")").font(.caption).foregroundStyle(palette.textSecondary)
+                        Text("\(l.trailerType ?? "-") · \(l.cargoType ?? "-")").font(.caption).foregroundStyle(palette.textSecondary)
                     }
                     Text("ESCORT-046 EM-3 lead · UN1005").font(.caption2.monospaced()).foregroundStyle(palette.textTertiary)
                 }
@@ -971,7 +971,7 @@ private struct DockMismatchBody: View {
     }
 
     private func initialsFor(_ name: String?) -> String {
-        guard let n = name?.trimmingCharacters(in: .whitespaces), !n.isEmpty else { return "—" }
+        guard let n = name?.trimmingCharacters(in: .whitespaces), !n.isEmpty else { return "-" }
         let parts = n.split(separator: " ").map(String.init)
         let f = parts.first?.first.map(String.init) ?? ""
         let l = parts.count > 1 ? (parts.last?.first.map(String.init) ?? "") : ""

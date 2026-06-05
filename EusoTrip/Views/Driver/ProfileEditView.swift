@@ -398,7 +398,7 @@ struct ProfileEditView: View {
             }
 
             if scan.verdict.didAutofill {
-                Text("Auto-filled the CDL fields above — please double-check them before saving.")
+                Text("Auto-filled the CDL fields above, please double-check them before saving.")
                     .font(EType.micro)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -760,7 +760,7 @@ private enum LicenseVerdict {
     var headline: String {
         switch self {
         case .confirmed:     return "Driver license confirmed"
-        case .lowConfidence: return "Looks like a license — please confirm"
+        case .lowConfidence: return "Looks like a license - please confirm"
         case .mismatch:      return "That doesn't look like a driver license"
         case .unknown:       return "Couldn't confidently identify this document"
         }

@@ -276,7 +276,7 @@ struct ShipperCargoInsurance: View {
 
     private var subtitle: String {
         let cov = headlineCoverageText
-        if cov == "—" { return "\(shipperName) · cargo all-risk · annual" }
+        if cov == "-" { return "\(shipperName) · cargo all-risk · annual" }
         return "\(shipperName) · \(cov) all-risk · annual"
     }
 
@@ -319,7 +319,7 @@ struct ShipperCargoInsurance: View {
     private func kpiStrip(_ s: InsuranceSummary) -> some View {
         HStack(spacing: Space.s2) {
             kpiCell(label: "ANNUAL PREMIUM",
-                    value: s.annualPremium.map(grouped) ?? "—",
+                    value: s.annualPremium.map(grouped) ?? "-",
                     accent: nil)
             kpiCell(label: "ACTIVE · EXPIRING",
                     value: "\(s.active ?? 0)",
@@ -380,7 +380,7 @@ struct ShipperCargoInsurance: View {
                     .font(.system(size: 16)).foregroundStyle(LinearGradient.diagonal))
             VStack(alignment: .leading, spacing: 3) {
                 Text(prettyType(p.policyType)).font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                Text("\(p.providerName ?? "—") · \(p.policyNumber)")
+                Text("\(p.providerName ?? "-") · \(p.policyNumber)")
                     .font(EType.caption.monospaced()).foregroundStyle(palette.textSecondary).lineLimit(1)
                 Text(policySubline(p)).font(EType.micro).foregroundStyle(palette.textTertiary).lineLimit(1)
             }
@@ -403,7 +403,7 @@ struct ShipperCargoInsurance: View {
         } else if st == "active" {
             badgeText("ACTIVE", Brand.success)
         } else {
-            badgeText((p.status ?? "—").uppercased(), palette.textTertiary)
+            badgeText((p.status ?? "-").uppercased(), palette.textTertiary)
         }
     }
 
@@ -548,7 +548,7 @@ struct ShipperCargoInsurance: View {
             .max()
         if let cargo, cargo > 0 { return compact(cargo) }
         if let tc = store.state.value?.summary.totalCoverage, tc > 0 { return compact(tc) }
-        return "—"
+        return "-"
     }
 
     private var aggregateText: String {
@@ -557,7 +557,7 @@ struct ShipperCargoInsurance: View {
             .filter { $0.policyType.contains("cargo") }
             .compactMap { money($0.aggregateLimit) }
             .max()
-        return agg.map(compact) ?? "—"
+        return agg.map(compact) ?? "-"
     }
 
     // MARK: States

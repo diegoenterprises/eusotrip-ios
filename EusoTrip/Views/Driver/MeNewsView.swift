@@ -293,7 +293,7 @@ struct MeNewsView: View {
                 Text("No articles")
                     .font(EType.h2)
                     .foregroundStyle(palette.textPrimary)
-                Text("Nothing fresh in this category yet — try another chip or pull to refresh.")
+                Text("Nothing fresh in this category yet, try another chip or pull to refresh.")
                     .font(EType.body)
                     .foregroundStyle(palette.textSecondary)
             }

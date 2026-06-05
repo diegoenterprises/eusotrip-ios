@@ -28,7 +28,7 @@ private struct CounterOfferBody: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
-                if sent { LifecycleCard(accentGradient: true) { Text("Counter sent — carrier has 30 min to respond.").font(EType.body).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true) } }
+                if sent { LifecycleCard(accentGradient: true) { Text("Counter sent. Carrier has 30 min to respond.").font(EType.body).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true) } }
                 if let err = actionError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
                 rateCard
                 noteCard

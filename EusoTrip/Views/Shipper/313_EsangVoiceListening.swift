@@ -123,7 +123,7 @@ private final class VoiceCaptureController: ObservableObject {
             let text = (r.transcript ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             await MainActor.run {
                 if text.isEmpty {
-                    self.phase = .error("Couldn't transcribe that — try again with less background noise.")
+                    self.phase = .error("Couldn't transcribe that. Try again with less background noise.")
                 } else {
                     self.phase = .done(transcript: text)
                 }

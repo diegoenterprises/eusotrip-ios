@@ -214,7 +214,7 @@ struct MeContacts: View {
                     systemImage: "person.2",
                     title: "No contacts match",
                     subtitle: store.query.isEmpty
-                        ? "Your directory populates as you accept loads, message dispatch, and pair with shippers. New contacts land here automatically."
+                        ? "Your directory populates as you accept loads, message dispatch and pair with shippers. New contacts land here automatically."
                         : "No one matches “\(store.query).” Try a company name or different role filter."
                 )
             } else {

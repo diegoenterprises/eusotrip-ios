@@ -249,12 +249,12 @@ private struct CatalystVehicleBody: View {
     private var nextStepCard: some View {
         let copy: String = {
             switch kind {
-            case .scorecard:    return "A composite — refresh weekly. Use this asset as the carrier-pitch reference for next NH₃ pull."
-            case .profile:      return "Peterbilt 579, 2022, owner-op — clean. Confirm MC-306 doesn't lapse before next §391 refresh."
+            case .scorecard:    return "A composite. Refresh weekly. Use this asset as the carrier-pitch reference for next NH₃ pull."
+            case .profile:      return "Peterbilt 579, 2022, owner-op, clean. Confirm MC-306 doesn't lapse before next §391 refresh."
             case .documents:    return "All 14 documents are current. Set a 60-day reminder before the CVSA L1 anniversary."
-            case .analytics:    return "RPM $5.12, MPG 6.8 — solid. Mine the 0:48 dwell for one more loaded mile vs. dock idle."
+            case .analytics:    return "RPM $5.12, MPG 6.8, solid. Mine the 0:48 dwell for one more loaded mile vs. dock idle."
             case .settlements:  return "$14,820 in 9 loads, 0 pending AR. Push a 10th load this 90-day window to close the rolling target."
-            case .onboarding:   return "All 5 onboarding steps closed. Asset is fully seated — push to backhaul tender priority A."
+            case .onboarding:   return "All 5 onboarding steps closed. Asset is fully seated. Push to backhaul tender priority A."
             case .compliance:   return "SAFER A, 0 OOS YTD. Stay on the §396 + §397 cadence to hold the clean record."
             }
         }()

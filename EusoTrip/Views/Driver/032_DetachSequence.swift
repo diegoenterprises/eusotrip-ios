@@ -38,11 +38,11 @@ struct DetachSequence: View {
     // Updated 2026-04-24 (eusotrip-killers ledger-hygiene pass).
     // Live values come from `tankMonitor.getDetachSnapshot` once the
     // bay-ops sensor stack ships — until then, em-dashes only.
-    private let fallbackClock  = "—"
-    private let fallbackLoadID = "—"
-    private let fallbackHosePressure = "—"
-    private let fallbackN2Flow       = "—"
-    private let fallbackVaporTemp    = "—"
+    private let fallbackClock  = "-"
+    private let fallbackLoadID = "-"
+    private let fallbackHosePressure = "-"
+    private let fallbackN2Flow       = "-"
+    private let fallbackVaporTemp    = "-"
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -145,7 +145,7 @@ struct DetachSequence: View {
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
 
-            Text("Both bay valves are shut. ESANG is sweeping the loading hose with nitrogen — pulling residual NH3 back into the bay vapor return so the line is safe to break. Hold position. Do not touch the couplers yet.")
+            Text("Both bay valves are shut. ESANG is sweeping the loading hose with nitrogen, pulling residual NH3 back into the bay vapor return so the line is safe to break. Hold position. Do not touch the couplers yet.")
                 .font(EType.body)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -162,7 +162,7 @@ struct DetachSequence: View {
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(LinearGradient.diagonal)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Hose is at \(fallbackHosePressure) psig and falling fast — almost zero. About 30 seconds. When I call clear, you crack the liquid coupler first, then the vapor return.")
+                    Text("Hose is at \(fallbackHosePressure) psig and falling fast, almost zero. About 30 seconds. When I call clear, you crack the liquid coupler first, then the vapor return.")
                         .font(EType.body)
                         .foregroundStyle(palette.textPrimary)
                         .italic()

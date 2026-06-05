@@ -70,7 +70,7 @@ private struct ThreadListBody: View {
                 Text("SHIPPER · MESSAGES · INBOX").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Messages").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("Conversations with dispatch, carriers, brokers, and load participants.")
+            Text("Conversations with dispatch, carriers, brokers and load participants.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
         }
     }
@@ -80,7 +80,7 @@ private struct ThreadListBody: View {
         if loading { LifecycleCard { Text("Loading threads…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
         else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
         else if rows.isEmpty {
-            EusoEmptyState(systemImage: "message", title: "No conversations", subtitle: "Start a chat with a carrier, dispatcher, or eSang from a load detail.")
+            EusoEmptyState(systemImage: "message", title: "No conversations", subtitle: "Start a chat with a carrier, dispatcher or eSang from a load detail.")
         } else {
             ForEach(rows) { c in
                 Button {

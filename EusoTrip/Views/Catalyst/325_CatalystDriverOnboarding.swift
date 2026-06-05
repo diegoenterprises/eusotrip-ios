@@ -137,7 +137,7 @@ private struct OnboardingBody: View {
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(driverName ?? "Driver").font(.system(size: 17, weight: .heavy)).foregroundStyle(palette.textPrimary)
-                    let hired = progress?.hiredAt ?? "—"
+                    let hired = progress?.hiredAt ?? "-"
                     Text("DR-\(driverId) · hired \(shortDate(hired))")
                         .font(.caption.monospaced()).foregroundStyle(palette.textTertiary)
                 }
@@ -156,7 +156,7 @@ private struct OnboardingBody: View {
         let due = progress?.dueWithin30d ?? dueCount
         let missing = progress?.missingCount ?? missingCount
         return LazyVGrid(columns: cols, spacing: 8) {
-            kpi("ONBOARDED", "\(onboarded)d", progress?.hiredAt.map { "since \(shortDate($0))" } ?? "—", .blue)
+            kpi("ONBOARDED", "\(onboarded)d", progress?.hiredAt.map { "since \(shortDate($0))" } ?? "-", .blue)
             kpi("§391 STEPS", "\(cleared)/\(total)", "cleared · \(pct)%", .green)
             kpi("DUE",      "\(due)",       "≤ 30d · annual",       due > 0 ? .orange : .green)
             kpi("MISSING",  "\(missing)",   "action req",           missing > 0 ? .red : .green)
@@ -247,7 +247,7 @@ private struct OnboardingBody: View {
     }
 
     private func initialsFor(_ name: String?) -> String {
-        guard let name = name?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return "—" }
+        guard let name = name?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return "-" }
         let parts = name.split(separator: " ").map(String.init)
         let first = parts.first?.first.map(String.init) ?? ""
         let last = parts.count > 1 ? (parts.last?.first.map(String.init) ?? "") : ""

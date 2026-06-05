@@ -379,10 +379,10 @@ struct ShipperLoadDetail: View {
 
     private var podHeaderCard: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(podPacket?.receiverName ?? "—")
+            Text(podPacket?.receiverName ?? "-")
                 .font(EType.title)
                 .foregroundStyle(palette.textPrimary)
-            Text("Submitted \(podPacket?.submittedAt ?? "—")")
+            Text("Submitted \(podPacket?.submittedAt ?? "-")")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
             if podLoading {
@@ -706,7 +706,7 @@ struct ShipperLoadDetail: View {
                 Text(displayLoadId)
                     .font(EType.title)
                     .foregroundStyle(palette.textPrimary)
-                Text("Update rate, instructions, or a dispatch note. Pickup / delivery edits route through Reroute. Carrier sees changes the moment you save.")
+                Text("Update rate, instructions or a dispatch note. Pickup / delivery edits route through Reroute. Carrier sees changes the moment you save.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -1023,7 +1023,7 @@ struct ShipperLoadDetail: View {
     private var laneTitle: String {
         if let d = liveDetail {
             let lane = d.laneDisplay
-            if lane != "—" {
+            if lane != "-" {
                 // Compact city names for the title bar.
                 let parts = lane.split(separator: " → ").map { String($0) }
                 if parts.count == 2 {
@@ -1188,10 +1188,10 @@ struct ShipperLoadDetail: View {
         if let d = liveDetail, let eta = d.estimatedDeliveryDate ?? d.deliveryDate, !eta.isEmpty {
             return "ETA \(formatTime(eta))"
         }
-        return "ETA —"
+        return "ETA -"
     }
     private var progressMilesLine: String {
-        guard let d = liveDetail, let dist = d.distance, dist > 0 else { return "— mi" }
+        guard let d = liveDetail, let dist = d.distance, dist > 0 else { return "- mi" }
         let total = Int(dist.rounded())
         let driven = Int((Double(total) * Double(progressPct) / 100.0).rounded())
         return "\(driven) / \(total) mi"
@@ -1371,7 +1371,7 @@ struct ShipperLoadDetail: View {
             parts.append("\(Int(dist.rounded())) mi")
         }
         if d.hazmatClass != nil { parts.append("escort optional") }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
 
     private func pill(text: String, tint: Color, label: Color) -> some View {
@@ -1456,21 +1456,21 @@ struct ShipperLoadDetail: View {
         if let id = d.catalystId {
             return "Catalyst #\(id)"
         }
-        return "Catalyst — pending"
+        return "Catalyst - pending"
     }
 
     private func carrierMetaLine(for d: LoadsAPI.LoadDetail) -> String {
         var parts: [String] = []
         if let id = d.catalystId { parts.append("ID \(id)") }
         if let equip = d.equipmentType { parts.append(equip) }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
 
     private func carrierDriverLine(for d: LoadsAPI.LoadDetail) -> String {
         if let id = d.driverId {
             return "Driver #\(id) · CDL pending lookup"
         }
-        return "Driver — awaiting assignment"
+        return "Driver - awaiting assignment"
     }
 
     // MARK: - Documents row
@@ -1501,13 +1501,13 @@ struct ShipperLoadDetail: View {
     }
 
     private var bolStateText: String {
-        guard let d = liveDetail else { return "—" }
+        guard let d = liveDetail else { return "-" }
         switch d.status.lowercased() {
         case "posted", "bidding": return "draft"
         case "awarded", "assigned", "pickup": return "draft"
         case "in_transit", "in transit", "delivery", "delivering": return "issued"
         case "paperwork", "closed", "delivered", "complete": return "signed"
-        default: return "—"
+        default: return "-"
         }
     }
     private var bolStateColor: Color {
@@ -1518,7 +1518,7 @@ struct ShipperLoadDetail: View {
         }
     }
     private var rateconStateText: String {
-        guard let d = liveDetail else { return "—" }
+        guard let d = liveDetail else { return "-" }
         return ["awarded", "assigned", "pickup", "in_transit", "in transit", "delivery", "delivering", "paperwork", "closed", "delivered", "complete"]
             .contains(d.status.lowercased()) ? "signed" : "draft"
     }
@@ -1736,7 +1736,7 @@ struct ShipperLoadDetail: View {
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             } else if count == 0 {
-                Text("No bids yet — carriers will surface offers here as they come in.")
+                Text("No bids yet. Carriers will surface offers here as they come in.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1901,7 +1901,7 @@ struct ShipperLoadDetail: View {
     }
 
     private func humanCargoType(_ raw: String?) -> String {
-        guard let r = raw, !r.isEmpty else { return "—" }
+        guard let r = raw, !r.isEmpty else { return "-" }
         switch r.lowercased() {
         case "general":      return "General freight"
         case "hazmat":       return "Hazmat"
@@ -1916,7 +1916,7 @@ struct ShipperLoadDetail: View {
     }
 
     private func humanDate(_ iso: String?) -> String {
-        guard let iso = iso, !iso.isEmpty else { return "—" }
+        guard let iso = iso, !iso.isEmpty else { return "-" }
         let isoFmt = ISO8601DateFormatter()
         isoFmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         var date = isoFmt.date(from: iso)
@@ -1985,7 +1985,7 @@ struct ShipperLoadDetail: View {
             print("[ShipperLoadDetail] DecodingError on loads.getById: \(decode)")
             switch decode {
             case .keyNotFound(let key, _):
-                return "Server response is missing key \"\(key.stringValue)\" — the deploy target's loads.getById response is older than this build."
+                return "Server response is missing key \"\(key.stringValue)\". The deploy target's loads.getById response is older than this build."
             case .typeMismatch(let type, let ctx):
                 return "Server returned \(type) where iOS expected something else (path: \(ctx.codingPath.map { $0.stringValue }.joined(separator: "."))). Server response shape doesn't match."
             case .valueNotFound(let type, let ctx):
@@ -2001,7 +2001,7 @@ struct ShipperLoadDetail: View {
         let lower = raw.lowercased()
         // True MySQL schema-drift signal only.
         if lower.contains("unknown column") || lower.contains("er_bad_field") {
-            return "Server-side schema is out of sync — missing column on `loads`. Apply the latest migrations on the deploy target."
+            return "Server-side schema is out of sync, missing column on `loads`. Apply the latest migrations on the deploy target."
         }
         if lower.contains("network") || lower.contains("offline")
             || lower.contains("could not connect") {
@@ -2121,7 +2121,7 @@ struct ShipperLoadDetail: View {
                         .font(EType.title)
                         .foregroundStyle(palette.textPrimary)
                     if let carrier = r.carrierName {
-                        Text("\(carrier) · USDOT \(r.carrierDot ?? "—") · MC \(r.carrierMc ?? "—")")
+                        Text("\(carrier) · USDOT \(r.carrierDot ?? "-") · MC \(r.carrierMc ?? "-")")
                             .font(EType.mono(.micro)).tracking(0.3)
                             .foregroundStyle(palette.textTertiary)
                     }
@@ -2153,7 +2153,7 @@ struct ShipperLoadDetail: View {
     }
 
     private func hosPrimary(_ r: LoadsAPI.DriverReadiness) -> String {
-        guard let h = r.hosDrivingRemainingHours else { return "—" }
+        guard let h = r.hosDrivingRemainingHours else { return "-" }
         return String(format: "%.1fh", h)
     }
 
@@ -2167,7 +2167,7 @@ struct ShipperLoadDetail: View {
     }
 
     private func daysLabel(_ days: Int?) -> String {
-        guard let d = days else { return "—" }
+        guard let d = days else { return "-" }
         if d <= 0 { return "LAPSED" }
         return "\(d)d"
     }

@@ -212,7 +212,7 @@ private struct FleetVehiclesBody: View {
                         Text(vehicleTitle(v))
                             .font(EType.body.weight(.bold))
                             .foregroundStyle(palette.textPrimary)
-                        Text("VIN \(v.vin ?? "—") · \(v.licensePlate ?? "—")")
+                        Text("VIN \(v.vin ?? "-") · \(v.licensePlate ?? "-")")
                             .font(.caption2.monospaced())
                             .foregroundStyle(palette.textTertiary)
                     }
@@ -220,7 +220,7 @@ private struct FleetVehiclesBody: View {
                 }
 
                 HStack(spacing: 6) {
-                    statusCapsule(v.status ?? "—")
+                    statusCapsule(v.status ?? "-")
                     if isHazmatTank {
                         Text("HAZMAT TANK")
                             .font(.system(size: 9, weight: .heavy)).tracking(0.6)
@@ -233,11 +233,11 @@ private struct FleetVehiclesBody: View {
                 // KPI grid 2×2 (ODOMETER / MPG 30D / LAST SVC / NEXT SVC)
                 HStack(spacing: 8) {
                     kpiTile(label: "ODOMETER",
-                            value: v.currentMileage.map { "\($0.formatted(.number))" } ?? "—",
+                            value: v.currentMileage.map { "\($0.formatted(.number))" } ?? "-",
                             unit: "mi")
                     kpiTile(label: "MPG · 30D",
-                            value: "—",
-                            unit: "—")
+                            value: "-",
+                            unit: "-")
                 }
                 HStack(spacing: 8) {
                     kpiTile(label: "LAST SVC",
@@ -362,13 +362,13 @@ private struct FleetVehiclesBody: View {
             if let r = result, let tax = (r.netTaxOwed ?? r.totalTaxDue), tax > 0 {
                 return "$\(Int(tax).formatted(.number))"
             }
-            return "—"
+            return "-"
         }()
         let miles: String = {
             if let r = result, let m = r.totalMiles, m > 0 {
                 return "\(Int(m).formatted(.number)) mi"
             }
-            return q >= 3 ? "opens Jul \(q * 3 - 6)" : "—"
+            return q >= 3 ? "opens Jul \(q * 3 - 6)" : "-"
         }()
         return VStack(alignment: .leading, spacing: 2) {
             Text("Q\(q) · \(statusLabel)")
@@ -518,19 +518,19 @@ private struct FleetVehiclesBody: View {
     }
 
     private func shortDate(_ iso: String?) -> String {
-        guard let date = isoDate(iso) else { return "—" }
+        guard let date = isoDate(iso) else { return "-" }
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
         return f.string(from: date)
     }
 
     private func daysAgoOrDate(_ iso: String?) -> String {
-        guard let date = isoDate(iso) else { return "—" }
+        guard let date = isoDate(iso) else { return "-" }
         let days = max(0, Int(Date().timeIntervalSince(date) / 86400))
         return "\(days)d"
     }
 
     private func daysUntilOrDate(_ iso: String?) -> String {
-        guard let date = isoDate(iso) else { return "—" }
+        guard let date = isoDate(iso) else { return "-" }
         let days = Int(date.timeIntervalSinceNow / 86400)
         if days < 0 { return "OVERDUE" }
         return "\(days)d"

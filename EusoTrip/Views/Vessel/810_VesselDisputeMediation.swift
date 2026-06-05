@@ -181,7 +181,7 @@ private struct VesselDisputeMediationBody810: View {
         HStack(spacing: 12) {
             Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
             VStack(alignment: .leading, spacing: 3) {
-                Text("Submit the brief by 06-05 — 9 of 10 exhibits packed").font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textPrimary)
+                Text("Submit the brief by 06-05 - 9 of 10 exhibits packed").font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Text("ESang · \(esangLine)").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
             }
             Spacer(minLength: 0)
@@ -237,7 +237,7 @@ private struct VesselDisputeMediationBody810: View {
                 events = t.prefix(4).enumerated().map { idx, e in
                     let state: EventState810 = idx == 0 ? .done : (idx == 1 ? .active : (idx == 2 ? .scheduled : .future))
                     let tag = ["DONE", "ACTIVE", "SCHED", "EXPECTED"][min(idx, 3)]
-                    return MedEvent810(date: shortDate(e.date), title: e.event ?? "—", sub: e.details ?? "", tag: tag, state: state)
+                    return MedEvent810(date: shortDate(e.date), title: e.event ?? "-", sub: e.details ?? "", tag: tag, state: state)
                 }
             }
             // Empty timeline ("not_started") keeps the design-time projection — no fabricated rows.

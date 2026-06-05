@@ -280,14 +280,14 @@ private struct DispatchBoardBody: View {
                 Text(l.loadNumber ?? "LD-\(l.id)")
                     .font(.caption.monospaced().weight(.semibold))
                     .foregroundStyle(palette.textPrimary)
-                Text("\(l.pickupCity ?? "—"), \(l.pickupState ?? "—") → \(l.destCity ?? "—"), \(l.destState ?? "—")")
+                Text("\(l.pickupCity ?? "-"), \(l.pickupState ?? "-") → \(l.destCity ?? "-"), \(l.destState ?? "-")")
                     .font(EType.body.weight(.bold))
                     .foregroundStyle(palette.textPrimary)
                 Text("Pickup \(humanDate(l.pickupDate)) · \(Int(l.distance ?? 0)) mi")
                     .font(.caption)
                     .foregroundStyle(palette.textSecondary)
                 HStack {
-                    Text("$\(l.rate ?? "—")")
+                    Text("$\(l.rate ?? "-")")
                         .font(.title3.weight(.heavy).monospacedDigit())
                         .foregroundStyle(palette.textPrimary)
                     if let rpm = l.ratePerMile {
@@ -336,7 +336,7 @@ private struct DispatchBoardBody: View {
     }
 
     private func humanDate(_ iso: String?) -> String {
-        guard let iso, let date = ISO8601DateFormatter().date(from: iso) else { return "—" }
+        guard let iso, let date = ISO8601DateFormatter().date(from: iso) else { return "-" }
         let f = DateFormatter(); f.dateFormat = "MMM d HH:mm"
         return f.string(from: date)
     }

@@ -235,7 +235,7 @@ struct ShipperWidgetGallery: View {
                     GradientCapsuleCTA(label: activeWidget.ctaLabel, width: 140)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Reinstall the active Home Screen widget — refreshes the WidgetKit timeline immediately.")
+                .accessibilityLabel("Reinstall the active Home Screen widget. Refreshes the WidgetKit timeline immediately.")
             }
             .padding(.top, 14)
             .padding(.horizontal, 20)

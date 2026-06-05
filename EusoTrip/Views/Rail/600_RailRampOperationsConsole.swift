@@ -319,9 +319,9 @@ private struct RailRampOperationsConsoleBody: View {
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: Space.s3) {
-                    heroStat(value: util.map { "\(Int($0.rounded()))%" } ?? "—", label: "util")
-                    heroStat(value: dwell.map { "\(Int($0.rounded()))h" } ?? "—", label: "avg dwell")
-                    heroStat(value: detentionN.map { "\($0)" } ?? "—", label: "detention")
+                    heroStat(value: util.map { "\(Int($0.rounded()))%" } ?? "-", label: "util")
+                    heroStat(value: dwell.map { "\(Int($0.rounded()))h" } ?? "-", label: "avg dwell")
+                    heroStat(value: detentionN.map { "\($0)" } ?? "-", label: "detention")
                 }
             }
             // Slots-used progress bar.
@@ -483,19 +483,19 @@ private struct RailRampOperationsConsoleBody: View {
         if let c = m.containerId, !c.isEmpty { parts.append(c) }
         if let e = m.equipment,   !e.isEmpty { parts.append(e) }
         if let d = m.direction,   !d.isEmpty { parts.append(d) }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
 
     private func movePill(_ m: YardMove) -> (text: String, etaCaption: String) {
         if isHold(m)       { return ("HOLD",   "blocked") }
         if isInProgress(m) { return ("MOVING", "to ramp") }
         if isQueued(m)     { return ("QUEUED", "wait") }
-        return ((m.status ?? "—").uppercased(), "")
+        return ((m.status ?? "-").uppercased(), "")
     }
 
     private func moveEta(_ m: YardMove) -> String {
         if let mins = m.etaMinutes { return "\(mins) min" }
-        return "—"
+        return "-"
     }
 
     // MARK: - Capacity guard tile shelf
@@ -526,17 +526,17 @@ private struct RailRampOperationsConsoleBody: View {
             HStack(spacing: Space.s2) {
                 guardTile(
                     dot: Brand.success,
-                    value: openSlots.map { "\($0) open" } ?? "—",
+                    value: openSlots.map { "\($0) open" } ?? "-",
                     line1: "slots free",
-                    line2: openPct ?? "—")
+                    line2: openPct ?? "-")
                 guardTile(
                     dot: Brand.danger,
-                    value: detentionN.map { "\($0) alerts" } ?? "—",
+                    value: detentionN.map { "\($0) alerts" } ?? "-",
                     line1: "detention live",
                     line2: "> 2h dwell")
                 guardTile(
                     dot: Brand.blue,
-                    value: gateN.map { "\($0) gate" } ?? "—",
+                    value: gateN.map { "\($0) gate" } ?? "-",
                     line1: "entries today",
                     line2: facility ?? "BNSF · IL")
             }

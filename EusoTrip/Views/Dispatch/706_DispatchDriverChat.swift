@@ -115,7 +115,7 @@ private struct ChatBody: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)
-                Text(c.lastMessage ?? "—")
+                Text(c.lastMessage ?? "-")
                     .font(EType.caption)
                     .foregroundStyle(unread ? palette.textPrimary : palette.textSecondary)
                     .lineLimit(1)

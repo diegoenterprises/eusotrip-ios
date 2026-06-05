@@ -14,7 +14,7 @@
 //  The projections preserve every field the detail sheet reads. Fields
 //  that the richer models don't carry (hazmat UN/ERG, prohibited routes,
 //  weight, hot score) fall back to safe neutrals — the detail sheet
-//  already renders "—" for empty strings and skips empty collections,
+//  already renders "-" for empty strings and skips empty collections,
 //  so omitted data shows up as graceful blanks rather than broken UI.
 //
 //  Powered by ESANG AI™.
@@ -48,7 +48,7 @@ extension AvailableLoad {
             pickupWindow: my.eta,
             broker: my.broker,
             hazmat: false,
-            weight: "—",
+            weight: "-",
             hotScore: 0,
             originLat: oLat,
             originLng: oLng,
@@ -96,13 +96,13 @@ extension AvailableLoad {
         let rate = load.rateValue
         let rpm = miles > 0 ? rate / Double(miles) : 0
         let originDisplay: String = originCity
-            ?? (pickup.cityState.isEmpty ? "—" : pickup.cityState)
+            ?? (pickup.cityState.isEmpty ? "-" : pickup.cityState)
         let destDisplay: String = destCity
-            ?? (delivery.cityState.isEmpty ? "—" : delivery.cityState)
+            ?? (delivery.cityState.isEmpty ? "-" : delivery.cityState)
         let hazmat = (load.hazmatClass?.isEmpty == false)
         let weightDisplay: String = {
             let wv = load.weightValue
-            guard wv > 0 else { return "—" }
+            guard wv > 0 else { return "-" }
             let kLbs = Int((wv / 1000.0).rounded())
             return "\(kLbs)k lb"
         }()
@@ -135,11 +135,11 @@ extension AvailableLoad {
     /// Falls back to a dash when the backend hasn't populated the ISO
     /// string yet.
     private static func formatWindow(_ iso: String?) -> String {
-        guard let iso, !iso.isEmpty else { return "—" }
+        guard let iso, !iso.isEmpty else { return "-" }
         let parser = ISO8601DateFormatter()
         parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let date: Date? = parser.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
-        guard let date else { return "—" }
+        guard let date else { return "-" }
         let cal = Calendar.current
         let df = DateFormatter()
         df.dateStyle = .none
@@ -194,9 +194,9 @@ extension AvailableLoad {
             rate: s.rate,
             rpm: rpm,
             pickupWindow: s.pickupDate,
-            broker: "—",                   // summary doesn't carry broker name
+            broker: "-",                   // summary doesn't carry broker name
             hazmat: false,
-            weight: "—",
+            weight: "-",
             hotScore: 0,
             originLat: oLat,
             originLng: oLng,
@@ -244,7 +244,7 @@ extension MyLoad {
             rate: s.rate,
             status: s.status,
             eta: s.pickupDate,
-            broker: "—",
+            broker: "-",
             progress: bucket == .finished ? 1.0 : (bucket == .active ? 0.5 : 0.0)
         )
     }

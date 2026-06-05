@@ -204,7 +204,7 @@ private struct DispatcherHomeBody: View {
                         .background(Capsule().fill(Brand.hazmat.opacity(0.18)))
                     Spacer(minLength: 0)
                     Text(soonest.map {
-                        "\(($0.expiresInMinutes ?? 0)) min · LD ending \(String(($0.loadNumber ?? "—").suffix(4)))"
+                        "\(($0.expiresInMinutes ?? 0)) min · LD ending \(String(($0.loadNumber ?? "-").suffix(4)))"
                     } ?? "no tender expiring")
                         .font(EType.mono(.caption)).tracking(0.4)
                         .foregroundStyle(palette.textSecondary)
@@ -240,7 +240,7 @@ private struct DispatcherHomeBody: View {
 
     private func attentionLaneSummary(_ items: [PendingTender]) -> String {
         guard !items.isEmpty else { return "all tenders steady" }
-        let lanes = items.prefix(2).map { $0.lane ?? "—" }
+        let lanes = items.prefix(2).map { $0.lane ?? "-" }
         let extra = items.count - lanes.count
         return extra > 0 ? "\(lanes.joined(separator: " · ")) · +\(extra)" : lanes.joined(separator: " · ")
     }
@@ -370,7 +370,7 @@ private struct DispatcherHomeBody: View {
             .frame(width: 40, height: 40)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(t.lane ?? "—")
+                Text(t.lane ?? "-")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(palette.textPrimary).lineLimit(1)
                 Text(tenderMeta(t))
@@ -431,10 +431,10 @@ private struct DispatcherHomeBody: View {
 
     private func tenderStatus(_ t: PendingTender) -> String {
         if t.isPeer == true, let award = t.awardedTo {
-            let exp = t.expiresInMinutes.map { expiryLabel($0) } ?? "—"
+            let exp = t.expiresInMinutes.map { expiryLabel($0) } ?? "-"
             return "expires \(exp) · awarded \(award)"
         }
-        let exp = t.expiresInMinutes.map { expiryLabel($0) } ?? "—"
+        let exp = t.expiresInMinutes.map { expiryLabel($0) } ?? "-"
         if let d = t.suggestedDriver { return "expires \(exp) · suggest \(d)" }
         return "expires \(exp)"
     }
@@ -465,7 +465,7 @@ private struct DispatcherHomeBody: View {
                 .frame(width: 32, height: 32)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(pick.map { "ESang says: tender \($0.lane ?? "this lane") to \($0.suggestedDriver ?? "best driver")" }
-                         ?? "ESang says: queue is steady — no urgent tender")
+                         ?? "ESang says: queue is steady, no urgent tender")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(palette.textPrimary).lineLimit(1)
                     Text(esangReason(pick))
@@ -489,7 +489,7 @@ private struct DispatcherHomeBody: View {
         guard let t, let d = drivers.first(where: { $0.name.contains(t.suggestedDriver ?? "∅") }) else {
             return "live HoS-aware matching from the driver board"
         }
-        let hos = d.hoursRemaining.map { String(format: "HOS %.0fh %02.0fm", floor($0), ($0 - floor($0)) * 60) } ?? "HOS —"
+        let hos = d.hoursRemaining.map { String(format: "HOS %.0fh %02.0fm", floor($0), ($0 - floor($0)) * 60) } ?? "HOS -"
         return "\(hos) · home-base near lane · best rate vs avg"
     }
 

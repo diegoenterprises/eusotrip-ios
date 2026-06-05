@@ -313,7 +313,7 @@ struct ShipperHotZones: View {
     private func kpiSummaryStrip(_ f: HotZonesFeedResult) -> some View {
         let avgPulse: String = {
             let changes = f.zones.compactMap { $0.rateChangePercent }
-            guard !changes.isEmpty else { return "—" }
+            guard !changes.isEmpty else { return "-" }
             let avg = changes.reduce(0, +) / Double(changes.count)
             return String(format: "%+.1f%%", avg)
         }()
@@ -336,7 +336,7 @@ struct ShipperHotZones: View {
             kpiCell(label: "COLD METROS",
                     value: "\(cold)",
                     valueStyle: cold > 0 ? .success : .neutral,
-                    trail: cold > 0 ? "post here" : "—",
+                    trail: cold > 0 ? "post here" : "-",
                     trailColor: cold > 0 ? Brand.success : palette.textSecondary)
         }
         .padding(.horizontal, Space.s4)
@@ -542,7 +542,7 @@ struct ShipperHotZones: View {
             default:         return Brand.info
             }
         }()
-        let pulse = z.rateChangePercent.map { String(format: "%+.1f%%", $0) } ?? "—"
+        let pulse = z.rateChangePercent.map { String(format: "%+.1f%%", $0) } ?? "-"
         let pulseColor: Color = {
             guard let p = z.rateChangePercent else { return palette.textPrimary }
             return p >= 0 ? Brand.danger : Brand.success
@@ -568,7 +568,7 @@ struct ShipperHotZones: View {
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
-                    Text(z.topEquipment.first?.replacingOccurrences(of: "_", with: " ").capitalized ?? "—")
+                    Text(z.topEquipment.first?.replacingOccurrences(of: "_", with: " ").capitalized ?? "-")
                         .font(EType.micro).tracking(0.5)
                         .foregroundStyle(palette.textTertiary)
                         .lineLimit(1)
@@ -639,7 +639,7 @@ struct ShipperHotZones: View {
     }
 
     private func coldTile(_ c: ColdZoneEntry) -> some View {
-        let pulse = c.liveSurge.map { String(format: "%+.1f", ($0 - 1.0) * 100.0) + "%" } ?? "—"
+        let pulse = c.liveSurge.map { String(format: "%+.1f", ($0 - 1.0) * 100.0) + "%" } ?? "-"
         return Button {
             let metro = c.name ?? c.state ?? ""
             let label = c.state.map { "\(metro), \($0)" } ?? metro

@@ -191,7 +191,7 @@ private struct VesselBunkerFSCScheduleBody: View {
                         .foregroundStyle(palette.textTertiary)
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text(s.indexUsdPerMt.map { "$\(Int($0.rounded()))" } ?? "—")
+                        Text(s.indexUsdPerMt.map { "$\(Int($0.rounded()))" } ?? "-")
                             .font(.system(size: 22, weight: .bold)).monospacedDigit()
                             .foregroundStyle(palette.textPrimary)
                         Text(String(format: "%@ %+.1f%% wk", up ? "▲" : "▼", week))
@@ -204,7 +204,7 @@ private struct VesselBunkerFSCScheduleBody: View {
                 }
                 Spacer(minLength: 0)
                 HStack(alignment: .center, spacing: 12) {
-                    Text(pct.map { String(format: "%.1f%%", $0) } ?? "—")
+                    Text(pct.map { String(format: "%.1f%%", $0) } ?? "-")
                         .font(.system(size: 40, weight: .bold)).tracking(-1.0)
                         .monospacedDigit()
                         .foregroundStyle(LinearGradient.diagonal)
@@ -229,7 +229,7 @@ private struct VesselBunkerFSCScheduleBody: View {
     }
 
     private func bracketLabel(_ b: FSCBracket?) -> String {
-        guard let b else { return "—" }
+        guard let b else { return "-" }
         let lo = "$\(Int(b.minUsdMt.rounded()))"
         let hi = b.maxUsdMt.map { "$\(Int($0.rounded()))" } ?? "+"
         return "\(lo) – \(hi) / MT"
@@ -268,7 +268,7 @@ private struct VesselBunkerFSCScheduleBody: View {
         let pct = bracket?.surchargePct ?? 0
         let base = booking?.loadRate ?? 0
         let applied = base * pct / 100.0
-        let carrier = booking?.carrierName ?? "—"
+        let carrier = booking?.carrierName ?? "-"
         let bn = booking?.bookingNumber ?? bookingRef
         return HStack(spacing: 0) {
             Rectangle().fill(LinearGradient.diagonal).frame(width: 4)
@@ -279,7 +279,7 @@ private struct VesselBunkerFSCScheduleBody: View {
                 Text(String(format: "base %@ × %.1f%% bracket", currency(base), pct))
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
-                Text("\(bn.isEmpty ? "—" : bn) · \(carrier)")
+                Text("\(bn.isEmpty ? "-" : bn) · \(carrier)")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
             }
@@ -358,7 +358,7 @@ private struct VesselBunkerFSCScheduleBody: View {
         let curPct = brackets[idx].surchargePct
         let nextPct = brackets[idx + 1].surchargePct
         let delta = base * (nextPct - curPct) / 100.0
-        return String(format: "a settle above $%.0f adds %@ to this booking — lock the rate now",
+        return String(format: "a settle above $%.0f adds %@ to this booking - lock the rate now",
                       top, currency(delta))
     }
 

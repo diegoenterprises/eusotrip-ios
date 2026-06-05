@@ -378,7 +378,7 @@ struct MeAgreements: View {
             case "expired":
                 return ("EXPIRED", palette.textTertiary, false)
             default:
-                return (status.isEmpty ? "—" : status.uppercased(), palette.textTertiary, false)
+                return (status.isEmpty ? "-" : status.uppercased(), palette.textTertiary, false)
             }
         }()
         Text(label)
@@ -434,7 +434,7 @@ struct MeAgreements: View {
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)
-            Text("Recurring lane contracts + the load-posting wizard (marketplace / direct / broker / own-fleet) live in shipper + broker role surfaces — not here.")
+            Text("Recurring lane contracts + the load-posting wizard (marketplace / direct / broker / own-fleet) live in shipper + broker role surfaces, not here.")
                 .font(EType.micro)
                 .foregroundStyle(palette.textTertiary.opacity(0.85))
                 .multilineTextAlignment(.center)

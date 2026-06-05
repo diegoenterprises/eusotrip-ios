@@ -13,7 +13,7 @@
 //  scenario literals — the wireframe ships canonical Aurora /
 //  Diego / LA→PHX / $2,425 strings to illustrate; production
 //  substitutes whichever load was the counter subject and shows
-//  "—" while data resolves.
+//  "-" while data resolves.
 //
 //  tRPC procs consumed (verified real):
 //    · loads.getById — load context (lane, equipment, rate, status)
@@ -72,31 +72,31 @@ private struct CCRBody: View {
     @Environment(\.palette) private var palette
     @State private var load: CCRLoad?
 
-    private var loadNumberDisplay: String { load?.loadNumber ?? "—" }
+    private var loadNumberDisplay: String { load?.loadNumber ?? "-" }
     private var rateDisplay: String {
         if let r = load?.rate, let n = Double(r), n > 0 {
             let v = n.rounded()
             return v < 1000 ? String(format: "$%.0f", v) : "$\(Int(v).formatted(.number))"
         }
-        return "—"
+        return "-"
     }
     private var laneDisplay: String? {
         let p = [load?.pickupLocation?.city, load?.pickupLocation?.state].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
         let d = [load?.deliveryLocation?.city, load?.deliveryLocation?.state].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
         if p.isEmpty && d.isEmpty { return nil }
-        return "\(p.isEmpty ? "—" : p) → \(d.isEmpty ? "—" : d)"
+        return "\(p.isEmpty ? "-" : p) → \(d.isEmpty ? "-" : d)"
     }
     private var distanceDisplay: String {
-        guard let d = load?.distance, d > 0 else { return "—" }
+        guard let d = load?.distance, d > 0 else { return "-" }
         return "\(Int(d.rounded())) mi"
     }
     private var equipmentDisplay: String {
         let parts = [load?.equipmentType, load?.cargoType].compactMap { $0 }.filter { !$0.isEmpty }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
     private var acceptedAtDisplay: String {
         guard let iso = load?.updatedAt,
-              let dt = ISO8601DateFormatter().date(from: iso) else { return "—" }
+              let dt = ISO8601DateFormatter().date(from: iso) else { return "-" }
         let f = DateFormatter(); f.dateFormat = "MMM d · h:mm a"
         return f.string(from: dt)
     }
@@ -191,13 +191,13 @@ private struct CCRBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 rowFor(label: "Load number", value: loadNumberDisplay)
-                rowFor(label: "Lane", value: laneDisplay ?? "—")
+                rowFor(label: "Lane", value: laneDisplay ?? "-")
                 rowFor(label: "Equipment", value: equipmentDisplay)
                 rowFor(label: "Distance", value: distanceDisplay)
                 if let haz = load?.hazmatClass, !haz.isEmpty {
                     rowFor(label: "Hazmat", value: haz, tint: .orange)
                 }
-                rowFor(label: "Status", value: (load?.status ?? "—").uppercased(), tint: .green)
+                rowFor(label: "Status", value: (load?.status ?? "-").uppercased(), tint: .green)
             }
         }
     }
@@ -246,7 +246,7 @@ private struct CCRBody: View {
         struct In: Encodable { let id: String }
         do {
             load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId))
-        } catch { /* tolerated; UI shows "—" */ }
+        } catch { /* tolerated; UI shows "-" */ }
     }
 }
 

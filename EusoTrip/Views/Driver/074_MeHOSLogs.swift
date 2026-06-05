@@ -174,7 +174,7 @@ struct MeHOSLogs: View {
                 .font(EType.micro)
                 .tracking(1.3)
                 .foregroundStyle(palette.textTertiary)
-            Text(hoursRemaining == nil ? "—" : HOSStatus.formatHours(remaining))
+            Text(hoursRemaining == nil ? "-" : HOSStatus.formatHours(remaining))
                 .font(EType.numeric)
                 .foregroundStyle(LinearGradient.diagonal)
                 .monospacedDigit()
@@ -491,7 +491,7 @@ struct MeHOSLogs: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
             }
-            Text("This surface is read-only. To change duty status, sign a log, or edit a segment, head to the full HOS duty screen.")
+            Text("This surface is read-only. To change duty status, sign a log or edit a segment, head to the full HOS duty screen.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

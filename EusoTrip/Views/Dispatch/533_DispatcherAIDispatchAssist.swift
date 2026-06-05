@@ -468,7 +468,7 @@ private struct DispatcherAIDispatchAssistBody: View {
         if failures.isEmpty {
             applyNote = "Applied \(applied) auto-match\(applied == 1 ? "" : "es")."
         } else {
-            applyNote = "Applied \(applied); \(failures.count) blocked by compliance — \(failures.prefix(2).joined(separator: " · "))"
+            applyNote = "Applied \(applied); \(failures.count) blocked by compliance · \(failures.prefix(2).joined(separator: " · "))"
         }
         await load()   // refresh the board after the writes
     }

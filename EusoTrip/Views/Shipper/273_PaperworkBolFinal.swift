@@ -64,7 +64,7 @@ private struct BolFinalBody: View {
             LifecycleRow(label: "Driver",  value: dashIfEmpty(live.driver?.name))
             if live.load.hazmatClass?.isEmpty == false {
                 LifecycleRow(label: "Hazmat manifest", value: "UN \(dashIfEmpty(live.load.unNumber)) · Class \(dashIfEmpty(live.load.hazmatClass))")
-                LifecycleRow(label: "ERG guide",       value: live.load.ergGuide.map { "#\($0)" } ?? "—")
+                LifecycleRow(label: "ERG guide",       value: live.load.ergGuide.map { "#\($0)" } ?? "-")
             }
             if live.load.spectraMatchVerified == true {
                 LifecycleRow(label: "SpectraMatch", value: "Verified")

@@ -57,7 +57,7 @@ struct BackingIn: View {
     // inches/degrees. The live overlay path (uwbCenterlineCard /
     // arkitMarkerCard) is unchanged — it renders the real numbers when
     // the hardware is present. Pattern mirrors sibling 022/024/039.
-    private let dash = "—"
+    private let dash = "-"
 
     /// Server-assigned dock door, trimmed. Empty when not yet assigned.
     private var liveDock: String {
@@ -249,7 +249,7 @@ struct BackingIn: View {
     /// a sign-flipped drift cm value so the message reads from the
     /// driver's perspective.
     private var uwbCenterlineText: String {
-        guard !uwb.lostLineOfSight else { return "—" }
+        guard !uwb.lostLineOfSight else { return "-" }
         guard let dist = uwb.distance else { return "Locating…" }
         if let dir = uwb.direction {
             let lateralCm = Int((dir.x * dist) * 100)
@@ -413,7 +413,7 @@ struct BackingIn: View {
             } else {
                 VStack {
                     Spacer()
-                    Text("No partner camera at this door — drawn alignment guide only")
+                    Text("No partner camera at this door - drawn alignment guide only")
                         .font(EType.mono(.micro)).tracking(0.3)
                         .foregroundStyle(.white.opacity(0.7))
                         .multilineTextAlignment(.center)
@@ -438,7 +438,7 @@ struct BackingIn: View {
     // So those two tiles always render the em-dash sentinel. The CENTER
     // REAR tile maps to the one real datum we do have — the UWB
     // centerline distance — when the UWB session is ranging with LOS;
-    // otherwise it too is "—". No fabricated inches, ever.
+    // otherwise it too is "-". No fabricated inches, ever.
 
     /// Center-rear distance derived from the live UWB range, rendered in
     /// feet+inches. Em-dash when no UWB range is available.
@@ -582,9 +582,9 @@ struct BackingIn: View {
     /// mirrors + GOAL" advisory instead of a fabricated inch count.
     private var advisoryText: String {
         guard sensorActive else {
-            return "No alignment sensor paired at this door — no live clearance reading. Use your mirrors, get out and look, and re-pull if you aren't square. No spotter overnight."
+            return "No alignment sensor paired at this door, no live clearance reading. Use your mirrors, get out and look and re-pull if you aren't square. No spotter overnight."
         }
-        return "Counter-steer and hold it. Straighten before you close the last foot. Watch the live centerline above. No spotter overnight — re-pull if you aren't square."
+        return "Counter-steer and hold it. Straighten before you close the last foot. Watch the live centerline above. No spotter overnight, re-pull if you aren't square."
     }
 
     private var advisoryCard: some View {

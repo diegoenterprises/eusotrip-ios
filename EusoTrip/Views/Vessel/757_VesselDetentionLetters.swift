@@ -95,7 +95,7 @@ private struct VesselDetentionLettersBody: View {
                 } else if !hasLetters {
                     EusoEmptyState(systemImage: "doc.text.magnifyingglass",
                                    title: "No detention letters to paper",
-                                   subtitle: "No facility has 2+ detention events in range. getDetentionLetters returned an empty ledger — nothing to escalate.")
+                                   subtitle: "No facility has 2+ detention events in range. getDetentionLetters returned an empty ledger, nothing to escalate.")
                 } else {
                     exposureHero
                     Text("BY FACILITY · WORST OFFENDERS").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
@@ -214,11 +214,11 @@ private struct VesselDetentionLettersBody: View {
 
     /// Chronic offender for the ESang row = worst facility (server orders by total_charges DESC,
     /// so the first letter is the highest-exposure facility).
-    private var chronicFacility: String { letters.first?.facility ?? "—" }
+    private var chronicFacility: String { letters.first?.facility ?? "-" }
     private var chronicSubtitle: String {
         guard let top = letters.first else { return "send the final notice now" }
         let verb = (top.tier == .finalNotice) ? "send the final notice now" : "escalate now"
-        return "\(verb) — \(top.events) events, \(top.charges) unpapered"
+        return "\(verb) - \(top.events) events, \(top.charges) unpapered"
     }
 
     private func load() async {
@@ -237,14 +237,14 @@ private struct VesselDetentionLettersBody: View {
                     totalWait += l.avgWaitMinutes ?? 0
                     let wait = Double(l.avgWaitMinutes ?? 0) / 60.0
                     return FacilityLetter757(
-                        facility: l.facilityName ?? "—",
-                        notice: "NOTICE · \(l.facilityName?.prefix(3).uppercased() ?? "—")",
+                        facility: l.facilityName ?? "-",
+                        notice: "NOTICE · \(l.facilityName?.prefix(3).uppercased() ?? "-")",
                         tier: tier,
                         events: l.eventCount ?? 0,
                         charges: "$\(Int(l.totalCharges ?? 0))",
                         avgWait: String(format: "%.1fh", wait),
                         status: (l.status ?? "draft").uppercased(),
-                        date: "—")
+                        date: "-")
                 }
                 exposure = "$\(Int(totalCharges))"
                 exposureSub = "across \(totalEvents) events"

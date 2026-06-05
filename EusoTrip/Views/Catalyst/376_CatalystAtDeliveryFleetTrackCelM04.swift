@@ -155,7 +155,7 @@ struct CatalystAtDeliveryVM_376 {
               realParamAnchor: "catalysts.getMyDrivers.hoursRemaining · catalysts.ts:461-474"),
         .init(title: "Active board echo",
               detail: "at_delivery drops off catalysts.getActiveLoads (filter excludes it)",
-              trailing: "—",
+              trailing: "-",
               realBacked: false,
               realParamAnchor: "catalysts.getActiveLoads filter IN(in_transit,assigned,loading,at_pickup) · catalysts.ts:523")
     ]

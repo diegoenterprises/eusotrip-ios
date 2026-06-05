@@ -58,9 +58,9 @@ private struct HotZoneDetailBody: View {
     private func demandCard(_ d: HotZoneDetail) -> some View {
         LifecycleCard(accentGradient: true) {
             LifecycleSection(label: "DEMAND INDEX", icon: "chart.line.uptrend.xyaxis")
-            Text(d.demandIndex.map { String(format: "%+.0f", $0) } ?? "—")
+            Text(d.demandIndex.map { String(format: "%+.0f", $0) } ?? "-")
                 .font(.system(size: 36, weight: .heavy)).foregroundStyle(palette.textPrimary).monospacedDigit()
-            LifecycleRow(label: "Carriers available", value: d.carriersAvailable.map { "\($0)" } ?? "—")
+            LifecycleRow(label: "Carriers available", value: d.carriersAvailable.map { "\($0)" } ?? "-")
         }
     }
 
@@ -68,7 +68,7 @@ private struct HotZoneDetailBody: View {
         LifecycleCard {
             LifecycleSection(label: "RATES", icon: "dollarsign.circle")
             LifecycleRow(label: "Avg rate", value: usd(d.avgRate))
-            LifecycleRow(label: "30-day Δ", value: d.avgRateDelta30d.map { String(format: "%+.0f", $0) } ?? "—")
+            LifecycleRow(label: "30-day Δ", value: d.avgRateDelta30d.map { String(format: "%+.0f", $0) } ?? "-")
         }
     }
 

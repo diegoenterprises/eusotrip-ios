@@ -305,10 +305,10 @@ private struct RailBidBoardBody: View {
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
 
             kpiCell(label: "LOW",
-                    value: lowAmount.map { moneyK($0) } ?? "—",
+                    value: lowAmount.map { moneyK($0) } ?? "-",
                     color: Color(hex: 0x34D8A6))
             kpiCell(label: "SPREAD",
-                    value: spread.map { money($0) } ?? "—",
+                    value: spread.map { money($0) } ?? "-",
                     color: palette.textPrimary)
         }
     }
@@ -424,7 +424,7 @@ private struct RailBidBoardBody: View {
         let title = carrierTitle(next)
         let days = next.metadata?.transitDays.map { "\($0) day" } ?? ""
         let extras = next.metadata?.notes ?? next.metadata?.route ?? ""
-        let spreadStr = spread.map { money($0) } ?? "—"
+        let spreadStr = spread.map { money($0) } ?? "-"
         var line = "+ \(title) \(money(amt))"
         if !days.isEmpty { line += " · \(days)" }
         if !extras.isEmpty { line += " \(extras)" }
@@ -516,12 +516,12 @@ private struct RailBidBoardBody: View {
         return unit
     }
     private func routeLabel(_ bid: RailBid627) -> String {
-        let days = bid.metadata?.transitDays.map { "\($0) day" } ?? "—"
+        let days = bid.metadata?.transitDays.map { "\($0) day" } ?? "-"
         return "\(lane) · \(days)"
     }
     private func quoteSub(_ bid: RailBid627) -> String {
-        let amt = bid.metadata?.amount.map { money($0) } ?? "—"
-        let days = bid.metadata?.transitDays.map { "\($0) day" } ?? "—"
+        let amt = bid.metadata?.amount.map { money($0) } ?? "-"
+        let days = bid.metadata?.transitDays.map { "\($0) day" } ?? "-"
         let svc = bid.metadata?.notes ?? bid.metadata?.route ?? "intermodal"
         return "\(amt) · \(days) · \(svc)"
     }

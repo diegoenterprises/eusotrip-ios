@@ -207,7 +207,7 @@ struct ShipperApplePayWallet: View {
                     .font(.system(size: 14, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
             }
-            Text("Post a load and accept a carrier's bid — we'll mint a signed .pkpass for your gate scanner the moment the load goes in-transit.")
+            Text("Post a load and accept a carrier's bid. We'll mint a signed .pkpass for your gate scanner the moment the load goes in-transit.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Button {
@@ -560,7 +560,7 @@ struct ShipperApplePayWallet: View {
                         GradientCapsuleCTA(label: activePass.ctaLabel, width: 140)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Add the active pickup credential to Apple Wallet — installs a .pkpass bundle bound to \(activePass.loadId).")
+                    .accessibilityLabel("Add the active pickup credential to Apple Wallet. Installs a .pkpass bundle bound to \(activePass.loadId).")
                 }
                 .padding(.horizontal, 20)
                 // SVG carrier band sits at y=178 within the 220h card;
@@ -773,7 +773,7 @@ struct ShipperApplePayWallet: View {
             passBannerText = "Pass added to Apple Wallet"
         case .signingUnavailable(let qrPayload, let shortCode):
             passBannerKind = .info
-            passBannerText = "Wallet signing offline — show the in-app QR + code \(shortCode) at the gate."
+            passBannerText = "Wallet signing offline - show the in-app QR + code \(shortCode) at the gate."
             inlineQrPayload = qrPayload
             inlineShortCode = shortCode
         case .failure(let message):
@@ -1039,7 +1039,7 @@ private struct GradientPassHeader: View {
         }
         .frame(maxWidth: .infinity, minHeight: 40, maxHeight: 40)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(issuerLine) — \(title) — Apple Pay")
+        .accessibilityLabel("\(issuerLine) - \(title) - Apple Pay")
     }
 }
 

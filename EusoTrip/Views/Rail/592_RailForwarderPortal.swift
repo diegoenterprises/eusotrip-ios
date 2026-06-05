@@ -293,9 +293,9 @@ private struct RailForwarderPortalBody: View {
                     .foregroundStyle(modeColor)
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(s.reference ?? "—")
+                Text(s.reference ?? "-")
                     .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                Text(s.lane ?? "—")
+                Text(s.lane ?? "-")
                     .font(EType.mono(.caption)).tracking(0.4)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
@@ -303,7 +303,7 @@ private struct RailForwarderPortalBody: View {
             Spacer(minLength: Space.s2)
             VStack(alignment: .trailing, spacing: 6) {
                 statusPill(for: s.status ?? "")
-                Text((s.mode ?? "—").lowercased())
+                Text((s.mode ?? "-").lowercased())
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                     .monospacedDigit()

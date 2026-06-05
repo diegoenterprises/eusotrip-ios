@@ -238,8 +238,8 @@ private struct WeatherRerouteBody: View {
             VStack(alignment: .leading, spacing: 4) {
                 if let l = load {
                     Text(l.loadNumber ?? "LD-\(l.id ?? 0)").font(.caption.monospaced().weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("\(l.pickupCity ?? "—") → \(l.destCity ?? "—")").font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
-                    Text("\(l.trailerType ?? "—") · \(l.cargoType ?? "—") · $\(l.rate ?? "—") · driver \(l.assignedDriverName ?? "ME")")
+                    Text("\(l.pickupCity ?? "-") → \(l.destCity ?? "-")").font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
+                    Text("\(l.trailerType ?? "-") · \(l.cargoType ?? "-") · $\(l.rate ?? "-") · driver \(l.assignedDriverName ?? "ME")")
                         .font(.caption).foregroundStyle(palette.textSecondary)
                 }
             }
@@ -257,7 +257,7 @@ private struct WeatherRerouteBody: View {
             VStack {
                 Spacer()
                 HStack {
-                    Text("NWS · BLIZZARD ADVISORY · 14:00 — 22:00 MT")
+                    Text("NWS · BLIZZARD ADVISORY · 14:00-22:00 MT")
                         .font(.caption2.weight(.semibold))
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(Capsule().fill(Color.red.opacity(0.18)))
@@ -475,8 +475,8 @@ private struct ReloadOfferBody: View {
                         Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                             .foregroundStyle(isSelected ? Color.green : palette.textTertiary)
                     }
-                    Text("\(c.pickupCity ?? "—") → \(c.destCity ?? "—")").font(EType.body.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("\(c.trailerType ?? "—") · \(c.cargoType ?? "—") · $\(c.rate ?? "—")")
+                    Text("\(c.pickupCity ?? "-") → \(c.destCity ?? "-")").font(EType.body.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                    Text("\(c.trailerType ?? "-") · \(c.cargoType ?? "-") · $\(c.rate ?? "-")")
                         .font(.caption).foregroundStyle(palette.textSecondary)
                     HStack(spacing: 6) {
                         if let l = c.laneDeltaMi {
@@ -721,7 +721,7 @@ private struct FuelOverrideBody: View {
                                 .background(Capsule().fill((s.inNetwork == true ? Color.green : Color.orange).opacity(0.18)))
                                 .foregroundStyle(s.inNetwork == true ? .green : .orange)
                         }
-                        Text(s.address ?? "—").font(.caption).foregroundStyle(palette.textSecondary)
+                        Text(s.address ?? "-").font(.caption).foregroundStyle(palette.textSecondary)
                         if let m = s.mileOffRoute { Text("+\(String(format: "%.1f", m)) mi off route").font(.caption2).foregroundStyle(palette.textTertiary) }
                     }
                     Spacer()

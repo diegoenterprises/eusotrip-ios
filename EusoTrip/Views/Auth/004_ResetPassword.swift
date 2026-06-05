@@ -76,7 +76,7 @@ struct ResetPasswordView: View {
                 Text("Reset your password")
                     .font(EType.h1)
                     .foregroundStyle(palette.textPrimary)
-                Text("Choose a new password — 8 characters minimum.")
+                Text("Choose a new password. 8 characters minimum.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .multilineTextAlignment(.center)

@@ -191,7 +191,7 @@ private struct SettingsBody: View {
         LifecycleCard {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text("\(p.lane ?? "—") · \(p.equipment ?? "—")")
+                    Text("\(p.lane ?? "-") · \(p.equipment ?? "-")")
                         .font(EType.body.weight(.semibold))
                         .foregroundStyle(palette.textPrimary)
                     Spacer()

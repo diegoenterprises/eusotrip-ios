@@ -322,7 +322,7 @@ private struct RailCrossBorderDGRegsBody: View {
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("\(code) · \(reg.regulationName ?? "—")")
+                Text("\(code) · \(reg.regulationName ?? "-")")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                 Text(subLine(for: code, reg: reg))
@@ -354,7 +354,7 @@ private struct RailCrossBorderDGRegsBody: View {
         case "US": return "Class 3"
         case "CA": return "ERAP"
         case "MX": return "Tarjeta"
-        default:   return "—"
+        default:   return "-"
         }
     }
 
@@ -362,7 +362,7 @@ private struct RailCrossBorderDGRegsBody: View {
     // sourced from the live regime payload (falls back to the wireframe
     // copy if the server omits keyRules).
     private func subLine(for code: String, reg: RailDGRegulation) -> String {
-        let authority = reg.authority ?? "—"
+        let authority = reg.authority ?? "-"
         let rules = reg.keyRules ?? []
         switch code {
         case "US":

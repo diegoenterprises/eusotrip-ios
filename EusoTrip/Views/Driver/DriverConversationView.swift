@@ -397,7 +397,7 @@ struct DriverConversationView: View {
             Text("No messages yet")
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
-            Text("Say hi to \(thread.title.components(separatedBy: " ").first ?? "them") below — they'll get a push the moment it lands.")
+            Text("Say hi to \(thread.title.components(separatedBy: " ").first ?? "them") below. They'll get a push the moment it lands.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
@@ -880,7 +880,7 @@ struct DriverConversationView: View {
                 Image(systemName: "questionmark.circle")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(palette.textTertiary)
-                Text("Couldn't confidently identify — please confirm")
+                Text("Couldn't confidently identify - please confirm")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(2)
@@ -1065,7 +1065,7 @@ struct DriverConversationView: View {
             lastErrorMessage = "Please sign in to view this conversation."
             didLoad = true
         } catch {
-            lastErrorMessage = "Couldn't load messages — \(error.localizedDescription)"
+            lastErrorMessage = "Couldn't load messages - \(error.localizedDescription)"
             didLoad = true
         }
     }
@@ -1195,7 +1195,7 @@ struct DriverConversationView: View {
             } catch {
                 // Roll the optimistic bubble back and surface the error.
                 messages.removeAll { $0.id == anchor }
-                lastErrorMessage = "Send failed — \(error.localizedDescription)"
+                lastErrorMessage = "Send failed - \(error.localizedDescription)"
                 // Put the draft + attachment (and its detected verdict) back
                 // so the driver can retry without re-picking or re-scanning.
                 if !text.isEmpty { draft = text }
@@ -1255,7 +1255,7 @@ struct DriverConversationView: View {
                 )
                 messages[idx] = updated
             }
-            lastErrorMessage = "Transfer failed — \(error.localizedDescription)"
+            lastErrorMessage = "Transfer failed - \(error.localizedDescription)"
         }
     }
 
@@ -1295,7 +1295,7 @@ struct DriverConversationView: View {
     private func performUnsend(_ message: ChatMessage) async {
         pendingUnsend = nil
         guard let serverId = message.serverId else {
-            lastErrorMessage = "Can't unsend — message still sending."
+            lastErrorMessage = "Can't unsend, message still sending."
             return
         }
         guard let idx = messages.firstIndex(where: { $0.id == message.id }) else { return }
@@ -1315,7 +1315,7 @@ struct DriverConversationView: View {
                     messages[currentIdx] = original
                 }
             }
-            lastErrorMessage = "Couldn't unsend — \(error.localizedDescription)"
+            lastErrorMessage = "Couldn't unsend - \(error.localizedDescription)"
         }
     }
 
@@ -1634,7 +1634,7 @@ struct ChatMoneyTransferSheet: View {
         glyph: "person.crop.square",
         title: "Marco (team partner)",
         subtitle: "Team driver · owner-op",
-        preview: "Thx for covering the fuel in Tyler — I'll settle tonight.",
+        preview: "Thx for covering the fuel in Tyler. I'll settle tonight.",
         time: "42m",
         unread: 1,
         allowsTransfer: true

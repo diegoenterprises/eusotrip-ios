@@ -298,7 +298,7 @@ struct ArrivalGateTaskActive: View {
 
     private var stepBody: String {
         if ctx.isHazmat {
-            return "Verify all four sides show the UN1005 ammonia placard (non-flammable gas — green). Confirm the ERG 125 copy is legible and pinned under the driver-side visor. Photograph each side on tap — ESANG archives to the DVIR sheet."
+            return "Verify all four sides show the UN1005 ammonia placard (non-flammable gas, green). Confirm the ERG 125 copy is legible and pinned under the driver-side visor. Photograph each side on tap. ESANG archives to the DVIR sheet."
         }
         switch ctx.product {
         case .reefer:
