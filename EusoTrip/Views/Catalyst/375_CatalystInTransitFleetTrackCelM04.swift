@@ -30,11 +30,21 @@
 //      per catalysts.ts:430 — {id, name, status, currentLoad,
 //      hoursRemaining, location}.
 //
+//  Live map (in-house HERE, bespoke · mirrors Shipper 222):
+//    • `liveFleetMap` renders the rolling driver's REAL gps_tracking fix
+//      (parsed from `catalysts.getMyDrivers.location` "lat, lng") as a
+//      .truck puck on HereLiveMapView with addOns:.shipperTracking. The
+//      puck id is the load id → tap routes to the load's dispatch chat.
+//      Coord-gated: no parseable fix (or null-island) ⇒ honest "map
+//      pending" placeholder, never a fabricated route. Origin/destination
+//      are city-name strings (not coords), so NO lane is drawn — only the
+//      single real live fix is mapped.
+//
 //  Honest seams flagged in-file:
-//    • The OPEN LIVE MAP / MESSAGE JR / VIEW LOAD ribbon is navigation
-//      only (no backing mutation). This surface fires NO write — the
-//      load status mutation lives downstream at arrival (drivers.ts:859
-//      at_delivery), not on the catalyst fleet-tracker.
+//    • The MESSAGE JR ribbon is navigation only (no backing mutation).
+//      This surface fires NO write — the load status mutation lives
+//      downstream at arrival (drivers.ts:859 at_delivery), not on the
+//      catalyst fleet-tracker.
 //
 //  Powered by ESANG AI™.
 //
@@ -154,6 +164,7 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
                     kpiQuartet(l)
                     lifecycleStrip
                     rollingFleetCard(l)
+                    liveFleetMap(l)
                     telemetrySection(l)
                     routeProgressCapsule(l)
                     shipperOfRecordCard
@@ -402,6 +413,98 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
                     Text("Live position pending · not in this catalyst's roster feed")
                         .font(.system(size: 10))
                         .foregroundStyle(palette.textSecondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(palette.bgCard)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
+    }
+
+    // MARK: Live fleet map (in-house HERE basemap · real driver GPS puck)
+
+    /// The driver's REAL live fix, parsed from `rollingDriver.location`
+    /// (the "lat, lng" string the server joins off the latest gps_tracking
+    /// row in `catalysts.getMyDrivers`). nil when the roster row is absent,
+    /// the string isn't a coordinate pair, or it resolves to null island —
+    /// so the puck only ever draws on a real fix (no fabricated coords).
+    private var liveDriverFix: HereLatLng? {
+        guard let raw = rollingDriver?.location else { return nil }
+        let parts = raw.split(separator: ",")
+        guard parts.count == 2,
+              let lat = Double(parts[0].trimmingCharacters(in: .whitespaces)),
+              let lng = Double(parts[1].trimmingCharacters(in: .whitespaces)),
+              !(lat == 0 && lng == 0) else { return nil }
+        return HereLatLng(lat, lng)
+    }
+
+    /// Truck-puck marker for the rolling driver's live fix. The marker id is
+    /// the load id so a tap routes back to that load (HereLiveMapView marks
+    /// id-carrying base pins actionable → `onSelectMarker`).
+    private func liveMapLayers(_ l: ActiveLoadRow_375) -> [HereMapLayer] {
+        guard let fix = liveDriverFix else { return [] }
+        return [
+            .markers([
+                HereMarker(
+                    at: fix,
+                    kind: .truck,
+                    label: rollingDriver.map { "\($0.name) · \(laneShort(l))" } ?? laneShort(l),
+                    id: l.id
+                )
+            ])
+        ]
+    }
+
+    @ViewBuilder
+    private func liveFleetMap(_ l: ActiveLoadRow_375) -> some View {
+        if let fix = liveDriverFix {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("LIVE FLEET MAP · HERE basemap · gps_tracking heartbeat")
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                HereLiveMapView(
+                    center: fix,
+                    zoom: 8,
+                    baseLayers: liveMapLayers(l),
+                    addOns: .shipperTracking,
+                    onSelectMarker: { _ in
+                        NotificationCenter.default.post(
+                            name: .esangOpenMeDetail,
+                            object: "messages",
+                            userInfo: ["loadId": l.id]
+                        )
+                    }
+                )
+                .frame(height: 200)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint)
+                )
+                .accessibilityLabel("Live fleet map, driver rolling \(laneShort(l))")
+            }
+        } else {
+            // Coord gate — no parseable live fix in the roster feed yet.
+            // Honest placeholder so the map never frames on null island.
+            HStack(spacing: 12) {
+                Image(systemName: "map")
+                    .font(.system(size: 20, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Live fleet map pending")
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Awaiting a gps_tracking fix on this load's driver")
+                        .font(.system(size: 10))
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1).minimumScaleFactor(0.7)
                 }
                 Spacer(minLength: 0)
             }

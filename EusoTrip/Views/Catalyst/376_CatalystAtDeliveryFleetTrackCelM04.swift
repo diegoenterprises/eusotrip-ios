@@ -472,6 +472,8 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
 
                     FleetTrackerArrivedCard_376(fleet: vm.fleet)
 
+                    fleetTrackMapCard
+
                     telemetrySection
 
                     routeProgressCapsule
@@ -544,6 +546,63 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
             }.frame(height: 4)
             Text("DELIVERY ROUTE · 245/245 mi · 100% · arrived CLT Newell · next UNLOAD + POD")
                 .font(.system(size: 8, weight: .heavy)).kerning(0.4).foregroundStyle(palette.textTertiary)
+        }
+    }
+
+    // MARK: Fleet-track map (in-house HERE · real gpsTracking truck puck)
+
+    /// Real driver fix parsed from `vm.fleet.positionLabel`, which the catalyst
+    /// vantage seeds + overwrites from `catalysts.getMyDrivers.location`. That
+    /// server field is formatted verbatim as `"<lat>, <lng>"` off the latest
+    /// gpsTracking row (catalysts.ts:487 — `${lat.toFixed(2)}, ${lng.toFixed(2)}`),
+    /// so it parses back to a real coordinate. Returns nil when the string is a
+    /// place name / "Unknown" / unparseable, or frames on null island (0,0) —
+    /// in which case we draw NO map rather than fabricate a fix.
+    private var liveTruckFix: HereLatLng? {
+        let parts = vm.fleet.positionLabel
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        guard parts.count == 2,
+              let lat = Double(parts[0]),
+              let lng = Double(parts[1]),
+              !(lat == 0 && lng == 0) else { return nil }
+        return HereLatLng(lat, lng)
+    }
+
+    /// In-house HERE live map carrying the catalyst fleet-track truck puck at
+    /// the driver's real gpsTracking position. Only the live `.truck` marker is
+    /// drawn: the consignee (CLT Newell) and destination reach this surface as
+    /// NAMES only — `catalysts.getActiveLoads` returns origin/destination as
+    /// "City, State" text (catalysts.ts:565-566) with NO lat/lng, and the
+    /// at_delivery row is filtered off that board anyway — so a delivery pin /
+    /// geofence would have to be geocoded, which the embed doctrine forbids. We
+    /// honestly render the single real puck and gate it behind a real fix.
+    @ViewBuilder
+    private var fleetTrackMapCard: some View {
+        if let fix = liveTruckFix {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("LIVE FLEET-TRACK · gpsTracking · catalysts.getMyDrivers.location")
+                    .font(.system(size: 8, weight: .heavy)).kerning(0.5)
+                    .foregroundStyle(palette.textTertiary)
+                HereLiveMapView(
+                    center: .init(fix.lat, fix.lng),
+                    zoom: 9,
+                    baseLayers: [
+                        .markers([
+                            .init(at: .init(fix.lat, fix.lng),
+                                  kind: .truck,
+                                  label: "\(vm.fleet.tractor) · \(vm.fleet.driverName)")
+                        ])
+                    ],
+                    addOns: .shipperTracking
+                )
+                .frame(height: 200)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint)
+                )
+            }
         }
     }
 

@@ -65,7 +65,15 @@ struct VesselLivePositionScreen: View {
 
 // MARK: - Wire shapes (loose optionals · overwritten on load)
 
-private struct VesselDetail660: Decodable { let lane: String?; let berth: String?; let reference: String? }
+private struct VesselDetail660: Decodable {
+    let lane: String?; let berth: String?; let reference: String?
+    // Port join from getVesselShipmentDetail (:289 returns originPort / destinationPort
+    // rows). UN/LOCODE + name resolve the great-circle endpoints through the bundled
+    // PortDirectory catalog — the SAME real-coordinate path Vessel 003 uses (003:314/326).
+    let originPort: VesselPort660?
+    let destinationPort: VesselPort660?
+}
+private struct VesselPort660: Decodable { let name: String?; let unlocode: String? }
 private struct VesselTrack660: Decodable {
     let progress: Double?      // 0...1 along the approach polyline
     let sogKn: Double?
@@ -99,8 +107,16 @@ private struct VesselLivePositionBody_660: View {
     @State private var berth = "BERTH J232"
     @State private var reference = "VES-260602"
 
-    // One live tick (getVesselTrack) -------------------------------------------------
-    @State private var markerProgress: CGFloat = 0.32
+    // Great-circle endpoints — UN/LOCODE + name from the getVesselShipmentDetail port
+    // join (:289), coordinates resolved through PortDirectory. nil until load lands a
+    // real booking, which gates the live ocean map (no map on null endpoints).
+    @State private var originPort: VesselPort660? = nil
+    @State private var destinationPort: VesselPort660? = nil
+
+    // One live tick (getVesselTrack) — SOG/COG feed the voyage meter + the AIS status
+    // capsule. The live marker fraction now lives INSIDE VesselOceanTrackMap (the canvas
+    // splits the route at the real AIS fix), so this view no longer tracks a self-drawn
+    // marker progress.
     @State private var sog = "14.2 kn"
     @State private var cogDeg = 71
     @State private var degraded = false
@@ -173,7 +189,8 @@ private struct VesselLivePositionBody_660: View {
 
     private var loadingState: some View {
         VStack(spacing: Space.s3) {
-            RoundedRectangle(cornerRadius: 18, style: .continuous).fill(palette.bgCardSoft).frame(height: 145)
+            RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).fill(palette.bgCardSoft).frame(height: 300)
+                .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).strokeBorder(palette.borderFaint))
             ForEach(0..<2, id: \.self) { _ in
                 RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).fill(palette.bgCardSoft).frame(height: 92)
                     .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).strokeBorder(palette.borderFaint))
@@ -194,32 +211,44 @@ private struct VesselLivePositionBody_660: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    // MARK: Hero — geofence approach chart + animated vessel (marine-navy in both modes, SVG-faithful)
+    // MARK: Hero — LIVE ocean/AIS register (canonical VesselOceanTrackMap · Vessel 003:250)
+    //
+    // CANON: the hand-drawn approach-chart (Circles/Text via .position() + a static
+    // quad-curve approach + status-fraction marker) is REPLACED by the in-house native
+    // ocean register `VesselOceanTrackMap` → `BespokeMapCanvas(style: .ocean)`. It is fed
+    // the booking's REAL endpoints (great circle CNSHA→USLGB drawn from the
+    // getVesselShipmentDetail port join) and the LIVE AIS feed keyed by this screen's
+    // `imoNumber` — the orb, solid/dashed route split, and the speed/heading/coords chip
+    // are the real position inside the canvas, NOT a status guess. Same hero chrome the
+    // 003 card uses (ocean fill, Radius.xl, borderFaint stroke). The AIS-LIVE/DEGRADED and
+    // berth status capsules ride on as overlays so the live-position eyebrow is preserved.
+    //
+    // Coord gate (Driver 013 pattern, cheat-sheet §6): both endpoints must resolve to real
+    // PortDirectory coordinates before drawing; otherwise a neutral placeholder so the map
+    // never frames on null island. No hardcoded coordinate literal anywhere in this view.
 
     private var heroMap: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(red: 0.055, green: 0.090, blue: 0.149))
-            GeometryReader { geo in
-                let w = geo.size.width, h = geo.size.height
-                Path { p in
-                    for fy in stride(from: 0.22, through: 0.86, by: 0.21) { p.move(to: .init(x: 0, y: h*fy)); p.addLine(to: .init(x: w, y: h*fy)) }
-                    for fx in stride(from: 0.2, through: 0.85, by: 0.2) { p.move(to: .init(x: w*fx, y: 0)); p.addLine(to: .init(x: w*fx, y: h)) }
-                }.stroke(Color(red: 0.106, green: 0.188, blue: 0.314), lineWidth: 1)
-                Circle().stroke(Color(red: 0.247, green: 0.663, blue: 0.961).opacity(0.65), style: StrokeStyle(lineWidth: 1.4, dash: [5,5]))
-                    .frame(width: w*0.55, height: w*0.55).position(x: w*0.52, y: h*0.52)
-                approachPath(w: w, h: h).stroke(LinearGradient.primary, style: StrokeStyle(lineWidth: 2.6, lineCap: .round))
-                Circle().fill(.white).frame(width: 8, height: 8).position(x: w*0.12, y: h*0.34)
-                Text("CNSHA").font(.system(size: 7.5, weight: .heavy)).foregroundColor(Color(red:0.56,green:0.64,blue:0.75)).position(x: w*0.12, y: h*0.22)
-                Circle().fill(.white).frame(width: 9, height: 9).position(x: w*0.80, y: h*0.66)
-                Text("USLGB · J232").font(.system(size: 7.5, weight: .heavy)).foregroundColor(Color(red:0.50,green:0.66,blue:0.90)).position(x: w*0.80, y: h*0.80)
-                VesselMarker660(degraded: degraded).position(pointOnApproach(markerProgress, w: w, h: h))
-                Text("SOG \(sog) · COG 0\(cogDeg)°").font(.system(size: 7.5, weight: .bold))
-                    .foregroundColor(Color(red: 0.373, green: 0.878, blue: 0.753)).position(x: w*0.42, y: h*0.92)
+            RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                .fill(Color(red: 0.039, green: 0.078, blue: 0.133)) // #0A1422 ocean
+            RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                .fill(Brand.blue.opacity(0.06))
+
+            if !imoNumber.isEmpty, let o = originCoord, let d = destinationCoord {
+                VesselOceanTrackMap(
+                    imoNumber: imoNumber,
+                    origin: o,
+                    destination: d,
+                    originLabel: originLabel,
+                    destinationLabel: destinationLabel
+                )
+            } else {
+                heroMapAwaiting
             }
         }
-        .frame(height: 145)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(LinearGradient.diagonal, lineWidth: 1.5))
+        .frame(height: 300)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).strokeBorder(palette.borderFaint))
         .overlay(alignment: .topLeading) {
             HStack(spacing: 6) {
                 Circle().fill(Color(red: 0.169, green: 0.878, blue: 0.690)).frame(width: 6, height: 6)
@@ -232,7 +261,7 @@ private struct VesselLivePositionBody_660: View {
             .padding(12)
         }
         .overlay(alignment: .topTrailing) {
-            Text("FENCE ENTER 14:12 EST").font(.system(size: 8, weight: .bold, design: .monospaced))
+            Text(berth).font(.system(size: 8, weight: .bold, design: .monospaced))
                 .foregroundColor(Color(red: 0.725, green: 0.831, blue: 0.949))
                 .padding(.horizontal, 9).padding(.vertical, 4)
                 .background(Capsule().fill(Color(red: 0.043, green: 0.071, blue: 0.125)))
@@ -240,18 +269,37 @@ private struct VesselLivePositionBody_660: View {
         }
     }
 
-    private func approachPath(w: CGFloat, h: CGFloat) -> Path {
-        Path { p in
-            p.move(to: .init(x: w*0.12, y: h*0.34))
-            p.addQuadCurve(to: .init(x: w*0.40, y: h*0.50), control: .init(x: w*0.30, y: h*0.38))
-            p.addQuadCurve(to: .init(x: w*0.80, y: h*0.66), control: .init(x: w*0.58, y: h*0.50))
+    /// No-endpoints / no-IMO placeholder so the hero never frames on null island.
+    private var heroMapAwaiting: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "dot.radiowaves.left.and.right")
+                .font(.system(size: 22, weight: .semibold)).foregroundStyle(palette.textTertiary)
+            Text("Awaiting first AIS fix")
+                .font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textSecondary)
+            Text("Live position appears once the lane endpoints resolve.")
+                .font(.system(size: 10)).foregroundStyle(palette.textTertiary)
+                .multilineTextAlignment(.center)
         }
+        .padding(Space.s4)
     }
-    private func pointOnApproach(_ t: CGFloat, w: CGFloat, h: CGFloat) -> CGPoint {
-        let x = 0.12 + (0.80 - 0.12) * t
-        let y = 0.34 + (0.66 - 0.34) * t + 0.04 * sin(t * .pi)
-        return CGPoint(x: w * x, y: h * y)
+
+    // MARK: Origin / destination resolution (UN/LOCODE port join → PortDirectory coords)
+
+    /// Origin great-circle endpoint — the booking's origin port UN/LOCODE resolved through
+    /// the bundled PortDirectory catalog (the same real-coordinate path Vessel 003 uses at
+    /// 003:314). nil until a real booking lands ⇒ the coord gate keeps the placeholder.
+    private var originCoord: HereLatLng? { coord(for: originPort) }
+
+    /// Destination great-circle endpoint — destination port UN/LOCODE → PortDirectory (003:326).
+    private var destinationCoord: HereLatLng? { coord(for: destinationPort) }
+
+    private func coord(for port: VesselPort660?) -> HereLatLng? {
+        guard let code = port?.unlocode, !code.isEmpty, let p = PortDirectory.find(unlocode: code) else { return nil }
+        return HereLatLng(p.lat, p.lng)
     }
+
+    private var originLabel: String { originPort?.name ?? originPort?.unlocode ?? "Origin" }
+    private var destinationLabel: String { destinationPort?.name ?? destinationPort?.unlocode ?? "Destination" }
 
     // MARK: Live voyage meter (to-berth arc + ETA/RUN/SOG/TIDE)
 
@@ -402,9 +450,10 @@ private struct VesselLivePositionBody_660: View {
         if let v = d.lane { lane = v }
         if let v = d.berth { berth = v }
         if let v = d.reference { reference = v }
+        originPort = d.originPort
+        destinationPort = d.destinationPort
     }
     private func applyTrack(_ t: VesselTrack660) {
-        if let v = t.progress { markerProgress = min(0.5, max(0, CGFloat(v))) }
         if let v = t.sogKn { sog = String(format: "%.1f kn", v) }
         if let v = t.cogDeg { cogDeg = v }
         degraded = t.stale ?? degraded
@@ -468,32 +517,6 @@ private struct ApproachStep660: Identifiable {
         ApproachStep660(kind: .cbpEntry, title: "CBP entry · ISF on file",
                         detail: "ACE accepted · release on discharge", pill: "CLEARED", pillKind: .success, value: "ACE")
     ]
-}
-
-// MARK: - SVG-faithful animated vessel marker (heading-pulse · marine glyph, not an equipment card)
-
-private struct VesselMarker660: View {
-    let degraded: Bool
-    @State private var pulse = false
-    var body: some View {
-        ZStack {
-            Circle().fill(Color(red: 0.169, green: 0.878, blue: 0.690).opacity(pulse ? 0 : 0.35))
-                .frame(width: pulse ? 30 : 14, height: pulse ? 30 : 14)
-                .animation(.easeOut(duration: 1.2).repeatForever(autoreverses: false), value: pulse)
-            HStack(spacing: 1) {
-                ForEach([Brand.blue, Brand.magenta, Brand.warning, Brand.success], id: \.self) { c in
-                    Rectangle().fill(c).frame(width: 3.6, height: 6)
-                }
-            }
-            .padding(.horizontal, 3).padding(.vertical, 1)
-            .background(
-                RoundedRectangle(cornerRadius: 1).fill(Color(red: 0.043, green: 0.071, blue: 0.125))
-                    .overlay(RoundedRectangle(cornerRadius: 1).strokeBorder(Color(red: 0.373, green: 0.878, blue: 0.753), lineWidth: 1))
-            )
-        }
-        .opacity(degraded ? 0.55 : 1)
-        .onAppear { pulse = true }
-    }
 }
 
 #Preview("660 · Live position · Night") {
