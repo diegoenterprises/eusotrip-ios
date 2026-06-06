@@ -7,119 +7,27 @@
 //  rows + Insurance policy list + Endorsements/Filings strip.
 //
 //  Wire bindings (all real, no stubs):
-//    authority.getMyAuthority    — USDOT, MC, BMC-91X, BOC-3 status
-//    insurance.getPolicies       — auto liability / motor cargo / general
-//    insurance.getStats          — pool grade + renewals YTD
+//    authority.getMyAuthority  — AuthorityAPI.MyAuthority
+//                                (ownAuthority {companyName, legalName,
+//                                 mcNumber, dotNumber, insurancePolicy,
+//                                 insuranceExpiry, complianceStatus,
+//                                 isActive} + complianceScore).
+//    insurance.getPolicies     — auto liability / motor cargo / general
+//    insurance.getStats        — pool grade + renewals YTD
+//
+//  ZERO-FABRICATION NOTE — the server `authority.getMyAuthority`
+//  (frontend/server/routers/authority.ts) returns ONLY ownAuthority +
+//  leases + complianceScore. It carries NO USDOT-distinct-from-DOT,
+//  NO surety bond, NO BMC-91X / BOC-3 flags, NO FMCSA SAFER / BASIC /
+//  OOS counts, NO MCS-150 date, NO HazMat / TWIC / IRP / IFTA / UCR
+//  filing state, NO operating-authority-type, NO grant date. Those are
+//  a backend gap — they render as an honest "-" / "—" / EusoEmptyState,
+//  never a fabricated literal or a green ACTIVE badge.
 //
 //  Bottom nav frozen per doctrine — content only.
 //
 
 import SwiftUI
-
-// MARK: - Wire models
-
-private struct MyAuthorityResponse: Decodable, Hashable {
-    let usdot: String?
-    let mcNumber: String?
-    let dotNumber: String?
-    let operatingAuthorityType: String?
-    let grantedAt: String?
-    let standing: String?
-    let bmc91x: Bool?
-    let boc3: Bool?
-    let suretyBond: String?
-    let safetyRating: String?
-    let lastMcs150: String?
-    let oosCount: Int?
-    let basicScore: Int?
-    
-    private struct ServerEnvelope: Decodable {
-        let ownAuthority: OwnAuthority?
-        let complianceScore: Int?
-        
-        struct OwnAuthority: Decodable {
-            let mcNumber: String?
-            let dotNumber: String?
-            let complianceStatus: String?
-        }
-    }
-    
-    init(from decoder: Decoder) throws {
-        let envelope = try ServerEnvelope(from: decoder)
-        
-        self.mcNumber = envelope.ownAuthority?.mcNumber
-        self.dotNumber = envelope.ownAuthority?.dotNumber
-        self.usdot = envelope.ownAuthority?.dotNumber
-        self.operatingAuthorityType = nil
-        self.grantedAt = nil
-        self.standing = envelope.ownAuthority?.complianceStatus.flatMap { $0 == "active" ? "ACTIVE" : "INACTIVE" }
-        self.bmc91x = nil
-        self.boc3 = nil
-        self.suretyBond = nil
-        self.safetyRating = nil
-        self.lastMcs150 = nil
-        self.oosCount = nil
-        self.basicScore = envelope.complianceScore
-    }
-}
-
-private struct InsurancePolicy: Decodable, Hashable, Identifiable {
-    let id: Int
-    var stringId: String { String(id) }
-    let policyType: String?
-    let policyNumber: String?
-    let carrier: String?
-    let coverageAmount: String?
-    let effectiveDate: String?
-    let expirationDate: String?
-    let status: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id, policyType, policyNumber, effectiveDate, expirationDate, status
-        case carrier = "providerName"  // Server sends providerName, iOS expects carrier
-        case coverageAmount = "perOccurrenceLimit"  // Server sends perOccurrenceLimit, iOS expects coverageAmount
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(Int.self, forKey: .id)
-        policyType = try container.decodeIfPresent(String.self, forKey: .policyType)
-        policyNumber = try container.decodeIfPresent(String.self, forKey: .policyNumber)
-        carrier = try container.decodeIfPresent(String.self, forKey: .carrier)
-        coverageAmount = try container.decodeIfPresent(String.self, forKey: .coverageAmount)
-        effectiveDate = try container.decodeIfPresent(String.self, forKey: .effectiveDate)
-        expirationDate = try container.decodeIfPresent(String.self, forKey: .expirationDate)
-        status = try container.decodeIfPresent(String.self, forKey: .status)
-    }
-}
-
-private struct InsuranceStats: Decodable, Hashable {
-    let totalPolicies: Int?
-    let activePolicies: Int?
-    let expiringPolicies: Int?
-    let renewalsYTD: Int?
-    let poolGrade: String?
-    
-    enum CodingKeys: String, CodingKey {
-        case totalPolicies
-        case activePolicies = "active"
-        case expiringPolicies = "expiring"
-        case renewalsYTD
-        case poolGrade
-        case activeClaims      // tolerate server's actual keys
-        case totalCoverage
-        case expired
-    }
-    
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.totalPolicies = try c.decodeIfPresent(Int.self, forKey: .totalPolicies)
-        self.activePolicies = try c.decodeIfPresent(Int.self, forKey: .activePolicies)
-        self.expiringPolicies = try c.decodeIfPresent(Int.self, forKey: .expiringPolicies)
-        self.renewalsYTD = try c.decodeIfPresent(Int.self, forKey: .renewalsYTD)
-        self.poolGrade = try c.decodeIfPresent(String.self, forKey: .poolGrade)
-    }
-}
 
 // MARK: - Screen
 
@@ -141,7 +49,65 @@ struct CatalystAuthorityInsuranceScreen: View {
 private struct AuthInsBody: View {
     @Environment(\.palette) private var palette
 
-    @State private var authority: MyAuthorityResponse?
+    // MARK: Wire models (insurance section — real insurancePolicies columns)
+
+    private struct InsurancePolicy: Decodable, Hashable, Identifiable {
+        let id: Int
+        let policyType: String?
+        let policyNumber: String?
+        let carrier: String?
+        let coverageAmount: String?
+        let effectiveDate: String?
+        let expirationDate: String?
+        let status: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id, policyType, policyNumber, effectiveDate, expirationDate, status
+            case carrier = "providerName"          // server column
+            case coverageAmount = "perOccurrenceLimit"  // server column
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id             = try c.decode(Int.self, forKey: .id)
+            policyType     = try c.decodeIfPresent(String.self, forKey: .policyType)
+            policyNumber   = try c.decodeIfPresent(String.self, forKey: .policyNumber)
+            carrier        = try c.decodeIfPresent(String.self, forKey: .carrier)
+            coverageAmount = try c.decodeIfPresent(String.self, forKey: .coverageAmount)
+            effectiveDate  = try c.decodeIfPresent(String.self, forKey: .effectiveDate)
+            expirationDate = try c.decodeIfPresent(String.self, forKey: .expirationDate)
+            status         = try c.decodeIfPresent(String.self, forKey: .status)
+        }
+    }
+
+    private struct InsuranceStats: Decodable, Hashable {
+        let totalPolicies: Int?
+        let activePolicies: Int?
+        let expiringPolicies: Int?
+        let renewalsYTD: Int?
+        let poolGrade: String?
+
+        enum CodingKeys: String, CodingKey {
+            case totalPolicies
+            case activePolicies = "active"
+            case expiringPolicies = "expiring"
+            case renewalsYTD
+            case poolGrade
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.totalPolicies    = try c.decodeIfPresent(Int.self, forKey: .totalPolicies)
+            self.activePolicies   = try c.decodeIfPresent(Int.self, forKey: .activePolicies)
+            self.expiringPolicies = try c.decodeIfPresent(Int.self, forKey: .expiringPolicies)
+            self.renewalsYTD      = try c.decodeIfPresent(Int.self, forKey: .renewalsYTD)
+            self.poolGrade        = try c.decodeIfPresent(String.self, forKey: .poolGrade)
+        }
+    }
+
+    // MARK: State
+
+    @State private var authority: AuthorityAPI.MyAuthority?
     @State private var policies: [InsurancePolicy] = []
     @State private var stats: InsuranceStats?
     @State private var loading: Bool = true
@@ -178,17 +144,24 @@ private struct AuthInsBody: View {
                 Text("CATALYST · AUTHORITY + INSURANCE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Authority + Insurance").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            let usdot = authority?.usdot ?? authority?.dotNumber ?? "-"
-            Text("USDOT \(usdot)").font(EType.caption).foregroundStyle(palette.textSecondary)
-            let renewals = stats?.renewalsYTD ?? 0
-            let active = stats?.activePolicies ?? 0
-            Text("\(active) ACTIVE · \(renewals) RENEWAL\(renewals == 1 ? "" : "S") YTD")
-                .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textSecondary)
+            // USDOT — server returns dotNumber only (no USDOT distinct from DOT).
+            let dot = authority?.ownAuthority?.dotNumber ?? "-"
+            Text("USDOT \(dot)").font(EType.caption).foregroundStyle(palette.textSecondary)
+            // Active policies + renewals YTD — only render the YTD clause when
+            // insurance.getStats actually shipped a renewal count.
+            let active = stats?.activePolicies ?? policies.filter { ($0.status ?? "").lowercased() == "active" }.count
+            if let renewals = stats?.renewalsYTD {
+                Text("\(active) ACTIVE · \(renewals) RENEWAL\(renewals == 1 ? "" : "S") YTD")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textSecondary)
+            } else {
+                Text("\(active) ACTIVE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textSecondary)
+            }
         }
     }
 
-    private func authorityHealthCard(_ a: MyAuthorityResponse) -> some View {
-        let score = a.basicScore ?? 100
+    private func authorityHealthCard(_ a: AuthorityAPI.MyAuthority) -> some View {
+        let score = a.complianceScore
         let grade = stats?.poolGrade ?? gradeForScore(score)
         return LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 8) {
@@ -208,37 +181,45 @@ private struct AuthInsBody: View {
                             .foregroundStyle(scoreColor(score))
                     }
                 }
-                Text("FMCSA SAFER · BASIC \(a.oosCount ?? 0) OOS · last MCS-150 \(shortDate(a.lastMcs150))")
+                // Honest source line — Part 376 lease compliance is what the
+                // score is computed from server-side. No SAFER / BASIC / OOS /
+                // MCS-150 data exists on this proc, so we don't claim it.
+                Text("FMCSR Part 376 lease compliance · \(a.activeLeasesAsLessee.count + a.activeLeasesAsLessor.count) active lease\(a.activeLeasesAsLessee.count + a.activeLeasesAsLessor.count == 1 ? "" : "s")")
                     .font(.caption2)
                     .foregroundStyle(palette.textTertiary)
             }
         }
     }
 
-    private func operatingAuthoritySection(_ a: MyAuthorityResponse) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private func operatingAuthoritySection(_ a: AuthorityAPI.MyAuthority) -> some View {
+        let own = a.ownAuthority
+        return VStack(alignment: .leading, spacing: 6) {
             Text("OPERATING AUTHORITY").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-            LifecycleCard {
-                authRow(title: "USDOT \(a.usdot ?? a.dotNumber ?? "-")",
-                        subtitle: "SAFER · BASIC clean · \(a.oosCount ?? 0) OOS · MCS-150 \(shortDate(a.lastMcs150))",
-                        badge: (a.standing ?? "ACTIVE").uppercased(),
-                        badgeColor: .green)
-            }
-            if let mc = a.mcNumber, !mc.isEmpty {
+            if let own {
+                let standing = (own.complianceStatus ?? "").lowercased()
+                let standingLabel = (own.complianceStatus ?? "-").uppercased()
+                let standingColor: Color = standing == "compliant" || standing == "active" ? .green
+                                         : standing.isEmpty ? palette.textTertiary : .orange
                 LifecycleCard {
-                    authRow(title: "MC-\(mc) · \(a.operatingAuthorityType ?? "Common Carrier")",
-                            subtitle: "Operating authority · property · granted \(shortDate(a.grantedAt)) · in good standing",
-                            badge: "ACTIVE",
-                            badgeColor: .green)
+                    authRow(title: "USDOT \(own.dotNumber ?? "-")",
+                            subtitle: own.companyName ?? own.legalName ?? "-",
+                            badge: standingLabel,
+                            badgeColor: standingColor)
                 }
-            }
-            if a.bmc91x == true || (a.suretyBond ?? "").isEmpty == false {
-                LifecycleCard {
-                    authRow(title: "Trust filings · BMC-91X on file",
-                            subtitle: "Surety bond \(a.suretyBond ?? "$75,000") · BOC-3 process agent active",
-                            badge: "ACTIVE",
-                            badgeColor: .green)
+                if let mc = own.mcNumber, !mc.isEmpty {
+                    LifecycleCard {
+                        authRow(title: "MC-\(mc)",
+                                subtitle: "Operating authority\(own.insuranceExpiry.map { " · insurance expires \(shortDate($0))" } ?? "")",
+                                badge: standingLabel,
+                                badgeColor: standingColor)
+                    }
                 }
+            } else {
+                EusoEmptyState(
+                    systemImage: "building.2",
+                    title: "No company authority on file",
+                    subtitle: "Your DOT / MC operating authority appears here once it's registered to your company."
+                )
             }
         }
     }
@@ -286,7 +267,7 @@ private struct AuthInsBody: View {
         let renewing = expiresWithin(p.expirationDate, days: 60)
         let (badge, color): (String, Color) = renewing ? ("RENEW", .orange) : ("CURRENT", .green)
         return LifecycleCard(accentDanger: renewing) {
-            authRow(title: "\(p.policyType ?? "Policy") · \(p.coverageAmount ?? "")",
+            authRow(title: "\(p.policyType ?? "Policy")\(p.coverageAmount.map { " · \($0)" } ?? "")",
                     subtitle: "\(p.carrier ?? "-") · POL \(p.policyNumber ?? "-") · expires \(shortDate(p.expirationDate))",
                     badge: badge,
                     badgeColor: color)
@@ -296,18 +277,15 @@ private struct AuthInsBody: View {
     private var endorsementsSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("ENDORSEMENTS & FILINGS").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-            LifecycleCard {
-                authRow(title: "HazMat HNX + Tank endorsement",
-                        subtitle: "UN1203 (gasoline) · UN1005 (anhydrous ammonia) · TSA TWIC current",
-                        badge: "ACTIVE",
-                        badgeColor: .green)
-            }
-            LifecycleCard {
-                authRow(title: "BOC-3 · IRP · IFTA · UCR",
-                        subtitle: "BOC-3 ✓ · IRP apportioned ✓ · IFTA filed ✓ · UCR current",
-                        badge: "ACTIVE",
-                        badgeColor: .green)
-            }
+            // ZERO-FABRICATION — HazMat / TWIC / BOC-3 / IRP / IFTA / UCR
+            // filing state has NO live source on authority.getMyAuthority
+            // (or any wired proc this screen reads). We render an honest
+            // empty state instead of fabricated green ACTIVE badges.
+            EusoEmptyState(
+                systemImage: "doc.text.magnifyingglass",
+                title: "No filing data available",
+                subtitle: "HazMat HNX · TWIC · BOC-3 · IRP · IFTA · UCR endorsement status isn't connected to this view yet."
+            )
         }
     }
 
@@ -340,7 +318,9 @@ private struct AuthInsBody: View {
             let out = DateFormatter(); out.dateFormat = "yyyy-MM-dd"
             return out.string(from: d)
         }
-        return iso
+        // Tolerate a date-only or non-fractional ISO string by surfacing the
+        // first 10 chars (yyyy-MM-dd) rather than the raw timestamp.
+        return iso.count >= 10 ? String(iso.prefix(10)) : iso
     }
 
     private func expiresWithin(_ iso: String?, days: Int) -> Bool {
@@ -363,7 +343,7 @@ private struct AuthInsBody: View {
 
     private func loadAuthority() async {
         do {
-            authority = try await EusoTripAPI.shared.queryNoInput("authority.getMyAuthority")
+            authority = try await EusoTripAPI.shared.authority.getMyAuthority()
         } catch {
             self.error = (error as? LocalizedError)?.errorDescription ?? "\(error)"
         }

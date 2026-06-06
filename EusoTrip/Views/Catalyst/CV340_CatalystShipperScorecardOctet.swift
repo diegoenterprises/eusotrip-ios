@@ -18,6 +18,19 @@
 //  `shipperScorecard.getScorecard` for live customer metrics. Bottom
 //  nav frozen (Catalyst: Home / Fleet / Wallet / Me).
 //
+//  ZERO-FABRICATION BINDING (2026-06-06):
+//  Every KPI is bound to the typed `shipperScorecard.getScorecard`
+//  response (overallScore / grade / metrics.{tenderAcceptance,
+//  completionRate, cancellationRate, averageRate, volumeConsistency,
+//  totalLoads, deliveredCount, cancelledCount}). The proc returns NO
+//  per-doc compliance (MSA/W-9/COI), NO per-invoice settlement
+//  line-items, NO DSO-in-days / RPM / detention, NO onboarding-step
+//  ladder, NO 1099/quarterly rollup, NO carrier authority (MC) and NO
+//  shipper/company NAME — only the numeric shipperId echo. Those rows
+//  render an honest "—" placeholder; identity shows the real
+//  `shipperId` from the proc, never a hardcoded persona. No `??
+//  <invented>` fallbacks remain — absent fields collapse to "—".
+//
 
 import SwiftUI
 
@@ -59,58 +72,58 @@ private extension CatalystShipperKind {
             return .init(eyebrow: "CATALYST · CUSTOMER · SCORECARD",
                          citation: "OWNER-OP SEAM · CLEAN PAYOR",
                          title: "Customer scorecard",
-                         subhead: "Eusorone Technologies · Diego Usoro · companyId 1 · last 90 days",
-                         pillCopy: "Catalyst grades shipper · same companyId both sides · clean payor file",
-                         statusPill: "GRADE A · COMPOSITE 0.93")
+                         subhead: "shipperScorecard.getScorecard · last 90 days",
+                         pillCopy: "Catalyst grades the shipper-payor on tender acceptance, completion, cancellation, volume consistency and average rate.",
+                         statusPill: "GRADE + COMPOSITE · LIVE")
         case .profile:
             return .init(eyebrow: "CATALYST · CUSTOMER · PROFILE",
                          citation: "OWNER-OP SEAM · CLEAN PAYOR",
                          title: "Customer profile",
-                         subhead: "SHIP-001-EUSORONE · 90D · DU",
-                         pillCopy: "Catalyst grades shipper · same companyId both sides · clean payor file",
-                         statusPill: "MATRIX-50 · NET-30 · SHIPPER OF RECORD")
+                         subhead: "shipperScorecard.getScorecard · 90 days",
+                         pillCopy: "Catalyst grades the shipper-payor on tender acceptance, completion, cancellation, volume consistency and average rate.",
+                         statusPill: "PAYOR GRADE · LIVE")
         case .documents:
             return .init(eyebrow: "CATALYST · CUSTOMER · DOCUMENTS",
                          citation: "OWNER-OP SEAM · PAYOR EVIDENCE",
                          title: "Customer documents",
-                         subhead: "SHIP-001-EUSORONE · 12 docs · all current",
-                         pillCopy: "Catalyst pins MSA + W-9 + COI + rate confirmations · clean payor cabinet",
-                         statusPill: "MSA · W-9 · COI · RATE-CONS ALL CURRENT")
+                         subhead: "per-document vault not in scorecard proc",
+                         pillCopy: "Catalyst pins MSA + W-9 + COI + rate confirmations in the payor document cabinet. Per-document status is not returned by the scorecard proc.",
+                         statusPill: "DOCUMENT VAULT · NOT IN SCORECARD PROC")
         case .analytics:
             return .init(eyebrow: "CATALYST · CUSTOMER · ANALYTICS",
                          citation: "OWNER-OP SEAM · 90D ROLLING",
                          title: "Customer analytics",
-                         subhead: "SHIP-001-EUSORONE · 9 loads · ATP / RPM / dwell decomp",
-                         pillCopy: "Catalyst dashboards payor · same companyId · clean lane mix + payment cadence + tender win",
-                         statusPill: "TENDER-WIN 88.4% · DSO 5.8D · RPM $5.12")
+                         subhead: "shipperScorecard.getScorecard · 90 days",
+                         pillCopy: "Catalyst dashboards the payor on tender acceptance, completion and average rate. DSO-in-days and rate-per-mile are not returned by the scorecard proc.",
+                         statusPill: "TENDER-ACCEPT · AVG RATE · LIVE")
         case .settlements:
             return .init(eyebrow: "CATALYST · CUSTOMER · LEDGER",
                          citation: "OWNER-OP SEAM · §387 NET-30 PAYOR",
                          title: "Customer settlements",
-                         subhead: "SHIP-001-EUSORONE · 90D · 9 SETTLEMENTS",
-                         pillCopy: "Catalyst earns from shipper · same companyId both sides · clean payor records",
-                         statusPill: "GROSS 90D $14,820 · 9 INVOICES · GROSS")
+                         subhead: "per-invoice ledger not in scorecard proc",
+                         pillCopy: "Catalyst earns from the shipper-payor. Per-invoice settlement line-items are not returned by the scorecard proc — only delivered-load counts are live.",
+                         statusPill: "DELIVERED COUNT · LIVE")
         case .onboarding:
             return .init(eyebrow: "CATALYST · CUSTOMER · ONBOARD",
                          citation: "OWNER-OP SEAM · 6-STEP LADDER",
                          title: "Customer onboarding",
-                         subhead: "SHIP-001-EUSORONE · 6/6 steps · terminal",
-                         pillCopy: "Catalyst seats payor · same companyId · 6 onboarding pillars closed (MSA, W-9, COI, terms, rate-card, first PO)",
-                         statusPill: "TERMINAL · 6/6 · CLOSED 2024-08-04")
+                         subhead: "onboarding ladder not in scorecard proc",
+                         pillCopy: "Catalyst seats the payor across MSA, W-9, COI, terms, rate-card and first PO. The onboarding-step ladder is not returned by the scorecard proc.",
+                         statusPill: "ONBOARDING LADDER · NOT IN SCORECARD PROC")
         case .compliance:
             return .init(eyebrow: "CATALYST · CUSTOMER · COMPLIANCE",
                          citation: "OWNER-OP SEAM · §387 §388 CLEAN PAYOR",
                          title: "Customer compliance",
-                         subhead: "SHIP-001-EUSORONE · §387 · 0 disputes YTD",
-                         pillCopy: "Catalyst monitors payor · same companyId both sides · clean §387 (cargo liability) §388 (broker auth)",
-                         statusPill: "PAYOR A · 0 DISPUTES YTD · §387 §388")
+                         subhead: "shipperScorecard.getScorecard · 90 days",
+                         pillCopy: "Catalyst monitors the payor on cancellation rate and dispute exposure. §387 §388 document checks are not returned by the scorecard proc.",
+                         statusPill: "CANCELLATION RATE · LIVE")
         case .quarter:
             return .init(eyebrow: "CATALYST · CUSTOMER · QUARTERLY HISTORY",
-                         citation: "OWNER-OP SEAM · PAYOR QUARTERLY BOOKS CLEAN",
+                         citation: "OWNER-OP SEAM · PAYOR QUARTERLY BOOKS",
                          title: "Quarterly history",
-                         subhead: "SHIP-001-EUSORONE · 2026 · DU",
-                         pillCopy: "Catalyst rolls up payor · same companyId both sides · clean §6041 1099-NEC quarters",
-                         statusPill: "YTD LANES 3 · MC-306 · MC-331 · 53' REEFER")
+                         subhead: "365-day rolling · scorecard proc",
+                         pillCopy: "Catalyst rolls up the payor across the year. Per-quarter and §6041 1099-NEC rollups are not returned by the scorecard proc — only 365-day aggregates are live.",
+                         statusPill: "365-DAY AGGREGATE · LIVE")
         }
     }
     var period: Int { self == .quarter ? 365 : 90 }
@@ -177,14 +190,20 @@ private struct CatalystShipperBody: View {
         }
     }
 
+    // Identity comes ONLY from the real proc echo (`shipperId`). The
+    // scorecard proc returns no shipper/company NAME, so the name line
+    // renders the real id and the secondary line stays an honest "—".
     private var identityRow: some View {
-        LifecycleCard {
+        let id = resp?.shipperId
+        return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    .overlay(Text("DU").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
+                    .overlay(Image(systemName: "shippingbox.fill").font(.system(size: 12, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Diego Usoro · founder · Eusorone Technologies").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("SHIP-001-EUSORONE · companyId 1 · shipper-of-record · MATRIX-50").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text(id.map { "Shipper #\($0)" } ?? "Shipper · —")
+                        .font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                    Text("shipper-of-record · name not in scorecard proc · —")
+                        .font(.caption2).foregroundStyle(palette.textTertiary)
                 }
                 Spacer()
             }
@@ -193,64 +212,71 @@ private struct CatalystShipperBody: View {
 
     private var kpiGrid: some View {
         let m = resp?.metrics
-        let grade = resp?.grade ?? "A"
+        let grade = resp?.grade ?? "—"
         let kpis: [(String, String, String, Color)] = {
             switch kind {
             case .scorecard:
                 return [
-                    ("GRADE",      grade,                                 "composite \(Double(resp?.overallScore ?? 93) / 100)", .green),
-                    ("PAY SPEED",  "\(payDays(m?.averageRate))d",         "−1.4d vs prior 90d",                                    .green),
-                    ("DETENTION",  "0:48",                                 "avg dock dwell",                                        .orange),
-                    ("LOADS",      "\(m?.totalLoads ?? 9)",                "90d delivered",                                          .blue),
+                    ("GRADE",      grade,                        compositeLine(resp?.overallScore),      .green),
+                    ("TENDER-ACC", pct(m?.tenderAcceptance),     "accepted · 90d",                        .green),
+                    ("COMPLETION", pct(m?.completionRate),       "delivered / total · 90d",               .blue),
+                    ("LOADS",      intStr(m?.totalLoads),        "90d total",                             .blue),
                 ]
             case .profile:
                 return [
-                    ("ROLE",       "SHIPPER",                              "matrix-50",                                              .blue),
-                    ("TERMS",      "NET-30",                               "§387 clean payor",                                       .green),
-                    ("MC",         "MC-306",                               "carrier authority pair",                                .blue),
-                    ("GRADE",      grade,                                  "payor pillar",                                           .green),
+                    ("ROLE",       "SHIPPER",                    "shipper-of-record",                     .blue),
+                    ("GRADE",      grade,                        "payor pillar",                          .green),
+                    ("DELIVERED",  intStr(m?.deliveredCount),    "completed · 90d",                       .green),
+                    ("CANCELLED",  intStr(m?.cancelledCount),    "cancelled · 90d",                       .red),
                 ]
             case .documents:
+                // Per-document compliance (MSA / W-9 / COI / rate-cons) is a
+                // backend gap — the scorecard proc returns none. Honest "—".
                 return [
-                    ("DOCS",       "12",                                   "pinned · current",                                       .blue),
-                    ("MSA",        "OK",                                    "active · 2024-08-04",                                   .green),
-                    ("W-9",        "OK",                                    "EIN verified · IRS-active",                             .green),
-                    ("COI",        "OK",                                    "$1M auto / $2M general",                                .green),
+                    ("MSA",        "—",                          "not in scorecard proc",                 .gray),
+                    ("W-9",        "—",                          "not in scorecard proc",                 .gray),
+                    ("COI",        "—",                          "not in scorecard proc",                 .gray),
+                    ("RATE-CONS",  "—",                          "not in scorecard proc",                 .gray),
                 ]
             case .analytics:
                 return [
-                    ("TENDER-WIN", "\(percentCS(m?.tenderAcceptance))%",   "88.4% accepted",                                         .green),
-                    ("DSO",        "5.8d",                                   "Eusorone NET-30 pillar",                                .green),
-                    ("RPM",        "$5.12",                                   "rate per mile · 90d",                                  .green),
-                    ("LANES",      "3",                                       "YTD active",                                            .blue),
+                    ("TENDER-ACC", pct(m?.tenderAcceptance),     "accepted · 90d",                        .green),
+                    ("AVG RATE",   moneyStr(m?.averageRate),     "avg delivered-load rate · 90d",         .green),
+                    ("VOL-CONS",   pct(m?.volumeConsistency),    "month-over-month · 90d",                .blue),
+                    ("DSO / RPM",  "—",                          "not in scorecard proc",                 .gray),
                 ]
             case .settlements:
+                // Per-invoice settlement line-items + gross are a backend gap.
+                // Only delivered-load count is live; gross / per-invoice "—".
                 return [
-                    ("GROSS-90D",  "$14,820",                                "9 invoices · gross",                                    .green),
-                    ("AVG/INV",    "$1,647",                                  "per invoice · 90d",                                    .blue),
-                    ("PAID",       "\(m?.deliveredCount ?? 9)",              "NET-30 closed",                                         .green),
-                    ("PENDING",    "0",                                       "AR clean",                                              .green),
+                    ("DELIVERED",  intStr(m?.deliveredCount),    "completed loads · 90d",                 .green),
+                    ("AVG RATE",   moneyStr(m?.averageRate),     "avg delivered-load rate · 90d",         .blue),
+                    ("GROSS 90D",  "—",                          "per-invoice ledger not in proc",        .gray),
+                    ("AR PENDING", "—",                          "per-invoice ledger not in proc",        .gray),
                 ]
             case .onboarding:
+                // 6-step onboarding ladder is a backend gap — proc returns none.
                 return [
-                    ("STEPS",      "6/6",                                    "terminal · ladder",                                     .green),
-                    ("MSA",        "OK",                                      "active",                                                .green),
-                    ("RATE-CARD",  "OK",                                      "Eusorone 2026 rate book",                              .green),
-                    ("FIRST-PO",   "OK",                                       "PO-0001 closed",                                       .green),
+                    ("STEPS",      "—",                          "ladder not in scorecard proc",          .gray),
+                    ("MSA",        "—",                          "not in scorecard proc",                 .gray),
+                    ("RATE-CARD",  "—",                          "not in scorecard proc",                 .gray),
+                    ("FIRST-PO",   "—",                          "not in scorecard proc",                 .gray),
                 ]
             case .compliance:
                 return [
-                    ("PAYOR",      "A",                                       "§387 §388 clean",                                       .green),
-                    ("DISPUTES",   "0",                                       "YTD",                                                   .green),
-                    ("CARGO LIAB", "$100K",                                    "§387 minimum met",                                     .green),
-                    ("AUTH",       "BROKER",                                   "MC-306 active",                                         .blue),
+                    ("CANCEL RT",  pct(m?.cancellationRate),     "cancelled / total · 90d",               .orange),
+                    ("COMPLETION", pct(m?.completionRate),       "delivered / total · 90d",               .green),
+                    ("PAYOR GRD",  grade,                        "composite pillar",                      .green),
+                    ("§387 §388",  "—",                          "document checks not in proc",           .gray),
                 ]
             case .quarter:
+                // Per-quarter + 1099-NEC rollups are a backend gap. The proc
+                // returns 365-day aggregates only; per-quarter rows are "—".
                 return [
-                    ("YTD LANES",  "3",                                       "MC-306 · MC-331 · 53' REEFER",                          .blue),
-                    ("Q1 INV",     "\(m?.totalLoads ?? 9)",                   "$\(Int(m?.averageRate ?? 1647)) avg",                  .green),
-                    ("1099-NEC",   "READY",                                    "§6041 quarterly clean",                                .green),
-                    ("GRADE",      grade,                                       "year pillar",                                          .green),
+                    ("LOADS 365D", intStr(m?.totalLoads),        "365-day total",                         .blue),
+                    ("DELIVERED",  intStr(m?.deliveredCount),    "365-day completed",                     .green),
+                    ("AVG RATE",   moneyStr(m?.averageRate),     "avg delivered-load rate · 365d",        .blue),
+                    ("1099-NEC",   "—",                          "per-quarter rollup not in proc",        .gray),
                 ]
             }
         }()
@@ -273,14 +299,14 @@ private struct CatalystShipperBody: View {
     private var nextStepCard: some View {
         let copy: String = {
             switch kind {
-            case .scorecard:    return "A composite, 5.8d pay speed, exemplary. Use Eusorone as the reference payor on the next broker-pitch."
-            case .profile:      return "Eusorone is a Tier-1 shipper-of-record. Lock the next quarter's rate book before Q2 kick-off."
-            case .documents:    return "All 12 documents are current. Set a 60-day reminder before MSA/COI anniversaries."
-            case .analytics:    return "88.4% tender-win, 5.8d DSO, best-in-class. Replicate the playbook for the next dormant payor."
-            case .settlements:  return "$14,820 closed in 9 invoices. Aim for a 10th this period to hold the rolling cadence."
-            case .onboarding:   return "All 6 onboarding steps closed. Push to Tier-1 priority on next NH₃ tender."
-            case .compliance:   return "§387 §388 clean. Renew the COI 30 days before its 2026-08-04 anniversary."
-            case .quarter:      return "Q1 1099-NEC ready. Run §6041 export end-of-quarter; archive to Catalyst tax cabinet."
+            case .scorecard:    return "Composite grade and tender-acceptance are live from the scorecard proc. Use the grade to set tender priority and payment terms for this payor."
+            case .profile:      return "Delivered and cancelled counts are live. Shipper/company name is not returned by the scorecard proc — resolve via the user/company directory when needed."
+            case .documents:    return "Per-document status (MSA / W-9 / COI / rate-confirmations) is not exposed by the scorecard proc. Pull it from the compliance document vault."
+            case .analytics:    return "Tender-acceptance, average rate and volume-consistency are live. DSO-in-days and rate-per-mile are not returned by this proc."
+            case .settlements:  return "Delivered-load count and average rate are live. Per-invoice gross and AR are not returned by the scorecard proc — read the settlement ledger."
+            case .onboarding:   return "The 6-step onboarding ladder is not returned by the scorecard proc. Drive it from the onboarding workflow service."
+            case .compliance:   return "Cancellation and completion rates are live. §387 §388 document checks and dispute history are not returned by this proc."
+            case .quarter:      return "365-day load, delivered and average-rate aggregates are live. Per-quarter and 1099-NEC rollups are not returned by the scorecard proc."
             }
         }()
         return LifecycleCard {
@@ -298,10 +324,32 @@ private struct CatalystShipperBody: View {
     }
 }
 
-private func percentCS(_ raw: Double?) -> String { String(format: "%.1f", raw ?? 88) }
-private func payDays(_ raw: Double?) -> String {
-    let v = raw ?? 5.8
-    return String(format: "%.1f", v > 0 && v < 30 ? v : 5.8)
+// MARK: - Honest formatters (no invented fallbacks — absent -> "—")
+
+/// Percentage from a live Double field, e.g. `tenderAcceptance` already
+/// in 0-100 from the proc. Absent field renders an honest "—".
+private func pct(_ raw: Double?) -> String {
+    guard let raw else { return "—" }
+    return String(format: "%.1f%%", raw)
+}
+
+/// Integer count from a live Int field. Absent renders "—".
+private func intStr(_ raw: Int?) -> String {
+    guard let raw else { return "—" }
+    return "\(raw)"
+}
+
+/// Money from the proc's `averageRate` (rounded dollars). Absent -> "—".
+private func moneyStr(_ raw: Double?) -> String {
+    guard let raw else { return "—" }
+    return "$" + String(format: "%.0f", raw)
+}
+
+/// Composite caption from the live `overallScore` (0-100 integer the
+/// proc computes). Absent renders an honest "composite —".
+private func compositeLine(_ score: Int?) -> String {
+    guard let score else { return "composite —" }
+    return "composite \(String(format: "%.2f", Double(score) / 100))"
 }
 
 // MARK: - Screens (CV340-CV347)

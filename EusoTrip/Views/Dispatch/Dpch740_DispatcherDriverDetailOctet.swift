@@ -13,34 +13,25 @@
 //    427 Dispatcher Driver Quarter Detail
 //
 //  All 8 screens share `DispatcherDriverDetailBody`, parameterized
-//  by `DriverDetailKind`. Body reads live driver performance via
-//  `drivers.getPerformanceMetrics` and identity via `drivers.getDriverProfile`
-//  if available, falling back to the request param `driverId` ("0" default
-//  via `BrokerNavContext.latestDriverId`). Bottom nav frozen.
+//  by `DriverDetailKind`. ZERO FABRICATION:
+//    • Identity (name / truck / CDL) comes from the typed
+//      `drivers.getProfileById` → `DriversAPI.DriverProfile`. Never a
+//      hardcoded persona.
+//    • KPIs come from the typed `drivers.getPerformanceMetrics` →
+//      `DriversAPI.PerformanceScorecard` (metrics + rankings), the
+//      letter-grade computed off those real metrics the same way the
+//      Catalyst 320 scorecard computes it.
+//    • Live HOS headroom comes from the typed `hos.getCurrentStatus`
+//      → `HOSCurrentStatus` (driving-limit remaining minutes).
+//    • Compliance / onboarding posture comes from the typed
+//      `driverQualification.getOverview` → `DriverQualificationAPI.Overview`.
+//    • Every field with NO live source (per-incident counts, per-step
+//      onboarding cycle, per-cert runway, per-quarter rollups) renders
+//      an honest em-dash — never a fabricated literal. No `?? <invented>`.
+//  Bottom nav frozen.
 //
 
 import SwiftUI
-
-// MARK: - Live response shapes
-
-private struct DriverMetricsResp: Decodable, Hashable {
-    let driverId: String?
-    let period: String?
-    let metrics: Metrics?
-    let rankings: Rankings?
-    struct Metrics: Decodable, Hashable {
-        let totalMiles: Double?
-        let totalLoads: Int?
-        let onTimeDeliveryRate: Int?
-        let safetyScore: Double?
-        let fuelEfficiency: Double?
-        let hosCompliance: Int?
-        let inspectionPassRate: Int?
-    }
-    struct Rankings: Decodable, Hashable {
-        let totalDrivers: Int?
-    }
-}
 
 // MARK: - Kind + config
 
@@ -52,7 +43,9 @@ private struct DriverDetailConfig {
     let eyebrow: String
     let citation: String
     let title: String
-    let subhead: String
+    /// Trailing context appended after the live driver line in the
+    /// subhead. Pure regulatory / window context — no invented identity.
+    let subheadContext: String
     let pillCopy: String
     let statusPill: String
 }
@@ -65,26 +58,26 @@ private extension DriverDetailKind {
                 eyebrow: "DISPATCHER · DRIVER · REVIEW",
                 citation: "DISPATCHER REVIEW · HOS-AWARE · 90D",
                 title: "Driver review",
-                subhead: "Aurora Freight Lines · S. Quintero · last 90 days · SQ MC-331 escort",
-                pillCopy: "Renée rates roster driver · cross-track HOS · safety · no payroll vantage",
-                statusPill: "GRADE A · COMPOSITE 0.93"
+                subheadContext: "last 90 days",
+                pillCopy: "Rate this roster driver · cross-track HOS · safety · no payroll vantage in this lens.",
+                statusPill: "DISPATCHER REVIEW · HOS-AWARE · 90D"
             )
         case .lane:
             return .init(
                 eyebrow: "DISPATCHER · DRIVER · LANE",
                 citation: "DISPATCHER LANE · ESCORT-AWARE · 90D · §11.4",
                 title: "Lane detail",
-                subhead: "LANE-B41782FF02 · §11.4 · LIVE",
-                pillCopy: "Renée pre-assigns next NH₃ pull · Eusorone shipper-of-record · clean lane books",
-                statusPill: "A+ 0.95 · §11.4 EUSORONE FLAGSHIP"
+                subheadContext: "§11.4 · LIVE",
+                pillCopy: "Pre-assign the next pull · clean lane books surface in the eligible-roster API.",
+                statusPill: "ESCORT-AWARE · 90D · §11.4"
             )
         case .incident:
             return .init(
                 eyebrow: "DISPATCHER · DRIVER · LOG",
                 citation: "DISPATCHER LOG · ATTEST-READY · 90D · §13.3",
                 title: "Incident log",
-                subhead: "AFL-DR-00018 · 90D · CLEAN",
-                pillCopy: "Renée audits 90-day driver record · Eusorone shipper-of-record · zero open events",
+                subheadContext: "90D",
+                pillCopy: "Audit the 90-day driver record · attest to §13.3 to surface the driver in the eligible-roster API.",
                 statusPill: "90D AUDIT · §13.3 ATTESTATION-ELIGIBLE"
             )
         case .performance:
@@ -92,8 +85,8 @@ private extension DriverDetailKind {
                 eyebrow: "DISPATCHER · DRIVER · KPI",
                 citation: "DISPATCHER KPI · REFINE-READY · 30D · §13.3",
                 title: "Performance",
-                subhead: "AFL-DR-00018 · OTP · LIVE",
-                pillCopy: "Renée refines 30-day KPI goal · Eusorone shipper-of-record · stretch +0.6pt",
+                subheadContext: "OTP · LIVE",
+                pillCopy: "Refine the 30-day KPI goal · on-time pickup tracks §392.7 ETA.",
                 statusPill: "PUBLISHED · LIVE · ON-TIME PICKUP §392.7 ETA"
             )
         case .hos:
@@ -101,44 +94,44 @@ private extension DriverDetailKind {
                 eyebrow: "DISPATCHER · DRIVER · HOS",
                 citation: "DISPATCHER HOS · PRE-CLEAR-READY · LIVE · §395",
                 title: "HOS clock",
-                subhead: "AFL-DR-00018 · §395 · LIVE",
-                pillCopy: "Renée pre-clears HOS for next NH₃ pull · 8h 42m drive headroom · KC-Omaha",
-                statusPill: "COMPLIANT · LIVE · §395.3(a)(3)(i)"
+                subheadContext: "§395 · LIVE",
+                pillCopy: "Pre-clear HOS for the next pull · drive headroom is read live from the ELD.",
+                statusPill: "LIVE · §395.3(a)(3)(i)"
             )
         case .onboarding:
             return .init(
                 eyebrow: "DISPATCHER · DRIVER · STEP DETAIL",
                 citation: "DISPATCHER ONBOARDING · STEP-DETAIL · LIVE · §391",
                 title: "Step detail",
-                subhead: "AFL-DR-00018 · §391.25 · DUE",
-                pillCopy: "Renée pre-clears SQ MVR refresh · 14d window · before next NH₃ Eusorone pull",
-                statusPill: "DUE · ACTION SOON · §391.25 ANNUAL MVR REFRESH"
+                subheadContext: "§391.25",
+                pillCopy: "Driver-qualification posture is read from the DQ file · §391.25 annual MVR refresh.",
+                statusPill: "STEP DETAIL · §391.25 ANNUAL MVR REFRESH"
             )
         case .compliance:
             return .init(
                 eyebrow: "DISPATCHER · DRIVER · COMPLIANCE ROW",
                 citation: "DISPATCHER COMPLIANCE · ROW DETAIL · LIVE · §383",
                 title: "Compliance row",
-                subhead: "AFL-DR-00018 · §383.93 · MET",
-                pillCopy: "Renée confirms SQ HME runway · 187d ahead · NH₃ Eusorone-eligible",
-                statusPill: "MET · 187D TO EXPIRY · §383.93 HME"
+                subheadContext: "§383.93",
+                pillCopy: "Confirm endorsement runway from the DQ file · §383.93 hazmat endorsement.",
+                statusPill: "ROW DETAIL · §383.93 HME"
             )
         case .quarter:
             return .init(
                 eyebrow: "DISPATCHER · DRIVER · QUARTER DETAIL",
-                citation: "DISPATCHER PERIODIC REVIEW · Q1 ARCHIVED · CLEAN",
+                citation: "DISPATCHER PERIODIC REVIEW · QUARTER",
                 title: "Quarter detail",
-                subhead: "AFL-DR-00018 · Q1-2026 · CLOSED",
-                pillCopy: "Renée logs SQ Q1-2026 archive review · 92.4% OTP · 13 weeks closed",
-                statusPill: "CLOSED · QC LOGGED · Q1 ON-TIME §395.8 ELD"
+                subheadContext: "quarter",
+                pillCopy: "Periodic quarter review · totals roll into the next-quarter baseline · §395.8 ELD.",
+                statusPill: "PERIODIC REVIEW · §395.8 ELD"
             )
         }
     }
-    var period: String {
+    var period: DriversAPI.PerformancePeriod {
         switch self {
-        case .performance, .onboarding, .compliance: return "month"
-        case .quarter: return "quarter"
-        default: return "quarter"
+        case .performance, .onboarding, .compliance: return .month
+        case .quarter: return .quarter
+        default: return .quarter
         }
     }
 }
@@ -166,7 +159,10 @@ private struct DispatcherDriverDetailBody: View {
     let kind: DriverDetailKind
 
     @Environment(\.palette) private var palette
-    @State private var resp: DriverMetricsResp?
+    @State private var scorecard: DriversAPI.PerformanceScorecard?
+    @State private var profile: DriversAPI.DriverProfile?
+    @State private var hos: HOSCurrentStatus?
+    @State private var dq: DriverQualificationAPI.Overview?
     @State private var loading: Bool = true
 
     var body: some View {
@@ -186,14 +182,29 @@ private struct DispatcherDriverDetailBody: View {
         .refreshable { await load() }
     }
 
+    // Real driver display name, or honest dash.
+    private var driverName: String {
+        let n = profile?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return n.isEmpty ? "—" : n
+    }
+
+    private func monogram(for name: String) -> String {
+        let parts = name.split(separator: " ").prefix(2)
+        let initials = parts.compactMap { $0.first.map(String.init) }.joined().uppercased()
+        return initials.isEmpty ? "—" : String(initials.prefix(2))
+    }
+
     private func header(_ c: DriverDetailConfig) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        // Subhead = real driver name · regulatory/window context.
+        // No invented carrier / DR-id / lane literals.
+        let sub = "\(driverName) · \(c.subheadContext)"
+        return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text(c.eyebrow).font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text(c.title).font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text(c.subhead).font(EType.caption).foregroundStyle(palette.textSecondary)
+            Text(sub).font(EType.caption).foregroundStyle(palette.textSecondary)
         }
     }
 
@@ -208,13 +219,18 @@ private struct DispatcherDriverDetailBody: View {
     }
 
     private var identityRow: some View {
-        LifecycleCard {
+        // Identity strip from the typed driver profile only. Truck +
+        // CDL render an em-dash when the column is blank — no persona.
+        let truck = (profile?.truckNumber.isEmpty == false) ? "T-\(profile!.truckNumber)" : "—"
+        let cdl = (profile?.cdlNumber.isEmpty == false) ? profile!.cdlNumber : "—"
+        let cls = (profile?.cdl.class.isEmpty == false) ? "Class \(profile!.cdl.class)" : "—"
+        return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    .overlay(Text("SQ").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
+                    .overlay(Text(monogram(for: driverName)).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("S. Quintero · Aurora Freight Lines").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("AFL-DR-00018 · T-512 · MC-331 · Eusorone · Diego U.").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text(driverName).font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                    Text("\(truck) · CDL \(cdl) · \(cls)").font(.caption2).foregroundStyle(palette.textTertiary)
                 }
                 Spacer()
             }
@@ -222,64 +238,77 @@ private struct DispatcherDriverDetailBody: View {
     }
 
     private var kpiGrid: some View {
-        let m = resp?.metrics
+        let m = scorecard?.metrics
+        let r = scorecard?.rankings
         let kpis: [(String, String, String, Color)] = {
             switch kind {
             case .review:
+                let (letter, _) = letterGrade(scorecard)
                 return [
-                    ("GRADE",   "A",                                  "composite \(safetyDisplay(m?.safetyScore))", .green),
-                    ("ON-TIME", "\(m?.onTimeDeliveryRate ?? 95)%",    "+0.6 pts vs prior 90d",                       .green),
-                    ("SAFETY",  safetyDisplay(m?.safetyScore),        "CSA · 0 violations",                          .green),
-                    ("LOADS",   "\(m?.totalLoads ?? 32)",             "90d · 3.6/wk avg",                            .blue),
+                    ("GRADE",   letter,                          "composite · live", .green),
+                    ("ON-TIME", pct(m?.onTimeDeliveryRate),      "on-time delivery · 90d", .green),
+                    ("SAFETY",  safetyDisplay(m?.safetyScore),   "CSA · live", .green),
+                    ("LOADS",   intStr(m?.totalLoads),           "90d window", .blue),
                 ]
             case .lane:
+                let (letter, _) = letterGrade(scorecard)
                 return [
-                    ("LANE",    "A+ 0.95",                            "FLAGSHIP · LIVE",            .green),
-                    ("ON-TIME", "\(m?.onTimeDeliveryRate ?? 97)%",    "97.2% on-time · 90d",         .green),
-                    ("LOADS",   "\(m?.totalLoads ?? 9)",              "KC → Omaha · MC-331",         .blue),
-                    ("RANK",    "1 of \(resp?.rankings?.totalDrivers ?? 4)", "NH₃-cleared drivers",  .blue),
+                    ("GRADE",   letter,                          "composite · live", .green),
+                    ("ON-TIME", pct(m?.onTimeDeliveryRate),      "on-time delivery · 90d", .green),
+                    ("LOADS",   intStr(m?.totalLoads),           "90d window", .blue),
+                    ("RANK",    rankDisplay(r),                  "scored drivers", .blue),
                 ]
             case .incident:
+                // No live per-incident event/violation/dispute counts on
+                // any wired proc — honest dashes. Inspection pass-rate IS
+                // live on the scorecard.
                 return [
-                    ("EVENTS",       "0",                              "open · 90d",                 .green),
-                    ("VIOLATIONS",   "0",                              "CSA · 90d",                  .green),
-                    ("DISPUTES",     "0",                              "open · 90d",                 .green),
-                    ("PASS-RATE",    "\(m?.inspectionPassRate ?? 100)%", "inspection · §396",       .green),
+                    ("EVENTS",       "—",                        "no live source", .green),
+                    ("VIOLATIONS",   "—",                        "no live source", .green),
+                    ("DISPUTES",     "—",                        "no live source", .green),
+                    ("PASS-RATE",    pct(m?.inspectionPassRate), "inspection · §396", .green),
                 ]
             case .performance:
                 return [
-                    ("ON-TIME",    "\(m?.onTimeDeliveryRate ?? 94)%", "+2.1 pt vs Aurora avg",      .green),
-                    ("TRIPS-30D",  "\(m?.totalLoads ?? 9)",            "30-day rolling",            .blue),
-                    ("SAFETY",     safetyDisplay(m?.safetyScore),     "/5 · CSA clean",             .green),
-                    ("RANK",       "1 of \(resp?.rankings?.totalDrivers ?? 47)", "Aurora drivers", .blue),
+                    ("ON-TIME",    pct(m?.onTimeDeliveryRate),   "on-time delivery", .green),
+                    ("LOADS",      intStr(m?.totalLoads),        "rolling window", .blue),
+                    ("SAFETY",     safetyDisplay(m?.safetyScore),"/5 · CSA · live", .green),
+                    ("RANK",       rankDisplay(r),               "scored drivers", .blue),
                 ]
             case .hos:
                 return [
-                    ("HEADROOM",  "8h 42m",                           "drive · §395.3(a)(3)(i)",    .green),
-                    ("LIMIT",     "+78%",                              "of 11h limit free",          .green),
-                    ("HOS%",      "\(m?.hosCompliance ?? 100)%",       "compliance · 90d",          .green),
-                    ("MILES-90D", milesK(m?.totalMiles),               "covered live",              .blue),
+                    ("HEADROOM",  hosDriveHeadroom,              "drive · §395.3(a)(3)(i)", .green),
+                    ("LIMIT",     hosDriveLimitFreePct,          "of 11h limit free", .green),
+                    ("HOS%",      pct(m?.hosCompliance),         "compliance · window", .green),
+                    ("MILES",     milesK(m?.totalMiles),         "covered · window", .blue),
                 ]
             case .onboarding:
+                // Per-step onboarding cycle / due-window / step-id have no
+                // wired source. DQ file gives the documents posture.
                 return [
-                    ("DUE",        "14d",                              "before NH₃ pull",            .orange),
-                    ("STATUS",     "DUE",                              "action soon · §391.25",      .orange),
-                    ("CYCLE",      "ANNUAL",                            "MVR refresh",                .blue),
-                    ("STEP-ID",    "MVR-00018",                        "AFL roster",                 .blue),
+                    ("DOCS",       intStr(dq?.documents.total),      "DQ file · §391", .blue),
+                    ("EXPIRING",   intStr(dq?.documents.expiringSoon), "soon · §391", .orange),
+                    ("EXPIRED",    intStr(dq?.documents.expired),    "§391", .orange),
+                    ("MISSING",    intStr(dq?.documents.missing),    "§391", .orange),
                 ]
             case .compliance:
+                // Per-cert runway / eligible-lane flags have no wired
+                // source. DQ overview gives a real compliance score +
+                // valid-doc count.
                 return [
-                    ("RUNWAY",     "187d",                             "to expiry · §383.93",        .green),
-                    ("STATUS",     "MET",                              "HME · hazmat endorsement",   .green),
-                    ("CITATION",   "§383.93",                          "FMCSA renewable",            .blue),
-                    ("ELIGIBLE",   "NH₃",                              "Eusorone-eligible lanes",    .blue),
+                    ("SCORE",      complianceScoreDisplay,           "DQ · §383", .green),
+                    ("VALID",      intStr(dq?.documents.valid),      "docs · §383", .green),
+                    ("EXPIRED",    intStr(dq?.documents.expired),    "docs · §383", .orange),
+                    ("CITATION",   "§383.93",                        "FMCSA renewable", .blue),
                 ]
             case .quarter:
+                // No per-quarter archived rollup on a wired proc — bind
+                // to the live quarter-period scorecard the body fetched.
                 return [
-                    ("OTP-Q1",     "\(m?.onTimeDeliveryRate ?? 92)%",  "Q1 closed · 13 weeks",       .green),
-                    ("MILES",      milesK(m?.totalMiles),              "Q1 driven",                  .blue),
-                    ("LOADS",      "\(m?.totalLoads ?? 0)",            "Q1 completed",               .blue),
-                    ("PASS",       "\(m?.inspectionPassRate ?? 100)%", "Q1 inspections · §396",     .green),
+                    ("OTP",        pct(m?.onTimeDeliveryRate),   "quarter · on-time", .green),
+                    ("MILES",      milesK(m?.totalMiles),        "quarter driven", .blue),
+                    ("LOADS",      intStr(m?.totalLoads),        "quarter completed", .blue),
+                    ("PASS",       pct(m?.inspectionPassRate),   "inspections · §396", .green),
                 ]
             }
         }()
@@ -303,13 +332,13 @@ private struct DispatcherDriverDetailBody: View {
         let copy: String = {
             switch kind {
             case .review:      return "Refresh weekly. Roster KPIs roll into the dispatcher score-card. No payroll vantage in this lens."
-            case .lane:        return "Pre-assign SQ for the next NH₃ pull. ESang re-scores when the lane refreshes."
-            case .incident:    return "Clean 90-day record. Attest to §13.3 to surface SQ in the broker eligible-roster API."
-            case .performance: return "Refine the 30-day KPI goal. Stretch the on-time floor to +0.6 pt over Aurora's mean."
-            case .hos:         return "Pre-clear HOS for the next KC-Omaha pull. Driver has 8h 42m of clean headroom."
-            case .onboarding:  return "Push the MVR refresh task to SQ. Annual cycle hits in 14 days."
-            case .compliance:  return "HME runway is healthy, 187 days. Queue renewal reminder 60 days out."
-            case .quarter:     return "Q1 archive is closed; QC-log the recap and roll the totals into the Q2 baseline."
+            case .lane:        return "Pre-assign the driver for the next pull. ESang re-scores when the lane refreshes."
+            case .incident:    return "Clean 90-day record attests to §13.3 to surface the driver in the eligible-roster API. Per-incident counts wire when the events feed lands."
+            case .performance: return "Refine the 30-day KPI goal off the live on-time floor and inspection pass-rate."
+            case .hos:         return "Pre-clear HOS for the next pull. Drive headroom above is read live from the ELD."
+            case .onboarding:  return "Work the DQ file. Expiring and missing §391 documents above drive the onboarding queue."
+            case .compliance:  return "Confirm endorsement posture from the DQ compliance score. Per-cert renewal runway wires when the certifications feed lands."
+            case .quarter:     return "Quarter totals above are the live quarter-period scorecard; roll them into the next-quarter baseline."
             }
         }()
         return LifecycleCard {
@@ -320,25 +349,118 @@ private struct DispatcherDriverDetailBody: View {
         }
     }
 
+    // MARK: - Live HOS headroom (typed hos.getCurrentStatus)
+
+    /// "8h 42m" drive headroom from the live ELD limits, or em-dash.
+    private var hosDriveHeadroom: String {
+        guard let rem = hos?.limits.driving.remaining else { return "—" }
+        return HOSStatus.formatHours(Double(max(0, rem)) / 60.0)
+    }
+
+    /// "+78%" of the 11-hour drive limit still free, or em-dash.
+    private var hosDriveLimitFreePct: String {
+        guard let d = hos?.limits.driving, d.limit > 0 else { return "—" }
+        let free = Double(max(0, d.remaining)) / Double(d.limit) * 100
+        return "+\(Int(free.rounded()))%"
+    }
+
+    // MARK: - DQ overview helpers
+
+    private var complianceScoreDisplay: String {
+        guard let s = dq?.complianceScore else { return "—" }
+        return "\(s)%"
+    }
+
+    // MARK: - Letter grade (same recipe as Catalyst 320 scorecard)
+
+    private func letterGrade(_ s: DriversAPI.PerformanceScorecard?) -> (letter: String, composite: Double) {
+        guard let s else { return ("—", 0) }
+        let onTime = max(0.0, min(1.0, s.metrics.onTimeDeliveryRate / 100))
+        let completion = max(0.0, min(1.0, s.metrics.hosCompliance / 100))
+        let loadsTerm: Double = {
+            let n = Double(max(0, s.metrics.totalLoads))
+            let num = log10(n + 1.0)
+            let den = log10(50.0)
+            return den > 0 ? num / den : 0
+        }()
+        let composite = onTime * 0.5 + completion * 0.3 + loadsTerm * 0.2
+        let letter: String = {
+            switch composite {
+            case 0.95...:     return "A+"
+            case 0.90..<0.95: return "A"
+            case 0.85..<0.90: return "A−"
+            case 0.80..<0.85: return "B+"
+            case 0.75..<0.80: return "B"
+            case 0.70..<0.75: return "B−"
+            case 0.60..<0.70: return "C"
+            case 0.50..<0.60: return "D"
+            default:          return "F"
+            }
+        }()
+        return (letter, composite)
+    }
+
+    private func rankDisplay(_ r: DriversAPI.PerformanceRankings?) -> String {
+        guard let r, r.totalDrivers > 0 else { return "—" }
+        return "\(r.overall) of \(r.totalDrivers)"
+    }
+
     private func load() async {
         loading = true; defer { loading = false }
-        struct In: Encodable { let driverId: String; let period: String }
-        do {
-            resp = try await EusoTripAPI.shared.query(
-                "drivers.getPerformanceMetrics",
-                input: In(driverId: driverId, period: kind.period)
+        // Performance scorecard (typed proc).
+        async let scoreTask: DriversAPI.PerformanceScorecard? = {
+            try? await EusoTripAPI.shared.drivers.getPerformanceMetrics(
+                driverId: driverId, period: kind.period
             )
-        } catch { /* preserve empty */ }
+        }()
+        // Identity (typed proc).
+        async let profileTask: DriversAPI.DriverProfile? = {
+            try? await EusoTripAPI.shared.drivers.getProfileById(driverId: driverId)
+        }()
+        // Live HOS — only the HOS lens needs it.
+        async let hosTask: HOSCurrentStatus? = {
+            guard kind == .hos else { return nil }
+            return try? await EusoTripAPI.shared.hos.getCurrentStatus(driverId: driverId)
+        }()
+        // DQ overview — onboarding + compliance lenses.
+        async let dqTask: DriverQualificationAPI.Overview? = {
+            guard kind == .onboarding || kind == .compliance else { return nil }
+            return try? await EusoTripAPI.shared.dq.getOverview(driverId: driverId)
+        }()
+
+        let (s, p, h, d) = await (scoreTask, profileTask, hosTask, dqTask)
+        self.scorecard = s
+        self.profile = p
+        self.hos = h
+        self.dq = d
     }
 }
 
+// MARK: - Honest display helpers (no fabricated fallbacks)
+
+/// "94%" from a 0–100 rate, or em-dash when the field is absent.
+private func pct(_ raw: Double?) -> String {
+    guard let raw else { return "—" }
+    return "\(Int(raw.rounded()))%"
+}
+
+/// Integer field → string, or em-dash when absent.
+private func intStr(_ raw: Int?) -> String {
+    guard let raw else { return "—" }
+    return "\(raw)"
+}
+
+/// Safety score: server stores 0–100; render the 5-scale conversion to
+/// match the recipe. Em-dash when the field is absent.
 private func safetyDisplay(_ raw: Double?) -> String {
-    guard let raw else { return "4.86" }
-    let v = raw <= 5 ? raw : raw / 20
+    guard let raw else { return "—" }
+    let v = max(0, min(5, raw / 20))
     return String(format: "%.2f", v)
 }
+
+/// "12.4k" / "840" miles, or em-dash when the field is absent.
 private func milesK(_ m: Double?) -> String {
-    let v = m ?? 0
+    guard let v = m else { return "—" }
     if v >= 1000 { return String(format: "%.1fk", v / 1000) }
     return String(format: "%.0f", v)
 }

@@ -12,17 +12,31 @@
 //    336B Catalyst Vehicle Compliance Row Detail
 //    337B Catalyst Vehicle Quarter Detail
 //
-//  B-variants of the CV330-CV336 octet — same Peterbilt 579 owner-op
-//  but one level deeper: each surfaces a specific row identifier
-//  (SCORE-260427-COMPOSITE-PB579 / TIER-GOLD / DOC-HM126F /
-//   PERF-MPG / ALLOC-A38FB12C7E / STEP-CVSA / COMP-HM126F /
-//   PERF-Q1ROLL). All 8 share `CatalystVehicleBBody`. Body reads
-//  `fleet.getFleetStats` for fleet-side metrics + surfaces the
-//  per-row drill identity. Bottom nav frozen.
+//  B-variants of the CV330-CV336 octet — one level deeper than the septet:
+//  each surfaces a specific axis/row drill for the company's first fleet
+//  asset. All 8 share `CatalystVehicleBBody`. Bottom nav frozen.
+//
+//  LIVE BINDINGS (zero fabrication):
+//    • fleet.getFleetStats        → CVBFleetStats  (utilization / avgMpg)
+//    • fleet.listAssets           → FleetAsset[]   (resolve a real vehicleId)
+//    • vehicles.getScorecardAxis  → CVBScorecardAxis
+//        (real vehicleName / companyName / assetCode / titledAt / scoreId /
+//         status / grade / composite / laneAvgDelta — server vehicles.ts:532)
+//
+//  Identity (vehicle make/model/year, owner company, asset code, titled
+//  date) is read STRICTLY from the live scorecard-axis proc — never a
+//  hardcoded persona. Sub-fields with NO live source — per-allocation
+//  settlement line-items, per-quarter gross rollups, per-doc / per-step /
+//  per-compliance-row §-citation states, profile-tier grading — render an
+//  honest "—" / EusoEmptyState, never a fabricated literal or a
+//  §-citation MISSING/EXPIRED row. There is no scorecard-target,
+//  tier, settlement-allocation, or per-doc-compliance table in the
+//  schema, so those drills carry the honest neutral state.
 //
 
 import SwiftUI
 
+// fleet.getFleetStats — subset iOS reads (fleet.ts:233 returns the wider set).
 private struct CVBFleetStats: Decodable, Hashable {
     let totalVehicles: Int?
     let utilization: Int?
@@ -30,20 +44,37 @@ private struct CVBFleetStats: Decodable, Hashable {
     let inMaintenance: Int?
 }
 
+// vehicles.getScorecardAxis — verbatim server return shape (vehicles.ts:592).
+// Optional throughout so a null server response (no db / no company / no
+// matching vehicle) degrades into an honest "—" rather than crashing decode.
+private struct CVBScorecardAxis: Decodable, Hashable {
+    let axisId: String?          // "COMPOSITE-<id>"
+    let vehicleId: String?
+    let scoreId: String?         // "SCORE-<id>-COMPOSITE"
+    let vehicleName: String?     // "Peterbilt 579 · 2022" (real make/model/year)
+    let companyName: String?     // owner company (nullable)
+    let assetCode: String?       // "TRK-001"
+    let titledAt: String?        // "2024-08-04" (vehicle.createdAt date, nullable)
+    let status: String?          // "PUBLISHED · LIVE" / "ARCHIVED"
+    let grade: String?           // "A" … "F"
+    let composite: Double?       // 0.00–1.00
+    let laneAvgDelta: Double?    // this vehicle's composite − fleet mean
+}
+
 enum CatalystVehicleBKind: String {
     case scoreAxis, profileTier, document, analytic, settlement, onboarding, compliance, quarter
 }
 
+// Static per-kind chrome copy. The eyebrow / title / citation anchor (§9.4,
+// §13.4, §107.601, §396.17, §168) are published-spec SECTION LABELS, not
+// data — they identify which compliance/scoring construct the drill is
+// about. The live STATE of any of those constructs is sourced (or honestly
+// "—") below; this struct never asserts a fabricated MISSING/EXPIRED state.
 private struct CVBConfig {
     let eyebrow: String
-    let citation: String
+    let citation: String        // spec section label only — no asserted state
     let title: String
-    let subhead: String
     let pillCopy: String
-    let rowId: String           // SCORE-260427-COMPOSITE-PB579 etc.
-    let statusBadge: String     // PUBLISHED / DUE / EXPIRED / CLOSED
-    let statusColor: Color
-    let grade: String           // "A" / "G"
 }
 
 private extension CatalystVehicleBKind {
@@ -51,60 +82,44 @@ private extension CatalystVehicleBKind {
         switch self {
         case .scoreAxis:
             return .init(eyebrow: "CATALYST · VEHICLE · SCORECARD AXIS",
-                         citation: "§9.4 · LIVE",
+                         citation: "§9.4 · COMPOSITE",
                          title: "Axis detail",
-                         subhead: "TRK-001-PB579 · §9.4 · LIVE",
-                         pillCopy: "Catalyst rates asset · same companyId both sides · clean §9.4 vehicle books",
-                         rowId: "SCORE-260427-COMPOSITE-PB579", statusBadge: "PUBLISHED · LIVE", statusColor: .green, grade: "A")
+                         pillCopy: "Catalyst rates this asset on the §9.4 vehicle-composite axis · same companyId both sides.")
         case .profileTier:
             return .init(eyebrow: "CATALYST · VEHICLE · TIER",
-                         citation: "§13.4 · LIVE",
+                         citation: "§13.4 · TIER",
                          title: "Tier detail",
-                         subhead: "TRK-001-PB579 · §13.4 · LIVE",
-                         pillCopy: "Catalyst rates asset · same companyId both sides · clean §13.4 tier criteria",
-                         rowId: "TIER-260427-GOLD-PB579", statusBadge: "PUBLISHED · LIVE", statusColor: .green, grade: "G")
+                         pillCopy: "Catalyst tier criteria (§13.4) apply to this asset · same companyId both sides.")
         case .document:
             return .init(eyebrow: "CATALYST · VEHICLE · DOCUMENT",
-                         citation: "§107.601 · MISSING",
+                         citation: "§107.601 · HAZMAT REG",
                          title: "Document detail",
-                         subhead: "TRK-001-PB579 · §107.601 · MISSING",
-                         pillCopy: "Catalyst archives vehicle docs · same companyId both sides · clean §107.601 hazmat registration",
-                         rowId: "DOC-260427-HM126F-PB579", statusBadge: "MISSING · ACTION", statusColor: .red, grade: "A")
+                         pillCopy: "Catalyst archives this asset's §107.601 hazmat-registration document · same companyId both sides.")
         case .analytic:
             return .init(eyebrow: "CATALYST · VEHICLE · ANALYTIC",
-                         citation: "§9.4 · LIVE",
+                         citation: "§9.4 · MPG INDEX",
                          title: "Analytic detail",
-                         subhead: "TRK-001-PB579 · §9.4 · LIVE",
-                         pillCopy: "Catalyst tracks asset KPIs · same companyId both sides · clean §9.4 mpg-index record",
-                         rowId: "PERF-260427-MPG-PB579", statusBadge: "PUBLISHED · LIVE", statusColor: .green, grade: "A")
+                         pillCopy: "Catalyst tracks this asset's §9.4 mpg-index KPI · same companyId both sides.")
         case .settlement:
             return .init(eyebrow: "CATALYST · VEHICLE · SETTLEMENT",
-                         citation: "§168(k) CLEAN BOOKS · POD SIGNED",
+                         citation: "§168(k) · DEPRECIATION",
                          title: "Settlement detail",
-                         subhead: "TRK-001-PB579 · LD-…7E · POD SIGNED",
-                         pillCopy: "Catalyst earns on asset · same companyId both sides · clean depreciation books",
-                         rowId: "ALLOC-260427-A38FB12C7E", statusBadge: "DUE · POD SIGNED", statusColor: .green, grade: "A")
+                         pillCopy: "Catalyst earns on this asset under §168(k) clean depreciation books · same companyId both sides.")
         case .onboarding:
             return .init(eyebrow: "CATALYST · ASSET · STEP DETAIL",
-                         citation: "§396.17 · EXPIRED",
+                         citation: "§396.17 · PERIODIC INSP",
                          title: "Step detail",
-                         subhead: "TRK-001-PB579 · §396.17 · EXPIRED",
-                         pillCopy: "Catalyst onboards asset · same companyId both sides · clean §396 periodic-inspection file",
-                         rowId: "STEP-260427-CVSA-PB001", statusBadge: "EXPIRED · ACTION", statusColor: .red, grade: "A")
+                         pillCopy: "Catalyst onboards this asset against the §396.17 periodic-inspection step · same companyId both sides.")
         case .compliance:
             return .init(eyebrow: "CATALYST · VEHICLE · COMPLIANCE ROW",
-                         citation: "§107.601 · MISSING",
+                         citation: "§397 · HAZMAT TRANSPORT",
                          title: "Compliance row",
-                         subhead: "TRK-001-PB579 · §107.601 · MISSING",
-                         pillCopy: "Catalyst monitors asset · same companyId both sides · clean §397 hazmat-transport pool",
-                         rowId: "COMP-260427-HM126F-PB579", statusBadge: "MISSING · ACTION", statusColor: .red, grade: "A")
+                         pillCopy: "Catalyst monitors this asset's §397 hazmat-transport compliance row · same companyId both sides.")
         case .quarter:
             return .init(eyebrow: "CATALYST · VEHICLE · QUARTER DETAIL",
-                         citation: "Q1-2026 · CLOSED",
+                         citation: "§168 · QUARTER ROLLUP",
                          title: "Quarter detail",
-                         subhead: "TRK-001-PB579 · Q1-2026 · CLOSED",
-                         pillCopy: "Catalyst archives Q1 asset rollup · same companyId both sides · clean §168 depreciation closed quarter",
-                         rowId: "PERF-260331-Q1ROLL-PB579", statusBadge: "CLOSED · QC LOGGED", statusColor: .green, grade: "A")
+                         pillCopy: "Catalyst archives the §168 depreciation quarter rollup for this asset · same companyId both sides.")
         }
     }
 }
@@ -130,6 +145,8 @@ private struct CatalystVehicleBBody: View {
 
     @Environment(\.palette) private var palette
     @State private var stats: CVBFleetStats?
+    @State private var axis: CVBScorecardAxis?
+    @State private var loading = true
 
     var body: some View {
         let c = kind.config
@@ -149,6 +166,14 @@ private struct CatalystVehicleBBody: View {
         .refreshable { await load() }
     }
 
+    // Subhead: real asset code · spec section · real published status.
+    // No source for assetCode/status → honest "—".
+    private func subhead(_ c: CVBConfig) -> String {
+        let code = nonEmpty(axis?.assetCode) ?? "—"
+        let state = nonEmpty(axis?.status) ?? "—"
+        return "\(code) · \(c.citation) · \(state)"
+    }
+
     private func header(_ c: CVBConfig) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
@@ -156,7 +181,7 @@ private struct CatalystVehicleBBody: View {
                 Text(c.eyebrow).font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text(c.title).font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text(c.subhead).font(EType.caption).foregroundStyle(palette.textSecondary)
+            Text(subhead(c)).font(EType.caption).foregroundStyle(palette.textSecondary)
         }
     }
 
@@ -169,93 +194,132 @@ private struct CatalystVehicleBBody: View {
         }
     }
 
+    // Row identity card. scoreId + grade + status come from the live axis
+    // proc. The score axis is the only one of the eight rows backed by a
+    // live derivation; the other seven (tier/doc/analytic/settlement/step/
+    // compliance/quarter) have NO per-row table, so their row identity and
+    // state render an honest "—" rather than a fabricated SCORE/DOC/ALLOC id.
     private func rowCard(_ c: CVBConfig) -> some View {
-        LifecycleCard {
+        let grade = nonEmpty(axis?.grade)
+        let rowId: String? = (kind == .scoreAxis) ? nonEmpty(axis?.scoreId) : nil
+        let state: String? = (kind == .scoreAxis) ? nonEmpty(axis?.status) : nil
+        return LifecycleCard {
             HStack(spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    .overlay(Text(c.grade).font(.system(size: 12, weight: .heavy)).foregroundStyle(.white))
+                    .overlay(Text(grade ?? "–").font(.system(size: 12, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(c.rowId).font(.caption2.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text(c.statusBadge).font(.caption2).foregroundStyle(c.statusColor)
+                    Text(rowId ?? "—").font(.caption2.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                    Text(state ?? "No live row record").font(.caption2).foregroundStyle(palette.textTertiary)
                 }
                 Spacer()
             }
         }
     }
 
+    // Real vehicle identity from vehicles.getScorecardAxis — never hardcoded.
     private var identityRow: some View {
-        LifecycleCard {
+        let name = nonEmpty(axis?.vehicleName)
+        let code = nonEmpty(axis?.assetCode)
+        let line1: String = {
+            switch (name, code) {
+            case let (n?, c?): return "\(n) · \(c)"
+            case let (n?, nil): return n
+            case let (nil, c?): return c
+            default: return "—"
+            }
+        }()
+        let company = nonEmpty(axis?.companyName)
+        let titled = nonEmpty(axis?.titledAt).map { "titled \($0)" }
+        let line2 = [company, "owner-op", titled].compactMap { $0 }.joined(separator: " · ")
+        let badge = name?.split(separator: " ").first.map { String($0.prefix(2)).uppercased() } ?? "—"
+        return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    .overlay(Text("PB").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
+                    .overlay(Text(badge).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Peterbilt 579 · 2022 · TRK-001-PB579").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("Eusotrans LLC · owner-op · titled 2024-08-04").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text(line1).font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                    Text(line2.isEmpty ? "—" : line2).font(.caption2).foregroundStyle(palette.textTertiary)
                 }
                 Spacer()
             }
         }
     }
 
+    // KPI grid. Bound to live fields where a source exists; honest "—" for
+    // every sub-field with NO live source (settlement allocation amount/chain,
+    // quarter gross rollup, per-doc/step/compliance-row state, tier grade).
     private func kpiGrid(_ c: CVBConfig) -> some View {
         let s = stats
+        let a = axis
+        let dash = "—"
         let kpis: [(String, String, String, Color)] = {
             switch kind {
             case .scoreAxis:
                 return [
-                    ("GRADE",    c.grade,                                       "composite axis",            .green),
-                    ("UTIL",     "\(s?.utilization ?? 84)%",                    "fleet · live · §9.4",       .green),
-                    ("MPG",      fmtCVBMpg(s?.avgMpg),                            "live fuel · §9.4",        .blue),
-                    ("STATE",    "LIVE",                                          c.statusBadge,             .green),
+                    ("GRADE",  nonEmpty(a?.grade) ?? dash,           "composite axis",      .green),
+                    ("UTIL",   pct(s?.utilization),                  "fleet · §9.4",        .green),
+                    ("MPG",    fmtCVBMpg(s?.avgMpg),                 "live fuel · §9.4",    .blue),
+                    ("COMPST", fmtScore(a?.composite),               nonEmpty(a?.status) ?? dash, .green),
                 ]
             case .profileTier:
+                // No tier table in schema → tier / grade / effect have no live
+                // source; only the §13.4 anchor and the company are real.
                 return [
-                    ("TIER",     "GOLD",                                           "Eusotrans · LD-7C3A asset", .green),
-                    ("CRITERIA", "§13.4",                                            "tier published",         .blue),
-                    ("STATE",    "LIVE",                                              c.statusBadge,           .green),
-                    ("EFFECT",   "+0.06",                                              "pillar boost vs Silver", .green),
+                    ("TIER",     dash,                                "no live tier record", palette.textTertiary),
+                    ("CRITERIA", "§13.4",                             "tier criteria anchor", .blue),
+                    ("ASSET",    nonEmpty(a?.assetCode) ?? dash,      nonEmpty(a?.companyName) ?? "owner", .blue),
+                    ("EFFECT",   dash,                                "no live pillar effect", palette.textTertiary),
                 ]
             case .document:
+                // No per-doc compliance table → doc state / runway have no live
+                // source. Never assert a §107.601 MISSING row.
                 return [
-                    ("DOC",      "HM-126F",                                              "hazmat registration",  .red),
-                    ("STATE",    "MISSING",                                                "§107.601 · action",  .red),
-                    ("RUNWAY",   "0d",                                                       "renew · urgent",   .red),
-                    ("OWNER",    "Eusotrans",                                                 "to file by EOD",  .blue),
+                    ("DOC",    "HM-126F",                             "§107.601 hazmat reg", .blue),
+                    ("STATE",  dash,                                  "no live doc record",  palette.textTertiary),
+                    ("RUNWAY", dash,                                  "no live expiry",      palette.textTertiary),
+                    ("OWNER",  nonEmpty(a?.companyName) ?? dash,      "asset owner",         .blue),
                 ]
             case .analytic:
                 return [
-                    ("MPG",      fmtCVBMpg(s?.avgMpg),                                          "90d · live",     .blue),
-                    ("IDX",      "+0.12",                                                       "vs fleet mean",  .green),
-                    ("STATE",    "LIVE",                                                         c.statusBadge,   .green),
-                    ("PILLAR",   "§9.4",                                                          "MPG index pillar", .blue),
+                    ("MPG",    fmtCVBMpg(s?.avgMpg),                 "fleet fuel · §9.4",   .blue),
+                    ("IDX",    fmtDelta(a?.laneAvgDelta),            "composite vs fleet mean", .green),
+                    ("COMPST", fmtScore(a?.composite),               nonEmpty(a?.status) ?? dash, .green),
+                    ("PILLAR", "§9.4",                               "MPG index pillar",    .blue),
                 ]
             case .settlement:
+                // No settlement-allocation table for this drill → amount / chain
+                // / due state have no live source. Never assert $1,320 / LD-…7E.
                 return [
-                    ("AMOUNT",   "$1,320",                                                          "this allocation",  .green),
-                    ("CHAIN",    "LD-...7E",                                                         "POD signed",     .green),
-                    ("STATE",    "DUE",                                                                "NET-30 due",     .orange),
-                    ("BOOK",     "§168(k)",                                                              "clean books",  .blue),
+                    ("AMOUNT", dash,                                  "no live allocation",  palette.textTertiary),
+                    ("CHAIN",  dash,                                  "no live POD chain",   palette.textTertiary),
+                    ("STATE",  dash,                                  "no live settlement",  palette.textTertiary),
+                    ("BOOK",   "§168(k)",                             "depreciation anchor", .blue),
                 ]
             case .onboarding:
+                // No per-step onboarding table → step state / runway have no live
+                // source. Never assert a §396.17 EXPIRED row.
                 return [
-                    ("STEP",     "CVSA",                                                                  "periodic inspection",  .red),
-                    ("STATE",    "EXPIRED",                                                                "§396.17 · action",   .red),
-                    ("RUNWAY",   "0d",                                                                      "renew · urgent",    .red),
-                    ("OWNER",    "Eusotrans",                                                                "to schedule",      .blue),
+                    ("STEP",   "CVSA",                                "§396.17 periodic insp", .blue),
+                    ("STATE",  dash,                                  "no live step record",  palette.textTertiary),
+                    ("RUNWAY", dash,                                  "no live expiry",       palette.textTertiary),
+                    ("OWNER",  nonEmpty(a?.companyName) ?? dash,      "asset owner",          .blue),
                 ]
             case .compliance:
+                // No per-compliance-row table → row state has no live source.
                 return [
-                    ("ROW",      "HM-126F",                                                                   "hazmat-transport row", .red),
-                    ("STATE",    "MISSING",                                                                    "§107.601 · pool",   .red),
-                    ("POOL",     "§397",                                                                        "transport pillar", .blue),
-                    ("OWNER",    "Eusotrans",                                                                    "to file",          .blue),
+                    ("ROW",    "HM-126F",                             "§397 hazmat-transport", .blue),
+                    ("STATE",  dash,                                  "no live compliance row", palette.textTertiary),
+                    ("POOL",   "§397",                                "transport pillar",     .blue),
+                    ("OWNER",  nonEmpty(a?.companyName) ?? dash,      "asset owner",          .blue),
                 ]
             case .quarter:
+                // No per-quarter rollup table → gross rollup / load count have no
+                // live source. Never assert $14,820 / 9 loads.
                 return [
-                    ("Q1",       "CLOSED",                                                                       "2026-03-31",        .green),
-                    ("ROLLUP",   "$14,820",                                                                       "gross · 9 loads",  .green),
-                    ("BOOK",     "§168",                                                                           "depreciation closed", .blue),
-                    ("STATE",    "QC LOGGED",                                                                      c.statusBadge,     .green),
+                    ("Q",      dash,                                  "no live quarter close", palette.textTertiary),
+                    ("ROLLUP", dash,                                  "no live gross rollup",  palette.textTertiary),
+                    ("BOOK",   "§168",                                "depreciation anchor",   .blue),
+                    ("STATE",  dash,                                  "no live QC record",     palette.textTertiary),
                 ]
             }
         }()
@@ -278,14 +342,31 @@ private struct CatalystVehicleBBody: View {
     private func nextStepCard(_ c: CVBConfig) -> some View {
         let copy: String = {
             switch kind {
-            case .scoreAxis:   return "Composite axis grade A. Pinned to §9.4 vehicle books. Refresh weekly with the next QC cycle."
-            case .profileTier: return "Gold tier (§13.4) holds +0.06 pillar boost. Reconfirm criteria on Q2 baseline."
-            case .document:    return "Hazmat HM-126F registration is missing. File §107.601 by EOD to clear the asset for the next NH₃ pull."
-            case .analytic:    return "MPG index +0.12 vs fleet mean. Hold the cadence. Owner-op driving discipline is the lever."
-            case .settlement:  return "Allocation A38FB12C7E at $1,320, POD signed. NET-30 wires next; advance-eligible 1.5%/5D."
-            case .onboarding:  return "CVSA periodic inspection expired (§396.17). Schedule mechanic + DOT lane immediately."
-            case .compliance:  return "Hazmat-transport pool row HM-126F missing. Pair with the §107.601 doc filing above."
-            case .quarter:     return "Q1 closed 2026-03-31 with $14,820 gross · 9 loads. Q1 1099-NEC ready for tax cabinet."
+            case .scoreAxis:
+                let g = nonEmpty(axis?.grade)
+                let sc = fmtScore(axis?.composite)
+                if let g, sc != "—" {
+                    return "Composite axis grade \(g) at \(sc), derived from live §9.4 util + volume. Refresh weekly with the next QC cycle."
+                }
+                return "Composite axis is derived from live §9.4 util + volume throughput. No graded record yet — refresh after the next delivered-load cycle."
+            case .profileTier:
+                return "No live §13.4 tier record for this asset yet. The tier table isn't in the schema; this drill stays neutral until it lands."
+            case .document:
+                return "§107.601 hazmat-registration document drill. No per-doc compliance record is sourced yet — the doc state stays neutral until the document store lands."
+            case .analytic:
+                let d = fmtDelta(axis?.laneAvgDelta)
+                if d != "—" {
+                    return "Composite index \(d) vs fleet mean, derived live. MPG carries from the fleet fuel feed (§9.4)."
+                }
+                return "MPG carries from the live fleet fuel feed (§9.4). No composite-vs-mean delta yet — refresh after more delivered loads."
+            case .settlement:
+                return "No per-allocation settlement line-item is sourced for this drill yet (no allocation table in the schema). Amount and POD chain stay neutral."
+            case .onboarding:
+                return "§396.17 periodic-inspection step drill. No per-step onboarding record is sourced yet — the step state stays neutral."
+            case .compliance:
+                return "§397 hazmat-transport compliance-row drill. No per-row compliance record is sourced yet — the row state stays neutral."
+            case .quarter:
+                return "No per-quarter §168 depreciation rollup is sourced for this drill yet (no quarter-rollup table in the schema). Gross and QC stay neutral."
             }
         }()
         return LifecycleCard {
@@ -297,13 +378,49 @@ private struct CatalystVehicleBBody: View {
     }
 
     private func load() async {
-        do { stats = try await EusoTripAPI.shared.queryNoInput("fleet.getFleetStats") } catch { /* */ }
+        loading = true
+        defer { loading = false }
+        // Fleet-wide live metrics (utilization / avgMpg).
+        stats = try? await EusoTripAPI.shared.queryNoInput("fleet.getFleetStats")
+        // Resolve a REAL vehicleId from the signed-in company's fleet, then
+        // pull the live scorecard axis for it. No hardcoded vehicleId.
+        do {
+            let assets: FleetAPI.AssetsResponse =
+                try await EusoTripAPI.shared.queryNoInput("fleet.listAssets")
+            if let first = assets.items.first {
+                struct AxisIn: Encodable { let vehicleId: String }
+                axis = try await EusoTripAPI.shared.query(
+                    "vehicles.getScorecardAxis", input: AxisIn(vehicleId: first.id))
+            }
+        } catch { /* honest "—" everywhere axis is absent */ }
     }
 }
 
+// MARK: - Honest formatters (no invented fallbacks)
+
+private func nonEmpty(_ s: String?) -> String? {
+    guard let s, !s.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+    return s
+}
+
+private func pct(_ v: Int?) -> String {
+    guard let v else { return "—" }
+    return "\(v)%"
+}
+
 private func fmtCVBMpg(_ raw: Double?) -> String {
-    let v = raw ?? 6.8
-    return String(format: "%.1f", v > 0 ? v : 6.8)
+    guard let v = raw, v > 0 else { return "—" }
+    return String(format: "%.1f", v)
+}
+
+private func fmtScore(_ raw: Double?) -> String {
+    guard let v = raw else { return "—" }
+    return String(format: "%.2f", v)
+}
+
+private func fmtDelta(_ raw: Double?) -> String {
+    guard let v = raw else { return "—" }
+    return (v >= 0 ? "+" : "") + String(format: "%.2f", v)
 }
 
 // MARK: - Screens (CV330B-CV337B)

@@ -13,17 +13,21 @@
 //    487 Dispatcher Comms Quarter Trajectory Detail
 //
 //  All 8 share `DispatcherCommsBody` parameterized by
-//  `DispatcherCommsKind`. Body reads `messaging.getConversations` to
-//  surface thread count + render per-axis KPI cards. Bottom nav frozen
-//  (Dispatcher: Home / Board / ESANG / Me).
+//  `DispatcherCommsKind`. Body reads the TYPED `messaging.getConversations`
+//  proc (`EusoTripAPI.shared.messaging.getConversations()` →
+//  `[MessagingConversation]`) and renders ONLY what that proc actually
+//  surfaces: thread count, unread total, and last-activity timing.
+//
+//  ZERO FABRICATION: the messaging stack has NO SLA grade, response-time
+//  p50, escalation count, closure rate, first-touch-resolution, or
+//  per-quarter rollup. Those are genuine backend gaps and render an
+//  honest "—" / "-" — never an invented literal, EUSORONE ceiling, or
+//  §-citation. Identity is the signed-in dispatcher (`session.user`),
+//  not a hardcoded persona. Bottom nav frozen (Dispatcher: Home / Board /
+//  ESANG / Me).
 //
 
 import SwiftUI
-
-private struct DCConversation: Decodable, Hashable {
-    let id: String?
-    let updatedAt: String?
-}
 
 enum DispatcherCommsKind: String {
     case review, responseTime, slaCompliance, escalationFree, threadClosure, threadVolume, firstTouchResolution, quarter
@@ -35,7 +39,6 @@ private struct DCConfig {
     let title: String
     let subhead: String
     let pillCopy: String
-    let statusPill: String
 }
 
 private extension DispatcherCommsKind {
@@ -43,60 +46,52 @@ private extension DispatcherCommsKind {
         switch self {
         case .review:
             return .init(eyebrow: "DISPATCHER · COMMS · REVIEW",
-                         citation: "DISPATCHER REVIEW · COMMS THREADS · 90D",
+                         citation: "DISPATCHER REVIEW · COMMS THREADS",
                          title: "Comms review",
-                         subhead: "AURORA-CTLG-00001 · 4 CLASSES · 90D",
-                         pillCopy: "Renée rates response · escalation · closure · Eusorone NH₃ thread anchor",
-                         statusPill: "GRADE A · COMPOSITE 0.92 · RESPONSE 7m")
+                         subhead: "Thread inbox · live",
+                         pillCopy: "Live thread count, unread total and last-activity timing from the messaging inbox. Per-axis grading is a backend gap.")
         case .responseTime:
             return .init(eyebrow: "DISPATCHER · COMMS · RESPONSE-TIME",
-                         citation: "DISPATCHER RESPONSE · 4 CLASSES · 90D · §480-A",
+                         citation: "DISPATCHER RESPONSE · COMMS THREADS",
                          title: "Response time",
-                         subhead: "SCORE-COMPOSITE · §480-A · 90D",
-                         pillCopy: "Renée rates per-class p50 · 7m fleet · EUSORONE 4m floor",
-                         statusPill: "p50 7m · EUSORONE FLOOR 4m")
+                         subhead: "Thread inbox · last activity",
+                         pillCopy: "Last-activity timing is live from the inbox. Per-class response-time scoring is a backend gap.")
         case .slaCompliance:
             return .init(eyebrow: "DISPATCHER · COMMS · SLA-COMPLIANCE",
-                         citation: "DISPATCHER COMPLIANCE · 4 CLASSES · 90D · §480-B",
+                         citation: "DISPATCHER COMPLIANCE · COMMS THREADS",
                          title: "SLA compliance",
-                         subhead: "SCORE-COMPOSITE · §480-B · 90D",
-                         pillCopy: "Renée rates per-class SLA · 0.93 fleet · EUSORONE 1.00 ceiling",
-                         statusPill: "SLA 0.93 · EUSORONE CEILING 1.00")
+                         subhead: "Thread inbox · live",
+                         pillCopy: "SLA-compliance grading is a backend gap — no live source. Thread count is live from the inbox.")
         case .escalationFree:
             return .init(eyebrow: "DISPATCHER · COMMS · ESCALATION-FREE",
-                         citation: "DISPATCHER ESCALATION · 4 CLASSES · 90D · §480-C",
+                         citation: "DISPATCHER ESCALATION · COMMS THREADS",
                          title: "Escalation-free",
-                         subhead: "SCORE-COMPOSITE · §480-C · 90D",
-                         pillCopy: "Renée rates per-class escalations · 20 fleet · EUSORONE 0 floor",
-                         statusPill: "ESCAL 20 · EUSORONE FLOOR 0")
+                         subhead: "Thread inbox · live",
+                         pillCopy: "Escalation tracking is a backend gap — no live source. Thread count is live from the inbox.")
         case .threadClosure:
             return .init(eyebrow: "DISPATCHER · COMMS · THREAD-CLOSURE",
-                         citation: "DISPATCHER CLOSURE · 4 CLASSES · 90D · §480-D",
+                         citation: "DISPATCHER CLOSURE · COMMS THREADS",
                          title: "Thread closure",
-                         subhead: "SCORE-COMPOSITE · §480-D · 90D",
-                         pillCopy: "Renée rates per-class closure rates · 42/47 fleet · EUSORONE 13/13 ceiling",
-                         statusPill: "CLOSURE 42/47 · EUSORONE 13/13")
+                         subhead: "Thread inbox · live",
+                         pillCopy: "Closure-rate grading is a backend gap — no live source. Thread count is live from the inbox.")
         case .threadVolume:
             return .init(eyebrow: "DISPATCHER · COMMS · THREAD-VOLUME",
-                         citation: "DISPATCHER VOLUME · 4 CLASSES · 90D · §480-E",
+                         citation: "DISPATCHER VOLUME · COMMS THREADS",
                          title: "Thread volume",
-                         subhead: "SCORE-COMPOSITE · §480-E · 90D",
-                         pillCopy: "Renée rates per-class msg/wk · 9.2 fleet · EUSORONE 18 ceiling",
-                         statusPill: "VOL 9.2/wk · EUSORONE CEILING 18/wk")
+                         subhead: "Thread inbox · live",
+                         pillCopy: "Live thread count and unread total from the inbox. Per-week volume rollups are a backend gap.")
         case .firstTouchResolution:
             return .init(eyebrow: "DISPATCHER · COMMS · FIRST-TOUCH-RESOLUTION",
-                         citation: "DISPATCHER FTR · 4 CLASSES · 90D · §480-F",
+                         citation: "DISPATCHER FTR · COMMS THREADS",
                          title: "First-touch resolution",
-                         subhead: "SCORE-COMPOSITE · §480-F · 90D",
-                         pillCopy: "Renée rates per-class first-touch-resolution · 81.0% fleet · EUSORONE 92.3% ceiling",
-                         statusPill: "FTR 81.0% · EUSORONE CEILING 92.3%")
+                         subhead: "Thread inbox · live",
+                         pillCopy: "First-touch-resolution grading is a backend gap — no live source. Thread count is live from the inbox.")
         case .quarter:
             return .init(eyebrow: "DISPATCHER · COMMS · TRAJECTORY",
-                         citation: "DISPATCHER COMMS TRAJECTORY · 4 QUARTERS · YEAR 2026 · §480-G",
+                         citation: "DISPATCHER COMMS TRAJECTORY · COMMS THREADS",
                          title: "Quarter trajectory",
-                         subhead: "SCORE-COMPOSITE · §480-G · YEAR 2026",
-                         pillCopy: "Renée rates year-cadence · 0.94 fleet target · EUSORONE 4Q ceiling streak",
-                         statusPill: "YEAR 0.94 · EUSORONE 4Q CEILING")
+                         subhead: "Thread inbox · live",
+                         pillCopy: "Per-quarter trajectory rollups are a backend gap — no live source. Thread count is live from the inbox.")
         }
     }
 }
@@ -121,10 +116,29 @@ private struct DispatcherCommsBody: View {
     let kind: DispatcherCommsKind
 
     @Environment(\.palette) private var palette
-    @State private var threads: [DCConversation] = []
+    @EnvironmentObject private var session: EusoTripSession
+    @State private var threads: [MessagingConversation] = []
     @State private var loaded = false
 
-    private var threadCount: Int { threads.count > 0 ? threads.count : 47 }
+    // MARK: Live aggregates (typed `messaging.getConversations`)
+
+    /// Thread count straight off the typed proc. No invented floor.
+    /// "—" until the first decode completes (genuinely unknown), then 0+.
+    private var threadCountText: String { loaded ? "\(threads.count)" : "—" }
+
+    /// Sum of per-conversation unread via the struct's `effectiveUnread`
+    /// (`unreadCount ?? unread ?? 0`).
+    private var unreadTotal: Int { threads.reduce(0) { $0 + $1.effectiveUnread } }
+    private var unreadText: String { loaded ? "\(unreadTotal)" : "—" }
+
+    /// Last-activity timing — newest `lastMessageAt` across the inbox,
+    /// rendered as a relative age. This is the only honest "timing" the
+    /// proc surfaces. "—" when no thread carries a parseable timestamp.
+    private var lastActivityText: String {
+        let dates = threads.compactMap { $0.lastMessageAt.flatMap(Self.parseISO) }
+        guard let newest = dates.max() else { return "—" }
+        return Self.relativeAge.localizedString(for: newest, relativeTo: Date())
+    }
 
     var body: some View {
         let c = kind.config
@@ -159,19 +173,22 @@ private struct DispatcherCommsBody: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(c.citation).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                 Text(c.pillCopy).font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true)
-                Text(c.statusPill).font(.caption2).foregroundStyle(palette.textSecondary)
+                Text("THREADS \(threadCountText) · LAST ACTIVITY \(lastActivityText)").font(.caption2).foregroundStyle(palette.textSecondary)
             }
         }
     }
 
     private var identityRow: some View {
-        LifecycleCard {
+        // Identity is the signed-in dispatcher (session), NOT a persona.
+        let person = session.user?.name ?? "—"
+        let companyTag = session.user?.companyId.map { "companyId · \($0)" } ?? "—"
+        return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
                     .overlay(Image(systemName: "bubble.left.and.bubble.right.fill").font(.system(size: 12)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Aurora Freight Lines · Comms Threads").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("AURORA-CTLG-00001 · 4 classes · \(threadCount) threads · EUSORONE TIER 1 DEDICATED").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text("\(person) · Comms Threads").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                    Text("\(companyTag) · \(threadCountText) threads · \(unreadText) unread").font(.caption2).foregroundStyle(palette.textTertiary)
                 }
                 Spacer()
             }
@@ -179,63 +196,65 @@ private struct DispatcherCommsBody: View {
     }
 
     private var kpiGrid: some View {
+        // Live cards bind to the typed proc (threads / unread / last
+        // activity). Every grading axis with no live source renders "—".
         let kpis: [(String, String, String, Color)] = {
             switch kind {
             case .review:
                 return [
-                    ("GRADE",      "A",                          "composite 0.92",        .green),
-                    ("RESPONSE",   "7m",                          "p50 · EUSO 4m floor",   .green),
-                    ("THREADS",    "\(threadCount)",              "90d · live",            .blue),
-                    ("CLOSURE",    "42/47",                        "EUSO 13/13 ceiling",   .green),
+                    ("GRADE",      "—",                   "no live source",        palette.textTertiary),
+                    ("RESPONSE",   "—",                   "no live source",        palette.textTertiary),
+                    ("THREADS",    threadCountText,       "inbox · live",          .blue),
+                    ("UNREAD",     unreadText,             "inbox · live",         .blue),
                 ]
             case .responseTime:
                 return [
-                    ("P50",        "7m",                            "fleet · §480-A",      .green),
-                    ("EUSO",       "4m",                              "floor · 90d",       .green),
-                    ("THREADS",    "\(threadCount)",                    "90d aggregate",   .blue),
-                    ("GRADE",      "A",                                   "response pillar", .green),
+                    ("P50",        "—",                    "no live source",      palette.textTertiary),
+                    ("LAST",       lastActivityText,        "inbox · live",       .blue),
+                    ("THREADS",    threadCountText,           "inbox · live",     .blue),
+                    ("GRADE",      "—",                       "no live source",   palette.textTertiary),
                 ]
             case .slaCompliance:
                 return [
-                    ("SLA",        "0.93",                                  "fleet · §480-B",  .green),
-                    ("CEILING",    "1.00",                                   "EUSORONE peak", .green),
-                    ("BREACH",     "3",                                       "90d · classes 2-3", .orange),
-                    ("GRADE",      "A",                                        "SLA pillar",   .green),
+                    ("SLA",        "—",                          "no live source",  palette.textTertiary),
+                    ("BREACH",     "—",                           "no live source", palette.textTertiary),
+                    ("THREADS",    threadCountText,                "inbox · live",  .blue),
+                    ("GRADE",      "—",                            "no live source", palette.textTertiary),
                 ]
             case .escalationFree:
                 return [
-                    ("ESCAL",      "20",                                       "fleet · 90d",  .orange),
-                    ("EUSO",       "0",                                          "floor · 90d", .green),
-                    ("THREADS",    "\(threadCount)",                              "90d total",  .blue),
-                    ("GRADE",      "A",                                            "escalation pillar", .green),
+                    ("ESCAL",      "—",                            "no live source", palette.textTertiary),
+                    ("THREADS",    threadCountText,                 "inbox · live",  .blue),
+                    ("UNREAD",     unreadText,                       "inbox · live", .blue),
+                    ("GRADE",      "—",                              "no live source", palette.textTertiary),
                 ]
             case .threadClosure:
                 return [
-                    ("CLOSED",     "42",                                            "fleet · 90d",   .green),
-                    ("OPEN",       "5",                                              "in-flight",   .orange),
-                    ("EUSO",       "13/13",                                            "ceiling 90d", .green),
-                    ("GRADE",      "A",                                                  "closure pillar", .green),
+                    ("CLOSED",     "—",                              "no live source", palette.textTertiary),
+                    ("OPEN",       "—",                              "no live source", palette.textTertiary),
+                    ("THREADS",    threadCountText,                   "inbox · live", .blue),
+                    ("GRADE",      "—",                               "no live source", palette.textTertiary),
                 ]
             case .threadVolume:
                 return [
-                    ("VOL/WK",     "9.2",                                                "fleet msg/wk", .blue),
-                    ("EUSO",       "18",                                                  "msg/wk · ceiling", .green),
-                    ("THREADS",    "\(threadCount)",                                       "90d total", .blue),
-                    ("GRADE",      "A",                                                    "volume pillar", .green),
+                    ("VOL/WK",     "—",                               "no live source", palette.textTertiary),
+                    ("THREADS",    threadCountText,                    "inbox · live", .blue),
+                    ("UNREAD",     unreadText,                          "inbox · live", .blue),
+                    ("GRADE",      "—",                                 "no live source", palette.textTertiary),
                 ]
             case .firstTouchResolution:
                 return [
-                    ("FTR",        "81.0%",                                                  "34 / 42 · §480-F", .green),
-                    ("EUSO",       "92.3%",                                                    "ceiling 90d",   .green),
-                    ("PENDING",    "8",                                                          "multi-touch",  .orange),
-                    ("GRADE",      "A",                                                            "FTR pillar",  .green),
+                    ("FTR",        "—",                                  "no live source", palette.textTertiary),
+                    ("PENDING",    "—",                                   "no live source", palette.textTertiary),
+                    ("THREADS",    threadCountText,                        "inbox · live", .blue),
+                    ("GRADE",      "—",                                    "no live source", palette.textTertiary),
                 ]
             case .quarter:
                 return [
-                    ("YEAR-AVG",   "0.94",                                                          "EOY · §480-G",   .green),
-                    ("CEILING",    "EUSORONE",                                                        "4Q streak",   .green),
-                    ("THREADS",    "\(threadCount)",                                                    "year total", .blue),
-                    ("GRADE",      "A",                                                                  "year pillar", .green),
+                    ("YEAR-AVG",   "—",                                    "no live source", palette.textTertiary),
+                    ("CEILING",    "—",                                     "no live source", palette.textTertiary),
+                    ("THREADS",    threadCountText,                          "inbox · live", .blue),
+                    ("GRADE",      "—",                                      "no live source", palette.textTertiary),
                 ]
             }
         }()
@@ -256,16 +275,18 @@ private struct DispatcherCommsBody: View {
     }
 
     private var nextStepCard: some View {
+        // Honest guidance: live axis (threads/unread/timing) where the
+        // proc supplies it, otherwise name the backend gap plainly.
         let copy: String = {
             switch kind {
-            case .review:              return "Composite A · EUSORONE NH₃ thread anchor holding 4m p50 floor. Refresh weekly."
-            case .responseTime:        return "7m fleet p50 is healthy. Push slower classes to match EUSORONE's 4m floor."
-            case .slaCompliance:       return "0.93 SLA, 3 breaches in classes 2-3. Re-flag those threads in the next standup."
-            case .escalationFree:      return "20 escalations across fleet. EUSORONE clean at 0. Audit the 20 for pattern."
-            case .threadClosure:       return "42 closed, 5 in-flight. Close-loop on the 5 before quarter-end."
-            case .threadVolume:        return "9.2 msg/wk fleet average. EUSORONE 18/wk ceiling shows engagement headroom."
-            case .firstTouchResolution:return "81% FTR. Investigate the 8 multi-touch threads. Most need playbook update."
-            case .quarter:             return "Year-rolling 0.94 target. EUSORONE 4Q streak. Copy playbook to next 3 dedicated accounts."
+            case .review:              return "\(threadCountText) threads, \(unreadText) unread, last activity \(lastActivityText). Per-axis grading is a backend gap."
+            case .responseTime:        return "Last activity \(lastActivityText). Per-class response-time scoring is a backend gap — no live source yet."
+            case .slaCompliance:       return "SLA-compliance grading is a backend gap — no live source. \(threadCountText) threads in the inbox."
+            case .escalationFree:      return "Escalation tracking is a backend gap — no live source. \(threadCountText) threads in the inbox."
+            case .threadClosure:       return "Closure-rate grading is a backend gap — no live source. \(threadCountText) threads in the inbox."
+            case .threadVolume:        return "\(threadCountText) threads, \(unreadText) unread. Per-week volume rollups are a backend gap."
+            case .firstTouchResolution:return "First-touch-resolution grading is a backend gap — no live source. \(threadCountText) threads in the inbox."
+            case .quarter:             return "Per-quarter trajectory rollups are a backend gap — no live source. \(threadCountText) threads in the inbox."
             }
         }()
         return LifecycleCard {
@@ -277,9 +298,33 @@ private struct DispatcherCommsBody: View {
     }
 
     private func load() async {
-        do { threads = try await EusoTripAPI.shared.queryNoInput("messaging.getConversations") } catch { /* */ }
+        // Bind to the TYPED proc — `[MessagingConversation]`, not a
+        // hand-rolled decoder. effectiveUnread / lastMessageAt come off
+        // the struct verbatim.
+        do { threads = try await EusoTripAPI.shared.messaging.getConversations() } catch { /* leave inbox empty */ }
         loaded = true
     }
+
+    // MARK: Date helpers
+
+    private static let isoParser: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    private static let isoParserNoFrac: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+    private static func parseISO(_ s: String) -> Date? {
+        isoParser.date(from: s) ?? isoParserNoFrac.date(from: s)
+    }
+    private static let relativeAge: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f
+    }()
 }
 
 // MARK: - Screens (480-487)
