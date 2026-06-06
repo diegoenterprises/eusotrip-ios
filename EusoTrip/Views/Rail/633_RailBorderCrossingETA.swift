@@ -56,6 +56,11 @@ private struct InterchangePoint633: Decodable, Identifiable {
     let customsOffice: String?
     let hazmatAllowed: Bool?
     let notes: String?
+    // Real border-node coordinate carried verbatim by the server
+    // RailInterchangePoint contract (crossBorderRail.ts:13 — every catalog
+    // row has a genuine lat/lng; e.g. Laredo/Nuevo Laredo = 27.501,-99.508).
+    let lat: Double?
+    let lng: Double?
 }
 
 private struct CrossingFactor633: Decodable, Identifiable {
@@ -73,6 +78,7 @@ private struct CrossingEstimate633: Decodable {
 
 private struct RailBorderCrossingETABody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var colorScheme
     let carCount: Int
     let hasHazmat: Bool
     let railroad: String
@@ -96,6 +102,7 @@ private struct RailBorderCrossingETABody: View {
                     errorCard(err)
                 } else {
                     heroCard
+                    if let node = crossingNode { crossingMap(node) }
                     kpiStrip
                     factorsCard
                     recommendationStrip
@@ -253,6 +260,58 @@ private struct RailBorderCrossingETABody: View {
     private var statusText: String { "queued" }
     private var statusKind: StatusPill.Kind { hasPreClearance ? .success : .warning }
     private var statusColor: Color { hasPreClearance ? Brand.success : Brand.warning }
+
+    // MARK: - Crossing-node map (in-house HERE · BespokeMapCanvas .standard)
+
+    /// The real border-node coordinate for the chosen interchange, gated
+    /// against the null-island (0,0) trap (cheat-sheet §6). The server only
+    /// models the single crossing node — there is no approach-route polyline
+    /// or origin yard in the contract — so we render an honest single-marker
+    /// crossing pin at its genuine lat/lng, never a fabricated corridor.
+    private var crossingNode: HereLatLng? {
+        guard let lat = point?.lat, let lng = point?.lng,
+              !(lat == 0 && lng == 0) else { return nil }
+        return HereLatLng(lat, lng)
+    }
+
+    /// Bespoke crossing-node card: flat shipper/board register (tilt 0 ⇒
+    /// .standard) — RAIL has no dedicated map style. Drops the interchange
+    /// glyph on the real border node, labeled with the live route + railroad
+    /// interchange mark. Wrapped to the screen's Radius.lg + borderFaint card
+    /// grammar so it reads as a section of this layout, not a generic block.
+    @ViewBuilder
+    private func crossingMap(_ node: HereLatLng) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack {
+                Text("INTERCHANGE NODE · USMCA")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer()
+                Text(provenanceLine)
+                    .font(EType.mono(.caption)).tracking(0.4)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
+            BespokeMapCanvas(
+                center: node,
+                zoom: 9,
+                tilt: 0,
+                isDark: colorScheme == .dark,
+                layers: [
+                    .markers([
+                        HereMarker(at: node, kind: .stop,
+                                   label: routeLabel, id: point?.id)
+                    ])
+                ]
+            )
+            .frame(height: 200)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+        }
+    }
 
     // MARK: - KPI strip (3 cells · cell-1 eusoDiagonal)
 
