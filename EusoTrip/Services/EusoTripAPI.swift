@@ -14421,6 +14421,37 @@ struct EscortAPI {
             input: GetCorridorInput(id: id)
         )
     }
+
+    // MARK: - Request escort (LoadDetailSheet demand)
+    //
+    // Real escort demand raised by the load OWNER (driver/carrier/shipper/
+    // dispatcher). Backend `escorts.requestEscort` flips loads.requiresEscort
+    // = true + escortCount >= 1 so the load surfaces in the escort
+    // marketplace (getAvailableJobs). Replaces the old dispatch-chat
+    // stand-in in `LoadDetailSheet.requestEscort()`.
+    struct RequestEscortResult: Decodable {
+        let success: Bool
+        let loadId: Int
+        let loadNumber: String
+        let requiresEscort: Bool
+        let escortCount: Int
+        let alreadyOpen: Bool
+        let status: String
+    }
+
+    struct RequestEscortInput: Encodable {
+        let loadId: Int
+        let position: String
+        let notes: String?
+    }
+
+    @discardableResult
+    func requestEscort(loadId: Int, position: String = "lead", notes: String? = nil) async throws -> RequestEscortResult {
+        try await api.mutation(
+            "escorts.requestEscort",
+            input: RequestEscortInput(loadId: loadId, position: position, notes: notes)
+        )
+    }
 }
 
 // =====================================================================

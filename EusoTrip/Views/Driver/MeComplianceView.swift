@@ -50,11 +50,24 @@ import UIKit
 /// ack reconciliation; only add new tags, never rename old ones.
 struct ComplianceRule: Identifiable, Equatable {
     enum Tag: String, CaseIterable, Equatable {
+        // Truck — FMCSA / PHMSA (March 23, 2026 wave). Never rename.
         case eDvir        = "fmcsa.edvir.396"
         case overfill     = "fmcsa.overfill.393_67"
         case auxPump      = "fmcsa.auxpump.393_67"
         case warningDevice = "fmcsa.warning_device.flares"
         case phmsaExxon   = "phmsa.2025_0777.exxon_preemption"
+        // Rail — FRA. Add-only; same ack ledger.
+        case railBrakeInspection = "fra.brake_inspection.232"
+        case railDefectiveCar    = "fra.freight_car_safety.215"
+        case railHazmatRouting   = "fra.hazmat_routing.172_820"
+        // Vessel — IMO / SOLAS / USCG.
+        case vesselVGM        = "imo.solas.vi_2_vgm"
+        case vesselIMDG       = "imo.imdg.stow_segregation"
+        case vesselCargoGear  = "uscg.cargo_gear.46cfr"
+        // Barge — USCG / USACE.
+        case bargeCOI           = "uscg.coi.certificate_of_inspection"
+        case bargeBulkDangerous = "uscg.bulk_dangerous.46cfr_subchap_o"
+        case bargeNavSafety     = "uscg.nav_safety.33cfr_164_165"
     }
     enum Severity: Equatable { case informational, advisory, action }
 
@@ -231,6 +244,135 @@ Why this matters to you: the determination — whenever it issues — will affec
 """,
             callToAction: "Open docket",
             severity: .informational
+        ),
+        // ── Rail — FRA / AAR ─────────────────────────────────────────
+        ComplianceRule(
+            tag: .railBrakeInspection,
+            headline: "Air-brake inspection & two-way EOT",
+            citation: "49 CFR § 232",
+            effective: "In force",
+            summary: "Confirm the train's air-brake system inspection (initial terminal / Class I) is recorded and a two-way end-of-train device is operative before departure.",
+            detail: """
+49 CFR Part 232 (Brake System Safety Standards for Freight and Other Non-Passenger Trains) governs initial terminal air-brake inspections, Class I/IA/II/III brake tests, and two-way end-of-train (EOT) telemetry device requirements.
+
+Verify the brake test class for this movement is logged and the EOT is armed and communicating before the train departs.
+""",
+            callToAction: "I understand",
+            severity: .action
+        ),
+        ComplianceRule(
+            tag: .railDefectiveCar,
+            headline: "Freight car safety / defective-car check",
+            citation: "49 CFR § 215",
+            effective: "In force",
+            summary: "Verify no condemnable defects (wheels, trucks, couplers, draft systems) place this car under the Part 215 not-in-service restriction.",
+            detail: """
+49 CFR Part 215 (Railroad Freight Car Safety Standards) lists the conditions that make a freight car defective and prohibits placing or continuing a car in service with a condemnable wheel, truck, coupler, or draft-system defect.
+
+Confirm the car has passed inspection and carries no open defect card before it moves.
+""",
+            callToAction: "I understand",
+            severity: .action
+        ),
+        ComplianceRule(
+            tag: .railHazmatRouting,
+            headline: "Hazmat rail routing analysis",
+            citation: "49 CFR § 172.820",
+            effective: "In force",
+            summary: "For security-sensitive hazmat (PIH/TIH, explosives, certain RAM), confirm the carrier's annual route-analysis safest/most-secure routing under §172.820 covers this shipment.",
+            detail: """
+49 CFR § 172.820 requires rail carriers transporting specified quantities of security-sensitive hazardous materials (poison/toxic-inhalation-hazard, certain explosives, high-level radioactive material) to perform an annual safety- and security-based route analysis and select the safest, most secure practicable route.
+
+Confirm this movement is covered by a current route analysis before tendering.
+""",
+            callToAction: "I understand",
+            severity: .advisory
+        ),
+        // ── Vessel — IMO / SOLAS / USCG ──────────────────────────────
+        ComplianceRule(
+            tag: .vesselVGM,
+            headline: "Verified Gross Mass (VGM) submitted",
+            citation: "SOLAS Ch. VI, Reg. 2",
+            effective: "In force",
+            summary: "Confirm a Verified Gross Mass for each packed container has been determined (Method 1 or 2) and provided to the carrier/terminal before loading.",
+            detail: """
+SOLAS Chapter VI, Regulation 2 requires the shipper of a packed container to provide its Verified Gross Mass (VGM) to the master and terminal before the container may be loaded aboard a ship. VGM is determined by weighing the packed container (Method 1) or by weighing and summing all contents plus tare (Method 2).
+
+A container without a submitted VGM must not be loaded.
+""",
+            callToAction: "I understand",
+            severity: .action
+        ),
+        ComplianceRule(
+            tag: .vesselIMDG,
+            headline: "IMDG stowage & segregation",
+            citation: "IMDG Code (SOLAS Ch. VII)",
+            effective: "In force",
+            summary: "For dangerous goods, confirm declaration, packing, marking/placarding, and stowage/segregation comply with the current IMDG Code.",
+            detail: """
+The International Maritime Dangerous Goods (IMDG) Code, mandatory under SOLAS Chapter VII, governs classification, packing, marking, labelling, placarding, documentation (Dangerous Goods Declaration), and the stowage and segregation of incompatible dangerous goods aboard ship.
+
+Confirm the DG declaration and segregation plan are valid for this cargo before loading.
+""",
+            callToAction: "I understand",
+            severity: .action
+        ),
+        ComplianceRule(
+            tag: .vesselCargoGear,
+            headline: "Cargo gear / lifting-appliance certification",
+            citation: "46 CFR (USCG)",
+            effective: "In force",
+            summary: "Confirm shipboard cargo gear and lifting appliances used for this load carry current USCG/Register certification and test records.",
+            detail: """
+46 CFR (USCG marine cargo and vessel inspection regulations) requires shipboard cargo-handling gear and lifting appliances to be certificated, tested, and marked with safe working loads.
+
+Confirm the lifting-appliance register and current certificates are aboard and valid before working this cargo.
+""",
+            callToAction: "I understand",
+            severity: .advisory
+        ),
+        // ── Barge — USCG / USACE ─────────────────────────────────────
+        ComplianceRule(
+            tag: .bargeCOI,
+            headline: "Certificate of Inspection (COI) valid",
+            citation: "46 CFR (USCG COI)",
+            effective: "In force",
+            summary: "Confirm the barge/towing vessel holds a current USCG Certificate of Inspection and is operating within its COI manning, route, and cargo limits.",
+            detail: """
+USCG-inspected vessels and tank barges must carry a current Certificate of Inspection (COI) issued under 46 CFR, which fixes the authorized cargoes, route/area of operation, manning, and equipment.
+
+Confirm the COI is unexpired and the planned movement and cargo fall within its terms.
+""",
+            callToAction: "I understand",
+            severity: .action
+        ),
+        ComplianceRule(
+            tag: .bargeBulkDangerous,
+            headline: "Bulk dangerous cargo (Subchapter O/D)",
+            citation: "46 CFR Subchapter O",
+            effective: "In force",
+            summary: "For bulk liquid/dangerous cargo, confirm tank-barge carriage, compatibility, and transfer requirements under 46 CFR Subchapter O (and Subchapter D where applicable) are met.",
+            detail: """
+46 CFR Subchapter O (Certain Bulk Dangerous Cargoes) and Subchapter D (Tank Vessels) govern the carriage of bulk liquid hazardous and dangerous cargoes by tank barge — including authorized cargo lists, cargo compatibility, and transfer-operation requirements.
+
+Confirm the cargo is authorized for this barge and compatibility/transfer rules are satisfied before loading.
+""",
+            callToAction: "I understand",
+            severity: .action
+        ),
+        ComplianceRule(
+            tag: .bargeNavSafety,
+            headline: "Navigation safety / regulated nav area",
+            citation: "33 CFR 164 & 165",
+            effective: "In force",
+            summary: "Confirm navigation-safety equipment (33 CFR 164) is operative and the tow's route clears any Regulated Navigation Areas / safety/security zones (33 CFR 165).",
+            detail: """
+33 CFR Part 164 sets navigation-safety equipment and operating requirements, and 33 CFR Part 165 establishes Regulated Navigation Areas (RNAs), safety zones, and security zones that may restrict or condition transit.
+
+Confirm required navigation equipment is operative and the planned tow route accounts for any applicable RNA or zone restrictions.
+""",
+            callToAction: "I understand",
+            severity: .advisory
         )
     ]
 
@@ -246,6 +388,21 @@ Why this matters to you: the determination — whenever it issues — will affec
     /// multiple rules (e.g. overfill + auxPump on the fuel strip).
     static func rules(for tags: [ComplianceRule.Tag]) -> [ComplianceRule] {
         march2026.filter { tags.contains($0.tag) }
+    }
+
+    /// Per-mode default checklist — the in-load compliance items a panel
+    /// shows when it isn't handed an explicit tag list. Truck keeps the
+    /// existing FMCSA equipment/handling set (overfill + auxPump +
+    /// warningDevice); rail/vessel/barge resolve to their own authority's
+    /// pre-load checks. `ComplianceInlinePanel` falls back to this when its
+    /// `tags` is empty so a non-truck panel surfaces the right regs.
+    static func defaultTags(for mode: TransportMode) -> [ComplianceRule.Tag] {
+        switch mode {
+        case .truck:  return [.overfill, .auxPump, .warningDevice]
+        case .rail:   return [.railBrakeInspection, .railDefectiveCar, .railHazmatRouting]
+        case .vessel: return [.vesselVGM, .vesselIMDG, .vesselCargoGear]
+        case .barge:  return [.bargeCOI, .bargeBulkDangerous, .bargeNavSafety]
+        }
     }
 }
 
@@ -333,12 +490,22 @@ struct ComplianceInlinePanel: View {
     /// via `TransportLexicon.short(.primarySafetyAuthority, mode:)`
     /// (truck→FMCSA, rail→FRA, vessel→IMO / USCG, barge→USCG / IMO).
     /// Defaults to `.truck` so every existing call site is unchanged.
-    /// NOTE: the checklist CATALOG itself is still truck-keyed; only the
-    /// authority LABEL is mode-correct here. Per-mode rule catalogs are a
-    /// followup if non-truck checklist items are needed.
+    /// Both the authority LABEL and the CHECKLIST are now mode-correct: a
+    /// truck panel renders its explicit `tags`, while a rail/vessel/barge
+    /// panel falls back to `ComplianceCatalog.defaultTags(for: mode)` so
+    /// the checklist resolves that authority's pre-load regs.
     var mode: TransportMode = .truck
 
-    private var rules: [ComplianceRule] { ComplianceCatalog.rules(for: tags) }
+    /// The tag list the panel actually renders. Truck keeps the explicit
+    /// `tags` it's handed (every existing call site is unchanged); every
+    /// other mode resolves its per-mode default checklist. Routed through
+    /// `ComplianceCatalog.rules(for:)` exactly like the old path, so the
+    /// render is untouched downstream.
+    private var effectiveTags: [ComplianceRule.Tag] {
+        mode == .truck ? tags : ComplianceCatalog.defaultTags(for: mode)
+    }
+
+    private var rules: [ComplianceRule] { ComplianceCatalog.rules(for: effectiveTags) }
 
     /// Authority prefix for the header strip — mode-keyed off the lexicon
     /// (e.g. "FMCSA" / "FRA" / "IMO / USCG"). Falls back to "FMCSA" if the

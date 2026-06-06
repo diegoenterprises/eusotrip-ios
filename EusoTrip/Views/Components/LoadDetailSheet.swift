@@ -908,14 +908,15 @@ struct LoadDetailSheet: View {
         }
     }
 
-    /// Fire the escort request. No `escorts.request` procedure exists on
-    /// the backend, so we (1) fire a MeAction so the haptic + any
-    /// listening surface (dispatch board, notifications) picks it up, and
-    /// (2) post a dispatch message on the load's conversation thread via
-    /// the canonical `messages.sendMessage` route — the same path the
-    /// driver dispatch chat (053_ESangDispatchChat) uses. The message
-    /// names the load + the mode's escort concept so dispatch sees a
-    /// concrete, actionable request rather than a silent flag.
+    /// Fire the escort request. The `escorts.requestEscort` procedure now
+    /// exists on the backend: it raises a REAL escort demand by flipping
+    /// loads.requiresEscort = true (+ escortCount >= 1) so the load surfaces
+    /// in the escort marketplace (escorts.getAvailableJobs). We (1) fire a
+    /// MeAction for the haptic + any listening surface, (2) call the real
+    /// endpoint as the PRIMARY action — the button's success/failure now
+    /// reflects this real demand, then (3) post a best-effort dispatch
+    /// message on the load's conversation thread (same `messages.sendMessage`
+    /// route as 053 dispatch chat) as a non-blocking human-readable courtesy.
     private func requestEscort() async {
         guard escortRequestState != .requesting else { return }
         escortRequestState = .requesting
@@ -923,29 +924,38 @@ struct LoadDetailSheet: View {
         let loadRef = load.backendLoadId.map(String.init) ?? load.id
         let concept = mode.escortConcept
 
-        // MeAction — haptic + surface notification. Listeners (dispatch
-        // board, notifications inbox) can react to the request without a
-        // dedicated endpoint.
+        // MeAction — haptic + surface notification.
         MeAction.fire("loaddetail.request-escort", userInfo: [
             "loadId": loadRef,
             "mode": mode.rawValue,
             "escortConcept": concept,
         ])
 
-        // Post the dispatch message on the load's conversation thread.
-        // The messages router treats the load id as a stable conversation
-        // key for dispatch threads (same convention as 053 dispatch chat).
-        let body = "Escort request · \(load.origin) → \(load.destination): requesting \(concept.lowercased()) for load \(load.id)."
+        // PRIMARY: raise a REAL escort demand. Flips loads.requiresEscort on
+        // the backend so the load surfaces in the escort marketplace
+        // (escorts.getAvailableJobs). Needs the canonical backend load id.
+        guard let backendId = load.backendLoadId else {
+            escortRequestState = .failed("This load isn't synced yet. Try again once it's posted.")
+            return
+        }
         do {
-            _ = try await EusoTripAPI.shared.messaging.sendMessage(
+            _ = try await EusoTripAPI.shared.escort.requestEscort(
+                loadId: backendId,
+                position: "lead",
+                notes: "Requested \(concept.lowercased()) · \(load.origin) → \(load.destination)"
+            )
+            escortRequestState = .requested
+
+            // SECONDARY (best-effort): post a dispatch message on the load's
+            // conversation thread so dispatch sees a human-readable note. A
+            // failure here does NOT undo the real demand already committed.
+            let body = "Escort request · \(load.origin) → \(load.destination): requesting \(concept.lowercased()) for load \(load.id)."
+            _ = try? await EusoTripAPI.shared.messaging.sendMessage(
                 conversationId: loadRef,
                 content: body,
                 type: "text"
             )
-            escortRequestState = .requested
         } catch {
-            // The MeAction already fired, but the dispatch message didn't
-            // land — surface an honest retry rather than a false success.
             let msg: String
             if let api = error as? EusoTripAPIError, case .trpcError(let m) = api {
                 msg = m
