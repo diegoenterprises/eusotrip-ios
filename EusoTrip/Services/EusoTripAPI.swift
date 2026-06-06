@@ -349,6 +349,12 @@ final class EusoTripAPI: ObservableObject {
     /// guardian verdict). Backed by
     /// `frontend/server/routers/carrierVetAgent.ts`.
     lazy var carrierVetAgent: CarrierVetAgentAPI = CarrierVetAgentAPI(api: self)
+    /// Carrier Vetting Gate — post-Montgomery negligent-selection
+    /// eligibility gate (§61). Deterministic four-floor evaluator +
+    /// immutable vetting-audit record. Backed by
+    /// `frontend/server/routers/carrierVetting.ts`
+    /// (carrierVetting.evaluate / recordDecision / getPolicy).
+    lazy var carrierVetting: CarrierVettingAPI = CarrierVettingAPI(api: self)
 
     // --- Driver-facing surfaces added to back the gamification / wallet /
     // fleet / availability screens. Each router mirrors a file under
@@ -20424,6 +20430,219 @@ struct CarrierVetAgentAPI {
     func getRecentVettings(companyId: Int, limit: Int = 10) async throws -> [CarrierVetHistoryItem] {
         try await api.query("carrierVetAgent.getRecentVettings",
                             input: GetRecentInput(companyId: companyId, limit: limit))
+    }
+}
+
+// MARK: - carrierVettingRouter (post-Montgomery negligent-selection gate · §61)
+//
+// Consumes `frontend/server/routers/carrierVetting.ts`. This is the
+// EVALUATIVE eligibility gate fired at every freight-tender commit point
+// (bid accept, assign-driver, book-load, manual match override). It is a
+// DIFFERENT subsystem from `carrierVetAgent` above: where carrierVetAgent
+// is the ESANG conversational FMCSA-snapshot agent, carrierVetting is the
+// deterministic four-floor evaluator whose verdict + immutable hash-chained
+// record is the legal defense for negligent-selection liability.
+//
+//   • evaluate(carrierId/dot/mc[, loadId])  (query)    → VettingVerdict
+//        pure read-only four-floor evaluation. Writes nothing.
+//   • recordDecision(... , reason?)         (mutation)  → RecordDecisionResult
+//        re-evaluates server-side, writes the immutable vetting-audit row.
+//   • getPolicy()                           (query)     → VettingPolicy
+//        resolved per-tenant floors + active enforcement mode.
+//
+// Verdict shape is VERBATIM to the service `VettingVerdict`/`VettingCheck`/
+// `VettingPolicy` interfaces in `server/services/carrierVetting.ts`. The four
+// check keys are `insurance_min` / `safety_rating` / `authority_age` /
+// `basic_percentile`. Decision logic (server-owned): any real `fail` → `block`;
+// else any `indeterminate` → `review`; else all `pass` → `pass`. The gate NEVER
+// certifies `eligible` on missing data — `indeterminate` reads honestly, never
+// as a green pass.
+//
+// `actual`/`threshold` are `string | number | null` server-side; decoded here
+// through `VettingScalar` (Int/Double/String → display String, nil-safe),
+// mirroring the codebase's existing string-or-number coalescing convention.
+
+/// Overall gate decision. `block` is a hard fail (real OOS/insurance/etc.);
+/// `review` means at least one floor is INDETERMINATE (missing data) — it is
+/// NOT a pass and must never render green; `pass` is all-floors-clear.
+enum CarrierVettingDecision: String, Decodable, Hashable {
+    case pass
+    case block
+    case review
+}
+
+/// Per-floor honest status. `indeterminate` ≠ `pass`: a vetting gate refuses
+/// to certify eligibility on missing data.
+enum CarrierVettingCheckStatus: String, Decodable, Hashable {
+    case pass
+    case fail
+    case indeterminate
+}
+
+/// Active per-tenant enforcement mode. `block` hard-stops on a real `fail`;
+/// `warn` records + warns but allows the bind; `auditOnly` records silently.
+enum CarrierVettingMode: String, Decodable, Hashable {
+    case block
+    case warn
+    case auditOnly = "audit-only"
+}
+
+/// `string | number | null` scalar, coalesced to a display String. Follows the
+/// codebase convention (e.g. EusoTripAPI.swift:1726) of decoding Int/Double/
+/// String via a single-value container, nil-tolerant.
+struct VettingScalar: Decodable, Hashable {
+    /// nil when the server emitted JSON `null` (no datum on file).
+    let display: String?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() {
+            self.display = nil
+        } else if let i = try? c.decode(Int.self) {
+            self.display = String(i)
+        } else if let d = try? c.decode(Double.self) {
+            // trim a trailing ".0" so 1000000.0 reads "1000000"
+            self.display = d == d.rounded() ? String(Int(d)) : String(d)
+        } else if let b = try? c.decode(Bool.self) {
+            self.display = b ? "true" : "false"
+        } else if let s = try? c.decode(String.self) {
+            self.display = s
+        } else {
+            self.display = nil
+        }
+    }
+}
+
+struct CarrierVettingCheck: Decodable, Hashable, Identifiable {
+    /// stable key the surface binds to: insurance_min / safety_rating /
+    /// authority_age / basic_percentile.
+    let key: String
+    let label: String
+    let status: CarrierVettingCheckStatus
+    /// the real observed value (nil when no datum exists).
+    let actual: VettingScalar?
+    /// the configured threshold this floor was evaluated against.
+    let threshold: VettingScalar?
+    /// honest, human-readable explanation — esp. WHY indeterminate.
+    let note: String
+    /// data source the datum came from, for the legal record.
+    let source: String
+
+    var id: String { key }
+}
+
+struct CarrierVettingCarrier: Decodable, Hashable {
+    let dotNumber: String?
+    let mcNumber: String?
+    let legalName: String?
+}
+
+struct CarrierVettingPolicy: Decodable, Hashable {
+    let policyVersion: String
+    let mode: CarrierVettingMode
+    let minInsuranceUsd: Double
+    let blockedSafetyRatings: [String]
+    let minAuthorityAgeDays: Int
+    let basicSevereCeiling: Double
+    let basicStandardCeiling: Double
+    /// "tenant_settings" | "default"
+    let source: String
+}
+
+struct CarrierVettingVerdict: Decodable, Hashable {
+    let eligible: Bool
+    let decision: CarrierVettingDecision
+    let carrier: CarrierVettingCarrier
+    let loadId: Int?
+    let checks: [CarrierVettingCheck]
+    let policy: CarrierVettingPolicy
+    let evaluatedAt: String
+}
+
+/// `recordDecision` envelope: re-evaluated verdict + whether the immutable
+/// hash-chained audit row was written.
+struct CarrierVettingRecordResult: Decodable, Hashable {
+    let verdict: CarrierVettingVerdict
+    let audited: Bool
+}
+
+/// `getPolicy` envelope.
+struct CarrierVettingPolicyEnvelope: Decodable, Hashable {
+    let policy: CarrierVettingPolicy
+}
+
+struct CarrierVettingAPI {
+    unowned let api: EusoTripAPI
+
+    /// Shared input: at least one carrier identifier is required server-side
+    /// (dotNumber | mcNumber | carrierCompanyId). `loadId` scopes the verdict +
+    /// the audit record to a specific tender. Omitted keys are dropped by the
+    /// encoder so the server's `.optional()` zod fields see `undefined`, not
+    /// `null`.
+    struct EvaluateInput: Encodable {
+        var dotNumber: String?
+        var mcNumber: String?
+        var carrierCompanyId: Int?
+        var loadId: Int?
+    }
+
+    /// `carrierVetting.evaluate` — pure read-only four-floor evaluation.
+    /// Returns the verdict; writes nothing. Use this to render the badge at a
+    /// selection surface BEFORE the commit action.
+    func evaluate(
+        dotNumber: String? = nil,
+        mcNumber: String? = nil,
+        carrierCompanyId: Int? = nil,
+        loadId: Int? = nil
+    ) async throws -> CarrierVettingVerdict {
+        try await api.query(
+            "carrierVetting.evaluate",
+            input: EvaluateInput(
+                dotNumber: dotNumber,
+                mcNumber: mcNumber,
+                carrierCompanyId: carrierCompanyId,
+                loadId: loadId
+            )
+        )
+    }
+
+    struct RecordDecisionInput: Encodable {
+        var dotNumber: String?
+        var mcNumber: String?
+        var carrierCompanyId: Int?
+        var loadId: Int?
+        var reason: String?
+    }
+
+    /// `carrierVetting.recordDecision` — re-evaluates server-side (never trusts
+    /// a client verdict) and writes the immutable hash-chained vetting-audit
+    /// row. This is the negligent-selection legal record. Fire it AT the
+    /// commit moment alongside the assign/accept mutation.
+    @discardableResult
+    func recordDecision(
+        dotNumber: String? = nil,
+        mcNumber: String? = nil,
+        carrierCompanyId: Int? = nil,
+        loadId: Int? = nil,
+        reason: String? = nil
+    ) async throws -> CarrierVettingRecordResult {
+        try await api.mutation(
+            "carrierVetting.recordDecision",
+            input: RecordDecisionInput(
+                dotNumber: dotNumber,
+                mcNumber: mcNumber,
+                carrierCompanyId: carrierCompanyId,
+                loadId: loadId,
+                reason: reason
+            )
+        )
+    }
+
+    /// `carrierVetting.getPolicy` — resolved per-tenant floors + active
+    /// enforcement mode (for rendering thresholds + mode chip).
+    func getPolicy() async throws -> CarrierVettingPolicy {
+        let env: CarrierVettingPolicyEnvelope = try await api.queryNoInput("carrierVetting.getPolicy")
+        return env.policy
     }
 }
 
