@@ -1534,7 +1534,7 @@ enum ScreenRegistry {
         list.append(.init(id: "245", title: "Shipper · Departing",      role: .shipper) { p in AnyView(ShipperDepartingScreen(theme: p, loadId: "0")) })
         // 2026-05-31 — Rescue land: bespoke pixel-faithful 244/245 At-Dock + Departing (full ports; structs take loadId, not theme).
         list.append(.init(id: "244b", title: "Shipper · At Dock (Bespoke)",   role: .shipper) { _ in AnyView(ShipperAtDock()) })
-        list.append(.init(id: "245b", title: "Shipper · Departing (Bespoke)", role: .shipper) { _ in AnyView(ShipperDeparting()) })
+        list.append(.init(id: "245b", title: "Shipper · Departing (Bespoke)", role: .shipper) { _ in AnyView(ShipperDeparting(loadId: "0")) })
         list.append(.init(id: "246", title: "Shipper · Pre-Delivery",   role: .shipper) { p in AnyView(ShipperPreDeliveryScreen(theme: p, loadId: "0")) })
         list.append(.init(id: "247", title: "Shipper · At Delivery",    role: .shipper) { p in AnyView(ShipperAtDeliveryScreen(theme: p, loadId: "0")) })
         list.append(.init(id: "249", title: "Shipper · Load Closed",    role: .shipper) { p in AnyView(ShipperLoadClosedScreen(theme: p, loadId: "0")) })

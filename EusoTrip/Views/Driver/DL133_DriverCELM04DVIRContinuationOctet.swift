@@ -13,7 +13,14 @@
 //    140 Driver Pretrip DVIR Section 14 Submit Cel M04
 //
 //  Continues the CEL M-04 DVIR sequence (DL126-DL132 → DL133-DL140).
-//  Single bundled file. Body reads `loads.getById`. Bottom nav frozen.
+//  Single bundled file. Body reads `loads.getById` (parties, rate,
+//  distance, lane, equipment) + `inspections.getDVIRHistory` (DVIR id).
+//  Every rendered business value binds to live fetched data; anything
+//  without a live source renders an honest "-". Bottom nav frozen.
+//
+//  Honest binding parity with sibling DL126_DriverCELM04Septet
+//  (loads.getById parties) and DL109_DriverDVIRContinuationQuintet
+//  (inspections.getDVIRHistory DVIR row).
 //
 
 import SwiftUI
@@ -23,6 +30,27 @@ private struct CMDLoadCtx: Decodable, Hashable {
     let loadNumber: String?
     let pickupCity: String?
     let destCity: String?
+    let rate: String?
+    let distance: Double?
+    let equipmentType: String?
+    let driver: CMDParty?
+    let catalyst: CMDParty?
+    let shipper: CMDParty?
+    struct CMDParty: Decodable, Hashable {
+        let id: Int?
+        let name: String?
+        let initials: String?
+        let companyName: String?
+        let mcNumber: String?
+    }
+}
+
+private struct CMDDVIRRow: Decodable, Hashable {
+    let id: Int?
+    let status: String?
+    let unitNumber: String?
+    let make: String?
+    let model: String?
 }
 
 private struct CELDVIRSection {
@@ -65,9 +93,26 @@ private struct CELDVIRBody: View {
 
     @Environment(\.palette) private var palette
     @State private var load: CMDLoadCtx?
+    @State private var dvir: CMDDVIRRow?
 
     private var section: CELDVIRSection { CEL_SECTIONS[sectionIndex] ?? CEL_SECTIONS[7]! }
     private var pct: Double { Double(sectionIndex) / 14.0 }
+
+    // MARK: - Dynamic display helpers (live-bound; honest "-" fallback)
+
+    private var loadNumberDisplay: String { load?.loadNumber ?? "-" }
+    private var carrierCodeDisplay: String {
+        load?.catalyst?.companyName ?? load?.catalyst?.name ?? "-"
+    }
+    private var laneDisplay: String? {
+        guard let p = load?.pickupCity, let d = load?.destCity else { return nil }
+        return "\(p) → \(d)"
+    }
+    /// DVIR id from the inspections store when present, else "-".
+    private var dvirIdDisplay: String {
+        guard let id = dvir?.id else { return "-" }
+        return "dvir-\(id)"
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -82,15 +127,18 @@ private struct CELDVIRBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 8)
         }
-        .task { await loadCtx() }
-        .refreshable { await loadCtx() }
+        .task { await loadCtx(); await loadDvir() }
+        .refreshable { await loadCtx(); await loadDvir() }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text("DRIVER · TRIPS · DVIR · S\(sectionIndex) · CEL · M-04").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+                Text("DRIVER · TRIPS · DVIR · S\(sectionIndex) · \(loadNumberDisplay)")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .lineLimit(1)
             }
             Text(section.isSubmit ? "Section \(sectionIndex) · submit" : "Section \(sectionIndex) · acked")
                 .font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
@@ -100,13 +148,17 @@ private struct CELDVIRBody: View {
     }
 
     private var citationPill: some View {
-        LifecycleCard(accentGradient: true) {
+        let driverIni = load?.driver?.initials ?? "-"
+        let dispIni   = load?.catalyst?.initials ?? "-"
+        let shipIni   = load?.shipper?.initials ?? "-"
+        return LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("\(section.citation) · DVIR \(section.isSubmit ? "COMPLETE" : "ADVANCING") · \(sectionIndex)/14 · \(section.label) \(section.isSubmit ? "" : "ACKED")")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text("CEL · DVIR dvir_t1747830000123 · \(sectionIndex)/14 sections · \(section.isSubmit ? "DVIR submitted" : "S\(sectionIndex) acked") 0:00 ago")
+                Text("\(carrierCodeDisplay) · DVIR \(dvirIdDisplay) · \(sectionIndex)/14 sections · \(section.isSubmit ? "DVIR submitted" : "S\(sectionIndex) acked")")
                     .font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true)
-                Text("LD-M-04 · ATL-CLT · JR runs DVIR · NC monitors · DU shipper").font(.caption2).foregroundStyle(palette.textSecondary)
+                Text("\(loadNumberDisplay) · \(laneDisplay ?? "-") · \(driverIni) runs DVIR · \(dispIni) monitors · \(shipIni) shipper")
+                    .font(.caption2).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -128,19 +180,29 @@ private struct CELDVIRBody: View {
                     }
                 }
                 .frame(height: 8)
-                Text("dvir_t1747830000123 · CEL walk-around \(section.isSubmit ? "complete · submitted" : "in progress")").font(.caption2).foregroundStyle(palette.textTertiary)
+                Text("\(dvirIdDisplay) · \(carrierCodeDisplay) walk-around \(section.isSubmit ? "complete · submitted" : "in progress")").font(.caption2).foregroundStyle(palette.textTertiary)
             }
         }
     }
 
     private var identityRow: some View {
-        LifecycleCard {
+        let dispIni     = load?.catalyst?.initials ?? "-"
+        let dispName    = load?.catalyst?.name ?? "-"
+        let carrierFull = load?.catalyst?.companyName ?? load?.catalyst?.name ?? "-"
+        let mc          = load?.catalyst?.mcNumber.map { "MC-\($0)" } ?? "-"
+        let driverName  = load?.driver?.name ?? "-"
+        let shipperName = load?.shipper?.name ?? "-"
+        return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    .overlay(Text("NC").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
+                    .overlay(Text(dispIni).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("CEL · Naomi Chen · dispatcher").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("Carolina Express Logistics · MC-712 944 · JR (driver) · DU (shipper)").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text("\(carrierCodeDisplay) · \(dispName) · dispatcher")
+                        .font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    Text("\(carrierFull) · \(mc) · \(driverName) (driver) · \(shipperName) (shipper)")
+                        .font(.caption2).foregroundStyle(palette.textTertiary)
+                        .lineLimit(2)
                 }
                 Spacer()
             }
@@ -148,11 +210,15 @@ private struct CELDVIRBody: View {
     }
 
     private var kpiGrid: some View {
+        let payout = Self.payoutDisplay(load?.rate)
+        let dist = Self.distanceDisplay(load?.distance)
+        let lane = laneDisplay ?? "-"
+        let equip = load?.equipmentType ?? "-"
         let kpis: [(String, String, String, Color)] = [
-            ("DVIR",    "\(sectionIndex)/14",       section.label,           section.isSubmit ? .green : .blue),
-            ("PAYOUT",  "$1,610",                    "LOCKED · CEL · §371",   .green),
-            ("DIST",    "245 mi",                     "ATL → CLT · 53' Dry",  .blue),
-            ("STATE",   section.isSubmit ? "COMPLETE" : "ADVANCING", section.isSubmit ? "submitted · §385" : section.citation, section.isSubmit ? .green : .blue),
+            ("DVIR",    "\(sectionIndex)/14",                              section.label,                              section.isSubmit ? .green : .blue),
+            ("PAYOUT",  payout,                                            "LOCKED · \(carrierCodeDisplay) · §371",    .green),
+            ("DIST",    dist,                                              "\(lane) · \(equip)",                       .blue),
+            ("STATE",   section.isSubmit ? "COMPLETE" : "ADVANCING",       section.isSubmit ? "submitted · §385" : section.citation, section.isSubmit ? .green : .blue),
         ]
         let cols = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
         return LazyVGrid(columns: cols, spacing: 8) {
@@ -180,7 +246,7 @@ private struct CELDVIRBody: View {
             case 11: return "Cargo securement passed. Driver seat & belts (S12) next."
             case 12: return "Driver seat & belts logged. Certify (S13) up next."
             case 13: return "Certify acked at 93%. S14 submits the full DVIR; ON-SITE arms on submission."
-            case 14: return "DVIR submitted at §385. ON-SITE armed; gate-in fires next on dock 4A approach."
+            case 14: return "DVIR submitted at §385. ON-SITE armed; gate-in fires next on dock approach."
             default: return "Continue walk-around per §392."
             }
         }()
@@ -195,6 +261,28 @@ private struct CELDVIRBody: View {
     private func loadCtx() async {
         struct In: Encodable { let id: String }
         do { load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId)) } catch { /* */ }
+    }
+
+    private func loadDvir() async {
+        struct In: Encodable { let vehicleId: Int?; let limit: Int }
+        do {
+            let rows: [CMDDVIRRow] = try await EusoTripAPI.shared.query("inspections.getDVIRHistory", input: In(vehicleId: nil, limit: 1))
+            dvir = rows.first
+        } catch { /* */ }
+    }
+
+    /// Format the load's rate (decimal string from server) as a
+    /// payout display. Falls back to "-" when missing/invalid.
+    private static func payoutDisplay(_ rate: String?) -> String {
+        guard let r = rate, let n = Double(r), n > 0 else { return "-" }
+        let v = n.rounded()
+        return v < 1000 ? String(format: "$%.0f", v) : "$\(Int(v).formatted(.number))"
+    }
+
+    /// Format the load's distance in miles. Falls back to "-".
+    private static func distanceDisplay(_ d: Double?) -> String {
+        guard let d, d > 0 else { return "-" }
+        return "\(Int(d.rounded())) mi"
     }
 }
 
