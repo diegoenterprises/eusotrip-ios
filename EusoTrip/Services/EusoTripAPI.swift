@@ -14411,6 +14411,62 @@ struct EscortAPI {
         let bridgeClearanceFt: Double?
         /// Optional permit number authorising the corridor.
         let permitNumber: String?
+        /// Real corridor coordinate block for the in-house HERE map —
+        /// routed polyline + origin/dest pins + live escort/lead/chase/
+        /// piloted positions. Optional: `nil` on envelopes predating the
+        /// coordinate projection. Empty inner arrays until rows populate.
+        let corridor: CorridorGeo?
+    }
+
+    /// A single lat/lng coordinate projected by the server for the
+    /// in-house corridor map. Server source: `loads.route` JSON,
+    /// `loads.pickupLocation`/`deliveryLocation`, and `location_history`.
+    /// Optional so a payload predating the coordinate block (or one that
+    /// omits a pin) still decodes — the UI coord-gates `!(lat==0 && lng==0)`.
+    struct CorridorCoord: Decodable, Hashable {
+        let lat: Double
+        let lng: Double
+    }
+
+    /// Live position of an escort / lead / chase / piloted vehicle along
+    /// the corridor. Sourced from the newest `location_history` fix per
+    /// user (escort = me, lead/chase = paired convoy escorts, piloted =
+    /// the load-carrying primary vehicle). `role` ∈ lead|chase|piloted.
+    struct CorridorLivePosition: Decodable, Hashable, Identifiable {
+        let role: String
+        let lat: Double
+        let lng: Double
+        let heading: Double?
+        let vehicleId: String
+        let updatedAt: String?
+        var id: String { vehicleId }
+    }
+
+    /// Map viewport bounds (NE / SW corners) computed server-side across
+    /// every real point. `nil` until at least one coordinate lands.
+    struct CorridorBounds: Decodable, Hashable {
+        let neLat: Double
+        let neLng: Double
+        let swLat: Double
+        let swLng: Double
+    }
+
+    /// The corridor coordinate block — the real-geometry sibling of the
+    /// place-name `legs`/`escortVehicles`. Every field is server-projected
+    /// from existing DB columns; empty/`nil` until rows populate so the
+    /// map lights up honestly (no fabricated points). Optional on
+    /// `EscortCorridor` so older envelopes still decode.
+    struct CorridorGeo: Decodable, Hashable {
+        /// Ordered corridor polyline: origin → route waypoints → destination.
+        let polyline: [CorridorCoord]
+        /// Origin pin (`loads.pickupLocation`). `nil` when not geocoded.
+        let originPin: CorridorCoord?
+        /// Destination pin (`loads.deliveryLocation`). `nil` when not geocoded.
+        let destPin: CorridorCoord?
+        /// Live escort / lead / chase / piloted positions.
+        let livePositions: [CorridorLivePosition]
+        /// Viewport bounds across all real points.
+        let bounds: CorridorBounds?
     }
 
     struct GetCorridorInput: Encodable { let id: String }

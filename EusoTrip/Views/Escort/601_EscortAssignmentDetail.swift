@@ -99,6 +99,20 @@ struct EscortAssignmentDetail: View {
     /// eusotrip-killers firing alongside the 602 brick.
     @State private var showCorridorMap: Bool = false
 
+    /// Real corridor endpoint coordinates for the route-preview map.
+    ///
+    /// `EscortAPI.AssignmentDetail` (the canonical envelope decoded by the
+    /// store) does not surface lat/lng — `escorts.getActiveAssignmentDetail`
+    /// historically only put origin/destination on the wire as city/state
+    /// strings. The proc now ALSO returns `originLat/originLng/destLat/destLng`
+    /// straight off `loads.pickupLocation.lat/lng` + `loads.deliveryLocation`
+    /// (the same real columns the shipper LoadDetail hero map reads). To
+    /// consume them without widening the shared model, we decode a tiny
+    /// coordinate-only projection of the SAME proc, screen-local. Nil until
+    /// the fetch lands; `(0,0)` ends are treated as "awaiting coordinates"
+    /// (null-island gate) so a brand-new load with no geocode never draws.
+    @State private var corridorCoords: EscortCorridorCoords? = nil
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -217,6 +231,7 @@ struct EscortAssignmentDetail: View {
     @ViewBuilder
     private func detailCards(for detail: EscortAPI.AssignmentDetail) -> some View {
         metricsRow(detail)
+        routePreviewCard(detail)
         scheduleCard(detail)
         corridorCard(detail)
         pairingCard(detail)
@@ -224,6 +239,92 @@ struct EscortAssignmentDetail: View {
         notesCard(detail)
         viewCorridorMapCTA(detail)
         confirmRouteCTA(detail)
+    }
+
+    // MARK: - Route-preview map (real corridor coordinates / honest seam)
+
+    /// Static route-preview thumbnail above the CORRIDOR card: origin →
+    /// destination corridor sketch on the in-house HERE vector basemap.
+    /// This is the upstream half of the same seam the "View corridor"
+    /// CTA drills into (602) — it surfaces the corridor at a glance
+    /// without leaving the detail surface.
+    ///
+    /// Coordinates come from the proc's `originLat/originLng/destLat/destLng`
+    /// (real `loads.pickupLocation` / `loads.deliveryLocation` JSON columns).
+    /// Both endpoints are null-island gated: if either end is `(0,0)` — i.e.
+    /// the load has no geocode yet — we render an honest "awaiting corridor
+    /// coordinates" placeholder instead of fabricating a route. No hardcoded
+    /// demo coordinates anywhere; the map lights up the moment the load's
+    /// location JSON carries real lat/lng.
+    @ViewBuilder
+    private func routePreviewCard(_ d: EscortAPI.AssignmentDetail) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            sectionHeader("ROUTE PREVIEW", icon: "map.fill")
+            if let coords = corridorCoords, coords.isRoutable {
+                let pickup = HereLatLng(coords.originLat, coords.originLng)
+                let delivery = HereLatLng(coords.destLat, coords.destLng)
+                HereLiveMapView(
+                    center: HereLatLng(
+                        (coords.originLat + coords.destLat) / 2,
+                        (coords.originLng + coords.destLng) / 2
+                    ),
+                    zoom: 6,
+                    interactive: false,
+                    route: [pickup, delivery],
+                    baseLayers: [
+                        .route(polyline: [pickup, delivery], colorHex: "#1473FF"),
+                        .markers([
+                            HereMarker(at: pickup, kind: .pickup, label: d.origin.isEmpty ? nil : d.origin),
+                            HereMarker(at: delivery, kind: .delivery, label: d.destination.isEmpty ? nil : d.destination)
+                        ])
+                    ],
+                    addOns: .shipperTracking,
+                    showTicker: false
+                )
+                .frame(height: 180)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint, lineWidth: 1)
+                )
+                .allowsHitTesting(false)
+            } else {
+                routePreviewAwaiting
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    /// Honest empty state shown until the load's pickup/delivery location
+    /// JSON carries real lat/lng (both endpoints non-null-island). Never a
+    /// fabricated route — the corridor surfaces the moment coordinates land.
+    private var routePreviewAwaiting: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "mappin.slash")
+                .font(.system(size: 14, weight: .heavy))
+                .foregroundStyle(palette.textTertiary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Awaiting corridor coordinates")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Text("The route preview lights up once this load is geocoded. Tap \u{201C}View corridor\u{201D} for the full corridor map.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
+        .padding(Space.s3)
+        .background(palette.tintNeutral.opacity(0.4))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
     /// Drill-in CTA that opens the 602 corridor-map sheet. Added 2026-04-27
@@ -731,6 +832,76 @@ struct EscortAssignmentDetail: View {
         if case .loaded(let opt) = detailStore.state, let v = opt {
             localConfirmed = (v.routeConfirmed == true)
         }
+        await loadCorridorCoords()
+    }
+
+    /// Decode the corridor endpoint coordinates off the SAME proc the
+    /// detail store reads (`escorts.getActiveAssignmentDetail`), via a
+    /// screen-local coordinate-only Decodable. This keeps the shared
+    /// `EscortAPI.AssignmentDetail` model untouched while still consuming
+    /// the proc's real `originLat/originLng/destLat/destLng` fields
+    /// (sourced from `loads.pickupLocation` / `loads.deliveryLocation`).
+    /// On any failure (proc not yet deployed, transport error) the coords
+    /// stay nil and the route preview falls back to its honest awaiting
+    /// state — it never fabricates a route.
+    private func loadCorridorCoords() async {
+        guard !assignmentId.isEmpty else { return }
+        do {
+            let coords: EscortCorridorCoords = try await EusoTripAPI.shared.query(
+                "escorts.getActiveAssignmentDetail",
+                input: EscortCorridorCoordsInput(id: assignmentId)
+            )
+            corridorCoords = coords
+        } catch {
+            // Honest seam: no coords → awaiting state, never a fake route.
+            corridorCoords = nil
+        }
+    }
+}
+
+// MARK: - Corridor coordinate projection (route-preview map)
+
+/// Input echo for the coordinate-only decode of
+/// `escorts.getActiveAssignmentDetail`. Mirrors the proc's `{ id: string }`
+/// Zod input.
+private struct EscortCorridorCoordsInput: Encodable {
+    let id: String
+}
+
+/// Coordinate-only projection of the `escorts.getActiveAssignmentDetail`
+/// envelope. The proc returns the full assignment detail; this struct
+/// decodes ONLY the four real corridor-endpoint coordinate fields the
+/// route-preview map needs, ignoring everything else. The fields come
+/// straight off `loads.pickupLocation.lat/lng` + `loads.deliveryLocation`
+/// (`fmtLoc`), the same real columns the shipper LoadDetail hero map reads.
+///
+/// All four default to `0` when the proc omits them (older deploy) or the
+/// load has no geocode — `isRoutable` then reports `false` and the UI shows
+/// the awaiting state. No coordinate is ever synthesized here.
+private struct EscortCorridorCoords: Decodable {
+    let originLat: Double
+    let originLng: Double
+    let destLat: Double
+    let destLng: Double
+
+    enum CodingKeys: String, CodingKey {
+        case originLat, originLng, destLat, destLng
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        originLat = try c.decodeIfPresent(Double.self, forKey: .originLat) ?? 0
+        originLng = try c.decodeIfPresent(Double.self, forKey: .originLng) ?? 0
+        destLat   = try c.decodeIfPresent(Double.self, forKey: .destLat) ?? 0
+        destLng   = try c.decodeIfPresent(Double.self, forKey: .destLng) ?? 0
+    }
+
+    /// True only when BOTH endpoints carry a real (non-null-island) fix.
+    /// A `(0,0)` endpoint means the load isn't geocoded yet — the map
+    /// must not draw a corridor to null island, so the UI shows its
+    /// awaiting state instead.
+    var isRoutable: Bool {
+        !(originLat == 0 && originLng == 0) && !(destLat == 0 && destLng == 0)
     }
 }
 

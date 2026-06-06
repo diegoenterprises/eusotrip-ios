@@ -51,6 +51,7 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 // MARK: - Screen body
 
@@ -167,6 +168,7 @@ struct BrokerTenderDetail: View {
 
     @ViewBuilder
     private func detailCards(for detail: LoadsAPI.LoadDetail) -> some View {
+        laneCard(detail)
         metricsRow(detail)
         scheduleCard(detail)
         cargoCard(detail)
@@ -399,6 +401,119 @@ struct BrokerTenderDetail: View {
                 .strokeBorder(palette.borderFaint, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    // MARK: - Lane hero map
+    //
+    // The canonical hero for a load/route detail surface — an
+    // origin→destination lane on the in-house HERE basemap. Matches
+    // the Shipper 205 (`heroMap`/`laneForMap`) and Carrier 302 idiom:
+    // the broker's single deep-dive on a tendered load opens onto its
+    // lane. Renders `HereLiveMapView` in the flat board register
+    // (`.shipperTracking` add-ons: weather + traffic + ad-zones — no
+    // driver-only gamification pins) since the broker is a tracking
+    // role, not a first-person driver.
+    //
+    // Real data: coordinates come ONLY from
+    //   `detail.pickupLocation.lat/.lng` and
+    //   `detail.deliveryLocation.lat/.lng`
+    // (LoadsAPI.LoadCityState — the same loads.getById fields 205
+    // reads; the server self-heals/geocodes these on read). When
+    // either endpoint hasn't been geocoded yet (lat/lng nil or 0,0
+    // null-island), the card renders an honest "Route geocoding…"
+    // empty state — never a fabricated route — and lights up on the
+    // next read once the rows populate. No hardcoded coordinates.
+    @ViewBuilder
+    private func laneCard(_ d: LoadsAPI.LoadDetail) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            sectionHeader("LANE", icon: "map")
+            ZStack {
+                if let lane = laneForMap(d) {
+                    HereLiveMapView(
+                        center: .init(
+                            (lane.pickup.latitude + lane.delivery.latitude) / 2,
+                            (lane.pickup.longitude + lane.delivery.longitude) / 2
+                        ),
+                        zoom: 6,
+                        route: [.init(lane.pickup), .init(lane.delivery)],
+                        baseLayers: [
+                            .route(
+                                polyline: [.init(lane.pickup), .init(lane.delivery)],
+                                colorHex: "#1473FF"
+                            ),
+                            .markers([
+                                .init(at: .init(lane.pickup),   kind: .pickup,   label: lane.originTitle),
+                                .init(at: .init(lane.delivery), kind: .delivery, label: lane.destinationTitle)
+                            ])
+                        ],
+                        addOns: .shipperTracking
+                    )
+                } else {
+                    // SEAM: no geocoded coords on the tender yet. Honest
+                    // "awaiting data" state — no fabricated points. Lights
+                    // up automatically once loads.getById's self-heal
+                    // backfills pickup/delivery lat/lng on the next read.
+                    Rectangle()
+                        .fill(palette.bgCardSoft)
+                        .overlay(
+                            VStack(spacing: 6) {
+                                Image(systemName: "map")
+                                    .font(.system(size: 18, weight: .heavy))
+                                    .foregroundStyle(palette.textTertiary)
+                                Text("Route geocoding…")
+                                    .font(.system(size: 11, weight: .heavy)).tracking(0.8)
+                                    .foregroundStyle(palette.textTertiary)
+                            }
+                        )
+                }
+            }
+            .frame(height: 180)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+            .accessibilityLabel("Lane map, \(originLabel(d)) to \(destinationLabel(d))")
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    /// Composes a `HereMapView.Lane` from the tender's pickup + delivery
+    /// coordinates (`detail.pickupLocation.lat/.lng`,
+    /// `detail.deliveryLocation.lat/.lng`). Returns nil — never a
+    /// fabricated lane — when either endpoint hasn't been geocoded yet
+    /// (lat/lng nil or a 0,0 null-island sentinel). The server's
+    /// loads.getById self-heal backfills these on the next read.
+    private func laneForMap(_ d: LoadsAPI.LoadDetail) -> HereMapView.Lane? {
+        guard let p = d.pickupLocation,
+              let dl = d.deliveryLocation,
+              let pLat = p.lat, let pLng = p.lng,
+              let dLat = dl.lat, let dLng = dl.lng,
+              pLat != 0, pLng != 0, dLat != 0, dLng != 0 else { return nil }
+        return HereMapView.Lane(
+            id: "tender_\(d.id)",
+            originTitle: originLabel(d),
+            destinationTitle: destinationLabel(d),
+            pickup: CLLocationCoordinate2D(latitude: pLat, longitude: pLng),
+            delivery: CLLocationCoordinate2D(latitude: dLat, longitude: dLng)
+        )
+    }
+
+    private func originLabel(_ d: LoadsAPI.LoadDetail) -> String {
+        let city = d.pickupLocation?.city ?? ""
+        return city.isEmpty ? "ORIGIN" : city.uppercased()
+    }
+
+    private func destinationLabel(_ d: LoadsAPI.LoadDetail) -> String {
+        let city = d.deliveryLocation?.city ?? ""
+        return city.isEmpty ? "DESTINATION" : city.uppercased()
     }
 
     /// Pickup / delivery / bidding-ends. Em-dash on missing columns
